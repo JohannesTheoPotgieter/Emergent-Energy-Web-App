@@ -35,7 +35,16 @@ async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
   
   if (!response.ok) {
     const error = await response.json().catch(() => ({ message: "Request failed" }));
-    throw new Error(error.message || `HTTP ${response.status}`);
+    // Prefer 'error' field over 'message' for more specific error messages
+    const errorMessage = error.error || error.message || `HTTP ${response.status}`;
+    const errorDetail = error.detail;
+    
+    // Log detailed error info in development
+    if (process.env.NODE_ENV === 'development' && errorDetail) {
+      console.error('[API Error]', errorMessage, 'Detail:', errorDetail);
+    }
+    
+    throw new Error(errorMessage);
   }
   
   return response.json();

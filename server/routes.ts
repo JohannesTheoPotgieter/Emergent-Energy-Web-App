@@ -97,37 +97,74 @@ export async function registerRoutes(
   
   // ==================== AUTH ROUTES ====================
   
+  app.get("/api/auth/status", async (req, res) => {
+    try {
+      const { dbMode } = await import("./db");
+      const { getDbConfigStatus } = await import("./db-config");
+      const dbStatus = getDbConfigStatus();
+      
+      res.json({
+        authenticated: req.isAuthenticated(),
+        user: req.user ? { 
+          email: req.user.email, 
+          role: req.user.role 
+        } : null,
+        dbMode,
+        dbConnected: dbStatus.connected,
+      });
+    } catch (error) {
+      res.status(500).json({ 
+        error: "Failed to get auth status",
+        detail: error instanceof Error ? error.message : String(error)
+      });
+    }
+  });
+  
   app.post("/api/auth/login", (req, res, next) => {
     passport.authenticate("local", (err: any, user: Express.User | false, info: { message: string }) => {
       if (err) {
-        console.error("Login error:", err);
+        console.error("[LOGIN ERROR] Full error:", err);
+        console.error("[LOGIN ERROR] Stack trace:", err.stack);
         
         // Provide better error messages for common DB connection issues
         if (err.message && (err.message.includes('ENOTFOUND') || err.message.includes('ECONNREFUSED'))) {
           return res.status(503).json({ 
+            error: "Database connection unavailable",
             message: "Database connection unavailable. Please check the database configuration.",
-            details: process.env.NODE_ENV === 'development' ? err.message : undefined
+            detail: process.env.NODE_ENV === 'development' ? err.message : undefined,
+            code: 'DB_CONNECTION_ERROR'
           });
         }
         
         return res.status(500).json({ 
+          error: "Server error during login",
           message: "An error occurred during login",
-          details: process.env.NODE_ENV === 'development' ? err.message : undefined
+          detail: process.env.NODE_ENV === 'development' ? err.message : undefined,
+          stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
+          code: 'LOGIN_ERROR'
         });
       }
       
       if (!user) {
-        return res.status(401).json({ message: info?.message || "Login failed" });
+        console.log("[LOGIN] Failed login attempt:", req.body?.email, "- Reason:", info?.message);
+        return res.status(401).json({ 
+          error: info?.message || "Invalid email or password",
+          message: info?.message || "Login failed" 
+        });
       }
       
       req.logIn(user, (err) => {
         if (err) {
-          console.error("Session error:", err);
+          console.error("[SESSION ERROR]:", err);
           return res.status(500).json({ 
+            error: "Failed to establish session",
             message: "Failed to establish session",
-            details: process.env.NODE_ENV === 'development' ? err.message : undefined
+            detail: process.env.NODE_ENV === 'development' ? err.message : undefined,
+            code: 'SESSION_ERROR'
           });
         }
+        
+        console.log("[LOGIN] Successful login:", user.email);
         
         // Generate JWT token as fallback auth mechanism
         const token = generateToken({

@@ -46,9 +46,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       return true;
     } catch (error: any) {
+      console.error("[Login Error]", error);
+      
+      const errorMessage = error.message || "An unexpected error occurred";
+      
       toast({
         title: "Login Failed",
-        description: error.message || "Invalid credentials",
+        description: errorMessage,
         variant: "destructive",
       });
       return false;

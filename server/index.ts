@@ -174,23 +174,29 @@ app.use((req, res, next) => {
   next();
 });
 
-// Seed admin user on startup
+// Seed demo/admin user on startup (idempotent)
 async function seedAdminUser() {
   try {
-    const adminEmail = "admin@emergent.energy";
+    const adminEmail = process.env.DEMO_ADMIN_EMAIL || "admin@emergent.energy";
+    const adminPassword = process.env.DEMO_ADMIN_PASSWORD || "admin123";
+    
     const existingAdmin = await storage.getUserByEmail(adminEmail);
+    
     if (!existingAdmin) {
-      const hashedPassword = await bcrypt.hash("admin123", 10);
+      const hashedPassword = await bcrypt.hash(adminPassword, 10);
       await storage.createUser({
         email: adminEmail,
         password: hashedPassword,
         name: "Admin User",
         role: "admin",
       });
-      log("Admin user seeded: admin@emergent.energy / admin123");
+      log(`✓ Demo admin user seeded: ${adminEmail}`);
+    } else {
+      log(`✓ Demo admin user exists: ${adminEmail}`);
     }
   } catch (error) {
-    log("Error seeding admin user: " + error);
+    log("✗ Error seeding admin user: " + error);
+    console.error("[SEED ERROR] Full error:", error);
   }
 }
 
