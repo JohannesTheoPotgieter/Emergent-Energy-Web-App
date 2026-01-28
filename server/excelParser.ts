@@ -424,43 +424,107 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
   const financeRevenueMonthly: InsertFinanceRevenueMonthly[] = [];
   const financeCosMonthly: InsertFinanceCosMonthly[] = [];
 
-  // Parse Cashflow sheet (weekly time-series)
+  // Parse Cashflow sheet (weekly time-series with robust header detection)
   if (workbook.SheetNames.includes("Cashflow")) {
     try {
       const sheet = workbook.Sheets["Cashflow"];
       const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: false }) as any[][];
       
-      if (data.length > 0 && data[0]) {
-        // Row 1 has date headers starting from column F (index 5)
-        const dateHeaders: string[] = [];
-        for (let colIdx = 5; colIdx < data[0].length; colIdx++) {
-          const dateVal = parseDate(data[0][colIdx]);
-          if (dateVal) {
-            dateHeaders.push(dateVal);
+      if (data.length > 0) {
+        // Find header row with dates (usually row 1, column F onwards)
+        let dateHeaderRow = -1;
+        let dateStartCol = -1;
+        for (let rowIdx = 0; rowIdx < Math.min(5, data.length); rowIdx++) {
+          for (let colIdx = 0; colIdx < data[rowIdx].length; colIdx++) {
+            const dateVal = parseDate(data[rowIdx][colIdx]);
+            if (dateVal) {
+              dateHeaderRow = rowIdx;
+              dateStartCol = colIdx;
+              break;
+            }
           }
+          if (dateHeaderRow >= 0) break;
         }
         
-        // Look for series names in column B (index 1) for rows 3-14
-        const seriesRows = [
-          { row: 2, name: "Planned Revenue" },
-          { row: 3, name: "Planned Expenditure" },
-          { row: 4, name: "PLANNED CashFlow" },
-          { row: 8, name: "Actual + Planned Revenue" },
-          { row: 9, name: "Actual + Planned Expenditure" },
-          { row: 10, name: "ACTUAL CashFlow" },
-        ];
-        
-        for (const { row, name } of seriesRows) {
-          if (data[row]) {
-            for (let dateIdx = 0; dateIdx < dateHeaders.length; dateIdx++) {
-              const valueColIdx = 5 + dateIdx;
-              const value = parseNumber(data[row][valueColIdx]);
-              if (value !== null) {
+        if (dateHeaderRow >= 0 && dateStartCol >= 0) {
+          // Extract all date headers
+          const dateHeaders: string[] = [];
+          for (let colIdx = dateStartCol; colIdx < data[dateHeaderRow].length; colIdx++) {
+            const dateVal = parseDate(data[dateHeaderRow][colIdx]);
+            if (dateVal) {
+              dateHeaders.push(dateVal);
+            } else {
+              break; // Stop at first non-date
+            }
+          }
+          
+          // Find series rows by searching column B (index 1) for series names
+          const seriesToFind = [
+            "planned revenue",
+            "planned expenditure",
+            "planned cashflow",
+            "actual + planned revenue",
+            "actual + planned expenditure",
+            "actual cashflow"
+          ];
+          
+          const seriesRows: { row: number; name: string }[] = [];
+          for (let rowIdx = dateHeaderRow + 1; rowIdx < Math.min(dateHeaderRow + 20, data.length); rowIdx++) {
+            const cellB = data[rowIdx][1]; // Column B
+            if (cellB) {
+              const normalized = normalizeHeader(cellB);
+              for (const seriesName of seriesToFind) {
+                if (normalized.includes(seriesName)) {
+                  seriesRows.push({ row: rowIdx, name: String(cellB).trim() });
+                  break;
+                }
+              }
+            }
+          }
+          
+          // Calculate date horizon limit: lastNonZeroDate + 52 weeks
+          let maxSignificantDate = '';
+          for (const { row } of seriesRows) {
+            if (data[row]) {
+              for (let dateIdx = 0; dateIdx < dateHeaders.length; dateIdx++) {
+                const valueColIdx = dateStartCol + dateIdx;
+                const value = parseNumber(data[row][valueColIdx]);
+                if (value !== null && parseFloat(value) !== 0) {
+                  const currentDate = dateHeaders[dateIdx];
+                  if (currentDate > maxSignificantDate) {
+                    maxSignificantDate = currentDate;
+                  }
+                }
+              }
+            }
+          }
+          
+          // Add 52 weeks (364 days) buffer
+          let horizonLimit = '';
+          if (maxSignificantDate) {
+            const maxDate = new Date(maxSignificantDate);
+            maxDate.setDate(maxDate.getDate() + 364);
+            horizonLimit = maxDate.toISOString().split('T')[0];
+          }
+          
+          // Parse values for each series
+          for (const { row, name } of seriesRows) {
+            if (data[row]) {
+              for (let dateIdx = 0; dateIdx < dateHeaders.length; dateIdx++) {
+                const pointDate = dateHeaders[dateIdx];
+                
+                // Skip dates beyond horizon limit
+                if (horizonLimit && pointDate > horizonLimit) continue;
+                
+                const valueColIdx = dateStartCol + dateIdx;
+                const value = parseNumber(data[row][valueColIdx]);
+                
+                // Store all points including zeros within horizon
                 cashflowPoints.push({
                   projectName,
                   seriesName: name,
-                  pointDate: dateHeaders[dateIdx],
-                  value,
+                  pointDate,
+                  value: value || "0",
                 });
               }
             }
@@ -472,39 +536,66 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
     }
   }
 
-  // Parse Finance - Revenue sheet (monthly pivot)
+  // Parse Finance - Revenue sheet (monthly pivot with robust header detection)
   if (workbook.SheetNames.includes("Finance - Revenue")) {
     try {
       const sheet = workbook.Sheets["Finance - Revenue"];
       const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: false }) as any[][];
       
-      if (data.length > 0 && data[0]) {
-        // Row 1 has month headers starting from column B (index 1)
-        const monthHeaders: string[] = [];
-        for (let colIdx = 1; colIdx < data[0].length; colIdx++) {
-          const header = normalizeHeader(data[0][colIdx]);
-          if (header !== "grand total" && header !== "row labels") {
-            const dateVal = parseDate(data[0][colIdx]);
-            if (dateVal) {
-              monthHeaders.push(dateVal);
-            }
+      if (data.length > 0) {
+        // Find header row containing "Row Labels" in column A
+        let headerRowIdx = -1;
+        for (let rowIdx = 0; rowIdx < Math.min(10, data.length); rowIdx++) {
+          const cellA = data[rowIdx][0];
+          if (cellA && normalizeHeader(cellA) === "row labels") {
+            headerRowIdx = rowIdx;
+            break;
           }
         }
         
-        // Parse category rows starting from row 2
-        for (let rowIdx = 1; rowIdx < data.length; rowIdx++) {
-          const category = data[rowIdx][0];
-          if (!category || normalizeHeader(category) === "grand total") break;
+        if (headerRowIdx >= 0) {
+          // Extract month headers from header row (Excel date columns only)
+          const monthHeaders: string[] = [];
+          const monthColIndices: number[] = [];
+          for (let colIdx = 1; colIdx < data[headerRowIdx].length; colIdx++) {
+            const header = normalizeHeader(data[headerRowIdx][colIdx]);
+            if (header === "grand total") break;
+            
+            const dateVal = parseDate(data[headerRowIdx][colIdx]);
+            if (dateVal) {
+              monthHeaders.push(dateVal);
+              monthColIndices.push(colIdx);
+            }
+          }
           
-          for (let monthIdx = 0; monthIdx < monthHeaders.length; monthIdx++) {
-            const valueColIdx = 1 + monthIdx;
-            const value = parseNumber(data[rowIdx][valueColIdx]);
-            if (value !== null) {
+          // Parse category rows starting after header row
+          for (let rowIdx = headerRowIdx + 1; rowIdx < data.length; rowIdx++) {
+            const category = data[rowIdx][0];
+            
+            // Stop conditions
+            if (!category) {
+              // Check for multiple consecutive blank rows
+              let consecutiveBlanks = 0;
+              for (let checkIdx = rowIdx; checkIdx < Math.min(rowIdx + 3, data.length); checkIdx++) {
+                if (!data[checkIdx][0]) consecutiveBlanks++;
+              }
+              if (consecutiveBlanks >= 2) break;
+              continue;
+            }
+            
+            const normalizedCategory = normalizeHeader(category);
+            if (normalizedCategory === "grand total" || normalizedCategory === "(blank)") break;
+            
+            // Parse values for each month column
+            for (let monthIdx = 0; monthIdx < monthHeaders.length; monthIdx++) {
+              const valueColIdx = monthColIndices[monthIdx];
+              const value = parseNumber(data[rowIdx][valueColIdx]);
+              
               financeRevenueMonthly.push({
                 projectName,
-                category: String(category),
+                category: String(category).trim(),
                 monthEndDate: monthHeaders[monthIdx],
-                value,
+                value: value || "0",
               });
             }
           }
@@ -515,39 +606,66 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
     }
   }
 
-  // Parse Finance - COS sheet (monthly pivot)
+  // Parse Finance - COS sheet (monthly pivot with robust header detection)
   if (workbook.SheetNames.includes("Finance - COS")) {
     try {
       const sheet = workbook.Sheets["Finance - COS"];
       const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: false }) as any[][];
       
-      if (data.length > 0 && data[0]) {
-        // Row 1 has month headers starting from column B (index 1)
-        const monthHeaders: string[] = [];
-        for (let colIdx = 1; colIdx < data[0].length; colIdx++) {
-          const header = normalizeHeader(data[0][colIdx]);
-          if (header !== "grand total" && header !== "row labels") {
-            const dateVal = parseDate(data[0][colIdx]);
-            if (dateVal) {
-              monthHeaders.push(dateVal);
-            }
+      if (data.length > 0) {
+        // Find header row containing "Row Labels" in column A
+        let headerRowIdx = -1;
+        for (let rowIdx = 0; rowIdx < Math.min(10, data.length); rowIdx++) {
+          const cellA = data[rowIdx][0];
+          if (cellA && normalizeHeader(cellA) === "row labels") {
+            headerRowIdx = rowIdx;
+            break;
           }
         }
         
-        // Parse category rows starting from row 2
-        for (let rowIdx = 1; rowIdx < data.length; rowIdx++) {
-          const category = data[rowIdx][0];
-          if (!category || normalizeHeader(category) === "grand total") break;
+        if (headerRowIdx >= 0) {
+          // Extract month headers from header row (Excel date columns only)
+          const monthHeaders: string[] = [];
+          const monthColIndices: number[] = [];
+          for (let colIdx = 1; colIdx < data[headerRowIdx].length; colIdx++) {
+            const header = normalizeHeader(data[headerRowIdx][colIdx]);
+            if (header === "grand total") break;
+            
+            const dateVal = parseDate(data[headerRowIdx][colIdx]);
+            if (dateVal) {
+              monthHeaders.push(dateVal);
+              monthColIndices.push(colIdx);
+            }
+          }
           
-          for (let monthIdx = 0; monthIdx < monthHeaders.length; monthIdx++) {
-            const valueColIdx = 1 + monthIdx;
-            const value = parseNumber(data[rowIdx][valueColIdx]);
-            if (value !== null) {
+          // Parse category rows starting after header row
+          for (let rowIdx = headerRowIdx + 1; rowIdx < data.length; rowIdx++) {
+            const category = data[rowIdx][0];
+            
+            // Stop conditions
+            if (!category) {
+              // Check for multiple consecutive blank rows
+              let consecutiveBlanks = 0;
+              for (let checkIdx = rowIdx; checkIdx < Math.min(rowIdx + 3, data.length); checkIdx++) {
+                if (!data[checkIdx][0]) consecutiveBlanks++;
+              }
+              if (consecutiveBlanks >= 2) break;
+              continue;
+            }
+            
+            const normalizedCategory = normalizeHeader(category);
+            if (normalizedCategory === "grand total" || normalizedCategory === "(blank)") break;
+            
+            // Parse values for each month column
+            for (let monthIdx = 0; monthIdx < monthHeaders.length; monthIdx++) {
+              const valueColIdx = monthColIndices[monthIdx];
+              const value = parseNumber(data[rowIdx][valueColIdx]);
+              
               financeCosMonthly.push({
                 projectName,
-                category: String(category),
+                category: String(category).trim(),
                 monthEndDate: monthHeaders[monthIdx],
-                value,
+                value: value || "0",
               });
             }
           }
