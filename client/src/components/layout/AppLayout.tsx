@@ -15,10 +15,12 @@ import {
   Menu,
   RefreshCw,
   Search,
-  Upload
+  Upload,
+  Database
 } from "lucide-react";
 import { useProgramData } from "@/hooks/use-program-data";
 import { useAuth } from "@/hooks/use-auth";
+import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -33,6 +35,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { data, overview, refreshData, isLoading, importFiles, lastUploadResult } = useProgramData();
   const { user, logout } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Fetch health status to show DB mode
+  const { data: healthStatus } = useQuery({
+    queryKey: ["health"],
+    queryFn: async () => {
+      const response = await fetch("/api/health");
+      return response.json();
+    },
+    refetchInterval: 30000, // Refresh every 30 seconds
+  });
 
   const navItems = [
     { label: "Overview", icon: LayoutDashboard, path: "/" },
@@ -147,6 +159,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <div className="h-8 w-px bg-border mx-2" />
 
             <div className="flex flex-col items-end mr-2">
+               <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">DB Mode</span>
+               <div className="flex items-center gap-1">
+                 <Database className="w-3 h-3 text-muted-foreground" />
+                 <span className="text-xs font-mono font-medium text-foreground">
+                   {healthStatus?.dbMode === 'postgres' ? 'Postgres' : healthStatus?.dbMode === 'sqlite' ? 'SQLite' : 'Unknown'}
+                 </span>
+               </div>
+            </div>
+
+            <div className="h-8 w-px bg-border mx-2 hidden lg:block" />
+
+            <div className="flex-col items-end mr-2 hidden lg:flex">
                <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Data As Of</span>
                <span className="text-xs font-mono font-medium text-foreground">
                  {overview?.data_as_of ? format(new Date(overview.data_as_of), "dd MMM HH:mm") : "No data"}

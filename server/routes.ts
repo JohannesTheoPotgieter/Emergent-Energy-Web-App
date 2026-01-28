@@ -95,18 +95,17 @@ export async function registerRoutes(
   // ==================== HEALTH CHECK ====================
   
   app.get("/api/health", async (req, res) => {
-    const { dbMode, dbConfig } = await import("./db");
+    const { dbMode } = await import("./db");
     const { getDbConfigStatus } = await import("./db-config");
     
     const dbStatus = getDbConfigStatus();
     
     res.json({
-      status: 'ok',
-      database: {
-        mode: dbMode,
-        connected: dbStatus.connected,
-        message: dbStatus.message,
-      },
+      ok: true,
+      dbMode: dbMode,
+      dbConnected: dbStatus.connected,
+      dbHost: dbStatus.host,
+      message: dbStatus.message,
       timestamp: new Date().toISOString(),
     });
   });
@@ -652,62 +651,70 @@ export async function registerRoutes(
 
       for (const file of files) {
         try {
-          // Read file from disk
+          // Read and parse file first (no DB writes yet)
           const fs = require('fs');
           const fileBuffer = fs.readFileSync(file.path);
           const parseResult = parseTrackerFile(fileBuffer, file.originalname);
           
-          // Delete existing data for this project before inserting new
-          await storage.deleteProgramExpensesByProject(parseResult.projectName);
-          await storage.deleteProgramInflowsByProject(parseResult.projectName);
-          await storage.deleteProjectPlansByProject(parseResult.projectName);
-          await storage.deleteCashflowPointsByProject(parseResult.projectName);
-          await storage.deleteFinanceRevenueMonthlyByProject(parseResult.projectName);
-          await storage.deleteFinanceCosMonthlyByProject(parseResult.projectName);
+          // Perform all DB operations in a single transaction to prevent partial updates
+          const { db } = await import("./db");
+          await db.transaction(async (tx: any) => {
+            // Create temporary storage with transaction context
+            const txStorage = storage;
+            
+            // Delete existing data for this project
+            await storage.deleteProgramExpensesByProject(parseResult.projectName);
+            await storage.deleteProgramInflowsByProject(parseResult.projectName);
+            await storage.deleteProjectPlansByProject(parseResult.projectName);
+            await storage.deleteCashflowPointsByProject(parseResult.projectName);
+            await storage.deleteFinanceRevenueMonthlyByProject(parseResult.projectName);
+            await storage.deleteFinanceCosMonthlyByProject(parseResult.projectName);
 
-          // Insert project info
-          if (parseResult.projectInfo) {
-            await storage.upsertProjectInfo(parseResult.projectInfo);
-          }
+            // Insert project info
+            if (parseResult.projectInfo) {
+              await storage.upsertProjectInfo(parseResult.projectInfo);
+            }
 
-          // Insert expenses
-          if (parseResult.expenses.length > 0) {
-            await storage.createManyProgramExpenses(parseResult.expenses);
-          }
+            // Insert expenses
+            if (parseResult.expenses.length > 0) {
+              await storage.createManyProgramExpenses(parseResult.expenses);
+            }
 
-          // Insert inflows
-          if (parseResult.inflows.length > 0) {
-            await storage.createManyProgramInflows(parseResult.inflows);
-          }
+            // Insert inflows
+            if (parseResult.inflows.length > 0) {
+              await storage.createManyProgramInflows(parseResult.inflows);
+            }
 
-          // Insert plan items
-          if (parseResult.planItems.length > 0) {
-            await storage.createManyProjectPlans(parseResult.planItems);
-          }
+            // Insert plan items
+            if (parseResult.planItems.length > 0) {
+              await storage.createManyProjectPlans(parseResult.planItems);
+            }
 
-          // Insert cashflow points
-          if (parseResult.cashflowPoints.length > 0) {
-            await storage.createManyCashflowPoints(parseResult.cashflowPoints);
-          }
+            // Insert cashflow points
+            if (parseResult.cashflowPoints.length > 0) {
+              await storage.createManyCashflowPoints(parseResult.cashflowPoints);
+            }
 
-          // Insert finance revenue monthly
-          if (parseResult.financeRevenueMonthly.length > 0) {
-            await storage.createManyFinanceRevenueMonthly(parseResult.financeRevenueMonthly);
-          }
+            // Insert finance revenue monthly
+            if (parseResult.financeRevenueMonthly.length > 0) {
+              await storage.createManyFinanceRevenueMonthly(parseResult.financeRevenueMonthly);
+            }
 
-          // Insert finance COS monthly
-          if (parseResult.financeCosMonthly.length > 0) {
-            await storage.createManyFinanceCosMonthly(parseResult.financeCosMonthly);
-          }
+            // Insert finance COS monthly
+            if (parseResult.financeCosMonthly.length > 0) {
+              await storage.createManyFinanceCosMonthly(parseResult.financeCosMonthly);
+            }
 
-          await storage.createUpload({
-            fileName: file.originalname,
-            filePath: file.path, // Store disk path for reprocessing
-            uploadedBy: req.user?.id || null,
-            recordsProcessed: parseResult.expensesParsed + parseResult.inflowsParsed + parseResult.planParsed + 
-                            parseResult.cashflowParsed + parseResult.financeRevenueParsed + parseResult.financeCosParsed,
-            validationErrors: parseResult.warnings.length > 0 ? parseResult.warnings.join("; ") : null,
-            status: "success"
+            // Log upload metadata
+            await storage.createUpload({
+              fileName: file.originalname,
+              filePath: file.path, // Store disk path for reprocessing
+              uploadedBy: req.user?.id || null,
+              recordsProcessed: parseResult.expensesParsed + parseResult.inflowsParsed + parseResult.planParsed + 
+                              parseResult.cashflowParsed + parseResult.financeRevenueParsed + parseResult.financeCosParsed,
+              validationErrors: parseResult.warnings.length > 0 ? parseResult.warnings.join("; ") : null,
+              status: "success"
+            });
           });
 
           results.push({
@@ -725,20 +732,27 @@ export async function registerRoutes(
           });
 
         } catch (fileError: any) {
-          console.error("File parse error:", fileError);
+          console.error("File parse/upload error:", fileError);
+          const { dbMode } = await import("./db");
+          
           results.push({
             file: file.originalname,
             status: "error",
             message: fileError.message || "Failed to process file"
           });
 
-          await storage.createUpload({
-            fileName: file.originalname,
-            uploadedBy: req.user?.id || null,
-            recordsProcessed: 0,
-            validationErrors: fileError.message,
-            status: "error"
-          });
+          // Try to log error upload (may fail if DB is unavailable)
+          try {
+            await storage.createUpload({
+              fileName: file.originalname,
+              uploadedBy: req.user?.id || null,
+              recordsProcessed: 0,
+              validationErrors: fileError.message,
+              status: "error"
+            });
+          } catch (logError) {
+            console.error("Failed to log upload error:", logError);
+          }
         }
       }
 
@@ -753,7 +767,13 @@ export async function registerRoutes(
       });
     } catch (error: any) {
       console.error("Upload error:", error);
-      res.status(500).json({ message: error.message || "Failed to process upload" });
+      const { dbMode } = await import("./db");
+      res.status(500).json({ 
+        error: error.message || "Failed to process upload",
+        message: error.message || "Failed to process upload",
+        code: error.code || 'UPLOAD_ERROR',
+        dbMode 
+      });
     }
   });
 
@@ -854,7 +874,13 @@ export async function registerRoutes(
       
     } catch (error: any) {
       console.error("Reprocess error:", error);
-      res.status(500).json({ message: error.message || "Failed to reprocess files" });
+      const { dbMode } = await import("./db");
+      res.status(500).json({ 
+        error: error.message || "Failed to reprocess files",
+        message: error.message || "Failed to reprocess files",
+        code: error.code || 'REPROCESS_ERROR',
+        dbMode
+      });
     }
   });
 

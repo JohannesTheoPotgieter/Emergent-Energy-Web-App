@@ -3,7 +3,9 @@ import { drizzle as drizzleSqlite } from "drizzle-orm/better-sqlite3";
 import pg from "pg";
 import BetterSqlite3 from "better-sqlite3";
 import * as schema from "@shared/schema";
-import { resolveDbConfig } from "./db-config";
+import * as fs from "fs";
+import * as path from "path";
+import { resolveDbConfig, setDbConfigStatus } from "./db-config";
 
 const config = resolveDbConfig();
 
@@ -11,33 +13,77 @@ let db: any;
 let dbMode: 'sqlite' | 'postgres';
 let dbConfig: typeof config;
 
-if (config.mode === 'sqlite') {
-  // SQLite fallback mode
-  console.warn('[DB] Using SQLite fallback mode:', config.error);
-  const sqlite = new BetterSqlite3(':memory:');
+async function testPostgresConnection(connectionString: string, timeoutMs: number = 2000): Promise<boolean> {
+  return new Promise((resolve) => {
+    const pool = new pg.Pool({ connectionString, connectionTimeoutMillis: timeoutMs });
+    const timeout = setTimeout(() => {
+      pool.end();
+      resolve(false);
+    }, timeoutMs);
+    
+    pool.query('SELECT 1', (err) => {
+      clearTimeout(timeout);
+      pool.end();
+      resolve(!err);
+    });
+  });
+}
+
+function initializeSqlite() {
+  const dataDir = path.join(process.cwd(), 'data');
+  if (!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir, { recursive: true });
+  }
+  
+  const sqliteFile = path.join(dataDir, 'app.sqlite');
+  console.log(`[DB] Using SQLite file: ${sqliteFile}`);
+  
+  const sqlite = new BetterSqlite3(sqliteFile);
   db = drizzleSqlite(sqlite, { schema });
   dbMode = 'sqlite';
-  dbConfig = config;
-} else if (config.connectionString) {
-  // PostgreSQL mode
-  const pool = new pg.Pool({
-    connectionString: config.connectionString,
-  });
+  dbConfig = { mode: 'sqlite', error: config.error || 'Postgres unavailable' };
   
-  // Test connection on startup
-  pool.query('SELECT 1', (err) => {
-    if (err) {
-      console.error('[DB] PostgreSQL connection test failed:', err.message);
+  setDbConfigStatus({
+    connected: true,
+    mode: 'sqlite',
+    message: `Using SQLite fallback (${sqliteFile})`,
+    host: undefined,
+  });
+}
+
+// Initialize database - test Postgres first with timeout, fall back to SQLite
+if (config.mode === 'postgres' && config.connectionString) {
+  console.log(`[DB] Testing PostgreSQL connection to ${config.dbHost}...`);
+  
+  // Start with SQLite for immediate availability
+  initializeSqlite();
+  
+  // Test Postgres in background, switch if successful
+  testPostgresConnection(config.connectionString, 2000).then((isConnectable) => {
+    if (isConnectable) {
+      // Success - switch to Postgres
+      const pool = new pg.Pool({ connectionString: config.connectionString });
+      db = drizzle(pool, { schema });
+      dbMode = 'postgres';
+      dbConfig = config;
+      
+      console.log(`[DB] ✓ PostgreSQL connection successful, switched from SQLite (host: ${config.dbHost})`);
+      setDbConfigStatus({
+        connected: true,
+        mode: 'postgres',
+        message: `Connected to PostgreSQL (${config.dbHost})`,
+        host: config.dbHost,
+      });
     } else {
-      console.log('[DB] PostgreSQL connection successful');
+      // Connection test failed - keep using SQLite
+      console.warn(`[DB] ⚠ PostgreSQL connection test failed (host: ${config.dbHost}), using SQLite`);
     }
+  }).catch((err) => {
+    console.error(`[DB] Postgres test error:`, err.message, '- using SQLite');
   });
-  
-  db = drizzle(pool, { schema });
-  dbMode = 'postgres';
-  dbConfig = config;
 } else {
-  throw new Error('Database configuration error: unable to resolve connection');
+  // No Postgres config - use SQLite
+  initializeSqlite();
 }
 
 export { db, dbMode, dbConfig };

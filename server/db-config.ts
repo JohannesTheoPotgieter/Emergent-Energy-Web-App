@@ -6,6 +6,7 @@
 export interface DbConfig {
   mode: 'postgres' | 'sqlite';
   connectionString?: string;
+  dbHost?: string;
   error?: string;
 }
 
@@ -14,37 +15,23 @@ export function resolveDbConfig(): DbConfig {
   if (process.env.DATABASE_URL) {
     const url = process.env.DATABASE_URL;
     
-    // In development with Replit DB, DATABASE_URL may contain internal hostnames
-    // Only validate in production deployments
-    if (process.env.NODE_ENV === 'production') {
-      // Check for obviously invalid hosts in production
-      if (url.includes('localhost') || url.includes('127.0.0.1')) {
-        return {
-          mode: 'sqlite',
-          error: 'Invalid DATABASE_URL detected (localhost in production)',
-        };
-      }
-    }
+    // Extract hostname for diagnostics
+    let dbHost = 'unknown';
+    try {
+      const urlObj = new URL(url);
+      dbHost = urlObj.hostname;
+    } catch {}
     
     return {
       mode: 'postgres',
       connectionString: url,
+      dbHost,
     };
   }
 
   // Priority 2: Build from PG environment variables
   const { PGHOST, PGUSER, PGPASSWORD, PGDATABASE, PGPORT } = process.env;
   if (PGHOST && PGUSER && PGDATABASE) {
-    // Validate host is not invalid in production
-    if (process.env.NODE_ENV === 'production') {
-      if (PGHOST === 'localhost' || PGHOST === '127.0.0.1') {
-        return {
-          mode: 'sqlite',
-          error: 'Invalid PGHOST detected (localhost in production)',
-        };
-      }
-    }
-    
     const port = PGPORT || '5432';
     const password = PGPASSWORD ? `:${PGPASSWORD}` : '';
     const connectionString = `postgresql://${PGUSER}${password}@${PGHOST}:${port}/${PGDATABASE}`;
@@ -52,6 +39,7 @@ export function resolveDbConfig(): DbConfig {
     return {
       mode: 'postgres',
       connectionString,
+      dbHost: PGHOST,
     };
   }
 
@@ -62,20 +50,13 @@ export function resolveDbConfig(): DbConfig {
   };
 }
 
-export function getDbConfigStatus(): { connected: boolean; mode: string; message: string } {
-  const config = resolveDbConfig();
-  
-  if (config.mode === 'postgres' && config.connectionString) {
-    return {
-      connected: true,
-      mode: 'postgres',
-      message: 'Connected to PostgreSQL database',
-    };
-  }
-  
-  return {
-    connected: false,
-    mode: config.mode,
-    message: config.error || 'Database not configured',
-  };
+let cachedStatus: { connected: boolean; mode: string; message: string; host?: string } | null = null;
+
+export function getDbConfigStatus(): { connected: boolean; mode: string; message: string; host?: string } {
+  if (cachedStatus) return cachedStatus;
+  return { connected: false, mode: 'unknown', message: 'Database not initialized' };
+}
+
+export function setDbConfigStatus(status: { connected: boolean; mode: string; message: string; host?: string }) {
+  cachedStatus = status;
 }
