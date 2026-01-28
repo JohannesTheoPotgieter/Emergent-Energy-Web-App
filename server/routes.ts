@@ -2,16 +2,15 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import passport from "passport";
 import multer from "multer";
-import * as XLSX from "xlsx";
 import { storage } from "./storage";
-import { insertProjectSchema, insertExpenseSchema, insertRevenueSchema, insertTaskSchema, insertBudgetSchema } from "@shared/schema";
+import { parseTrackerFile } from "./excelParser";
+import { insertBudgetSchema } from "@shared/schema";
 import { z } from "zod";
 import { format } from "date-fns";
 
-// Multer configuration for file uploads
 const upload = multer({ 
   storage: multer.memoryStorage(),
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
+  limits: { fileSize: 50 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const allowedMimes = [
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -29,7 +28,6 @@ const upload = multer({
   }
 });
 
-// Auth middleware
 function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (req.isAuthenticated()) {
     return next();
@@ -83,6 +81,203 @@ export async function registerRoutes(
       });
     }
     res.status(401).json({ message: "Not authenticated" });
+  });
+
+  // ==================== OVERVIEW API ====================
+
+  app.get("/api/overview", async (req, res) => {
+    try {
+      const [allProjectInfo, allExpenses, allInflows, latestRefresh] = await Promise.all([
+        storage.getAllProjectInfo(),
+        storage.getAllProgramExpenses(),
+        storage.getAllProgramInflows(),
+        storage.getLatestRefresh()
+      ]);
+
+      const today = new Date().toISOString().split("T")[0];
+
+      // total_program_budget = SUM(project_info.contract_value)
+      let totalProgramBudget = 0;
+      for (const info of allProjectInfo) {
+        if (info.contractValue) {
+          totalProgramBudget += parseFloat(info.contractValue);
+        }
+      }
+      
+      // Fallback to sum of inflows if no contract values
+      if (totalProgramBudget === 0) {
+        for (const inflow of allInflows) {
+          if (inflow.milestoneAmount) {
+            totalProgramBudget += parseFloat(inflow.milestoneAmount);
+          }
+        }
+      }
+
+      // actual_spend_paid = SUM(expense_actual_total where payment_date not null AND <= today)
+      let actualSpendPaid = 0;
+      for (const expense of allExpenses) {
+        if (expense.expensePaymentDate && expense.expensePaymentDate <= today && expense.expenseActualTotal) {
+          actualSpendPaid += parseFloat(expense.expenseActualTotal);
+        }
+      }
+
+      // revenue_realised = SUM(milestone_amount where payment_received_date not null AND <= today)
+      let revenueRealised = 0;
+      for (const inflow of allInflows) {
+        if (inflow.paymentReceivedDate && inflow.paymentReceivedDate <= today && inflow.milestoneAmount) {
+          revenueRealised += parseFloat(inflow.milestoneAmount);
+        }
+      }
+
+      // active_projects = count distinct project names
+      const uniqueProjects = new Set(allProjectInfo.map(p => p.projectName));
+
+      res.json({
+        total_program_budget: totalProgramBudget,
+        actual_spend_paid: actualSpendPaid,
+        revenue_realised: revenueRealised,
+        active_projects: uniqueProjects.size,
+        data_as_of: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error("Overview fetch error:", error);
+      res.status(500).json({ message: "Failed to fetch overview data" });
+    }
+  });
+
+  // ==================== PROJECTS SUMMARY API ====================
+
+  app.get("/api/projects-summary", async (req, res) => {
+    try {
+      const [allProjectInfo, allExpenses, allInflows, allPlans] = await Promise.all([
+        storage.getAllProjectInfo(),
+        storage.getAllProgramExpenses(),
+        storage.getAllProgramInflows(),
+        storage.getAllProjectPlans()
+      ]);
+
+      const today = new Date().toISOString().split("T")[0];
+
+      // Group data by project name
+      const expensesByProject = new Map<string, typeof allExpenses>();
+      for (const expense of allExpenses) {
+        if (!expensesByProject.has(expense.projectName)) {
+          expensesByProject.set(expense.projectName, []);
+        }
+        expensesByProject.get(expense.projectName)!.push(expense);
+      }
+
+      const inflowsByProject = new Map<string, typeof allInflows>();
+      for (const inflow of allInflows) {
+        if (!inflowsByProject.has(inflow.projectName)) {
+          inflowsByProject.set(inflow.projectName, []);
+        }
+        inflowsByProject.get(inflow.projectName)!.push(inflow);
+      }
+
+      const plansByProject = new Map<string, typeof allPlans>();
+      for (const plan of allPlans) {
+        if (!plansByProject.has(plan.projectName)) {
+          plansByProject.set(plan.projectName, []);
+        }
+        plansByProject.get(plan.projectName)!.push(plan);
+      }
+
+      const projectsSummary = allProjectInfo.map(info => {
+        const projectExpenses = expensesByProject.get(info.projectName) || [];
+        const projectInflows = inflowsByProject.get(info.projectName) || [];
+        const projectPlans = plansByProject.get(info.projectName) || [];
+
+        // Calculate actual revenue = SUM(milestone_amount)
+        let actualRevenue = 0;
+        for (const inflow of projectInflows) {
+          if (inflow.milestoneAmount) {
+            actualRevenue += parseFloat(inflow.milestoneAmount);
+          }
+        }
+
+        // Calculate actual expenses = SUM(expense_actual_total)
+        let actualExpenses = 0;
+        for (const expense of projectExpenses) {
+          if (expense.expenseActualTotal) {
+            actualExpenses += parseFloat(expense.expenseActualTotal);
+          }
+        }
+
+        // GP % = 1 - (Actual Expenses / Actual Revenue)
+        let gpPercent: number | null = null;
+        if (actualRevenue > 0) {
+          gpPercent = 1 - (actualExpenses / actualRevenue);
+        }
+
+        // Project % Complete = avg(actual_pct_complete)
+        let projectPctComplete: number | null = null;
+        let expectedPctComplete: number | null = null;
+        const validActualPcts = projectPlans.filter(p => p.actualPctComplete !== null);
+        const validExpectedPcts = projectPlans.filter(p => p.expectedPctComplete !== null);
+        
+        if (validActualPcts.length > 0) {
+          projectPctComplete = validActualPcts.reduce((sum, p) => sum + (p.actualPctComplete || 0), 0) / validActualPcts.length;
+        }
+        if (validExpectedPcts.length > 0) {
+          expectedPctComplete = validExpectedPcts.reduce((sum, p) => sum + (p.expectedPctComplete || 0), 0) / validExpectedPcts.length;
+        }
+
+        // Delta vs Expected
+        let deltaVsExpected: number | null = null;
+        if (projectPctComplete !== null && expectedPctComplete !== null) {
+          deltaVsExpected = projectPctComplete - expectedPctComplete;
+        }
+
+        // Revenue Outstanding = SUM(inflows where payment_received_date is empty AND invoice_number is empty)
+        let revenueOutstanding = 0;
+        for (const inflow of projectInflows) {
+          if (!inflow.paymentReceivedDate && !inflow.milestoneInvoiceNumber && inflow.milestoneAmount) {
+            revenueOutstanding += parseFloat(inflow.milestoneAmount);
+          }
+        }
+
+        // Expenses Outstanding = SUM(expenses where payment_date is empty AND invoice_number is empty)
+        let expensesOutstanding = 0;
+        for (const expense of projectExpenses) {
+          if (!expense.expensePaymentDate && !expense.expenseInvoiceNumber && expense.expenseActualTotal) {
+            expensesOutstanding += parseFloat(expense.expenseActualTotal);
+          }
+        }
+
+        return {
+          project_name: info.projectName,
+          size_kwp: info.sizeKwp ? parseFloat(info.sizeKwp) : null,
+          pd: info.pd,
+          pm: info.pm,
+          cost_proposal_signed: null,
+          funding_signed: null,
+          epc_contract_signed: null,
+          phase: info.phase,
+          pd_handover_date: null,
+          construction_start_date: null,
+          duration: null,
+          kw_per_week: null,
+          commissioning_date: null,
+          om_handover_date: null,
+          client_handover_date: null,
+          project_pct_complete: projectPctComplete,
+          expected_pct_complete: expectedPctComplete,
+          delta_vs_expected: deltaVsExpected,
+          actual_revenue: actualRevenue,
+          actual_expenses: actualExpenses,
+          gp_percent: gpPercent,
+          revenue_outstanding: revenueOutstanding,
+          expenses_outstanding: expensesOutstanding,
+          current_vo_total: 0
+        };
+      });
+
+      res.json(projectsSummary);
+    } catch (error) {
+      console.error("Projects summary fetch error:", error);
+      res.status(500).json({ message: "Failed to fetch projects summary" });
+    }
   });
 
   // ==================== DASHBOARD DATA ROUTES ====================
@@ -231,164 +426,84 @@ export async function registerRoutes(
         return res.status(400).json({ message: "No files uploaded" });
       }
 
-      const results: { file: string; status: string; message?: string; records?: number }[] = [];
-      const requiredSheets = ["Expenditure Breakdown", "Revenue Tracking", "Project Plan"];
+      const results: { 
+        file: string; 
+        status: string; 
+        message?: string; 
+        project_name?: string;
+        expensesParsed?: number;
+        inflowsParsed?: number;
+        planParsed?: number;
+        infoParsed?: boolean;
+        warnings?: string[];
+      }[] = [];
 
       for (const file of files) {
         try {
-          const workbook = XLSX.read(file.buffer, { type: "buffer" });
+          const parseResult = parseTrackerFile(file.buffer, file.originalname);
           
-          // Validate required sheets
-          const missingSheets = requiredSheets.filter(sheet => !workbook.SheetNames.includes(sheet));
-          if (missingSheets.length > 0) {
-            results.push({
-              file: file.originalname,
-              status: "error",
-              message: `Missing required sheets: ${missingSheets.join(", ")}`
-            });
-            await storage.createUpload({
-              fileName: file.originalname,
-              uploadedBy: req.user?.id || null,
-              recordsProcessed: 0,
-              validationErrors: `Missing sheets: ${missingSheets.join(", ")}`,
-              status: "error"
-            });
-            continue;
+          // Delete existing data for this project before inserting new
+          await storage.deleteProgramExpensesByProject(parseResult.projectName);
+          await storage.deleteProgramInflowsByProject(parseResult.projectName);
+          await storage.deleteProjectPlansByProject(parseResult.projectName);
+
+          // Insert project info
+          if (parseResult.projectInfo) {
+            await storage.upsertProjectInfo(parseResult.projectInfo);
           }
 
-          // Extract project info from filename or first sheet
-          const projectCode = file.originalname.replace(/\.(xlsx|xlsm|xls)$/i, "").substring(0, 20);
-          let recordCount = 0;
-
-          // Check if project exists or create new
-          let project = await storage.getProjectByCode(projectCode);
-          if (!project) {
-            project = await storage.createProject({
-              name: projectCode,
-              code: projectCode,
-              manager: "Imported",
-              site: "TBD",
-              status: "Active",
-              stage: "Development",
-              startDate: format(new Date(), "yyyy-MM-dd"),
-              completionDate: format(new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), "yyyy-MM-dd"),
-              budget: "0",
-              sourceFile: file.originalname
-            });
-          } else {
-            // Clear existing data for refresh
-            await storage.deleteExpensesByProject(project.id);
-            await storage.deleteRevenuesByProject(project.id);
-            await storage.deleteTasksByProject(project.id);
-            await storage.updateProject(project.id, { sourceFile: file.originalname });
+          // Insert expenses
+          if (parseResult.expenses.length > 0) {
+            await storage.createManyProgramExpenses(parseResult.expenses);
           }
 
-          // Parse Expenditure Breakdown sheet
-          if (workbook.SheetNames.includes("Expenditure Breakdown")) {
-            const sheet = workbook.Sheets["Expenditure Breakdown"];
-            const data = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
-            
-            const expenseRows: any[] = [];
-            for (let i = 1; i < data.length; i++) {
-              const row = data[i];
-              if (row && row.length > 2 && row[0]) {
-                expenseRows.push({
-                  projectId: project.id,
-                  category: "Procurement" as const,
-                  description: String(row[1] || `Row ${i}`),
-                  amount: String(parseFloat(row[2]) || 0),
-                  date: format(new Date(), "yyyy-MM-dd"),
-                  vendor: String(row[3] || "Unknown"),
-                  status: "Forecast" as const,
-                  sourceSheet: "Expenditure Breakdown",
-                  rowLocator: i + 1
-                });
-              }
-            }
-            if (expenseRows.length > 0) {
-              await storage.createManyExpenses(expenseRows);
-              recordCount += expenseRows.length;
-            }
+          // Insert inflows
+          if (parseResult.inflows.length > 0) {
+            await storage.createManyProgramInflows(parseResult.inflows);
           }
 
-          // Parse Revenue Tracking sheet
-          if (workbook.SheetNames.includes("Revenue Tracking")) {
-            const sheet = workbook.Sheets["Revenue Tracking"];
-            const data = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
-            
-            const revenueRows: any[] = [];
-            for (let i = 1; i < data.length; i++) {
-              const row = data[i];
-              if (row && row.length > 1 && row[0]) {
-                revenueRows.push({
-                  projectId: project.id,
-                  type: "PPA" as const,
-                  amount: String(parseFloat(row[1]) || 0),
-                  date: format(new Date(), "yyyy-MM-dd"),
-                  status: "Forecast" as const,
-                  sourceSheet: "Revenue Tracking",
-                  rowLocator: i + 1
-                });
-              }
-            }
-            if (revenueRows.length > 0) {
-              await storage.createManyRevenues(revenueRows);
-              recordCount += revenueRows.length;
-            }
-          }
-
-          // Parse Project Plan sheet
-          if (workbook.SheetNames.includes("Project Plan")) {
-            const sheet = workbook.Sheets["Project Plan"];
-            const data = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
-            
-            const taskRows: any[] = [];
-            for (let i = 1; i < data.length; i++) {
-              const row = data[i];
-              if (row && row.length > 1 && row[0]) {
-                taskRows.push({
-                  projectId: project.id,
-                  taskName: String(row[0] || `Task ${i}`),
-                  startDate: format(new Date(), "yyyy-MM-dd"),
-                  endDate: format(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), "yyyy-MM-dd"),
-                  progress: 0,
-                  status: "Not Started" as const,
-                  assignee: String(row[2] || "TBD"),
-                  sourceSheet: "Project Plan",
-                  rowLocator: i + 1
-                });
-              }
-            }
-            if (taskRows.length > 0) {
-              await storage.createManyTasks(taskRows);
-              recordCount += taskRows.length;
-            }
+          // Insert plan items
+          if (parseResult.planItems.length > 0) {
+            await storage.createManyProjectPlans(parseResult.planItems);
           }
 
           await storage.createUpload({
             fileName: file.originalname,
             uploadedBy: req.user?.id || null,
-            recordsProcessed: recordCount,
-            validationErrors: null,
+            recordsProcessed: parseResult.expensesParsed + parseResult.inflowsParsed + parseResult.planParsed,
+            validationErrors: parseResult.warnings.length > 0 ? parseResult.warnings.join("; ") : null,
             status: "success"
           });
 
           results.push({
             file: file.originalname,
             status: "success",
-            records: recordCount
+            project_name: parseResult.projectName,
+            expensesParsed: parseResult.expensesParsed,
+            inflowsParsed: parseResult.inflowsParsed,
+            planParsed: parseResult.planParsed,
+            infoParsed: parseResult.infoParsed,
+            warnings: parseResult.warnings
           });
 
         } catch (fileError: any) {
+          console.error("File parse error:", fileError);
           results.push({
             file: file.originalname,
             status: "error",
             message: fileError.message || "Failed to process file"
           });
+
+          await storage.createUpload({
+            fileName: file.originalname,
+            uploadedBy: req.user?.id || null,
+            recordsProcessed: 0,
+            validationErrors: fileError.message,
+            status: "error"
+          });
         }
       }
 
-      // Create refresh log
       await storage.createRefreshLog({
         triggeredBy: req.user?.id || null,
         status: results.every(r => r.status === "success") ? "success" : "partial"
@@ -401,6 +516,59 @@ export async function registerRoutes(
     } catch (error: any) {
       console.error("Upload error:", error);
       res.status(500).json({ message: error.message || "Failed to process upload" });
+    }
+  });
+
+  // ==================== PROGRAM DATA ROUTES ====================
+
+  app.get("/api/program-expenses", async (req, res) => {
+    try {
+      const { projectName } = req.query;
+      if (projectName && typeof projectName === 'string') {
+        const expenses = await storage.getProgramExpensesByProject(projectName);
+        return res.json(expenses);
+      }
+      const expenses = await storage.getAllProgramExpenses();
+      res.json(expenses);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch program expenses" });
+    }
+  });
+
+  app.get("/api/program-inflows", async (req, res) => {
+    try {
+      const { projectName } = req.query;
+      if (projectName && typeof projectName === 'string') {
+        const inflows = await storage.getProgramInflowsByProject(projectName);
+        return res.json(inflows);
+      }
+      const inflows = await storage.getAllProgramInflows();
+      res.json(inflows);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch program inflows" });
+    }
+  });
+
+  app.get("/api/project-plans", async (req, res) => {
+    try {
+      const { projectName } = req.query;
+      if (projectName && typeof projectName === 'string') {
+        const plans = await storage.getProjectPlansByProject(projectName);
+        return res.json(plans);
+      }
+      const plans = await storage.getAllProjectPlans();
+      res.json(plans);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch project plans" });
+    }
+  });
+
+  app.get("/api/project-info", async (req, res) => {
+    try {
+      const info = await storage.getAllProjectInfo();
+      res.json(info);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch project info" });
     }
   });
 
@@ -457,10 +625,11 @@ export async function registerRoutes(
 
   app.get("/api/export/expenses", async (req, res) => {
     try {
-      const expenses = await storage.getAllExpenses();
+      const expenses = await storage.getAllProgramExpenses();
       const csv = generateCSV(expenses, [
-        "id", "projectId", "category", "description", "amount", "date", 
-        "vendor", "status", "sourceSheet", "rowLocator"
+        "id", "projectName", "expenseCategory", "expenseLineItem", 
+        "expenseActualTotal", "expensePoNumber", "expenseInvoiceNumber",
+        "expensePaymentDate", "cosAmount"
       ]);
       res.setHeader("Content-Type", "text/csv");
       res.setHeader("Content-Disposition", "attachment; filename=expenses_export.csv");
@@ -472,9 +641,11 @@ export async function registerRoutes(
 
   app.get("/api/export/revenues", async (req, res) => {
     try {
-      const revenues = await storage.getAllRevenues();
+      const revenues = await storage.getAllProgramInflows();
       const csv = generateCSV(revenues, [
-        "id", "projectId", "type", "amount", "date", "status", "sourceSheet", "rowLocator"
+        "id", "projectName", "milestoneNo", "milestoneName", 
+        "milestoneAmount", "plannedPaymentDate", "milestoneInvoiceNumber",
+        "paymentReceivedDate"
       ]);
       res.setHeader("Content-Type", "text/csv");
       res.setHeader("Content-Disposition", "attachment; filename=revenues_export.csv");
@@ -499,10 +670,27 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/export/projects-summary", async (req, res) => {
+    try {
+      const response = await fetch(`http://localhost:${process.env.PORT || 5000}/api/projects-summary`);
+      const summary = await response.json();
+      const csv = generateCSV(summary, [
+        "project_name", "size_kwp", "pd", "pm", "phase",
+        "project_pct_complete", "expected_pct_complete", "delta_vs_expected",
+        "actual_revenue", "actual_expenses", "gp_percent",
+        "revenue_outstanding", "expenses_outstanding"
+      ]);
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", "attachment; filename=projects_summary_export.csv");
+      res.send(csv);
+    } catch (error) {
+      res.status(500).json({ message: "Export failed" });
+    }
+  });
+
   return httpServer;
 }
 
-// Helper function to generate CSV
 function generateCSV(data: any[], columns: string[]): string {
   if (data.length === 0) {
     return columns.join(",") + "\n";
@@ -514,7 +702,6 @@ function generateCSV(data: any[], columns: string[]): string {
       const value = item[col];
       if (value === null || value === undefined) return "";
       const stringValue = String(value);
-      // Escape quotes and wrap in quotes if contains comma
       if (stringValue.includes(",") || stringValue.includes('"') || stringValue.includes("\n")) {
         return `"${stringValue.replace(/"/g, '""')}"`;
       }
