@@ -224,3 +224,45 @@ export const refreshLogs = pgTable("refresh_logs", {
 export const insertRefreshLogSchema = createInsertSchema(refreshLogs).omit({ id: true, refreshedAt: true });
 export type InsertRefreshLog = z.infer<typeof insertRefreshLogSchema>;
 export type RefreshLog = typeof refreshLogs.$inferSelect;
+
+// Cashflow Points Table (from Cashflow sheet - weekly time-series)
+export const cashflowPoints = pgTable("cashflow_points", {
+  id: serial("id").primaryKey(),
+  projectName: text("project_name").notNull(),
+  seriesName: text("series_name").notNull(), // e.g. "Planned Revenue", "ACTUAL CashFlow"
+  pointDate: text("point_date").notNull(), // ISO date string for the week/date
+  value: decimal("value", { precision: 15, scale: 2 }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertCashflowPointSchema = createInsertSchema(cashflowPoints).omit({ id: true, createdAt: true });
+export type InsertCashflowPoint = z.infer<typeof insertCashflowPointSchema>;
+export type CashflowPoint = typeof cashflowPoints.$inferSelect;
+
+// Finance Revenue Monthly Table (from Finance - Revenue sheet - monthly pivot)
+export const financeRevenueMonthly = pgTable("finance_revenue_monthly", {
+  id: serial("id").primaryKey(),
+  projectName: text("project_name").notNull(),
+  category: text("category").notNull(), // e.g. "1. Panels", "2. Inverters"
+  monthEndDate: text("month_end_date").notNull(), // ISO date string for month end
+  value: decimal("value", { precision: 15, scale: 2 }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertFinanceRevenueMonthlySchema = createInsertSchema(financeRevenueMonthly).omit({ id: true, createdAt: true });
+export type InsertFinanceRevenueMonthly = z.infer<typeof insertFinanceRevenueMonthlySchema>;
+export type FinanceRevenueMonthly = typeof financeRevenueMonthly.$inferSelect;
+
+// Finance COS Monthly Table (from Finance - COS sheet - monthly pivot)
+export const financeCosMonthly = pgTable("finance_cos_monthly", {
+  id: serial("id").primaryKey(),
+  projectName: text("project_name").notNull(),
+  category: text("category").notNull(), // COS categories
+  monthEndDate: text("month_end_date").notNull(), // ISO date string for month end
+  value: decimal("value", { precision: 15, scale: 2 }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertFinanceCosMonthlySchema = createInsertSchema(financeCosMonthly).omit({ id: true, createdAt: true });
+export type InsertFinanceCosMonthly = z.infer<typeof insertFinanceCosMonthlySchema>;
+export type FinanceCosMonthly = typeof financeCosMonthly.$inferSelect;
