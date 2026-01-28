@@ -85,6 +85,57 @@ function getCellValue(sheet: XLSX.WorkSheet, col: string, row: number): any {
   return cell ? cell.v : null;
 }
 
+function normalizeHeader(header: any): string {
+  return String(header || "").toLowerCase().trim().replace(/\s+/g, " ");
+}
+
+function findHeaderRow(data: any[][], requiredTokens: string[], startRow = 0, maxRows = 30): { rowIdx: number; colMap: Map<string, number> } | null {
+  for (let rowIdx = startRow; rowIdx < Math.min(data.length, startRow + maxRows); rowIdx++) {
+    const row = data[rowIdx];
+    if (!row) continue;
+    
+    // Build column map for this row
+    const colMap = new Map<string, number>();
+    for (let colIdx = 0; colIdx < row.length; colIdx++) {
+      const header = normalizeHeader(row[colIdx]);
+      if (header) {
+        colMap.set(header, colIdx);
+      }
+    }
+    
+    // Check if all required tokens are present
+    const allTokensFound = requiredTokens.every(token => {
+      const normalizedToken = token.toLowerCase().trim();
+      const headers = Array.from(colMap.keys());
+      for (const header of headers) {
+        if (header.includes(normalizedToken)) {
+          return true;
+        }
+      }
+      return false;
+    });
+    
+    if (allTokensFound) {
+      return { rowIdx, colMap };
+    }
+  }
+  
+  return null;
+}
+
+function getColumnIndex(colMap: Map<string, number>, searchTerms: string[]): number {
+  for (const term of searchTerms) {
+    const normalizedTerm = term.toLowerCase().trim();
+    const entries = Array.from(colMap.entries());
+    for (const [header, colIdx] of entries) {
+      if (header.includes(normalizedTerm)) {
+        return colIdx;
+      }
+    }
+  }
+  return -1;
+}
+
 export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult {
   const projectName = fileName.replace(/\.(xlsx|xlsm|xls)$/i, "");
   const warnings: string[] = [];
@@ -93,7 +144,8 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
     type: "buffer",
     cellDates: true,
     cellNF: true,
-    cellStyles: true
+    cellStyles: true,
+    cellFormula: false  // Read formula results, not formulas
   });
   
   let projectInfo: InsertProjectInfo | null = null;
@@ -121,54 +173,74 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
       phase: phase ? String(phase) : null,
     };
     
-    // Parse task rows starting from row 9 (header at row 8)
+    // Parse task table with robust header detection
     const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null }) as any[][];
     
-    let statusCol1 = -1;
-    let statusCol2 = -1;
+    // Look for task table header
+    const taskHeaderTokens = ["no.", "high level programme", "actual start", "actual end"];
+    const taskHeader = findHeaderRow(data, taskHeaderTokens);
     
-    // Find status columns in header row (row 8 = index 7)
-    if (data[7]) {
-      for (let i = 0; i < data[7].length; i++) {
-        const header = String(data[7][i] || "").toLowerCase();
-        if (header === "status" || header === "expected status") {
-          if (statusCol1 === -1) {
-            statusCol1 = i;
-          } else {
-            statusCol2 = i;
-            break;
+    if (taskHeader) {
+      const { rowIdx: headerRowIdx, colMap } = taskHeader;
+      
+      // Find column indices
+      const noCol = getColumnIndex(colMap, ["no.", "no"]);
+      const programmeCol = getColumnIndex(colMap, ["high level programme", "programme"]);
+      const actualStartCol = getColumnIndex(colMap, ["actual start"]);
+      const durationCol = getColumnIndex(colMap, ["duration", "days"]);
+      const actualEndCol = getColumnIndex(colMap, ["actual end"]);
+      
+      // Find status columns - prioritize "status" headers over generic "%" headers
+      const statusCols: number[] = [];
+      const entries = Array.from(colMap.entries());
+      
+      // First pass: look for explicit "status" headers
+      for (const [header, colIdx] of entries) {
+        if (header.includes("status")) {
+          statusCols.push(colIdx);
+        }
+      }
+      
+      // If we don't have 2 status columns, look for "%" headers as fallback
+      if (statusCols.length < 2) {
+        for (const [header, colIdx] of entries) {
+          if (header.includes("%") && !header.includes("status") && !statusCols.includes(colIdx)) {
+            statusCols.push(colIdx);
+            if (statusCols.length >= 2) break;
           }
         }
       }
-    }
-    
-    // Parse task rows (starting from row 9 = index 8)
-    for (let rowIdx = 8; rowIdx < data.length; rowIdx++) {
-      const row = data[rowIdx];
-      if (!row) continue;
       
-      const taskNo = row[1];
-      const highLevelProgramme = row[2];
-      
-      if (!taskNo && !highLevelProgramme) continue;
-      
-      const actualStart = parseDate(row[8]);
-      const durationDays = row[9] ? parseInt(String(row[9])) : null;
-      const actualEnd = parseDate(row[10]);
-      const actualPctComplete = statusCol1 >= 0 ? parseStatus(row[statusCol1]) : null;
-      const expectedPctComplete = statusCol2 >= 0 ? parseStatus(row[statusCol2]) : null;
-      
-      planItems.push({
-        projectName,
-        rowNumber: rowIdx + 1,
-        taskNo: taskNo ? String(taskNo) : null,
-        highLevelProgramme: highLevelProgramme ? String(highLevelProgramme) : null,
-        actualStart,
-        durationDays,
-        actualEnd,
-        actualPctComplete,
-        expectedPctComplete,
-      });
+      // Parse data rows (start from next row after header)
+      for (let rowIdx = headerRowIdx + 1; rowIdx < data.length; rowIdx++) {
+        const row = data[rowIdx];
+        if (!row) continue;
+        
+        const taskNo = noCol >= 0 ? row[noCol] : null;
+        const highLevelProgramme = programmeCol >= 0 ? row[programmeCol] : null;
+        
+        if (!taskNo && !highLevelProgramme) continue;
+        
+        const actualStart = actualStartCol >= 0 ? parseDate(row[actualStartCol]) : null;
+        const durationDays = durationCol >= 0 && row[durationCol] ? parseInt(String(row[durationCol])) : null;
+        const actualEnd = actualEndCol >= 0 ? parseDate(row[actualEndCol]) : null;
+        const actualPctComplete = statusCols[0] >= 0 ? parseStatus(row[statusCols[0]]) : null;
+        const expectedPctComplete = statusCols[1] >= 0 ? parseStatus(row[statusCols[1]]) : null;
+        
+        planItems.push({
+          projectName,
+          rowNumber: rowIdx + 1,
+          taskNo: taskNo ? String(taskNo) : null,
+          highLevelProgramme: highLevelProgramme ? String(highLevelProgramme) : null,
+          actualStart,
+          durationDays,
+          actualEnd,
+          actualPctComplete,
+          expectedPctComplete,
+        });
+      }
+    } else {
+      warnings.push("Could not find task table header in Project Plan sheet");
     }
   } else {
     warnings.push("Missing 'Project Plan' sheet");
@@ -179,85 +251,156 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
     const sheet = workbook.Sheets["Expenditure Breakdown"];
     const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null }) as any[][];
     
-    // Data starts at row 6 (index 5), headers at row 4 (index 3)
-    // Columns L=11, M=12, N=13, O=14, P=15, Q=16, R=17, S=18, T=19, U=20, W=22, X=23
-    for (let rowIdx = 5; rowIdx < data.length; rowIdx++) {
-      const row = data[rowIdx];
-      if (!row) continue;
+    // Look for "ACTUAL EXPENDITURE BREAKDOWN" table header
+    const expenseHeaderTokens = [
+      "product/ service",
+      "description of work",
+      "actual total",
+      "po number",
+      "invoice number",
+      "finance payment date",
+      "total cos"
+    ];
+    
+    const expenseHeader = findHeaderRow(data, expenseHeaderTokens);
+    
+    if (expenseHeader) {
+      const { rowIdx: headerRowIdx, colMap } = expenseHeader;
       
-      const expenseCategory = row[12];
-      const expenseLineItem = row[13];
-      const expenseActualTotal = parseNumber(row[16]);
+      // Find column indices
+      const categoryCol = getColumnIndex(colMap, ["product/ service", "product", "category"]);
+      const descCol = getColumnIndex(colMap, ["description of work", "description"]);
+      const qtyCol = getColumnIndex(colMap, ["qty", "quantity"]);
+      const rateCol = getColumnIndex(colMap, ["rate / unit", "rate"]);
+      const actualTotalCol = getColumnIndex(colMap, ["actual total"]);
+      const poCol = getColumnIndex(colMap, ["po number"]);
+      const invoiceCol = getColumnIndex(colMap, ["invoice number"]);
+      const invoiceDateCol = getColumnIndex(colMap, ["invoice raised date"]);
+      const revenueCol = getColumnIndex(colMap, ["revenue recognition amount", "revenue"]);
+      const paymentDateCol = getColumnIndex(colMap, ["finance payment date", "payment date"]);
+      const cosCol = getColumnIndex(colMap, ["total cos", "cos"]);
       
-      // Skip if M, N, Q are all blank
-      if (!expenseCategory && !expenseLineItem && !expenseActualTotal) continue;
+      // Parse data rows (check first row after header for subheader, otherwise start immediately)
+      let dataStartRow = headerRowIdx + 1;
+      // Check if next row is a subheader (contains "Category", "Line Item", or other meta text)
+      if (data[headerRowIdx + 1]) {
+        const firstRowStr = String(data[headerRowIdx + 1].join(" ")).toLowerCase();
+        if (firstRowStr.includes("category") || firstRowStr.includes("line item") || firstRowStr.length < 5) {
+          dataStartRow = headerRowIdx + 2;
+        }
+      }
       
-      expenses.push({
-        projectName,
-        rowNumber: rowIdx + 1,
-        expenseCategory: expenseCategory ? String(expenseCategory) : null,
-        expenseLineItem: expenseLineItem ? String(expenseLineItem) : null,
-        expenseQty: parseNumber(row[14]),
-        expenseRateUnit: parseNumber(row[15]),
-        expenseActualTotal,
-        expensePoNumber: row[17] ? String(row[17]) : null,
-        expenseInvoiceNumber: row[18] ? String(row[18]) : null,
-        expenseInvoicedDate: parseDate(row[19]),
-        revenueAmount: parseNumber(row[20]),
-        expensePaymentDate: parseDate(row[22]),
-        cosAmount: parseNumber(row[23]),
-      });
+      for (let rowIdx = dataStartRow; rowIdx < data.length; rowIdx++) {
+        const row = data[rowIdx];
+        if (!row) continue;
+        
+        const expenseCategory = categoryCol >= 0 ? row[categoryCol] : null;
+        const expenseLineItem = descCol >= 0 ? row[descCol] : null;
+        const expenseActualTotal = actualTotalCol >= 0 ? parseNumber(row[actualTotalCol]) : null;
+        
+        // Skip if category, description, and actual total are all blank
+        if (!expenseCategory && !expenseLineItem && !expenseActualTotal) continue;
+        
+        expenses.push({
+          projectName,
+          rowNumber: rowIdx + 1,
+          expenseCategory: expenseCategory ? String(expenseCategory) : null,
+          expenseLineItem: expenseLineItem ? String(expenseLineItem) : null,
+          expenseQty: qtyCol >= 0 ? parseNumber(row[qtyCol]) : null,
+          expenseRateUnit: rateCol >= 0 ? parseNumber(row[rateCol]) : null,
+          expenseActualTotal,
+          expensePoNumber: poCol >= 0 && row[poCol] ? String(row[poCol]) : null,
+          expenseInvoiceNumber: invoiceCol >= 0 && row[invoiceCol] ? String(row[invoiceCol]) : null,
+          expenseInvoicedDate: invoiceDateCol >= 0 ? parseDate(row[invoiceDateCol]) : null,
+          revenueAmount: revenueCol >= 0 ? parseNumber(row[revenueCol]) : null,
+          expensePaymentDate: paymentDateCol >= 0 ? parseDate(row[paymentDateCol]) : null,
+          cosAmount: cosCol >= 0 ? parseNumber(row[cosCol]) : null,
+        });
+      }
+    } else {
+      warnings.push("Could not find expenditure table header in Expenditure Breakdown sheet");
     }
   } else {
     warnings.push("Missing 'Expenditure Breakdown' sheet");
   }
 
-  // Parse Revenue Tracking sheet
+  // Parse Revenue Tracking sheet (FIRST table only)
   if (workbook.SheetNames.includes("Revenue Tracking")) {
     const sheet = workbook.Sheets["Revenue Tracking"];
     const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null }) as any[][];
     
-    // Header row is row 12 (index 11), data starts at row 13 (index 12)
-    // B=1, C=2, E=4, F=5, H=7, L=11, N=13, P=15, R=17, S=18
-    let foundFirstHeader = false;
+    // Look for first CONTRACT milestone table
+    const revenueHeaderTokens = [
+      "payment milestone",
+      "%",
+      "value",
+      "invoice number",
+      "invoice raised date",
+      "payment received date"
+    ];
     
-    for (let rowIdx = 12; rowIdx < data.length; rowIdx++) {
-      const row = data[rowIdx];
-      if (!row) continue;
+    let firstTableFound = false;
+    
+    for (let searchRow = 0; searchRow < Math.min(data.length, 50); searchRow++) {
+      const revenueHeader = findHeaderRow(data, revenueHeaderTokens, searchRow, 1);
       
-      const colB = row[1];
-      const colC = row[2];
-      
-      // Check for end conditions
-      if (colB && String(colB).toUpperCase().startsWith("KEY")) break;
-      if (colC && String(colC).toLowerCase().includes("end of sheet")) break;
-      
-      // Check for second header (stop parsing)
-      if (colB === "No." && colC && String(colC).includes("PAYMENT MILESTONE")) {
-        if (foundFirstHeader) break;
-        foundFirstHeader = true;
-        continue;
+      if (revenueHeader && !firstTableFound) {
+        firstTableFound = true;
+        const { rowIdx: headerRowIdx, colMap } = revenueHeader;
+        
+        // Find column indices
+        const milestoneNoCol = getColumnIndex(colMap, ["no.", "no", "milestone no"]);
+        const milestoneCol = getColumnIndex(colMap, ["payment milestone", "milestone"]);
+        const percentCol = getColumnIndex(colMap, ["%", "percent"]);
+        const valueCol = getColumnIndex(colMap, ["value", "amount"]);
+        const plannedDateCol = getColumnIndex(colMap, ["planned payment date", "planned date"]);
+        const invoiceCol = getColumnIndex(colMap, ["invoice number"]);
+        const invoiceDateCol = getColumnIndex(colMap, ["invoice raised date", "invoice date"]);
+        const paymentDateCol = getColumnIndex(colMap, ["payment received date", "received date"]);
+        const requirementsCol = getColumnIndex(colMap, ["requirement", "notes"]);
+        const docsCol = getColumnIndex(colMap, ["milestone documents received", "documents"]);
+        
+        // Parse data rows (start from next row after header)
+        for (let rowIdx = headerRowIdx + 1; rowIdx < data.length; rowIdx++) {
+          const row = data[rowIdx];
+          if (!row) continue;
+          
+          const milestoneDesc = milestoneCol >= 0 ? row[milestoneCol] : null;
+          
+          // Stop conditions: KEY section, second header, or "end of sheet"
+          if (milestoneDesc && String(milestoneDesc).toUpperCase().startsWith("KEY")) break;
+          if (milestoneDesc && String(milestoneDesc).toLowerCase().includes("end of sheet")) break;
+          
+          // Check for second header (another table) - stop parsing
+          const checkSecondHeader = milestoneDesc && 
+            (String(milestoneDesc).includes("PAYMENT MILESTONE") || 
+             String(milestoneDesc).includes("No."));
+          if (checkSecondHeader && rowIdx > headerRowIdx + 1) break;
+          
+          // Skip empty rows
+          if (!milestoneDesc) continue;
+          
+          inflows.push({
+            projectName,
+            rowNumber: rowIdx + 1,
+            milestoneNo: milestoneNoCol >= 0 && row[milestoneNoCol] ? String(row[milestoneNoCol]) : null,
+            milestoneName: String(milestoneDesc),
+            milestonePercent: percentCol >= 0 ? parsePercent(row[percentCol]) : null,
+            milestoneAmount: valueCol >= 0 ? parseNumber(row[valueCol]) : null,
+            plannedPaymentDate: plannedDateCol >= 0 ? parseDate(row[plannedDateCol]) : null,
+            milestoneInvoiceNumber: invoiceCol >= 0 && row[invoiceCol] ? String(row[invoiceCol]) : null,
+            invoiceRaisedDate: invoiceDateCol >= 0 ? parseDate(row[invoiceDateCol]) : null,
+            paymentReceivedDate: paymentDateCol >= 0 ? parseDate(row[paymentDateCol]) : null,
+            milestoneNotes: requirementsCol >= 0 && row[requirementsCol] ? String(row[requirementsCol]) : null,
+            documentsReceived: docsCol >= 0 && row[docsCol] ? String(row[docsCol]) : null,
+          });
+        }
+        break; // Stop after parsing first table
       }
-      
-      // Skip empty rows
-      if (!colB && !colC) continue;
-      
-      const milestoneAmount = parseNumber(row[5]);
-      
-      inflows.push({
-        projectName,
-        rowNumber: rowIdx + 1,
-        milestoneNo: colB ? String(colB) : null,
-        milestoneName: colC ? String(colC) : null,
-        milestonePercent: parsePercent(row[4]),
-        milestoneAmount,
-        plannedPaymentDate: parseDate(row[7]),
-        milestoneInvoiceNumber: row[11] ? String(row[11]) : null,
-        invoiceRaisedDate: parseDate(row[13]),
-        paymentReceivedDate: parseDate(row[15]),
-        milestoneNotes: row[17] ? String(row[17]) : null,
-        documentsReceived: row[18] ? String(row[18]) : null,
-      });
+    }
+    
+    if (!firstTableFound) {
+      warnings.push("Could not find revenue milestone table header in Revenue Tracking sheet");
     }
   } else {
     warnings.push("Missing 'Revenue Tracking' sheet");
