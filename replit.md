@@ -30,27 +30,48 @@ The frontend follows a page-based structure under `client/src/pages/` with share
 - **Excel Parsing**: xlsx library for parsing tracker files with custom parsing logic in `server/excelParser.ts`
 
 The server follows a modular structure:
-- `server/routes.ts` - API route definitions
-- `server/storage.ts` - Database access layer abstraction
-- `server/db.ts` - Drizzle ORM database connection
+- `server/routes.ts` - API route definitions with transactional upload handling
+- `server/storage.ts` - Database access layer abstraction with transaction support
+- `server/db.ts` - Drizzle ORM database connection with resilient connection logic
+- `server/db-config.ts` - Database connection testing and fallback management
 - `server/excelParser.ts` - Excel file parsing logic for tracker ingestion
 
 ### Data Storage
-- **Database**: PostgreSQL with Drizzle ORM
+- **Database**: PostgreSQL (primary) with SQLite fallback, using Drizzle ORM
 - **Schema Location**: `shared/schema.ts` (shared between client and server)
+- **Resilient Connection**: 
+  - `server/db-config.ts` - Tests Postgres connection with 2-second timeout
+  - Automatically falls back to file-based SQLite (`./data/app.sqlite`) if Postgres unavailable
+  - Health endpoint (`/api/health`) reports current database mode and connection status
+- **Transactional Safety**: All file uploads wrapped in database transactions to prevent partial data loss
 - **Key Tables**:
   - `users` - Authentication with role-based access (admin/member)
   - `projectInfo` - Project metadata parsed from trackers
   - `programExpense` - Expenditure entries from "Expenditure Breakdown" sheets
   - `programInflows` - Revenue entries from "Revenue Tracking" sheets
   - `projectPlan` - Task/milestone entries from "Project Plan" sheets
+  - `cashflowPoints` - Cashflow series data from "Cashflow" sheets
+  - `financeRevenueMonthly` - Revenue monthly data from "Finance-Revenue" sheets
+  - `financeCosMonthly` - Cost of sales monthly data from "Finance-COS" sheets
+  - `uploadMetadata` - Upload history with file paths for reprocessing
+  - `refreshLogs` - Data refresh audit trail
   - Legacy tables: `projects`, `expenses`, `revenues`, `tasks`, `budgets`
 
 ### Excel Parsing Contract
-The system parses project tracker Excel files with specific sheet structures:
+The system parses project tracker Excel files with specific sheet structures using robust header detection:
 1. **Expenditure Breakdown** - Row 4 headers (L-X columns), data starts row 6
 2. **Revenue Tracking** - Row 12 headers, data starts row 13, parse first table only
 3. **Project Plan** - Row 8 headers for task/milestone data
+4. **Cashflow** - Robust header detection, canonical series naming (Planned/Actual Revenue/Expenditure/CashFlow)
+5. **Finance-Revenue** - Monthly revenue breakdown with smart date horizon limiting
+6. **Finance-COS** - Monthly cost of sales with smart date horizon limiting
+
+### File Upload Features
+- **Disk Storage**: Files persisted to `./uploads/` directory for reprocessing capability
+- **Transactional Safety**: All uploads wrapped in database transactions to prevent partial data loss
+- **Reprocess Endpoint**: `POST /api/reprocess-all` re-parses stored files without re-upload
+- **Upload Validation**: Real-time validation report showing parsed record counts by type
+- **Database Mode Indicator**: UI displays current database mode (Postgres/SQLite) in top bar
 
 ### Build System
 - **Development**: Vite dev server with HMR for client, tsx for server
