@@ -135,7 +135,9 @@ export async function registerRoutes(
     }
   });
   
-  app.post("/api/auth/login", (req, res, next) => {
+  app.post("/api/auth/login", async (req, res, next) => {
+    const { dbMode } = await import("./db");
+    
     passport.authenticate("local", (err: any, user: Express.User | false, info: { message: string }) => {
       if (err) {
         console.error("[LOGIN ERROR] Full error:", err);
@@ -147,7 +149,8 @@ export async function registerRoutes(
             error: "Database connection unavailable",
             message: "Database connection unavailable. Please check the database configuration.",
             detail: process.env.NODE_ENV === 'development' ? err.message : undefined,
-            code: 'DB_CONNECTION_ERROR'
+            code: 'DB_CONNECTION_ERROR',
+            dbMode
           });
         }
         
@@ -156,7 +159,8 @@ export async function registerRoutes(
           message: "An error occurred during login",
           detail: process.env.NODE_ENV === 'development' ? err.message : undefined,
           stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
-          code: 'LOGIN_ERROR'
+          code: 'LOGIN_ERROR',
+          dbMode
         });
       }
       

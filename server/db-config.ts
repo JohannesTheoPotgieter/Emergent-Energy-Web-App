@@ -11,7 +11,7 @@ export interface DbConfig {
 }
 
 export function resolveDbConfig(): DbConfig {
-  // Priority 1: Use DATABASE_URL if present
+  // Priority 1: Use DATABASE_URL if present and host is NOT helium
   if (process.env.DATABASE_URL) {
     const url = process.env.DATABASE_URL;
     
@@ -20,6 +20,15 @@ export function resolveDbConfig(): DbConfig {
     try {
       const urlObj = new URL(url);
       dbHost = urlObj.hostname;
+      
+      // Force SQLite for helium hosts (unreliable DNS/connection)
+      if (dbHost.includes('helium')) {
+        console.log(`[DB] Detected helium host (${dbHost}), forcing SQLite for stability`);
+        return {
+          mode: 'sqlite',
+          error: `Helium host detected (${dbHost}), using SQLite for reliability`,
+        };
+      }
     } catch {}
     
     return {
@@ -29,9 +38,18 @@ export function resolveDbConfig(): DbConfig {
     };
   }
 
-  // Priority 2: Build from PG environment variables
+  // Priority 2: Build from PG environment variables (but avoid helium)
   const { PGHOST, PGUSER, PGPASSWORD, PGDATABASE, PGPORT } = process.env;
   if (PGHOST && PGUSER && PGDATABASE) {
+    // Force SQLite for helium hosts
+    if (PGHOST.includes('helium')) {
+      console.log(`[DB] Detected helium PGHOST (${PGHOST}), forcing SQLite for stability`);
+      return {
+        mode: 'sqlite',
+        error: `Helium PGHOST detected (${PGHOST}), using SQLite for reliability`,
+      };
+    }
+    
     const port = PGPORT || '5432';
     const password = PGPASSWORD ? `:${PGPASSWORD}` : '';
     const connectionString = `postgresql://${PGUSER}${password}@${PGHOST}:${port}/${PGDATABASE}`;

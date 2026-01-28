@@ -10,7 +10,7 @@ import bcrypt from "bcryptjs";
 import connectPgSimple from "connect-pg-simple";
 import MemoryStore from "memorystore";
 import pg from "pg";
-import { dbMode, dbConfig } from "./db";
+import { dbMode, dbConfig, initializeDatabase } from "./db";
 
 const app = express();
 const httpServer = createServer(app);
@@ -184,12 +184,21 @@ async function seedAdminUser() {
     
     if (!existingAdmin) {
       const hashedPassword = await bcrypt.hash(adminPassword, 10);
-      await storage.createUser({
+      
+      // For SQLite compatibility, manually handle createdAt
+      const userData: any = {
         email: adminEmail,
         password: hashedPassword,
         name: "Admin User",
         role: "admin",
-      });
+      };
+      
+      // Add createdAt manually for SQLite (doesn't support defaultNow())
+      if (dbMode === 'sqlite') {
+        userData.createdAt = new Date();
+      }
+      
+      await storage.createUser(userData);
       log(`✓ Demo admin user seeded: ${adminEmail}`);
     } else {
       log(`✓ Demo admin user exists: ${adminEmail}`);
@@ -201,6 +210,9 @@ async function seedAdminUser() {
 }
 
 (async () => {
+  // Initialize database FIRST before any storage operations
+  await initializeDatabase();
+  
   await seedAdminUser();
   await registerRoutes(httpServer, app);
 

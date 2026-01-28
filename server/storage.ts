@@ -117,10 +117,15 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
-  private dbInstance: typeof db;
+  private _dbInstance?: typeof db;
   
-  constructor(dbInstance: typeof db = db) {
-    this.dbInstance = dbInstance;
+  // Getter that always returns the current db (handles dynamic switching)
+  private get dbInstance(): typeof db {
+    return this._dbInstance || db;
+  }
+  
+  constructor(dbInstance?: typeof db) {
+    this._dbInstance = dbInstance;
   }
   
   // Transaction support
