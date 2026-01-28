@@ -657,56 +657,52 @@ export async function registerRoutes(
           const parseResult = parseTrackerFile(fileBuffer, file.originalname);
           
           // Perform all DB operations in a single transaction to prevent partial updates
-          const { db } = await import("./db");
-          await db.transaction(async (tx: any) => {
-            // Create temporary storage with transaction context
-            const txStorage = storage;
-            
+          await storage.transaction(async (txStorage) => {
             // Delete existing data for this project
-            await storage.deleteProgramExpensesByProject(parseResult.projectName);
-            await storage.deleteProgramInflowsByProject(parseResult.projectName);
-            await storage.deleteProjectPlansByProject(parseResult.projectName);
-            await storage.deleteCashflowPointsByProject(parseResult.projectName);
-            await storage.deleteFinanceRevenueMonthlyByProject(parseResult.projectName);
-            await storage.deleteFinanceCosMonthlyByProject(parseResult.projectName);
+            await txStorage.deleteProgramExpensesByProject(parseResult.projectName);
+            await txStorage.deleteProgramInflowsByProject(parseResult.projectName);
+            await txStorage.deleteProjectPlansByProject(parseResult.projectName);
+            await txStorage.deleteCashflowPointsByProject(parseResult.projectName);
+            await txStorage.deleteFinanceRevenueMonthlyByProject(parseResult.projectName);
+            await txStorage.deleteFinanceCosMonthlyByProject(parseResult.projectName);
 
             // Insert project info
             if (parseResult.projectInfo) {
-              await storage.upsertProjectInfo(parseResult.projectInfo);
+              await txStorage.upsertProjectInfo(parseResult.projectInfo);
             }
 
             // Insert expenses
             if (parseResult.expenses.length > 0) {
-              await storage.createManyProgramExpenses(parseResult.expenses);
+              await txStorage.createManyProgramExpenses(parseResult.expenses);
             }
 
             // Insert inflows
             if (parseResult.inflows.length > 0) {
-              await storage.createManyProgramInflows(parseResult.inflows);
+              await txStorage.createManyProgramInflows(parseResult.inflows);
             }
 
             // Insert plan items
             if (parseResult.planItems.length > 0) {
-              await storage.createManyProjectPlans(parseResult.planItems);
+              await txStorage.createManyProjectPlans(parseResult.planItems);
             }
 
             // Insert cashflow points
             if (parseResult.cashflowPoints.length > 0) {
-              await storage.createManyCashflowPoints(parseResult.cashflowPoints);
+              await txStorage.createManyCashflowPoints(parseResult.cashflowPoints);
             }
 
             // Insert finance revenue monthly
             if (parseResult.financeRevenueMonthly.length > 0) {
-              await storage.createManyFinanceRevenueMonthly(parseResult.financeRevenueMonthly);
+              await txStorage.createManyFinanceRevenueMonthly(parseResult.financeRevenueMonthly);
             }
 
             // Insert finance COS monthly
             if (parseResult.financeCosMonthly.length > 0) {
-              await storage.createManyFinanceCosMonthly(parseResult.financeCosMonthly);
+              await txStorage.createManyFinanceCosMonthly(parseResult.financeCosMonthly);
             }
 
             // Log upload metadata
-            await storage.createUpload({
+            await txStorage.createUpload({
               fileName: file.originalname,
               filePath: file.path, // Store disk path for reprocessing
               uploadedBy: req.user?.id || null,
