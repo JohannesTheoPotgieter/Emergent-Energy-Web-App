@@ -458,40 +458,50 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
             }
           }
           
-          // Find series rows by searching column B (index 1) for series names
-          const seriesToFind = [
-            "planned revenue",
-            "planned expenditure",
-            "planned cashflow",
-            "actual + planned revenue",
-            "actual + planned expenditure",
-            "actual cashflow"
+          if (dateHeaders.length === 0) {
+            warnings.push("Cashflow sheet: found potential header row but no date columns");
+          }
+          
+          // Find series rows by searching column B (index 1) - map to canonical names
+          const seriesToFind: { pattern: string; canonical: string; forHorizon: boolean }[] = [
+            { pattern: "planned revenue", canonical: "Planned Revenue", forHorizon: true },
+            { pattern: "planned expenditure", canonical: "Planned Expenditure", forHorizon: true },
+            { pattern: "planned cashflow", canonical: "PLANNED CashFlow", forHorizon: false },
+            { pattern: "actual + planned revenue", canonical: "Actual + Planned Revenue", forHorizon: true },
+            { pattern: "actual + planned expenditure", canonical: "Actual + Planned Expenditure", forHorizon: true },
+            { pattern: "actual cashflow", canonical: "ACTUAL CashFlow", forHorizon: false }
           ];
           
-          const seriesRows: { row: number; name: string }[] = [];
+          const seriesRows: { row: number; name: string; forHorizon: boolean }[] = [];
           for (let rowIdx = dateHeaderRow + 1; rowIdx < Math.min(dateHeaderRow + 20, data.length); rowIdx++) {
             const cellB = data[rowIdx][1]; // Column B
             if (cellB) {
               const normalized = normalizeHeader(cellB);
-              for (const seriesName of seriesToFind) {
-                if (normalized.includes(seriesName)) {
-                  seriesRows.push({ row: rowIdx, name: String(cellB).trim() });
+              for (const series of seriesToFind) {
+                if (normalized.includes(series.pattern)) {
+                  seriesRows.push({ 
+                    row: rowIdx, 
+                    name: series.canonical,
+                    forHorizon: series.forHorizon
+                  });
                   break;
                 }
               }
             }
           }
           
-          // Calculate date horizon limit: lastNonZeroDate + 52 weeks
-          let maxSignificantDate = '';
-          for (const { row } of seriesRows) {
+          // Calculate date horizon limit: lastNonZeroDate among revenue/expenditure series + 52 weeks
+          let maxSignificantDate: Date | null = null;
+          for (const { row, forHorizon } of seriesRows) {
+            if (!forHorizon) continue; // Only use revenue/expenditure series for horizon
+            
             if (data[row]) {
               for (let dateIdx = 0; dateIdx < dateHeaders.length; dateIdx++) {
                 const valueColIdx = dateStartCol + dateIdx;
                 const value = parseNumber(data[row][valueColIdx]);
                 if (value !== null && parseFloat(value) !== 0) {
-                  const currentDate = dateHeaders[dateIdx];
-                  if (currentDate > maxSignificantDate) {
+                  const currentDate = new Date(dateHeaders[dateIdx]);
+                  if (!maxSignificantDate || currentDate > maxSignificantDate) {
                     maxSignificantDate = currentDate;
                   }
                 }
@@ -500,11 +510,10 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
           }
           
           // Add 52 weeks (364 days) buffer
-          let horizonLimit = '';
+          let horizonLimit: Date | null = null;
           if (maxSignificantDate) {
-            const maxDate = new Date(maxSignificantDate);
-            maxDate.setDate(maxDate.getDate() + 364);
-            horizonLimit = maxDate.toISOString().split('T')[0];
+            horizonLimit = new Date(maxSignificantDate);
+            horizonLimit.setDate(horizonLimit.getDate() + 364);
           }
           
           // Parse values for each series
@@ -512,9 +521,10 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
             if (data[row]) {
               for (let dateIdx = 0; dateIdx < dateHeaders.length; dateIdx++) {
                 const pointDate = dateHeaders[dateIdx];
+                const pointDateObj = new Date(pointDate);
                 
                 // Skip dates beyond horizon limit
-                if (horizonLimit && pointDate > horizonLimit) continue;
+                if (horizonLimit && pointDateObj > horizonLimit) continue;
                 
                 const valueColIdx = dateStartCol + dateIdx;
                 const value = parseNumber(data[row][valueColIdx]);
@@ -529,11 +539,19 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
               }
             }
           }
+          
+          if (seriesRows.length === 0) {
+            warnings.push("Cashflow sheet: could not find any expected series labels in column B");
+          }
+        } else {
+          warnings.push("Cashflow sheet: could not find date header row");
         }
       }
     } catch (error) {
       warnings.push(`Cashflow sheet parse error: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+  } else {
+    warnings.push("Missing 'Cashflow' sheet");
   }
 
   // Parse Finance - Revenue sheet (monthly pivot with robust header detection)
@@ -568,6 +586,10 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
             }
           }
           
+          if (monthHeaders.length === 0) {
+            warnings.push("Finance - Revenue: found Row Labels header but no date columns");
+          }
+          
           // Parse category rows starting after header row
           for (let rowIdx = headerRowIdx + 1; rowIdx < data.length; rowIdx++) {
             const category = data[rowIdx][0];
@@ -584,7 +606,8 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
             }
             
             const normalizedCategory = normalizeHeader(category);
-            if (normalizedCategory === "grand total" || normalizedCategory === "(blank)") break;
+            if (normalizedCategory === "grand total") break;
+            if (normalizedCategory === "(blank)") continue; // Skip, don't break
             
             // Parse values for each month column
             for (let monthIdx = 0; monthIdx < monthHeaders.length; monthIdx++) {
@@ -599,6 +622,8 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
               });
             }
           }
+        } else {
+          warnings.push("Finance - Revenue: could not find 'Row Labels' header row");
         }
       }
     } catch (error) {
@@ -638,6 +663,10 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
             }
           }
           
+          if (monthHeaders.length === 0) {
+            warnings.push("Finance - COS: found Row Labels header but no date columns");
+          }
+          
           // Parse category rows starting after header row
           for (let rowIdx = headerRowIdx + 1; rowIdx < data.length; rowIdx++) {
             const category = data[rowIdx][0];
@@ -654,7 +683,8 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
             }
             
             const normalizedCategory = normalizeHeader(category);
-            if (normalizedCategory === "grand total" || normalizedCategory === "(blank)") break;
+            if (normalizedCategory === "grand total") break;
+            if (normalizedCategory === "(blank)") continue; // Skip, don't break
             
             // Parse values for each month column
             for (let monthIdx = 0; monthIdx < monthHeaders.length; monthIdx++) {
@@ -669,6 +699,8 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
               });
             }
           }
+        } else {
+          warnings.push("Finance - COS: could not find 'Row Labels' header row");
         }
       }
     } catch (error) {
