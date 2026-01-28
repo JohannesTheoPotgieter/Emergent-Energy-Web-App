@@ -13,11 +13,6 @@ async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
   });
   
   if (!response.ok) {
-    if (response.status === 401) {
-      const error = await response.json().catch(() => ({ message: "Authentication required" }));
-      window.location.href = "/auth/login";
-      throw new Error(error.message || "Authentication required");
-    }
     const error = await response.json().catch(() => ({ message: "Request failed" }));
     throw new Error(error.message || `HTTP ${response.status}`);
   }
@@ -129,11 +124,6 @@ export const uploadApi = {
     });
     
     if (!response.ok) {
-      if (response.status === 401) {
-        const error = await response.json().catch(() => ({ message: "Authentication required" }));
-        window.location.href = "/auth/login";
-        throw new Error(error.message || "Authentication required");
-      }
       const error = await response.json().catch(() => ({ message: "Upload failed" }));
       throw new Error(error.message || "Upload failed");
     }
