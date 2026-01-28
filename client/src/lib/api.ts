@@ -16,9 +16,8 @@ export function setAuthToken(token: string | null) {
 
 async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
   const token = getAuthToken();
-  const headers: HeadersInit = {
+  const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    ...options?.headers,
   };
   
   if (token) {
@@ -28,7 +27,10 @@ async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     ...options,
     credentials: "include",
-    headers,
+    headers: {
+      ...headers,
+      ...options?.headers,
+    },
   });
   
   if (!response.ok) {
@@ -140,7 +142,7 @@ export const uploadApi = {
     files.forEach(file => formData.append("files", file));
     
     const token = getAuthToken();
-    const headers: HeadersInit = {};
+    const headers: Record<string, string> = {};
     
     if (token) {
       headers["Authorization"] = `Bearer ${token}`;

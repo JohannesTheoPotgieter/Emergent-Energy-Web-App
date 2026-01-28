@@ -477,7 +477,7 @@ export async function registerRoutes(
 
   app.get("/api/projects/:id", async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       const project = await storage.getProject(id);
       if (!project) {
         return res.status(404).json({ message: "Project not found" });
@@ -562,7 +562,7 @@ export async function registerRoutes(
 
   app.delete("/api/budgets/:id", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       const deleted = await storage.deleteBudget(id);
       if (!deleted) {
         return res.status(404).json({ message: "Budget not found" });
