@@ -9,8 +9,24 @@ import { z } from "zod";
 import { format } from "date-fns";
 import { generateToken, verifyToken } from "./jwt";
 
+// Configure multer for disk storage
 const upload = multer({ 
-  storage: multer.memoryStorage(),
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      const fs = require('fs');
+      const path = require('path');
+      const uploadDir = path.join(process.cwd(), 'uploads');
+      if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+      }
+      cb(null, uploadDir);
+    },
+    filename: (req, file, cb) => {
+      const timestamp = Date.now();
+      const sanitized = file.originalname.replace(/[^a-zA-Z0-9_.-]/g, '_');
+      cb(null, `${timestamp}_${sanitized}`);
+    }
+  }),
   limits: { fileSize: 50 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const allowedMimes = [
@@ -636,7 +652,10 @@ export async function registerRoutes(
 
       for (const file of files) {
         try {
-          const parseResult = parseTrackerFile(file.buffer, file.originalname);
+          // Read file from disk
+          const fs = require('fs');
+          const fileBuffer = fs.readFileSync(file.path);
+          const parseResult = parseTrackerFile(fileBuffer, file.originalname);
           
           // Delete existing data for this project before inserting new
           await storage.deleteProgramExpensesByProject(parseResult.projectName);
@@ -683,6 +702,7 @@ export async function registerRoutes(
 
           await storage.createUpload({
             fileName: file.originalname,
+            filePath: file.path, // Store disk path for reprocessing
             uploadedBy: req.user?.id || null,
             recordsProcessed: parseResult.expensesParsed + parseResult.inflowsParsed + parseResult.planParsed + 
                             parseResult.cashflowParsed + parseResult.financeRevenueParsed + parseResult.financeCosParsed,
@@ -734,6 +754,107 @@ export async function registerRoutes(
     } catch (error: any) {
       console.error("Upload error:", error);
       res.status(500).json({ message: error.message || "Failed to process upload" });
+    }
+  });
+
+  // ==================== REPROCESS ALL UPLOADS ====================
+
+  app.post("/api/reprocess-all", requireAuth, async (req, res) => {
+    try {
+      const fs = require('fs');
+      
+      // Get all uploads with file paths
+      const uploads = await storage.getAllUploads();
+      const reprocessResults: { fileName: string; status: string; message?: string }[] = [];
+      
+      // Group by project (use most recent upload per project)
+      const projectFiles = new Map<string, { filePath: string; fileName: string }>();
+      for (const upload of uploads) {
+        if (!upload.filePath) continue;
+        
+        // Extract project name from filename
+        const projectName = upload.fileName.replace(/_Tracker\.(xlsx|xlsm|xls)$/i, '');
+        
+        // Only keep if this is the most recent or if project not yet seen
+        if (!projectFiles.has(projectName)) {
+          projectFiles.set(projectName, { filePath: upload.filePath, fileName: upload.fileName });
+        }
+      }
+      
+      // Reprocess each project's latest file
+      for (const [projectName, fileInfo] of Array.from(projectFiles.entries())) {
+        try {
+          if (!fs.existsSync(fileInfo.filePath)) {
+            reprocessResults.push({
+              fileName: fileInfo.fileName,
+              status: "error",
+              message: "File not found on disk"
+            });
+            continue;
+          }
+          
+          const fileBuffer = fs.readFileSync(fileInfo.filePath);
+          const parseResult = parseTrackerFile(fileBuffer, fileInfo.fileName);
+          
+          // Delete existing data for this project
+          await storage.deleteProgramExpensesByProject(parseResult.projectName);
+          await storage.deleteProgramInflowsByProject(parseResult.projectName);
+          await storage.deleteProjectPlansByProject(parseResult.projectName);
+          await storage.deleteCashflowPointsByProject(parseResult.projectName);
+          await storage.deleteFinanceRevenueMonthlyByProject(parseResult.projectName);
+          await storage.deleteFinanceCosMonthlyByProject(parseResult.projectName);
+          
+          // Re-insert all data
+          if (parseResult.projectInfo) {
+            await storage.upsertProjectInfo(parseResult.projectInfo);
+          }
+          if (parseResult.expenses.length > 0) {
+            await storage.createManyProgramExpenses(parseResult.expenses);
+          }
+          if (parseResult.inflows.length > 0) {
+            await storage.createManyProgramInflows(parseResult.inflows);
+          }
+          if (parseResult.planItems.length > 0) {
+            await storage.createManyProjectPlans(parseResult.planItems);
+          }
+          if (parseResult.cashflowPoints.length > 0) {
+            await storage.createManyCashflowPoints(parseResult.cashflowPoints);
+          }
+          if (parseResult.financeRevenueMonthly.length > 0) {
+            await storage.createManyFinanceRevenueMonthly(parseResult.financeRevenueMonthly);
+          }
+          if (parseResult.financeCosMonthly.length > 0) {
+            await storage.createManyFinanceCosMonthly(parseResult.financeCosMonthly);
+          }
+          
+          reprocessResults.push({
+            fileName: fileInfo.fileName,
+            status: "success",
+            message: `Reprocessed ${parseResult.cashflowParsed + parseResult.financeRevenueParsed + parseResult.financeCosParsed} cashflow/finance records`
+          });
+          
+        } catch (error: any) {
+          reprocessResults.push({
+            fileName: fileInfo.fileName,
+            status: "error",
+            message: error.message || "Reprocessing failed"
+          });
+        }
+      }
+      
+      await storage.createRefreshLog({
+        triggeredBy: req.user?.id || null,
+        status: reprocessResults.every(r => r.status === "success") ? "success" : "partial"
+      });
+      
+      res.json({
+        message: `Reprocessed ${projectFiles.size} project(s)`,
+        results: reprocessResults
+      });
+      
+    } catch (error: any) {
+      console.error("Reprocess error:", error);
+      res.status(500).json({ message: error.message || "Failed to reprocess files" });
     }
   });
 

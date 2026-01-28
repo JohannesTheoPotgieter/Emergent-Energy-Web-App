@@ -202,6 +202,7 @@ export type Budget = typeof budgets.$inferSelect;
 export const uploadMetadata = pgTable("upload_metadata", {
   id: serial("id").primaryKey(),
   fileName: text("file_name").notNull(),
+  filePath: text("file_path"), // Path to stored file on disk
   uploadedBy: integer("uploaded_by").references(() => users.id),
   uploadedAt: timestamp("uploaded_at").notNull().defaultNow(),
   recordsProcessed: integer("records_processed").notNull().default(0),
