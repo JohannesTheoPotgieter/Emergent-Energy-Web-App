@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, decimal, timestamp, pgEnum, serial } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, decimal, timestamp, pgEnum, serial, real } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -28,7 +28,87 @@ export const insertUserSchema = createInsertSchema(users).omit({ id: true, creat
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 
-// Projects Table
+// Project Info Table (parsed from Project Plan sheet fixed cells)
+export const projectInfo = pgTable("project_info", {
+  id: serial("id").primaryKey(),
+  projectName: text("project_name").notNull().unique(),
+  sizeKwp: decimal("size_kwp", { precision: 12, scale: 2 }),
+  pd: text("pd"),
+  pm: text("pm"),
+  contractValue: decimal("contract_value", { precision: 15, scale: 2 }),
+  phase: text("phase"),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertProjectInfoSchema = createInsertSchema(projectInfo).omit({ id: true, updatedAt: true });
+export type InsertProjectInfo = z.infer<typeof insertProjectInfoSchema>;
+export type ProjectInfo = typeof projectInfo.$inferSelect;
+
+// Program Expense Table (from Expenditure Breakdown sheet)
+export const programExpense = pgTable("program_expense", {
+  id: serial("id").primaryKey(),
+  projectName: text("project_name").notNull(),
+  rowNumber: integer("row_number"),
+  expenseCategory: text("expense_category"),
+  expenseLineItem: text("expense_line_item"),
+  expenseQty: decimal("expense_qty", { precision: 12, scale: 4 }),
+  expenseRateUnit: decimal("expense_rate_unit", { precision: 15, scale: 2 }),
+  expenseActualTotal: decimal("expense_actual_total", { precision: 15, scale: 2 }),
+  expensePoNumber: text("expense_po_number"),
+  expenseInvoiceNumber: text("expense_invoice_number"),
+  expenseInvoicedDate: text("expense_invoiced_date"),
+  revenueAmount: decimal("revenue_amount", { precision: 15, scale: 2 }),
+  expensePaymentDate: text("expense_payment_date"),
+  cosAmount: decimal("cos_amount", { precision: 15, scale: 2 }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertProgramExpenseSchema = createInsertSchema(programExpense).omit({ id: true, createdAt: true });
+export type InsertProgramExpense = z.infer<typeof insertProgramExpenseSchema>;
+export type ProgramExpense = typeof programExpense.$inferSelect;
+
+// Program Inflows Table (from Revenue Tracking sheet)
+export const programInflows = pgTable("program_inflows", {
+  id: serial("id").primaryKey(),
+  projectName: text("project_name").notNull(),
+  rowNumber: integer("row_number"),
+  milestoneNo: text("milestone_no"),
+  milestoneName: text("milestone_name"),
+  milestonePercent: decimal("milestone_percent", { precision: 6, scale: 4 }),
+  milestoneAmount: decimal("milestone_amount", { precision: 15, scale: 2 }),
+  plannedPaymentDate: text("planned_payment_date"),
+  milestoneInvoiceNumber: text("milestone_invoice_number"),
+  invoiceRaisedDate: text("invoice_raised_date"),
+  paymentReceivedDate: text("payment_received_date"),
+  milestoneNotes: text("milestone_notes"),
+  documentsReceived: text("documents_received"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertProgramInflowsSchema = createInsertSchema(programInflows).omit({ id: true, createdAt: true });
+export type InsertProgramInflows = z.infer<typeof insertProgramInflowsSchema>;
+export type ProgramInflows = typeof programInflows.$inferSelect;
+
+// Project Plan Table (from Project Plan sheet)
+export const projectPlan = pgTable("project_plan", {
+  id: serial("id").primaryKey(),
+  projectName: text("project_name").notNull(),
+  rowNumber: integer("row_number"),
+  taskNo: text("task_no"),
+  highLevelProgramme: text("high_level_programme"),
+  actualStart: text("actual_start"),
+  durationDays: integer("duration_days"),
+  actualEnd: text("actual_end"),
+  actualPctComplete: real("actual_pct_complete"),
+  expectedPctComplete: real("expected_pct_complete"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertProjectPlanSchema = createInsertSchema(projectPlan).omit({ id: true, createdAt: true });
+export type InsertProjectPlan = z.infer<typeof insertProjectPlanSchema>;
+export type ProjectPlan = typeof projectPlan.$inferSelect;
+
+// Legacy Projects Table (kept for backward compatibility)
 export const projects = pgTable("projects", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
@@ -48,7 +128,7 @@ export const insertProjectSchema = createInsertSchema(projects).omit({ id: true,
 export type InsertProject = z.infer<typeof insertProjectSchema>;
 export type Project = typeof projects.$inferSelect;
 
-// Expenses Table
+// Legacy Expenses Table (kept for backward compatibility)
 export const expenses = pgTable("expenses", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
@@ -68,7 +148,7 @@ export const insertExpenseSchema = createInsertSchema(expenses).omit({ id: true,
 export type InsertExpense = z.infer<typeof insertExpenseSchema>;
 export type Expense = typeof expenses.$inferSelect;
 
-// Revenues Table
+// Legacy Revenues Table (kept for backward compatibility)
 export const revenues = pgTable("revenues", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
@@ -85,7 +165,7 @@ export const insertRevenueSchema = createInsertSchema(revenues).omit({ id: true,
 export type InsertRevenue = z.infer<typeof insertRevenueSchema>;
 export type Revenue = typeof revenues.$inferSelect;
 
-// Tasks Table
+// Legacy Tasks Table (kept for backward compatibility)
 export const tasks = pgTable("tasks", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
