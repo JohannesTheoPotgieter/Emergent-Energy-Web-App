@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
-import { authApi, User } from "../lib/api";
+import { authApi, User, setAuthToken } from "../lib/api";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 
@@ -38,6 +38,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const response = await authApi.login(email, password);
       setUser(response.user);
+      // Store JWT token for authenticated requests
+      setAuthToken(response.token);
       toast({
         title: "Welcome back!",
         description: `Logged in as ${response.user.name}`,
@@ -57,6 +59,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await authApi.logout();
       setUser(null);
+      // Clear JWT token on logout
+      setAuthToken(null);
       setLocation("/auth/login");
       toast({
         title: "Logged out",

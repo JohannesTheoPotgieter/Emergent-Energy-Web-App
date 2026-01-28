@@ -2,14 +2,33 @@ import { queryOptions } from "@tanstack/react-query";
 
 const API_BASE = "/api";
 
+function getAuthToken(): string | null {
+  return localStorage.getItem('auth_token');
+}
+
+export function setAuthToken(token: string | null) {
+  if (token) {
+    localStorage.setItem('auth_token', token);
+  } else {
+    localStorage.removeItem('auth_token');
+  }
+}
+
 async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
+  const token = getAuthToken();
+  const headers: HeadersInit = {
+    "Content-Type": "application/json",
+    ...options?.headers,
+  };
+  
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  
   const response = await fetch(url, {
     ...options,
     credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...options?.headers,
-    },
+    headers,
   });
   
   if (!response.ok) {
@@ -23,7 +42,7 @@ async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
 // Auth API
 export const authApi = {
   login: async (email: string, password: string) => {
-    return fetchJSON<{ message: string; user: User }>(`${API_BASE}/auth/login`, {
+    return fetchJSON<{ message: string; user: User; token: string }>(`${API_BASE}/auth/login`, {
       method: "POST",
       body: JSON.stringify({ email, password }),
     });
@@ -35,6 +54,9 @@ export const authApi = {
   },
   me: async () => {
     return fetchJSON<{ user: User }>(`${API_BASE}/auth/me`);
+  },
+  status: async () => {
+    return fetchJSON<{ authenticated: boolean; hasSession: boolean; hasUser: boolean; hasCookie: boolean; hasAuthHeader: boolean; jwtValid: boolean; sessionAuth: boolean }>(`${API_BASE}/auth/status`);
   },
 };
 
@@ -117,9 +139,17 @@ export const uploadApi = {
     const formData = new FormData();
     files.forEach(file => formData.append("files", file));
     
+    const token = getAuthToken();
+    const headers: HeadersInit = {};
+    
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+    
     const response = await fetch(`${API_BASE}/upload`, {
       method: "POST",
       credentials: "include",
+      headers,
       body: formData,
     });
     
