@@ -753,6 +753,50 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== FINANCIAL DATA ROUTES ====================
+
+  app.get("/api/cashflow", async (req, res) => {
+    try {
+      const { projectName } = req.query;
+      if (projectName && typeof projectName === 'string') {
+        const points = await storage.getCashflowPointsByProject(projectName);
+        return res.json(points);
+      }
+      const points = await storage.getAllCashflowPoints();
+      res.json(points);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch cashflow data" });
+    }
+  });
+
+  app.get("/api/finance/revenue", async (req, res) => {
+    try {
+      const { projectName } = req.query;
+      if (projectName && typeof projectName === 'string') {
+        const data = await storage.getFinanceRevenueMonthlyByProject(projectName);
+        return res.json(data);
+      }
+      const data = await storage.getAllFinanceRevenueMonthly();
+      res.json(data);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch finance revenue data" });
+    }
+  });
+
+  app.get("/api/finance/cos", async (req, res) => {
+    try {
+      const { projectName } = req.query;
+      if (projectName && typeof projectName === 'string') {
+        const data = await storage.getFinanceCosMonthlyByProject(projectName);
+        return res.json(data);
+      }
+      const data = await storage.getAllFinanceCosMonthly();
+      res.json(data);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch finance COS data" });
+    }
+  });
+
   // ==================== REFRESH ROUTE ====================
 
   app.post("/api/refresh", requireAuth, async (req, res) => {
