@@ -18,17 +18,23 @@ import { DollarSign, Activity, AlertCircle, CheckCircle2 } from "lucide-react";
 export default function Dashboard() {
   const { data } = useProgramData();
   
-  // Calculate aggregate metrics
-  const totalBudget = data.projects.reduce((sum, p) => sum + p.budget, 0);
-  const totalSpent = data.expenses.filter(e => e.status === 'Paid').reduce((sum, e) => sum + e.amount, 0);
-  const totalRevenue = data.revenues.filter(r => r.status === 'Realised').reduce((sum, r) => sum + r.amount, 0);
-  const activeProjects = data.projects.filter(p => p.status === 'Active').length;
+  // Handle null data gracefully
+  const projects = data?.projects || [];
+  const expenses = data?.expenses || [];
+  const revenues = data?.revenues || [];
+  const tasks = data?.tasks || [];
+  
+  // Calculate aggregate metrics (parse strings to numbers)
+  const totalBudget = projects.reduce((sum, p) => sum + parseFloat(p.budget || '0'), 0);
+  const totalSpent = expenses.filter(e => e.status === 'Paid').reduce((sum, e) => sum + parseFloat(e.amount || '0'), 0);
+  const totalRevenue = revenues.filter(r => r.status === 'Realised').reduce((sum, r) => sum + parseFloat(r.amount || '0'), 0);
+  const activeProjects = projects.filter(p => p.status === 'Active').length;
 
-  const budgetUtilization = (totalSpent / totalBudget) * 100;
+  const budgetUtilization = totalBudget > 0 ? (totalSpent / totalBudget) * 100 : 0;
 
   // Chart Data Preparation
-  const expensesByCategory = data.expenses.reduce((acc, curr) => {
-    acc[curr.category] = (acc[curr.category] || 0) + curr.amount;
+  const expensesByCategory = expenses.reduce((acc, curr) => {
+    acc[curr.category] = (acc[curr.category] || 0) + parseFloat(curr.amount || '0');
     return acc;
   }, {} as Record<string, number>);
 
@@ -39,7 +45,7 @@ export default function Dashboard() {
     <div className="space-y-6">
       <div className="flex flex-col gap-2">
         <h2 className="text-3xl font-heading font-bold text-foreground">Program Overview</h2>
-        <p className="text-muted-foreground">High-level insights across all {data.projects.length} portfolio projects.</p>
+        <p className="text-muted-foreground">High-level insights across all {projects.length} portfolio projects.</p>
       </div>
 
       {/* Top Metrics Row */}
@@ -47,7 +53,7 @@ export default function Dashboard() {
         <SummaryCard 
           title="Total Program Budget" 
           value={`$${(totalBudget / 1000000).toFixed(1)}M`} 
-          subValue={`${data.projects.length} Projects Loaded`}
+          subValue={`${projects.length} Projects Loaded`}
           icon={DollarSign}
         />
         <SummaryCard 
@@ -55,7 +61,7 @@ export default function Dashboard() {
           value={`$${(totalSpent / 1000000).toFixed(1)}M`} 
           subValue={`${budgetUtilization.toFixed(1)}% of Budget`}
           trend={budgetUtilization > 50 ? "up" : "neutral"}
-          trendValue="+12%" // Mock trend
+          trendValue="+12%"
           icon={Activity}
         />
         <SummaryCard 
@@ -68,7 +74,7 @@ export default function Dashboard() {
         <SummaryCard 
           title="Active Projects" 
           value={activeProjects} 
-          subValue={`${data.tasks.filter(t => t.status === 'Delayed').length} Tasks Delayed`}
+          subValue={`${tasks.filter(t => t.status === 'Delayed').length} Tasks Delayed`}
           icon={AlertCircle}
           className="border-l-rose-500"
         />
@@ -114,7 +120,7 @@ export default function Dashboard() {
            </CardHeader>
            <CardContent>
               <div className="space-y-4">
-                 {data.projects.slice(0, 5).map((project, i) => (
+                 {projects.slice(0, 5).map((project, i) => (
                     <div key={project.id} className="flex items-center">
                        <div className="w-2 h-2 rounded-full bg-primary mr-2" />
                        <div className="flex-1 space-y-1">

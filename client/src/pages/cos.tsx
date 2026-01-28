@@ -4,7 +4,14 @@ import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 
 export default function CostTracker() {
-  const { data } = useProgramData();
+  const { data, exportUrl } = useProgramData();
+
+  const projects = data?.projects || [];
+  const expenses = data?.expenses || [];
+
+  const handleExport = () => {
+    window.location.href = exportUrl("expenses");
+  };
 
   return (
     <div className="space-y-6">
@@ -17,10 +24,10 @@ export default function CostTracker() {
 
       <TrackerTable 
         title="Expenditure Entries"
-        data={data.expenses}
+        data={expenses}
         columns={[
           { header: "ID", accessorKey: "id", className: "font-mono text-xs text-muted-foreground" },
-          { header: "Project", accessorKey: (item) => data.projects.find(p => p.id === item.projectId)?.name || item.projectId },
+          { header: "Project", accessorKey: (item) => projects.find(p => p.id === item.projectId)?.name || item.projectId },
           { header: "Vendor", accessorKey: "vendor" },
           { header: "Description", accessorKey: "description", className: "max-w-[300px] truncate" },
           { header: "Category", accessorKey: "category" },
@@ -30,7 +37,7 @@ export default function CostTracker() {
           },
           { 
              header: "Amount", 
-             accessorKey: (item) => <span className="font-mono">${item.amount.toLocaleString()}</span>,
+             accessorKey: (item) => <span className="font-mono">${parseFloat(item.amount || '0').toLocaleString()}</span>,
              className: "text-right" 
           },
           { 
@@ -42,6 +49,7 @@ export default function CostTracker() {
             )
           },
         ]}
+        onExport={handleExport}
       />
     </div>
   );

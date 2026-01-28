@@ -5,7 +5,13 @@ import { Progress } from "@/components/ui/progress";
 import { format } from "date-fns";
 
 export default function ProjectsSummary() {
-  const { data } = useProgramData();
+  const { data, exportUrl } = useProgramData();
+
+  const projects = data?.projects || [];
+
+  const handleExport = () => {
+    window.location.href = exportUrl("projects");
+  };
 
   return (
     <div className="space-y-6">
@@ -18,7 +24,7 @@ export default function ProjectsSummary() {
 
       <TrackerTable 
         title="Active Portfolio Projects"
-        data={data.projects}
+        data={projects}
         columns={[
           { header: "Project Code", accessorKey: "code", className: "font-mono font-bold text-primary" },
           { header: "Project Name", accessorKey: "name", className: "font-medium" },
@@ -48,7 +54,7 @@ export default function ProjectsSummary() {
           },
           { 
              header: "Budget", 
-             accessorKey: (p) => `$${(p.budget / 1000000).toFixed(1)}M`,
+             accessorKey: (p) => `$${(parseFloat(p.budget || '0') / 1000000).toFixed(1)}M`,
              className: "text-right font-mono" 
           },
           { 
@@ -56,7 +62,7 @@ export default function ProjectsSummary() {
             accessorKey: (p) => format(new Date(p.startDate), "MMM yyyy") 
           },
         ]}
-        onExport={() => alert("Export functionality would go here.")}
+        onExport={handleExport}
       />
     </div>
   );

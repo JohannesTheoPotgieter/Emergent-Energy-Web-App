@@ -33,6 +33,9 @@ const formSchema = z.object({
 export default function BudgetPage() {
   const { data, addBudgetEntry } = useProgramData();
   
+  const projects = data?.projects || [];
+  const budgets = data?.budgets || [];
+  
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -45,10 +48,10 @@ export default function BudgetPage() {
 
   function onSubmit(values: z.infer<typeof formSchema>) {
     addBudgetEntry({
-      projectId: values.projectId,
+      projectId: parseInt(values.projectId),
       month: values.month,
       category: values.category,
-      amount: values.amount,
+      amount: values.amount.toString(),
     });
     form.reset({
       projectId: values.projectId,
@@ -88,8 +91,8 @@ export default function BudgetPage() {
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {data.projects.map((project) => (
-                          <SelectItem key={project.id} value={project.id}>
+                        {projects.map((project) => (
+                          <SelectItem key={project.id} value={project.id.toString()}>
                             {project.name} ({project.code})
                           </SelectItem>
                         ))}
@@ -160,15 +163,15 @@ export default function BudgetPage() {
         </CardContent>
       </Card>
       
-      {data.budgets.length > 0 && (
+      {budgets.length > 0 && (
         <Card>
           <CardHeader><CardTitle>Recent Entries</CardTitle></CardHeader>
           <CardContent>
              <div className="space-y-2">
-                {data.budgets.slice().reverse().slice(0, 5).map(b => (
+                {budgets.slice().reverse().slice(0, 5).map(b => (
                   <div key={b.id} className="flex justify-between items-center text-sm border-b pb-2">
-                     <span>{data.projects.find(p => p.id === b.projectId)?.name} - {b.category}</span>
-                     <span className="font-mono">{b.month}: ${b.amount.toLocaleString()}</span>
+                     <span>{projects.find(p => p.id === b.projectId)?.name} - {b.category}</span>
+                     <span className="font-mono">{b.month}: ${parseFloat(b.amount || '0').toLocaleString()}</span>
                   </div>
                 ))}
              </div>

@@ -17,6 +17,9 @@ import { TrackerTable } from "@/components/dashboard/TrackerTable";
 export default function CashflowPage() {
   const { data } = useProgramData();
 
+  const expenses = data?.expenses || [];
+  const revenues = data?.revenues || [];
+
   // Aggregate data by week
   // This is a simplified aggregation for the chart
   const weeks: Record<string, { week: string, inflow: number, outflow: number, net: number }> = {};
@@ -32,20 +35,20 @@ export default function CashflowPage() {
   }
 
   // Bucket expenses
-  data.expenses.forEach(e => {
+  expenses.forEach(e => {
     const date = new Date(e.date);
     const weekStart = format(startOfWeek(date), "yyyy-MM-dd");
     if (weeks[weekStart]) {
-      weeks[weekStart].outflow += e.amount;
+      weeks[weekStart].outflow += parseFloat(e.amount || '0');
     }
   });
 
   // Bucket revenue
-  data.revenues.forEach(r => {
+  revenues.forEach(r => {
     const date = new Date(r.date);
     const weekStart = format(startOfWeek(date), "yyyy-MM-dd");
     if (weeks[weekStart]) {
-      weeks[weekStart].inflow += r.amount;
+      weeks[weekStart].inflow += parseFloat(r.amount || '0');
     }
   });
 
@@ -95,9 +98,9 @@ export default function CashflowPage() {
           <CardHeader><CardTitle>Top Outflows (Next 30 Days)</CardTitle></CardHeader>
           <CardContent>
              <div className="space-y-4">
-               {data.expenses
+               {expenses
                  .filter(e => e.status === 'Forecast')
-                 .sort((a,b) => b.amount - a.amount)
+                 .sort((a,b) => parseFloat(b.amount || '0') - parseFloat(a.amount || '0'))
                  .slice(0, 5)
                  .map(e => (
                    <div key={e.id} className="flex justify-between items-center border-b pb-2 last:border-0">
@@ -105,7 +108,7 @@ export default function CashflowPage() {
                         <div className="font-medium text-sm">{e.description}</div>
                         <div className="text-xs text-muted-foreground">{e.vendor} • {format(new Date(e.date), "dd MMM")}</div>
                       </div>
-                      <div className="font-mono font-bold text-rose-600">-${e.amount.toLocaleString()}</div>
+                      <div className="font-mono font-bold text-rose-600">-${parseFloat(e.amount || '0').toLocaleString()}</div>
                    </div>
                  ))
                }
@@ -117,9 +120,9 @@ export default function CashflowPage() {
           <CardHeader><CardTitle>Expected Inflows (Next 30 Days)</CardTitle></CardHeader>
           <CardContent>
              <div className="space-y-4">
-               {data.revenues
-                 .filter(r => r.status === 'Forecast' || r.status === 'Realised') // Show realised too for demo if needed, but strictly next 30 days is forecast
-                 .sort((a,b) => b.amount - a.amount)
+               {revenues
+                 .filter(r => r.status === 'Forecast' || r.status === 'Realised')
+                 .sort((a,b) => parseFloat(b.amount || '0') - parseFloat(a.amount || '0'))
                  .slice(0, 5)
                  .map(r => (
                    <div key={r.id} className="flex justify-between items-center border-b pb-2 last:border-0">
@@ -127,11 +130,11 @@ export default function CashflowPage() {
                         <div className="font-medium text-sm">{r.type} Revenue</div>
                         <div className="text-xs text-muted-foreground">{format(new Date(r.date), "dd MMM")}</div>
                       </div>
-                      <div className="font-mono font-bold text-emerald-600">+${r.amount.toLocaleString()}</div>
+                      <div className="font-mono font-bold text-emerald-600">+${parseFloat(r.amount || '0').toLocaleString()}</div>
                    </div>
                  ))
                }
-               {data.revenues.length === 0 && <div className="text-muted-foreground text-sm italic">No expected inflows found.</div>}
+               {revenues.length === 0 && <div className="text-muted-foreground text-sm italic">No expected inflows found.</div>}
              </div>
           </CardContent>
         </Card>

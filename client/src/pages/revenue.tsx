@@ -4,7 +4,14 @@ import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 
 export default function RevenueTracker() {
-  const { data } = useProgramData();
+  const { data, exportUrl } = useProgramData();
+
+  const projects = data?.projects || [];
+  const revenues = data?.revenues || [];
+
+  const handleExport = () => {
+    window.location.href = exportUrl("revenues");
+  };
 
   return (
     <div className="space-y-6">
@@ -17,10 +24,10 @@ export default function RevenueTracker() {
 
       <TrackerTable 
         title="Revenue Entries"
-        data={data.revenues}
+        data={revenues}
         columns={[
           { header: "ID", accessorKey: "id", className: "font-mono text-xs text-muted-foreground" },
-          { header: "Project", accessorKey: (item) => data.projects.find(p => p.id === item.projectId)?.name || item.projectId },
+          { header: "Project", accessorKey: (item) => projects.find(p => p.id === item.projectId)?.name || item.projectId },
           { header: "Type", accessorKey: "type" },
           { 
             header: "Date", 
@@ -28,7 +35,7 @@ export default function RevenueTracker() {
           },
           { 
              header: "Amount", 
-             accessorKey: (item) => <span className="text-emerald-600 font-bold font-mono">+${item.amount.toLocaleString()}</span>,
+             accessorKey: (item) => <span className="text-emerald-600 font-bold font-mono">+${parseFloat(item.amount || '0').toLocaleString()}</span>,
              className: "text-right" 
           },
           { 
@@ -40,6 +47,7 @@ export default function RevenueTracker() {
             )
           },
         ]}
+        onExport={handleExport}
       />
     </div>
   );

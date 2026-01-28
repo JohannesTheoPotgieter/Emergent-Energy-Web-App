@@ -13,12 +13,12 @@ import {
   Settings,
   LogOut,
   Menu,
-  X,
   RefreshCw,
   Search,
   Upload
 } from "lucide-react";
 import { useProgramData } from "@/hooks/use-program-data";
+import { useAuth } from "@/hooks/use-auth";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -27,7 +27,8 @@ import { Input } from "@/components/ui/input";
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const { data, refreshData, isLoading, importFile } = useProgramData();
+  const { data, refreshData, isLoading, importFiles } = useProgramData();
+  const { user, logout } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const navItems = [
@@ -43,9 +44,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     { label: "Budget Entry", icon: Settings, path: "/budget", adminOnly: true },
   ];
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      importFile(e.target.files[0]);
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const filesArray = Array.from(e.target.files);
+      await importFiles(filesArray);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
     }
   };
 
@@ -68,40 +73,42 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
 
         <nav className="flex-1 overflow-y-auto py-4 px-2 space-y-1">
-          {navItems.map((item) => (
-            <Link key={item.path} href={item.path}>
-              <a className={cn(
-                "flex items-center gap-3 px-3 py-2.5 rounded-md transition-all duration-200 group",
-                location === item.path 
-                  ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium shadow-md" 
-                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-              )}>
-                <item.icon className={cn("w-5 h-5 shrink-0", item.className)} />
-                {sidebarOpen && <span>{item.label}</span>}
-                {!sidebarOpen && location === item.path && (
-                  <div className="absolute left-18 bg-popover text-popover-foreground px-2 py-1 rounded text-xs shadow-md border ml-2 z-50">
-                    {item.label}
-                  </div>
-                )}
-              </a>
-            </Link>
-          ))}
+          {navItems.map((item) => {
+            if (item.adminOnly && user?.role !== 'admin') return null;
+            return (
+              <Link key={item.path} href={item.path}>
+                <a className={cn(
+                  "flex items-center gap-3 px-3 py-2.5 rounded-md transition-all duration-200 group",
+                  location === item.path 
+                    ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium shadow-md" 
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                )}>
+                  <item.icon className={cn("w-5 h-5 shrink-0", item.className)} />
+                  {sidebarOpen && <span>{item.label}</span>}
+                </a>
+              </Link>
+            );
+          })}
         </nav>
 
         <div className="p-4 border-t border-sidebar-border">
           <div className="flex items-center gap-3">
             <Avatar className="w-9 h-9 border border-sidebar-border/50">
-              <AvatarImage src="https://github.com/shadcn.png" />
-              <AvatarFallback>AD</AvatarFallback>
+              <AvatarFallback>{user?.name.substring(0, 2).toUpperCase()}</AvatarFallback>
             </Avatar>
             {sidebarOpen && (
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">Admin User</p>
-                <p className="text-xs text-sidebar-foreground/50 truncate">admin@emergent.energy</p>
+                <p className="text-sm font-medium truncate">{user?.name}</p>
+                <p className="text-xs text-sidebar-foreground/50 truncate">{user?.email}</p>
               </div>
             )}
              {sidebarOpen && (
-               <Button variant="ghost" size="icon" className="h-8 w-8 text-sidebar-foreground/50 hover:text-white">
+               <Button 
+                 variant="ghost" 
+                 size="icon" 
+                 className="h-8 w-8 text-sidebar-foreground/50 hover:text-white"
+                 onClick={logout}
+               >
                  <LogOut className="w-4 h-4" />
                </Button>
              )}
@@ -138,7 +145,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <div className="flex flex-col items-end mr-2">
                <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Data As Of</span>
                <span className="text-xs font-mono font-medium text-foreground">
-                 {data.lastRefresh ? format(new Date(data.lastRefresh), "dd MMM HH:mm") : "N/A"}
+                 {data?.lastRefresh ? format(new Date(data.lastRefresh), "dd MMM HH:mm") : "No data"}
                </span>
             </div>
             
@@ -147,6 +154,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               ref={fileInputRef} 
               className="hidden" 
               accept=".xlsx,.xls,.xlsm"
+              multiple
               onChange={handleFileUpload}
             />
             

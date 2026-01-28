@@ -1,7 +1,14 @@
 import express, { type Request, Response, NextFunction } from "express";
+import session from "express-session";
+import passport from "passport";
+import { Strategy as LocalStrategy } from "passport-local";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { storage } from "./storage";
+import bcrypt from "bcryptjs";
+import connectPgSimple from "connect-pg-simple";
+import pg from "pg";
 
 const app = express();
 const httpServer = createServer(app);
@@ -9,6 +16,23 @@ const httpServer = createServer(app);
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;
+  }
+}
+
+declare module "express-session" {
+  interface SessionData {
+    passport: { user: number };
+  }
+}
+
+declare global {
+  namespace Express {
+    interface User {
+      id: number;
+      email: string;
+      name: string;
+      role: "admin" | "member";
+    }
   }
 }
 
@@ -21,6 +45,78 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false }));
+
+// Session configuration
+const PgSession = connectPgSimple(session);
+const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+
+app.use(
+  session({
+    store: new PgSession({
+      pool,
+      createTableIfMissing: true,
+    }),
+    secret: process.env.SESSION_SECRET || "emergent-energy-secret-key-2026",
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: process.env.NODE_ENV === "production",
+      httpOnly: true,
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+    },
+  })
+);
+
+app.use(passport.initialize());
+app.use(passport.session());
+
+// Passport Local Strategy
+passport.use(
+  new LocalStrategy(
+    { usernameField: "email" },
+    async (email, password, done) => {
+      try {
+        const user = await storage.getUserByEmail(email);
+        if (!user) {
+          return done(null, false, { message: "Invalid email or password" });
+        }
+        const isValid = await bcrypt.compare(password, user.password);
+        if (!isValid) {
+          return done(null, false, { message: "Invalid email or password" });
+        }
+        return done(null, { 
+          id: user.id, 
+          email: user.email, 
+          name: user.name, 
+          role: user.role 
+        });
+      } catch (err) {
+        return done(err);
+      }
+    }
+  )
+);
+
+passport.serializeUser((user, done) => {
+  done(null, user.id);
+});
+
+passport.deserializeUser(async (id: number, done) => {
+  try {
+    const user = await storage.getUser(id);
+    if (!user) {
+      return done(null, false);
+    }
+    done(null, { 
+      id: user.id, 
+      email: user.email, 
+      name: user.name, 
+      role: user.role 
+    });
+  } catch (err) {
+    done(err);
+  }
+});
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
@@ -59,7 +155,28 @@ app.use((req, res, next) => {
   next();
 });
 
+// Seed admin user on startup
+async function seedAdminUser() {
+  try {
+    const adminEmail = "admin@emergent.energy";
+    const existingAdmin = await storage.getUserByEmail(adminEmail);
+    if (!existingAdmin) {
+      const hashedPassword = await bcrypt.hash("admin123", 10);
+      await storage.createUser({
+        email: adminEmail,
+        password: hashedPassword,
+        name: "Admin User",
+        role: "admin",
+      });
+      log("Admin user seeded: admin@emergent.energy / admin123");
+    }
+  } catch (error) {
+    log("Error seeding admin user: " + error);
+  }
+}
+
 (async () => {
+  await seedAdminUser();
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
