@@ -47,16 +47,58 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   
+  // ==================== HEALTH CHECK ====================
+  
+  app.get("/api/health", async (req, res) => {
+    const { dbMode, dbConfig } = await import("./db");
+    const { getDbConfigStatus } = await import("./db-config");
+    
+    const dbStatus = getDbConfigStatus();
+    
+    res.json({
+      status: 'ok',
+      database: {
+        mode: dbMode,
+        connected: dbStatus.connected,
+        message: dbStatus.message,
+      },
+      timestamp: new Date().toISOString(),
+    });
+  });
+  
   // ==================== AUTH ROUTES ====================
   
   app.post("/api/auth/login", (req, res, next) => {
     passport.authenticate("local", (err: any, user: Express.User | false, info: { message: string }) => {
-      if (err) return next(err);
+      if (err) {
+        console.error("Login error:", err);
+        
+        // Provide better error messages for common DB connection issues
+        if (err.message && (err.message.includes('ENOTFOUND') || err.message.includes('ECONNREFUSED'))) {
+          return res.status(503).json({ 
+            message: "Database connection unavailable. Please check the database configuration.",
+            details: process.env.NODE_ENV === 'development' ? err.message : undefined
+          });
+        }
+        
+        return res.status(500).json({ 
+          message: "An error occurred during login",
+          details: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
+      }
+      
       if (!user) {
         return res.status(401).json({ message: info?.message || "Login failed" });
       }
+      
       req.logIn(user, (err) => {
-        if (err) return next(err);
+        if (err) {
+          console.error("Session error:", err);
+          return res.status(500).json({ 
+            message: "Failed to establish session",
+            details: process.env.NODE_ENV === 'development' ? err.message : undefined
+          });
+        }
         return res.json({ 
           message: "Login successful", 
           user: { id: user.id, email: user.email, name: user.name, role: user.role } 

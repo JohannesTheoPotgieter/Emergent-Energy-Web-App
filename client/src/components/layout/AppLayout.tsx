@@ -23,6 +23,7 @@ import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
+import { DatabaseStatusBanner } from "@/components/DatabaseStatusBanner";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
@@ -184,6 +185,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         {/* Scrollable Page Content */}
         <div className="flex-1 overflow-auto p-6 scroll-smooth">
           <div className="max-w-[1600px] mx-auto animate-in fade-in slide-in-from-bottom-2 duration-500">
+            <DatabaseStatusBanner />
             {children}
           </div>
         </div>

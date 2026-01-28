@@ -8,7 +8,9 @@ import { createServer } from "http";
 import { storage } from "./storage";
 import bcrypt from "bcryptjs";
 import connectPgSimple from "connect-pg-simple";
+import MemoryStore from "memorystore";
 import pg from "pg";
+import { dbMode, dbConfig } from "./db";
 
 const app = express();
 const httpServer = createServer(app);
@@ -46,16 +48,29 @@ app.use(
 
 app.use(express.urlencoded({ extended: false }));
 
-// Session configuration
-const PgSession = connectPgSimple(session);
-const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+// Session configuration - use appropriate store based on DB mode
+let sessionStore: any;
+
+if (dbMode === 'postgres' && dbConfig.connectionString) {
+  const PgSession = connectPgSimple(session);
+  const pool = new pg.Pool({ connectionString: dbConfig.connectionString });
+  sessionStore = new PgSession({
+    pool,
+    createTableIfMissing: true,
+  });
+  log('Using PostgreSQL session store');
+} else {
+  // Fallback to memory store for SQLite mode
+  const MemoryStoreSession = MemoryStore(session);
+  sessionStore = new MemoryStoreSession({
+    checkPeriod: 86400000, // prune expired entries every 24h
+  });
+  log('Using in-memory session store (SQLite fallback mode)');
+}
 
 app.use(
   session({
-    store: new PgSession({
-      pool,
-      createTableIfMissing: true,
-    }),
+    store: sessionStore,
     secret: process.env.SESSION_SECRET || "emergent-energy-secret-key-2026",
     resave: false,
     saveUninitialized: false,
