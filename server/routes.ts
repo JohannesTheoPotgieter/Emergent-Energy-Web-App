@@ -87,10 +87,11 @@ export async function registerRoutes(
 
   app.get("/api/overview", async (req, res) => {
     try {
-      const [allProjectInfo, allExpenses, allInflows, latestRefresh] = await Promise.all([
+      const [allProjectInfo, allExpenses, allInflows, allPlans, latestRefresh] = await Promise.all([
         storage.getAllProjectInfo(),
         storage.getAllProgramExpenses(),
         storage.getAllProgramInflows(),
+        storage.getAllProjectPlans(),
         storage.getLatestRefresh()
       ]);
 
@@ -113,24 +114,38 @@ export async function registerRoutes(
         }
       }
 
-      // actual_spend_paid = SUM(expense_actual_total where payment_date not null AND <= today)
+      // actual_spend_paid = SUM(expense_actual_total where payment_date is valid YYYY-MM-DD and <= today)
       let actualSpendPaid = 0;
       for (const expense of allExpenses) {
-        if (expense.expensePaymentDate && expense.expensePaymentDate <= today && expense.expenseActualTotal) {
+        const paymentDate = expense.expensePaymentDate;
+        if (paymentDate && /^\d{4}-\d{2}-\d{2}$/.test(paymentDate) && paymentDate <= today && expense.expenseActualTotal) {
           actualSpendPaid += parseFloat(expense.expenseActualTotal);
         }
       }
 
-      // revenue_realised = SUM(milestone_amount where payment_received_date not null AND <= today)
+      // revenue_realised = SUM(milestone_amount where payment_received_date is valid YYYY-MM-DD and <= today)
       let revenueRealised = 0;
       for (const inflow of allInflows) {
-        if (inflow.paymentReceivedDate && inflow.paymentReceivedDate <= today && inflow.milestoneAmount) {
+        const paymentDate = inflow.paymentReceivedDate;
+        if (paymentDate && /^\d{4}-\d{2}-\d{2}$/.test(paymentDate) && paymentDate <= today && inflow.milestoneAmount) {
           revenueRealised += parseFloat(inflow.milestoneAmount);
         }
       }
 
-      // active_projects = count distinct project names
-      const uniqueProjects = new Set(allProjectInfo.map(p => p.projectName));
+      // active_projects = count distinct project names from ALL data sources (union)
+      const uniqueProjects = new Set<string>();
+      for (const info of allProjectInfo) {
+        uniqueProjects.add(info.projectName);
+      }
+      for (const expense of allExpenses) {
+        uniqueProjects.add(expense.projectName);
+      }
+      for (const inflow of allInflows) {
+        uniqueProjects.add(inflow.projectName);
+      }
+      for (const plan of allPlans) {
+        uniqueProjects.add(plan.projectName);
+      }
 
       res.json({
         total_program_budget: totalProgramBudget,
@@ -183,10 +198,29 @@ export async function registerRoutes(
         plansByProject.get(plan.projectName)!.push(plan);
       }
 
-      const projectsSummary = allProjectInfo.map(info => {
-        const projectExpenses = expensesByProject.get(info.projectName) || [];
-        const projectInflows = inflowsByProject.get(info.projectName) || [];
-        const projectPlans = plansByProject.get(info.projectName) || [];
+      // Collect all unique project names from all data sources
+      const allProjectNames = new Set<string>();
+      for (const info of allProjectInfo) {
+        allProjectNames.add(info.projectName);
+      }
+      for (const expense of allExpenses) {
+        allProjectNames.add(expense.projectName);
+      }
+      for (const inflow of allInflows) {
+        allProjectNames.add(inflow.projectName);
+      }
+      for (const plan of allPlans) {
+        allProjectNames.add(plan.projectName);
+      }
+
+      // Create a lookup map for project info
+      const projectInfoMap = new Map(allProjectInfo.map(info => [info.projectName, info]));
+
+      const projectsSummary = Array.from(allProjectNames).map(projectName => {
+        const info = projectInfoMap.get(projectName);
+        const projectExpenses = expensesByProject.get(projectName) || [];
+        const projectInflows = inflowsByProject.get(projectName) || [];
+        const projectPlans = plansByProject.get(projectName) || [];
 
         // Calculate actual revenue = SUM(milestone_amount)
         let actualRevenue = 0;
@@ -246,14 +280,14 @@ export async function registerRoutes(
         }
 
         return {
-          project_name: info.projectName,
-          size_kwp: info.sizeKwp ? parseFloat(info.sizeKwp) : null,
-          pd: info.pd,
-          pm: info.pm,
+          project_name: projectName,
+          size_kwp: info?.sizeKwp ? parseFloat(info.sizeKwp) : null,
+          pd: info?.pd || null,
+          pm: info?.pm || null,
           cost_proposal_signed: null,
           funding_signed: null,
           epc_contract_signed: null,
-          phase: info.phase,
+          phase: info?.phase || null,
           pd_handover_date: null,
           construction_start_date: null,
           duration: null,
