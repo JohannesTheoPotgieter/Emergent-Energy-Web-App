@@ -21,8 +21,8 @@ export default function CashflowPage() {
   const [endDate, setEndDate] = useState<string | null>(null);
 
   const { data: cashflowPoints = [], isLoading } = useQuery({
-    queryKey: ["cashflow", selectedProject],
-    queryFn: () => cashflowApi.getAll(selectedProject || undefined),
+    queryKey: ["cashflow", selectedProject, startDate, endDate],
+    queryFn: () => cashflowApi.getAll(selectedProject || undefined, startDate || undefined, endDate || undefined),
     staleTime: 30000,
   });
 

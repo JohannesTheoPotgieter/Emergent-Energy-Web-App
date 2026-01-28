@@ -3,7 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { DateRangeBar } from "@/components/DateRangeBar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { financeApi } from "@/lib/api";
+import { Badge } from "@/components/ui/badge";
+import { financeApi, overviewApi } from "@/lib/api";
 import { format, parseISO } from "date-fns";
 
 export default function CosTracker() {
@@ -11,11 +12,19 @@ export default function CosTracker() {
   const [startDate, setStartDate] = useState<string | null>(null);
   const [endDate, setEndDate] = useState<string | null>(null);
 
-  const { data: financeCos = [], isLoading } = useQuery({
-    queryKey: ["finance-cos", selectedProject],
-    queryFn: () => financeApi.getCos(selectedProject || undefined),
+  const { data: financeCos = [], isLoading: isLoadingFinance } = useQuery({
+    queryKey: ["finance-cos", selectedProject, startDate, endDate],
+    queryFn: () => financeApi.getCos(selectedProject || undefined, startDate || undefined, endDate || undefined),
     staleTime: 30000,
   });
+
+  const { data: programExpenses = [], isLoading: isLoadingExpenses } = useQuery({
+    queryKey: ["program-expenses", selectedProject, startDate, endDate],
+    queryFn: () => overviewApi.getProgramExpenses(selectedProject || undefined, startDate || undefined, endDate || undefined),
+    staleTime: 30000,
+  });
+
+  const isLoading = isLoadingFinance || isLoadingExpenses;
 
   const filteredData = useMemo(() => {
     let filtered = financeCos;
@@ -174,7 +183,7 @@ export default function CosTracker() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Line-Level COS Data</CardTitle>
+                <CardTitle>Line-Level COS Data (Expenditures)</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="overflow-x-auto">
@@ -183,26 +192,46 @@ export default function CosTracker() {
                       <TableRow>
                         <TableHead>Project</TableHead>
                         <TableHead>Category</TableHead>
-                        <TableHead>Month End</TableHead>
-                        <TableHead className="text-right">Amount</TableHead>
+                        <TableHead>Line Item</TableHead>
+                        <TableHead>Amount</TableHead>
+                        <TableHead>PO Number</TableHead>
+                        <TableHead>Payment Date</TableHead>
+                        <TableHead className="text-right">Status</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredData.slice(0, 100).map((item, idx) => (
-                        <TableRow key={idx}>
-                          <TableCell className="font-medium">{item.projectName}</TableCell>
-                          <TableCell>{item.category}</TableCell>
-                          <TableCell>{format(parseISO(item.monthEndDate), "dd MMM yyyy")}</TableCell>
-                          <TableCell className="text-right font-mono text-rose-700">
-                            R{item.value.toLocaleString()}
+                      {programExpenses.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                            No expense data available
                           </TableCell>
                         </TableRow>
-                      ))}
+                      ) : (
+                        programExpenses.slice(0, 100).map((item, idx) => (
+                          <TableRow key={idx}>
+                            <TableCell className="font-medium">{item.projectName}</TableCell>
+                            <TableCell>{item.expenseCategory || '-'}</TableCell>
+                            <TableCell className="max-w-[200px] truncate">{item.expenseLineItem || '-'}</TableCell>
+                            <TableCell className="font-mono text-rose-700">
+                              R{item.expenseActualTotal?.toLocaleString() || '-'}
+                            </TableCell>
+                            <TableCell className="font-mono text-sm">{item.expensePoNumber || '-'}</TableCell>
+                            <TableCell>
+                              {item.expensePaymentDate ? format(parseISO(item.expensePaymentDate), "dd MMM yyyy") : '-'}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Badge variant={item.expensePaymentDate ? "default" : "outline"} className={item.expensePaymentDate ? "bg-rose-600" : ""}>
+                                {item.expensePaymentDate ? "Paid" : "Pending"}
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
                     </TableBody>
                   </Table>
-                  {filteredData.length > 100 && (
+                  {programExpenses.length > 100 && (
                     <div className="text-center py-4 text-sm text-muted-foreground">
-                      Showing first 100 of {filteredData.length} records
+                      Showing first 100 of {programExpenses.length} records
                     </div>
                   )}
                 </div>

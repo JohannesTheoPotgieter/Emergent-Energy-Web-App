@@ -4,7 +4,7 @@ import { DateRangeBar } from "@/components/DateRangeBar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { financeApi } from "@/lib/api";
+import { financeApi, overviewApi } from "@/lib/api";
 import { format, parseISO } from "date-fns";
 
 export default function RevenueTracker() {
@@ -12,11 +12,19 @@ export default function RevenueTracker() {
   const [startDate, setStartDate] = useState<string | null>(null);
   const [endDate, setEndDate] = useState<string | null>(null);
 
-  const { data: financeRevenue = [], isLoading } = useQuery({
-    queryKey: ["finance-revenue", selectedProject],
-    queryFn: () => financeApi.getRevenue(selectedProject || undefined),
+  const { data: financeRevenue = [], isLoading: isLoadingFinance } = useQuery({
+    queryKey: ["finance-revenue", selectedProject, startDate, endDate],
+    queryFn: () => financeApi.getRevenue(selectedProject || undefined, startDate || undefined, endDate || undefined),
     staleTime: 30000,
   });
+
+  const { data: programInflows = [], isLoading: isLoadingInflows } = useQuery({
+    queryKey: ["program-inflows", selectedProject, startDate, endDate],
+    queryFn: () => overviewApi.getProgramInflows(selectedProject || undefined, startDate || undefined, endDate || undefined),
+    staleTime: 30000,
+  });
+
+  const isLoading = isLoadingFinance || isLoadingInflows;
 
   const filteredData = useMemo(() => {
     let filtered = financeRevenue;
@@ -175,7 +183,7 @@ export default function RevenueTracker() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Line-Level Revenue Data</CardTitle>
+                <CardTitle>Line-Level Revenue Data (Inflows)</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="overflow-x-auto">
@@ -183,27 +191,47 @@ export default function RevenueTracker() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Project</TableHead>
-                        <TableHead>Category</TableHead>
-                        <TableHead>Month End</TableHead>
-                        <TableHead className="text-right">Amount</TableHead>
+                        <TableHead>Milestone</TableHead>
+                        <TableHead>Amount</TableHead>
+                        <TableHead>Planned Payment</TableHead>
+                        <TableHead>Payment Received</TableHead>
+                        <TableHead className="text-right">Status</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredData.slice(0, 100).map((item, idx) => (
-                        <TableRow key={idx}>
-                          <TableCell className="font-medium">{item.projectName}</TableCell>
-                          <TableCell>{item.category}</TableCell>
-                          <TableCell>{format(parseISO(item.monthEndDate), "dd MMM yyyy")}</TableCell>
-                          <TableCell className="text-right font-mono text-emerald-700">
-                            R{item.value.toLocaleString()}
+                      {programInflows.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                            No inflow data available
                           </TableCell>
                         </TableRow>
-                      ))}
+                      ) : (
+                        programInflows.slice(0, 100).map((item, idx) => (
+                          <TableRow key={idx}>
+                            <TableCell className="font-medium">{item.projectName}</TableCell>
+                            <TableCell>{item.milestoneName || `#${item.milestoneNo}`}</TableCell>
+                            <TableCell className="font-mono text-emerald-700">
+                              R{item.milestoneAmount?.toLocaleString() || '-'}
+                            </TableCell>
+                            <TableCell>
+                              {item.plannedPaymentDate ? format(parseISO(item.plannedPaymentDate), "dd MMM yyyy") : '-'}
+                            </TableCell>
+                            <TableCell>
+                              {item.paymentReceivedDate ? format(parseISO(item.paymentReceivedDate), "dd MMM yyyy") : '-'}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Badge variant={item.paymentReceivedDate ? "default" : "outline"} className={item.paymentReceivedDate ? "bg-emerald-600" : ""}>
+                                {item.paymentReceivedDate ? "Received" : "Pending"}
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
                     </TableBody>
                   </Table>
-                  {filteredData.length > 100 && (
+                  {programInflows.length > 100 && (
                     <div className="text-center py-4 text-sm text-muted-foreground">
-                      Showing first 100 of {filteredData.length} records
+                      Showing first 100 of {programInflows.length} records
                     </div>
                   )}
                 </div>

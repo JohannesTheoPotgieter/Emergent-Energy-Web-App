@@ -175,16 +175,22 @@ export const overviewApi = {
   getProjectsSummary: async () => {
     return fetchJSON<ProjectSummary[]>(`${API_BASE}/projects-summary`);
   },
-  getProgramExpenses: async (projectName?: string) => {
-    const url = projectName 
-      ? `${API_BASE}/program-expenses?projectName=${encodeURIComponent(projectName)}` 
-      : `${API_BASE}/program-expenses`;
+  getProgramExpenses: async (projectName?: string, startDate?: string, endDate?: string) => {
+    const params = new URLSearchParams();
+    if (projectName) params.append('projectName', projectName);
+    if (startDate) params.append('startDate', startDate);
+    if (endDate) params.append('endDate', endDate);
+    
+    const url = params.toString() ? `${API_BASE}/program-expenses?${params}` : `${API_BASE}/program-expenses`;
     return fetchJSON<ProgramExpense[]>(url);
   },
-  getProgramInflows: async (projectName?: string) => {
-    const url = projectName 
-      ? `${API_BASE}/program-inflows?projectName=${encodeURIComponent(projectName)}` 
-      : `${API_BASE}/program-inflows`;
+  getProgramInflows: async (projectName?: string, startDate?: string, endDate?: string) => {
+    const params = new URLSearchParams();
+    if (projectName) params.append('projectName', projectName);
+    if (startDate) params.append('startDate', startDate);
+    if (endDate) params.append('endDate', endDate);
+    
+    const url = params.toString() ? `${API_BASE}/program-inflows?${params}` : `${API_BASE}/program-inflows`;
     return fetchJSON<ProgramInflow[]>(url);
   },
   getProjectPlans: async (projectName?: string) => {
@@ -427,25 +433,34 @@ export interface FinanceCosMonthly {
 }
 
 export const cashflowApi = {
-  getAll: async (projectName?: string) => {
-    const url = projectName 
-      ? `${API_BASE}/cashflow?projectName=${encodeURIComponent(projectName)}`
-      : `${API_BASE}/cashflow`;
+  getAll: async (projectName?: string, startDate?: string, endDate?: string) => {
+    const params = new URLSearchParams();
+    if (projectName) params.append('projectName', projectName);
+    if (startDate) params.append('startDate', startDate);
+    if (endDate) params.append('endDate', endDate);
+    
+    const url = params.toString() ? `${API_BASE}/cashflow?${params}` : `${API_BASE}/cashflow`;
     return fetchJSON<CashflowPoint[]>(url);
   },
 };
 
 export const financeApi = {
-  getRevenue: async (projectName?: string) => {
-    const url = projectName 
-      ? `${API_BASE}/finance/revenue?projectName=${encodeURIComponent(projectName)}`
-      : `${API_BASE}/finance/revenue`;
+  getRevenue: async (projectName?: string, startDate?: string, endDate?: string) => {
+    const params = new URLSearchParams();
+    if (projectName) params.append('projectName', projectName);
+    if (startDate) params.append('startDate', startDate);
+    if (endDate) params.append('endDate', endDate);
+    
+    const url = params.toString() ? `${API_BASE}/finance/revenue?${params}` : `${API_BASE}/finance/revenue`;
     return fetchJSON<FinanceRevenueMonthly[]>(url);
   },
-  getCos: async (projectName?: string) => {
-    const url = projectName 
-      ? `${API_BASE}/finance/cos?projectName=${encodeURIComponent(projectName)}`
-      : `${API_BASE}/finance/cos`;
+  getCos: async (projectName?: string, startDate?: string, endDate?: string) => {
+    const params = new URLSearchParams();
+    if (projectName) params.append('projectName', projectName);
+    if (startDate) params.append('startDate', startDate);
+    if (endDate) params.append('endDate', endDate);
+    
+    const url = params.toString() ? `${API_BASE}/finance/cos?${params}` : `${API_BASE}/finance/cos`;
     return fetchJSON<FinanceCosMonthly[]>(url);
   },
 };

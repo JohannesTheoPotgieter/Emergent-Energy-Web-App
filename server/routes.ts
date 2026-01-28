@@ -704,12 +704,22 @@ export async function registerRoutes(
 
   app.get("/api/program-expenses", async (req, res) => {
     try {
-      const { projectName } = req.query;
+      const { projectName, startDate, endDate } = req.query;
+      let expenses;
+      
       if (projectName && typeof projectName === 'string') {
-        const expenses = await storage.getProgramExpensesByProject(projectName);
-        return res.json(expenses);
+        expenses = await storage.getProgramExpensesByProject(projectName);
+      } else {
+        expenses = await storage.getAllProgramExpenses();
       }
-      const expenses = await storage.getAllProgramExpenses();
+
+      if (startDate && typeof startDate === 'string') {
+        expenses = expenses.filter(e => e.expensePaymentDate && e.expensePaymentDate >= startDate);
+      }
+      if (endDate && typeof endDate === 'string') {
+        expenses = expenses.filter(e => e.expensePaymentDate && e.expensePaymentDate <= endDate);
+      }
+
       res.json(expenses);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch program expenses" });
@@ -718,12 +728,28 @@ export async function registerRoutes(
 
   app.get("/api/program-inflows", async (req, res) => {
     try {
-      const { projectName } = req.query;
+      const { projectName, startDate, endDate } = req.query;
+      let inflows;
+      
       if (projectName && typeof projectName === 'string') {
-        const inflows = await storage.getProgramInflowsByProject(projectName);
-        return res.json(inflows);
+        inflows = await storage.getProgramInflowsByProject(projectName);
+      } else {
+        inflows = await storage.getAllProgramInflows();
       }
-      const inflows = await storage.getAllProgramInflows();
+
+      if (startDate && typeof startDate === 'string') {
+        inflows = inflows.filter(i => 
+          (i.paymentReceivedDate && i.paymentReceivedDate >= startDate) ||
+          (i.plannedPaymentDate && i.plannedPaymentDate >= startDate)
+        );
+      }
+      if (endDate && typeof endDate === 'string') {
+        inflows = inflows.filter(i => 
+          (i.paymentReceivedDate && i.paymentReceivedDate <= endDate) ||
+          (i.plannedPaymentDate && i.plannedPaymentDate <= endDate)
+        );
+      }
+
       res.json(inflows);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch program inflows" });
@@ -757,12 +783,22 @@ export async function registerRoutes(
 
   app.get("/api/cashflow", async (req, res) => {
     try {
-      const { projectName } = req.query;
+      const { projectName, startDate, endDate } = req.query;
+      let points;
+      
       if (projectName && typeof projectName === 'string') {
-        const points = await storage.getCashflowPointsByProject(projectName);
-        return res.json(points);
+        points = await storage.getCashflowPointsByProject(projectName);
+      } else {
+        points = await storage.getAllCashflowPoints();
       }
-      const points = await storage.getAllCashflowPoints();
+
+      if (startDate && typeof startDate === 'string') {
+        points = points.filter(p => p.pointDate >= startDate);
+      }
+      if (endDate && typeof endDate === 'string') {
+        points = points.filter(p => p.pointDate <= endDate);
+      }
+
       res.json(points);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch cashflow data" });
@@ -771,12 +807,22 @@ export async function registerRoutes(
 
   app.get("/api/finance/revenue", async (req, res) => {
     try {
-      const { projectName } = req.query;
+      const { projectName, startDate, endDate } = req.query;
+      let data;
+      
       if (projectName && typeof projectName === 'string') {
-        const data = await storage.getFinanceRevenueMonthlyByProject(projectName);
-        return res.json(data);
+        data = await storage.getFinanceRevenueMonthlyByProject(projectName);
+      } else {
+        data = await storage.getAllFinanceRevenueMonthly();
       }
-      const data = await storage.getAllFinanceRevenueMonthly();
+
+      if (startDate && typeof startDate === 'string') {
+        data = data.filter(d => d.monthEndDate >= startDate);
+      }
+      if (endDate && typeof endDate === 'string') {
+        data = data.filter(d => d.monthEndDate <= endDate);
+      }
+
       res.json(data);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch finance revenue data" });
@@ -785,12 +831,22 @@ export async function registerRoutes(
 
   app.get("/api/finance/cos", async (req, res) => {
     try {
-      const { projectName } = req.query;
+      const { projectName, startDate, endDate } = req.query;
+      let data;
+      
       if (projectName && typeof projectName === 'string') {
-        const data = await storage.getFinanceCosMonthlyByProject(projectName);
-        return res.json(data);
+        data = await storage.getFinanceCosMonthlyByProject(projectName);
+      } else {
+        data = await storage.getAllFinanceCosMonthly();
       }
-      const data = await storage.getAllFinanceCosMonthly();
+
+      if (startDate && typeof startDate === 'string') {
+        data = data.filter(d => d.monthEndDate >= startDate);
+      }
+      if (endDate && typeof endDate === 'string') {
+        data = data.filter(d => d.monthEndDate <= endDate);
+      }
+
       res.json(data);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch finance COS data" });
