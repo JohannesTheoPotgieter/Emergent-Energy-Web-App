@@ -61,10 +61,11 @@ export function ProgramProvider({ children }: { children: ReactNode }) {
         description: `Successfully reprocessed ${successCount} of ${result.results.length} project file(s).`,
       });
     },
-    onError: (error: Error) => {
+    onError: (error: any) => {
+      const errorMessage = error?.message || error?.error || "Failed to reprocess data";
       toast({
         title: "Reprocess Failed",
-        description: error.message,
+        description: errorMessage,
         variant: "destructive",
       });
     },
@@ -89,10 +90,11 @@ export function ProgramProvider({ children }: { children: ReactNode }) {
         variant: errorCount > 0 ? "destructive" : "default",
       });
     },
-    onError: (error: Error) => {
+    onError: (error: any) => {
+      const errorMessage = error?.message || error?.error || "Failed to upload files";
       toast({
         title: "Upload Failed",
-        description: error.message,
+        description: errorMessage,
         variant: "destructive",
       });
     },
@@ -107,10 +109,11 @@ export function ProgramProvider({ children }: { children: ReactNode }) {
         description: "Manual budget entry has been recorded.",
       });
     },
-    onError: (error: Error) => {
+    onError: (error: any) => {
+      const errorMessage = error?.message || error?.error || "Failed to save budget entry";
       toast({
         title: "Save Failed",
-        description: error.message,
+        description: errorMessage,
         variant: "destructive",
       });
     },

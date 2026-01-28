@@ -34,17 +34,38 @@ async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
   });
   
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: "Request failed" }));
-    // Prefer 'error' field over 'message' for more specific error messages
-    const errorMessage = error.error || error.message || `HTTP ${response.status}`;
-    const errorDetail = error.detail;
-    
-    // Log detailed error info in development
-    if (process.env.NODE_ENV === 'development' && errorDetail) {
-      console.error('[API Error]', errorMessage, 'Detail:', errorDetail);
+    let errorData: any = {};
+    try {
+      errorData = await response.json();
+    } catch {
+      // JSON parse failed, use statusText as fallback
+      errorData = { message: response.statusText || "Request failed" };
     }
     
-    throw new Error(errorMessage);
+    // Extract error message from multiple possible fields
+    const errorMessage = 
+      errorData?.error || 
+      errorData?.message || 
+      errorData?.detail || 
+      response.statusText || 
+      `HTTP ${response.status}`;
+    
+    // Log detailed error info in development
+    if (process.env.NODE_ENV === 'development') {
+      console.error('[API Error]', {
+        url,
+        status: response.status,
+        message: errorMessage,
+        data: errorData,
+      });
+    }
+    
+    // Create error object and attach metadata
+    const error = new Error(errorMessage);
+    (error as any).status = response.status;
+    (error as any).dbMode = errorData?.dbMode;
+    
+    throw error;
   }
   
   return response.json();
@@ -170,8 +191,20 @@ export const uploadApi = {
     });
     
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ message: "Upload failed" }));
-      throw new Error(error.message || "Upload failed");
+      let errorData: any = {};
+      try {
+        errorData = await response.json();
+      } catch {
+        errorData = { message: "Upload failed" };
+      }
+      
+      const errorMessage = 
+        errorData?.error || 
+        errorData?.message || 
+        response.statusText || 
+        "Upload failed";
+      
+      throw new Error(errorMessage);
     }
     
     return response.json() as Promise<UploadResult>;

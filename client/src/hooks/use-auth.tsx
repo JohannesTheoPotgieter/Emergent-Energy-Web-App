@@ -48,7 +48,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error: any) {
       console.error("[Login Error]", error);
       
-      const errorMessage = error.message || "An unexpected error occurred";
+      // Safely extract error message
+      let errorMessage = "An unexpected error occurred";
+      if (error && typeof error === 'object') {
+        errorMessage = error.message || error.error || errorMessage;
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      }
       
       toast({
         title: "Login Failed",

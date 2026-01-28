@@ -84,7 +84,7 @@ function requireAdmin(req: Request, res: Response, next: NextFunction) {
   if (req.isAuthenticated() && req.user?.role === "admin") {
     return next();
   }
-  res.status(403).json({ message: "Admin access required" });
+  res.status(403).json({ error: "Admin access required", message: "Admin access required" });
 }
 
 export async function registerRoutes(
@@ -128,8 +128,10 @@ export async function registerRoutes(
         dbConnected: dbStatus.connected,
       });
     } catch (error) {
+      const errorMsg = "Failed to get auth status";
       res.status(500).json({ 
-        error: "Failed to get auth status",
+        error: errorMsg,
+        message: errorMsg,
         detail: error instanceof Error ? error.message : String(error)
       });
     }
@@ -205,7 +207,7 @@ export async function registerRoutes(
   app.post("/api/auth/logout", (req, res) => {
     req.logout((err) => {
       if (err) {
-        return res.status(500).json({ message: "Logout failed" });
+        return res.status(500).json({ error: "Logout failed", message: "Logout failed" });
       }
       res.json({ message: "Logged out successfully" });
     });
@@ -232,7 +234,7 @@ export async function registerRoutes(
       }
     }
     
-    res.status(401).json({ message: "Not authenticated" });
+    res.status(401).json({ error: "Not authenticated", message: "Not authenticated" });
   });
 
 
@@ -309,7 +311,7 @@ export async function registerRoutes(
       });
     } catch (error) {
       console.error("Overview fetch error:", error);
-      res.status(500).json({ message: "Failed to fetch overview data" });
+      res.status(500).json({ error: "Failed to fetch overview data", message: "Failed to fetch overview data" });
     }
   });
 
@@ -463,7 +465,7 @@ export async function registerRoutes(
       res.json(projectsSummary);
     } catch (error) {
       console.error("Projects summary fetch error:", error);
-      res.status(500).json({ message: "Failed to fetch projects summary" });
+      res.status(500).json({ error: "Failed to fetch projects summary", message: "Failed to fetch projects summary" });
     }
   });
 
@@ -491,7 +493,7 @@ export async function registerRoutes(
       });
     } catch (error) {
       console.error("Dashboard fetch error:", error);
-      res.status(500).json({ message: "Failed to fetch dashboard data" });
+      res.status(500).json({ error: "Failed to fetch dashboard data", message: "Failed to fetch dashboard data" });
     }
   });
 
@@ -502,7 +504,7 @@ export async function registerRoutes(
       const projects = await storage.getAllProjects();
       res.json(projects);
     } catch (error) {
-      res.status(500).json({ message: "Failed to fetch projects" });
+      res.status(500).json({ error: "Failed to fetch projects", message: "Failed to fetch projects" });
     }
   });
 
@@ -511,11 +513,11 @@ export async function registerRoutes(
       const id = parseInt(String(req.params.id));
       const project = await storage.getProject(id);
       if (!project) {
-        return res.status(404).json({ message: "Project not found" });
+        return res.status(404).json({ error: "Project not found", message: "Project not found" });
       }
       res.json(project);
     } catch (error) {
-      res.status(500).json({ message: "Failed to fetch project" });
+      res.status(500).json({ error: "Failed to fetch project", message: "Failed to fetch project" });
     }
   });
 
@@ -531,7 +533,7 @@ export async function registerRoutes(
       const expenses = await storage.getAllExpenses();
       res.json(expenses);
     } catch (error) {
-      res.status(500).json({ message: "Failed to fetch expenses" });
+      res.status(500).json({ error: "Failed to fetch expenses", message: "Failed to fetch expenses" });
     }
   });
 
@@ -547,7 +549,7 @@ export async function registerRoutes(
       const revenues = await storage.getAllRevenues();
       res.json(revenues);
     } catch (error) {
-      res.status(500).json({ message: "Failed to fetch revenues" });
+      res.status(500).json({ error: "Failed to fetch revenues", message: "Failed to fetch revenues" });
     }
   });
 
@@ -563,7 +565,7 @@ export async function registerRoutes(
       const tasks = await storage.getAllTasks();
       res.json(tasks);
     } catch (error) {
-      res.status(500).json({ message: "Failed to fetch tasks" });
+      res.status(500).json({ error: "Failed to fetch tasks", message: "Failed to fetch tasks" });
     }
   });
 
@@ -574,7 +576,7 @@ export async function registerRoutes(
       const budgets = await storage.getAllBudgets();
       res.json(budgets);
     } catch (error) {
-      res.status(500).json({ message: "Failed to fetch budgets" });
+      res.status(500).json({ error: "Failed to fetch budgets", message: "Failed to fetch budgets" });
     }
   });
 
@@ -585,9 +587,9 @@ export async function registerRoutes(
       res.status(201).json(budget);
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "Invalid budget data", errors: error.errors });
+        return res.status(400).json({ error: "Invalid budget data", message: "Invalid budget data", errors: error.errors });
       }
-      res.status(500).json({ message: "Failed to create budget" });
+      res.status(500).json({ error: "Failed to create budget", message: "Failed to create budget" });
     }
   });
 
@@ -596,11 +598,11 @@ export async function registerRoutes(
       const id = parseInt(String(req.params.id));
       const deleted = await storage.deleteBudget(id);
       if (!deleted) {
-        return res.status(404).json({ message: "Budget not found" });
+        return res.status(404).json({ error: "Budget not found", message: "Budget not found" });
       }
       res.json({ message: "Budget deleted" });
     } catch (error) {
-      res.status(500).json({ message: "Failed to delete budget" });
+      res.status(500).json({ error: "Failed to delete budget", message: "Failed to delete budget" });
     }
   });
 
@@ -610,7 +612,7 @@ export async function registerRoutes(
     try {
       const files = req.files as Express.Multer.File[];
       if (!files || files.length === 0) {
-        return res.status(400).json({ message: "No files uploaded" });
+        return res.status(400).json({ error: "No files uploaded", message: "No files uploaded" });
       }
 
       const results: { 
@@ -881,7 +883,7 @@ export async function registerRoutes(
 
       res.json(expenses);
     } catch (error) {
-      res.status(500).json({ message: "Failed to fetch program expenses" });
+      res.status(500).json({ error: "Failed to fetch program expenses", message: "Failed to fetch program expenses" });
     }
   });
 
@@ -911,7 +913,7 @@ export async function registerRoutes(
 
       res.json(inflows);
     } catch (error) {
-      res.status(500).json({ message: "Failed to fetch program inflows" });
+      res.status(500).json({ error: "Failed to fetch program inflows", message: "Failed to fetch program inflows" });
     }
   });
 
@@ -925,7 +927,7 @@ export async function registerRoutes(
       const plans = await storage.getAllProjectPlans();
       res.json(plans);
     } catch (error) {
-      res.status(500).json({ message: "Failed to fetch project plans" });
+      res.status(500).json({ error: "Failed to fetch project plans", message: "Failed to fetch project plans" });
     }
   });
 
@@ -934,7 +936,7 @@ export async function registerRoutes(
       const info = await storage.getAllProjectInfo();
       res.json(info);
     } catch (error) {
-      res.status(500).json({ message: "Failed to fetch project info" });
+      res.status(500).json({ error: "Failed to fetch project info", message: "Failed to fetch project info" });
     }
   });
 
@@ -960,7 +962,7 @@ export async function registerRoutes(
 
       res.json(points);
     } catch (error) {
-      res.status(500).json({ message: "Failed to fetch cashflow data" });
+      res.status(500).json({ error: "Failed to fetch cashflow data", message: "Failed to fetch cashflow data" });
     }
   });
 
@@ -984,7 +986,7 @@ export async function registerRoutes(
 
       res.json(data);
     } catch (error) {
-      res.status(500).json({ message: "Failed to fetch finance revenue data" });
+      res.status(500).json({ error: "Failed to fetch finance revenue data", message: "Failed to fetch finance revenue data" });
     }
   });
 
@@ -1008,7 +1010,7 @@ export async function registerRoutes(
 
       res.json(data);
     } catch (error) {
-      res.status(500).json({ message: "Failed to fetch finance COS data" });
+      res.status(500).json({ error: "Failed to fetch finance COS data", message: "Failed to fetch finance COS data" });
     }
   });
 
@@ -1022,7 +1024,7 @@ export async function registerRoutes(
       });
       res.json({ message: "Data refresh recorded", refreshedAt: refreshLog.refreshedAt });
     } catch (error) {
-      res.status(500).json({ message: "Failed to record refresh" });
+      res.status(500).json({ error: "Failed to record refresh", message: "Failed to record refresh" });
     }
   });
 
@@ -1031,7 +1033,7 @@ export async function registerRoutes(
       const latest = await storage.getLatestRefresh();
       res.json({ lastRefresh: latest?.refreshedAt?.toISOString() || null });
     } catch (error) {
-      res.status(500).json({ message: "Failed to get refresh status" });
+      res.status(500).json({ error: "Failed to get refresh status", message: "Failed to get refresh status" });
     }
   });
 
@@ -1042,7 +1044,7 @@ export async function registerRoutes(
       const uploads = await storage.getAllUploads();
       res.json(uploads);
     } catch (error) {
-      res.status(500).json({ message: "Failed to fetch upload history" });
+      res.status(500).json({ error: "Failed to fetch upload history", message: "Failed to fetch upload history" });
     }
   });
 
@@ -1059,7 +1061,7 @@ export async function registerRoutes(
       res.setHeader("Content-Disposition", "attachment; filename=projects_export.csv");
       res.send(csv);
     } catch (error) {
-      res.status(500).json({ message: "Export failed" });
+      res.status(500).json({ error: "Export failed", message: "Export failed" });
     }
   });
 
@@ -1075,7 +1077,7 @@ export async function registerRoutes(
       res.setHeader("Content-Disposition", "attachment; filename=expenses_export.csv");
       res.send(csv);
     } catch (error) {
-      res.status(500).json({ message: "Export failed" });
+      res.status(500).json({ error: "Export failed", message: "Export failed" });
     }
   });
 
@@ -1091,7 +1093,7 @@ export async function registerRoutes(
       res.setHeader("Content-Disposition", "attachment; filename=revenues_export.csv");
       res.send(csv);
     } catch (error) {
-      res.status(500).json({ message: "Export failed" });
+      res.status(500).json({ error: "Export failed", message: "Export failed" });
     }
   });
 
@@ -1106,7 +1108,7 @@ export async function registerRoutes(
       res.setHeader("Content-Disposition", "attachment; filename=tasks_export.csv");
       res.send(csv);
     } catch (error) {
-      res.status(500).json({ message: "Export failed" });
+      res.status(500).json({ error: "Export failed", message: "Export failed" });
     }
   });
 
@@ -1124,7 +1126,7 @@ export async function registerRoutes(
       res.setHeader("Content-Disposition", "attachment; filename=projects_summary_export.csv");
       res.send(csv);
     } catch (error) {
-      res.status(500).json({ message: "Export failed" });
+      res.status(500).json({ error: "Export failed", message: "Export failed" });
     }
   });
 

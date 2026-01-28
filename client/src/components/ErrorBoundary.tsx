@@ -28,6 +28,23 @@ export class ErrorBoundary extends React.Component<Props, State> {
 
   render() {
     if (this.state.hasError) {
+      // Safely extract error message
+      let errorMessage = "Unknown error";
+      
+      const err: any = this.state.error;
+      
+      if (err) {
+        if (err instanceof Error) {
+          errorMessage = err.message || "Unknown error";
+        } else if (typeof err === 'string') {
+          errorMessage = err;
+        } else if (typeof err === 'object' && 'message' in err) {
+          errorMessage = String(err.message);
+        } else {
+          errorMessage = String(err);
+        }
+      }
+      
       return (
         <div className="min-h-screen flex items-center justify-center bg-background p-4">
           <Card className="w-full max-w-md">
@@ -41,7 +58,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
             <CardContent className="space-y-4">
               <div className="bg-muted p-3 rounded-md">
                 <p className="text-sm font-mono text-muted-foreground">
-                  {this.state.error?.message || "Unknown error"}
+                  {errorMessage}
                 </p>
               </div>
               <Button 
