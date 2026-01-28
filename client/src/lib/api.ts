@@ -399,6 +399,57 @@ export interface ProjectPlanItem {
   expectedPctComplete: number | null;
 }
 
+export interface CashflowPoint {
+  id: number;
+  projectName: string;
+  seriesName: string;
+  pointDate: string;
+  value: number;
+  createdAt: string;
+}
+
+export interface FinanceRevenueMonthly {
+  id: number;
+  projectName: string;
+  category: string;
+  monthEndDate: string;
+  value: number;
+  createdAt: string;
+}
+
+export interface FinanceCosMonthly {
+  id: number;
+  projectName: string;
+  category: string;
+  monthEndDate: string;
+  value: number;
+  createdAt: string;
+}
+
+export const cashflowApi = {
+  getAll: async (projectName?: string) => {
+    const url = projectName 
+      ? `${API_BASE}/cashflow?projectName=${encodeURIComponent(projectName)}`
+      : `${API_BASE}/cashflow`;
+    return fetchJSON<CashflowPoint[]>(url);
+  },
+};
+
+export const financeApi = {
+  getRevenue: async (projectName?: string) => {
+    const url = projectName 
+      ? `${API_BASE}/finance/revenue?projectName=${encodeURIComponent(projectName)}`
+      : `${API_BASE}/finance/revenue`;
+    return fetchJSON<FinanceRevenueMonthly[]>(url);
+  },
+  getCos: async (projectName?: string) => {
+    const url = projectName 
+      ? `${API_BASE}/finance/cos?projectName=${encodeURIComponent(projectName)}`
+      : `${API_BASE}/finance/cos`;
+    return fetchJSON<FinanceCosMonthly[]>(url);
+  },
+};
+
 // Query Options
 export const dashboardQueryOptions = queryOptions({
   queryKey: ["dashboard"],
