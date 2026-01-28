@@ -32,7 +32,7 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (req.isAuthenticated()) {
     return next();
   }
-  res.status(401).json({ message: "Authentication required" });
+  res.status(401).json({ error: "Authentication required", message: "Authentication required" });
 }
 
 function requireAdmin(req: Request, res: Response, next: NextFunction) {
