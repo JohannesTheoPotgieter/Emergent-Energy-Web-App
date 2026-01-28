@@ -1,65 +1,151 @@
 import { useProgramData } from "@/hooks/use-program-data";
 import { TrackerTable } from "@/components/dashboard/TrackerTable";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
-import { format } from "date-fns";
+import { Card, CardContent } from "@/components/ui/card";
+import { AlertCircle } from "lucide-react";
 
 export default function ProjectsSummary() {
-  const { data, exportUrl } = useProgramData();
+  const { projectsSummary, exportUrl, isLoading } = useProgramData();
 
-  const projects = data?.projects || [];
+  // Map ProjectSummary to include id field for TrackerTable
+  const projects = (projectsSummary || []).map((p, idx) => ({
+    ...p,
+    id: p.project_name,
+  }));
 
   const handleExport = () => {
-    window.location.href = exportUrl("projects");
+    window.location.href = exportUrl("projects-summary");
   };
+
+  if (isLoading && !projectsSummary) {
+    return (
+      <div className="space-y-6">
+        <h2 className="text-3xl font-heading font-bold text-foreground">Projects Summary</h2>
+        <div className="h-96 bg-muted/20 animate-pulse rounded-lg" />
+      </div>
+    );
+  }
+
+  if (projects.length === 0) {
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col gap-2">
+          <h2 className="text-3xl font-heading font-bold text-foreground">Projects Summary</h2>
+          <p className="text-muted-foreground">
+            Portfolio status, financial progress, and key performance indicators.
+          </p>
+        </div>
+
+        <Card className="border-2 border-dashed border-muted">
+          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+            <AlertCircle className="w-12 h-12 text-muted-foreground mb-4" />
+            <h3 className="text-lg font-semibold mb-2">No Projects Available</h3>
+            <p className="text-sm text-muted-foreground max-w-md">
+              Upload tracker files to populate the Projects Summary dashboard with financial metrics, 
+              progress tracking, and outstanding items.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-2">
         <h2 className="text-3xl font-heading font-bold text-foreground">Projects Summary</h2>
         <p className="text-muted-foreground">
-           Portfolio status, budget progress, and key milestones.
+          Excel-aligned portfolio overview with financial metrics and progress tracking
         </p>
       </div>
 
       <TrackerTable 
-        title="Active Portfolio Projects"
+        title={`Active Portfolio Projects (${projects.length})`}
         data={projects}
         columns={[
-          { header: "Project Code", accessorKey: "code", className: "font-mono font-bold text-primary" },
-          { header: "Project Name", accessorKey: "name", className: "font-medium" },
-          { header: "Manager", accessorKey: "manager" },
-          { header: "Site", accessorKey: "site" },
           { 
-            header: "Status", 
-            accessorKey: (project) => (
+            header: "Project Name", 
+            accessorKey: "project_name", 
+            className: "font-medium text-primary max-w-[200px]" 
+          },
+          { 
+            header: "Size (kWp)", 
+            accessorKey: (p) => p.size_kwp ? p.size_kwp.toFixed(0) : "-",
+            className: "text-right font-mono text-xs"
+          },
+          { 
+            header: "PD", 
+            accessorKey: "pd",
+            className: "text-xs"
+          },
+          { 
+            header: "PM", 
+            accessorKey: "pm",
+            className: "text-xs"
+          },
+          { 
+            header: "Phase", 
+            accessorKey: (p) => (
               <Badge variant={
-                project.status === 'Active' ? 'default' : 
-                project.status === 'Completed' ? 'secondary' : 
+                p.phase === 'Construction' ? 'default' : 
+                p.phase === 'Development' ? 'secondary' : 
                 'outline'
               }>
-                {project.status}
+                {p.phase || "Unknown"}
               </Badge>
             )
           },
-          { header: "Stage", accessorKey: "stage" },
           { 
-            header: "Budget Progress", 
-            accessorKey: (project) => (
-              <div className="flex items-center gap-2 w-32">
-                 <Progress value={Math.random() * 80 + 10} className="h-2" />
-                 <span className="text-xs text-muted-foreground">{(Math.random() * 80 + 10).toFixed(0)}%</span>
-              </div>
-            )
+            header: "Project %", 
+            accessorKey: (p) => p.project_pct_complete !== null 
+              ? `${(p.project_pct_complete * 100).toFixed(0)}%` 
+              : "-",
+            className: "text-right font-mono text-xs"
           },
           { 
-             header: "Budget", 
-             accessorKey: (p) => `$${(parseFloat(p.budget || '0') / 1000000).toFixed(1)}M`,
-             className: "text-right font-mono" 
+            header: "Expected %", 
+            accessorKey: (p) => p.expected_pct_complete !== null 
+              ? `${(p.expected_pct_complete * 100).toFixed(0)}%` 
+              : "-",
+            className: "text-right font-mono text-xs"
           },
           { 
-            header: "Start Date", 
-            accessorKey: (p) => format(new Date(p.startDate), "MMM yyyy") 
+            header: "Δ vs Expected", 
+            accessorKey: (p) => {
+              if (p.delta_vs_expected === null) return "-";
+              const delta = p.delta_vs_expected * 100;
+              const sign = delta >= 0 ? "+" : "";
+              const color = delta >= 0 ? "text-emerald-600" : "text-rose-600";
+              return <span className={`${color} font-mono text-xs`}>{sign}{delta.toFixed(1)}%</span>;
+            },
+            className: "text-right"
+          },
+          { 
+            header: "Actual Revenue", 
+            accessorKey: (p) => `R${(p.actual_revenue / 1000000).toFixed(2)}M`,
+            className: "text-right font-mono text-xs"
+          },
+          { 
+            header: "Actual Expenses", 
+            accessorKey: (p) => `R${(p.actual_expenses / 1000000).toFixed(2)}M`,
+            className: "text-right font-mono text-xs"
+          },
+          { 
+            header: "GP %", 
+            accessorKey: (p) => p.gp_percent !== null 
+              ? `${(p.gp_percent * 100).toFixed(1)}%` 
+              : "-",
+            className: "text-right font-mono text-xs"
+          },
+          { 
+            header: "Rev Outstanding", 
+            accessorKey: (p) => `R${(p.revenue_outstanding / 1000000).toFixed(2)}M`,
+            className: "text-right font-mono text-xs text-amber-600"
+          },
+          { 
+            header: "Exp Outstanding", 
+            accessorKey: (p) => `R${(p.expenses_outstanding / 1000000).toFixed(2)}M`,
+            className: "text-right font-mono text-xs text-amber-600"
           },
         ]}
         onExport={handleExport}

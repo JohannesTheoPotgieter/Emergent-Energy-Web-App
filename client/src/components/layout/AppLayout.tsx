@@ -24,11 +24,13 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { DatabaseStatusBanner } from "@/components/DatabaseStatusBanner";
+import { UploadValidationReport } from "@/components/UploadValidationReport";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const { data, refreshData, isLoading, importFiles } = useProgramData();
+  const [showValidationReport, setShowValidationReport] = useState(false);
+  const { data, overview, refreshData, isLoading, importFiles, lastUploadResult } = useProgramData();
   const { user, logout } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -49,6 +51,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     if (e.target.files && e.target.files.length > 0) {
       const filesArray = Array.from(e.target.files);
       await importFiles(filesArray);
+      setShowValidationReport(true);
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
@@ -146,7 +149,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <div className="flex flex-col items-end mr-2">
                <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Data As Of</span>
                <span className="text-xs font-mono font-medium text-foreground">
-                 {data?.lastRefresh ? format(new Date(data.lastRefresh), "dd MMM HH:mm") : "No data"}
+                 {overview?.data_as_of ? format(new Date(overview.data_as_of), "dd MMM HH:mm") : "No data"}
                </span>
             </div>
             
@@ -184,8 +187,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
         {/* Scrollable Page Content */}
         <div className="flex-1 overflow-auto p-6 scroll-smooth">
-          <div className="max-w-[1600px] mx-auto animate-in fade-in slide-in-from-bottom-2 duration-500">
+          <div className="max-w-[1600px] mx-auto animate-in fade-in slide-in-from-bottom-2 duration-500 space-y-4">
             <DatabaseStatusBanner />
+            {showValidationReport && lastUploadResult && (
+              <UploadValidationReport 
+                result={lastUploadResult} 
+                onDismiss={() => setShowValidationReport(false)}
+              />
+            )}
             {children}
           </div>
         </div>
