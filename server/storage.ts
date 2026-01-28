@@ -3,6 +3,7 @@ import { eq, desc, and, gte, lte, isNotNull, isNull, sql } from "drizzle-orm";
 import {
   users, projects, expenses, revenues, tasks, budgets, uploadMetadata, refreshLogs,
   projectInfo, programExpense, programInflows, projectPlan,
+  cashflowPoints, financeRevenueMonthly, financeCosMonthly,
   type User, type InsertUser,
   type Project, type InsertProject,
   type Expense, type InsertExpense,
@@ -15,6 +16,9 @@ import {
   type ProgramExpense, type InsertProgramExpense,
   type ProgramInflows, type InsertProgramInflows,
   type ProjectPlan, type InsertProjectPlan,
+  type CashflowPoint, type InsertCashflowPoint,
+  type FinanceRevenueMonthly, type InsertFinanceRevenueMonthly,
+  type FinanceCosMonthly, type InsertFinanceCosMonthly,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -89,6 +93,24 @@ export interface IStorage {
   getProjectPlansByProject(projectName: string): Promise<ProjectPlan[]>;
   createManyProjectPlans(plans: InsertProjectPlan[]): Promise<ProjectPlan[]>;
   deleteProjectPlansByProject(projectName: string): Promise<void>;
+
+  // Cashflow Points (new)
+  getAllCashflowPoints(): Promise<CashflowPoint[]>;
+  getCashflowPointsByProject(projectName: string): Promise<CashflowPoint[]>;
+  createManyCashflowPoints(points: InsertCashflowPoint[]): Promise<CashflowPoint[]>;
+  deleteCashflowPointsByProject(projectName: string): Promise<void>;
+
+  // Finance Revenue Monthly (new)
+  getAllFinanceRevenueMonthly(): Promise<FinanceRevenueMonthly[]>;
+  getFinanceRevenueMonthlyByProject(projectName: string): Promise<FinanceRevenueMonthly[]>;
+  createManyFinanceRevenueMonthly(data: InsertFinanceRevenueMonthly[]): Promise<FinanceRevenueMonthly[]>;
+  deleteFinanceRevenueMonthlyByProject(projectName: string): Promise<void>;
+
+  // Finance COS Monthly (new)
+  getAllFinanceCosMonthly(): Promise<FinanceCosMonthly[]>;
+  getFinanceCosMonthlyByProject(projectName: string): Promise<FinanceCosMonthly[]>;
+  createManyFinanceCosMonthly(data: InsertFinanceCosMonthly[]): Promise<FinanceCosMonthly[]>;
+  deleteFinanceCosMonthlyByProject(projectName: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -331,6 +353,60 @@ export class DatabaseStorage implements IStorage {
 
   async deleteProjectPlansByProject(projectName: string): Promise<void> {
     await db.delete(projectPlan).where(eq(projectPlan.projectName, projectName));
+  }
+
+  // Cashflow Points (new)
+  async getAllCashflowPoints(): Promise<CashflowPoint[]> {
+    return db.select().from(cashflowPoints).orderBy(desc(cashflowPoints.createdAt));
+  }
+
+  async getCashflowPointsByProject(projectName: string): Promise<CashflowPoint[]> {
+    return db.select().from(cashflowPoints).where(eq(cashflowPoints.projectName, projectName));
+  }
+
+  async createManyCashflowPoints(pointList: InsertCashflowPoint[]): Promise<CashflowPoint[]> {
+    if (pointList.length === 0) return [];
+    return db.insert(cashflowPoints).values(pointList).returning();
+  }
+
+  async deleteCashflowPointsByProject(projectName: string): Promise<void> {
+    await db.delete(cashflowPoints).where(eq(cashflowPoints.projectName, projectName));
+  }
+
+  // Finance Revenue Monthly (new)
+  async getAllFinanceRevenueMonthly(): Promise<FinanceRevenueMonthly[]> {
+    return db.select().from(financeRevenueMonthly).orderBy(desc(financeRevenueMonthly.createdAt));
+  }
+
+  async getFinanceRevenueMonthlyByProject(projectName: string): Promise<FinanceRevenueMonthly[]> {
+    return db.select().from(financeRevenueMonthly).where(eq(financeRevenueMonthly.projectName, projectName));
+  }
+
+  async createManyFinanceRevenueMonthly(dataList: InsertFinanceRevenueMonthly[]): Promise<FinanceRevenueMonthly[]> {
+    if (dataList.length === 0) return [];
+    return db.insert(financeRevenueMonthly).values(dataList).returning();
+  }
+
+  async deleteFinanceRevenueMonthlyByProject(projectName: string): Promise<void> {
+    await db.delete(financeRevenueMonthly).where(eq(financeRevenueMonthly.projectName, projectName));
+  }
+
+  // Finance COS Monthly (new)
+  async getAllFinanceCosMonthly(): Promise<FinanceCosMonthly[]> {
+    return db.select().from(financeCosMonthly).orderBy(desc(financeCosMonthly.createdAt));
+  }
+
+  async getFinanceCosMonthlyByProject(projectName: string): Promise<FinanceCosMonthly[]> {
+    return db.select().from(financeCosMonthly).where(eq(financeCosMonthly.projectName, projectName));
+  }
+
+  async createManyFinanceCosMonthly(dataList: InsertFinanceCosMonthly[]): Promise<FinanceCosMonthly[]> {
+    if (dataList.length === 0) return [];
+    return db.insert(financeCosMonthly).values(dataList).returning();
+  }
+
+  async deleteFinanceCosMonthlyByProject(projectName: string): Promise<void> {
+    await db.delete(financeCosMonthly).where(eq(financeCosMonthly.projectName, projectName));
   }
 }
 

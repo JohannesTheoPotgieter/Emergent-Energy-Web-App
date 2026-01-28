@@ -591,6 +591,9 @@ export async function registerRoutes(
         inflowsParsed?: number;
         planParsed?: number;
         infoParsed?: boolean;
+        cashflowParsed?: number;
+        financeRevenueParsed?: number;
+        financeCosParsed?: number;
         warnings?: string[];
       }[] = [];
 
@@ -602,6 +605,9 @@ export async function registerRoutes(
           await storage.deleteProgramExpensesByProject(parseResult.projectName);
           await storage.deleteProgramInflowsByProject(parseResult.projectName);
           await storage.deleteProjectPlansByProject(parseResult.projectName);
+          await storage.deleteCashflowPointsByProject(parseResult.projectName);
+          await storage.deleteFinanceRevenueMonthlyByProject(parseResult.projectName);
+          await storage.deleteFinanceCosMonthlyByProject(parseResult.projectName);
 
           // Insert project info
           if (parseResult.projectInfo) {
@@ -623,10 +629,26 @@ export async function registerRoutes(
             await storage.createManyProjectPlans(parseResult.planItems);
           }
 
+          // Insert cashflow points
+          if (parseResult.cashflowPoints.length > 0) {
+            await storage.createManyCashflowPoints(parseResult.cashflowPoints);
+          }
+
+          // Insert finance revenue monthly
+          if (parseResult.financeRevenueMonthly.length > 0) {
+            await storage.createManyFinanceRevenueMonthly(parseResult.financeRevenueMonthly);
+          }
+
+          // Insert finance COS monthly
+          if (parseResult.financeCosMonthly.length > 0) {
+            await storage.createManyFinanceCosMonthly(parseResult.financeCosMonthly);
+          }
+
           await storage.createUpload({
             fileName: file.originalname,
             uploadedBy: req.user?.id || null,
-            recordsProcessed: parseResult.expensesParsed + parseResult.inflowsParsed + parseResult.planParsed,
+            recordsProcessed: parseResult.expensesParsed + parseResult.inflowsParsed + parseResult.planParsed + 
+                            parseResult.cashflowParsed + parseResult.financeRevenueParsed + parseResult.financeCosParsed,
             validationErrors: parseResult.warnings.length > 0 ? parseResult.warnings.join("; ") : null,
             status: "success"
           });
@@ -639,6 +661,9 @@ export async function registerRoutes(
             inflowsParsed: parseResult.inflowsParsed,
             planParsed: parseResult.planParsed,
             infoParsed: parseResult.infoParsed,
+            cashflowParsed: parseResult.cashflowParsed,
+            financeRevenueParsed: parseResult.financeRevenueParsed,
+            financeCosParsed: parseResult.financeCosParsed,
             warnings: parseResult.warnings
           });
 

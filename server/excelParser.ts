@@ -1,5 +1,13 @@
 import * as XLSX from "xlsx";
-import type { InsertProjectInfo, InsertProgramExpense, InsertProgramInflows, InsertProjectPlan } from "@shared/schema";
+import type { 
+  InsertProjectInfo, 
+  InsertProgramExpense, 
+  InsertProgramInflows, 
+  InsertProjectPlan,
+  InsertCashflowPoint,
+  InsertFinanceRevenueMonthly,
+  InsertFinanceCosMonthly
+} from "@shared/schema";
 
 export interface ParseResult {
   projectName: string;
@@ -7,11 +15,17 @@ export interface ParseResult {
   expenses: InsertProgramExpense[];
   inflows: InsertProgramInflows[];
   planItems: InsertProjectPlan[];
+  cashflowPoints: InsertCashflowPoint[];
+  financeRevenueMonthly: InsertFinanceRevenueMonthly[];
+  financeCosMonthly: InsertFinanceCosMonthly[];
   warnings: string[];
   expensesParsed: number;
   inflowsParsed: number;
   planParsed: number;
   infoParsed: boolean;
+  cashflowParsed: number;
+  financeRevenueParsed: number;
+  financeCosParsed: number;
 }
 
 function parseDate(value: any): string | null {
@@ -406,16 +420,160 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
     warnings.push("Missing 'Revenue Tracking' sheet");
   }
 
+  const cashflowPoints: InsertCashflowPoint[] = [];
+  const financeRevenueMonthly: InsertFinanceRevenueMonthly[] = [];
+  const financeCosMonthly: InsertFinanceCosMonthly[] = [];
+
+  // Parse Cashflow sheet (weekly time-series)
+  if (workbook.SheetNames.includes("Cashflow")) {
+    try {
+      const sheet = workbook.Sheets["Cashflow"];
+      const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: false }) as any[][];
+      
+      if (data.length > 0 && data[0]) {
+        // Row 1 has date headers starting from column F (index 5)
+        const dateHeaders: string[] = [];
+        for (let colIdx = 5; colIdx < data[0].length; colIdx++) {
+          const dateVal = parseDate(data[0][colIdx]);
+          if (dateVal) {
+            dateHeaders.push(dateVal);
+          }
+        }
+        
+        // Look for series names in column B (index 1) for rows 3-14
+        const seriesRows = [
+          { row: 2, name: "Planned Revenue" },
+          { row: 3, name: "Planned Expenditure" },
+          { row: 4, name: "PLANNED CashFlow" },
+          { row: 8, name: "Actual + Planned Revenue" },
+          { row: 9, name: "Actual + Planned Expenditure" },
+          { row: 10, name: "ACTUAL CashFlow" },
+        ];
+        
+        for (const { row, name } of seriesRows) {
+          if (data[row]) {
+            for (let dateIdx = 0; dateIdx < dateHeaders.length; dateIdx++) {
+              const valueColIdx = 5 + dateIdx;
+              const value = parseNumber(data[row][valueColIdx]);
+              if (value !== null) {
+                cashflowPoints.push({
+                  projectName,
+                  seriesName: name,
+                  pointDate: dateHeaders[dateIdx],
+                  value,
+                });
+              }
+            }
+          }
+        }
+      }
+    } catch (error) {
+      warnings.push(`Cashflow sheet parse error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  // Parse Finance - Revenue sheet (monthly pivot)
+  if (workbook.SheetNames.includes("Finance - Revenue")) {
+    try {
+      const sheet = workbook.Sheets["Finance - Revenue"];
+      const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: false }) as any[][];
+      
+      if (data.length > 0 && data[0]) {
+        // Row 1 has month headers starting from column B (index 1)
+        const monthHeaders: string[] = [];
+        for (let colIdx = 1; colIdx < data[0].length; colIdx++) {
+          const header = normalizeHeader(data[0][colIdx]);
+          if (header !== "grand total" && header !== "row labels") {
+            const dateVal = parseDate(data[0][colIdx]);
+            if (dateVal) {
+              monthHeaders.push(dateVal);
+            }
+          }
+        }
+        
+        // Parse category rows starting from row 2
+        for (let rowIdx = 1; rowIdx < data.length; rowIdx++) {
+          const category = data[rowIdx][0];
+          if (!category || normalizeHeader(category) === "grand total") break;
+          
+          for (let monthIdx = 0; monthIdx < monthHeaders.length; monthIdx++) {
+            const valueColIdx = 1 + monthIdx;
+            const value = parseNumber(data[rowIdx][valueColIdx]);
+            if (value !== null) {
+              financeRevenueMonthly.push({
+                projectName,
+                category: String(category),
+                monthEndDate: monthHeaders[monthIdx],
+                value,
+              });
+            }
+          }
+        }
+      }
+    } catch (error) {
+      warnings.push(`Finance - Revenue sheet parse error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  // Parse Finance - COS sheet (monthly pivot)
+  if (workbook.SheetNames.includes("Finance - COS")) {
+    try {
+      const sheet = workbook.Sheets["Finance - COS"];
+      const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: false }) as any[][];
+      
+      if (data.length > 0 && data[0]) {
+        // Row 1 has month headers starting from column B (index 1)
+        const monthHeaders: string[] = [];
+        for (let colIdx = 1; colIdx < data[0].length; colIdx++) {
+          const header = normalizeHeader(data[0][colIdx]);
+          if (header !== "grand total" && header !== "row labels") {
+            const dateVal = parseDate(data[0][colIdx]);
+            if (dateVal) {
+              monthHeaders.push(dateVal);
+            }
+          }
+        }
+        
+        // Parse category rows starting from row 2
+        for (let rowIdx = 1; rowIdx < data.length; rowIdx++) {
+          const category = data[rowIdx][0];
+          if (!category || normalizeHeader(category) === "grand total") break;
+          
+          for (let monthIdx = 0; monthIdx < monthHeaders.length; monthIdx++) {
+            const valueColIdx = 1 + monthIdx;
+            const value = parseNumber(data[rowIdx][valueColIdx]);
+            if (value !== null) {
+              financeCosMonthly.push({
+                projectName,
+                category: String(category),
+                monthEndDate: monthHeaders[monthIdx],
+                value,
+              });
+            }
+          }
+        }
+      }
+    } catch (error) {
+      warnings.push(`Finance - COS sheet parse error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
   return {
     projectName,
     projectInfo,
     expenses,
     inflows,
     planItems,
+    cashflowPoints,
+    financeRevenueMonthly,
+    financeCosMonthly,
     warnings,
     expensesParsed: expenses.length,
     inflowsParsed: inflows.length,
     planParsed: planItems.length,
     infoParsed: projectInfo !== null,
+    cashflowParsed: cashflowPoints.length,
+    financeRevenueParsed: financeRevenueMonthly.length,
+    financeCosParsed: financeCosMonthly.length,
   };
 }
