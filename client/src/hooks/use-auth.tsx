@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, ReactNode } from "react
 import { authApi, User, setAuthToken } from "../lib/api";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
+import { getErrorMessage } from "@/lib/errors";
 
 interface AuthContextType {
   user: User | null;
@@ -45,20 +46,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         description: `Logged in as ${response.user.name}`,
       });
       return true;
-    } catch (error: any) {
+    } catch (error) {
       console.error("[Login Error]", error);
-      
-      // Safely extract error message
-      let errorMessage = "An unexpected error occurred";
-      if (error && typeof error === 'object') {
-        errorMessage = error.message || error.error || errorMessage;
-      } else if (typeof error === 'string') {
-        errorMessage = error;
-      }
       
       toast({
         title: "Login Failed",
-        description: errorMessage,
+        description: getErrorMessage(error, "An unexpected error occurred"),
         variant: "destructive",
       });
       return false;

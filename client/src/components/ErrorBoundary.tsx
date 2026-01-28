@@ -2,6 +2,7 @@ import React from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { AlertCircle } from "lucide-react";
+import { getErrorMessage } from "@/lib/errors";
 
 interface Props {
   children: React.ReactNode;
@@ -28,22 +29,8 @@ export class ErrorBoundary extends React.Component<Props, State> {
 
   render() {
     if (this.state.hasError) {
-      // Safely extract error message
-      let errorMessage = "Unknown error";
-      
-      const err: any = this.state.error;
-      
-      if (err) {
-        if (err instanceof Error) {
-          errorMessage = err.message || "Unknown error";
-        } else if (typeof err === 'string') {
-          errorMessage = err;
-        } else if (typeof err === 'object' && 'message' in err) {
-          errorMessage = String(err.message);
-        } else {
-          errorMessage = String(err);
-        }
-      }
+      // Safely extract error message using helper
+      const errorMessage = getErrorMessage(this.state.error, "An unexpected error occurred");
       
       return (
         <div className="min-h-screen flex items-center justify-center bg-background p-4">

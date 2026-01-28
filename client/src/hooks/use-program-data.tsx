@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { dashboardApi, uploadApi, budgetsApi, overviewApi, DashboardData, CreateBudget, exportApi, OverviewData, ProjectSummary, UploadResult } from "../lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+import { getErrorMessage } from "@/lib/errors";
 
 interface ProgramContextType {
   data: DashboardData | null;
@@ -61,11 +62,10 @@ export function ProgramProvider({ children }: { children: ReactNode }) {
         description: `Successfully reprocessed ${successCount} of ${result.results.length} project file(s).`,
       });
     },
-    onError: (error: any) => {
-      const errorMessage = error?.message || error?.error || "Failed to reprocess data";
+    onError: (error) => {
       toast({
         title: "Reprocess Failed",
-        description: errorMessage,
+        description: getErrorMessage(error, "Failed to reprocess data"),
         variant: "destructive",
       });
     },
@@ -90,11 +90,10 @@ export function ProgramProvider({ children }: { children: ReactNode }) {
         variant: errorCount > 0 ? "destructive" : "default",
       });
     },
-    onError: (error: any) => {
-      const errorMessage = error?.message || error?.error || "Failed to upload files";
+    onError: (error) => {
       toast({
         title: "Upload Failed",
-        description: errorMessage,
+        description: getErrorMessage(error, "Failed to upload files"),
         variant: "destructive",
       });
     },
@@ -109,11 +108,10 @@ export function ProgramProvider({ children }: { children: ReactNode }) {
         description: "Manual budget entry has been recorded.",
       });
     },
-    onError: (error: any) => {
-      const errorMessage = error?.message || error?.error || "Failed to save budget entry";
+    onError: (error) => {
       toast({
         title: "Save Failed",
-        description: errorMessage,
+        description: getErrorMessage(error, "Failed to save budget entry"),
         variant: "destructive",
       });
     },

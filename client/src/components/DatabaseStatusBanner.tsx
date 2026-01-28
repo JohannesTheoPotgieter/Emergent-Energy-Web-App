@@ -28,7 +28,7 @@ export function DatabaseStatusBanner() {
       });
   }, []);
 
-  if (!showBanner || !dbHealth) {
+  if (!showBanner || !dbHealth || !dbHealth.database) {
     return null;
   }
 
@@ -37,7 +37,7 @@ export function DatabaseStatusBanner() {
       <AlertTriangle className="h-4 w-4" />
       <AlertTitle>Database Configuration Warning</AlertTitle>
       <AlertDescription>
-        {dbHealth.database.message}
+        {dbHealth.database.message || 'Database connection issue'}
         {dbHealth.database.mode === 'sqlite' && (
           <span className="block mt-1">
             This deployment is running in SQLite fallback mode. Data will not persist between deployments.

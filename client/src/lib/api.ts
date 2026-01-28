@@ -1,4 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
+import { getErrorMessage } from "./errors";
 
 const API_BASE = "/api";
 
@@ -42,13 +43,8 @@ async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
       errorData = { message: response.statusText || "Request failed" };
     }
     
-    // Extract error message from multiple possible fields
-    const errorMessage = 
-      errorData?.error || 
-      errorData?.message || 
-      errorData?.detail || 
-      response.statusText || 
-      `HTTP ${response.status}`;
+    // Use safe error message extraction
+    const errorMessage = getErrorMessage(errorData, `HTTP ${response.status}: ${response.statusText || 'Request failed'}`);
     
     // Log detailed error info in development
     if (process.env.NODE_ENV === 'development') {
@@ -198,11 +194,7 @@ export const uploadApi = {
         errorData = { message: "Upload failed" };
       }
       
-      const errorMessage = 
-        errorData?.error || 
-        errorData?.message || 
-        response.statusText || 
-        "Upload failed";
+      const errorMessage = getErrorMessage(errorData, `Upload failed: ${response.statusText || 'Unknown error'}`);
       
       throw new Error(errorMessage);
     }
