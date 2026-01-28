@@ -81,6 +81,11 @@ export const dashboardApi = {
       method: "POST",
     });
   },
+  reprocessAll: async () => {
+    return fetchJSON<{ message: string; results: { fileName: string; status: string; message?: string }[] }>(`${API_BASE}/reprocess-all`, {
+      method: "POST",
+    });
+  },
   getLatestRefresh: async () => {
     return fetchJSON<{ lastRefresh: string | null }>(`${API_BASE}/refresh/latest`);
   },
@@ -318,6 +323,9 @@ export interface UploadResult {
     inflowsParsed?: number;
     planParsed?: number;
     infoParsed?: boolean;
+    cashflowParsed?: number;
+    financeRevenueParsed?: number;
+    financeCosParsed?: number;
     warnings?: string[];
   }[];
 }

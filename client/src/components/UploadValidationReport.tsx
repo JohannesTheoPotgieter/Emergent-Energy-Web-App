@@ -14,7 +14,8 @@ export function UploadValidationReport({ result, onDismiss }: UploadValidationRe
   const successCount = result.results.filter(r => r.status === "success").length;
   const errorCount = result.results.filter(r => r.status === "error").length;
   const totalRecords = result.results.reduce((sum, r) => 
-    sum + (r.expensesParsed || 0) + (r.inflowsParsed || 0) + (r.planParsed || 0), 0);
+    sum + (r.expensesParsed || 0) + (r.inflowsParsed || 0) + (r.planParsed || 0) + 
+    (r.cashflowParsed || 0) + (r.financeRevenueParsed || 0) + (r.financeCosParsed || 0), 0);
 
   return (
     <Card className="border-emerald-200 bg-emerald-50/50 dark:bg-emerald-950/20 dark:border-emerald-800 shadow-sm animate-in fade-in slide-in-from-top-2 duration-300">
@@ -85,6 +86,21 @@ export function UploadValidationReport({ result, onDismiss }: UploadValidationRe
                 {(fileResult.planParsed ?? 0) > 0 && (
                   <Badge variant="outline" className="bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800">
                     {fileResult.planParsed} Tasks
+                  </Badge>
+                )}
+                {(fileResult.cashflowParsed ?? 0) > 0 && (
+                  <Badge variant="outline" className="bg-cyan-50 dark:bg-cyan-950/20 border-cyan-200 dark:border-cyan-800">
+                    {fileResult.cashflowParsed} Cashflow
+                  </Badge>
+                )}
+                {(fileResult.financeRevenueParsed ?? 0) > 0 && (
+                  <Badge variant="outline" className="bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800">
+                    {fileResult.financeRevenueParsed} Revenue
+                  </Badge>
+                )}
+                {(fileResult.financeCosParsed ?? 0) > 0 && (
+                  <Badge variant="outline" className="bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800">
+                    {fileResult.financeCosParsed} COS
                   </Badge>
                 )}
               </div>

@@ -50,17 +50,20 @@ export function ProgramProvider({ children }: { children: ReactNode }) {
   });
 
   const refreshMutation = useMutation({
-    mutationFn: dashboardApi.refresh,
-    onSuccess: () => {
+    mutationFn: dashboardApi.reprocessAll,
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["overview"] });
+      queryClient.invalidateQueries({ queryKey: ["projects-summary"] });
+      const successCount = result.results.filter(r => r.status === "success").length;
       toast({
-        title: "Data Refreshed",
-        description: "Dashboard data has been updated.",
+        title: "Data Reprocessed",
+        description: `Successfully reprocessed ${successCount} of ${result.results.length} project file(s).`,
       });
     },
     onError: (error: Error) => {
       toast({
-        title: "Refresh Failed",
+        title: "Reprocess Failed",
         description: error.message,
         variant: "destructive",
       });
