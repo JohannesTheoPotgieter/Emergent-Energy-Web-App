@@ -235,31 +235,6 @@ export async function registerRoutes(
     res.status(401).json({ message: "Not authenticated" });
   });
 
-  app.get("/api/auth/status", (req, res) => {
-    const hasCookie = !!req.headers.cookie;
-    const hasSession = !!req.session;
-    const hasUser = !!req.user;
-    const isAuthenticated = req.isAuthenticated();
-    const authHeader = req.headers.authorization;
-    const hasAuthHeader = !!authHeader;
-    
-    let jwtValid = false;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      const token = authHeader.substring(7);
-      const payload = verifyToken(token);
-      jwtValid = !!payload;
-    }
-    
-    res.json({
-      authenticated: isAuthenticated || jwtValid,
-      hasSession: hasSession,
-      hasUser: hasUser,
-      hasCookie: hasCookie,
-      hasAuthHeader: hasAuthHeader,
-      jwtValid: jwtValid,
-      sessionAuth: isAuthenticated,
-    });
-  });
 
   // ==================== OVERVIEW API ====================
 
