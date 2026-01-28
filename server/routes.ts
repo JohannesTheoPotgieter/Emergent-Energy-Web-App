@@ -7,6 +7,7 @@ import { parseTrackerFile } from "./excelParser";
 import { insertBudgetSchema } from "@shared/schema";
 import { z } from "zod";
 import { format } from "date-fns";
+import { generateToken, verifyToken } from "./jwt";
 
 const upload = multer({ 
   storage: multer.memoryStorage(),
@@ -29,9 +30,37 @@ const upload = multer({
 });
 
 function requireAuth(req: Request, res: Response, next: NextFunction) {
+  // Check session-based auth first
   if (req.isAuthenticated()) {
     return next();
   }
+  
+  // Check JWT token as fallback
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.substring(7);
+    const payload = verifyToken(token);
+    
+    if (payload) {
+      // Attach user to request for consistency
+      req.user = {
+        id: payload.userId,
+        email: payload.email,
+        name: payload.name,
+        role: payload.role,
+      };
+      return next();
+    }
+  }
+  
+  // Log diagnostic info for debugging
+  const hasCookie = !!req.headers.cookie;
+  const hasSession = !!req.session;
+  const hasUser = !!req.user;
+  const hasAuthHeader = !!authHeader;
+  
+  console.log(`[AUTH FAIL] hasCookie:${hasCookie}, hasSession:${hasSession}, hasUser:${hasUser}, hasAuthHeader:${hasAuthHeader}`);
+  
   res.status(401).json({ error: "Authentication required", message: "Authentication required" });
 }
 
@@ -99,9 +128,19 @@ export async function registerRoutes(
             details: process.env.NODE_ENV === 'development' ? err.message : undefined
           });
         }
+        
+        // Generate JWT token as fallback auth mechanism
+        const token = generateToken({
+          userId: user.id,
+          email: user.email,
+          name: user.name,
+          role: user.role,
+        });
+        
         return res.json({ 
           message: "Login successful", 
-          user: { id: user.id, email: user.email, name: user.name, role: user.role } 
+          user: { id: user.id, email: user.email, name: user.name, role: user.role },
+          token,
         });
       });
     })(req, res, next);
@@ -117,12 +156,53 @@ export async function registerRoutes(
   });
 
   app.get("/api/auth/me", (req, res) => {
+    // Check session auth
     if (req.isAuthenticated() && req.user) {
       return res.json({ 
         user: { id: req.user.id, email: req.user.email, name: req.user.name, role: req.user.role } 
       });
     }
+    
+    // Check JWT auth
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.substring(7);
+      const payload = verifyToken(token);
+      
+      if (payload) {
+        return res.json({
+          user: { id: payload.userId, email: payload.email, name: payload.name, role: payload.role }
+        });
+      }
+    }
+    
     res.status(401).json({ message: "Not authenticated" });
+  });
+
+  app.get("/api/auth/status", (req, res) => {
+    const hasCookie = !!req.headers.cookie;
+    const hasSession = !!req.session;
+    const hasUser = !!req.user;
+    const isAuthenticated = req.isAuthenticated();
+    const authHeader = req.headers.authorization;
+    const hasAuthHeader = !!authHeader;
+    
+    let jwtValid = false;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.substring(7);
+      const payload = verifyToken(token);
+      jwtValid = !!payload;
+    }
+    
+    res.json({
+      authenticated: isAuthenticated || jwtValid,
+      hasSession: hasSession,
+      hasUser: hasUser,
+      hasCookie: hasCookie,
+      hasAuthHeader: hasAuthHeader,
+      jwtValid: jwtValid,
+      sessionAuth: isAuthenticated,
+    });
   });
 
   // ==================== OVERVIEW API ====================
