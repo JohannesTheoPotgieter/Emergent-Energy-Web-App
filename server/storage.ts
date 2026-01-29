@@ -160,7 +160,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createUser(user: InsertUser): Promise<User> {
-    const [created] = await this.dbInstance.insert(users).values(user).returning();
+    // Explicitly provide timestamp for SQLite compatibility
+    const [created] = await this.dbInstance.insert(users).values({
+      ...user,
+      createdAt: new Date(),
+    }).returning();
     return created;
   }
 
@@ -180,7 +184,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createProject(project: InsertProject): Promise<Project> {
-    const [created] = await this.dbInstance.insert(projects).values(project).returning();
+    // Explicitly provide timestamp for SQLite compatibility
+    const [created] = await this.dbInstance.insert(projects).values({
+      ...project,
+      lastUpdated: new Date(),
+    }).returning();
     return created;
   }
 
@@ -208,13 +216,20 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createExpense(expense: InsertExpense): Promise<Expense> {
-    const [created] = await this.dbInstance.insert(expenses).values(expense).returning();
+    // Explicitly provide timestamp for SQLite compatibility
+    const [created] = await this.dbInstance.insert(expenses).values({
+      ...expense,
+      createdAt: new Date(),
+    }).returning();
     return created;
   }
 
   async createManyExpenses(expenseList: InsertExpense[]): Promise<Expense[]> {
     if (expenseList.length === 0) return [];
-    return this.dbInstance.insert(expenses).values(expenseList).returning();
+    // Explicitly provide timestamp for SQLite compatibility
+    const now = new Date();
+    const withTimestamps = expenseList.map(e => ({ ...e, createdAt: now }));
+    return this.dbInstance.insert(expenses).values(withTimestamps).returning();
   }
 
   async deleteExpensesByProject(projectId: number): Promise<void> {
@@ -231,13 +246,20 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createRevenue(revenue: InsertRevenue): Promise<Revenue> {
-    const [created] = await this.dbInstance.insert(revenues).values(revenue).returning();
+    // Explicitly provide timestamp for SQLite compatibility
+    const [created] = await this.dbInstance.insert(revenues).values({
+      ...revenue,
+      createdAt: new Date(),
+    }).returning();
     return created;
   }
 
   async createManyRevenues(revenueList: InsertRevenue[]): Promise<Revenue[]> {
     if (revenueList.length === 0) return [];
-    return this.dbInstance.insert(revenues).values(revenueList).returning();
+    // Explicitly provide timestamp for SQLite compatibility
+    const now = new Date();
+    const withTimestamps = revenueList.map(r => ({ ...r, createdAt: now }));
+    return this.dbInstance.insert(revenues).values(withTimestamps).returning();
   }
 
   async deleteRevenuesByProject(projectId: number): Promise<void> {
@@ -254,13 +276,20 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createTask(task: InsertTask): Promise<Task> {
-    const [created] = await this.dbInstance.insert(tasks).values(task).returning();
+    // Explicitly provide timestamp for SQLite compatibility
+    const [created] = await this.dbInstance.insert(tasks).values({
+      ...task,
+      createdAt: new Date(),
+    }).returning();
     return created;
   }
 
   async createManyTasks(taskList: InsertTask[]): Promise<Task[]> {
     if (taskList.length === 0) return [];
-    return this.dbInstance.insert(tasks).values(taskList).returning();
+    // Explicitly provide timestamp for SQLite compatibility
+    const now = new Date();
+    const withTimestamps = taskList.map(t => ({ ...t, createdAt: now }));
+    return this.dbInstance.insert(tasks).values(withTimestamps).returning();
   }
 
   async deleteTasksByProject(projectId: number): Promise<void> {
@@ -277,7 +306,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createBudget(budget: InsertBudget): Promise<Budget> {
-    const [created] = await this.dbInstance.insert(budgets).values(budget).returning();
+    // Explicitly provide timestamp for SQLite compatibility
+    const [created] = await this.dbInstance.insert(budgets).values({
+      ...budget,
+      createdAt: new Date(),
+    }).returning();
     return created;
   }
 
@@ -335,7 +368,11 @@ export class DatabaseStorage implements IStorage {
         .returning();
       return updated;
     }
-    const [created] = await this.dbInstance.insert(projectInfo).values(info).returning();
+    // Explicitly provide timestamp for SQLite compatibility
+    const [created] = await this.dbInstance.insert(projectInfo).values({
+      ...info,
+      updatedAt: new Date(),
+    }).returning();
     return created;
   }
 
@@ -354,7 +391,10 @@ export class DatabaseStorage implements IStorage {
 
   async createManyProgramExpenses(expenseList: InsertProgramExpense[]): Promise<ProgramExpense[]> {
     if (expenseList.length === 0) return [];
-    return this.dbInstance.insert(programExpense).values(expenseList).returning();
+    // Explicitly provide timestamp for SQLite compatibility
+    const now = new Date();
+    const withTimestamps = expenseList.map(e => ({ ...e, createdAt: now }));
+    return this.dbInstance.insert(programExpense).values(withTimestamps).returning();
   }
 
   async deleteProgramExpensesByProject(projectName: string): Promise<void> {
@@ -372,7 +412,10 @@ export class DatabaseStorage implements IStorage {
 
   async createManyProgramInflows(inflowList: InsertProgramInflows[]): Promise<ProgramInflows[]> {
     if (inflowList.length === 0) return [];
-    return this.dbInstance.insert(programInflows).values(inflowList).returning();
+    // Explicitly provide timestamp for SQLite compatibility
+    const now = new Date();
+    const withTimestamps = inflowList.map(i => ({ ...i, createdAt: now }));
+    return this.dbInstance.insert(programInflows).values(withTimestamps).returning();
   }
 
   async deleteProgramInflowsByProject(projectName: string): Promise<void> {
@@ -390,7 +433,10 @@ export class DatabaseStorage implements IStorage {
 
   async createManyProjectPlans(planList: InsertProjectPlan[]): Promise<ProjectPlan[]> {
     if (planList.length === 0) return [];
-    return this.dbInstance.insert(projectPlan).values(planList).returning();
+    // Explicitly provide timestamp for SQLite compatibility
+    const now = new Date();
+    const withTimestamps = planList.map(p => ({ ...p, createdAt: now }));
+    return this.dbInstance.insert(projectPlan).values(withTimestamps).returning();
   }
 
   async deleteProjectPlansByProject(projectName: string): Promise<void> {
@@ -408,7 +454,10 @@ export class DatabaseStorage implements IStorage {
 
   async createManyCashflowPoints(pointList: InsertCashflowPoint[]): Promise<CashflowPoint[]> {
     if (pointList.length === 0) return [];
-    return this.dbInstance.insert(cashflowPoints).values(pointList).returning();
+    // Explicitly provide timestamp for SQLite compatibility
+    const now = new Date();
+    const withTimestamps = pointList.map(p => ({ ...p, createdAt: now }));
+    return this.dbInstance.insert(cashflowPoints).values(withTimestamps).returning();
   }
 
   async deleteCashflowPointsByProject(projectName: string): Promise<void> {
@@ -426,7 +475,10 @@ export class DatabaseStorage implements IStorage {
 
   async createManyFinanceRevenueMonthly(dataList: InsertFinanceRevenueMonthly[]): Promise<FinanceRevenueMonthly[]> {
     if (dataList.length === 0) return [];
-    return this.dbInstance.insert(financeRevenueMonthly).values(dataList).returning();
+    // Explicitly provide timestamp for SQLite compatibility
+    const now = new Date();
+    const withTimestamps = dataList.map(d => ({ ...d, createdAt: now }));
+    return this.dbInstance.insert(financeRevenueMonthly).values(withTimestamps).returning();
   }
 
   async deleteFinanceRevenueMonthlyByProject(projectName: string): Promise<void> {
@@ -444,7 +496,10 @@ export class DatabaseStorage implements IStorage {
 
   async createManyFinanceCosMonthly(dataList: InsertFinanceCosMonthly[]): Promise<FinanceCosMonthly[]> {
     if (dataList.length === 0) return [];
-    return this.dbInstance.insert(financeCosMonthly).values(dataList).returning();
+    // Explicitly provide timestamp for SQLite compatibility
+    const now = new Date();
+    const withTimestamps = dataList.map(d => ({ ...d, createdAt: now }));
+    return this.dbInstance.insert(financeCosMonthly).values(withTimestamps).returning();
   }
 
   async deleteFinanceCosMonthlyByProject(projectName: string): Promise<void> {
