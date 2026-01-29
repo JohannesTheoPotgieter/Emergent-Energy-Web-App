@@ -280,7 +280,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createUpload(upload: InsertUploadMetadata): Promise<UploadMetadata> {
-    const [created] = await this.dbInstance.insert(uploadMetadata).values(upload).returning();
+    // Explicitly provide timestamp for SQLite compatibility (doesn't have now() function)
+    const [created] = await this.dbInstance.insert(uploadMetadata).values({
+      ...upload,
+      uploadedAt: new Date(),
+    }).returning();
     return created;
   }
 
@@ -291,7 +295,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createRefreshLog(log: InsertRefreshLog): Promise<RefreshLog> {
-    const [created] = await this.dbInstance.insert(refreshLogs).values(log).returning();
+    // Explicitly provide timestamp for SQLite compatibility (doesn't have now() function)
+    const [created] = await this.dbInstance.insert(refreshLogs).values({
+      ...log,
+      refreshedAt: new Date(),
+    }).returning();
     return created;
   }
 

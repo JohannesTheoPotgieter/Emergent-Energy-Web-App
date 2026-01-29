@@ -661,7 +661,6 @@ export async function registerRoutes(
       for (const file of files) {
         try {
           // Read and parse file first (no DB writes yet)
-          const fs = require('fs');
           const fileBuffer = fs.readFileSync(file.path);
           const parseResult = parseTrackerFile(fileBuffer, file.originalname);
           
@@ -786,8 +785,6 @@ export async function registerRoutes(
 
   app.post("/api/reprocess-all", requireAuth, async (req, res) => {
     try {
-      const fs = require('fs');
-      
       // Get all uploads with file paths
       const uploads = await storage.getAllUploads();
       const reprocessResults: { fileName: string; status: string; message?: string }[] = [];
