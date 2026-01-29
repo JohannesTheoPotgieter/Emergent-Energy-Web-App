@@ -328,4 +328,8 @@ async function ensureSqliteSchema() {
   }
 }
 
-export { db, dbMode, dbConfig, initializeDatabase };
+function getDbMode(): 'sqlite' | 'postgres' {
+  return dbMode;
+}
+
+export { db, dbMode, dbConfig, initializeDatabase, getDbMode };

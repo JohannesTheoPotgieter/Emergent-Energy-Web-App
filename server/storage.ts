@@ -1,4 +1,4 @@
-import { db } from "./db";
+import { db, getDbMode } from "./db";
 import { eq, desc, and, gte, lte, isNotNull, isNull, sql } from "drizzle-orm";
 import {
   users, projects, expenses, revenues, tasks, budgets, uploadMetadata, refreshLogs,
@@ -129,7 +129,19 @@ export class DatabaseStorage implements IStorage {
   }
   
   // Transaction support
+  // Note: SQLite with better-sqlite3 uses synchronous transactions which can't return promises
+  // For SQLite, we execute operations directly (they're atomic per statement)
+  // For Postgres, we use proper async transactions
   async transaction<T>(callback: (txStorage: IStorage) => Promise<T>): Promise<T> {
+    const mode = getDbMode();
+    
+    if (mode === 'sqlite') {
+      // SQLite: just execute the callback directly
+      // Individual statements are already atomic in SQLite
+      return await callback(this);
+    }
+    
+    // Postgres: use proper async transaction
     return await this.dbInstance.transaction(async (tx: any) => {
       const txStorage = new DatabaseStorage(tx as typeof db);
       return await callback(txStorage);
