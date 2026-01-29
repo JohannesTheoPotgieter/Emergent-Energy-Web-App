@@ -1,0 +1,53 @@
+Fix the Emergent Energy Dashboard app. Current issues:
+- Upload sometimes fails with toast “Upload failed” and earlier errors included “getaddrinfo EAI_AGAIN helium”.
+- Uploading a second tracker removes the first project (it’s showing only latest upload).
+- Cashflow/COS/Revenue tabs show no data even after uploading trackers.
+- Login/upload sometimes fails due to auth/session not persisting.
+
+Do ALL of the following:
+
+1) Storage / DB stability (stop helium errors)
+- Remove any dependency on a DB host called “helium”.
+- Default to SQLite file DB for Replit deploys (persist a local db file).
+- Add DB_MODE=sqlite|postgres env support, but only use postgres if DATABASE_URL is set AND connection succeeds.
+- Add GET /api/health that returns { ok, dbMode, dbConnected, dbError }.
+
+2) Upload must be additive (never replace previous projects)
+- Current behavior is showing only the latest upload. Change logic so uploads are appended/merged into ONE portfolio.
+- Use UPSERT per projectCode (or derived unique project key) so uploading a tracker updates that project, but does NOT wipe other projects.
+- IMPORTANT: if you currently compute summary “by latest upload_id”, stop doing that. Compute across all projects (or active portfolio id), not just the last upload.
+
+3) Upload endpoint robustness + real errors
+- Accept multipart fields: “files” (multi), “file”, and “tracker”. Normalize into files[].
+- If no files, return 400 JSON { error:'no_files', message:'No files received. Expected files/file/tracker.' }.
+- Add a global API error handler so any failure returns JSON { error, message } with useful detail.
+- In the client, when upload fails, show toast: “Upload failed (HTTP <status>): <message>” by parsing JSON/text response.
+
+4) Parse the real tracker sheets for history
+You have tracker workbooks with these sheet names (exact):
+- “Cashflow”
+- “Finance - Revenue”
+- “Finance - COS”
+Also: “Expenditure Breakdown”, “Revenue Tracking”, “Project Plan”, “Tasks”, “Data”.
+
+Implement parsers that extract historical rows from:
+- Cashflow sheet -> cashflow_entries table: { projectCode, date, type(in/out), amount, description, category?, sourceRow? }
+- Finance - Revenue -> revenue_entries table: { projectCode, date, amount, description, invoice?, status? }
+- Finance - COS -> cos_entries table: { projectCode, date, amount, description, supplier?, status? }
+
+Use flexible header matching (case-insensitive) and do NOT assume perfect column names.
+If a sheet is found but no usable rows, show an explicit empty-state reason.
+
+5) Hook up the tabs
+- Cashflow/COS/Revenue tabs must query these *_entries tables.
+- Add date range filters (FY = 1 Sep to 31 Aug) + project filter.
+- Make sure the FY button sets the range accordingly.
+
+Acceptance checks (must pass in the deployed preview URL):
+- Login works reliably.
+- Upload “1 Bolt Ave_Tracker.xlsx” then upload “Coega Steels Ph2_Tracker.xlsx” -> BOTH projects remain visible.
+- Uploading a third tracker does not remove earlier ones.
+- Upload errors show real causes (no generic “Upload failed”).
+- Cashflow/COS/Revenue show rows when present or show clear empty-state reasons when not.
+
+Commit message: “Fix upload/additive portfolio + stable sqlite + parse cashflow/cos/revenue + better errors”.

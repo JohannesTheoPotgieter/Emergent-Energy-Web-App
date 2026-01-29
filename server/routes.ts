@@ -100,11 +100,18 @@ export async function registerRoutes(
     
     const dbStatus = getDbConfigStatus();
     
+    // Check DB_MODE env var support
+    const envDbMode = process.env.DB_MODE;
+    const hasDatabaseUrl = !!process.env.DATABASE_URL;
+    
     res.json({
-      ok: true,
+      ok: dbStatus.connected,
       dbMode: dbMode,
       dbConnected: dbStatus.connected,
       dbHost: dbStatus.host,
+      dbError: dbStatus.error || null,
+      envDbMode: envDbMode || 'auto',
+      hasDatabaseUrl,
       message: dbStatus.message,
       timestamp: new Date().toISOString(),
     });
@@ -608,11 +615,30 @@ export async function registerRoutes(
 
   // ==================== FILE UPLOAD ROUTE ====================
 
-  app.post("/api/upload", requireAuth, upload.array("files", 20), async (req, res) => {
+  // Accept multiple field names: files, file, tracker
+  const multiUpload = upload.fields([
+    { name: 'files', maxCount: 20 },
+    { name: 'file', maxCount: 20 },
+    { name: 'tracker', maxCount: 20 }
+  ]);
+
+  app.post("/api/upload", requireAuth, multiUpload, async (req, res) => {
     try {
-      const files = req.files as Express.Multer.File[];
+      // Normalize files from multiple possible field names
+      const filesObj = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
+      let files: Express.Multer.File[] = [];
+      
+      if (filesObj) {
+        if (filesObj.files) files.push(...filesObj.files);
+        if (filesObj.file) files.push(...filesObj.file);
+        if (filesObj.tracker) files.push(...filesObj.tracker);
+      }
+      
       if (!files || files.length === 0) {
-        return res.status(400).json({ error: "No files uploaded", message: "No files uploaded" });
+        return res.status(400).json({ 
+          error: "no_files", 
+          message: "No files received. Expected files/file/tracker field(s)." 
+        });
       }
 
       const results: { 
@@ -1128,6 +1154,37 @@ export async function registerRoutes(
     } catch (error) {
       res.status(500).json({ error: "Export failed", message: "Export failed" });
     }
+  });
+
+  // ==================== GLOBAL API ERROR HANDLER ====================
+  // Catch any unhandled errors and return proper JSON
+  app.use('/api', (err: any, req: Request, res: Response, next: NextFunction) => {
+    console.error('[API Error Handler]', err);
+    
+    // Multer file size/type errors
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({
+        error: 'file_too_large',
+        message: 'File too large. Maximum file size is 50MB.'
+      });
+    }
+    
+    if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+      return res.status(400).json({
+        error: 'unexpected_field',
+        message: 'Unexpected form field. Expected files/file/tracker.'
+      });
+    }
+    
+    // Generic error with message
+    const errorMessage = err.message || 'Internal server error';
+    const statusCode = err.status || err.statusCode || 500;
+    
+    res.status(statusCode).json({
+      error: err.code || 'server_error',
+      message: errorMessage,
+      detail: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
   });
 
   return httpServer;

@@ -94,6 +94,7 @@ function initializeSqlite() {
     mode: 'sqlite',
     message: `Using SQLite (${sqliteFile})`,
     host: undefined,
+    error: config.error,
   });
 }
 
@@ -113,93 +114,115 @@ async function ensureSqliteSchema() {
       )
     `);
     
-    // Create other essential tables
+    // Project Info table (matches Drizzle schema)
     await db.run(sql`
       CREATE TABLE IF NOT EXISTS project_info (
-        project_name TEXT PRIMARY KEY,
-        client TEXT,
-        location TEXT,
-        capacity_kwp REAL,
-        project_type TEXT,
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_name TEXT NOT NULL UNIQUE,
+        size_kwp REAL,
+        pd TEXT,
+        pm TEXT,
+        contract_value REAL,
+        phase TEXT,
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP
       )
     `);
     
+    // Program Expense table (matches Drizzle schema)
     await db.run(sql`
       CREATE TABLE IF NOT EXISTS program_expense (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         project_name TEXT NOT NULL,
-        category TEXT,
-        item TEXT,
-        supplier TEXT,
-        status TEXT,
-        total_amount REAL,
-        paid_to_date REAL,
-        balance REAL,
-        payment_date TEXT,
-        notes TEXT,
+        row_number INTEGER,
+        expense_category TEXT,
+        expense_line_item TEXT,
+        expense_qty REAL,
+        expense_rate_unit REAL,
+        expense_actual_total REAL,
+        expense_po_number TEXT,
+        expense_invoice_number TEXT,
+        expense_invoiced_date TEXT,
+        revenue_amount REAL,
+        expense_payment_date TEXT,
+        cos_amount REAL,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
       )
     `);
     
+    // Program Inflows table (matches Drizzle schema)
     await db.run(sql`
       CREATE TABLE IF NOT EXISTS program_inflows (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         project_name TEXT NOT NULL,
-        revenue_source TEXT,
-        amount REAL,
-        date_received TEXT,
-        status TEXT,
-        notes TEXT,
+        row_number INTEGER,
+        milestone_no TEXT,
+        milestone_name TEXT,
+        milestone_percent REAL,
+        milestone_amount REAL,
+        planned_payment_date TEXT,
+        milestone_invoice_number TEXT,
+        invoice_raised_date TEXT,
+        payment_received_date TEXT,
+        milestone_notes TEXT,
+        documents_received TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
       )
     `);
     
+    // Project Plan table (matches Drizzle schema)
     await db.run(sql`
       CREATE TABLE IF NOT EXISTS project_plan (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         project_name TEXT NOT NULL,
-        task_name TEXT,
-        responsible TEXT,
-        start_date TEXT,
-        end_date TEXT,
-        status TEXT,
-        notes TEXT,
+        row_number INTEGER,
+        task_no TEXT,
+        high_level_programme TEXT,
+        actual_start TEXT,
+        duration_days INTEGER,
+        actual_end TEXT,
+        actual_pct_complete REAL,
+        expected_pct_complete REAL,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
       )
     `);
     
+    // Cashflow Points table (matches Drizzle schema)
     await db.run(sql`
       CREATE TABLE IF NOT EXISTS cashflow_points (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         project_name TEXT NOT NULL,
         series_name TEXT NOT NULL,
-        period_label TEXT NOT NULL,
+        point_date TEXT NOT NULL,
         value REAL,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
       )
     `);
     
+    // Finance Revenue Monthly table (matches Drizzle schema)
     await db.run(sql`
       CREATE TABLE IF NOT EXISTS finance_revenue_monthly (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         project_name TEXT NOT NULL,
-        month_label TEXT NOT NULL,
+        category TEXT NOT NULL,
+        month_end_date TEXT NOT NULL,
         value REAL,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
       )
     `);
     
+    // Finance COS Monthly table (matches Drizzle schema)
     await db.run(sql`
       CREATE TABLE IF NOT EXISTS finance_cos_monthly (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         project_name TEXT NOT NULL,
-        month_label TEXT NOT NULL,
+        category TEXT NOT NULL,
+        month_end_date TEXT NOT NULL,
         value REAL,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
       )
     `);
     
+    // Upload Metadata table
     await db.run(sql`
       CREATE TABLE IF NOT EXISTS upload_metadata (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -213,11 +236,88 @@ async function ensureSqliteSchema() {
       )
     `);
     
+    // Refresh Logs table
     await db.run(sql`
       CREATE TABLE IF NOT EXISTS refresh_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         triggered_by INTEGER,
         status TEXT DEFAULT 'success',
+        refreshed_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    
+    // Legacy tables for backward compatibility
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS projects (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        code TEXT NOT NULL UNIQUE,
+        manager TEXT NOT NULL,
+        site TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'Planning',
+        stage TEXT NOT NULL DEFAULT 'Development',
+        start_date TEXT NOT NULL,
+        completion_date TEXT NOT NULL,
+        budget REAL NOT NULL,
+        source_file TEXT NOT NULL,
+        last_updated TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS expenses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL,
+        category TEXT NOT NULL,
+        description TEXT NOT NULL,
+        amount REAL NOT NULL,
+        date TEXT NOT NULL,
+        vendor TEXT NOT NULL,
+        invoice_number TEXT,
+        status TEXT NOT NULL DEFAULT 'Forecast',
+        source_sheet TEXT NOT NULL DEFAULT 'Expenditure Breakdown',
+        row_locator INTEGER,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS revenues (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL,
+        type TEXT NOT NULL,
+        amount REAL NOT NULL,
+        date TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'Forecast',
+        source_sheet TEXT NOT NULL DEFAULT 'Revenue Tracking',
+        row_locator INTEGER,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL,
+        task_name TEXT NOT NULL,
+        start_date TEXT NOT NULL,
+        end_date TEXT NOT NULL,
+        progress INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'Not Started',
+        assignee TEXT NOT NULL,
+        source_sheet TEXT NOT NULL DEFAULT 'Project Plan',
+        row_locator INTEGER,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS budgets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL,
+        month TEXT NOT NULL,
+        category TEXT NOT NULL,
+        amount REAL NOT NULL,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
       )
     `);

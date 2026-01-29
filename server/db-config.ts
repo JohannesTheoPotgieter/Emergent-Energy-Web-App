@@ -11,6 +11,16 @@ export interface DbConfig {
 }
 
 export function resolveDbConfig(): DbConfig {
+  // Priority 0: Check explicit DB_MODE env var
+  const explicitMode = process.env.DB_MODE?.toLowerCase();
+  if (explicitMode === 'sqlite') {
+    console.log(`[DB] DB_MODE=sqlite, forcing SQLite mode`);
+    return {
+      mode: 'sqlite',
+      error: 'DB_MODE=sqlite explicitly set',
+    };
+  }
+  
   // Priority 1: Use DATABASE_URL if present and host is NOT helium
   if (process.env.DATABASE_URL) {
     const url = process.env.DATABASE_URL;
@@ -68,13 +78,13 @@ export function resolveDbConfig(): DbConfig {
   };
 }
 
-let cachedStatus: { connected: boolean; mode: string; message: string; host?: string } | null = null;
+let cachedStatus: { connected: boolean; mode: string; message: string; host?: string; error?: string } | null = null;
 
-export function getDbConfigStatus(): { connected: boolean; mode: string; message: string; host?: string } {
+export function getDbConfigStatus(): { connected: boolean; mode: string; message: string; host?: string; error?: string } {
   if (cachedStatus) return cachedStatus;
   return { connected: false, mode: 'unknown', message: 'Database not initialized' };
 }
 
-export function setDbConfigStatus(status: { connected: boolean; mode: string; message: string; host?: string }) {
+export function setDbConfigStatus(status: { connected: boolean; mode: string; message: string; host?: string; error?: string }) {
   cachedStatus = status;
 }
