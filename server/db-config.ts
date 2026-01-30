@@ -1,6 +1,6 @@
 /**
  * Database configuration resolver
- * Handles multiple deployment scenarios with proper fallbacks
+ * Production-safe: Uses SQLite by default for reliability, only uses Postgres if explicitly configured and connectable
  */
 
 export interface DbConfig {
@@ -21,7 +21,7 @@ export function resolveDbConfig(): DbConfig {
     };
   }
   
-  // Priority 1: Use DATABASE_URL if present and host is NOT helium
+  // Priority 1: Use DATABASE_URL if present
   if (process.env.DATABASE_URL) {
     const url = process.env.DATABASE_URL;
     
@@ -30,15 +30,6 @@ export function resolveDbConfig(): DbConfig {
     try {
       const urlObj = new URL(url);
       dbHost = urlObj.hostname;
-      
-      // Force SQLite for helium hosts (unreliable DNS/connection)
-      if (dbHost.includes('helium')) {
-        console.log(`[DB] Detected helium host (${dbHost}), forcing SQLite for stability`);
-        return {
-          mode: 'sqlite',
-          error: `Helium host detected (${dbHost}), using SQLite for reliability`,
-        };
-      }
     } catch {}
     
     return {
@@ -48,30 +39,8 @@ export function resolveDbConfig(): DbConfig {
     };
   }
 
-  // Priority 2: Build from PG environment variables (but avoid helium)
-  const { PGHOST, PGUSER, PGPASSWORD, PGDATABASE, PGPORT } = process.env;
-  if (PGHOST && PGUSER && PGDATABASE) {
-    // Force SQLite for helium hosts
-    if (PGHOST.includes('helium')) {
-      console.log(`[DB] Detected helium PGHOST (${PGHOST}), forcing SQLite for stability`);
-      return {
-        mode: 'sqlite',
-        error: `Helium PGHOST detected (${PGHOST}), using SQLite for reliability`,
-      };
-    }
-    
-    const port = PGPORT || '5432';
-    const password = PGPASSWORD ? `:${PGPASSWORD}` : '';
-    const connectionString = `postgresql://${PGUSER}${password}@${PGHOST}:${port}/${PGDATABASE}`;
-    
-    return {
-      mode: 'postgres',
-      connectionString,
-      dbHost: PGHOST,
-    };
-  }
-
-  // Priority 3: SQLite fallback for deployments (no network dependencies)
+  // Priority 2: SQLite fallback (safe for all deployments)
+  console.log('[DB] No DATABASE_URL found, using SQLite for reliability');
   return {
     mode: 'sqlite',
     error: 'No PostgreSQL configuration found, using SQLite fallback',

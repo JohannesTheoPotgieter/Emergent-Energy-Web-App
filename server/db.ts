@@ -17,20 +17,25 @@ let isInitialized = false;
 
 /**
  * Deterministic database initialization - selects DB ONCE and never switches
+ * Falls back to SQLite if Postgres connection fails (production-safe)
  */
 async function initializeDatabase(): Promise<void> {
   if (isInitialized) return;
   
   if (config.mode === 'postgres' && config.connectionString) {
-    // Try Postgres synchronously with timeout
+    // Try Postgres with short timeout to avoid blocking startup
     console.log(`[DB] Testing PostgreSQL connection to ${config.dbHost}...`);
     
     try {
-      const isConnectable = await testPostgresConnection(config.connectionString, 2000);
+      const isConnectable = await testPostgresConnection(config.connectionString, 1500);
       
       if (isConnectable) {
         // Use Postgres
-        const pool = new pg.Pool({ connectionString: config.connectionString });
+        const pool = new pg.Pool({ 
+          connectionString: config.connectionString,
+          connectionTimeoutMillis: 2000,
+          query_timeout: 5000,
+        });
         db = drizzle(pool, { schema });
         dbMode = 'postgres';
         dbConfig = config;
@@ -46,10 +51,10 @@ async function initializeDatabase(): Promise<void> {
         isInitialized = true;
         return;
       } else {
-        console.warn(`[DB] ⚠ PostgreSQL test failed (host: ${config.dbHost}), falling back to SQLite`);
+        console.warn(`[DB] ⚠ PostgreSQL connection test failed, falling back to SQLite`);
       }
     } catch (err: any) {
-      console.error(`[DB] Postgres connection error:`, err.message);
+      console.warn(`[DB] ⚠ Postgres connection error (${err.message}), falling back to SQLite`);
     }
   }
   
@@ -59,17 +64,22 @@ async function initializeDatabase(): Promise<void> {
   isInitialized = true;
 }
 
-function testPostgresConnection(connectionString: string, timeoutMs: number = 2000): Promise<boolean> {
+function testPostgresConnection(connectionString: string, timeoutMs: number = 1500): Promise<boolean> {
   return new Promise((resolve) => {
-    const pool = new pg.Pool({ connectionString, connectionTimeoutMillis: timeoutMs });
+    const pool = new pg.Pool({ 
+      connectionString, 
+      connectionTimeoutMillis: timeoutMs,
+      max: 1, // Only test with one connection
+    });
+    
     const timeout = setTimeout(() => {
-      pool.end();
+      pool.end().catch(() => {});
       resolve(false);
     }, timeoutMs);
     
     pool.query('SELECT 1', (err) => {
       clearTimeout(timeout);
-      pool.end();
+      pool.end().catch(() => {});
       resolve(!err);
     });
   });
