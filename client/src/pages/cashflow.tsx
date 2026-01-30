@@ -70,26 +70,42 @@ export default function CashflowPage() {
     },
   });
 
-  // Get unique weekly dates and project names
-  const { weeklyDates, projects } = useMemo(() => {
-    const dates = new Set<string>();
+  // Get unique project names and default to first or selected
+  const projects = useMemo(() => {
     const projs = new Set<string>();
-    cashflowPoints.forEach(point => {
-      dates.add(point.pointDate);
-      projs.add(point.projectName);
-    });
-    return {
-      weeklyDates: Array.from(dates).sort(),
-      projects: Array.from(projs).sort(),
-    };
+    cashflowPoints.forEach(point => projs.add(point.projectName));
+    return Array.from(projs).sort();
   }, [cashflowPoints]);
 
-  // Organize data for chart and grid
+  // Auto-select first project if none selected
+  const activeProject = selectedProject || projects[0] || null;
+
+  // Clear edits when project changes to prevent cross-project edit confusion
+  useEffect(() => {
+    if (edits.size > 0) {
+      setEdits(new Map());
+    }
+  }, [activeProject]);
+
+  // Filter cashflow points by active project
+  const projectCashflowPoints = useMemo(() => {
+    if (!activeProject) return [];
+    return cashflowPoints.filter(point => point.projectName === activeProject);
+  }, [cashflowPoints, activeProject]);
+
+  // Get unique weekly dates for the active project
+  const weeklyDates = useMemo(() => {
+    const dates = new Set<string>();
+    projectCashflowPoints.forEach(point => dates.add(point.pointDate));
+    return Array.from(dates).sort();
+  }, [projectCashflowPoints]);
+
+  // Organize data for chart and grid (project-specific)
   const chartData = useMemo(() => {
     const dateMap = new Map<string, Record<string, number>>();
 
     // Apply edits to cashflow points
-    const pointsWithEdits = cashflowPoints.map(point => {
+    const pointsWithEdits = projectCashflowPoints.map(point => {
       const editKey = `${point.projectName}|${point.pointDate}|${point.seriesName}`;
       if (edits.has(editKey)) {
         return { ...point, value: edits.get(editKey)! };
@@ -112,14 +128,14 @@ export default function CashflowPage() {
         ...values,
       }))
       .sort((a, b) => a.date.localeCompare(b.date));
-  }, [cashflowPoints, edits]);
+  }, [projectCashflowPoints, edits]);
 
   // Extract planning grid data (Planned Revenue and Planned Expenditure only)
   const planningGridData = useMemo(() => {
     const plannedRevenueRow: Record<string, number> = {};
     const plannedExpenditureRow: Record<string, number> = {};
 
-    cashflowPoints.forEach(point => {
+    projectCashflowPoints.forEach(point => {
       if (point.seriesName === "Planned Revenue") {
         const editKey = `${point.projectName}|${point.pointDate}|${point.seriesName}`;
         plannedRevenueRow[point.pointDate] = edits.has(editKey) ? edits.get(editKey)! : point.value;
@@ -133,7 +149,7 @@ export default function CashflowPage() {
       revenue: plannedRevenueRow,
       expenditure: plannedExpenditureRow,
     };
-  }, [cashflowPoints, edits]);
+  }, [projectCashflowPoints, edits]);
 
   const seriesConfig = [
     { name: "Planned Revenue", color: "#3b82f6", strokeWidth: 2 },
@@ -147,8 +163,8 @@ export default function CashflowPage() {
   ];
 
   const handleCellEdit = (date: string, seriesName: string, value: number) => {
-    const project = selectedProject || projects[0] || "";
-    const editKey = `${project}|${date}|${seriesName}`;
+    if (!activeProject) return;
+    const editKey = `${activeProject}|${date}|${seriesName}`;
     const newEdits = new Map(edits);
     newEdits.set(editKey, value);
     setEdits(newEdits);
@@ -178,8 +194,7 @@ export default function CashflowPage() {
   };
 
   const handleResetPlan = async () => {
-    const project = selectedProject || projects[0];
-    if (!project) {
+    if (!activeProject) {
       toast({
         title: "No Project Selected",
         description: "Please select a project to reset.",
@@ -188,7 +203,7 @@ export default function CashflowPage() {
       return;
     }
 
-    await resetMutation.mutateAsync(project);
+    await resetMutation.mutateAsync(activeProject);
   };
 
   const hasEdits = edits.size > 0;

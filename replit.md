@@ -23,6 +23,13 @@ Preferred communication style: Simple, everyday language.
 
 The frontend follows a page-based structure under `client/src/pages/` with shared components in `client/src/components/`. Custom hooks in `client/src/hooks/` manage authentication (`use-auth`), program data state (`use-program-data`), and UI utilities.
 
+### Cashflow Planning Feature
+- **Editable Planning Grid**: Users can edit Planned Revenue and Planned Expenditure values directly in the UI (inline editing)
+- **Real-time Chart Updates**: Chart reflects edits immediately (before saving) using local state management
+- **Planning Overrides**: Edits are stored as overrides per project + week_start_date + series_name, applied on top of baseline tracker data
+- **Save/Reset**: Save Plan persists overrides to database, Reset Plan clears all overrides for selected project
+- **Multi-project Support**: Edits are automatically cleared when switching projects to prevent cross-project confusion
+
 ### Backend Architecture
 - **Framework**: Express.js with TypeScript
 - **Authentication**: Passport.js with local strategy, express-session with PostgreSQL session store
@@ -53,6 +60,7 @@ The server follows a modular structure:
   - `cashflowPoints` - Cashflow series data from "Cashflow" sheets
   - `financeRevenueMonthly` - Revenue monthly data from "Finance-Revenue" sheets
   - `financeCosMonthly` - Cost of sales monthly data from "Finance-COS" sheets
+  - `cashflowPlanningOverrides` - User edits for planned cashflow series (project + week + series + override value)
   - `uploadMetadata` - Upload history with file paths for reprocessing
   - `refreshLogs` - Data refresh audit trail
   - Legacy tables: `projects`, `expenses`, `revenues`, `tasks`, `budgets`
