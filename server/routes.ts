@@ -54,11 +54,15 @@ function applyPlanningOverrides(
 ): any[] {
   if (overrides.length === 0) return baselinePoints;
 
-  // Create override lookup map: projectName|weekStartDate|seriesName -> overrideValue
-  const overrideMap = new Map<string, string>();
+  // Create override lookup map: projectName|weekStartDate|seriesName -> overrideValue (parsed as number)
+  const overrideMap = new Map<string, number>();
   overrides.forEach((o: any) => {
     const key = `${o.projectName}|${o.weekStartDate}|${o.seriesName}`;
-    overrideMap.set(key, o.overrideValue);
+    // Parse override value to number to maintain type consistency
+    const numValue = typeof o.overrideValue === 'string' ? parseFloat(o.overrideValue) : o.overrideValue;
+    if (!isNaN(numValue)) {
+      overrideMap.set(key, numValue);
+    }
   });
 
   // Apply overrides to baseline points
@@ -1048,20 +1052,37 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Overrides must be an array", message: "Overrides must be an array" });
       }
 
-      // Add createdBy from authenticated user
+      // Add createdBy from authenticated user and validate override values
       const userId = req.user?.id;
-      const overridesWithUser = overrides.map(o => ({ ...o, createdBy: userId }));
+      const overridesWithUser = overrides.map(o => {
+        // Ensure overrideValue is a valid number
+        const numValue = typeof o.overrideValue === 'string' ? parseFloat(o.overrideValue) : o.overrideValue;
+        if (isNaN(numValue)) {
+          throw new Error(`Invalid override value: ${o.overrideValue}`);
+        }
+        return { 
+          ...o, 
+          overrideValue: numValue.toString(), // Store as string in DB but validate it's numeric
+          createdBy: userId 
+        };
+      });
 
       const saved = await storage.upsertManyPlanningOverrides(overridesWithUser);
       res.json({ message: "Planning overrides saved", count: saved.length, overrides: saved });
     } catch (error) {
-      res.status(500).json({ error: "Failed to save planning overrides", message: "Failed to save planning overrides" });
+      res.status(500).json({ 
+        error: "Failed to save planning overrides", 
+        message: error instanceof Error ? error.message : "Failed to save planning overrides" 
+      });
     }
   });
 
   app.delete("/api/cashflow/planning-overrides/:projectName", requireAuth, async (req, res) => {
     try {
-      const { projectName } = req.params;
+      const projectName = req.params.projectName;
+      if (!projectName || typeof projectName !== 'string') {
+        return res.status(400).json({ error: "Project name required", message: "Project name is required" });
+      }
       await storage.deletePlanningOverridesByProject(projectName);
       res.json({ message: `Planning overrides deleted for project: ${projectName}` });
     } catch (error) {
