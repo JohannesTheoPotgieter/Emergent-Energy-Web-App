@@ -47,6 +47,16 @@ function parseDate(value: any): string | null {
   }
   
   if (typeof value === "string") {
+    // Try parsing with JavaScript Date (handles many formats including "7-Jul-25", "Jul 7, 2025", etc.)
+    const parsed = new Date(value);
+    if (!isNaN(parsed.getTime())) {
+      const year = parsed.getFullYear();
+      const month = String(parsed.getMonth() + 1).padStart(2, "0");
+      const day = String(parsed.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    }
+    
+    // Legacy patterns for explicit formats
     const ddmmyyyy = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
     if (ddmmyyyy) {
       const [, day, month, year] = ddmmyyyy;
