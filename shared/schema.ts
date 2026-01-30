@@ -283,3 +283,83 @@ export const cashflowPlanningOverrides = pgTable("cashflow_planning_overrides", 
 export const insertCashflowPlanningOverrideSchema = createInsertSchema(cashflowPlanningOverrides).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertCashflowPlanningOverride = z.infer<typeof insertCashflowPlanningOverrideSchema>;
 export type CashflowPlanningOverride = typeof cashflowPlanningOverrides.$inferSelect;
+
+// Project Plan Overrides Table (user edits for tasks/milestones)
+export const projectPlanOverrides = pgTable("project_plan_overrides", {
+  id: serial("id").primaryKey(),
+  projectName: text("project_name").notNull(),
+  rowNumber: integer("row_number").notNull(), // Links to projectPlan.rowNumber
+  fieldName: text("field_name").notNull(), // Field being overridden (e.g., "actualStart", "actualEnd")
+  overrideValue: text("override_value"), // New value (stored as text, type-cast on retrieval)
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertProjectPlanOverrideSchema = createInsertSchema(projectPlanOverrides).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertProjectPlanOverride = z.infer<typeof insertProjectPlanOverrideSchema>;
+export type ProjectPlanOverride = typeof projectPlanOverrides.$inferSelect;
+
+// Revenue Tracking Overrides Table (user edits for revenue milestones)
+export const revenueTrackingOverrides = pgTable("revenue_tracking_overrides", {
+  id: serial("id").primaryKey(),
+  projectName: text("project_name").notNull(),
+  rowNumber: integer("row_number").notNull(), // Links to programInflows.rowNumber
+  fieldName: text("field_name").notNull(), // Field being overridden
+  overrideValue: text("override_value"), // New value
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertRevenueTrackingOverrideSchema = createInsertSchema(revenueTrackingOverrides).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertRevenueTrackingOverride = z.infer<typeof insertRevenueTrackingOverrideSchema>;
+export type RevenueTrackingOverride = typeof revenueTrackingOverrides.$inferSelect;
+
+// Expenditure Breakdown Overrides Table (user edits for expenses)
+export const expenditureOverrides = pgTable("expenditure_overrides", {
+  id: serial("id").primaryKey(),
+  projectName: text("project_name").notNull(),
+  rowNumber: integer("row_number").notNull(), // Links to programExpense.rowNumber
+  fieldName: text("field_name").notNull(), // Field being overridden
+  overrideValue: text("override_value"), // New value
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertExpenditureOverrideSchema = createInsertSchema(expenditureOverrides).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertExpenditureOverride = z.infer<typeof insertExpenditureOverrideSchema>;
+export type ExpenditureOverride = typeof expenditureOverrides.$inferSelect;
+
+// Finance Revenue Overrides Table (user edits for monthly revenue)
+export const financeRevenueOverrides = pgTable("finance_revenue_overrides", {
+  id: serial("id").primaryKey(),
+  projectName: text("project_name").notNull(),
+  category: text("category").notNull(), // Revenue category
+  monthEndDate: text("month_end_date").notNull(), // ISO date string
+  overrideValue: decimal("override_value", { precision: 15, scale: 2 }), // New value
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertFinanceRevenueOverrideSchema = createInsertSchema(financeRevenueOverrides).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertFinanceRevenueOverride = z.infer<typeof insertFinanceRevenueOverrideSchema>;
+export type FinanceRevenueOverride = typeof financeRevenueOverrides.$inferSelect;
+
+// Finance COS Overrides Table (user edits for monthly COS)
+export const financeCosOverrides = pgTable("finance_cos_overrides", {
+  id: serial("id").primaryKey(),
+  projectName: text("project_name").notNull(),
+  category: text("category").notNull(), // COS category
+  monthEndDate: text("month_end_date").notNull(), // ISO date string
+  overrideValue: decimal("override_value", { precision: 15, scale: 2 }), // New value
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertFinanceCosOverrideSchema = createInsertSchema(financeCosOverrides).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertFinanceCosOverride = z.infer<typeof insertFinanceCosOverrideSchema>;
+export type FinanceCosOverride = typeof financeCosOverrides.$inferSelect;
