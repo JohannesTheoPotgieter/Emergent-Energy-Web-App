@@ -457,7 +457,16 @@ export class DatabaseStorage implements IStorage {
     // Explicitly provide timestamp for SQLite compatibility
     const now = new Date();
     const withTimestamps = pointList.map(p => ({ ...p, createdAt: now }));
-    return this.dbInstance.insert(cashflowPoints).values(withTimestamps).returning();
+    
+    // Batch inserts to avoid SQLite variable limit (max ~999 variables, each row has ~6 fields)
+    const batchSize = 100;
+    const results: CashflowPoint[] = [];
+    for (let i = 0; i < withTimestamps.length; i += batchSize) {
+      const batch = withTimestamps.slice(i, i + batchSize);
+      const batchResults = await this.dbInstance.insert(cashflowPoints).values(batch).returning();
+      results.push(...batchResults);
+    }
+    return results;
   }
 
   async deleteCashflowPointsByProject(projectName: string): Promise<void> {
@@ -478,7 +487,16 @@ export class DatabaseStorage implements IStorage {
     // Explicitly provide timestamp for SQLite compatibility
     const now = new Date();
     const withTimestamps = dataList.map(d => ({ ...d, createdAt: now }));
-    return this.dbInstance.insert(financeRevenueMonthly).values(withTimestamps).returning();
+    
+    // Batch inserts to avoid SQLite variable limit
+    const batchSize = 100;
+    const results: FinanceRevenueMonthly[] = [];
+    for (let i = 0; i < withTimestamps.length; i += batchSize) {
+      const batch = withTimestamps.slice(i, i + batchSize);
+      const batchResults = await this.dbInstance.insert(financeRevenueMonthly).values(batch).returning();
+      results.push(...batchResults);
+    }
+    return results;
   }
 
   async deleteFinanceRevenueMonthlyByProject(projectName: string): Promise<void> {
@@ -499,7 +517,16 @@ export class DatabaseStorage implements IStorage {
     // Explicitly provide timestamp for SQLite compatibility
     const now = new Date();
     const withTimestamps = dataList.map(d => ({ ...d, createdAt: now }));
-    return this.dbInstance.insert(financeCosMonthly).values(withTimestamps).returning();
+    
+    // Batch inserts to avoid SQLite variable limit
+    const batchSize = 100;
+    const results: FinanceCosMonthly[] = [];
+    for (let i = 0; i < withTimestamps.length; i += batchSize) {
+      const batch = withTimestamps.slice(i, i + batchSize);
+      const batchResults = await this.dbInstance.insert(financeCosMonthly).values(batch).returning();
+      results.push(...batchResults);
+    }
+    return results;
   }
 
   async deleteFinanceCosMonthlyByProject(projectName: string): Promise<void> {
