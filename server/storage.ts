@@ -4,6 +4,7 @@ import {
   users, projects, expenses, revenues, tasks, budgets, uploadMetadata, refreshLogs,
   projectInfo, programExpense, programInflows, projectPlan,
   cashflowPoints, financeRevenueMonthly, financeCosMonthly,
+  cashflowPlanningOverrides,
   type User, type InsertUser,
   type Project, type InsertProject,
   type Expense, type InsertExpense,
@@ -19,6 +20,7 @@ import {
   type CashflowPoint, type InsertCashflowPoint,
   type FinanceRevenueMonthly, type InsertFinanceRevenueMonthly,
   type FinanceCosMonthly, type InsertFinanceCosMonthly,
+  type CashflowPlanningOverride, type InsertCashflowPlanningOverride,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -114,6 +116,13 @@ export interface IStorage {
   getFinanceCosMonthlyByProject(projectName: string): Promise<FinanceCosMonthly[]>;
   createManyFinanceCosMonthly(data: InsertFinanceCosMonthly[]): Promise<FinanceCosMonthly[]>;
   deleteFinanceCosMonthlyByProject(projectName: string): Promise<void>;
+
+  // Cashflow Planning Overrides (user edits)
+  getAllPlanningOverrides(): Promise<CashflowPlanningOverride[]>;
+  getPlanningOverridesByProject(projectName: string): Promise<CashflowPlanningOverride[]>;
+  upsertPlanningOverride(override: InsertCashflowPlanningOverride): Promise<CashflowPlanningOverride>;
+  upsertManyPlanningOverrides(overrides: InsertCashflowPlanningOverride[]): Promise<CashflowPlanningOverride[]>;
+  deletePlanningOverridesByProject(projectName: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -531,6 +540,66 @@ export class DatabaseStorage implements IStorage {
 
   async deleteFinanceCosMonthlyByProject(projectName: string): Promise<void> {
     await this.dbInstance.delete(financeCosMonthly).where(eq(financeCosMonthly.projectName, projectName));
+  }
+
+  // Cashflow Planning Overrides (user edits)
+  async getAllPlanningOverrides(): Promise<CashflowPlanningOverride[]> {
+    return this.dbInstance.select().from(cashflowPlanningOverrides).orderBy(desc(cashflowPlanningOverrides.updatedAt));
+  }
+
+  async getPlanningOverridesByProject(projectName: string): Promise<CashflowPlanningOverride[]> {
+    return this.dbInstance.select()
+      .from(cashflowPlanningOverrides)
+      .where(eq(cashflowPlanningOverrides.projectName, projectName))
+      .orderBy(cashflowPlanningOverrides.weekStartDate);
+  }
+
+  async upsertPlanningOverride(override: InsertCashflowPlanningOverride): Promise<CashflowPlanningOverride> {
+    const now = new Date();
+    const withTimestamps = { ...override, createdAt: now, updatedAt: now };
+    
+    // Check if override already exists
+    const existing = await this.dbInstance.select()
+      .from(cashflowPlanningOverrides)
+      .where(and(
+        eq(cashflowPlanningOverrides.projectName, override.projectName),
+        eq(cashflowPlanningOverrides.weekStartDate, override.weekStartDate),
+        eq(cashflowPlanningOverrides.seriesName, override.seriesName)
+      ))
+      .limit(1);
+
+    if (existing.length > 0) {
+      // Update existing
+      const updated = await this.dbInstance
+        .update(cashflowPlanningOverrides)
+        .set({ overrideValue: override.overrideValue, updatedAt: now })
+        .where(eq(cashflowPlanningOverrides.id, existing[0].id))
+        .returning();
+      return updated[0];
+    } else {
+      // Insert new
+      const inserted = await this.dbInstance
+        .insert(cashflowPlanningOverrides)
+        .values(withTimestamps)
+        .returning();
+      return inserted[0];
+    }
+  }
+
+  async upsertManyPlanningOverrides(overrides: InsertCashflowPlanningOverride[]): Promise<CashflowPlanningOverride[]> {
+    if (overrides.length === 0) return [];
+    
+    // Process one at a time to ensure upsert logic
+    const results: CashflowPlanningOverride[] = [];
+    for (const override of overrides) {
+      const result = await this.upsertPlanningOverride(override);
+      results.push(result);
+    }
+    return results;
+  }
+
+  async deletePlanningOverridesByProject(projectName: string): Promise<void> {
+    await this.dbInstance.delete(cashflowPlanningOverrides).where(eq(cashflowPlanningOverrides.projectName, projectName));
   }
 }
 

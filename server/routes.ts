@@ -47,6 +47,33 @@ const upload = multer({
   }
 });
 
+// Helper function to apply planning overrides to cashflow baseline data
+function applyPlanningOverrides(
+  baselinePoints: any[],
+  overrides: any[]
+): any[] {
+  if (overrides.length === 0) return baselinePoints;
+
+  // Create override lookup map: projectName|weekStartDate|seriesName -> overrideValue
+  const overrideMap = new Map<string, string>();
+  overrides.forEach((o: any) => {
+    const key = `${o.projectName}|${o.weekStartDate}|${o.seriesName}`;
+    overrideMap.set(key, o.overrideValue);
+  });
+
+  // Apply overrides to baseline points
+  return baselinePoints.map((point: any) => {
+    const key = `${point.projectName}|${point.pointDate}|${point.seriesName}`;
+    if (overrideMap.has(key)) {
+      return {
+        ...point,
+        value: overrideMap.get(key)!,
+      };
+    }
+    return point;
+  });
+}
+
 function requireAuth(req: Request, res: Response, next: NextFunction) {
   // Check session-based auth first
   if (req.isAuthenticated()) {
@@ -978,6 +1005,10 @@ export async function registerRoutes(
         points = await storage.getAllCashflowPoints();
       }
 
+      // Apply planning overrides to baseline data
+      const overrides = await storage.getAllPlanningOverrides();
+      points = applyPlanningOverrides(points, overrides);
+
       if (startDate && typeof startDate === 'string') {
         points = points.filter(p => p.pointDate >= startDate);
       }
@@ -988,6 +1019,53 @@ export async function registerRoutes(
       res.json(points);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch cashflow data", message: "Failed to fetch cashflow data" });
+    }
+  });
+
+  // Planning overrides API
+  app.get("/api/cashflow/planning-overrides", requireAuth, async (req, res) => {
+    try {
+      const { projectName } = req.query;
+      let overrides;
+      
+      if (projectName && typeof projectName === 'string') {
+        overrides = await storage.getPlanningOverridesByProject(projectName);
+      } else {
+        overrides = await storage.getAllPlanningOverrides();
+      }
+
+      res.json(overrides);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch planning overrides", message: "Failed to fetch planning overrides" });
+    }
+  });
+
+  app.post("/api/cashflow/planning-overrides", requireAuth, async (req, res) => {
+    try {
+      const { overrides } = req.body;
+      
+      if (!Array.isArray(overrides)) {
+        return res.status(400).json({ error: "Overrides must be an array", message: "Overrides must be an array" });
+      }
+
+      // Add createdBy from authenticated user
+      const userId = req.user?.id;
+      const overridesWithUser = overrides.map(o => ({ ...o, createdBy: userId }));
+
+      const saved = await storage.upsertManyPlanningOverrides(overridesWithUser);
+      res.json({ message: "Planning overrides saved", count: saved.length, overrides: saved });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to save planning overrides", message: "Failed to save planning overrides" });
+    }
+  });
+
+  app.delete("/api/cashflow/planning-overrides/:projectName", requireAuth, async (req, res) => {
+    try {
+      const { projectName } = req.params;
+      await storage.deletePlanningOverridesByProject(projectName);
+      res.json({ message: `Planning overrides deleted for project: ${projectName}` });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete planning overrides", message: "Failed to delete planning overrides" });
     }
   });
 
