@@ -267,3 +267,19 @@ export const financeCosMonthly = pgTable("finance_cos_monthly", {
 export const insertFinanceCosMonthlySchema = createInsertSchema(financeCosMonthly).omit({ id: true, createdAt: true });
 export type InsertFinanceCosMonthly = z.infer<typeof insertFinanceCosMonthlySchema>;
 export type FinanceCosMonthly = typeof financeCosMonthly.$inferSelect;
+
+// Cashflow Planning Overrides Table (user edits for planned series)
+export const cashflowPlanningOverrides = pgTable("cashflow_planning_overrides", {
+  id: serial("id").primaryKey(),
+  projectName: text("project_name").notNull(),
+  weekStartDate: text("week_start_date").notNull(), // ISO date string (Monday)
+  seriesName: text("series_name").notNull(), // "Planned Revenue" or "Planned Expenditure"
+  overrideValue: decimal("override_value", { precision: 15, scale: 2 }).notNull(), // New value (absolute override)
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertCashflowPlanningOverrideSchema = createInsertSchema(cashflowPlanningOverrides).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertCashflowPlanningOverride = z.infer<typeof insertCashflowPlanningOverrideSchema>;
+export type CashflowPlanningOverride = typeof cashflowPlanningOverrides.$inferSelect;
