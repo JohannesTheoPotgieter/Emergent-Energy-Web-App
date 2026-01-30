@@ -4,7 +4,8 @@ import {
   users, projects, expenses, revenues, tasks, budgets, uploadMetadata, refreshLogs,
   projectInfo, programExpense, programInflows, projectPlan,
   cashflowPoints, financeRevenueMonthly, financeCosMonthly,
-  cashflowPlanningOverrides,
+  cashflowPlanningOverrides, projectPlanOverrides, revenueTrackingOverrides,
+  expenditureOverrides, financeRevenueOverrides, financeCosOverrides,
   type User, type InsertUser,
   type Project, type InsertProject,
   type Expense, type InsertExpense,
@@ -21,6 +22,11 @@ import {
   type FinanceRevenueMonthly, type InsertFinanceRevenueMonthly,
   type FinanceCosMonthly, type InsertFinanceCosMonthly,
   type CashflowPlanningOverride, type InsertCashflowPlanningOverride,
+  type ProjectPlanOverride, type InsertProjectPlanOverride,
+  type RevenueTrackingOverride, type InsertRevenueTrackingOverride,
+  type ExpenditureOverride, type InsertExpenditureOverride,
+  type FinanceRevenueOverride, type InsertFinanceRevenueOverride,
+  type FinanceCosOverride, type InsertFinanceCosOverride,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -123,6 +129,36 @@ export interface IStorage {
   upsertPlanningOverride(override: InsertCashflowPlanningOverride): Promise<CashflowPlanningOverride>;
   upsertManyPlanningOverrides(overrides: InsertCashflowPlanningOverride[]): Promise<CashflowPlanningOverride[]>;
   deletePlanningOverridesByProject(projectName: string): Promise<void>;
+
+  // Project Plan Overrides (user edits for tasks/milestones)
+  getProjectPlanOverridesByProject(projectName: string): Promise<ProjectPlanOverride[]>;
+  upsertProjectPlanOverride(override: InsertProjectPlanOverride): Promise<ProjectPlanOverride>;
+  upsertManyProjectPlanOverrides(overrides: InsertProjectPlanOverride[]): Promise<ProjectPlanOverride[]>;
+  deleteProjectPlanOverridesByProject(projectName: string): Promise<void>;
+
+  // Revenue Tracking Overrides (user edits for revenue milestones)
+  getRevenueTrackingOverridesByProject(projectName: string): Promise<RevenueTrackingOverride[]>;
+  upsertRevenueTrackingOverride(override: InsertRevenueTrackingOverride): Promise<RevenueTrackingOverride>;
+  upsertManyRevenueTrackingOverrides(overrides: InsertRevenueTrackingOverride[]): Promise<RevenueTrackingOverride[]>;
+  deleteRevenueTrackingOverridesByProject(projectName: string): Promise<void>;
+
+  // Expenditure Overrides (user edits for expenses)
+  getExpenditureOverridesByProject(projectName: string): Promise<ExpenditureOverride[]>;
+  upsertExpenditureOverride(override: InsertExpenditureOverride): Promise<ExpenditureOverride>;
+  upsertManyExpenditureOverrides(overrides: InsertExpenditureOverride[]): Promise<ExpenditureOverride[]>;
+  deleteExpenditureOverridesByProject(projectName: string): Promise<void>;
+
+  // Finance Revenue Overrides (user edits for monthly revenue)
+  getFinanceRevenueOverridesByProject(projectName: string): Promise<FinanceRevenueOverride[]>;
+  upsertFinanceRevenueOverride(override: InsertFinanceRevenueOverride): Promise<FinanceRevenueOverride>;
+  upsertManyFinanceRevenueOverrides(overrides: InsertFinanceRevenueOverride[]): Promise<FinanceRevenueOverride[]>;
+  deleteFinanceRevenueOverridesByProject(projectName: string): Promise<void>;
+
+  // Finance COS Overrides (user edits for monthly COS)
+  getFinanceCosOverridesByProject(projectName: string): Promise<FinanceCosOverride[]>;
+  upsertFinanceCosOverride(override: InsertFinanceCosOverride): Promise<FinanceCosOverride>;
+  upsertManyFinanceCosOverrides(overrides: InsertFinanceCosOverride[]): Promise<FinanceCosOverride[]>;
+  deleteFinanceCosOverridesByProject(projectName: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -600,6 +636,261 @@ export class DatabaseStorage implements IStorage {
 
   async deletePlanningOverridesByProject(projectName: string): Promise<void> {
     await this.dbInstance.delete(cashflowPlanningOverrides).where(eq(cashflowPlanningOverrides.projectName, projectName));
+  }
+
+  // Project Plan Overrides (user edits for tasks/milestones)
+  async getProjectPlanOverridesByProject(projectName: string): Promise<ProjectPlanOverride[]> {
+    return this.dbInstance.select()
+      .from(projectPlanOverrides)
+      .where(eq(projectPlanOverrides.projectName, projectName))
+      .orderBy(projectPlanOverrides.rowNumber);
+  }
+
+  async upsertProjectPlanOverride(override: InsertProjectPlanOverride): Promise<ProjectPlanOverride> {
+    const now = new Date();
+    const withTimestamps = { ...override, createdAt: now, updatedAt: now };
+    
+    const existing = await this.dbInstance.select()
+      .from(projectPlanOverrides)
+      .where(and(
+        eq(projectPlanOverrides.projectName, override.projectName),
+        eq(projectPlanOverrides.rowNumber, override.rowNumber),
+        eq(projectPlanOverrides.fieldName, override.fieldName)
+      ))
+      .limit(1);
+
+    if (existing.length > 0) {
+      const updated = await this.dbInstance
+        .update(projectPlanOverrides)
+        .set({ overrideValue: override.overrideValue, updatedAt: now })
+        .where(eq(projectPlanOverrides.id, existing[0].id))
+        .returning();
+      return updated[0];
+    } else {
+      const inserted = await this.dbInstance
+        .insert(projectPlanOverrides)
+        .values(withTimestamps)
+        .returning();
+      return inserted[0];
+    }
+  }
+
+  async upsertManyProjectPlanOverrides(overrides: InsertProjectPlanOverride[]): Promise<ProjectPlanOverride[]> {
+    if (overrides.length === 0) return [];
+    const results: ProjectPlanOverride[] = [];
+    for (const override of overrides) {
+      const result = await this.upsertProjectPlanOverride(override);
+      results.push(result);
+    }
+    return results;
+  }
+
+  async deleteProjectPlanOverridesByProject(projectName: string): Promise<void> {
+    await this.dbInstance.delete(projectPlanOverrides).where(eq(projectPlanOverrides.projectName, projectName));
+  }
+
+  // Revenue Tracking Overrides (user edits for revenue milestones)
+  async getRevenueTrackingOverridesByProject(projectName: string): Promise<RevenueTrackingOverride[]> {
+    return this.dbInstance.select()
+      .from(revenueTrackingOverrides)
+      .where(eq(revenueTrackingOverrides.projectName, projectName))
+      .orderBy(revenueTrackingOverrides.rowNumber);
+  }
+
+  async upsertRevenueTrackingOverride(override: InsertRevenueTrackingOverride): Promise<RevenueTrackingOverride> {
+    const now = new Date();
+    const withTimestamps = { ...override, createdAt: now, updatedAt: now };
+    
+    const existing = await this.dbInstance.select()
+      .from(revenueTrackingOverrides)
+      .where(and(
+        eq(revenueTrackingOverrides.projectName, override.projectName),
+        eq(revenueTrackingOverrides.rowNumber, override.rowNumber),
+        eq(revenueTrackingOverrides.fieldName, override.fieldName)
+      ))
+      .limit(1);
+
+    if (existing.length > 0) {
+      const updated = await this.dbInstance
+        .update(revenueTrackingOverrides)
+        .set({ overrideValue: override.overrideValue, updatedAt: now })
+        .where(eq(revenueTrackingOverrides.id, existing[0].id))
+        .returning();
+      return updated[0];
+    } else {
+      const inserted = await this.dbInstance
+        .insert(revenueTrackingOverrides)
+        .values(withTimestamps)
+        .returning();
+      return inserted[0];
+    }
+  }
+
+  async upsertManyRevenueTrackingOverrides(overrides: InsertRevenueTrackingOverride[]): Promise<RevenueTrackingOverride[]> {
+    if (overrides.length === 0) return [];
+    const results: RevenueTrackingOverride[] = [];
+    for (const override of overrides) {
+      const result = await this.upsertRevenueTrackingOverride(override);
+      results.push(result);
+    }
+    return results;
+  }
+
+  async deleteRevenueTrackingOverridesByProject(projectName: string): Promise<void> {
+    await this.dbInstance.delete(revenueTrackingOverrides).where(eq(revenueTrackingOverrides.projectName, projectName));
+  }
+
+  // Expenditure Overrides (user edits for expenses)
+  async getExpenditureOverridesByProject(projectName: string): Promise<ExpenditureOverride[]> {
+    return this.dbInstance.select()
+      .from(expenditureOverrides)
+      .where(eq(expenditureOverrides.projectName, projectName))
+      .orderBy(expenditureOverrides.rowNumber);
+  }
+
+  async upsertExpenditureOverride(override: InsertExpenditureOverride): Promise<ExpenditureOverride> {
+    const now = new Date();
+    const withTimestamps = { ...override, createdAt: now, updatedAt: now };
+    
+    const existing = await this.dbInstance.select()
+      .from(expenditureOverrides)
+      .where(and(
+        eq(expenditureOverrides.projectName, override.projectName),
+        eq(expenditureOverrides.rowNumber, override.rowNumber),
+        eq(expenditureOverrides.fieldName, override.fieldName)
+      ))
+      .limit(1);
+
+    if (existing.length > 0) {
+      const updated = await this.dbInstance
+        .update(expenditureOverrides)
+        .set({ overrideValue: override.overrideValue, updatedAt: now })
+        .where(eq(expenditureOverrides.id, existing[0].id))
+        .returning();
+      return updated[0];
+    } else {
+      const inserted = await this.dbInstance
+        .insert(expenditureOverrides)
+        .values(withTimestamps)
+        .returning();
+      return inserted[0];
+    }
+  }
+
+  async upsertManyExpenditureOverrides(overrides: InsertExpenditureOverride[]): Promise<ExpenditureOverride[]> {
+    if (overrides.length === 0) return [];
+    const results: ExpenditureOverride[] = [];
+    for (const override of overrides) {
+      const result = await this.upsertExpenditureOverride(override);
+      results.push(result);
+    }
+    return results;
+  }
+
+  async deleteExpenditureOverridesByProject(projectName: string): Promise<void> {
+    await this.dbInstance.delete(expenditureOverrides).where(eq(expenditureOverrides.projectName, projectName));
+  }
+
+  // Finance Revenue Overrides (user edits for monthly revenue)
+  async getFinanceRevenueOverridesByProject(projectName: string): Promise<FinanceRevenueOverride[]> {
+    return this.dbInstance.select()
+      .from(financeRevenueOverrides)
+      .where(eq(financeRevenueOverrides.projectName, projectName))
+      .orderBy(financeRevenueOverrides.monthEndDate, financeRevenueOverrides.category);
+  }
+
+  async upsertFinanceRevenueOverride(override: InsertFinanceRevenueOverride): Promise<FinanceRevenueOverride> {
+    const now = new Date();
+    const withTimestamps = { ...override, createdAt: now, updatedAt: now };
+    
+    const existing = await this.dbInstance.select()
+      .from(financeRevenueOverrides)
+      .where(and(
+        eq(financeRevenueOverrides.projectName, override.projectName),
+        eq(financeRevenueOverrides.category, override.category),
+        eq(financeRevenueOverrides.monthEndDate, override.monthEndDate)
+      ))
+      .limit(1);
+
+    if (existing.length > 0) {
+      const updated = await this.dbInstance
+        .update(financeRevenueOverrides)
+        .set({ overrideValue: override.overrideValue, updatedAt: now })
+        .where(eq(financeRevenueOverrides.id, existing[0].id))
+        .returning();
+      return updated[0];
+    } else {
+      const inserted = await this.dbInstance
+        .insert(financeRevenueOverrides)
+        .values(withTimestamps)
+        .returning();
+      return inserted[0];
+    }
+  }
+
+  async upsertManyFinanceRevenueOverrides(overrides: InsertFinanceRevenueOverride[]): Promise<FinanceRevenueOverride[]> {
+    if (overrides.length === 0) return [];
+    const results: FinanceRevenueOverride[] = [];
+    for (const override of overrides) {
+      const result = await this.upsertFinanceRevenueOverride(override);
+      results.push(result);
+    }
+    return results;
+  }
+
+  async deleteFinanceRevenueOverridesByProject(projectName: string): Promise<void> {
+    await this.dbInstance.delete(financeRevenueOverrides).where(eq(financeRevenueOverrides.projectName, projectName));
+  }
+
+  // Finance COS Overrides (user edits for monthly COS)
+  async getFinanceCosOverridesByProject(projectName: string): Promise<FinanceCosOverride[]> {
+    return this.dbInstance.select()
+      .from(financeCosOverrides)
+      .where(eq(financeCosOverrides.projectName, projectName))
+      .orderBy(financeCosOverrides.monthEndDate, financeCosOverrides.category);
+  }
+
+  async upsertFinanceCosOverride(override: InsertFinanceCosOverride): Promise<FinanceCosOverride> {
+    const now = new Date();
+    const withTimestamps = { ...override, createdAt: now, updatedAt: now };
+    
+    const existing = await this.dbInstance.select()
+      .from(financeCosOverrides)
+      .where(and(
+        eq(financeCosOverrides.projectName, override.projectName),
+        eq(financeCosOverrides.category, override.category),
+        eq(financeCosOverrides.monthEndDate, override.monthEndDate)
+      ))
+      .limit(1);
+
+    if (existing.length > 0) {
+      const updated = await this.dbInstance
+        .update(financeCosOverrides)
+        .set({ overrideValue: override.overrideValue, updatedAt: now })
+        .where(eq(financeCosOverrides.id, existing[0].id))
+        .returning();
+      return updated[0];
+    } else {
+      const inserted = await this.dbInstance
+        .insert(financeCosOverrides)
+        .values(withTimestamps)
+        .returning();
+      return inserted[0];
+    }
+  }
+
+  async upsertManyFinanceCosOverrides(overrides: InsertFinanceCosOverride[]): Promise<FinanceCosOverride[]> {
+    if (overrides.length === 0) return [];
+    const results: FinanceCosOverride[] = [];
+    for (const override of overrides) {
+      const result = await this.upsertFinanceCosOverride(override);
+      results.push(result);
+    }
+    return results;
+  }
+
+  async deleteFinanceCosOverridesByProject(projectName: string): Promise<void> {
+    await this.dbInstance.delete(financeCosOverrides).where(eq(financeCosOverrides.projectName, projectName));
   }
 }
 

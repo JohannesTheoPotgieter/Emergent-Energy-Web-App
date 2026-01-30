@@ -1090,6 +1090,216 @@ export async function registerRoutes(
     }
   });
 
+  // Project Plan Overrides API
+  app.get("/api/project-plan/overrides", requireAuth, async (req, res) => {
+    try {
+      const { projectName } = req.query;
+      if (!projectName || typeof projectName !== 'string') {
+        return res.status(400).json({ error: "Project name required", message: "Project name is required" });
+      }
+      const overrides = await storage.getProjectPlanOverridesByProject(projectName);
+      res.json(overrides);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch project plan overrides", message: "Failed to fetch project plan overrides" });
+    }
+  });
+
+  app.post("/api/project-plan/overrides", requireAuth, async (req, res) => {
+    try {
+      const { overrides } = req.body;
+      if (!Array.isArray(overrides)) {
+        return res.status(400).json({ error: "Overrides must be an array", message: "Overrides must be an array" });
+      }
+      const userId = req.user?.id;
+      const overridesWithUser = overrides.map(o => ({ ...o, createdBy: userId }));
+      const saved = await storage.upsertManyProjectPlanOverrides(overridesWithUser);
+      res.json({ message: "Project plan overrides saved", count: saved.length, overrides: saved });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to save project plan overrides", message: error instanceof Error ? error.message : "Failed to save project plan overrides" });
+    }
+  });
+
+  app.delete("/api/project-plan/overrides/:projectName", requireAuth, async (req, res) => {
+    try {
+      const projectName = req.params.projectName;
+      if (!projectName || typeof projectName !== 'string') {
+        return res.status(400).json({ error: "Project name required", message: "Project name is required" });
+      }
+      await storage.deleteProjectPlanOverridesByProject(projectName);
+      res.json({ message: `Project plan overrides deleted for project: ${projectName}` });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete project plan overrides", message: "Failed to delete project plan overrides" });
+    }
+  });
+
+  // Revenue Tracking Overrides API
+  app.get("/api/revenue-tracking/overrides", requireAuth, async (req, res) => {
+    try {
+      const { projectName } = req.query;
+      if (!projectName || typeof projectName !== 'string') {
+        return res.status(400).json({ error: "Project name required", message: "Project name is required" });
+      }
+      const overrides = await storage.getRevenueTrackingOverridesByProject(projectName);
+      res.json(overrides);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch revenue tracking overrides", message: "Failed to fetch revenue tracking overrides" });
+    }
+  });
+
+  app.post("/api/revenue-tracking/overrides", requireAuth, async (req, res) => {
+    try {
+      const { overrides } = req.body;
+      if (!Array.isArray(overrides)) {
+        return res.status(400).json({ error: "Overrides must be an array", message: "Overrides must be an array" });
+      }
+      const userId = req.user?.id;
+      const overridesWithUser = overrides.map(o => ({ ...o, createdBy: userId }));
+      const saved = await storage.upsertManyRevenueTrackingOverrides(overridesWithUser);
+      res.json({ message: "Revenue tracking overrides saved", count: saved.length, overrides: saved });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to save revenue tracking overrides", message: error instanceof Error ? error.message : "Failed to save revenue tracking overrides" });
+    }
+  });
+
+  app.delete("/api/revenue-tracking/overrides/:projectName", requireAuth, async (req, res) => {
+    try {
+      const projectName = req.params.projectName;
+      if (!projectName || typeof projectName !== 'string') {
+        return res.status(400).json({ error: "Project name required", message: "Project name is required" });
+      }
+      await storage.deleteRevenueTrackingOverridesByProject(projectName);
+      res.json({ message: `Revenue tracking overrides deleted for project: ${projectName}` });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete revenue tracking overrides", message: "Failed to delete revenue tracking overrides" });
+    }
+  });
+
+  // Expenditure Overrides API
+  app.get("/api/expenditure/overrides", requireAuth, async (req, res) => {
+    try {
+      const { projectName } = req.query;
+      if (!projectName || typeof projectName !== 'string') {
+        return res.status(400).json({ error: "Project name required", message: "Project name is required" });
+      }
+      const overrides = await storage.getExpenditureOverridesByProject(projectName);
+      res.json(overrides);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch expenditure overrides", message: "Failed to fetch expenditure overrides" });
+    }
+  });
+
+  app.post("/api/expenditure/overrides", requireAuth, async (req, res) => {
+    try {
+      const { overrides } = req.body;
+      if (!Array.isArray(overrides)) {
+        return res.status(400).json({ error: "Overrides must be an array", message: "Overrides must be an array" });
+      }
+      const userId = req.user?.id;
+      const overridesWithUser = overrides.map(o => ({ ...o, createdBy: userId }));
+      const saved = await storage.upsertManyExpenditureOverrides(overridesWithUser);
+      res.json({ message: "Expenditure overrides saved", count: saved.length, overrides: saved });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to save expenditure overrides", message: error instanceof Error ? error.message : "Failed to save expenditure overrides" });
+    }
+  });
+
+  app.delete("/api/expenditure/overrides/:projectName", requireAuth, async (req, res) => {
+    try {
+      const projectName = req.params.projectName;
+      if (!projectName || typeof projectName !== 'string') {
+        return res.status(400).json({ error: "Project name required", message: "Project name is required" });
+      }
+      await storage.deleteExpenditureOverridesByProject(projectName);
+      res.json({ message: `Expenditure overrides deleted for project: ${projectName}` });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete expenditure overrides", message: "Failed to delete expenditure overrides" });
+    }
+  });
+
+  // Finance Revenue Overrides API
+  app.get("/api/finance/revenue/overrides", requireAuth, async (req, res) => {
+    try {
+      const { projectName } = req.query;
+      if (!projectName || typeof projectName !== 'string') {
+        return res.status(400).json({ error: "Project name required", message: "Project name is required" });
+      }
+      const overrides = await storage.getFinanceRevenueOverridesByProject(projectName);
+      res.json(overrides);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch finance revenue overrides", message: "Failed to fetch finance revenue overrides" });
+    }
+  });
+
+  app.post("/api/finance/revenue/overrides", requireAuth, async (req, res) => {
+    try {
+      const { overrides } = req.body;
+      if (!Array.isArray(overrides)) {
+        return res.status(400).json({ error: "Overrides must be an array", message: "Overrides must be an array" });
+      }
+      const userId = req.user?.id;
+      const overridesWithUser = overrides.map(o => ({ ...o, createdBy: userId }));
+      const saved = await storage.upsertManyFinanceRevenueOverrides(overridesWithUser);
+      res.json({ message: "Finance revenue overrides saved", count: saved.length, overrides: saved });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to save finance revenue overrides", message: error instanceof Error ? error.message : "Failed to save finance revenue overrides" });
+    }
+  });
+
+  app.delete("/api/finance/revenue/overrides/:projectName", requireAuth, async (req, res) => {
+    try {
+      const projectName = req.params.projectName;
+      if (!projectName || typeof projectName !== 'string') {
+        return res.status(400).json({ error: "Project name required", message: "Project name is required" });
+      }
+      await storage.deleteFinanceRevenueOverridesByProject(projectName);
+      res.json({ message: `Finance revenue overrides deleted for project: ${projectName}` });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete finance revenue overrides", message: "Failed to delete finance revenue overrides" });
+    }
+  });
+
+  // Finance COS Overrides API
+  app.get("/api/finance/cos/overrides", requireAuth, async (req, res) => {
+    try {
+      const { projectName } = req.query;
+      if (!projectName || typeof projectName !== 'string') {
+        return res.status(400).json({ error: "Project name required", message: "Project name is required" });
+      }
+      const overrides = await storage.getFinanceCosOverridesByProject(projectName);
+      res.json(overrides);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch finance COS overrides", message: "Failed to fetch finance COS overrides" });
+    }
+  });
+
+  app.post("/api/finance/cos/overrides", requireAuth, async (req, res) => {
+    try {
+      const { overrides } = req.body;
+      if (!Array.isArray(overrides)) {
+        return res.status(400).json({ error: "Overrides must be an array", message: "Overrides must be an array" });
+      }
+      const userId = req.user?.id;
+      const overridesWithUser = overrides.map(o => ({ ...o, createdBy: userId }));
+      const saved = await storage.upsertManyFinanceCosOverrides(overridesWithUser);
+      res.json({ message: "Finance COS overrides saved", count: saved.length, overrides: saved });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to save finance COS overrides", message: error instanceof Error ? error.message : "Failed to save finance COS overrides" });
+    }
+  });
+
+  app.delete("/api/finance/cos/overrides/:projectName", requireAuth, async (req, res) => {
+    try {
+      const projectName = req.params.projectName;
+      if (!projectName || typeof projectName !== 'string') {
+        return res.status(400).json({ error: "Project name required", message: "Project name is required" });
+      }
+      await storage.deleteFinanceCosOverridesByProject(projectName);
+      res.json({ message: `Finance COS overrides deleted for project: ${projectName}` });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete finance COS overrides", message: "Failed to delete finance COS overrides" });
+    }
+  });
+
   app.get("/api/finance/revenue", async (req, res) => {
     try {
       const { projectName, startDate, endDate } = req.query;
