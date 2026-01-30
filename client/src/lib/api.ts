@@ -474,6 +474,24 @@ export interface FinanceCosMonthly {
   createdAt: string;
 }
 
+export interface CashflowPlanningOverride {
+  id: number;
+  projectName: string;
+  weekStartDate: string;
+  seriesName: string;
+  overrideValue: string;
+  createdBy?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface InsertCashflowPlanningOverride {
+  projectName: string;
+  weekStartDate: string;
+  seriesName: string;
+  overrideValue: string;
+}
+
 export const cashflowApi = {
   getAll: async (projectName?: string, startDate?: string, endDate?: string) => {
     const params = new URLSearchParams();
@@ -483,6 +501,28 @@ export const cashflowApi = {
     
     const url = params.toString() ? `${API_BASE}/cashflow?${params}` : `${API_BASE}/cashflow`;
     return fetchJSON<CashflowPoint[]>(url);
+  },
+  getPlanningOverrides: async (projectName?: string) => {
+    let url = `${API_BASE}/cashflow/planning-overrides`;
+    if (projectName) url += `?projectName=${encodeURIComponent(projectName)}`;
+    return fetchJSON<CashflowPlanningOverride[]>(url);
+  },
+  savePlanningOverrides: async (overrides: InsertCashflowPlanningOverride[]) => {
+    return fetchJSON<{ message: string; count: number; overrides: CashflowPlanningOverride[] }>(
+      `${API_BASE}/cashflow/planning-overrides`,
+      {
+        method: "POST",
+        body: JSON.stringify({ overrides }),
+      }
+    );
+  },
+  resetPlanningOverrides: async (projectName: string) => {
+    return fetchJSON<{ message: string }>(
+      `${API_BASE}/cashflow/planning-overrides/${encodeURIComponent(projectName)}`,
+      {
+        method: "DELETE",
+      }
+    );
   },
 };
 
