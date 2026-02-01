@@ -3,9 +3,11 @@ import { TrackerTable } from "@/components/dashboard/TrackerTable";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { AlertCircle } from "lucide-react";
+import { useLocation } from "wouter";
 
 export default function ProjectsSummary() {
   const { projectsSummary, exportUrl, isLoading } = useProgramData();
+  const [, setLocation] = useLocation();
 
   // Map ProjectSummary to include id field for TrackerTable
   const projects = (projectsSummary || []).map((p, idx) => ({
@@ -15,6 +17,10 @@ export default function ProjectsSummary() {
 
   const handleExport = () => {
     window.location.href = exportUrl("projects-summary");
+  };
+
+  const handleRowClick = (project: any) => {
+    setLocation(`/project/${encodeURIComponent(project.project_name)}`);
   };
 
   if (isLoading && !projectsSummary) {
@@ -62,6 +68,7 @@ export default function ProjectsSummary() {
       <TrackerTable 
         title={`Active Portfolio Projects (${projects.length})`}
         data={projects}
+        onRowClick={handleRowClick}
         columns={[
           { 
             header: "Project Name", 

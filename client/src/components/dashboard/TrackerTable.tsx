@@ -34,6 +34,7 @@ interface TrackerTableProps<T> {
   columns: Column<T>[];
   filterColumn?: keyof T; // Simple single column filter for now
   onExport?: () => void;
+  onRowClick?: (item: T) => void;
 }
 
 export function TrackerTable<T extends { id: string | number, sourceSheet?: string, rowLocator?: number }>({ 
@@ -41,7 +42,8 @@ export function TrackerTable<T extends { id: string | number, sourceSheet?: stri
   data, 
   columns, 
   filterColumn,
-  onExport 
+  onExport,
+  onRowClick
 }: TrackerTableProps<T>) {
   const [search, setSearch] = useState("");
   const [filterValue, setFilterValue] = useState("all");
@@ -106,7 +108,14 @@ export function TrackerTable<T extends { id: string | number, sourceSheet?: stri
             <TableBody>
               {filteredData.length > 0 ? (
                 filteredData.map((item) => (
-                  <TableRow key={item.id} className="data-table-row group">
+                  <TableRow 
+                    key={item.id} 
+                    className={cn(
+                      "data-table-row group",
+                      onRowClick && "cursor-pointer hover:bg-muted/50"
+                    )}
+                    onClick={() => onRowClick?.(item)}
+                  >
                     {columns.map((col, i) => (
                       <TableCell key={i} className={cn("py-3 font-mono text-sm", col.className)}>
                         {typeof col.accessorKey === 'function' 

@@ -1,7 +1,12 @@
 import { useRoute } from "wouter";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FileText, DollarSign, CreditCard, TrendingUp, BarChart3, Activity } from "lucide-react";
+import { ProjectPlanTab } from "@/components/tabs/ProjectPlanTab";
+import { RevenueTrackingTab } from "@/components/tabs/RevenueTrackingTab";
+import { ExpenditureTab } from "@/components/tabs/ExpenditureTab";
+import { FinanceRevenueTab } from "@/components/tabs/FinanceRevenueTab";
+import { FinanceCosTab } from "@/components/tabs/FinanceCosTab";
+import { CashflowTab } from "@/components/tabs/CashflowTab";
 
 export default function ProjectDetailPage() {
   const [, params] = useRoute("/project/:projectName");
@@ -56,69 +61,27 @@ export default function ProjectDetailPage() {
         </TabsList>
 
         <TabsContent value="project-plan" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Project Plan</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-muted-foreground">Project Plan tab - Coming soon</p>
-            </CardContent>
-          </Card>
+          <ProjectPlanTab projectName={projectName} />
         </TabsContent>
 
         <TabsContent value="revenue-tracking" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Revenue Tracking</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-muted-foreground">Revenue Tracking tab - Coming soon</p>
-            </CardContent>
-          </Card>
+          <RevenueTrackingTab projectName={projectName} />
         </TabsContent>
 
         <TabsContent value="expenditure" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Expenditure Breakdown</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-muted-foreground">Expenditure Breakdown tab - Coming soon</p>
-            </CardContent>
-          </Card>
+          <ExpenditureTab projectName={projectName} />
         </TabsContent>
 
         <TabsContent value="finance-revenue" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Finance - Revenue</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-muted-foreground">Finance - Revenue tab - Coming soon</p>
-            </CardContent>
-          </Card>
+          <FinanceRevenueTab projectName={projectName} />
         </TabsContent>
 
         <TabsContent value="finance-cos" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Finance - COS</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-muted-foreground">Finance - COS tab - Coming soon</p>
-            </CardContent>
-          </Card>
+          <FinanceCosTab projectName={projectName} />
         </TabsContent>
 
         <TabsContent value="cashflow" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Cashflow</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-muted-foreground">Cashflow tab - Coming soon</p>
-            </CardContent>
-          </Card>
+          <CashflowTab projectName={projectName} />
         </TabsContent>
       </Tabs>
     </div>
