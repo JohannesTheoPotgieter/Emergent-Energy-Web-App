@@ -15,6 +15,7 @@ import RevenueTracker from "@/pages/revenue";
 import CostTracker from "@/pages/cos";
 import BudgetPage from "@/pages/budget";
 import NotFound from "@/pages/not-found";
+import ProjectDetailPage from "@/pages/project-detail";
 import { useProgramData } from "@/hooks/use-program-data";
 import { TrackerTable } from "@/components/dashboard/TrackerTable";
 import { format } from "date-fns";
@@ -135,6 +136,7 @@ function ProtectedPages() {
       <Switch>
         <Route path="/" component={Dashboard} />
         <Route path="/projects" component={ProjectsSummary} />
+        <Route path="/project/:projectName" component={ProjectDetailPage} />
         <Route path="/cashflow" component={CashflowPage} />
         <Route path="/revenue" component={RevenueTracker} />
         <Route path="/cos" component={CostTracker} />
