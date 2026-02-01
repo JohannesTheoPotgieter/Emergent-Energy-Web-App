@@ -2,8 +2,8 @@ import { useRoute } from "wouter";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FileText, DollarSign, CreditCard, TrendingUp, BarChart3, Activity } from "lucide-react";
 import { ProjectPlanTab } from "@/components/tabs/ProjectPlanTab";
-import { RevenueTrackingTab } from "@/components/tabs/RevenueTrackingTab";
-import { ExpenditureTab } from "@/components/tabs/ExpenditureTab";
+import { RevenueTrackingEditableTab } from "@/components/tabs/RevenueTrackingEditableTab";
+import { ExpenditureEditableTab } from "@/components/tabs/ExpenditureEditableTab";
 import { FinanceRevenueTab } from "@/components/tabs/FinanceRevenueTab";
 import { FinanceCosTab } from "@/components/tabs/FinanceCosTab";
 import { CashflowTab } from "@/components/tabs/CashflowTab";
@@ -65,11 +65,11 @@ export default function ProjectDetailPage() {
         </TabsContent>
 
         <TabsContent value="revenue-tracking" className="space-y-4">
-          <RevenueTrackingTab projectName={projectName} />
+          <RevenueTrackingEditableTab projectName={projectName} />
         </TabsContent>
 
         <TabsContent value="expenditure" className="space-y-4">
-          <ExpenditureTab projectName={projectName} />
+          <ExpenditureEditableTab projectName={projectName} />
         </TabsContent>
 
         <TabsContent value="finance-revenue" className="space-y-4">
