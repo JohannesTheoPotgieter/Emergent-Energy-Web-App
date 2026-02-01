@@ -47,7 +47,9 @@ const upload = multer({
   }
 });
 
-// Helper function to apply planning overrides to cashflow baseline data
+// Helper functions to apply overrides to baseline data
+
+// Apply planning overrides to cashflow baseline data
 function applyPlanningOverrides(
   baselinePoints: any[],
   overrides: any[]
@@ -75,6 +77,148 @@ function applyPlanningOverrides(
       };
     }
     return point;
+  });
+}
+
+// Apply project plan overrides to tasks/milestones
+function applyProjectPlanOverrides(
+  baselineRows: any[],
+  overrides: any[]
+): any[] {
+  if (overrides.length === 0) return baselineRows;
+
+  // Group overrides by rowNumber
+  const overrideMap = new Map<number, Map<string, any>>();
+  overrides.forEach((o: any) => {
+    if (!overrideMap.has(o.rowNumber)) {
+      overrideMap.set(o.rowNumber, new Map());
+    }
+    overrideMap.get(o.rowNumber)!.set(o.fieldName, o.overrideValue);
+  });
+
+  // Apply overrides to rows
+  return baselineRows.map((row: any) => {
+    if (!row.rowNumber || !overrideMap.has(row.rowNumber)) {
+      return row;
+    }
+    const fieldOverrides = overrideMap.get(row.rowNumber)!;
+    const updatedRow = { ...row };
+    fieldOverrides.forEach((value, fieldName) => {
+      updatedRow[fieldName] = value;
+    });
+    return updatedRow;
+  });
+}
+
+// Apply revenue tracking overrides
+function applyRevenueTrackingOverrides(
+  baselineRows: any[],
+  overrides: any[]
+): any[] {
+  if (overrides.length === 0) return baselineRows;
+
+  const overrideMap = new Map<number, Map<string, any>>();
+  overrides.forEach((o: any) => {
+    if (!overrideMap.has(o.rowNumber)) {
+      overrideMap.set(o.rowNumber, new Map());
+    }
+    overrideMap.get(o.rowNumber)!.set(o.fieldName, o.overrideValue);
+  });
+
+  return baselineRows.map((row: any) => {
+    if (!row.rowNumber || !overrideMap.has(row.rowNumber)) {
+      return row;
+    }
+    const fieldOverrides = overrideMap.get(row.rowNumber)!;
+    const updatedRow = { ...row };
+    fieldOverrides.forEach((value, fieldName) => {
+      updatedRow[fieldName] = value;
+    });
+    return updatedRow;
+  });
+}
+
+// Apply expenditure overrides
+function applyExpenditureOverrides(
+  baselineRows: any[],
+  overrides: any[]
+): any[] {
+  if (overrides.length === 0) return baselineRows;
+
+  const overrideMap = new Map<number, Map<string, any>>();
+  overrides.forEach((o: any) => {
+    if (!overrideMap.has(o.rowNumber)) {
+      overrideMap.set(o.rowNumber, new Map());
+    }
+    overrideMap.get(o.rowNumber)!.set(o.fieldName, o.overrideValue);
+  });
+
+  return baselineRows.map((row: any) => {
+    if (!row.rowNumber || !overrideMap.has(row.rowNumber)) {
+      return row;
+    }
+    const fieldOverrides = overrideMap.get(row.rowNumber)!;
+    const updatedRow = { ...row };
+    fieldOverrides.forEach((value, fieldName) => {
+      updatedRow[fieldName] = value;
+    });
+    return updatedRow;
+  });
+}
+
+// Apply finance revenue overrides
+function applyFinanceRevenueOverrides(
+  baselineData: any[],
+  overrides: any[]
+): any[] {
+  if (overrides.length === 0) return baselineData;
+
+  const overrideMap = new Map<string, number>();
+  overrides.forEach((o: any) => {
+    const key = `${o.category}|${o.monthEndDate}`;
+    const numValue = typeof o.overrideValue === 'string' ? parseFloat(o.overrideValue) : o.overrideValue;
+    if (!isNaN(numValue)) {
+      overrideMap.set(key, numValue);
+    }
+  });
+
+  return baselineData.map((row: any) => {
+    const key = `${row.category}|${row.monthEndDate}`;
+    if (overrideMap.has(key)) {
+      return {
+        ...row,
+        value: overrideMap.get(key)!,
+      };
+    }
+    return row;
+  });
+}
+
+// Apply finance COS overrides
+function applyFinanceCosOverrides(
+  baselineData: any[],
+  overrides: any[]
+): any[] {
+  if (overrides.length === 0) return baselineData;
+
+  const overrideMap = new Map<string, number>();
+  overrides.forEach((o: any) => {
+    const key = `${o.category}|${o.monthEndDate}`;
+    const numValue = typeof o.overrideValue === 'string' ? parseFloat(o.overrideValue) : o.overrideValue;
+    if (!isNaN(numValue)) {
+      overrideMap.set(key, numValue);
+    }
+  });
+
+  return baselineData.map((row: any) => {
+    const key = `${row.category}|${row.monthEndDate}`;
+    if (overrideMap.has(key)) {
+      return {
+        ...row,
+        value: overrideMap.get(key)!,
+      };
+    }
+    return row;
   });
 }
 
@@ -921,11 +1065,17 @@ export async function registerRoutes(
 
   app.get("/api/program-expenses", async (req, res) => {
     try {
-      const { projectName, startDate, endDate } = req.query;
+      const { projectName, startDate, endDate, applyOverrides } = req.query;
       let expenses;
       
       if (projectName && typeof projectName === 'string') {
         expenses = await storage.getProgramExpensesByProject(projectName);
+        
+        // Apply overrides if requested
+        if (applyOverrides === 'true') {
+          const overrides = await storage.getExpenditureOverridesByProject(projectName);
+          expenses = applyExpenditureOverrides(expenses, overrides);
+        }
       } else {
         expenses = await storage.getAllProgramExpenses();
       }
@@ -945,11 +1095,17 @@ export async function registerRoutes(
 
   app.get("/api/program-inflows", async (req, res) => {
     try {
-      const { projectName, startDate, endDate } = req.query;
+      const { projectName, startDate, endDate, applyOverrides } = req.query;
       let inflows;
       
       if (projectName && typeof projectName === 'string') {
         inflows = await storage.getProgramInflowsByProject(projectName);
+        
+        // Apply overrides if requested
+        if (applyOverrides === 'true') {
+          const overrides = await storage.getRevenueTrackingOverridesByProject(projectName);
+          inflows = applyRevenueTrackingOverrides(inflows, overrides);
+        }
       } else {
         inflows = await storage.getAllProgramInflows();
       }
@@ -975,12 +1131,20 @@ export async function registerRoutes(
 
   app.get("/api/project-plans", async (req, res) => {
     try {
-      const { projectName } = req.query;
+      const { projectName, applyOverrides } = req.query;
+      let plans;
+      
       if (projectName && typeof projectName === 'string') {
-        const plans = await storage.getProjectPlansByProject(projectName);
+        plans = await storage.getProjectPlansByProject(projectName);
+        
+        // Apply overrides if requested
+        if (applyOverrides === 'true') {
+          const overrides = await storage.getProjectPlanOverridesByProject(projectName);
+          plans = applyProjectPlanOverrides(plans, overrides);
+        }
         return res.json(plans);
       }
-      const plans = await storage.getAllProjectPlans();
+      plans = await storage.getAllProjectPlans();
       res.json(plans);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch project plans", message: "Failed to fetch project plans" });
@@ -1302,11 +1466,17 @@ export async function registerRoutes(
 
   app.get("/api/finance/revenue", async (req, res) => {
     try {
-      const { projectName, startDate, endDate } = req.query;
+      const { projectName, startDate, endDate, applyOverrides } = req.query;
       let data;
       
       if (projectName && typeof projectName === 'string') {
         data = await storage.getFinanceRevenueMonthlyByProject(projectName);
+        
+        // Apply overrides if requested
+        if (applyOverrides === 'true') {
+          const overrides = await storage.getFinanceRevenueOverridesByProject(projectName);
+          data = applyFinanceRevenueOverrides(data, overrides);
+        }
       } else {
         data = await storage.getAllFinanceRevenueMonthly();
       }
@@ -1326,11 +1496,17 @@ export async function registerRoutes(
 
   app.get("/api/finance/cos", async (req, res) => {
     try {
-      const { projectName, startDate, endDate } = req.query;
+      const { projectName, startDate, endDate, applyOverrides } = req.query;
       let data;
       
       if (projectName && typeof projectName === 'string') {
         data = await storage.getFinanceCosMonthlyByProject(projectName);
+        
+        // Apply overrides if requested
+        if (applyOverrides === 'true') {
+          const overrides = await storage.getFinanceCosOverridesByProject(projectName);
+          data = applyFinanceCosOverrides(data, overrides);
+        }
       } else {
         data = await storage.getAllFinanceCosMonthly();
       }
