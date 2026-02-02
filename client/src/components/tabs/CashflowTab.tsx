@@ -184,17 +184,21 @@ export function CashflowTab({ projectName }: CashflowTabProps) {
           <CardDescription>Weekly cashflow visualization with live planning updates</CardDescription>
         </CardHeader>
         <CardContent>
-          <ResponsiveContainer width="100%" height={350}>
+          <ResponsiveContainer width="100%" height={400}>
             <LineChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="date" />
-              <YAxis />
-              <Tooltip />
-              <Legend />
+              <XAxis dataKey="date" fontSize={11} />
+              <YAxis fontSize={11} tickFormatter={(v) => `R${(v/1000000).toFixed(1)}M`} />
+              <Tooltip formatter={(value: number) => [`R${value.toLocaleString()}`, ""]} />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
               <Line type="monotone" dataKey="Planned Revenue" stroke="#10b981" strokeWidth={2} />
               <Line type="monotone" dataKey="Planned Expenditure" stroke="#f59e0b" strokeWidth={2} />
-              <Line type="monotone" dataKey="Actual Revenue" stroke="#22c55e" strokeDasharray="5 5" />
-              <Line type="monotone" dataKey="Actual Expenditure" stroke="#fb923c" strokeDasharray="5 5" />
+              <Line type="monotone" dataKey="PLANNED CashFlow" stroke="#3b82f6" strokeWidth={2} />
+              <Line type="monotone" dataKey="Actual + Planned Revenue" stroke="#22c55e" strokeDasharray="5 5" />
+              <Line type="monotone" dataKey="Actual + Planned Expenditure" stroke="#fb923c" strokeDasharray="5 5" />
+              <Line type="monotone" dataKey="ACTUAL CashFlow" stroke="#8b5cf6" strokeDasharray="5 5" />
+              <Line type="monotone" dataKey="Revenue Recognition" stroke="#ec4899" strokeWidth={1} />
+              <Line type="monotone" dataKey="Revenue Recognition Cumulative" stroke="#06b6d4" strokeWidth={1} />
             </LineChart>
           </ResponsiveContainer>
         </CardContent>

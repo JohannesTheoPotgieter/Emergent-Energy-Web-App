@@ -1,13 +1,17 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { DateRangeBar } from "@/components/DateRangeBar";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { SummaryCard } from "@/components/dashboard/SummaryCard";
 import { financeApi, overviewApi } from "@/lib/api";
-import { format, parseISO } from "date-fns";
+import { format, parseISO, addDays, isWithinInterval, isBefore } from "date-fns";
+import { CreditCard, TrendingDown, AlertTriangle, Users, ArrowRight } from "lucide-react";
 
 export default function CosTracker() {
+  const [, setLocation] = useLocation();
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [startDate, setStartDate] = useState<string | null>(null);
   const [endDate, setEndDate] = useState<string | null>(null);
@@ -75,6 +79,63 @@ export default function CosTracker() {
     return filteredData.reduce((sum, item) => sum + item.value, 0);
   }, [filteredData]);
 
+  const expenseMetrics = useMemo(() => {
+    const today = new Date();
+    let totalBudget = 0;
+    let totalPaid = 0;
+    let overdue = 0;
+    let atRiskCount = 0;
+
+    (programExpenses as any[]).forEach((exp: any) => {
+      const amount = Number(exp.amount) || 0;
+      totalBudget += amount;
+
+      if (exp.is_paid) {
+        totalPaid += amount;
+      } else if (exp.date) {
+        try {
+          const date = new Date(exp.date);
+          if (isBefore(date, today)) {
+            overdue += amount;
+            atRiskCount++;
+          }
+        } catch {}
+      }
+    });
+
+    return {
+      totalBudget,
+      totalPaid,
+      overdue,
+      atRiskCount,
+      variance: totalBudget > 0 ? ((totalPaid / totalBudget) * 100) : 0,
+    };
+  }, [programExpenses]);
+
+  const supplierBreakdown = useMemo(() => {
+    const supplierMap = new Map<string, number>();
+    filteredData.forEach(item => {
+      const current = supplierMap.get(item.category) || 0;
+      supplierMap.set(item.category, current + item.value);
+    });
+    return Array.from(supplierMap.entries())
+      .map(([supplier, total]) => ({ supplier, total }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 5);
+  }, [filteredData]);
+
+  const projectBreakdown = useMemo(() => {
+    const projectMap = new Map<string, number>();
+    filteredData.forEach(item => {
+      const current = projectMap.get(item.projectName) || 0;
+      projectMap.set(item.projectName, current + item.value);
+    });
+    return Array.from(projectMap.entries())
+      .map(([project, total]) => ({ project, total }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 5);
+  }, [filteredData]);
+
   return (
     <div className="space-y-0">
       <div className="bg-white border-b border-gray-200 px-6 py-6">
@@ -108,32 +169,63 @@ export default function CosTracker() {
           </Card>
         ) : (
           <>
-            <div className="grid md:grid-cols-3 gap-4">
-              <Card className="bg-rose-50 border-rose-200">
-                <CardContent className="pt-6">
-                  <div className="text-sm text-rose-700 font-medium">Total COS</div>
-                  <div className="text-3xl font-bold text-rose-900 mt-2">
-                    R{(totalCos / 1000000).toFixed(2)}M
-                  </div>
-                </CardContent>
-              </Card>
-              <Card className="bg-blue-50 border-blue-200">
-                <CardContent className="pt-6">
-                  <div className="text-sm text-blue-700 font-medium">Categories</div>
-                  <div className="text-3xl font-bold text-blue-900 mt-2">
-                    {pivotData.rows.length}
-                  </div>
-                </CardContent>
-              </Card>
-              <Card className="bg-amber-50 border-amber-200">
-                <CardContent className="pt-6">
-                  <div className="text-sm text-amber-700 font-medium">Months Tracked</div>
-                  <div className="text-3xl font-bold text-amber-900 mt-2">
-                    {pivotData.months.length}
-                  </div>
-                </CardContent>
-              </Card>
+            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <SummaryCard
+                title="Total COS (Finance)"
+                value={`R${(totalCos / 1000000).toFixed(2)}M`}
+                subValue={`${pivotData.rows.length} categories, ${pivotData.months.length} months`}
+                icon={CreditCard}
+                data-testid="card-total-cos"
+              />
+              <SummaryCard
+                title="Paid vs Budget"
+                value={`R${(expenseMetrics.totalPaid / 1000000).toFixed(2)}M`}
+                subValue={`of R${(expenseMetrics.totalBudget / 1000000).toFixed(2)}M budgeted (${expenseMetrics.variance.toFixed(0)}%)`}
+                icon={TrendingDown}
+                data-testid="card-paid-budget"
+              />
+              <SummaryCard
+                title="At Risk Lines"
+                value={expenseMetrics.atRiskCount}
+                subValue={expenseMetrics.overdue > 0 ? `R${(expenseMetrics.overdue / 1000000).toFixed(2)}M overdue` : "All on track"}
+                icon={AlertTriangle}
+                className={expenseMetrics.atRiskCount > 0 ? "border-l-red-500" : "border-l-emerald-500"}
+                data-testid="card-at-risk"
+              />
+              <SummaryCard
+                title="Top Suppliers"
+                value={supplierBreakdown.length}
+                subValue={supplierBreakdown.length > 0 ? `Top: ${supplierBreakdown[0]?.supplier}` : "No data"}
+                icon={Users}
+                data-testid="card-top-suppliers"
+              />
             </div>
+
+            {projectBreakdown.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Top Projects by COS</CardTitle>
+                  <CardDescription>Click to drill down into project details</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {projectBreakdown.map(({ project, total }) => (
+                      <div
+                        key={project}
+                        className="flex items-center justify-between p-3 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors"
+                        onClick={() => setLocation(`/project/${encodeURIComponent(project)}`)}
+                      >
+                        <span className="font-medium">{project.replace("_Tracker", "")}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono">R{(total / 1000000).toFixed(2)}M</span>
+                          <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             <Card>
               <CardHeader>
