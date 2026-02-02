@@ -175,7 +175,7 @@ function applyProjectPlanOverrides(
   });
 }
 
-// Apply revenue tracking overrides
+// Apply revenue tracking overrides with type coercion
 function applyRevenueTrackingOverrides(
   baselineRows: any[],
   overrides: any[]
@@ -197,7 +197,12 @@ function applyRevenueTrackingOverrides(
     const fieldOverrides = overrideMap.get(row.rowNumber)!;
     const updatedRow = { ...row };
     fieldOverrides.forEach((value, fieldName) => {
-      updatedRow[fieldName] = value;
+      // Coerce inBank to number for consistent handling
+      if (fieldName === 'inBank') {
+        updatedRow[fieldName] = value === '1' || value === 1 || value === true ? 1 : 0;
+      } else {
+        updatedRow[fieldName] = value;
+      }
     });
     return updatedRow;
   });

@@ -81,9 +81,9 @@ export function RevenueTrackingTab({ projectName }: RevenueTrackingTabProps) {
     const totalValue = revenueList.reduce((sum: number, r: any) => sum + (parseFloat(r.milestoneAmount) || 0), 0);
     const invoiced = revenueList.filter((r: any) => r.invoiceRaisedDate).reduce((sum: number, r: any) => sum + (parseFloat(r.milestoneAmount) || 0), 0);
     const received = revenueList.filter((r: any) => r.paymentReceivedDate).reduce((sum: number, r: any) => sum + (parseFloat(r.milestoneAmount) || 0), 0);
-    const inBank = revenueList.filter((r: any) => r.inBank === 1 || r.inBank === true).reduce((sum: number, r: any) => sum + (parseFloat(r.milestoneAmount) || 0), 0);
+    const inBankTotal = revenueList.filter((r: any) => r.inBank === 1 || r.inBank === '1' || r.inBank === true).reduce((sum: number, r: any) => sum + (parseFloat(r.milestoneAmount) || 0), 0);
     const pending = totalValue - invoiced;
-    return { totalValue, invoiced, received, inBank, pending, milestoneCount: revenueList.length };
+    return { totalValue, invoiced, received, inBank: inBankTotal, pending, milestoneCount: revenueList.length };
   }, [revenueList]);
 
   const formatCurrency = (amount: any) => {
@@ -111,8 +111,13 @@ export function RevenueTrackingTab({ projectName }: RevenueTrackingTabProps) {
     }
   };
 
+  // Robustly check if inBank is truthy (handles string "1", number 1, boolean true)
+  const isInBank = (value: any): boolean => {
+    return value === 1 || value === '1' || value === true || value === 'true';
+  };
+
   const getPaymentStatus = (rec: any) => {
-    if (rec.inBank === 1 || rec.inBank === true) return "inBank";
+    if (isInBank(rec.inBank)) return "inBank";
     if (rec.paymentReceivedDate) return "received";
     if (rec.invoiceRaisedDate) return "invoiced";
     if (rec.plannedPaymentDate) return "planned";
@@ -125,7 +130,7 @@ export function RevenueTrackingTab({ projectName }: RevenueTrackingTabProps) {
       invoiceNumber: row.milestoneInvoiceNumber || "",
       invoiceRaisedDate: formatDateForInput(row.invoiceRaisedDate),
       paymentReceivedDate: formatDateForInput(row.paymentReceivedDate),
-      inBank: row.inBank === 1 || row.inBank === true,
+      inBank: isInBank(row.inBank),
       documentsReceived: row.documentsReceived || "",
       notes: row.milestoneNotes || "",
     });
@@ -338,7 +343,7 @@ export function RevenueTrackingTab({ projectName }: RevenueTrackingTabProps) {
                               data-testid={`input-received-${rev.rowNumber}`}
                             />
                           ) : (
-                            <span className={`text-sm ${rev.paymentReceivedDate && !(rev.inBank === 1 || rev.inBank === true) ? 'text-red-600 font-medium' : ''}`}>
+                            <span className={`text-sm ${rev.paymentReceivedDate && !isInBank(rev.inBank) ? 'text-red-600 font-medium' : ''}`}>
                               {formatDate(rev.paymentReceivedDate)}
                             </span>
                           )}
@@ -354,7 +359,7 @@ export function RevenueTrackingTab({ projectName }: RevenueTrackingTabProps) {
                             />
                           ) : (
                             <div className="flex justify-center">
-                              {(rev.inBank === 1 || rev.inBank === true) ? (
+                              {isInBank(rev.inBank) ? (
                                 <Check className="h-5 w-5 text-green-600" />
                               ) : rev.paymentReceivedDate ? (
                                 <X className="h-5 w-5 text-red-500" />
