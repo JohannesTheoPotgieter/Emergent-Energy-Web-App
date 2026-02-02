@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FileText, DollarSign, CreditCard, TrendingUp, BarChart3, Activity, ArrowLeft, User, Calendar, CheckCircle, AlertCircle, Upload } from "lucide-react";
 import { ProjectPlanTab } from "@/components/tabs/ProjectPlanTab";
-import { RevenueTrackingEditableTab } from "@/components/tabs/RevenueTrackingEditableTab";
+import { RevenueTrackingTab } from "@/components/tabs/RevenueTrackingTab";
 import { ExpenditureEditableTab } from "@/components/tabs/ExpenditureEditableTab";
 import { FinanceRevenueTab } from "@/components/tabs/FinanceRevenueTab";
 import { FinanceCosTab } from "@/components/tabs/FinanceCosTab";
@@ -242,7 +242,7 @@ export default function ProjectDetailPage() {
         </TabsContent>
 
         <TabsContent value="revenue-tracking" className="space-y-4">
-          <RevenueTrackingEditableTab projectName={projectName} />
+          <RevenueTrackingTab projectName={projectName} />
         </TabsContent>
 
         <TabsContent value="expenditure" className="space-y-4">
