@@ -50,8 +50,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     { label: "Overview", icon: LayoutDashboard, path: "/" },
     { label: "Projects Summary", icon: FileSpreadsheet, path: "/projects" },
     { label: "Cashflow", icon: Wallet, path: "/cashflow" },
-    { label: "Revenue", icon: TrendingUp, path: "/revenue" },
-    { label: "COS", icon: TrendingUp, path: "/cos", className: "rotate-180" },
+    { label: "COS Tracker", icon: TrendingUp, path: "/cos", className: "rotate-180" },
     { label: "Upload", icon: Upload, path: "/upload" },
     { label: "Admin", icon: Settings, path: "/admin", adminOnly: true },
   ];
