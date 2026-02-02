@@ -1070,81 +1070,45 @@ export class DatabaseStorage implements IStorage {
     const tablesCleared: string[] = [];
     let filesDeleted = 0;
 
+    // Helper to safely delete from a table (handles missing tables gracefully)
+    const safeDelete = async (table: any, name: string) => {
+      try {
+        await this.dbInstance.delete(table);
+        tablesCleared.push(name);
+      } catch (err: any) {
+        // Skip if table doesn't exist
+        if (!err.message?.includes('does not exist')) {
+          throw err;
+        }
+      }
+    };
+
     // Clear all data tables (order matters for foreign keys)
-    await this.dbInstance.delete(scheduleChangeNotice);
-    tablesCleared.push("scheduleChangeNotice");
-
-    await this.dbInstance.delete(workingPlanDependencyOverride);
-    tablesCleared.push("workingPlanDependencyOverride");
-
-    await this.dbInstance.delete(projectPlanDependency);
-    tablesCleared.push("projectPlanDependency");
-
-    await this.dbInstance.delete(workingPlanTaskOverride);
-    tablesCleared.push("workingPlanTaskOverride");
-
-    await this.dbInstance.delete(workingPlanScenario);
-    tablesCleared.push("workingPlanScenario");
-
-    await this.dbInstance.delete(financeCosOverrides);
-    tablesCleared.push("financeCosOverrides");
-
-    await this.dbInstance.delete(financeRevenueOverrides);
-    tablesCleared.push("financeRevenueOverrides");
-
-    await this.dbInstance.delete(expenditureOverrides);
-    tablesCleared.push("expenditureOverrides");
-
-    await this.dbInstance.delete(revenueTrackingOverrides);
-    tablesCleared.push("revenueTrackingOverrides");
-
-    await this.dbInstance.delete(projectPlanOverrides);
-    tablesCleared.push("projectPlanOverrides");
-
-    await this.dbInstance.delete(cashflowPlanningOverrides);
-    tablesCleared.push("cashflowPlanningOverrides");
-
-    await this.dbInstance.delete(financeCosMonthly);
-    tablesCleared.push("financeCosMonthly");
-
-    await this.dbInstance.delete(financeRevenueMonthly);
-    tablesCleared.push("financeRevenueMonthly");
-
-    await this.dbInstance.delete(cashflowPoints);
-    tablesCleared.push("cashflowPoints");
-
-    await this.dbInstance.delete(projectPlan);
-    tablesCleared.push("projectPlan");
-
-    await this.dbInstance.delete(programInflows);
-    tablesCleared.push("programInflows");
-
-    await this.dbInstance.delete(programExpense);
-    tablesCleared.push("programExpense");
-
-    await this.dbInstance.delete(projectInfo);
-    tablesCleared.push("projectInfo");
-
-    await this.dbInstance.delete(refreshLogs);
-    tablesCleared.push("refreshLogs");
-
-    await this.dbInstance.delete(uploadMetadata);
-    tablesCleared.push("uploadMetadata");
-
-    await this.dbInstance.delete(budgets);
-    tablesCleared.push("budgets");
-
-    await this.dbInstance.delete(tasks);
-    tablesCleared.push("tasks");
-
-    await this.dbInstance.delete(revenues);
-    tablesCleared.push("revenues");
-
-    await this.dbInstance.delete(expenses);
-    tablesCleared.push("expenses");
-
-    await this.dbInstance.delete(projects);
-    tablesCleared.push("projects");
+    await safeDelete(scheduleChangeNotice, "scheduleChangeNotice");
+    await safeDelete(workingPlanDependencyOverride, "workingPlanDependencyOverride");
+    await safeDelete(projectPlanDependency, "projectPlanDependency");
+    await safeDelete(workingPlanTaskOverride, "workingPlanTaskOverride");
+    await safeDelete(workingPlanScenario, "workingPlanScenario");
+    await safeDelete(financeCosOverrides, "financeCosOverrides");
+    await safeDelete(financeRevenueOverrides, "financeRevenueOverrides");
+    await safeDelete(expenditureOverrides, "expenditureOverrides");
+    await safeDelete(revenueTrackingOverrides, "revenueTrackingOverrides");
+    await safeDelete(projectPlanOverrides, "projectPlanOverrides");
+    await safeDelete(cashflowPlanningOverrides, "cashflowPlanningOverrides");
+    await safeDelete(financeCosMonthly, "financeCosMonthly");
+    await safeDelete(financeRevenueMonthly, "financeRevenueMonthly");
+    await safeDelete(cashflowPoints, "cashflowPoints");
+    await safeDelete(projectPlan, "projectPlan");
+    await safeDelete(programInflows, "programInflows");
+    await safeDelete(programExpense, "programExpense");
+    await safeDelete(projectInfo, "projectInfo");
+    await safeDelete(refreshLogs, "refreshLogs");
+    await safeDelete(uploadMetadata, "uploadMetadata");
+    await safeDelete(budgets, "budgets");
+    await safeDelete(tasks, "tasks");
+    await safeDelete(revenues, "revenues");
+    await safeDelete(expenses, "expenses");
+    await safeDelete(projects, "projects");
 
     // Delete uploaded files
     const fs = await import("fs");
