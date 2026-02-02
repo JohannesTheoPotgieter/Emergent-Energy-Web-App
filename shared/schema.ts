@@ -37,6 +37,11 @@ export const projectInfo = pgTable("project_info", {
   pm: text("pm"),
   contractValue: decimal("contract_value", { precision: 15, scale: 2 }),
   phase: text("phase"),
+  pdHandoverDate: text("pd_handover_date"),
+  constructionStartDate: text("construction_start_date"),
+  commissioningDate: text("commissioning_date"),
+  omHandoverDate: text("om_handover_date"),
+  clientHandoverDate: text("client_handover_date"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
