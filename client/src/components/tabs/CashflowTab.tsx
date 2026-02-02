@@ -126,7 +126,7 @@ export function CashflowTab({ projectName }: CashflowTabProps) {
         projectName,
         weekStartDate,
         seriesName,
-        overrideValue: value,
+        overrideValue: value.toString(),
       };
     });
     await saveMutation.mutateAsync(overrides);

@@ -46,7 +46,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
       <CardHeader>
         <CardTitle>Project Plan</CardTitle>
         <CardDescription>
-          Tasks and milestones from the Project Plan sheet • Read-only view
+          Programme tasks and milestones • {taskList.length} items • Read-only view
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -59,39 +59,48 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Task Name</TableHead>
-                  <TableHead>Type</TableHead>
+                  <TableHead>No.</TableHead>
+                  <TableHead>Task / Programme</TableHead>
                   <TableHead>Start Date</TableHead>
+                  <TableHead>Duration</TableHead>
                   <TableHead>End Date</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Owner</TableHead>
+                  <TableHead>Actual %</TableHead>
+                  <TableHead>Expected %</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {taskList.map((task: any, idx: number) => (
-                  <TableRow key={task.id || idx}>
-                    <TableCell className="font-medium">{task.taskName || "-"}</TableCell>
-                    <TableCell>
-                      {task.taskType === "Milestone" ? (
-                        <Badge variant="secondary">Milestone</Badge>
-                      ) : (
-                        <Badge variant="outline">Task</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>{task.startDate ? new Date(task.startDate).toLocaleDateString() : "-"}</TableCell>
-                    <TableCell>{task.endDate ? new Date(task.endDate).toLocaleDateString() : "-"}</TableCell>
-                    <TableCell>
-                      {task.status ? (
-                        <Badge variant={task.status === "Complete" ? "default" : "outline"}>
-                          {task.status}
-                        </Badge>
-                      ) : (
-                        "-"
-                      )}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">{task.owner || "-"}</TableCell>
-                  </TableRow>
-                ))}
+                {taskList.map((task: any, idx: number) => {
+                  const isSection = task.taskNo && !task.taskNo.includes(".");
+                  const actualPct = task.actualPctComplete != null ? (task.actualPctComplete * 100).toFixed(0) : null;
+                  const expectedPct = task.expectedPctComplete != null ? (task.expectedPctComplete * 100).toFixed(0) : null;
+                  const delta = actualPct && expectedPct ? parseFloat(actualPct) - parseFloat(expectedPct) : null;
+                  
+                  return (
+                    <TableRow key={task.id || idx} className={isSection ? "bg-muted/50 font-semibold" : ""}>
+                      <TableCell className="font-mono text-sm">{task.taskNo || "-"}</TableCell>
+                      <TableCell className={isSection ? "font-semibold" : ""}>
+                        {task.highLevelProgramme || "-"}
+                      </TableCell>
+                      <TableCell>{task.actualStart ? new Date(task.actualStart).toLocaleDateString() : "-"}</TableCell>
+                      <TableCell>{task.durationDays != null ? `${task.durationDays}d` : "-"}</TableCell>
+                      <TableCell>{task.actualEnd ? new Date(task.actualEnd).toLocaleDateString() : "-"}</TableCell>
+                      <TableCell>
+                        {actualPct != null ? (
+                          <Badge variant={parseFloat(actualPct) >= 100 ? "default" : "outline"}>
+                            {actualPct}%
+                          </Badge>
+                        ) : "-"}
+                      </TableCell>
+                      <TableCell>
+                        {expectedPct != null ? (
+                          <span className={delta != null && delta < -10 ? "text-destructive font-medium" : ""}>
+                            {expectedPct}%
+                          </span>
+                        ) : "-"}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
