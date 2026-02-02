@@ -10,6 +10,7 @@ import { insertBudgetSchema } from "@shared/schema";
 import { z } from "zod";
 import { format } from "date-fns";
 import { generateToken, verifyToken } from "./jwt";
+import { calculateCPM, applyOverridesToTasks, applyOverridesToDependencies, type CPMDependency } from "./cpmEngine";
 
 // Ensure uploads directory exists
 const uploadDir = path.join(process.cwd(), 'uploads');
@@ -2221,6 +2222,338 @@ export async function registerRoutes(
           durationMs: Date.now() - startTime
         }
       });
+    }
+  });
+
+  // ==================== PROJECT PLAN SCHEDULING API ====================
+
+  // Get working plan with CPM calculation for a project
+  app.get("/api/projects/:projectName/working-plan", async (req, res) => {
+    try {
+      const { projectName } = req.params;
+      const decodedName = decodeURIComponent(projectName);
+
+      // Get or create active scenario
+      const scenario = await storage.getOrCreateActiveScenario(decodedName);
+
+      // Get base tasks from project_plan
+      const baseTasks = await storage.getProjectPlansByProject(decodedName);
+
+      // Get task overrides
+      const taskOverrides = await storage.getTaskOverridesByScenario(scenario.id);
+
+      // Apply overrides to get working tasks
+      const workingTasks = applyOverridesToTasks(
+        baseTasks.map(t => ({
+          id: t.id,
+          taskNo: t.taskNo,
+          name: t.name,
+          startDate: t.startDate,
+          endDate: t.endDate,
+          type: t.type,
+        })),
+        taskOverrides
+      );
+
+      // Get base dependencies
+      const baseDeps = await storage.getDependenciesByProject(decodedName);
+
+      // Get dependency overrides
+      const depOverrides = await storage.getDependencyOverridesByScenario(scenario.id);
+
+      // Apply dependency overrides
+      const workingDeps = applyOverridesToDependencies(
+        baseDeps.map(d => ({
+          id: d.id,
+          predecessorTaskId: d.predecessorTaskId,
+          successorTaskId: d.successorTaskId,
+          dependencyType: d.dependencyType,
+          lagDays: d.lagDays,
+        })),
+        depOverrides
+      );
+
+      // Calculate CPM
+      const cpmResult = calculateCPM(workingTasks, workingDeps);
+
+      // Get project info for key dates
+      const projectInfo = await storage.getProjectInfo(decodedName);
+
+      res.json({
+        scenario,
+        tasks: cpmResult.tasks,
+        dependencies: workingDeps,
+        criticalPath: cpmResult.criticalPath,
+        projectFinish: cpmResult.projectFinish,
+        hasCircularDependency: cpmResult.hasCircularDependency,
+        warnings: cpmResult.warnings,
+        keyDates: {
+          pdHandoverDate: projectInfo?.pdHandoverDate || null,
+          constructionStartDate: projectInfo?.constructionStartDate || null,
+          commissioningDate: projectInfo?.commissioningDate || null,
+          omHandoverDate: projectInfo?.omHandoverDate || null,
+          clientHandoverDate: projectInfo?.clientHandoverDate || null,
+        },
+        overrideCounts: {
+          taskOverrides: taskOverrides.filter(o => o.deletedFlag !== 1).length,
+          dependencyOverrides: depOverrides.filter(o => o.deletedFlag !== 1).length,
+        },
+      });
+    } catch (error: any) {
+      console.error("Error getting working plan:", error);
+      res.status(500).json({ error: "server_error", message: error.message });
+    }
+  });
+
+  // Reset working plan to baseline
+  app.post("/api/projects/:projectName/working-plan/reset", async (req, res) => {
+    try {
+      const { projectName } = req.params;
+      const decodedName = decodeURIComponent(projectName);
+
+      const scenario = await storage.getActiveScenario(decodedName);
+      if (scenario) {
+        await storage.resetScenario(scenario.id);
+      }
+
+      res.json({ success: true, message: "Working plan reset to baseline" });
+    } catch (error: any) {
+      console.error("Error resetting working plan:", error);
+      res.status(500).json({ error: "server_error", message: error.message });
+    }
+  });
+
+  // Update a task in working plan
+  app.patch("/api/working-plan/tasks/:taskId", async (req, res) => {
+    try {
+      const { taskId } = req.params;
+      const { projectName, startDate, endDate, name, taskNo, comment } = req.body;
+
+      if (!projectName) {
+        return res.status(400).json({ error: "validation_error", message: "projectName is required" });
+      }
+
+      const scenario = await storage.getOrCreateActiveScenario(projectName);
+      const id = parseInt(taskId);
+
+      // Check if override already exists for this task
+      const existingOverrides = await storage.getTaskOverridesByScenario(scenario.id);
+      const existing = existingOverrides.find(o => o.importedTaskId === id);
+
+      if (existing) {
+        // Update existing override
+        const updated = await storage.updateTaskOverride(existing.id, {
+          overrideStartDate: startDate || existing.overrideStartDate,
+          overrideEndDate: endDate || existing.overrideEndDate,
+          overrideName: name || existing.overrideName,
+          overrideTaskNo: taskNo || existing.overrideTaskNo,
+          overrideComment: comment || existing.overrideComment,
+        });
+        res.json(updated);
+      } else {
+        // Create new override
+        const created = await storage.createTaskOverride({
+          scenarioId: scenario.id,
+          importedTaskId: id,
+          overrideStartDate: startDate || null,
+          overrideEndDate: endDate || null,
+          overrideName: name || null,
+          overrideTaskNo: taskNo || null,
+          overrideComment: comment || null,
+          deletedFlag: 0,
+          isNewTask: 0,
+        });
+        res.json(created);
+      }
+    } catch (error: any) {
+      console.error("Error updating task:", error);
+      res.status(500).json({ error: "server_error", message: error.message });
+    }
+  });
+
+  // Create new task in working plan
+  app.post("/api/working-plan/tasks", async (req, res) => {
+    try {
+      const { projectName, startDate, endDate, name, taskNo } = req.body;
+
+      if (!projectName || !startDate || !endDate || !name) {
+        return res.status(400).json({ 
+          error: "validation_error", 
+          message: "projectName, startDate, endDate, and name are required" 
+        });
+      }
+
+      const scenario = await storage.getOrCreateActiveScenario(projectName);
+
+      const created = await storage.createTaskOverride({
+        scenarioId: scenario.id,
+        importedTaskId: null,
+        overrideStartDate: startDate,
+        overrideEndDate: endDate,
+        overrideName: name,
+        overrideTaskNo: taskNo || null,
+        overrideComment: null,
+        deletedFlag: 0,
+        isNewTask: 1,
+      });
+
+      res.json(created);
+    } catch (error: any) {
+      console.error("Error creating task:", error);
+      res.status(500).json({ error: "server_error", message: error.message });
+    }
+  });
+
+  // Delete task from working plan (soft delete)
+  app.delete("/api/working-plan/tasks/:taskId", async (req, res) => {
+    try {
+      const { taskId } = req.params;
+      const { projectName, isNewTask } = req.body;
+
+      if (!projectName) {
+        return res.status(400).json({ error: "validation_error", message: "projectName is required" });
+      }
+
+      const scenario = await storage.getOrCreateActiveScenario(projectName);
+      const id = parseInt(taskId);
+
+      if (isNewTask) {
+        // For new tasks, we can hard delete the override
+        await storage.softDeleteTaskOverride(Math.abs(id));
+      } else {
+        // For imported tasks, create soft-delete override
+        const existingOverrides = await storage.getTaskOverridesByScenario(scenario.id);
+        const existing = existingOverrides.find(o => o.importedTaskId === id);
+
+        if (existing) {
+          await storage.softDeleteTaskOverride(existing.id);
+        } else {
+          await storage.createTaskOverride({
+            scenarioId: scenario.id,
+            importedTaskId: id,
+            overrideStartDate: null,
+            overrideEndDate: null,
+            overrideName: null,
+            overrideTaskNo: null,
+            overrideComment: null,
+            deletedFlag: 1,
+            isNewTask: 0,
+          });
+        }
+      }
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting task:", error);
+      res.status(500).json({ error: "server_error", message: error.message });
+    }
+  });
+
+  // Create dependency
+  app.post("/api/projects/:projectName/dependencies", async (req, res) => {
+    try {
+      const { projectName } = req.params;
+      const decodedName = decodeURIComponent(projectName);
+      const { predecessorTaskId, successorTaskId, dependencyType, lagDays } = req.body;
+
+      if (!predecessorTaskId || !successorTaskId) {
+        return res.status(400).json({ 
+          error: "validation_error", 
+          message: "predecessorTaskId and successorTaskId are required" 
+        });
+      }
+
+      const created = await storage.createDependency({
+        projectName: decodedName,
+        predecessorTaskId: parseInt(predecessorTaskId),
+        successorTaskId: parseInt(successorTaskId),
+        dependencyType: dependencyType || "FS",
+        lagDays: lagDays || 0,
+      });
+
+      res.json(created);
+    } catch (error: any) {
+      console.error("Error creating dependency:", error);
+      res.status(500).json({ error: "server_error", message: error.message });
+    }
+  });
+
+  // Delete dependency
+  app.delete("/api/dependencies/:depId", async (req, res) => {
+    try {
+      const { depId } = req.params;
+      await storage.deleteDependency(parseInt(depId));
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting dependency:", error);
+      res.status(500).json({ error: "server_error", message: error.message });
+    }
+  });
+
+  // Get schedule change notices
+  app.get("/api/projects/:projectName/change-notices", async (req, res) => {
+    try {
+      const { projectName } = req.params;
+      const decodedName = decodeURIComponent(projectName);
+      const notices = await storage.getChangeNoticesByProject(decodedName);
+      res.json(notices);
+    } catch (error: any) {
+      console.error("Error getting change notices:", error);
+      res.status(500).json({ error: "server_error", message: error.message });
+    }
+  });
+
+  // Create schedule change notice
+  app.post("/api/projects/:projectName/change-notices", async (req, res) => {
+    try {
+      const { projectName } = req.params;
+      const decodedName = decodeURIComponent(projectName);
+      const { summary, oldFinishDate, newFinishDate, changedTasks, criticalPathDelta, userNote, createdBy } = req.body;
+
+      if (!summary) {
+        return res.status(400).json({ error: "validation_error", message: "summary is required" });
+      }
+
+      const created = await storage.createChangeNotice({
+        projectName: decodedName,
+        summary,
+        oldFinishDate: oldFinishDate || null,
+        newFinishDate: newFinishDate || null,
+        changedTasks: changedTasks || null,
+        criticalPathDelta: criticalPathDelta || null,
+        userNote: userNote || null,
+        clientNotified: 0,
+        documentationUpdated: 0,
+        createdBy: createdBy || null,
+      });
+
+      res.json(created);
+    } catch (error: any) {
+      console.error("Error creating change notice:", error);
+      res.status(500).json({ error: "server_error", message: error.message });
+    }
+  });
+
+  // Update schedule change notice (mark as notified/documented)
+  app.patch("/api/change-notices/:noticeId", async (req, res) => {
+    try {
+      const { noticeId } = req.params;
+      const { clientNotified, documentationUpdated, userNote } = req.body;
+
+      const updated = await storage.updateChangeNotice(parseInt(noticeId), {
+        clientNotified: clientNotified !== undefined ? clientNotified : undefined,
+        documentationUpdated: documentationUpdated !== undefined ? documentationUpdated : undefined,
+        userNote: userNote !== undefined ? userNote : undefined,
+      });
+
+      if (!updated) {
+        return res.status(404).json({ error: "not_found", message: "Change notice not found" });
+      }
+
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error updating change notice:", error);
+      res.status(500).json({ error: "server_error", message: error.message });
     }
   });
 
