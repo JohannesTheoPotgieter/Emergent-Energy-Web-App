@@ -1643,6 +1643,247 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== ADMIN SMOKE TEST ====================
+  
+  app.get("/api/admin/smoke-test", requireAuth, requireAdmin, async (req, res) => {
+    const startTime = Date.now();
+    const checks: { name: string; passed: boolean; details: any }[] = [];
+    
+    const addCheck = (name: string, passed: boolean, details: any = {}) => {
+      checks.push({ name, passed, details });
+    };
+
+    try {
+      // 1. Health Check
+      try {
+        const { dbMode } = await import("./db");
+        const { getDbConfigStatus } = await import("./db-config");
+        const dbStatus = getDbConfigStatus();
+        
+        const healthPassed = dbStatus.connected === true;
+        addCheck("health", healthPassed, {
+          ok: dbStatus.connected,
+          dbMode,
+          dbConnected: dbStatus.connected,
+          dbHost: dbStatus.host,
+          message: dbStatus.message
+        });
+      } catch (err: any) {
+        addCheck("health", false, { error: err.message });
+      }
+
+      // 2. Auth Check - Verify admin user exists
+      try {
+        const adminUser = await storage.getUserByEmail("admin@emergent.energy");
+        const adminExists = !!adminUser;
+        
+        addCheck("auth_admin_exists", adminExists, {
+          email: "admin@emergent.energy",
+          exists: adminExists,
+          role: adminUser?.role || null
+        });
+      } catch (err: any) {
+        addCheck("auth_admin_exists", false, { error: err.message });
+      }
+
+      // 3. Upload baseline test - Check existing uploads
+      try {
+        const uploadDir = path.join(process.cwd(), 'uploads');
+        const files = fs.readdirSync(uploadDir).filter(f => 
+          f.endsWith('.xlsx') || f.endsWith('.xlsm') || f.endsWith('.xls')
+        );
+        
+        addCheck("upload_files_available", files.length > 0, {
+          count: files.length,
+          files: files.slice(0, 5)
+        });
+      } catch (err: any) {
+        addCheck("upload_files_available", false, { error: err.message });
+      }
+
+      // 4. Projects data check
+      try {
+        const projects = await storage.getAllProjectInfo();
+        const projectCount = projects.length;
+        
+        addCheck("projects_exist", projectCount >= 1, {
+          count: projectCount,
+          projects: projects.map(p => p.projectName).slice(0, 10)
+        });
+      } catch (err: any) {
+        addCheck("projects_exist", false, { error: err.message });
+      }
+
+      // 5. Cashflow data check - verify 8 series names
+      try {
+        const cashflowPoints = await storage.getAllCashflowPoints();
+        const seriesNames = Array.from(new Set(cashflowPoints.map(p => p.seriesName)));
+        
+        const requiredSeries = [
+          "Planned Revenue", "ACTUAL Revenue",
+          "Planned Expenditure", "ACTUAL Expenditure",
+          "Planned CashFlow", "ACTUAL CashFlow",
+          "Planned Cumulative", "ACTUAL Cumulative"
+        ];
+        
+        const missingSeries = requiredSeries.filter(s => !seriesNames.includes(s));
+        const nonZeroPoints = cashflowPoints.filter(p => parseFloat(String(p.value)) !== 0).length;
+        
+        addCheck("cashflow_series", missingSeries.length === 0, {
+          foundSeries: seriesNames,
+          requiredSeries,
+          missingSeries,
+          totalPoints: cashflowPoints.length,
+          nonZeroPoints
+        });
+        
+        addCheck("cashflow_nonzero", nonZeroPoints >= 10, {
+          nonZeroPoints,
+          threshold: 10
+        });
+      } catch (err: any) {
+        addCheck("cashflow_series", false, { error: err.message });
+        addCheck("cashflow_nonzero", false, { error: err.message });
+      }
+
+      // 6. Revenue data check (program_inflows)
+      try {
+        const projects = await storage.getAllProjectInfo();
+        let totalInflows = 0;
+        
+        for (const project of projects.slice(0, 5)) {
+          const inflows = await storage.getProgramInflowsByProject(project.projectName);
+          totalInflows += inflows.length;
+        }
+        
+        addCheck("revenue_data", totalInflows > 0, {
+          totalInflows,
+          projectsChecked: Math.min(projects.length, 5)
+        });
+      } catch (err: any) {
+        addCheck("revenue_data", false, { error: err.message });
+      }
+
+      // 7. COS data check (program_expenses)
+      try {
+        const projects = await storage.getAllProjectInfo();
+        let totalExpenses = 0;
+        
+        for (const project of projects.slice(0, 5)) {
+          const expenses = await storage.getProgramExpensesByProject(project.projectName);
+          totalExpenses += expenses.length;
+        }
+        
+        addCheck("cos_data", totalExpenses > 0, {
+          totalExpenses,
+          projectsChecked: Math.min(projects.length, 5)
+        });
+      } catch (err: any) {
+        addCheck("cos_data", false, { error: err.message });
+      }
+
+      // 8. Override test - create, verify, cleanup
+      try {
+        const testProjectName = "SMOKE_TEST_PROJECT";
+        const testWeekStart = "2025-01-06";
+        const testSeriesName = "Planned Revenue";
+        const testOverrideValue = "99999.99";
+        
+        // Create override
+        await storage.upsertPlanningOverride({
+          projectName: testProjectName,
+          weekStartDate: testWeekStart,
+          seriesName: testSeriesName,
+          overrideValue: testOverrideValue
+        });
+        
+        // Verify override exists
+        const overrides = await storage.getPlanningOverridesByProject(testProjectName);
+        const found = overrides.find(o => 
+          o.weekStartDate === testWeekStart && 
+          o.seriesName === testSeriesName
+        );
+        
+        const overridePassed = !!(found && String(found.overrideValue) === testOverrideValue);
+        
+        // Cleanup
+        await storage.deletePlanningOverridesByProject(testProjectName);
+        
+        addCheck("override_test", overridePassed, {
+          created: true,
+          found: !!found,
+          valueMatches: found ? String(found.overrideValue) === testOverrideValue : false,
+          cleanedUp: true
+        });
+      } catch (err: any) {
+        addCheck("override_test", false, { error: err.message });
+      }
+
+      // 9. Finance Revenue Monthly check
+      try {
+        const projects = await storage.getAllProjectInfo();
+        let totalFinRevRows = 0;
+        
+        for (const project of projects.slice(0, 3)) {
+          const finRev = await storage.getFinanceRevenueMonthlyByProject(project.projectName);
+          totalFinRevRows += finRev.length;
+        }
+        
+        addCheck("finance_revenue", totalFinRevRows > 0, {
+          totalRows: totalFinRevRows,
+          projectsChecked: Math.min(projects.length, 3)
+        });
+      } catch (err: any) {
+        addCheck("finance_revenue", false, { error: err.message });
+      }
+
+      // 10. Finance COS Monthly check
+      try {
+        const projects = await storage.getAllProjectInfo();
+        let totalFinCosRows = 0;
+        
+        for (const project of projects.slice(0, 3)) {
+          const finCos = await storage.getFinanceCosMonthlyByProject(project.projectName);
+          totalFinCosRows += finCos.length;
+        }
+        
+        addCheck("finance_cos", totalFinCosRows > 0, {
+          totalRows: totalFinCosRows,
+          projectsChecked: Math.min(projects.length, 3)
+        });
+      } catch (err: any) {
+        addCheck("finance_cos", false, { error: err.message });
+      }
+
+      const endTime = Date.now();
+      const allPassed = checks.every(c => c.passed);
+      
+      res.json({
+        passed: allPassed,
+        checks,
+        timestamps: {
+          started: new Date(startTime).toISOString(),
+          completed: new Date(endTime).toISOString(),
+          durationMs: endTime - startTime
+        }
+      });
+      
+    } catch (error: any) {
+      res.status(500).json({
+        passed: false,
+        checks,
+        error: "smoke_test_error",
+        message: error.message || "Smoke test failed unexpectedly",
+        code: "smoke_test_error",
+        timestamps: {
+          started: new Date(startTime).toISOString(),
+          completed: new Date().toISOString(),
+          durationMs: Date.now() - startTime
+        }
+      });
+    }
+  });
+
   // ==================== GLOBAL API ERROR HANDLER ====================
   // Catch any unhandled errors and return proper JSON
   app.use('/api', (err: any, req: Request, res: Response, next: NextFunction) => {
@@ -1652,24 +1893,28 @@ export async function registerRoutes(
     if (err.code === 'LIMIT_FILE_SIZE') {
       return res.status(413).json({
         error: 'file_too_large',
-        message: 'File too large. Maximum file size is 50MB.'
+        message: 'File too large. Maximum file size is 50MB.',
+        code: 'LIMIT_FILE_SIZE'
       });
     }
     
     if (err.code === 'LIMIT_UNEXPECTED_FILE') {
       return res.status(400).json({
         error: 'unexpected_field',
-        message: 'Unexpected form field. Expected files/file/tracker.'
+        message: 'Unexpected form field. Expected files/file/tracker.',
+        code: 'LIMIT_UNEXPECTED_FILE'
       });
     }
     
     // Generic error with message
     const errorMessage = err.message || 'Internal server error';
     const statusCode = err.status || err.statusCode || 500;
+    const errorCode = err.code || 'server_error';
     
     res.status(statusCode).json({
-      error: err.code || 'server_error',
+      error: errorCode,
       message: errorMessage,
+      code: errorCode,
       detail: process.env.NODE_ENV === 'development' ? err.stack : undefined
     });
   });

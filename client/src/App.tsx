@@ -16,6 +16,7 @@ import CostTracker from "@/pages/cos";
 import UploadPage from "@/pages/upload";
 import NotFound from "@/pages/not-found";
 import ProjectDetailPage from "@/pages/project-detail";
+import AdminPage from "@/pages/admin";
 import { useProgramData } from "@/hooks/use-program-data";
 import { TrackerTable } from "@/components/dashboard/TrackerTable";
 import { format } from "date-fns";
@@ -141,6 +142,7 @@ function ProtectedPages() {
         <Route path="/revenue" component={RevenueTracker} />
         <Route path="/cos" component={CostTracker} />
         <Route path="/upload" component={UploadPage} />
+        <Route path="/admin" component={AdminPage} />
         <Route component={NotFound} />
       </Switch>
     </AppLayout>
