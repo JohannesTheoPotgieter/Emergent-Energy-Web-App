@@ -15,6 +15,7 @@ export interface CPMTask {
   successorIds: number[];
   isMilestone: boolean;
   type: string;
+  percentComplete: number | null;
 }
 
 export interface CPMDependency {
@@ -119,6 +120,7 @@ export function calculateCPM(
     startDate: string | null;
     endDate: string | null;
     type: string | null;
+    percentComplete?: number | null;
   }>,
   dependencies: CPMDependency[]
 ): CPMResult {
@@ -166,6 +168,7 @@ export function calculateCPM(
       successorIds: [],
       isMilestone,
       type: t.type || '',
+      percentComplete: t.percentComplete ?? null,
     };
   });
   
@@ -284,6 +287,7 @@ export function applyOverridesToTasks(
     startDate: string | null;
     endDate: string | null;
     type: string | null;
+    percentComplete?: number | null;
   }>,
   overrides: Array<{
     importedTaskId: number | null;
@@ -330,6 +334,7 @@ export function applyOverridesToTasks(
       startDate: o.overrideStartDate,
       endDate: o.overrideEndDate,
       type: 'Task',
+      percentComplete: null as number | null,
     }));
   
   return [...result, ...newTasks];

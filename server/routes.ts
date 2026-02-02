@@ -2251,6 +2251,7 @@ export async function registerRoutes(
           startDate: t.actualStart,
           endDate: t.actualEnd,
           type: null,
+          percentComplete: t.actualPctComplete ?? null,
         })),
         taskOverrides
       );
