@@ -764,7 +764,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/budgets", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/budgets", async (req, res) => {
     try {
       const parsed = insertBudgetSchema.parse(req.body);
       const budget = await storage.createBudget(parsed);
@@ -777,7 +777,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/budgets/:id", requireAuth, requireAdmin, async (req, res) => {
+  app.delete("/api/budgets/:id", async (req, res) => {
     try {
       const id = parseInt(String(req.params.id));
       const deleted = await storage.deleteBudget(id);
@@ -800,7 +800,7 @@ export async function registerRoutes(
     { name: 'trackers', maxCount: 20 }
   ]);
 
-  app.post("/api/upload", requireAuth, multiUpload, async (req, res) => {
+  app.post("/api/upload", multiUpload, async (req, res) => {
     try {
       // Normalize files from multiple possible field names
       const filesObj = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
@@ -960,7 +960,7 @@ export async function registerRoutes(
 
   // ==================== REPROCESS ALL UPLOADS ====================
 
-  app.post("/api/reprocess-all", requireAuth, async (req, res) => {
+  app.post("/api/reprocess-all", async (req, res) => {
     try {
       // Get all uploads with file paths
       const uploads = await storage.getAllUploads();
@@ -1212,7 +1212,7 @@ export async function registerRoutes(
   });
 
   // Planning overrides API
-  app.get("/api/cashflow/planning-overrides", requireAuth, async (req, res) => {
+  app.get("/api/cashflow/planning-overrides", async (req, res) => {
     try {
       const { projectName } = req.query;
       let overrides;
@@ -1229,7 +1229,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/cashflow/planning-overrides", requireAuth, async (req, res) => {
+  app.post("/api/cashflow/planning-overrides", async (req, res) => {
     try {
       const { overrides } = req.body;
       
@@ -1262,7 +1262,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/cashflow/planning-overrides/:projectName", requireAuth, async (req, res) => {
+  app.delete("/api/cashflow/planning-overrides/:projectName", async (req, res) => {
     try {
       const projectName = req.params.projectName;
       if (!projectName || typeof projectName !== 'string') {
@@ -1276,7 +1276,7 @@ export async function registerRoutes(
   });
 
   // Project Plan Overrides API
-  app.get("/api/project-plan/overrides", requireAuth, async (req, res) => {
+  app.get("/api/project-plan/overrides", async (req, res) => {
     try {
       const { projectName } = req.query;
       if (!projectName || typeof projectName !== 'string') {
@@ -1289,7 +1289,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/project-plan/overrides", requireAuth, async (req, res) => {
+  app.post("/api/project-plan/overrides", async (req, res) => {
     try {
       const { overrides } = req.body;
       if (!Array.isArray(overrides)) {
@@ -1304,7 +1304,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/project-plan/overrides/:projectName", requireAuth, async (req, res) => {
+  app.delete("/api/project-plan/overrides/:projectName", async (req, res) => {
     try {
       const projectName = req.params.projectName;
       if (!projectName || typeof projectName !== 'string') {
@@ -1318,7 +1318,7 @@ export async function registerRoutes(
   });
 
   // Revenue Tracking Overrides API
-  app.get("/api/revenue-tracking/overrides", requireAuth, async (req, res) => {
+  app.get("/api/revenue-tracking/overrides", async (req, res) => {
     try {
       const { projectName } = req.query;
       if (!projectName || typeof projectName !== 'string') {
@@ -1331,7 +1331,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/revenue-tracking/overrides", requireAuth, async (req, res) => {
+  app.post("/api/revenue-tracking/overrides", async (req, res) => {
     try {
       const { overrides } = req.body;
       if (!Array.isArray(overrides)) {
@@ -1346,7 +1346,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/revenue-tracking/overrides/:projectName", requireAuth, async (req, res) => {
+  app.delete("/api/revenue-tracking/overrides/:projectName", async (req, res) => {
     try {
       const projectName = req.params.projectName;
       if (!projectName || typeof projectName !== 'string') {
@@ -1360,7 +1360,7 @@ export async function registerRoutes(
   });
 
   // Expenditure Overrides API
-  app.get("/api/expenditure/overrides", requireAuth, async (req, res) => {
+  app.get("/api/expenditure/overrides", async (req, res) => {
     try {
       const { projectName } = req.query;
       if (!projectName || typeof projectName !== 'string') {
@@ -1373,7 +1373,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/expenditure/overrides", requireAuth, async (req, res) => {
+  app.post("/api/expenditure/overrides", async (req, res) => {
     try {
       const { overrides } = req.body;
       if (!Array.isArray(overrides)) {
@@ -1388,7 +1388,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/expenditure/overrides/:projectName", requireAuth, async (req, res) => {
+  app.delete("/api/expenditure/overrides/:projectName", async (req, res) => {
     try {
       const projectName = req.params.projectName;
       if (!projectName || typeof projectName !== 'string') {
@@ -1402,7 +1402,7 @@ export async function registerRoutes(
   });
 
   // Finance Revenue Overrides API
-  app.get("/api/finance/revenue/overrides", requireAuth, async (req, res) => {
+  app.get("/api/finance/revenue/overrides", async (req, res) => {
     try {
       const { projectName } = req.query;
       if (!projectName || typeof projectName !== 'string') {
@@ -1415,7 +1415,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/finance/revenue/overrides", requireAuth, async (req, res) => {
+  app.post("/api/finance/revenue/overrides", async (req, res) => {
     try {
       const { overrides } = req.body;
       if (!Array.isArray(overrides)) {
@@ -1430,7 +1430,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/finance/revenue/overrides/:projectName", requireAuth, async (req, res) => {
+  app.delete("/api/finance/revenue/overrides/:projectName", async (req, res) => {
     try {
       const projectName = req.params.projectName;
       if (!projectName || typeof projectName !== 'string') {
@@ -1444,7 +1444,7 @@ export async function registerRoutes(
   });
 
   // Finance COS Overrides API
-  app.get("/api/finance/cos/overrides", requireAuth, async (req, res) => {
+  app.get("/api/finance/cos/overrides", async (req, res) => {
     try {
       const { projectName } = req.query;
       if (!projectName || typeof projectName !== 'string') {
@@ -1457,7 +1457,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/finance/cos/overrides", requireAuth, async (req, res) => {
+  app.post("/api/finance/cos/overrides", async (req, res) => {
     try {
       const { overrides } = req.body;
       if (!Array.isArray(overrides)) {
@@ -1472,7 +1472,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/finance/cos/overrides/:projectName", requireAuth, async (req, res) => {
+  app.delete("/api/finance/cos/overrides/:projectName", async (req, res) => {
     try {
       const projectName = req.params.projectName;
       if (!projectName || typeof projectName !== 'string') {
@@ -1547,7 +1547,7 @@ export async function registerRoutes(
 
   // ==================== REFRESH ROUTE ====================
 
-  app.post("/api/refresh", requireAuth, async (req, res) => {
+  app.post("/api/refresh", async (req, res) => {
     try {
       const refreshLog = await storage.createRefreshLog({
         triggeredBy: req.user?.id || null,
@@ -1569,7 +1569,7 @@ export async function registerRoutes(
   });
 
   // Admin data refresh - re-process all stored tracker files
-  app.post("/api/admin/refresh-data", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/admin/refresh-data", async (req, res) => {
     const startTime = Date.now();
     
     try {
@@ -1715,7 +1715,7 @@ export async function registerRoutes(
   });
 
   // Get refresh history
-  app.get("/api/admin/refresh-history", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/admin/refresh-history", async (req, res) => {
     try {
       const uploads = await storage.getAllUploads();
       const latest = await storage.getLatestRefresh();
@@ -1757,7 +1757,7 @@ export async function registerRoutes(
 
   // ==================== UPLOAD HISTORY ROUTE ====================
 
-  app.get("/api/uploads", requireAuth, async (req, res) => {
+  app.get("/api/uploads", async (req, res) => {
     try {
       const uploads = await storage.getAllUploads();
       res.json(uploads);
@@ -1850,7 +1850,7 @@ export async function registerRoutes(
 
   // ==================== ADMIN SMOKE TEST ====================
   
-  app.get("/api/admin/smoke-test", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/admin/smoke-test", async (req, res) => {
     const startTime = Date.now();
     const checks: { name: string; passed: boolean; details: any }[] = [];
     
