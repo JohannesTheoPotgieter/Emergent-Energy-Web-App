@@ -457,6 +457,23 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
           // Skip empty rows
           if (!milestoneDesc) continue;
           
+          // Try to detect inBank status from cell font color (red = not in bank, black = in bank)
+          let inBankValue = 0;
+          if (paymentDateCol >= 0) {
+            const cellAddr = XLSX.utils.encode_cell({ r: rowIdx, c: paymentDateCol });
+            const cell = sheet[cellAddr];
+            if (cell && cell.s && cell.s.font && cell.s.font.color) {
+              // Red color typically has RGB like "FF0000" or argb "FFFF0000"
+              const fontColor = cell.s.font.color.rgb || cell.s.font.color.argb || "";
+              const isRed = fontColor.toLowerCase().includes("ff0000") || 
+                           fontColor.toLowerCase().endsWith("ff0000");
+              inBankValue = isRed ? 0 : (cell.v ? 1 : 0); // If has value and not red, assume in bank
+            } else if (cell && cell.v) {
+              // If payment received date exists but no color info, default to in bank
+              inBankValue = 1;
+            }
+          }
+          
           inflows.push({
             projectName,
             rowNumber: rowIdx + 1,
@@ -470,6 +487,7 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
             paymentReceivedDate: paymentDateCol >= 0 ? parseDate(row[paymentDateCol]) : null,
             milestoneNotes: requirementsCol >= 0 && row[requirementsCol] ? String(row[requirementsCol]) : null,
             documentsReceived: docsCol >= 0 && row[docsCol] ? String(row[docsCol]) : null,
+            inBank: inBankValue,
           });
         }
         break; // Stop after parsing first table

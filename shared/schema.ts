@@ -87,12 +87,65 @@ export const programInflows = pgTable("program_inflows", {
   paymentReceivedDate: text("payment_received_date"),
   milestoneNotes: text("milestone_notes"),
   documentsReceived: text("documents_received"),
+  inBank: integer("in_bank").default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
 export const insertProgramInflowsSchema = createInsertSchema(programInflows).omit({ id: true, createdAt: true });
 export type InsertProgramInflows = z.infer<typeof insertProgramInflowsSchema>;
 export type ProgramInflows = typeof programInflows.$inferSelect;
+
+// Revenue Milestone Manual Overrides Table (user edits for invoice/payment fields)
+export const revenueMilestoneManual = pgTable("revenue_milestone_manual", {
+  id: serial("id").primaryKey(),
+  projectName: text("project_name").notNull(),
+  importedMilestoneId: integer("imported_milestone_id").notNull(),
+  invoiceNumber: text("invoice_number"),
+  invoiceRaisedDate: text("invoice_raised_date"),
+  paymentReceivedDate: text("payment_received_date"),
+  inBank: integer("in_bank").default(0),
+  requirementsComments: text("requirements_comments"),
+  documentsReceived: integer("documents_received").default(0),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertRevenueMilestoneManualSchema = createInsertSchema(revenueMilestoneManual).omit({ id: true, updatedAt: true });
+export type InsertRevenueMilestoneManual = z.infer<typeof insertRevenueMilestoneManualSchema>;
+export type RevenueMilestoneManual = typeof revenueMilestoneManual.$inferSelect;
+
+// Project Revenue Summary Table (top summary block values)
+export const projectRevenueSummary = pgTable("project_revenue_summary", {
+  id: serial("id").primaryKey(),
+  projectName: text("project_name").notNull().unique(),
+  plannedRevenue: decimal("planned_revenue", { precision: 15, scale: 2 }),
+  plannedExpenditure: decimal("planned_expenditure", { precision: 15, scale: 2 }),
+  plannedProfit: decimal("planned_profit", { precision: 15, scale: 2 }),
+  plannedMargin: decimal("planned_margin", { precision: 6, scale: 4 }),
+  actualRevenue: decimal("actual_revenue", { precision: 15, scale: 2 }),
+  actualExpenditure: decimal("actual_expenditure", { precision: 15, scale: 2 }),
+  actualProfit: decimal("actual_profit", { precision: 15, scale: 2 }),
+  actualMargin: decimal("actual_margin", { precision: 6, scale: 4 }),
+  voPmLimit: decimal("vo_pm_limit", { precision: 15, scale: 2 }),
+  currentVoTotal: decimal("current_vo_total", { precision: 15, scale: 2 }),
+  capturedAt: timestamp("captured_at").notNull().defaultNow(),
+});
+
+export const insertProjectRevenueSummarySchema = createInsertSchema(projectRevenueSummary).omit({ id: true, capturedAt: true });
+export type InsertProjectRevenueSummary = z.infer<typeof insertProjectRevenueSummarySchema>;
+export type ProjectRevenueSummary = typeof projectRevenueSummary.$inferSelect;
+
+// Project Notes Table (financial review, timeline review notes)
+export const projectNotes = pgTable("project_notes", {
+  id: serial("id").primaryKey(),
+  projectName: text("project_name").notNull().unique(),
+  revenueFinancialReview: text("revenue_financial_review"),
+  revenueTimelineReview: text("revenue_timeline_review"),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertProjectNotesSchema = createInsertSchema(projectNotes).omit({ id: true, updatedAt: true });
+export type InsertProjectNotes = z.infer<typeof insertProjectNotesSchema>;
+export type ProjectNotes = typeof projectNotes.$inferSelect;
 
 // Project Plan Table (from Project Plan sheet)
 export const projectPlan = pgTable("project_plan", {
