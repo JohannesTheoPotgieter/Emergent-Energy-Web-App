@@ -621,7 +621,8 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
   if (workbook.SheetNames.includes("Finance - Revenue")) {
     try {
       const sheet = workbook.Sheets["Finance - Revenue"];
-      const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: false }) as any[][];
+      // Use raw: true to get actual numeric values instead of formatted strings
+      const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: true }) as any[][];
       
       if (data.length > 0) {
         // Find header row containing "Row Labels" in column A
@@ -698,12 +699,13 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
   if (workbook.SheetNames.includes("Finance - COS")) {
     try {
       const sheet = workbook.Sheets["Finance - COS"];
-      const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: false }) as any[][];
+      // Use raw: true to get actual numeric values instead of formatted strings
+      const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: true }) as any[][];
       
       if (data.length > 0) {
         // Find header row containing "Row Labels" in column A
         let headerRowIdx = -1;
-        for (let rowIdx = 0; rowIdx < Math.min(10, data.length); rowIdx++) {
+        for (let rowIdx = 0; rowIdx < Math.min(15, data.length); rowIdx++) {
           const cellA = data[rowIdx][0];
           if (cellA && normalizeHeader(cellA) === "row labels") {
             headerRowIdx = rowIdx;
@@ -719,7 +721,8 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
             const header = normalizeHeader(data[headerRowIdx][colIdx]);
             if (header === "grand total") break;
             
-            const dateVal = parseDate(data[headerRowIdx][colIdx]);
+            const cellVal = data[headerRowIdx][colIdx];
+            const dateVal = parseDate(cellVal);
             if (dateVal) {
               monthHeaders.push(dateVal);
               monthColIndices.push(colIdx);
@@ -752,7 +755,8 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
             // Parse values for each month column
             for (let monthIdx = 0; monthIdx < monthHeaders.length; monthIdx++) {
               const valueColIdx = monthColIndices[monthIdx];
-              const value = parseNumber(data[rowIdx][valueColIdx]);
+              const rawValue = data[rowIdx][valueColIdx];
+              const value = parseNumber(rawValue);
               
               financeCosMonthly.push({
                 projectName,
