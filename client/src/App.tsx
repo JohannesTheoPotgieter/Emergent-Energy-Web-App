@@ -13,7 +13,7 @@ import ProjectsSummary from "@/pages/projects";
 import CashflowPage from "@/pages/cashflow";
 import RevenueTracker from "@/pages/revenue";
 import CostTracker from "@/pages/cos";
-import BudgetPage from "@/pages/budget";
+import UploadPage from "@/pages/upload";
 import NotFound from "@/pages/not-found";
 import ProjectDetailPage from "@/pages/project-detail";
 import { useProgramData } from "@/hooks/use-program-data";
@@ -140,11 +140,7 @@ function ProtectedPages() {
         <Route path="/cashflow" component={CashflowPage} />
         <Route path="/revenue" component={RevenueTracker} />
         <Route path="/cos" component={CostTracker} />
-        <Route path="/procurement" component={ProcurementPage} />
-        <Route path="/construction" component={ConstructionPage} />
-        <Route path="/compliance" component={CompliancePage} />
-        <Route path="/tasks" component={TaskRegisterPage} />
-        <Route path="/budget" component={BudgetPage} />
+        <Route path="/upload" component={UploadPage} />
         <Route component={NotFound} />
       </Switch>
     </AppLayout>

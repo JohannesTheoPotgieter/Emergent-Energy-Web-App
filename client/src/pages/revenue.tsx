@@ -1,13 +1,18 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { DateRangeBar } from "@/components/DateRangeBar";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { SummaryCard } from "@/components/dashboard/SummaryCard";
 import { financeApi, overviewApi } from "@/lib/api";
-import { format, parseISO } from "date-fns";
+import { format, parseISO, addDays, isWithinInterval, isBefore } from "date-fns";
+import { DollarSign, TrendingUp, AlertTriangle, Calendar, ArrowRight } from "lucide-react";
 
 export default function RevenueTracker() {
+  const [, setLocation] = useLocation();
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [startDate, setStartDate] = useState<string | null>(null);
   const [endDate, setEndDate] = useState<string | null>(null);
@@ -75,6 +80,64 @@ export default function RevenueTracker() {
     return filteredData.reduce((sum, item) => sum + item.value, 0);
   }, [filteredData]);
 
+  const inflowMetrics = useMemo(() => {
+    const today = new Date();
+    const next30 = addDays(today, 30);
+    const next60 = addDays(today, 60);
+    const next90 = addDays(today, 90);
+
+    let totalPlanned = 0;
+    let totalReceived = 0;
+    let overdue = 0;
+    let upcoming30 = 0;
+    let upcoming60 = 0;
+    let upcoming90 = 0;
+
+    (programInflows as any[]).forEach((inflow: any) => {
+      const amount = Number(inflow.amount) || 0;
+      totalPlanned += amount;
+
+      if (inflow.is_received) {
+        totalReceived += amount;
+      } else if (inflow.date) {
+        try {
+          const date = new Date(inflow.date);
+          if (isBefore(date, today)) {
+            overdue += amount;
+          } else if (isWithinInterval(date, { start: today, end: next30 })) {
+            upcoming30 += amount;
+          } else if (isWithinInterval(date, { start: today, end: next60 })) {
+            upcoming60 += amount;
+          } else if (isWithinInterval(date, { start: today, end: next90 })) {
+            upcoming90 += amount;
+          }
+        } catch {}
+      }
+    });
+
+    return {
+      totalPlanned,
+      totalReceived,
+      overdue,
+      overdueCount: (programInflows as any[]).filter((i: any) => !i.is_received && i.date && isBefore(new Date(i.date), today)).length,
+      upcoming30,
+      upcoming60,
+      upcoming90,
+    };
+  }, [programInflows]);
+
+  const projectBreakdown = useMemo(() => {
+    const projectMap = new Map<string, number>();
+    filteredData.forEach(item => {
+      const current = projectMap.get(item.projectName) || 0;
+      projectMap.set(item.projectName, current + item.value);
+    });
+    return Array.from(projectMap.entries())
+      .map(([project, total]) => ({ project, total }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 5);
+  }, [filteredData]);
+
   return (
     <div className="space-y-0">
       <div className="bg-white border-b border-gray-200 px-6 py-6">
@@ -108,32 +171,64 @@ export default function RevenueTracker() {
           </Card>
         ) : (
           <>
-            <div className="grid md:grid-cols-3 gap-4">
-              <Card className="bg-emerald-50 border-emerald-200">
-                <CardContent className="pt-6">
-                  <div className="text-sm text-emerald-700 font-medium">Total Revenue</div>
-                  <div className="text-3xl font-bold text-emerald-900 mt-2">
-                    R{(totalRevenue / 1000000).toFixed(2)}M
-                  </div>
-                </CardContent>
-              </Card>
-              <Card className="bg-blue-50 border-blue-200">
-                <CardContent className="pt-6">
-                  <div className="text-sm text-blue-700 font-medium">Categories</div>
-                  <div className="text-3xl font-bold text-blue-900 mt-2">
-                    {pivotData.rows.length}
-                  </div>
-                </CardContent>
-              </Card>
-              <Card className="bg-amber-50 border-amber-200">
-                <CardContent className="pt-6">
-                  <div className="text-sm text-amber-700 font-medium">Months Tracked</div>
-                  <div className="text-3xl font-bold text-amber-900 mt-2">
-                    {pivotData.months.length}
-                  </div>
-                </CardContent>
-              </Card>
+            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <SummaryCard
+                title="Total Revenue (Finance)"
+                value={`R${(totalRevenue / 1000000).toFixed(2)}M`}
+                subValue={`${pivotData.rows.length} categories, ${pivotData.months.length} months`}
+                icon={DollarSign}
+                data-testid="card-total-revenue"
+              />
+              <SummaryCard
+                title="Received vs Planned"
+                value={`R${(inflowMetrics.totalReceived / 1000000).toFixed(2)}M`}
+                subValue={`of R${(inflowMetrics.totalPlanned / 1000000).toFixed(2)}M planned`}
+                trend={inflowMetrics.totalPlanned > 0 && inflowMetrics.totalReceived / inflowMetrics.totalPlanned >= 0.8 ? "up" : undefined}
+                icon={TrendingUp}
+                data-testid="card-received-planned"
+              />
+              <SummaryCard
+                title="Overdue Milestones"
+                value={inflowMetrics.overdueCount}
+                subValue={inflowMetrics.overdue > 0 ? `R${(inflowMetrics.overdue / 1000000).toFixed(2)}M outstanding` : "All on track"}
+                icon={AlertTriangle}
+                className={inflowMetrics.overdueCount > 0 ? "border-l-amber-500" : "border-l-emerald-500"}
+                data-testid="card-overdue-milestones"
+              />
+              <SummaryCard
+                title="Next 30 Days"
+                value={`R${(inflowMetrics.upcoming30 / 1000000).toFixed(2)}M`}
+                subValue={`60d: R${(inflowMetrics.upcoming60 / 1000000).toFixed(1)}M • 90d: R${(inflowMetrics.upcoming90 / 1000000).toFixed(1)}M`}
+                icon={Calendar}
+                data-testid="card-upcoming-inflows"
+              />
             </div>
+
+            {projectBreakdown.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Top Projects by Revenue</CardTitle>
+                  <CardDescription>Click to drill down into project details</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {projectBreakdown.map(({ project, total }) => (
+                      <div
+                        key={project}
+                        className="flex items-center justify-between p-3 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors"
+                        onClick={() => setLocation(`/project/${encodeURIComponent(project)}`)}
+                      >
+                        <span className="font-medium">{project.replace("_Tracker", "")}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono">R{(total / 1000000).toFixed(2)}M</span>
+                          <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             <Card>
               <CardHeader>

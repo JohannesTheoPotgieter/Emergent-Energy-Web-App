@@ -50,13 +50,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     { label: "Overview", icon: LayoutDashboard, path: "/" },
     { label: "Projects Summary", icon: FileSpreadsheet, path: "/projects" },
     { label: "Cashflow", icon: Wallet, path: "/cashflow" },
-    { label: "REV Tracker", icon: TrendingUp, path: "/revenue" },
-    { label: "COS Tracker", icon: TrendingUp, path: "/cos", className: "rotate-180" },
-    { label: "Procurement", icon: ShoppingCart, path: "/procurement" },
-    { label: "Compliance", icon: ShieldCheck, path: "/compliance" },
-    { label: "Construction", icon: HardHat, path: "/construction" },
-    { label: "Task Register", icon: ClipboardList, path: "/tasks" },
-    { label: "Budget Entry", icon: Settings, path: "/budget", adminOnly: true },
+    { label: "Revenue", icon: TrendingUp, path: "/revenue" },
+    { label: "COS", icon: TrendingUp, path: "/cos", className: "rotate-180" },
+    { label: "Upload", icon: Upload, path: "/upload" },
   ];
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {

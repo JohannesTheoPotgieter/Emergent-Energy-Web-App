@@ -1,0 +1,64 @@
+Upgrade the Emergent Energy dashboard workflow to be world-class and modern while keeping naming + core functions.
+
+Primary navigation:
+1) Overview = Program KPI Dashboard (portfolio-level)
+2) Projects Summary (keep as-is)
+3) Cashflow (portfolio + project drilldown)
+4) Revenue (milestone summary + project drilldown)
+5) COS (summary + project drilldown)
+6) Upload
+
+Overview (Program KPI Dashboard):
+- Default date range: This FY (Sep 1 – Aug 31), with custom range.
+- Project filter: All Projects / single project.
+- KPI cards: Total Portfolio Budget, Actual Spend (Paid), Revenue Realised (Cash Received), Net Cashflow (This FY), Active Projects, Projects at Risk.
+- Risks based on: overdue milestones, negative cashflow trend, spend > budget, missing critical data.
+- Include Top Risks list + Next 30 days inflows/outflows summary.
+
+Projects Summary:
+- Leave table/columns same.
+- Row click opens Project Drilldown.
+
+Project Drilldown:
+- Route /project/:projectCode
+- Header: project name/code, manager, stage/status, last upload
+- Grid of tab links (must be exactly these names):
+  Project Plan, Revenue Tracking, Expenditure Breakdown, Finance - Revenue, Finance - COS, Cashflow
+- Data health summary: sheet present, rows ingested, date range detected, parse warnings.
+
+Cashflow:
+- Chart series names must be exactly:
+  Planned Revenue, Planned Expenditure, PLANNED CashFlow,
+  Actual + Planned Revenue, Actual + Planned Expenditure, ACTUAL CashFlow,
+  Revenue Recognition, Revenue Recognition Cumulative
+- Weekly Monday buckets from tracker Cashflow sheet.
+- Editable planning grid for Planned Revenue and Planned Expenditure (weekly), updates chart instantly.
+- Save planning as app-side overrides (do not rewrite Excel).
+
+Revenue:
+- Summary view: planned vs received (FY), overdue milestones, next 30/60/90 days.
+- Drilldown: milestones table from Revenue Tracking.
+- Allow planning edits (planned payment date + value) as overrides.
+
+COS:
+- Summary view: COS budget vs paid, forecast vs paid (FY), top suppliers, at risk lines.
+- Drilldown: COS lines from Finance - COS and Expenditure Breakdown.
+- Allow planning edits (forecast payment dates + planned amounts) as overrides.
+
+Upload workflow:
+- Upload tracker(s) and extract project code/name.
+- If project does not exist: create it.
+- If project exists: show modal choice:
+  (A) Refresh existing (replace baseline, keep overrides; optional “reset overrides” checkbox)
+  (B) Duplicate as new project (suffix Copy 1 / date)
+  (C) Cancel
+- After upload, show Upload Summary with sheets found + rows ingested + quick buttons to drilldown.
+
+Reliability:
+- Uploads must be additive (no wiping other projects).
+- Return meaningful API errors; frontend must show real error message (no generic “Upload failed”).
+- No crashes from undefined.message.
+- Add /api/health (dbMode/dbConnected) and ensure stable storage (no helium DNS failures).
+
+Finally: implement an internal “smoke test” checklist page or automated checks to confirm:
+login, upload new, upload duplicate modal, refresh keeps overrides, duplicate creates second project, cashflow edits persist, revenue/cos summary loads, no crashes.
