@@ -792,11 +792,12 @@ export async function registerRoutes(
 
   // ==================== FILE UPLOAD ROUTE ====================
 
-  // Accept multiple field names: files, file, tracker
+  // Accept multiple field names: files, file, tracker, trackers
   const multiUpload = upload.fields([
     { name: 'files', maxCount: 20 },
     { name: 'file', maxCount: 20 },
-    { name: 'tracker', maxCount: 20 }
+    { name: 'tracker', maxCount: 20 },
+    { name: 'trackers', maxCount: 20 }
   ]);
 
   app.post("/api/upload", requireAuth, multiUpload, async (req, res) => {
@@ -809,6 +810,7 @@ export async function registerRoutes(
         if (filesObj.files) files.push(...filesObj.files);
         if (filesObj.file) files.push(...filesObj.file);
         if (filesObj.tracker) files.push(...filesObj.tracker);
+        if (filesObj.trackers) files.push(...filesObj.trackers);
       }
       
       if (!files || files.length === 0) {
