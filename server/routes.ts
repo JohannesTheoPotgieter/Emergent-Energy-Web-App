@@ -254,14 +254,14 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
   
   console.log(`[AUTH FAIL] hasCookie:${hasCookie}, hasSession:${hasSession}, hasUser:${hasUser}, hasAuthHeader:${hasAuthHeader}`);
   
-  res.status(401).json({ error: "Authentication required", message: "Authentication required" });
+  res.status(401).json({ error: "auth_required", message: "Authentication required", code: "AUTH_REQUIRED" });
 }
 
 function requireAdmin(req: Request, res: Response, next: NextFunction) {
   if (req.isAuthenticated() && req.user?.role === "admin") {
     return next();
   }
-  res.status(403).json({ error: "Admin access required", message: "Admin access required" });
+  res.status(403).json({ error: "admin_required", message: "Admin access required", code: "ADMIN_REQUIRED" });
 }
 
 export async function registerRoutes(
@@ -1537,7 +1537,7 @@ export async function registerRoutes(
       });
       res.json({ message: "Data refresh recorded", refreshedAt: refreshLog.refreshedAt });
     } catch (error) {
-      res.status(500).json({ error: "Failed to record refresh", message: "Failed to record refresh" });
+      res.status(500).json({ error: "Failed to record refresh", message: "Failed to record refresh", code: "REFRESH_ERROR" });
     }
   });
 
@@ -1546,7 +1546,194 @@ export async function registerRoutes(
       const latest = await storage.getLatestRefresh();
       res.json({ lastRefresh: latest?.refreshedAt?.toISOString() || null });
     } catch (error) {
-      res.status(500).json({ error: "Failed to get refresh status", message: "Failed to get refresh status" });
+      res.status(500).json({ error: "Failed to get refresh status", message: "Failed to get refresh status", code: "REFRESH_STATUS_ERROR" });
+    }
+  });
+
+  // Admin data refresh - re-process all stored tracker files
+  app.post("/api/admin/refresh-data", requireAuth, requireAdmin, async (req, res) => {
+    const startTime = Date.now();
+    
+    try {
+      // Get all uploads with file paths
+      const uploads = await storage.getAllUploads();
+      const refreshResults: { 
+        fileName: string; 
+        projectName: string;
+        status: string; 
+        message?: string;
+        recordsProcessed?: number;
+      }[] = [];
+      
+      // Group by project (use most recent upload per project)
+      const projectFiles = new Map<string, { filePath: string; fileName: string; uploadedAt: Date }>();
+      for (const upload of uploads) {
+        if (!upload.filePath) continue;
+        
+        // Extract project name from filename
+        const projectName = upload.fileName.replace(/_Tracker\.(xlsx|xlsm|xls)$/i, '').replace(/^\d+_/, '');
+        
+        // Keep the most recent file for each project
+        const existing = projectFiles.get(projectName);
+        if (!existing || (upload.uploadedAt && existing.uploadedAt < upload.uploadedAt)) {
+          projectFiles.set(projectName, { 
+            filePath: upload.filePath, 
+            fileName: upload.fileName,
+            uploadedAt: upload.uploadedAt || new Date(0)
+          });
+        }
+      }
+      
+      // Reprocess each project's latest file in transaction
+      for (const [projectName, fileInfo] of Array.from(projectFiles.entries())) {
+        try {
+          if (!fs.existsSync(fileInfo.filePath)) {
+            refreshResults.push({
+              fileName: fileInfo.fileName,
+              projectName,
+              status: "error",
+              message: "Source file not found on disk"
+            });
+            continue;
+          }
+          
+          const fileBuffer = fs.readFileSync(fileInfo.filePath);
+          const parseResult = parseTrackerFile(fileBuffer, fileInfo.fileName);
+          
+          // Perform refresh in transaction
+          await storage.transaction(async (txStorage) => {
+            // Delete existing data for this project
+            await txStorage.deleteProgramExpensesByProject(parseResult.projectName);
+            await txStorage.deleteProgramInflowsByProject(parseResult.projectName);
+            await txStorage.deleteProjectPlansByProject(parseResult.projectName);
+            await txStorage.deleteCashflowPointsByProject(parseResult.projectName);
+            await txStorage.deleteFinanceRevenueMonthlyByProject(parseResult.projectName);
+            await txStorage.deleteFinanceCosMonthlyByProject(parseResult.projectName);
+            
+            // Re-insert all data
+            if (parseResult.projectInfo) {
+              await txStorage.upsertProjectInfo(parseResult.projectInfo);
+            }
+            if (parseResult.expenses.length > 0) {
+              await txStorage.createManyProgramExpenses(parseResult.expenses);
+            }
+            if (parseResult.inflows.length > 0) {
+              await txStorage.createManyProgramInflows(parseResult.inflows);
+            }
+            if (parseResult.planItems.length > 0) {
+              await txStorage.createManyProjectPlans(parseResult.planItems);
+            }
+            if (parseResult.cashflowPoints.length > 0) {
+              await txStorage.createManyCashflowPoints(parseResult.cashflowPoints);
+            }
+            if (parseResult.financeRevenueMonthly.length > 0) {
+              await txStorage.createManyFinanceRevenueMonthly(parseResult.financeRevenueMonthly);
+            }
+            if (parseResult.financeCosMonthly.length > 0) {
+              await txStorage.createManyFinanceCosMonthly(parseResult.financeCosMonthly);
+            }
+          });
+          
+          const recordsProcessed = parseResult.expensesParsed + parseResult.inflowsParsed + 
+            parseResult.planParsed + parseResult.cashflowParsed + 
+            parseResult.financeRevenueParsed + parseResult.financeCosParsed;
+          
+          refreshResults.push({
+            fileName: fileInfo.fileName,
+            projectName: parseResult.projectName,
+            status: "success",
+            message: `Refreshed from source`,
+            recordsProcessed
+          });
+          
+        } catch (error: any) {
+          refreshResults.push({
+            fileName: fileInfo.fileName,
+            projectName,
+            status: "error",
+            message: error.message || "Refresh failed"
+          });
+        }
+      }
+      
+      // Log the refresh
+      await storage.createRefreshLog({
+        triggeredBy: req.user?.id || null,
+        status: refreshResults.every(r => r.status === "success") ? "success" : "partial"
+      });
+      
+      const endTime = Date.now();
+      const successCount = refreshResults.filter(r => r.status === "success").length;
+      const totalRecords = refreshResults.reduce((sum, r) => sum + (r.recordsProcessed || 0), 0);
+      
+      res.json({
+        success: true,
+        message: `Refreshed ${successCount}/${projectFiles.size} project(s)`,
+        projectsRefreshed: successCount,
+        projectsTotal: projectFiles.size,
+        totalRecordsProcessed: totalRecords,
+        results: refreshResults,
+        timestamps: {
+          started: new Date(startTime).toISOString(),
+          completed: new Date(endTime).toISOString(),
+          durationMs: endTime - startTime
+        }
+      });
+      
+    } catch (error: any) {
+      console.error("Data refresh error:", error);
+      res.status(500).json({ 
+        success: false,
+        error: "refresh_failed",
+        message: error.message || "Failed to refresh data from source files",
+        code: "REFRESH_DATA_ERROR",
+        timestamps: {
+          started: new Date(startTime).toISOString(),
+          completed: new Date().toISOString(),
+          durationMs: Date.now() - startTime
+        }
+      });
+    }
+  });
+
+  // Get refresh history
+  app.get("/api/admin/refresh-history", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const uploads = await storage.getAllUploads();
+      const latest = await storage.getLatestRefresh();
+      
+      // Get unique source files
+      const sourceFiles = new Map<string, { fileName: string; filePath: string; exists: boolean; uploadedAt: string }>();
+      for (const upload of uploads) {
+        if (!upload.filePath) continue;
+        const projectName = upload.fileName.replace(/_Tracker\.(xlsx|xlsm|xls)$/i, '').replace(/^\d+_/, '');
+        
+        const existing = sourceFiles.get(projectName);
+        if (!existing || (upload.uploadedAt && new Date(existing.uploadedAt) < upload.uploadedAt)) {
+          sourceFiles.set(projectName, {
+            fileName: upload.fileName,
+            filePath: upload.filePath,
+            exists: fs.existsSync(upload.filePath),
+            uploadedAt: upload.uploadedAt?.toISOString() || ''
+          });
+        }
+      }
+      
+      res.json({
+        lastRefresh: latest?.refreshedAt?.toISOString() || null,
+        lastRefreshStatus: latest?.status || null,
+        sourceFilesCount: sourceFiles.size,
+        sourceFiles: Array.from(sourceFiles.entries()).map(([project, info]) => ({
+          projectName: project,
+          ...info
+        }))
+      });
+    } catch (error: any) {
+      res.status(500).json({ 
+        error: "refresh_history_failed", 
+        message: error.message || "Failed to fetch refresh history",
+        code: "REFRESH_HISTORY_ERROR" 
+      });
     }
   });
 
