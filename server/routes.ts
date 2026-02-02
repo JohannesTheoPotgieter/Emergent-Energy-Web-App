@@ -1153,6 +1153,24 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/project-plan/:projectName", async (req, res) => {
+    try {
+      const projectName = req.params.projectName;
+      const { applyOverrides } = req.query;
+      
+      let plans = await storage.getProjectPlansByProject(projectName);
+      
+      if (applyOverrides === 'true') {
+        const overrides = await storage.getProjectPlanOverridesByProject(projectName);
+        plans = applyProjectPlanOverrides(plans, overrides);
+      }
+      
+      res.json(plans);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch project plan", message: "Failed to fetch project plan", code: "PROJECT_PLAN_ERROR" });
+    }
+  });
+
   app.get("/api/project-info", async (req, res) => {
     try {
       const info = await storage.getAllProjectInfo();
