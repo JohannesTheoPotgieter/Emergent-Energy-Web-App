@@ -9,8 +9,14 @@ interface ProjectPlanTabProps {
 }
 
 export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
-  const { data: tasks, isLoading, error } = useQuery({
-    queryKey: [`/api/project-plan/${projectName}`],
+  const { data: tasks = [], isLoading, error } = useQuery({
+    queryKey: ["project-plan", projectName],
+    queryFn: async () => {
+      const res = await fetch(`/api/project-plan/${encodeURIComponent(projectName)}`);
+      if (!res.ok) throw new Error("Failed to fetch project plan");
+      return res.json();
+    },
+    enabled: !!projectName,
   });
 
   if (isLoading) {
@@ -33,7 +39,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
     );
   }
 
-  const taskList = tasks || [];
+  const taskList = Array.isArray(tasks) ? tasks : [];
 
   return (
     <Card>
