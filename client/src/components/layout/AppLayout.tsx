@@ -46,13 +46,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     refetchInterval: 30000, // Refresh every 30 seconds
   });
 
-  const navItems = [
+  const navItems: { label: string; icon: any; path: string; className?: string; adminOnly?: boolean }[] = [
     { label: "Overview", icon: LayoutDashboard, path: "/" },
     { label: "Projects Summary", icon: FileSpreadsheet, path: "/projects" },
     { label: "Cashflow", icon: Wallet, path: "/cashflow" },
     { label: "Revenue", icon: TrendingUp, path: "/revenue" },
     { label: "COS", icon: TrendingUp, path: "/cos", className: "rotate-180" },
     { label: "Upload", icon: Upload, path: "/upload" },
+    { label: "Admin", icon: Settings, path: "/admin", adminOnly: true },
   ];
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
