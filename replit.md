@@ -30,6 +30,46 @@ The frontend follows a page-based structure under `client/src/pages/` with share
 - **Save/Reset**: Save Plan persists overrides to database, Reset Plan clears all overrides for selected project
 - **Multi-project Support**: Edits are automatically cleared when switching projects to prevent cross-project confusion
 
+### Project Plan View (Scheduling Tool)
+
+The Project Plan tab provides CPM scheduling with Gantt visualization:
+
+#### How to Use
+
+1. **Summary Strip**: Shows Project Start/Finish, Duration, # Tasks, # Critical, Overall % Complete vs Expected at a glance.
+
+2. **Task Grid Tab**:
+   - **Search & Filter**: Search tasks by name or number. Filter by: All Tasks, Critical Only, Late Tasks, Blocked.
+   - **Split View Toggle**: ON = Grid + Gantt side-by-side. OFF = Grid only. Default ON for desktop.
+   - **% Complete / Expected %**: Each task shows actual progress with a progress bar. Expected % is computed from planned dates.
+   - **Late Indicator**: Tasks behind schedule show an amber warning icon.
+   - **Critical Badge**: Tasks on critical path marked with "CRIT" badge.
+   - **Inline Editing**: Click Edit to modify task name, start/end dates.
+
+3. **Gantt Chart Tab**:
+   - **Fit to Project**: Zooms viewport to show entire project from first task start to last task end (with padding).
+   - **Jump to Today**: Centers today's date in the viewport.
+   - **Zoom Levels**: Week / Month / Quarter - controls timescale granularity.
+   - **Today Line**: Blue vertical line marks current date.
+   - **Progress Fill**: Bars fill based on actual % complete.
+   - **Expected Marker**: Small vertical line on bars shows expected % position.
+   - **Critical Path**: Critical tasks have red fill with distinct border.
+
+4. **Task Detail Panel**: Click any task row (grid or Gantt) to open a side panel with:
+   - Start/End dates, Duration, Slack
+   - Progress vs Expected comparison
+   - Predecessor/Successor dependencies
+   - Edit Task button
+
+5. **Dependencies Tab**: View and manage task links (FS/SS/FF/SF with lag).
+
+6. **Changes Tab**: View history of schedule change notices for governance tracking.
+
+#### Key Features
+- **CPM Engine**: Server-side critical path calculation with working-days calendar (Mon-Fri).
+- **Hover Sync**: Hovering a grid row highlights the matching Gantt bar and vice versa.
+- **Schedule Governance**: Changes to critical path tasks that may affect Commissioning/Client Handover dates trigger a warning modal requiring acknowledgment.
+
 ### Backend Architecture
 - **Framework**: Express.js with TypeScript
 - **Authentication**: Passport.js with local strategy, express-session with PostgreSQL session store
