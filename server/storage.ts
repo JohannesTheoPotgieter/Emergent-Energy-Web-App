@@ -6,6 +6,8 @@ import {
   cashflowPoints, financeRevenueMonthly, financeCosMonthly,
   cashflowPlanningOverrides, projectPlanOverrides, revenueTrackingOverrides,
   expenditureOverrides, financeRevenueOverrides, financeCosOverrides,
+  workingPlanScenario, workingPlanTaskOverride, projectPlanDependency,
+  workingPlanDependencyOverride, scheduleChangeNotice,
   type User, type InsertUser,
   type Project, type InsertProject,
   type Expense, type InsertExpense,
@@ -27,6 +29,11 @@ import {
   type ExpenditureOverride, type InsertExpenditureOverride,
   type FinanceRevenueOverride, type InsertFinanceRevenueOverride,
   type FinanceCosOverride, type InsertFinanceCosOverride,
+  type WorkingPlanScenario, type InsertWorkingPlanScenario,
+  type WorkingPlanTaskOverride, type InsertWorkingPlanTaskOverride,
+  type ProjectPlanDependency, type InsertProjectPlanDependency,
+  type WorkingPlanDependencyOverride, type InsertWorkingPlanDependencyOverride,
+  type ScheduleChangeNotice, type InsertScheduleChangeNotice,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -159,6 +166,33 @@ export interface IStorage {
   upsertFinanceCosOverride(override: InsertFinanceCosOverride): Promise<FinanceCosOverride>;
   upsertManyFinanceCosOverrides(overrides: InsertFinanceCosOverride[]): Promise<FinanceCosOverride[]>;
   deleteFinanceCosOverridesByProject(projectName: string): Promise<void>;
+
+  // Working Plan Scenarios
+  getActiveScenario(projectName: string): Promise<WorkingPlanScenario | undefined>;
+  getOrCreateActiveScenario(projectName: string): Promise<WorkingPlanScenario>;
+  resetScenario(scenarioId: number): Promise<void>;
+
+  // Working Plan Task Overrides
+  getTaskOverridesByScenario(scenarioId: number): Promise<WorkingPlanTaskOverride[]>;
+  createTaskOverride(override: InsertWorkingPlanTaskOverride): Promise<WorkingPlanTaskOverride>;
+  updateTaskOverride(id: number, data: Partial<InsertWorkingPlanTaskOverride>): Promise<WorkingPlanTaskOverride | undefined>;
+  softDeleteTaskOverride(id: number): Promise<void>;
+
+  // Project Plan Dependencies
+  getDependenciesByProject(projectName: string): Promise<ProjectPlanDependency[]>;
+  createDependency(dep: InsertProjectPlanDependency): Promise<ProjectPlanDependency>;
+  deleteDependency(id: number): Promise<void>;
+  deleteDependenciesByProject(projectName: string): Promise<void>;
+
+  // Working Plan Dependency Overrides
+  getDependencyOverridesByScenario(scenarioId: number): Promise<WorkingPlanDependencyOverride[]>;
+  createDependencyOverride(override: InsertWorkingPlanDependencyOverride): Promise<WorkingPlanDependencyOverride>;
+  softDeleteDependencyOverride(id: number): Promise<void>;
+
+  // Schedule Change Notices
+  getChangeNoticesByProject(projectName: string): Promise<ScheduleChangeNotice[]>;
+  createChangeNotice(notice: InsertScheduleChangeNotice): Promise<ScheduleChangeNotice>;
+  updateChangeNotice(id: number, data: Partial<InsertScheduleChangeNotice>): Promise<ScheduleChangeNotice | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -891,6 +925,142 @@ export class DatabaseStorage implements IStorage {
 
   async deleteFinanceCosOverridesByProject(projectName: string): Promise<void> {
     await this.dbInstance.delete(financeCosOverrides).where(eq(financeCosOverrides.projectName, projectName));
+  }
+
+  // Working Plan Scenarios
+  async getActiveScenario(projectName: string): Promise<WorkingPlanScenario | undefined> {
+    const [scenario] = await this.dbInstance.select()
+      .from(workingPlanScenario)
+      .where(and(
+        eq(workingPlanScenario.projectName, projectName),
+        eq(workingPlanScenario.isActive, 1)
+      ))
+      .limit(1);
+    return scenario;
+  }
+
+  async getOrCreateActiveScenario(projectName: string): Promise<WorkingPlanScenario> {
+    const existing = await this.getActiveScenario(projectName);
+    if (existing) return existing;
+    
+    const now = new Date();
+    const [created] = await this.dbInstance.insert(workingPlanScenario)
+      .values({
+        projectName,
+        name: "Working Plan",
+        isActive: 1,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning();
+    return created;
+  }
+
+  async resetScenario(scenarioId: number): Promise<void> {
+    await this.dbInstance.delete(workingPlanTaskOverride)
+      .where(eq(workingPlanTaskOverride.scenarioId, scenarioId));
+    await this.dbInstance.delete(workingPlanDependencyOverride)
+      .where(eq(workingPlanDependencyOverride.scenarioId, scenarioId));
+  }
+
+  // Working Plan Task Overrides
+  async getTaskOverridesByScenario(scenarioId: number): Promise<WorkingPlanTaskOverride[]> {
+    return await this.dbInstance.select()
+      .from(workingPlanTaskOverride)
+      .where(eq(workingPlanTaskOverride.scenarioId, scenarioId));
+  }
+
+  async createTaskOverride(override: InsertWorkingPlanTaskOverride): Promise<WorkingPlanTaskOverride> {
+    const now = new Date();
+    const [created] = await this.dbInstance.insert(workingPlanTaskOverride)
+      .values({ ...override, createdAt: now, updatedAt: now })
+      .returning();
+    return created;
+  }
+
+  async updateTaskOverride(id: number, data: Partial<InsertWorkingPlanTaskOverride>): Promise<WorkingPlanTaskOverride | undefined> {
+    const now = new Date();
+    const [updated] = await this.dbInstance.update(workingPlanTaskOverride)
+      .set({ ...data, updatedAt: now })
+      .where(eq(workingPlanTaskOverride.id, id))
+      .returning();
+    return updated;
+  }
+
+  async softDeleteTaskOverride(id: number): Promise<void> {
+    await this.dbInstance.update(workingPlanTaskOverride)
+      .set({ deletedFlag: 1, updatedAt: new Date() })
+      .where(eq(workingPlanTaskOverride.id, id));
+  }
+
+  // Project Plan Dependencies
+  async getDependenciesByProject(projectName: string): Promise<ProjectPlanDependency[]> {
+    return await this.dbInstance.select()
+      .from(projectPlanDependency)
+      .where(eq(projectPlanDependency.projectName, projectName));
+  }
+
+  async createDependency(dep: InsertProjectPlanDependency): Promise<ProjectPlanDependency> {
+    const now = new Date();
+    const [created] = await this.dbInstance.insert(projectPlanDependency)
+      .values({ ...dep, createdAt: now })
+      .returning();
+    return created;
+  }
+
+  async deleteDependency(id: number): Promise<void> {
+    await this.dbInstance.delete(projectPlanDependency)
+      .where(eq(projectPlanDependency.id, id));
+  }
+
+  async deleteDependenciesByProject(projectName: string): Promise<void> {
+    await this.dbInstance.delete(projectPlanDependency)
+      .where(eq(projectPlanDependency.projectName, projectName));
+  }
+
+  // Working Plan Dependency Overrides
+  async getDependencyOverridesByScenario(scenarioId: number): Promise<WorkingPlanDependencyOverride[]> {
+    return await this.dbInstance.select()
+      .from(workingPlanDependencyOverride)
+      .where(eq(workingPlanDependencyOverride.scenarioId, scenarioId));
+  }
+
+  async createDependencyOverride(override: InsertWorkingPlanDependencyOverride): Promise<WorkingPlanDependencyOverride> {
+    const now = new Date();
+    const [created] = await this.dbInstance.insert(workingPlanDependencyOverride)
+      .values({ ...override, createdAt: now, updatedAt: now })
+      .returning();
+    return created;
+  }
+
+  async softDeleteDependencyOverride(id: number): Promise<void> {
+    await this.dbInstance.update(workingPlanDependencyOverride)
+      .set({ deletedFlag: 1, updatedAt: new Date() })
+      .where(eq(workingPlanDependencyOverride.id, id));
+  }
+
+  // Schedule Change Notices
+  async getChangeNoticesByProject(projectName: string): Promise<ScheduleChangeNotice[]> {
+    return await this.dbInstance.select()
+      .from(scheduleChangeNotice)
+      .where(eq(scheduleChangeNotice.projectName, projectName))
+      .orderBy(desc(scheduleChangeNotice.createdAt));
+  }
+
+  async createChangeNotice(notice: InsertScheduleChangeNotice): Promise<ScheduleChangeNotice> {
+    const now = new Date();
+    const [created] = await this.dbInstance.insert(scheduleChangeNotice)
+      .values({ ...notice, createdAt: now })
+      .returning();
+    return created;
+  }
+
+  async updateChangeNotice(id: number, data: Partial<InsertScheduleChangeNotice>): Promise<ScheduleChangeNotice | undefined> {
+    const [updated] = await this.dbInstance.update(scheduleChangeNotice)
+      .set(data)
+      .where(eq(scheduleChangeNotice.id, id))
+      .returning();
+    return updated;
   }
 }
 
