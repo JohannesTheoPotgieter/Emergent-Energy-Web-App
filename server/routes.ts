@@ -833,7 +833,12 @@ export async function registerRoutes(
         financeRevenueParsed?: number;
         financeCosParsed?: number;
         warnings?: string[];
+        mode?: string;
       }[] = [];
+
+      // Get upload mode and options from form data
+      const mode = (req.body?.mode as string) || 'refresh'; // 'create', 'refresh', or 'duplicate'
+      const resetOverrides = req.body?.resetOverrides === 'true';
 
       for (const file of files) {
         try {
@@ -841,15 +846,40 @@ export async function registerRoutes(
           const fileBuffer = fs.readFileSync(file.path);
           const parseResult = parseTrackerFile(fileBuffer, file.originalname);
           
+          // Handle duplicate mode: append timestamp to make project name unique
+          let targetProjectName = parseResult.projectName;
+          if (mode === 'duplicate') {
+            const timestamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+            targetProjectName = `${parseResult.projectName}_${timestamp}`;
+            // Update project info with new name
+            if (parseResult.projectInfo) {
+              parseResult.projectInfo.projectName = targetProjectName;
+            }
+            // Update all records with new project name
+            parseResult.expenses.forEach(e => e.projectName = targetProjectName);
+            parseResult.inflows.forEach(i => i.projectName = targetProjectName);
+            parseResult.planItems.forEach(p => p.projectName = targetProjectName);
+            parseResult.cashflowPoints.forEach(c => c.projectName = targetProjectName);
+            parseResult.financeRevenueMonthly.forEach(r => r.projectName = targetProjectName);
+            parseResult.financeCosMonthly.forEach(c => c.projectName = targetProjectName);
+          }
+          
           // Perform all DB operations in a single transaction to prevent partial updates
           await storage.transaction(async (txStorage) => {
-            // Delete existing data for this project
-            await txStorage.deleteProgramExpensesByProject(parseResult.projectName);
-            await txStorage.deleteProgramInflowsByProject(parseResult.projectName);
-            await txStorage.deleteProjectPlansByProject(parseResult.projectName);
-            await txStorage.deleteCashflowPointsByProject(parseResult.projectName);
-            await txStorage.deleteFinanceRevenueMonthlyByProject(parseResult.projectName);
-            await txStorage.deleteFinanceCosMonthlyByProject(parseResult.projectName);
+            // For refresh mode or create mode (if project already exists), delete existing data
+            if (mode !== 'duplicate') {
+              await txStorage.deleteProgramExpensesByProject(targetProjectName);
+              await txStorage.deleteProgramInflowsByProject(targetProjectName);
+              await txStorage.deleteProjectPlansByProject(targetProjectName);
+              await txStorage.deleteCashflowPointsByProject(targetProjectName);
+              await txStorage.deleteFinanceRevenueMonthlyByProject(targetProjectName);
+              await txStorage.deleteFinanceCosMonthlyByProject(targetProjectName);
+              
+              // Optionally reset planning overrides
+              if (resetOverrides) {
+                await txStorage.deletePlanningOverridesByProject(targetProjectName);
+              }
+            }
 
             // Insert project info
             if (parseResult.projectInfo) {
@@ -901,7 +931,7 @@ export async function registerRoutes(
           results.push({
             file: file.originalname,
             status: "success",
-            project_name: parseResult.projectName,
+            project_name: targetProjectName,
             expensesParsed: parseResult.expensesParsed,
             inflowsParsed: parseResult.inflowsParsed,
             planParsed: parseResult.planParsed,
@@ -909,7 +939,8 @@ export async function registerRoutes(
             cashflowParsed: parseResult.cashflowParsed,
             financeRevenueParsed: parseResult.financeRevenueParsed,
             financeCosParsed: parseResult.financeCosParsed,
-            warnings: parseResult.warnings
+            warnings: parseResult.warnings,
+            mode: mode
           });
 
         } catch (fileError: any) {

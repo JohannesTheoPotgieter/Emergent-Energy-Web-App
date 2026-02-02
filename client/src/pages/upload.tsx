@@ -71,13 +71,16 @@ export default function UploadPage() {
       }
 
       const result = await response.json();
-      setUploadResult(result);
+      // Extract project name from first successful result
+      const projectName = result.results?.[0]?.project_name || result.projectName;
+      const uploadMode = result.results?.[0]?.mode || mode;
+      setUploadResult({ ...result, projectName });
       queryClient.invalidateQueries({ queryKey: ["projects-summary"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects-summary"] });
       
       toast({
         title: "Upload Successful",
-        description: `${result.projectName || file.name} has been processed successfully.`,
+        description: `${projectName || file.name} has been ${uploadMode === 'duplicate' ? 'duplicated' : 'processed'} successfully.`,
       });
     } catch (error: any) {
       toast({
