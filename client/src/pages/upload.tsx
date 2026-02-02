@@ -33,10 +33,14 @@ export default function UploadPage() {
     const file = e.target.files[0];
     const fileName = file.name.replace(/\.(xlsx|xlsm|xls)$/i, "");
     
-    // Check if project exists
+    // Check if project exists - use normalized exact match
+    // Normalize by removing _Tracker suffix and lowercasing
+    const normalizeProjectName = (name: string) => 
+      name.toLowerCase().replace(/_tracker$/i, "").trim();
+    
+    const normalizedFileName = normalizeProjectName(fileName);
     const existingProject = existingProjects.find(p => 
-      p.toLowerCase().includes(fileName.toLowerCase()) || 
-      fileName.toLowerCase().includes(p.toLowerCase().replace("_Tracker", ""))
+      normalizeProjectName(p) === normalizedFileName
     );
 
     if (existingProject) {
@@ -177,7 +181,7 @@ export default function UploadPage() {
               <div>
                 <h4 className="text-sm font-medium mb-2">Records Parsed</h4>
                 <div className="grid grid-cols-3 md:grid-cols-6 gap-2 text-sm">
-                  {uploadResult.results?.[0] && (
+                  {uploadResult.results?.[0] ? (
                     <>
                       <div className="p-2 bg-muted rounded text-center">
                         <div className="font-semibold text-lg">{uploadResult.results[0].planParsed || 0}</div>
@@ -204,6 +208,15 @@ export default function UploadPage() {
                         <div className="text-xs text-muted-foreground">Cashflow</div>
                       </div>
                     </>
+                  ) : (
+                    <div className="col-span-6 flex flex-wrap gap-2">
+                      <Badge variant="outline">Project Plan</Badge>
+                      <Badge variant="outline">Revenue Tracking</Badge>
+                      <Badge variant="outline">Expenditure Breakdown</Badge>
+                      <Badge variant="outline">Finance-Revenue</Badge>
+                      <Badge variant="outline">Finance-COS</Badge>
+                      <Badge variant="outline">Cashflow</Badge>
+                    </div>
                   )}
                 </div>
               </div>
