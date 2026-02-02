@@ -4,7 +4,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CheckCircle, XCircle, Loader2, Play, RefreshCw, FileSpreadsheet, Clock, Database } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { CheckCircle, XCircle, Loader2, Play, RefreshCw, FileSpreadsheet, Clock, Database, Trash2 } from "lucide-react";
 
 interface SmokeTestCheck {
   name: string;
@@ -68,6 +69,10 @@ export default function AdminPage() {
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [refreshHistory, setRefreshHistory] = useState<RefreshHistory | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
+  
+  const [clearLoading, setClearLoading] = useState(false);
+  const [clearResult, setClearResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [clearError, setClearError] = useState<string | null>(null);
 
   const loadRefreshHistory = async () => {
     setHistoryLoading(true);
@@ -137,6 +142,34 @@ export default function AdminPage() {
       setRefreshError(err?.message || "Failed to refresh data");
     } finally {
       setRefreshLoading(false);
+    }
+  };
+
+  const clearAllData = async () => {
+    setClearLoading(true);
+    setClearError(null);
+    setClearResult(null);
+
+    try {
+      const res = await fetch("/api/admin/clear-all-data", {
+        method: "POST",
+        credentials: "include",
+      });
+
+      if (!res.ok) {
+        if (res.status === 401) throw new Error("Authentication required. Please log in.");
+        if (res.status === 403) throw new Error("Admin access required.");
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData?.message || `Server error: ${res.status}`);
+      }
+
+      const data = await res.json();
+      setClearResult({ success: true, message: data.message });
+      loadRefreshHistory();
+    } catch (err: any) {
+      setClearError(err?.message || "Failed to clear data");
+    } finally {
+      setClearLoading(false);
     }
   };
 
@@ -328,6 +361,75 @@ export default function AdminPage() {
               </CardContent>
             </Card>
           )}
+
+          <Card className="border-destructive/50">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-destructive">
+                    <Trash2 className="h-5 w-5" />
+                    Clear All Data
+                  </CardTitle>
+                  <CardDescription>
+                    Permanently delete all project data, uploads, and user edits
+                  </CardDescription>
+                </div>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="destructive"
+                      disabled={clearLoading}
+                      data-testid="button-clear-all-data"
+                    >
+                      {clearLoading ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Clearing...
+                        </>
+                      ) : (
+                        <>
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Clear All Data
+                        </>
+                      )}
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This action cannot be undone. This will permanently delete all project data,
+                        uploaded tracker files, cashflow data, revenue tracking, and all user edits.
+                        You will need to re-upload your tracker files to restore the data.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={clearAllData}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      >
+                        Yes, delete everything
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
+            </CardHeader>
+            {clearError && (
+              <CardContent>
+                <p className="text-destructive" data-testid="text-clear-error">{clearError}</p>
+              </CardContent>
+            )}
+            {clearResult && (
+              <CardContent>
+                <div className="flex items-center gap-2 text-green-600">
+                  <CheckCircle className="h-5 w-5" />
+                  <span>{clearResult.message}</span>
+                </div>
+              </CardContent>
+            )}
+          </Card>
         </TabsContent>
 
         <TabsContent value="smoke" className="space-y-4 mt-4">

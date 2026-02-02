@@ -193,6 +193,9 @@ export interface IStorage {
   getChangeNoticesByProject(projectName: string): Promise<ScheduleChangeNotice[]>;
   createChangeNotice(notice: InsertScheduleChangeNotice): Promise<ScheduleChangeNotice>;
   updateChangeNotice(id: number, data: Partial<InsertScheduleChangeNotice>): Promise<ScheduleChangeNotice | undefined>;
+
+  // Admin Operations
+  clearAllData(): Promise<{ tablesCleared: string[]; filesDeleted: number }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1061,6 +1064,104 @@ export class DatabaseStorage implements IStorage {
       .where(eq(scheduleChangeNotice.id, id))
       .returning();
     return updated;
+  }
+
+  async clearAllData(): Promise<{ tablesCleared: string[]; filesDeleted: number }> {
+    const tablesCleared: string[] = [];
+    let filesDeleted = 0;
+
+    // Clear all data tables (order matters for foreign keys)
+    await this.dbInstance.delete(scheduleChangeNotice);
+    tablesCleared.push("scheduleChangeNotice");
+
+    await this.dbInstance.delete(workingPlanDependencyOverride);
+    tablesCleared.push("workingPlanDependencyOverride");
+
+    await this.dbInstance.delete(projectPlanDependency);
+    tablesCleared.push("projectPlanDependency");
+
+    await this.dbInstance.delete(workingPlanTaskOverride);
+    tablesCleared.push("workingPlanTaskOverride");
+
+    await this.dbInstance.delete(workingPlanScenario);
+    tablesCleared.push("workingPlanScenario");
+
+    await this.dbInstance.delete(financeCosOverrides);
+    tablesCleared.push("financeCosOverrides");
+
+    await this.dbInstance.delete(financeRevenueOverrides);
+    tablesCleared.push("financeRevenueOverrides");
+
+    await this.dbInstance.delete(expenditureOverrides);
+    tablesCleared.push("expenditureOverrides");
+
+    await this.dbInstance.delete(revenueTrackingOverrides);
+    tablesCleared.push("revenueTrackingOverrides");
+
+    await this.dbInstance.delete(projectPlanOverrides);
+    tablesCleared.push("projectPlanOverrides");
+
+    await this.dbInstance.delete(cashflowPlanningOverrides);
+    tablesCleared.push("cashflowPlanningOverrides");
+
+    await this.dbInstance.delete(financeCosMonthly);
+    tablesCleared.push("financeCosMonthly");
+
+    await this.dbInstance.delete(financeRevenueMonthly);
+    tablesCleared.push("financeRevenueMonthly");
+
+    await this.dbInstance.delete(cashflowPoints);
+    tablesCleared.push("cashflowPoints");
+
+    await this.dbInstance.delete(projectPlan);
+    tablesCleared.push("projectPlan");
+
+    await this.dbInstance.delete(programInflows);
+    tablesCleared.push("programInflows");
+
+    await this.dbInstance.delete(programExpense);
+    tablesCleared.push("programExpense");
+
+    await this.dbInstance.delete(projectInfo);
+    tablesCleared.push("projectInfo");
+
+    await this.dbInstance.delete(refreshLogs);
+    tablesCleared.push("refreshLogs");
+
+    await this.dbInstance.delete(uploadMetadata);
+    tablesCleared.push("uploadMetadata");
+
+    await this.dbInstance.delete(budgets);
+    tablesCleared.push("budgets");
+
+    await this.dbInstance.delete(tasks);
+    tablesCleared.push("tasks");
+
+    await this.dbInstance.delete(revenues);
+    tablesCleared.push("revenues");
+
+    await this.dbInstance.delete(expenses);
+    tablesCleared.push("expenses");
+
+    await this.dbInstance.delete(projects);
+    tablesCleared.push("projects");
+
+    // Delete uploaded files
+    const fs = await import("fs");
+    const path = await import("path");
+    const uploadsDir = path.resolve("./uploads");
+    if (fs.existsSync(uploadsDir)) {
+      const files = fs.readdirSync(uploadsDir);
+      for (const file of files) {
+        const filePath = path.join(uploadsDir, file);
+        if (fs.statSync(filePath).isFile()) {
+          fs.unlinkSync(filePath);
+          filesDeleted++;
+        }
+      }
+    }
+
+    return { tablesCleared, filesDeleted };
   }
 }
 
