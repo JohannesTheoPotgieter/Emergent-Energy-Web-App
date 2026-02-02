@@ -23,27 +23,52 @@ export default function ProjectDetailPage() {
   const projectInfo = projectsSummary?.find(p => p.project_name === projectName);
 
   const { data: projectPlanData = [] } = useQuery({
-    queryKey: [`/api/project-plan/${projectName}`],
+    queryKey: ["project-plan", projectName],
+    queryFn: async () => {
+      const res = await fetch(`/api/project-plan/${encodeURIComponent(projectName)}`);
+      if (!res.ok) return [];
+      return res.json();
+    },
     enabled: !!projectName,
   });
 
   const { data: revenueData = [] } = useQuery({
-    queryKey: [`/api/program-inflows/${projectName}`],
+    queryKey: ["program-inflows", projectName],
+    queryFn: async () => {
+      const res = await fetch(`/api/program-inflows/${encodeURIComponent(projectName)}`);
+      if (!res.ok) return [];
+      return res.json();
+    },
     enabled: !!projectName,
   });
 
   const { data: expenseData = [] } = useQuery({
-    queryKey: [`/api/program-expenses/${projectName}`],
+    queryKey: ["program-expenses", projectName],
+    queryFn: async () => {
+      const res = await fetch(`/api/program-expenses/${encodeURIComponent(projectName)}`);
+      if (!res.ok) return [];
+      return res.json();
+    },
     enabled: !!projectName,
   });
 
   const { data: financeRevData = [] } = useQuery({
-    queryKey: [`/api/finance-revenue/${projectName}`],
+    queryKey: ["finance-revenue", projectName],
+    queryFn: async () => {
+      const res = await fetch(`/api/finance-revenue/${encodeURIComponent(projectName)}`);
+      if (!res.ok) return [];
+      return res.json();
+    },
     enabled: !!projectName,
   });
 
   const { data: financeCosData = [] } = useQuery({
-    queryKey: [`/api/finance-cos/${projectName}`],
+    queryKey: ["finance-cos", projectName],
+    queryFn: async () => {
+      const res = await fetch(`/api/finance-cos/${encodeURIComponent(projectName)}`);
+      if (!res.ok) return [];
+      return res.json();
+    },
     enabled: !!projectName,
   });
 
@@ -51,6 +76,7 @@ export default function ProjectDetailPage() {
     queryKey: ["cashflow", projectName],
     queryFn: async () => {
       const res = await fetch(`/api/cashflow?project=${encodeURIComponent(projectName)}`);
+      if (!res.ok) return [];
       return res.json();
     },
     enabled: !!projectName,
