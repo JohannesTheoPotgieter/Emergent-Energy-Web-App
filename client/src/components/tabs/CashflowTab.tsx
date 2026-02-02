@@ -101,7 +101,7 @@ export function CashflowTab({ projectName }: CashflowTabProps) {
     const result = JSON.parse(JSON.stringify(seriesData));
     edits.forEach((value, key) => {
       const [series, date] = key.split("|");
-      if (result[series] && result[series][date] !== undefined) {
+      if (result[series]) {
         result[series][date] = value;
       }
     });
@@ -146,7 +146,7 @@ export function CashflowTab({ projectName }: CashflowTabProps) {
     }
   };
 
-  const editableSeries = ["Planned Revenue", "Planned Expenditure"];
+  const editableSeries = ["Planned Revenue", "Planned Expenditure", "PLANNED CashFlow"];
   const hasEdits = edits.size > 0;
 
   if (isLoading) {
