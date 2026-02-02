@@ -691,13 +691,13 @@ export async function registerRoutes(
           funding_signed: null,
           epc_contract_signed: null,
           phase: info?.phase || null,
-          pd_handover_date: null,
-          construction_start_date: null,
+          pd_handover_date: info?.pdHandoverDate || null,
+          construction_start_date: info?.constructionStartDate || null,
           duration: null,
           kw_per_week: null,
-          commissioning_date: null,
-          om_handover_date: null,
-          client_handover_date: null,
+          commissioning_date: info?.commissioningDate || null,
+          om_handover_date: info?.omHandoverDate || null,
+          client_handover_date: info?.clientHandoverDate || null,
           project_pct_complete: projectPctComplete,
           expected_pct_complete: expectedPctComplete,
           delta_vs_expected: deltaVsExpected,
@@ -1969,6 +1969,8 @@ export async function registerRoutes(
       const summary = await response.json();
       const csv = generateCSV(summary, [
         "project_name", "size_kwp", "pd", "pm", "phase",
+        "pd_handover_date", "construction_start_date", "commissioning_date", 
+        "om_handover_date", "client_handover_date",
         "project_pct_complete", "expected_pct_complete", "delta_vs_expected",
         "actual_revenue", "actual_expenses", "gp_percent",
         "revenue_outstanding", "expenses_outstanding"

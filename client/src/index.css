@@ -51,50 +51,50 @@
 }
 
 :root {
-  /* Slate & Emerald Theme - Clean, Technical, Professional */
-  --background: 210 20% 98%; /* Light slate greyish white */
-  --foreground: 222 47% 11%; /* Deep slate text */
+  /* Emergent Energy - Professional Green & Slate Control Room Theme */
+  --background: 210 20% 98%; /* Clean light background */
+  --foreground: 220 25% 15%; /* Professional dark text */
 
   --card: 0 0% 100%;
-  --card-foreground: 222 47% 11%;
+  --card-foreground: 220 25% 15%;
 
   --popover: 0 0% 100%;
-  --popover-foreground: 222 47% 11%;
+  --popover-foreground: 220 25% 15%;
 
-  /* Primary Action: Emerald/Teal */
-  --primary: 160 84% 39%;
-  --primary-foreground: 210 40% 98%;
+  /* Primary Action: Emergent Green */
+  --primary: 152 76% 36%; /* #0E9F6E - Emerald green, energy/sustainability feel */
+  --primary-foreground: 0 0% 100%;
 
-  /* Secondary: Slate */
-  --secondary: 210 40% 96.1%;
-  --secondary-foreground: 222 47% 11.2%;
+  /* Secondary: Professional Slate */
+  --secondary: 215 20% 95%;
+  --secondary-foreground: 220 25% 15%;
 
   /* Muted */
-  --muted: 210 40% 96.1%;
-  --muted-foreground: 215.4 16.3% 46.9%;
+  --muted: 215 20% 95%;
+  --muted-foreground: 220 15% 50%;
 
-  /* Accent */
-  --accent: 210 40% 96.1%;
-  --accent-foreground: 222 47% 11.2%;
+  /* Accent: Light green tint for highlights */
+  --accent: 152 50% 95%;
+  --accent-foreground: 152 76% 28%;
 
-  --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 210 40% 98%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
 
-  --border: 214.3 31.8% 91.4%;
-  --input: 214.3 31.8% 91.4%;
-  --ring: 160 84% 39%;
+  --border: 215 25% 88%;
+  --input: 215 25% 88%;
+  --ring: 152 76% 36%;
 
   --radius: 0.5rem;
 
-  /* Sidebar: Deep Slate */
-  --sidebar: 222 47% 11%;
+  /* Sidebar: Deep Professional Navy */
+  --sidebar: 220 30% 12%;
   --sidebar-foreground: 210 40% 98%;
-  --sidebar-primary: 160 84% 39%;
+  --sidebar-primary: 152 76% 42%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 217 33% 17%;
+  --sidebar-accent: 220 28% 18%;
   --sidebar-accent-foreground: 210 40% 98%;
-  --sidebar-border: 217 33% 17%;
-  --sidebar-ring: 160 84% 39%;
+  --sidebar-border: 220 28% 18%;
+  --sidebar-ring: 152 76% 42%;
 }
 
 .dark {

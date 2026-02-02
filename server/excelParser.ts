@@ -109,6 +109,46 @@ function getCellValue(sheet: XLSX.WorkSheet, col: string, row: number): any {
   return cell ? cell.v : null;
 }
 
+// Search sheet for a label and return the date value from adjacent cells
+// Expanded search area to cover more tracker variants
+function findLabeledDateValue(sheet: XLSX.WorkSheet, labels: string[]): string | null {
+  const range = XLSX.utils.decode_range(sheet["!ref"] || "A1:Z50");
+  const maxRow = Math.min(range.e.r, 50); // Search first 50 rows
+  const maxCol = Math.min(range.e.c, 10); // Search columns A-K for labels
+  
+  for (let r = 0; r <= maxRow; r++) {
+    for (let c = 0; c <= maxCol; c++) {
+      const cell = sheet[XLSX.utils.encode_cell({ r, c })];
+      if (cell && cell.v) {
+        const cellText = String(cell.v).toLowerCase().trim();
+        for (const label of labels) {
+          if (cellText.includes(label.toLowerCase())) {
+            // Found a match, look for date in adjacent columns (right side)
+            for (let dc = 1; dc <= 4; dc++) {
+              if (c + dc <= range.e.c) {
+                const valueCell = sheet[XLSX.utils.encode_cell({ r, c: c + dc })];
+                if (valueCell && valueCell.v) {
+                  const dateVal = parseDate(valueCell.v);
+                  if (dateVal) return dateVal;
+                }
+              }
+            }
+            // Also check row below same column (some trackers stack label/value)
+            if (r + 1 <= maxRow) {
+              const belowCell = sheet[XLSX.utils.encode_cell({ r: r + 1, c })];
+              if (belowCell && belowCell.v) {
+                const dateVal = parseDate(belowCell.v);
+                if (dateVal) return dateVal;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  return null;
+}
+
 function normalizeHeader(header: any): string {
   return String(header || "").toLowerCase().trim().replace(/\s+/g, " ");
 }
@@ -188,6 +228,14 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
     const contractValue = parseNumber(getCellValue(sheet, "E", 6));
     const phase = getCellValue(sheet, "E", 7);
     
+    // Extract date fields - look in multiple locations
+    // Try column E rows 8-12 first, then search for labeled cells
+    const pdHandoverDate = parseDate(getCellValue(sheet, "E", 8)) || findLabeledDateValue(sheet, ["pd handover", "handover date"]);
+    const constructionStartDate = parseDate(getCellValue(sheet, "E", 9)) || findLabeledDateValue(sheet, ["construction start", "start date"]);
+    const commissioningDate = parseDate(getCellValue(sheet, "E", 10)) || findLabeledDateValue(sheet, ["commissioning"]);
+    const omHandoverDate = parseDate(getCellValue(sheet, "E", 11)) || findLabeledDateValue(sheet, ["o&m handover", "om handover"]);
+    const clientHandoverDate = parseDate(getCellValue(sheet, "E", 12)) || findLabeledDateValue(sheet, ["client handover"]);
+    
     projectInfo = {
       projectName,
       sizeKwp,
@@ -195,6 +243,11 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
       pm: pm ? String(pm) : null,
       contractValue,
       phase: phase ? String(phase) : null,
+      pdHandoverDate,
+      constructionStartDate,
+      commissioningDate,
+      omHandoverDate,
+      clientHandoverDate,
     };
     
     // Parse task table with robust header detection

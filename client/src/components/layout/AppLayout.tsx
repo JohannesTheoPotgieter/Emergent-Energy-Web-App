@@ -89,8 +89,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           {navItems.map((item) => {
             if (item.adminOnly && user?.role !== 'admin') return null;
             return (
-              <Link key={item.path} href={item.path}>
-                <a className={cn(
+              <Link key={item.path} href={item.path} className={cn(
                   "flex items-center gap-3 px-3 py-2.5 rounded-md transition-all duration-200 group",
                   location === item.path 
                     ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium shadow-md" 
@@ -98,7 +97,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 )}>
                   <item.icon className={cn("w-5 h-5 shrink-0", item.className)} />
                   {sidebarOpen && <span>{item.label}</span>}
-                </a>
               </Link>
             );
           })}
