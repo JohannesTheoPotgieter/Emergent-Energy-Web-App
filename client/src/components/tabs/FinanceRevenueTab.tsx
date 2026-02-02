@@ -8,8 +8,14 @@ interface FinanceRevenueTabProps {
 }
 
 export function FinanceRevenueTab({ projectName }: FinanceRevenueTabProps) {
-  const { data: monthlyRevenue, isLoading, error } = useQuery({
-    queryKey: [`/api/finance-revenue/${projectName}`],
+  const { data: monthlyRevenue = [], isLoading, error } = useQuery({
+    queryKey: ["finance-revenue", projectName],
+    queryFn: async () => {
+      const res = await fetch(`/api/finance/revenue?projectName=${encodeURIComponent(projectName)}`);
+      if (!res.ok) throw new Error("Failed to fetch finance revenue data");
+      return res.json();
+    },
+    enabled: !!projectName,
   });
 
   if (isLoading) {
@@ -32,14 +38,42 @@ export function FinanceRevenueTab({ projectName }: FinanceRevenueTabProps) {
     );
   }
 
-  const revenueData = monthlyRevenue || [];
+  const revenueData = Array.isArray(monthlyRevenue) ? monthlyRevenue : [];
+
+  const formatCurrency = (amount: any) => {
+    const num = parseFloat(amount);
+    if (isNaN(num) || num === 0) return "-";
+    return new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(num);
+  };
+
+  const formatMonth = (dateStr: any) => {
+    if (!dateStr) return "-";
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString('en-AU', { month: 'short', year: 'numeric' });
+    } catch {
+      return "-";
+    }
+  };
+
+  const categories = Array.from(new Set(revenueData.map((r: any) => r.category)));
+  const months = Array.from(new Set(revenueData.map((r: any) => r.monthEndDate))).sort();
+
+  const pivotedData = categories.map(category => {
+    const row: any = { category };
+    months.forEach(month => {
+      const item = revenueData.find((r: any) => r.category === category && r.monthEndDate === month);
+      row[month as string] = item?.value;
+    });
+    return row;
+  });
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Finance - Revenue</CardTitle>
         <CardDescription>
-          Monthly revenue breakdown from Finance-Revenue sheet • Read-only view
+          Monthly revenue breakdown by category • {revenueData.length} entries • Read-only view
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -52,19 +86,23 @@ export function FinanceRevenueTab({ projectName }: FinanceRevenueTabProps) {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Month</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead className="sticky left-0 bg-background">Category</TableHead>
+                  {months.map((month: any) => (
+                    <TableHead key={month} className="text-right whitespace-nowrap">
+                      {formatMonth(month)}
+                    </TableHead>
+                  ))}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {revenueData.map((item: any, idx: number) => (
-                  <TableRow key={item.id || idx}>
-                    <TableCell className="font-medium">{item.category || "-"}</TableCell>
-                    <TableCell>{item.month ? new Date(item.month).toLocaleDateString() : "-"}</TableCell>
-                    <TableCell className="text-right font-mono">
-                      ${Number(item.amount || 0).toLocaleString()}
-                    </TableCell>
+                {pivotedData.map((row: any, idx: number) => (
+                  <TableRow key={idx}>
+                    <TableCell className="font-medium sticky left-0 bg-background">{row.category}</TableCell>
+                    {months.map((month: any) => (
+                      <TableCell key={month} className="text-right font-mono text-sm">
+                        {formatCurrency(row[month])}
+                      </TableCell>
+                    ))}
                   </TableRow>
                 ))}
               </TableBody>

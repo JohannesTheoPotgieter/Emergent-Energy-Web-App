@@ -8,8 +8,14 @@ interface FinanceCosTabProps {
 }
 
 export function FinanceCosTab({ projectName }: FinanceCosTabProps) {
-  const { data: monthlyCos, isLoading, error } = useQuery({
-    queryKey: [`/api/finance-cos/${projectName}`],
+  const { data: monthlyCos = [], isLoading, error } = useQuery({
+    queryKey: ["finance-cos", projectName],
+    queryFn: async () => {
+      const res = await fetch(`/api/finance/cos?projectName=${encodeURIComponent(projectName)}`);
+      if (!res.ok) throw new Error("Failed to fetch finance COS data");
+      return res.json();
+    },
+    enabled: !!projectName,
   });
 
   if (isLoading) {
@@ -32,14 +38,42 @@ export function FinanceCosTab({ projectName }: FinanceCosTabProps) {
     );
   }
 
-  const cosData = monthlyCos || [];
+  const cosData = Array.isArray(monthlyCos) ? monthlyCos : [];
+
+  const formatCurrency = (amount: any) => {
+    const num = parseFloat(amount);
+    if (isNaN(num) || num === 0) return "-";
+    return new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(num);
+  };
+
+  const formatMonth = (dateStr: any) => {
+    if (!dateStr) return "-";
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString('en-AU', { month: 'short', year: 'numeric' });
+    } catch {
+      return "-";
+    }
+  };
+
+  const categories = Array.from(new Set(cosData.map((r: any) => r.category)));
+  const months = Array.from(new Set(cosData.map((r: any) => r.monthEndDate))).sort();
+
+  const pivotedData = categories.map(category => {
+    const row: any = { category };
+    months.forEach(month => {
+      const item = cosData.find((r: any) => r.category === category && r.monthEndDate === month);
+      row[month as string] = item?.value;
+    });
+    return row;
+  });
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Finance - COS</CardTitle>
+        <CardTitle>Finance - Cost of Sales</CardTitle>
         <CardDescription>
-          Monthly cost of sales from Finance-COS sheet • Read-only view
+          Monthly COS breakdown by category • {cosData.length} entries • Read-only view
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -52,19 +86,23 @@ export function FinanceCosTab({ projectName }: FinanceCosTabProps) {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Month</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead className="sticky left-0 bg-background">Category</TableHead>
+                  {months.map((month: any) => (
+                    <TableHead key={month} className="text-right whitespace-nowrap">
+                      {formatMonth(month)}
+                    </TableHead>
+                  ))}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {cosData.map((item: any, idx: number) => (
-                  <TableRow key={item.id || idx}>
-                    <TableCell className="font-medium">{item.category || "-"}</TableCell>
-                    <TableCell>{item.month ? new Date(item.month).toLocaleDateString() : "-"}</TableCell>
-                    <TableCell className="text-right font-mono">
-                      ${Number(item.amount || 0).toLocaleString()}
-                    </TableCell>
+                {pivotedData.map((row: any, idx: number) => (
+                  <TableRow key={idx}>
+                    <TableCell className="font-medium sticky left-0 bg-background">{row.category}</TableCell>
+                    {months.map((month: any) => (
+                      <TableCell key={month} className="text-right font-mono text-sm">
+                        {formatCurrency(row[month])}
+                      </TableCell>
+                    ))}
                   </TableRow>
                 ))}
               </TableBody>
