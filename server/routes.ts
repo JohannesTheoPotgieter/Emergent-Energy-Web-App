@@ -1853,6 +1853,34 @@ export async function registerRoutes(
     }
   });
 
+  // Clear all data
+  app.post("/api/admin/clear-all-data", async (req, res) => {
+    const startTime = Date.now();
+    
+    try {
+      const result = await storage.clearAllData();
+      
+      res.json({
+        success: true,
+        message: `Cleared ${result.tablesCleared.length} tables and deleted ${result.filesDeleted} file(s)`,
+        tablesCleared: result.tablesCleared,
+        filesDeleted: result.filesDeleted,
+        timestamps: {
+          started: new Date(startTime).toISOString(),
+          completed: new Date().toISOString(),
+          durationMs: Date.now() - startTime
+        }
+      });
+    } catch (error: any) {
+      console.error("Clear all data error:", error);
+      res.status(500).json({ 
+        success: false,
+        error: "clear_failed",
+        message: error.message || "Failed to clear all data"
+      });
+    }
+  });
+
   // Get refresh history
   app.get("/api/admin/refresh-history", async (req, res) => {
     try {
