@@ -368,3 +368,94 @@ export const financeCosOverrides = pgTable("finance_cos_overrides", {
 export const insertFinanceCosOverrideSchema = createInsertSchema(financeCosOverrides).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertFinanceCosOverride = z.infer<typeof insertFinanceCosOverrideSchema>;
 export type FinanceCosOverride = typeof financeCosOverrides.$inferSelect;
+
+// Working Plan Scenario Table - stores named scenarios for project plans
+export const workingPlanScenario = pgTable("working_plan_scenario", {
+  id: serial("id").primaryKey(),
+  projectName: text("project_name").notNull(),
+  name: text("name").notNull().default("Working Plan"),
+  isActive: integer("is_active").notNull().default(1), // 1 = active, 0 = inactive
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertWorkingPlanScenarioSchema = createInsertSchema(workingPlanScenario).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertWorkingPlanScenario = z.infer<typeof insertWorkingPlanScenarioSchema>;
+export type WorkingPlanScenario = typeof workingPlanScenario.$inferSelect;
+
+// Working Plan Task Override Table - overlays on imported task data
+export const workingPlanTaskOverride = pgTable("working_plan_task_override", {
+  id: serial("id").primaryKey(),
+  scenarioId: integer("scenario_id").notNull().references(() => workingPlanScenario.id, { onDelete: 'cascade' }),
+  importedTaskId: integer("imported_task_id").references(() => projectPlan.id), // null for new tasks
+  overrideStartDate: text("override_start_date"),
+  overrideEndDate: text("override_end_date"),
+  overrideDurationDays: integer("override_duration_days"),
+  overrideName: text("override_name"),
+  overrideTaskNo: text("override_task_no"),
+  overrideComment: text("override_comment"),
+  deletedFlag: integer("deleted_flag").notNull().default(0), // 1 = soft deleted
+  isNewTask: integer("is_new_task").notNull().default(0), // 1 = created in app, not imported
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertWorkingPlanTaskOverrideSchema = createInsertSchema(workingPlanTaskOverride).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertWorkingPlanTaskOverride = z.infer<typeof insertWorkingPlanTaskOverrideSchema>;
+export type WorkingPlanTaskOverride = typeof workingPlanTaskOverride.$inferSelect;
+
+// Dependency type enum
+export const dependencyTypeEnum = pgEnum('dependency_type', ['FS', 'SS', 'FF', 'SF']);
+
+// Project Plan Dependency Table - user-created task dependencies
+export const projectPlanDependency = pgTable("project_plan_dependency", {
+  id: serial("id").primaryKey(),
+  projectName: text("project_name").notNull(),
+  predecessorTaskId: integer("predecessor_task_id").notNull(), // rowNumber of predecessor
+  successorTaskId: integer("successor_task_id").notNull(), // rowNumber of successor
+  dependencyType: text("dependency_type").notNull().default("FS"), // FS, SS, FF, SF
+  lagDays: integer("lag_days").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertProjectPlanDependencySchema = createInsertSchema(projectPlanDependency).omit({ id: true, createdAt: true });
+export type InsertProjectPlanDependency = z.infer<typeof insertProjectPlanDependencySchema>;
+export type ProjectPlanDependency = typeof projectPlanDependency.$inferSelect;
+
+// Working Plan Dependency Override Table - overlays on dependencies
+export const workingPlanDependencyOverride = pgTable("working_plan_dependency_override", {
+  id: serial("id").primaryKey(),
+  scenarioId: integer("scenario_id").notNull().references(() => workingPlanScenario.id, { onDelete: 'cascade' }),
+  importedDependencyId: integer("imported_dependency_id").references(() => projectPlanDependency.id), // null for new deps
+  predecessorTaskId: integer("predecessor_task_id").notNull(),
+  successorTaskId: integer("successor_task_id").notNull(),
+  dependencyType: text("dependency_type").notNull().default("FS"),
+  lagDays: integer("lag_days").notNull().default(0),
+  deletedFlag: integer("deleted_flag").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertWorkingPlanDependencyOverrideSchema = createInsertSchema(workingPlanDependencyOverride).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertWorkingPlanDependencyOverride = z.infer<typeof insertWorkingPlanDependencyOverrideSchema>;
+export type WorkingPlanDependencyOverride = typeof workingPlanDependencyOverride.$inferSelect;
+
+// Schedule Change Notice Table - governance log for schedule changes
+export const scheduleChangeNotice = pgTable("schedule_change_notice", {
+  id: serial("id").primaryKey(),
+  projectName: text("project_name").notNull(),
+  summary: text("summary").notNull(),
+  oldFinishDate: text("old_finish_date"),
+  newFinishDate: text("new_finish_date"),
+  changedTasks: text("changed_tasks"), // JSON: [{taskId, field, oldValue, newValue}]
+  criticalPathDelta: text("critical_path_delta"), // JSON: {becameCritical: [], noLongerCritical: []}
+  userNote: text("user_note"),
+  clientNotified: integer("client_notified").notNull().default(0),
+  documentationUpdated: integer("documentation_updated").notNull().default(0),
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertScheduleChangeNoticeSchema = createInsertSchema(scheduleChangeNotice).omit({ id: true, createdAt: true });
+export type InsertScheduleChangeNotice = z.infer<typeof insertScheduleChangeNoticeSchema>;
+export type ScheduleChangeNotice = typeof scheduleChangeNotice.$inferSelect;
