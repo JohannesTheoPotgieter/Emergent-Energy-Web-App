@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Upload, FileSpreadsheet, CheckCircle, AlertCircle, Loader2, ExternalLink } from "lucide-react";
+import { Upload, FileSpreadsheet, CheckCircle, AlertCircle, AlertTriangle, Loader2, ExternalLink } from "lucide-react";
 import { useProgramData } from "@/hooks/use-program-data";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
@@ -173,26 +173,55 @@ export default function UploadPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {/* Sheets Found */}
+              {/* Parse Results */}
               <div>
-                <h4 className="text-sm font-medium mb-2">Sheets Processed</h4>
-                <div className="flex flex-wrap gap-2">
-                  {uploadResult.sheets?.map((sheet: any) => (
-                    <Badge key={sheet.name} variant={sheet.rowsIngested > 0 ? "default" : "secondary"}>
-                      {sheet.name}: {sheet.rowsIngested} rows
-                    </Badge>
-                  )) || (
+                <h4 className="text-sm font-medium mb-2">Records Parsed</h4>
+                <div className="grid grid-cols-3 md:grid-cols-6 gap-2 text-sm">
+                  {uploadResult.results?.[0] && (
                     <>
-                      <Badge variant="outline">Project Plan</Badge>
-                      <Badge variant="outline">Revenue Tracking</Badge>
-                      <Badge variant="outline">Expenditure Breakdown</Badge>
-                      <Badge variant="outline">Finance-Revenue</Badge>
-                      <Badge variant="outline">Finance-COS</Badge>
-                      <Badge variant="outline">Cashflow</Badge>
+                      <div className="p-2 bg-muted rounded text-center">
+                        <div className="font-semibold text-lg">{uploadResult.results[0].planParsed || 0}</div>
+                        <div className="text-xs text-muted-foreground">Project Plan</div>
+                      </div>
+                      <div className="p-2 bg-muted rounded text-center">
+                        <div className="font-semibold text-lg">{uploadResult.results[0].inflowsParsed || 0}</div>
+                        <div className="text-xs text-muted-foreground">Revenue Tracking</div>
+                      </div>
+                      <div className="p-2 bg-muted rounded text-center">
+                        <div className="font-semibold text-lg">{uploadResult.results[0].expensesParsed || 0}</div>
+                        <div className="text-xs text-muted-foreground">Expenditure</div>
+                      </div>
+                      <div className="p-2 bg-muted rounded text-center">
+                        <div className="font-semibold text-lg">{uploadResult.results[0].financeRevenueParsed || 0}</div>
+                        <div className="text-xs text-muted-foreground">Finance-Revenue</div>
+                      </div>
+                      <div className="p-2 bg-muted rounded text-center">
+                        <div className="font-semibold text-lg">{uploadResult.results[0].financeCosParsed || 0}</div>
+                        <div className="text-xs text-muted-foreground">Finance-COS</div>
+                      </div>
+                      <div className="p-2 bg-muted rounded text-center">
+                        <div className="font-semibold text-lg">{uploadResult.results[0].cashflowParsed || 0}</div>
+                        <div className="text-xs text-muted-foreground">Cashflow</div>
+                      </div>
                     </>
                   )}
                 </div>
               </div>
+
+              {/* Warnings */}
+              {uploadResult.results?.[0]?.warnings?.length > 0 && (
+                <div className="border border-yellow-200 bg-yellow-50 rounded-lg p-3">
+                  <h4 className="text-sm font-medium mb-2 flex items-center gap-2 text-yellow-800">
+                    <AlertTriangle className="w-4 h-4" />
+                    Parser Warnings
+                  </h4>
+                  <ul className="text-xs text-yellow-700 space-y-1 list-disc list-inside">
+                    {uploadResult.results[0].warnings.map((w: string, i: number) => (
+                      <li key={i}>{w}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               {/* Quick Actions */}
               <div className="flex gap-2 pt-4 border-t">
