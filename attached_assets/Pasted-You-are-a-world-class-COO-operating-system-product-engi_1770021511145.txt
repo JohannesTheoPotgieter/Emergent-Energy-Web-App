@@ -1,0 +1,229 @@
+You are a world-class COO operating-system product engineer + full-stack lead + QA lead.
+
+Mission
+Build a stable internal web app for Emergent Energy (EE) that replicates our Excel “Program Dashboard” and per-project “Tracker” workbooks, but is easier to navigate, refresh, collaborate on, and read.
+This is not a demo. It must be COO-grade: fast, predictable, and trustworthy.
+
+Brand / UI
+- Theme: Emergent Energy (green + white), clean, readable, mobile-friendly.
+- Use Emergent logo in app shell/header.
+- Always show: “Last refresh timestamp” + Refresh button.
+- UX must be modern and “world-class”, but keep our naming (tab names and core functions) consistent with Excel.
+
+Source of truth / Inputs
+- Program-level dashboard workbook: “Program Dashboard FY26.xlsm”
+- Project tracker workbooks (same structure across projects):
+  - “1 Bolt Ave_Tracker.xlsx”
+  - “Coega Steels Ph2_Tracker.xlsx”
+- Tracker layout is consistent across all projects (sheet names and structures stable).
+- FY is Sep → Aug.
+  - “This FY” default filter must be current FY (e.g. 2025/09/01–2026/08/31).
+  - Implement correct FY logic based on today’s date.
+
+Target UX (high level)
+1) Program KPI Dashboard (Overview)
+   - Modern KPI dashboard showing portfolio KPIs: budget, spend, revenue, cashflow, active projects, etc.
+   - Quick search.
+   - Last refresh timestamp + refresh button.
+2) Projects Summary
+   - List all projects (portfolio view).
+   - Must show key columns from Program Dashboard (project code, name, manager, status/stage, budget progress, etc.).
+   - Clicking a project drills into Project Detail view.
+3) Project Detail view (per tracker)
+   - Project overview + drill-down into these sections (names must remain):
+     - Project Plan
+     - Revenue Tracking (milestones)
+     - Expenditure Breakdown
+     - Finance - Revenue
+     - Finance - COS
+     - Cashflow
+4) Data ingestion (upload trackers)
+   - Upload one or multiple Excel trackers.
+   - If project exists with same identity, prompt:
+     - Replace/Refresh existing project data (overwrite just that project)
+     - Duplicate (new project version/copy)
+   - Uploading a new tracker must NOT delete/replace other projects.
+5) Read/write rules
+   - Most data is read-only from tracker.
+   - Exception: Cashflow planning must allow moving amounts around (planning scenario) and chart updates immediately.
+   - Budget entry: manual budget entry required (allowed).
+6) Collaboration
+   - Works multi-user at least via shared DB.
+   - Auth optional; if login exists, it must never block uploads/viewing due to auth bugs.
+   - If auth is unstable: remove it until stable.
+
+Critical bugs observed (must be fixed)
+A) Project Plan shows “34 tasks ingested” but UI table empty (“-”).
+   Likely header parsing issue: our headers are NOT on row 1 and there are merged/title rows.
+B) Cashflow/COS/Revenue tabs show “no data available” even after upload.
+   Same issue: merged rows, multi-row headers, duplicated labels.
+C) Upload instability and network errors:
+   - “Authentication required”
+   - “ENOTFOUND helium”, “EAI_AGAIN helium”
+   - First upload works, second fails
+   Must be stabilized. Remove dependency on flaky hostname/services. Use local API + Postgres reliably.
+D) Persistence/replacement bug:
+   Uploading additional trackers sometimes removes previously uploaded projects.
+   Must store projects independently and append by default.
+
+Non-negotiable Excel parsing requirements
+- Do NOT assume row 1 is headers.
+- Implement robust header row detection per sheet:
+  - Scan top N rows (e.g. 40–80) to find best header row.
+  - Score rows by keyword matches (case-insensitive, trim whitespace).
+  - Handle merged cells (propagate merged cell value to all cells in range).
+  - Support multi-row headers (combine rows if needed).
+  - Support duplicate header names by indexing (Status_1, Status_2, etc.).
+- Fallback behavior:
+  - If mapping confidence is low, STILL render the raw sheet as a scrollable table so user sees data (no empty UI).
+- Store parse diagnostics per upload (persisted and viewable):
+  - detected header row index
+  - matched column mapping
+  - confidence score
+  - % rows with non-empty primary field (e.g. Task Name)
+  - warnings (duplicate headers, low confidence, empty primary field, etc.)
+
+Sheet-specific minimum mapping expectations
+1) Project Plan sheet
+   - Must extract real task rows.
+   - Flexible mapping fields:
+     task_number, task_description, planned_start, planned_duration_days, planned_end,
+     actual_start, actual_duration_days, actual_end, status_1, status_2, comment.
+2) Cashflow sheet
+   - Must pull historical + planned series for FY, with date filtering.
+   - Must display chart series similar in meaning to Excel chart “Revenue & Expenditure Tracking”:
+     - Planned Revenue (and cumulative)
+     - Planned Expenditure (and cumulative)
+     - Planned Cashflow
+     - Actual + Planned Revenue (and cumulative)
+     - Actual + Planned Expenditure (and cumulative)
+     - Actual Cashflow
+     - Revenue Recognition (and cumulative)
+   - UI layout can differ; series meaning must match.
+   - Planning interaction:
+     - user can adjust planned amounts by period (weekly/monthly depending on tracker)
+     - chart updates immediately
+     - changes saved as a scenario/version (original imported values remain recoverable)
+3) Finance - Revenue and Finance - COS
+   - Must show data and allow FY filters.
+   - Provide summary + drilldown by project.
+4) Revenue Tracking and Expenditure Breakdown
+   - Must show same data sets tracker provides.
+   - Must not show “no data” if sheet exists.
+
+Architecture requirements (stability first)
+- Use a straightforward stack:
+  - React frontend
+  - Node/Express backend
+  - Postgres (Drizzle/Prisma OK)
+- No external hostname dependency that can cause helium DNS errors.
+- Upload endpoint supports multiple file uploads and large Excel files reliably.
+- Store project data normalized enough for fast filters + charts.
+- Maintain per-upload project identity (projectCode + projectName) and versioning if duplicate.
+
+Data model requirements (single source of truth)
+- Projects table:
+  - id, projectCode, projectName, version, status/stage, PM, etc.
+  - unique key should support Replace vs Duplicate.
+- Uploads table:
+  - id, project_id, filename, timestamp, parseDiagnostics JSON, etc.
+- Parsed tables per sheet (normalized):
+  - project_plan_tasks
+  - finance_revenue_rows
+  - finance_cos_rows
+  - revenue_tracking_rows
+  - expenditure_breakdown_rows
+  - cashflow_period_rows (base imported)
+- Planning scenarios:
+  - cashflow_scenarios table + cashflow_scenario_overrides table
+  - overrides apply on top of imported base values
+  - ability to reset/revert to import
+
+Stability guardrails (must implement)
+- Replace must only overwrite ONE project (and its child tables) in a DB transaction.
+- Uploading a new tracker must never delete other projects.
+- No silent failures: always show user-facing errors + server logs.
+- Always show “upload parse summary” after upload:
+  - sheets found, sheets parsed, warnings, confidence per sheet.
+
+Acceptance tests (MUST pass before deploy)
+1) Upload “1 Bolt Ave_Tracker.xlsx”
+   - Project appears in Projects Summary.
+   - Project Plan shows real task rows (not “-”).
+   - Cashflow shows data + chart (not empty).
+   - Finance Revenue + Finance COS show data (not empty).
+2) Upload “Coega Steels Ph2_Tracker.xlsx”
+   - Both projects exist simultaneously.
+   - Neither upload deletes the other.
+3) Upload same tracker again
+   - Prompt Replace vs Duplicate.
+   - Replace updates only that project.
+   - Duplicate creates versioned copy (visible and selectable).
+4) FY filters work everywhere
+   - Default “This FY” = Sep 1 to Aug 31.
+   - Filters change charts/tables correctly.
+5) No auth-related blocking bugs
+   - Upload never fails due to “Authentication required” unless intentionally enforced.
+   - Login errors cannot brick upload/view.
+
+Before implementing changes: ASK THESE QUESTIONS (do not guess)
+1) Project unique key:
+   - Use Project Code, Project Name, or both?
+   - Where exactly in the tracker is canonical ID stored (sheet + cell/field)?
+2) Cashflow periodicity:
+   - Are cashflow columns weekly dates, monthly dates, or mixed?
+   - Should we normalize internally to monthly or keep native?
+3) Planning edits:
+   - Which fields can be edited for planning (planned revenue, planned expenditure, both)?
+   - Need approvals/audit trail, or just version history?
+4) Revenue recognition:
+   - Is revenue recognition an input from tracker, or calculated from milestones?
+   - If calculated, confirm formula logic.
+5) Access control:
+   - Remove login entirely until stable, or keep a shared password?
+
+Implementation order (follow this exactly)
+1) Inspect current code + run app.
+2) Fix upload stability first (remove helium dependency, make Postgres + API reliable).
+3) Build robust Excel parser layer:
+   - header row detection
+   - merged cell handling
+   - multi-row header support
+   - duplicate header indexing
+   - mapping confidence + diagnostics
+   - raw-sheet fallback renderer
+4) Fix persistence bugs:
+   - ensure uploads append by default
+   - Replace/Duplicate logic correct and scoped to one project
+5) Implement Program Dashboard + Projects Summary + Project Detail tabs UI.
+6) Implement Cashflow planning scenarios with instant chart update.
+7) Implement FY filter logic globally (default “This FY”).
+8) Add automated tests:
+   - parser unit tests (header detection + mapping)
+   - API integration tests (upload, replace, duplicate, persist)
+   - UI/E2E tests for acceptance flows (Playwright/Cypress if possible)
+9) Polish UX:
+   - empty states
+   - loading states
+   - search
+   - last refresh
+   - consistent date/number formats
+10) Final report + verification steps.
+
+Deliverables
+- Updated stable app that passes acceptance tests.
+- Parsing fixed so Project Plan/Cashflow/Revenue/COS populate from uploaded trackers.
+- Project drill-down with required tabs and clean UI.
+- Upload Replace/Duplicate logic; projects persist independently.
+- A “Parse Diagnostics” UI per upload.
+- Only deploy once tests pass. Provide commands to run tests and a checklist.
+
+Non-negotiable stopping condition
+Do not stop at “it seems okay”.
+Stop only when:
+- Acceptance tests pass
+- Parse diagnostics show correct header detection
+- No empty UI tables when sheet exists (fallback raw table at minimum)
+- Replace/Duplicate works reliably
+- Multi-project persistence is stable
+- Upload works repeatedly (2nd, 3rd upload) without DNS/auth errors.
