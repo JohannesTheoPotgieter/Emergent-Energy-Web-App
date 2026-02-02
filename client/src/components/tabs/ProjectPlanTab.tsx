@@ -297,17 +297,22 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
     };
   }, [tasks, criticalPath]);
 
+  // Initialize gantt date range when project stats change
+  const projectStartTime = projectStats?.projectStart ? projectStats.projectStart.getTime() : undefined;
+  const projectEndTime = projectStats?.projectEnd ? projectStats.projectEnd.getTime() : undefined;
+  
   useEffect(() => {
     if (projectStats?.projectStart && projectStats?.projectEnd) {
       const padding = 14;
       setGanttStart(addDays(projectStats.projectStart, -padding));
       setGanttEnd(addDays(projectStats.projectEnd, padding));
-    } else if (tasks.length > 0 && !ganttStart) {
+    } else if (tasks.length > 0) {
       const today = startOfDay(new Date());
       setGanttStart(addDays(today, -30));
       setGanttEnd(addDays(today, 60));
     }
-  }, [projectStats?.projectStart, projectStats?.projectEnd, tasks.length, ganttStart]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectStartTime, projectEndTime, tasks.length]);
 
   const filteredTasks = useMemo(() => {
     let result = tasks;
