@@ -261,7 +261,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
         }
       }
       
-      const actualPct = task.percentComplete || 0;
+      const actualPct = Math.round((task.percentComplete || 0) * 100);
       totalActualPercent += actualPct;
       
       if (task.startDate && task.endDate) {
@@ -282,7 +282,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
     });
     
     const durationDays = minStart && maxEnd ? differenceInCalendarDays(maxEnd, minStart) + 1 : 0;
-    const overallActual = Math.round(totalActualPercent / tasks.length);
+    const overallActual = tasks.length > 0 ? Math.round(totalActualPercent / tasks.length) : 0;
     const overallExpected = countWithDates > 0 ? Math.round(totalExpectedPercent / countWithDates) : null;
     
     return {
@@ -334,7 +334,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
         if (!t.endDate || !t.startDate) return false;
         const end = parseISO(t.endDate);
         const start = parseISO(t.startDate);
-        const actualPct = t.percentComplete || 0;
+        const actualPct = Math.round((t.percentComplete || 0) * 100);
         const totalDuration = differenceInCalendarDays(end, start);
         const elapsed = differenceInCalendarDays(today, start);
         const expectedPct = totalDuration > 0 ? clamp(elapsed / totalDuration, 0, 1) * 100 : 100;
@@ -550,7 +550,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
                 const isEditing = editingTaskId === task.id;
                 const isCritical = task.isCritical;
                 const isHovered = hoveredTaskId === task.id;
-                const actualPct = task.percentComplete || 0;
+                const actualPct = Math.round((task.percentComplete || 0) * 100);
                 const expectedPct = getExpectedPercent(task);
                 const isLate = expectedPct !== null && actualPct < expectedPct && actualPct < 100;
                 
@@ -798,7 +798,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
         <div className={`overflow-y-auto ${compact ? "max-h-[250px]" : "max-h-[500px]"}`} data-testid="gantt-task-list">
           {filteredTasks.map((task, idx) => {
             const isHovered = hoveredTaskId === task.id;
-            const actualPct = task.percentComplete || 0;
+            const actualPct = Math.round((task.percentComplete || 0) * 100);
             const expectedPct = getExpectedPercent(task);
             const barStyle = getTaskBarStyle(task);
             
@@ -1161,12 +1161,12 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
                 <label className="text-xs text-muted-foreground">Progress</label>
                 <div className="mt-2">
                   <CompactProgress 
-                    actual={selectedTask.percentComplete || 0} 
+                    actual={Math.round((selectedTask.percentComplete || 0) * 100)} 
                     expected={getExpectedPercent(selectedTask)}
                     size="md"
                   />
                   <div className="flex justify-between text-xs text-muted-foreground mt-1">
-                    <span>Actual: {selectedTask.percentComplete || 0}%</span>
+                    <span>Actual: {Math.round((selectedTask.percentComplete || 0) * 100)}%</span>
                     <span>Expected: {getExpectedPercent(selectedTask) ?? "—"}%</span>
                   </div>
                 </div>
