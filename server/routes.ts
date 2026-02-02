@@ -49,12 +49,20 @@ const upload = multer({
 
 // Helper functions to apply overrides to baseline data
 
-// Get week start date (Monday) for a given date
-function getWeekStartDate(date: Date): string {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
-  d.setDate(diff);
+// Get week start date (Monday) for a given date string
+// Parse as UTC to avoid timezone drift issues
+function getWeekStartDate(dateStr: string): string {
+  // Parse date string as YYYY-MM-DD without timezone shift
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const d = new Date(Date.UTC(year, month - 1, day));
+  
+  // Get day of week (0=Sunday, 1=Monday, ..., 6=Saturday)
+  const dayOfWeek = d.getUTCDay();
+  
+  // Calculate days to subtract to get to Monday (weekStartsOn: 1)
+  const diff = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Sunday -> 6 days back, else dayOfWeek - 1
+  d.setUTCDate(d.getUTCDate() - diff);
+  
   return d.toISOString().split('T')[0];
 }
 
@@ -78,8 +86,7 @@ function calculateRevenueRecognition(
   // Group by project and week
   for (const expense of relevantExpenses) {
     const pName = expense.projectName;
-    const invoiceDate = new Date(expense.expenseInvoicedDate);
-    const weekStart = getWeekStartDate(invoiceDate);
+    const weekStart = getWeekStartDate(expense.expenseInvoicedDate);
     const amount = parseFloat(expense.revenueAmount);
     
     if (!weekly.has(pName)) {
