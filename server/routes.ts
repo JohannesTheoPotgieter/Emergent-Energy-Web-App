@@ -1166,11 +1166,11 @@ export async function registerRoutes(
 
   app.get("/api/cashflow", async (req, res) => {
     try {
-      const { projectName, startDate, endDate } = req.query;
+      const { project, startDate, endDate } = req.query;
       let points;
       
-      if (projectName && typeof projectName === 'string') {
-        points = await storage.getCashflowPointsByProject(projectName);
+      if (project && typeof project === 'string') {
+        points = await storage.getCashflowPointsByProject(project);
       } else {
         points = await storage.getAllCashflowPoints();
       }
@@ -1188,7 +1188,8 @@ export async function registerRoutes(
 
       res.json(points);
     } catch (error) {
-      res.status(500).json({ error: "Failed to fetch cashflow data", message: "Failed to fetch cashflow data" });
+      console.error("Cashflow API error:", error);
+      res.status(500).json({ error: "Failed to fetch cashflow data", message: error instanceof Error ? error.message : "Unknown error" });
     }
   });
 
