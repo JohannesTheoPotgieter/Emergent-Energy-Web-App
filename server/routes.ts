@@ -2247,10 +2247,10 @@ export async function registerRoutes(
         baseTasks.map(t => ({
           id: t.id,
           taskNo: t.taskNo,
-          name: t.name,
-          startDate: t.startDate,
-          endDate: t.endDate,
-          type: t.type,
+          name: t.highLevelProgramme,
+          startDate: t.actualStart,
+          endDate: t.actualEnd,
+          type: null,
         })),
         taskOverrides
       );
