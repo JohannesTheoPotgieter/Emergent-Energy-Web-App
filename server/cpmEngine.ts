@@ -236,31 +236,33 @@ export function calculateCPM(
     const id = sortedIds[i];
     const task = taskMap.get(id)!;
     
-    let minSuccLs = projectFinish;
+    let minLf = projectFinish;
     for (const succId of task.successorIds) {
       const succ = taskMap.get(succId)!;
       const dep = validDeps.find(d => d.predecessorTaskId === id && d.successorTaskId === succId);
       const lag = dep?.lagDays || 0;
       
-      let succContribution = succ.ls - lag;
+      let constraint = succ.ls - lag;
       
-      if (dep?.dependencyType === 'SS') {
-        succContribution = succ.ls - lag + succ.durationDays;
+      if (dep?.dependencyType === 'FS') {
+        constraint = succ.ls - lag;
+      } else if (dep?.dependencyType === 'SS') {
+        constraint = succ.ls - lag + task.durationDays;
       } else if (dep?.dependencyType === 'FF') {
-        succContribution = succ.lf - lag;
+        constraint = succ.lf - lag;
       } else if (dep?.dependencyType === 'SF') {
-        succContribution = succ.ls - lag + succ.durationDays + task.durationDays;
+        constraint = succ.lf - lag + task.durationDays;
       }
       
-      minSuccLs = Math.min(minSuccLs, succContribution);
+      minLf = Math.min(minLf, constraint);
     }
     
     if (task.successorIds.length > 0) {
-      task.lf = minSuccLs;
+      task.lf = minLf;
     }
     task.ls = task.lf - task.durationDays;
     task.slack = task.ls - task.es;
-    task.isCritical = task.slack === 0;
+    task.isCritical = task.slack <= 0;
   }
   
   const criticalPath = cpmTasks.filter(t => t.isCritical).map(t => t.id);
