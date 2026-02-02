@@ -2463,12 +2463,61 @@ export async function registerRoutes(
         });
       }
 
+      const predId = parseInt(predecessorTaskId);
+      const succId = parseInt(successorTaskId);
+
+      if (predId === succId) {
+        return res.status(400).json({
+          error: "validation_error",
+          message: "A task cannot depend on itself"
+        });
+      }
+
+      const validTypes = ["FS", "SS", "FF", "SF"];
+      const depType = dependencyType || "FS";
+      if (!validTypes.includes(depType)) {
+        return res.status(400).json({
+          error: "validation_error",
+          message: "Invalid dependency type. Must be FS, SS, FF, or SF"
+        });
+      }
+
+      const lag = parseInt(lagDays) || 0;
+      if (lag < -365 || lag > 365) {
+        return res.status(400).json({
+          error: "validation_error",
+          message: "Lag days must be between -365 and 365"
+        });
+      }
+
+      const existingDeps = await storage.getDependenciesByProject(decodedName);
+      
+      const visited = new Set<number>();
+      const checkCycle = (taskId: number, target: number): boolean => {
+        if (taskId === target) return true;
+        if (visited.has(taskId)) return false;
+        visited.add(taskId);
+        
+        const successorDeps = existingDeps.filter(d => d.predecessorTaskId === taskId);
+        for (const dep of successorDeps) {
+          if (checkCycle(dep.successorTaskId, target)) return true;
+        }
+        return false;
+      };
+      
+      if (checkCycle(succId, predId)) {
+        return res.status(400).json({
+          error: "validation_error",
+          message: "This dependency would create a circular reference"
+        });
+      }
+
       const created = await storage.createDependency({
         projectName: decodedName,
-        predecessorTaskId: parseInt(predecessorTaskId),
-        successorTaskId: parseInt(successorTaskId),
-        dependencyType: dependencyType || "FS",
-        lagDays: lagDays || 0,
+        predecessorTaskId: predId,
+        successorTaskId: succId,
+        dependencyType: depType,
+        lagDays: lag,
       });
 
       res.json(created);

@@ -269,9 +269,9 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
 
   if (isLoading) {
     return (
-      <Card>
+      <Card data-testid="card-loading">
         <CardContent className="flex items-center justify-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" data-testid="spinner-loading" />
         </CardContent>
       </Card>
     );
@@ -279,9 +279,9 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
 
   if (error) {
     return (
-      <Card>
+      <Card data-testid="card-error">
         <CardContent className="py-12">
-          <p className="text-center text-destructive">Failed to load project plan data</p>
+          <p className="text-center text-destructive" data-testid="text-error">Failed to load project plan data</p>
         </CardContent>
       </Card>
     );
@@ -293,16 +293,16 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle className="flex items-center gap-2">
+              <CardTitle className="flex items-center gap-2" data-testid="title-project-plan">
                 Project Plan
                 {hasOverrides && (
-                  <Badge variant="secondary" className="ml-2">Modified</Badge>
+                  <Badge variant="secondary" className="ml-2" data-testid="badge-modified">Modified</Badge>
                 )}
               </CardTitle>
               <CardDescription>
-                {tasks.length} tasks • {criticalPath.length} on critical path
+                <span data-testid="text-task-count">{tasks.length} tasks</span> • <span data-testid="text-critical-count">{criticalPath.length} on critical path</span>
                 {workingPlan?.hasCircularDependency && (
-                  <span className="text-destructive ml-2">⚠ Circular dependency detected</span>
+                  <span className="text-destructive ml-2" data-testid="text-circular-warning">⚠ Circular dependency detected</span>
                 )}
               </CardDescription>
             </div>
@@ -311,6 +311,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
                 variant="outline"
                 size="sm"
                 onClick={() => setShowAddDependency(true)}
+                data-testid="button-add-dependency"
               >
                 <Link className="h-4 w-4 mr-1" />
                 Add Link
@@ -321,6 +322,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
                   size="sm"
                   onClick={() => resetPlanMutation.mutate()}
                   disabled={resetPlanMutation.isPending}
+                  data-testid="button-reset-plan"
                 >
                   <RotateCcw className="h-4 w-4 mr-1" />
                   Reset
@@ -333,15 +335,19 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
         <CardContent className="pt-0">
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList>
-              <TabsTrigger value="grid">
+              <TabsTrigger value="grid" data-testid="tab-task-grid">
                 <Calendar className="h-4 w-4 mr-1" />
                 Task Grid
               </TabsTrigger>
-              <TabsTrigger value="gantt">
+              <TabsTrigger value="gantt" data-testid="tab-gantt">
                 <GitBranch className="h-4 w-4 mr-1" />
                 Gantt Chart
               </TabsTrigger>
-              <TabsTrigger value="changes">
+              <TabsTrigger value="deps" data-testid="tab-dependencies">
+                <Link className="h-4 w-4 mr-1" />
+                Dependencies ({dependencies.length})
+              </TabsTrigger>
+              <TabsTrigger value="changes" data-testid="tab-changes">
                 <AlertTriangle className="h-4 w-4 mr-1" />
                 Changes ({changeNotices.length})
               </TabsTrigger>
@@ -349,7 +355,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
 
             <TabsContent value="grid" className="mt-4">
               {tasks.length === 0 ? (
-                <p className="text-center text-muted-foreground py-8">
+                <p className="text-center text-muted-foreground py-8" data-testid="text-no-tasks">
                   No project plan data available
                 </p>
               ) : (
@@ -376,8 +382,9 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
                           <TableRow 
                             key={task.id} 
                             className={isCritical ? "bg-red-50 dark:bg-red-950/20" : ""}
+                            data-testid={`row-task-${task.id}`}
                           >
-                            <TableCell className="font-mono text-sm">
+                            <TableCell className="font-mono text-sm" data-testid={`text-taskno-${task.id}`}>
                               {task.taskNo || "-"}
                             </TableCell>
                             <TableCell>
@@ -386,9 +393,10 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
                                   value={editValues.name ?? task.name}
                                   onChange={(e) => setEditValues({ ...editValues, name: e.target.value })}
                                   className="h-8"
+                                  data-testid={`input-name-${task.id}`}
                                 />
                               ) : (
-                                <span className={isCritical ? "font-medium" : ""}>
+                                <span className={isCritical ? "font-medium" : ""} data-testid={`text-name-${task.id}`}>
                                   {task.name || "-"}
                                 </span>
                               )}
@@ -400,9 +408,12 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
                                   value={editValues.startDate ?? task.startDate}
                                   onChange={(e) => setEditValues({ ...editValues, startDate: e.target.value })}
                                   className="h-8"
+                                  data-testid={`input-start-${task.id}`}
                                 />
                               ) : (
-                                task.startDate ? format(parseISO(task.startDate), "dd MMM yy") : "-"
+                                <span data-testid={`text-start-${task.id}`}>
+                                  {task.startDate ? format(parseISO(task.startDate), "dd MMM yy") : "-"}
+                                </span>
                               )}
                             </TableCell>
                             <TableCell>
@@ -412,24 +423,27 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
                                   value={editValues.endDate ?? task.endDate}
                                   onChange={(e) => setEditValues({ ...editValues, endDate: e.target.value })}
                                   className="h-8"
+                                  data-testid={`input-end-${task.id}`}
                                 />
                               ) : (
-                                task.endDate ? format(parseISO(task.endDate), "dd MMM yy") : "-"
+                                <span data-testid={`text-end-${task.id}`}>
+                                  {task.endDate ? format(parseISO(task.endDate), "dd MMM yy") : "-"}
+                                </span>
                               )}
                             </TableCell>
-                            <TableCell>
+                            <TableCell data-testid={`text-duration-${task.id}`}>
                               {task.durationDays}d
                             </TableCell>
                             <TableCell>
-                              <span className={task.slack === 0 ? "text-destructive font-medium" : "text-muted-foreground"}>
+                              <span className={task.slack === 0 ? "text-destructive font-medium" : "text-muted-foreground"} data-testid={`text-slack-${task.id}`}>
                                 {task.slack}d
                               </span>
                             </TableCell>
                             <TableCell>
                               {isCritical ? (
-                                <Badge variant="destructive" className="text-xs">Critical</Badge>
+                                <Badge variant="destructive" className="text-xs" data-testid={`badge-critical-${task.id}`}>Critical</Badge>
                               ) : (
-                                <Badge variant="outline" className="text-xs">Normal</Badge>
+                                <Badge variant="outline" className="text-xs" data-testid={`badge-normal-${task.id}`}>Normal</Badge>
                               )}
                             </TableCell>
                             <TableCell>
@@ -440,6 +454,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
                                     variant="ghost"
                                     onClick={() => handleSaveEdit(task.id)}
                                     disabled={updateTaskMutation.isPending}
+                                    data-testid={`button-save-${task.id}`}
                                   >
                                     <Save className="h-4 w-4" />
                                   </Button>
@@ -447,6 +462,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
                                     size="sm"
                                     variant="ghost"
                                     onClick={() => { setEditingTaskId(null); setEditValues({}); }}
+                                    data-testid={`button-cancel-${task.id}`}
                                   >
                                     ✕
                                   </Button>
@@ -463,6 +479,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
                                       endDate: task.endDate,
                                     });
                                   }}
+                                  data-testid={`button-edit-${task.id}`}
                                 >
                                   Edit
                                 </Button>
@@ -485,28 +502,30 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
                       variant="outline"
                       size="sm"
                       onClick={() => setGanttViewStart(addDays(ganttViewStart, -14))}
+                      data-testid="button-gantt-prev"
                     >
                       <ChevronLeft className="h-4 w-4" />
                     </Button>
-                    <span className="text-sm font-medium">
+                    <span className="text-sm font-medium" data-testid="text-gantt-range">
                       {format(ganttViewStart, "dd MMM yyyy")} - {format(addDays(ganttViewStart, 27), "dd MMM yyyy")}
                     </span>
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => setGanttViewStart(addDays(ganttViewStart, 14))}
+                      data-testid="button-gantt-next"
                     >
                       <ChevronRight className="h-4 w-4" />
                     </Button>
                   </div>
-                  <div className="flex items-center gap-4 text-sm">
+                  <div className="flex items-center gap-4 text-sm" data-testid="gantt-legend">
                     <div className="flex items-center gap-1">
                       <div className="w-4 h-3 bg-destructive rounded" />
-                      <span>Critical</span>
+                      <span data-testid="text-legend-critical">Critical</span>
                     </div>
                     <div className="flex items-center gap-1">
                       <div className="w-4 h-3 bg-primary rounded" />
-                      <span>Normal</span>
+                      <span data-testid="text-legend-normal">Normal</span>
                     </div>
                   </div>
                 </div>
@@ -522,6 +541,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
                             key={i}
                             className={`flex-1 text-center text-xs py-1 border-r ${isWeekend ? "bg-muted" : ""}`}
                             style={{ minWidth: "24px" }}
+                            data-testid={`text-gantt-day-${i}`}
                           >
                             {format(day, "d")}
                           </div>
@@ -530,10 +550,10 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
                     </div>
                   </div>
 
-                  <div className="max-h-[500px] overflow-y-auto">
+                  <div className="max-h-[500px] overflow-y-auto" data-testid="gantt-task-list">
                     {tasks.map((task) => (
-                      <div key={task.id} className="flex border-b hover:bg-muted/30">
-                        <div className="w-48 flex-shrink-0 p-2 border-r text-sm truncate">
+                      <div key={task.id} className="flex border-b hover:bg-muted/30" data-testid={`gantt-row-${task.id}`}>
+                        <div className="w-48 flex-shrink-0 p-2 border-r text-sm truncate" data-testid={`gantt-label-${task.id}`}>
                           {task.name || task.taskNo || "-"}
                         </div>
                         <div className="flex-1 relative h-8">
@@ -551,6 +571,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
                             className={`absolute top-1 bottom-1 rounded ${task.isCritical ? "bg-destructive" : "bg-primary"} opacity-80`}
                             style={getTaskBarStyle(task)}
                             title={`${task.name}: ${task.startDate} - ${task.endDate}`}
+                            data-testid={`gantt-bar-${task.id}`}
                           />
                         </div>
                       </div>
@@ -560,35 +581,95 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
               </div>
             </TabsContent>
 
+            <TabsContent value="deps" className="mt-4">
+              {dependencies.length === 0 ? (
+                <p className="text-center text-muted-foreground py-8" data-testid="text-no-dependencies">
+                  No dependencies defined. Use "Add Link" to create task relationships.
+                </p>
+              ) : (
+                <div className="rounded-md border overflow-auto max-h-[400px]">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Predecessor</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Successor</TableHead>
+                        <TableHead className="w-20">Lag</TableHead>
+                        <TableHead className="w-16">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {dependencies.map((dep) => {
+                        const predTask = tasks.find(t => t.id === dep.predecessorTaskId);
+                        const succTask = tasks.find(t => t.id === dep.successorTaskId);
+                        const typeLabels: Record<string, string> = {
+                          FS: "Finish→Start",
+                          SS: "Start→Start",
+                          FF: "Finish→Finish",
+                          SF: "Start→Finish",
+                        };
+                        
+                        return (
+                          <TableRow key={dep.id} data-testid={`row-dependency-${dep.id}`}>
+                            <TableCell data-testid={`text-predecessor-${dep.id}`}>
+                              {predTask?.taskNo} - {predTask?.name || "Unknown"}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" data-testid={`badge-dep-type-${dep.id}`}>{typeLabels[dep.dependencyType] || dep.dependencyType}</Badge>
+                            </TableCell>
+                            <TableCell data-testid={`text-successor-${dep.id}`}>
+                              {succTask?.taskNo} - {succTask?.name || "Unknown"}
+                            </TableCell>
+                            <TableCell data-testid={`text-lag-${dep.id}`}>{dep.lagDays}d</TableCell>
+                            <TableCell>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => deleteDependencyMutation.mutate(dep.id)}
+                                disabled={deleteDependencyMutation.isPending}
+                                data-testid={`button-delete-dependency-${dep.id}`}
+                              >
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </TabsContent>
+
             <TabsContent value="changes" className="mt-4">
               {changeNotices.length === 0 ? (
-                <p className="text-center text-muted-foreground py-8">
+                <p className="text-center text-muted-foreground py-8" data-testid="text-no-changes">
                   No schedule changes recorded
                 </p>
               ) : (
                 <div className="space-y-3">
                   {changeNotices.map((notice) => (
-                    <Card key={notice.id}>
+                    <Card key={notice.id} data-testid={`card-change-notice-${notice.id}`}>
                       <CardContent className="p-4">
                         <div className="flex justify-between items-start">
                           <div>
-                            <p className="font-medium">{notice.summary}</p>
+                            <p className="font-medium" data-testid={`text-notice-summary-${notice.id}`}>{notice.summary}</p>
                             {notice.oldFinishDate && notice.newFinishDate && (
-                              <p className="text-sm text-muted-foreground">
+                              <p className="text-sm text-muted-foreground" data-testid={`text-date-change-${notice.id}`}>
                                 Date change: {notice.oldFinishDate} → {notice.newFinishDate}
                               </p>
                             )}
                             {notice.userNote && (
-                              <p className="text-sm mt-1">{notice.userNote}</p>
+                              <p className="text-sm mt-1" data-testid={`text-user-note-${notice.id}`}>{notice.userNote}</p>
                             )}
                           </div>
                           <div className="flex gap-2">
-                            <Badge variant={notice.clientNotified ? "default" : "outline"}>
+                            <Badge variant={notice.clientNotified ? "default" : "outline"} data-testid={`badge-notification-${notice.id}`}>
                               {notice.clientNotified ? "Client Notified" : "Pending Notification"}
                             </Badge>
                           </div>
                         </div>
-                        <p className="text-xs text-muted-foreground mt-2">
+                        <p className="text-xs text-muted-foreground mt-2" data-testid={`text-notice-date-${notice.id}`}>
                           {format(parseISO(notice.createdAt), "dd MMM yyyy HH:mm")}
                         </p>
                       </CardContent>
@@ -610,9 +691,9 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
-            <ul className="text-sm space-y-1">
+            <ul className="text-sm space-y-1" data-testid="list-warnings">
               {workingPlan.warnings.map((w, i) => (
-                <li key={i} className="text-muted-foreground">{w}</li>
+                <li key={i} className="text-muted-foreground" data-testid={`text-warning-${i}`}>{w}</li>
               ))}
             </ul>
           </CardContent>
@@ -634,12 +715,12 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
             <p className="text-sm">
               Changing this task may affect:
             </p>
-            <ul className="text-sm list-disc pl-5 space-y-1">
+            <ul className="text-sm list-disc pl-5 space-y-1" data-testid="list-affected-dates">
               {workingPlan?.keyDates.commissioningDate && (
-                <li>Commissioning Date: {workingPlan.keyDates.commissioningDate}</li>
+                <li data-testid="text-commissioning-date">Commissioning Date: {workingPlan.keyDates.commissioningDate}</li>
               )}
               {workingPlan?.keyDates.clientHandoverDate && (
-                <li>Client Handover Date: {workingPlan.keyDates.clientHandoverDate}</li>
+                <li data-testid="text-client-handover-date">Client Handover Date: {workingPlan.keyDates.clientHandoverDate}</li>
               )}
             </ul>
             <div>
@@ -649,14 +730,15 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
                 onChange={(e) => setWarningNote(e.target.value)}
                 placeholder="Reason for change, mitigation actions, etc."
                 className="mt-2"
+                data-testid="input-warning-note"
               />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowWarningModal(false)}>
+            <Button variant="outline" onClick={() => setShowWarningModal(false)} data-testid="button-warning-cancel">
               Cancel
             </Button>
-            <Button variant="destructive" onClick={confirmWarningChange}>
+            <Button variant="destructive" onClick={confirmWarningChange} data-testid="button-warning-confirm">
               Confirm Change
             </Button>
           </DialogFooter>
@@ -678,6 +760,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
                 className="w-full mt-1 p-2 border rounded"
                 value={newDep.predecessorId}
                 onChange={(e) => setNewDep({ ...newDep, predecessorId: e.target.value })}
+                data-testid="select-predecessor"
               >
                 <option value="">Select task...</option>
                 {tasks.map((t) => (
@@ -691,6 +774,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
                 className="w-full mt-1 p-2 border rounded"
                 value={newDep.successorId}
                 onChange={(e) => setNewDep({ ...newDep, successorId: e.target.value })}
+                data-testid="select-successor"
               >
                 <option value="">Select task...</option>
                 {tasks.map((t) => (
@@ -705,6 +789,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
                   className="w-full mt-1 p-2 border rounded"
                   value={newDep.type}
                   onChange={(e) => setNewDep({ ...newDep, type: e.target.value })}
+                  data-testid="select-dep-type"
                 >
                   <option value="FS">Finish-to-Start</option>
                   <option value="SS">Start-to-Start</option>
@@ -719,12 +804,13 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
                   value={newDep.lag}
                   onChange={(e) => setNewDep({ ...newDep, lag: parseInt(e.target.value) || 0 })}
                   className="mt-1"
+                  data-testid="input-dep-lag"
                 />
               </div>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAddDependency(false)}>
+            <Button variant="outline" onClick={() => setShowAddDependency(false)} data-testid="button-dep-cancel">
               Cancel
             </Button>
             <Button
@@ -739,6 +825,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
                 }
               }}
               disabled={!newDep.predecessorId || !newDep.successorId || createDependencyMutation.isPending}
+              data-testid="button-dep-create"
             >
               Create Link
             </Button>
