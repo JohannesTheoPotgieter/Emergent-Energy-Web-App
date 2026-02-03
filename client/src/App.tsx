@@ -8,6 +8,7 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import AppLayout from "@/components/layout/AppLayout";
 import LoginPage from "@/pages/login";
+import Home from "@/pages/home";
 import Dashboard from "@/pages/dashboard";
 import ProjectsSummary from "@/pages/projects";
 import CashflowPage from "@/pages/cashflow";
@@ -135,7 +136,8 @@ function ProtectedPages() {
   return (
     <AppLayout>
       <Switch>
-        <Route path="/" component={Dashboard} />
+        <Route path="/" component={Home} />
+        <Route path="/dashboard" component={Dashboard} />
         <Route path="/projects" component={ProjectsSummary} />
         <Route path="/project/:projectName" component={ProjectDetailPage} />
         <Route path="/cashflow" component={CashflowPage} />
