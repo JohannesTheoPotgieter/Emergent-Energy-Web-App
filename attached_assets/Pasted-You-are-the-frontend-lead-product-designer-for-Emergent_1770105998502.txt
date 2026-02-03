@@ -1,0 +1,87 @@
+You are the frontend lead + product designer for Emergent Energy’s Program Dashboard app.
+
+Goal
+Improve the Expenditure Breakdown table UI so it is clean and usable.
+Do NOT change data integrity, calculations, or meaning.
+Only change how the data is rendered and interacted with.
+
+Two key fixes required
+1) Sticky column headings
+- The table column headers must stay visible while the user scrolls down the table.
+- The filter/action bar (Save / Reset / Filter dropdown) must also stay visible (sticky) so users don’t lose controls.
+- The first 1–2 columns should also be sticky horizontally (at least Description + Category) so users can still see what row they’re on when scrolling right.
+
+2) Remove “useless rows” / reduce clutter
+Right now the table shows a lot of repeated category rows, blank separator rows, and junk that makes scanning impossible.
+We need a cleaner, COO/PM-grade view.
+
+Non-negotiable UI requirements
+A) Sticky header + sticky controls
+- Implement a scroll container for the table body.
+- Use CSS position: sticky for:
+  - header row: top: 0; z-index high; background solid.
+  - controls row: top: 0 (or above the header if you want it pinned above); z-index higher.
+- Ensure it works across Chrome/Edge and does not jitter.
+
+B) Row-type cleanup
+We must detect and render row types properly:
+- Line item row (real spend item) → always show
+- Category header row (e.g. “1. Panels”) → show once per category, not repeated
+- Subtotal row → optional toggle (Show Subtotals on/off)
+- Blank/separator row → never show
+- Duplicate category header rows → collapse into one
+
+Implementation expectation:
+- Add a normalization step before rendering:
+  - filter out rows where all meaningful fields are empty (description, budget, actual, PO/invoice fields)
+  - collapse consecutive duplicate category header rows into one
+  - ensure category headers are not repeated between every line
+
+C) Better “grouped” display (world class, but simple)
+- Display categories as collapsible groups.
+- Category header row shows:
+  - Category name
+  - Category totals (Budget Total, Actual Total, Variance)
+  - Expand/collapse icon
+- Default: expanded
+- Add “Collapse all / Expand all”.
+
+D) Make the table readable
+- Apply zebra striping, smaller row height, and consistent alignment:
+  - Currency right-aligned
+  - Dates centered
+  - Text left-aligned
+- Truncate long description with tooltip (hover to show full).
+- Add row hover highlight.
+- Keep Status as a small badge (Paid / Invoiced / Committed / Planned).
+
+E) Column management
+- Add a “Columns” menu so users can hide less-used columns.
+- Default visible columns should match how ops uses it:
+  - Description
+  - Budget Total
+  - Forecast Pay Date
+  - Actual Total
+  - PO Number
+  - Invoice No
+  - Invoice Date (COS)
+  - Payment Date (Cash)
+  - Status
+  - (Optional) Variance
+
+F) Performance
+- If rows > 200, implement virtualization (TanStack Virtual or equivalent) so scrolling stays smooth.
+
+Acceptance tests (must pass)
+1) Scroll down: column headings remain visible at all times.
+2) Filter bar remains visible when scrolling.
+3) When scrolling horizontally: Description (and ideally Category) remains visible.
+4) Blank rows and repeated category header rows are not rendered.
+5) Categories render as collapsible groups; collapse works.
+6) Totals/summary cards at top remain unchanged and reconcile as before (UI-only change).
+7) No changes to stored values, calculations, or exported data.
+
+Deliverable
+- Updated Expenditure Breakdown table UI meeting all above requirements.
+- Keep existing backend, parsing, and calculations untouched.
+- Provide a short note in README: “Table UX improvements: sticky headers + grouping + row cleanup”.
