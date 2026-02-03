@@ -16,7 +16,8 @@ import {
   RefreshCw,
   Search,
   Upload,
-  Database
+  Database,
+  Home
 } from "lucide-react";
 import { useProgramData } from "@/hooks/use-program-data";
 import { useAuth } from "@/hooks/use-auth";
@@ -47,8 +48,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   });
 
   const navItems: { label: string; icon: any; path: string; className?: string; adminOnly?: boolean }[] = [
-    { label: "Overview", icon: LayoutDashboard, path: "/" },
-    { label: "Projects Summary", icon: FileSpreadsheet, path: "/projects" },
+    { label: "Home", icon: Home, path: "/" },
+    { label: "Dashboard", icon: LayoutDashboard, path: "/dashboard" },
+    { label: "Projects", icon: FileSpreadsheet, path: "/projects" },
     { label: "Cashflow", icon: Wallet, path: "/cashflow" },
     { label: "COS Tracker", icon: TrendingUp, path: "/cos", className: "rotate-180" },
     { label: "Upload", icon: Upload, path: "/upload" },
