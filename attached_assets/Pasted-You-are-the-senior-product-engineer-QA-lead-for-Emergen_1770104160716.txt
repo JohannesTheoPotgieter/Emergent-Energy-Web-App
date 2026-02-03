@@ -1,0 +1,170 @@
+You are the senior product engineer + QA lead for Emergent Energy’s Program Dashboard web app.
+
+Goal
+Fix and fully replicate the Tracker sheet “Expenditure Breakdown” so it works in the app exactly like Excel.
+UI can improve, but do NOT change the meaning of any numbers, date logic, or totals.
+If parsing confidence is low, show RAW SHEET VIEW rather than empty tables.
+
+Business meaning (non-negotiable)
+This screen is the operational source of truth for project COS and cashflow.
+- PO capture = procurement commitment + reference
+- Invoice capture = supplier invoicing event
+- Invoice Raised Date = COS realisation date (the date COS is recognised)
+- Finance Payment Date = cash out date (cashflow)
+These dates must feed the rest of the app:
+- Finance - COS must use Invoice Raised Date for COS timing
+- Cashflow must use Finance Payment Date for expenditure cash timing
+- Actual Expenditure totals must reconcile to the tracker (Bolt Ave sum equals 2,217,962.171875)
+
+Sheet structure reality (Bolt Ave reference)
+The Expenditure Breakdown sheet contains two side-by-side tables:
+A) COSTED/BUDGET side (left) headers include:
+- No., Product/Service, Description of Work, QTY, Rate/Unit, Budget Total, FORECASTED PAYMENT DATE, Total COS
+B) ACTUAL/FINANCE side (right) headers include:
+- No., Product/Service, Description of Work, QTY, Rate/Unit, Actual Total, PO NUMBER, INVOICE NUMBER,
+  INVOICE RAISED DATE, FINANCE PAYMENT DATE, Total COS
+There are also category subtotal rows and blank separator rows.
+
+Non-negotiable outcomes
+1) The app must show ALL imported costed and actual line items from the sheet (including categories and subtotals), with correct totals.
+2) The following fields must be editable and persisted in DB without breaking imported baseline:
+   - PO Number
+   - Invoice Number
+   - Invoice Raised Date (COS realisation date)
+   - Finance Payment Date (cashflow date)
+   - Optional: comments/notes per line
+3) The app must compute and display correct summaries that match Excel meaning:
+   - Total Budget (sum of Budget Total)
+   - Total Actual (sum of Actual Total)  <-- must reconcile to Excel
+   - Variance (Actual - Budget) and/or (Budget - Actual) (choose one and label clearly)
+   - COS Realised (sum of Actual Total where Invoice Raised Date is present)
+   - Cash Paid (sum of Actual Total where Finance Payment Date is present)
+   - Outstanding Invoices / Unpaid (invoiced but not paid)
+   - Committed (PO exists but not yet invoiced)  (if useful, optional)
+4) Filtering and usability must be world-class:
+   - Filters: Category, Supplier/Invoice text search, Missing PO, Missing Invoice, Invoiced not paid, Paid, Date range (FY)
+   - Sticky headers, right-aligned currency, totals row pinned
+   - Group by category with expand/collapse
+   - Quick action: edit PO/invoice/date inline (fast) or via side panel
+5) Data integrity rules:
+   - Imported sheet data is baseline and must remain recoverable.
+   - Manual edits must not corrupt baseline.
+   - Replace upload must not delete other projects.
+   - If replacing the same project, define and implement one consistent rule:
+     - Preserve manual edits when line identity matches, otherwise reset with warning.
+   - No silent failure. Show parse diagnostics and mapping.
+
+Excel parsing requirements (do not break again)
+- Do NOT assume row 1 is headers.
+- Implement robust header detection per sheet:
+  - Scan top N rows to find header row based on keyword matches (“Budget Total”, “FORECASTED PAYMENT DATE”, “PO NUMBER”, “INVOICE RAISED DATE”, “FINANCE PAYMENT DATE”).
+  - Handle merged/title rows and whitespace.
+  - Handle duplicate headers (index them).
+- Expenditure Breakdown has two tables side-by-side. Parser must detect both and merge into one canonical dataset.
+- Extract row types:
+  - category header (e.g., “1. Panels”)
+  - line item (real item rows)
+  - subtotal/total row
+  - blank row
+The UI must not show “-” or empty table when rows exist.
+
+Fallback:
+If mapping confidence is low, render the raw sheet as a scrollable table and show a warning banner.
+Never hide data.
+
+Data model (Postgres) – minimum
+1) expense_line_imported
+- id (pk)
+- project_id
+- source_row_index
+- category_code (e.g., “1. Panels”, “2. Inverters”)
+- costed_no, costed_product_service, costed_description, costed_qty, costed_rate, budget_total, forecast_payment_date
+- actual_no, actual_product_service, actual_description, actual_qty, actual_rate, actual_total
+- created_at, updated_at
+
+2) expense_line_manual (overlay, one-to-one with imported line where applicable)
+- id
+- project_id
+- imported_line_id (unique)
+- po_number (text nullable)
+- invoice_number (text nullable)
+- invoice_raised_date (date nullable)   <-- COS realisation date
+- finance_payment_date (date nullable)  <-- cashflow
+- note/comment (text nullable)
+- updated_at
+
+Optional (if you support multi-invoice/partial payments later):
+- expense_invoice table (many-to-one with line item)
+But for v1, keep it one invoice + one payment date per line unless Johannes confirms otherwise.
+
+API endpoints (minimum)
+- GET /api/projects/:id/expenditure-breakdown?fy=ThisFY
+  returns:
+    - summary KPIs
+    - grouped line items (imported + manual merged)
+    - parse diagnostics
+- PATCH /api/projects/:id/expenditure-breakdown/lines/:lineId
+  updates manual fields only (PO/invoice/dates/notes)
+- POST /api/projects/:id/expenditure-breakdown/reset-manual (optional, admin)
+
+Integration requirements (this is critical)
+1) Finance - COS tab must use this data:
+   - COS is recognised on Invoice Raised Date
+   - Amount = Actual Total
+   - Bucket by month (or tracker structure) but must match Excel meaning
+2) Cashflow tab must use this data:
+   - Expenditure cash out uses Finance Payment Date
+   - Amount = Actual Total
+3) Revenue Tracking “Actual Expenditure” / project GP must reconcile:
+   - Total Actual Expenditure must equal sum(Actual Total) across relevant rows (excluding subtotal rows)
+   - Provide a reconciliation panel:
+     - “Tracker sum: X” vs “App sum: Y” with tolerance
+     - If mismatch, show which rows are excluded and why
+
+World-class UI spec (do this)
+- Page layout:
+  A) Summary strip (cards) at top:
+     Total Budget | Total Actual | COS Realised | Cash Paid | Outstanding | Committed (optional)
+  B) Controls row:
+     Search, filters, FY range, export CSV, “Show raw sheet” toggle
+  C) Main table grouped by category:
+     Columns (minimum):
+       Category | Item/Description | Budget Total | Forecast Pay Date | Actual Total |
+       PO No | Invoice No | Invoice Raised (COS) | Payment Date (Cash) | Status
+     Add:
+       Variance (Actual - Budget) (optional but useful)
+  D) Row status logic:
+     - No PO, no invoice: “Planned”
+     - PO present, no invoice: “Committed”
+     - Invoice present, no payment date: “Invoiced”
+     - Payment date present: “Paid”
+  E) Editing:
+     - Inline edit PO/invoice/date cells with validation (date pickers).
+     - Alternatively, clicking row opens side panel for edits + notes.
+  F) Highlight missing critical fields:
+     - Missing invoice date (for COS) on invoiced lines
+     - Missing payment date on invoiced lines (cash risk)
+
+Acceptance tests (must pass)
+Using “1 Bolt Ave_Tracker.xlsx”:
+1) Expenditure Breakdown table loads and shows real rows (not empty).
+2) App Total Actual equals 2,217,962.171875 (tolerance ±0.01) using only line-item rows (not subtotals).
+3) Editing PO number persists after refresh.
+4) Editing Invoice number and Invoice Raised Date persists and immediately changes COS Realised totals.
+5) Editing Finance Payment Date persists and immediately changes cash paid totals / cashflow series.
+6) Replace upload does NOT delete other projects.
+7) If parser fails, raw sheet view appears (no “no data”).
+
+Before implementing, ASK THESE QUESTIONS (do not guess)
+1) VAT: Are these values ex VAT or incl VAT? Must the app display both?
+2) Can one line item have multiple invoices or partial payments (split payments)?
+3) What is the identity key for matching lines across re-uploads? (row index is not stable if template changes)
+4) For “COS Realised”: do we treat it as invoice date only, or must invoice number also exist?
+5) Should forecasted payment date (budget side) drive planned cashflow, or do we only plan in Cashflow sheet?
+
+Deliverables
+- Expenditure Breakdown fully working, correct, and fast.
+- Robust parsing with diagnostics.
+- Editable PO/Invoice/COS date/Payment date with persistence.
+- Reconciles totals back to tracker and feeds Finance - COS and Cashflow correctly.
+- Tests pass before deploy.
