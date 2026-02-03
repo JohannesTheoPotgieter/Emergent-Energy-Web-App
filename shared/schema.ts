@@ -49,22 +49,31 @@ export const insertProjectInfoSchema = createInsertSchema(projectInfo).omit({ id
 export type InsertProjectInfo = z.infer<typeof insertProjectInfoSchema>;
 export type ProjectInfo = typeof projectInfo.$inferSelect;
 
-// Program Expense Table (from Expenditure Breakdown sheet)
+// Program Expense Table (from Expenditure Breakdown sheet - dual table structure)
 export const programExpense = pgTable("program_expense", {
   id: serial("id").primaryKey(),
   projectName: text("project_name").notNull(),
   rowNumber: integer("row_number"),
+  rowType: text("row_type").default("item"), // 'category', 'item', 'subtotal', 'blank'
   expenseCategory: text("expense_category"),
   expenseLineItem: text("expense_line_item"),
+  // Budget/Costed side fields
+  budgetQty: decimal("budget_qty", { precision: 12, scale: 4 }),
+  budgetRateUnit: decimal("budget_rate_unit", { precision: 15, scale: 2 }),
+  budgetTotal: decimal("budget_total", { precision: 15, scale: 2 }),
+  forecastPaymentDate: text("forecast_payment_date"),
+  budgetCosTotal: decimal("budget_cos_total", { precision: 15, scale: 2 }),
+  // Actual/Finance side fields
   expenseQty: decimal("expense_qty", { precision: 12, scale: 4 }),
   expenseRateUnit: decimal("expense_rate_unit", { precision: 15, scale: 2 }),
   expenseActualTotal: decimal("expense_actual_total", { precision: 15, scale: 2 }),
   expensePoNumber: text("expense_po_number"),
   expenseInvoiceNumber: text("expense_invoice_number"),
   expenseInvoicedDate: text("expense_invoiced_date"),
-  revenueAmount: decimal("revenue_amount", { precision: 15, scale: 2 }),
   expensePaymentDate: text("expense_payment_date"),
-  cosAmount: decimal("cos_amount", { precision: 15, scale: 2 }),
+  actualCosTotal: decimal("actual_cos_total", { precision: 15, scale: 2 }),
+  // Computed status field
+  lineStatus: text("line_status"), // 'Planned', 'Committed', 'Invoiced', 'Paid'
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

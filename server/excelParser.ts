@@ -323,19 +323,22 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
     warnings.push("Missing 'Project Plan' sheet");
   }
 
-  // Parse Expenditure Breakdown sheet
+  // Parse Expenditure Breakdown sheet - handles dual-table structure (Budget/Costed + Actual/Finance)
   if (workbook.SheetNames.includes("Expenditure Breakdown")) {
     const sheet = workbook.Sheets["Expenditure Breakdown"];
     const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null }) as any[][];
     
-    // Look for "ACTUAL EXPENDITURE BREAKDOWN" table header
+    // Extended header tokens to capture both BUDGET and ACTUAL tables
     const expenseHeaderTokens = [
       "product/ service",
       "description of work",
+      "budget total",
       "actual total",
       "po number",
       "invoice number",
+      "invoice raised date",
       "finance payment date",
+      "forecasted payment date",
       "total cos"
     ];
     
@@ -344,22 +347,39 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
     if (expenseHeader) {
       const { rowIdx: headerRowIdx, colMap } = expenseHeader;
       
-      // Find column indices
+      // Budget/Costed side columns
       const categoryCol = getColumnIndex(colMap, ["product/ service", "product", "category"]);
       const descCol = getColumnIndex(colMap, ["description of work", "description"]);
-      const qtyCol = getColumnIndex(colMap, ["qty", "quantity"]);
-      const rateCol = getColumnIndex(colMap, ["rate / unit", "rate"]);
+      const budgetQtyCol = getColumnIndex(colMap, ["qty", "quantity"]);
+      const budgetRateCol = getColumnIndex(colMap, ["rate / unit", "rate"]);
+      const budgetTotalCol = getColumnIndex(colMap, ["budget total"]);
+      const forecastPayDateCol = getColumnIndex(colMap, ["forecasted payment date", "forecast payment date", "forecast pay date"]);
+      
+      // Find Budget Total COS column (first "Total COS")
+      let budgetCosCol = -1;
+      let actualCosCol = -1;
+      const cosMatches: number[] = [];
+      for (const [key, idx] of Object.entries(colMap)) {
+        if (key.toLowerCase().includes("total cos") || key.toLowerCase() === "cos") {
+          cosMatches.push(idx as number);
+        }
+      }
+      if (cosMatches.length >= 2) {
+        budgetCosCol = Math.min(...cosMatches);
+        actualCosCol = Math.max(...cosMatches);
+      } else if (cosMatches.length === 1) {
+        actualCosCol = cosMatches[0];
+      }
+      
+      // Actual/Finance side columns
       const actualTotalCol = getColumnIndex(colMap, ["actual total"]);
       const poCol = getColumnIndex(colMap, ["po number"]);
       const invoiceCol = getColumnIndex(colMap, ["invoice number"]);
       const invoiceDateCol = getColumnIndex(colMap, ["invoice raised date"]);
-      const revenueCol = getColumnIndex(colMap, ["revenue recognition amount", "revenue"]);
       const paymentDateCol = getColumnIndex(colMap, ["finance payment date", "payment date"]);
-      const cosCol = getColumnIndex(colMap, ["total cos", "cos"]);
       
-      // Parse data rows (check first row after header for subheader, otherwise start immediately)
+      // Parse data rows
       let dataStartRow = headerRowIdx + 1;
-      // Check if next row is a subheader (contains "Category", "Line Item", or other meta text)
       if (data[headerRowIdx + 1]) {
         const firstRowStr = String(data[headerRowIdx + 1].join(" ")).toLowerCase();
         if (firstRowStr.includes("category") || firstRowStr.includes("line item") || firstRowStr.length < 5) {
@@ -367,31 +387,81 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
         }
       }
       
+      let currentCategory = "";
+      
       for (let rowIdx = dataStartRow; rowIdx < data.length; rowIdx++) {
         const row = data[rowIdx];
         if (!row) continue;
         
-        const expenseCategory = categoryCol >= 0 ? row[categoryCol] : null;
-        const expenseLineItem = descCol >= 0 ? row[descCol] : null;
-        const expenseActualTotal = actualTotalCol >= 0 ? parseNumber(row[actualTotalCol]) : null;
+        const rawCategory = categoryCol >= 0 ? row[categoryCol] : null;
+        const rawDesc = descCol >= 0 ? row[descCol] : null;
+        const rawBudgetTotal = budgetTotalCol >= 0 ? row[budgetTotalCol] : null;
+        const rawActualTotal = actualTotalCol >= 0 ? row[actualTotalCol] : null;
         
-        // Skip if category, description, and actual total are all blank
-        if (!expenseCategory && !expenseLineItem && !expenseActualTotal) continue;
+        // Determine row type
+        let rowType = "item";
+        let expenseCategory = currentCategory;
+        let expenseLineItem = rawDesc ? String(rawDesc) : null;
+        
+        // Category header detection (numbered sections like "1. Panels", "2. Inverters")
+        if (rawCategory && typeof rawCategory === "string") {
+          const catStr = rawCategory.trim();
+          if (/^\d+\.?\s*.+/.test(catStr) && (!rawActualTotal || !rawBudgetTotal)) {
+            // This is a category header row
+            currentCategory = catStr;
+            expenseCategory = catStr;
+            rowType = "category";
+            expenseLineItem = null;
+          } else {
+            expenseCategory = catStr;
+          }
+        }
+        
+        // Subtotal detection
+        if (rawDesc && String(rawDesc).toLowerCase().includes("sub total")) {
+          rowType = "subtotal";
+        }
+        
+        // Skip completely blank rows
+        if (!rawCategory && !rawDesc && !rawBudgetTotal && !rawActualTotal) continue;
+        
+        // Determine line status
+        const poNumber = poCol >= 0 && row[poCol] ? String(row[poCol]) : null;
+        const invoiceNumber = invoiceCol >= 0 && row[invoiceCol] ? String(row[invoiceCol]) : null;
+        const invoiceDate = invoiceDateCol >= 0 ? parseDate(row[invoiceDateCol]) : null;
+        const paymentDate = paymentDateCol >= 0 ? parseDate(row[paymentDateCol]) : null;
+        
+        let lineStatus = "Planned";
+        if (paymentDate) {
+          lineStatus = "Paid";
+        } else if (invoiceNumber || invoiceDate) {
+          lineStatus = "Invoiced";
+        } else if (poNumber) {
+          lineStatus = "Committed";
+        }
         
         expenses.push({
           projectName,
           rowNumber: rowIdx + 1,
-          expenseCategory: expenseCategory ? String(expenseCategory) : null,
-          expenseLineItem: expenseLineItem ? String(expenseLineItem) : null,
-          expenseQty: qtyCol >= 0 ? parseNumber(row[qtyCol]) : null,
-          expenseRateUnit: rateCol >= 0 ? parseNumber(row[rateCol]) : null,
-          expenseActualTotal,
-          expensePoNumber: poCol >= 0 && row[poCol] ? String(row[poCol]) : null,
-          expenseInvoiceNumber: invoiceCol >= 0 && row[invoiceCol] ? String(row[invoiceCol]) : null,
-          expenseInvoicedDate: invoiceDateCol >= 0 ? parseDate(row[invoiceDateCol]) : null,
-          revenueAmount: revenueCol >= 0 ? parseNumber(row[revenueCol]) : null,
-          expensePaymentDate: paymentDateCol >= 0 ? parseDate(row[paymentDateCol]) : null,
-          cosAmount: cosCol >= 0 ? parseNumber(row[cosCol]) : null,
+          rowType,
+          expenseCategory: expenseCategory || null,
+          expenseLineItem,
+          // Budget side
+          budgetQty: budgetQtyCol >= 0 ? parseNumber(row[budgetQtyCol]) : null,
+          budgetRateUnit: budgetRateCol >= 0 ? parseNumber(row[budgetRateCol]) : null,
+          budgetTotal: budgetTotalCol >= 0 ? parseNumber(row[budgetTotalCol]) : null,
+          forecastPaymentDate: forecastPayDateCol >= 0 ? parseDate(row[forecastPayDateCol]) : null,
+          budgetCosTotal: budgetCosCol >= 0 ? parseNumber(row[budgetCosCol]) : null,
+          // Actual side
+          expenseQty: budgetQtyCol >= 0 ? parseNumber(row[budgetQtyCol]) : null,
+          expenseRateUnit: budgetRateCol >= 0 ? parseNumber(row[budgetRateCol]) : null,
+          expenseActualTotal: actualTotalCol >= 0 ? parseNumber(row[actualTotalCol]) : null,
+          expensePoNumber: poNumber,
+          expenseInvoiceNumber: invoiceNumber,
+          expenseInvoicedDate: invoiceDate,
+          expensePaymentDate: paymentDate,
+          actualCosTotal: actualCosCol >= 0 ? parseNumber(row[actualCosCol]) : null,
+          lineStatus,
         });
       }
     } else {
