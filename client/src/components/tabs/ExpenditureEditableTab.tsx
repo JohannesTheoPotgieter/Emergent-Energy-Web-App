@@ -1,14 +1,28 @@
-import { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { getErrorMessage } from "@/lib/errors";
-import { Save, RotateCcw, Loader2, ChevronDown, ChevronRight, Filter } from "lucide-react";
+import { 
+  Save, RotateCcw, Loader2, ChevronDown, ChevronRight, Filter, 
+  Columns, ChevronsUpDown, ChevronsDownUp 
+} from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuCheckboxItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface ProgramExpense {
   id: number;
@@ -33,9 +47,46 @@ interface ProgramExpense {
   lineStatus: string | null;
 }
 
+interface CategoryGroup {
+  category: string;
+  items: ProgramExpense[];
+  budgetTotal: number;
+  actualTotal: number;
+  variance: number;
+}
+
 interface ExpenditureEditableTabProps {
   projectName: string;
 }
+
+type ColumnKey = 
+  | "description" | "budgetQty" | "budgetRate" | "budgetTotal" 
+  | "forecastDate" | "actualTotal" | "poNumber" | "invoiceNo" 
+  | "invoiceDate" | "paymentDate" | "cosTotal" | "status" | "variance";
+
+interface ColumnDef {
+  key: ColumnKey;
+  label: string;
+  defaultVisible: boolean;
+  align: "left" | "center" | "right";
+  minWidth: string;
+}
+
+const COLUMNS: ColumnDef[] = [
+  { key: "description", label: "Description", defaultVisible: true, align: "left", minWidth: "200px" },
+  { key: "budgetQty", label: "Budget Qty", defaultVisible: false, align: "right", minWidth: "90px" },
+  { key: "budgetRate", label: "Budget Rate", defaultVisible: false, align: "right", minWidth: "100px" },
+  { key: "budgetTotal", label: "Budget Total", defaultVisible: true, align: "right", minWidth: "120px" },
+  { key: "forecastDate", label: "Fcst Pay Date", defaultVisible: true, align: "center", minWidth: "100px" },
+  { key: "actualTotal", label: "Actual Total", defaultVisible: true, align: "right", minWidth: "120px" },
+  { key: "poNumber", label: "PO Number", defaultVisible: true, align: "left", minWidth: "120px" },
+  { key: "invoiceNo", label: "Invoice No", defaultVisible: true, align: "left", minWidth: "120px" },
+  { key: "invoiceDate", label: "Invoice Date", defaultVisible: true, align: "center", minWidth: "100px" },
+  { key: "paymentDate", label: "Payment Date", defaultVisible: true, align: "center", minWidth: "100px" },
+  { key: "cosTotal", label: "COS Total", defaultVisible: false, align: "right", minWidth: "110px" },
+  { key: "status", label: "Status", defaultVisible: true, align: "center", minWidth: "80px" },
+  { key: "variance", label: "Variance", defaultVisible: true, align: "right", minWidth: "110px" },
+];
 
 const formatCurrency = (value: string | number | null): string => {
   if (value === null || value === undefined) return "-";
@@ -54,21 +105,15 @@ const formatDate = (value: string | null): string => {
 };
 
 const getStatusBadge = (status: string | null) => {
-  if (!status) return null;
-  const variants: Record<string, "default" | "secondary" | "outline" | "destructive"> = {
-    Planned: "secondary",
-    Committed: "outline",
-    Invoiced: "default",
-    Paid: "default",
-  };
+  if (!status) return <span className="text-muted-foreground text-xs">-</span>;
   const colors: Record<string, string> = {
-    Planned: "bg-gray-100 text-gray-700",
-    Committed: "bg-blue-100 text-blue-700",
-    Invoiced: "bg-amber-100 text-amber-700",
-    Paid: "bg-green-100 text-green-700",
+    Planned: "bg-slate-100 text-slate-600 border-slate-200",
+    Committed: "bg-blue-50 text-blue-600 border-blue-200",
+    Invoiced: "bg-amber-50 text-amber-600 border-amber-200",
+    Paid: "bg-emerald-50 text-emerald-600 border-emerald-200",
   };
   return (
-    <Badge className={`text-xs ${colors[status] || ""}`} variant={variants[status] || "secondary"}>
+    <Badge className={`text-[10px] font-medium px-1.5 py-0 border ${colors[status] || "bg-gray-100"}`} variant="outline">
       {status}
     </Badge>
   );
@@ -77,10 +122,16 @@ const getStatusBadge = (status: string | null) => {
 export function ExpenditureEditableTab({ projectName }: ExpenditureEditableTabProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+  
   const [edits, setEdits] = useState<Map<number, Record<string, string>>>(new Map());
   const [editingCell, setEditingCell] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
+  const [showSubtotals, setShowSubtotals] = useState<boolean>(false);
+  const [visibleColumns, setVisibleColumns] = useState<Set<ColumnKey>>(() => {
+    return new Set(COLUMNS.filter(c => c.defaultVisible).map(c => c.key));
+  });
 
   const queryKey = [`/api/program-expenses/${projectName}?applyOverrides=true`];
 
@@ -101,42 +152,26 @@ export function ExpenditureEditableTab({ projectName }: ExpenditureEditableTabPr
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey });
       setEdits(new Map());
-      toast({
-        title: "Changes Saved",
-        description: "Expenditure edits have been saved successfully.",
-      });
+      toast({ title: "Changes Saved", description: "Expenditure edits have been saved successfully." });
     },
     onError: (error) => {
-      toast({
-        title: "Save Failed",
-        description: getErrorMessage(error, "Failed to save edits"),
-        variant: "destructive",
-      });
+      toast({ title: "Save Failed", description: getErrorMessage(error, "Failed to save edits"), variant: "destructive" });
     },
   });
 
   const resetMutation = useMutation({
     mutationFn: async () => {
-      const response = await fetch(`/api/expenditure-overrides/${projectName}`, {
-        method: "DELETE",
-      });
+      const response = await fetch(`/api/expenditure-overrides/${projectName}`, { method: "DELETE" });
       if (!response.ok) throw new Error("Failed to reset overrides");
       return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey });
       setEdits(new Map());
-      toast({
-        title: "Overrides Reset",
-        description: "All edits have been cleared and tracker data restored.",
-      });
+      toast({ title: "Overrides Reset", description: "All edits have been cleared and tracker data restored." });
     },
     onError: (error) => {
-      toast({
-        title: "Reset Failed",
-        description: getErrorMessage(error, "Failed to reset overrides"),
-        variant: "destructive",
-      });
+      toast({ title: "Reset Failed", description: getErrorMessage(error, "Failed to reset overrides"), variant: "destructive" });
     },
   });
 
@@ -144,8 +179,10 @@ export function ExpenditureEditableTab({ projectName }: ExpenditureEditableTabPr
     const items = expenses.filter(e => e.rowType === "item");
     const totalBudget = items.reduce((sum, e) => sum + (parseFloat(e.budgetTotal || "0")), 0);
     const totalActual = items.reduce((sum, e) => sum + (parseFloat(e.expenseActualTotal || "0")), 0);
-    const totalInvoiced = items.filter(e => e.expenseInvoiceNumber && e.expenseInvoicedDate).reduce((sum, e) => sum + (parseFloat(e.actualCosTotal || e.expenseActualTotal || "0")), 0);
-    const totalPaid = items.filter(e => e.expensePaymentDate).reduce((sum, e) => sum + (parseFloat(e.expenseActualTotal || "0")), 0);
+    const totalInvoiced = items.filter(e => e.expenseInvoiceNumber && e.expenseInvoicedDate)
+      .reduce((sum, e) => sum + (parseFloat(e.actualCosTotal || e.expenseActualTotal || "0")), 0);
+    const totalPaid = items.filter(e => e.expensePaymentDate)
+      .reduce((sum, e) => sum + (parseFloat(e.expenseActualTotal || "0")), 0);
     const variance = totalBudget - totalActual;
     
     const countByStatus = {
@@ -158,33 +195,122 @@ export function ExpenditureEditableTab({ projectName }: ExpenditureEditableTabPr
     return { totalBudget, totalActual, totalInvoiced, totalPaid, variance, countByStatus, totalItems: items.length };
   }, [expenses]);
 
-  const displayData = useMemo(() => {
-    let filtered = expenses.map((row) => {
+  const normalizedData = useMemo(() => {
+    let data = expenses.map((row) => {
       const rowEdits = edits.get(row.id);
-      if (!rowEdits) return row;
-      return { ...row, ...rowEdits };
+      return rowEdits ? { ...row, ...rowEdits } : row;
     });
 
+    // Filter out blank rows (all meaningful fields empty)
+    data = data.filter(row => {
+      if (row.rowType === "category") return true;
+      if (row.rowType === "subtotal") return showSubtotals;
+      
+      // Check if row has any meaningful content
+      const hasDescription = row.expenseLineItem && row.expenseLineItem.trim();
+      const hasBudget = row.budgetTotal && parseFloat(row.budgetTotal) !== 0;
+      const hasActual = row.expenseActualTotal && parseFloat(row.expenseActualTotal) !== 0;
+      const hasPO = row.expensePoNumber && row.expensePoNumber.trim();
+      const hasInvoice = row.expenseInvoiceNumber && row.expenseInvoiceNumber.trim();
+      
+      return hasDescription || hasBudget || hasActual || hasPO || hasInvoice;
+    });
+
+    // Apply status filter
     if (statusFilter !== "all") {
-      filtered = filtered.filter(e => e.lineStatus === statusFilter || e.rowType === "category");
+      data = data.filter(e => e.lineStatus === statusFilter || e.rowType === "category");
     }
 
-    return filtered;
-  }, [expenses, edits, statusFilter]);
+    // Collapse consecutive duplicate category headers and remove orphan categories
+    const cleanedData: ProgramExpense[] = [];
+    let lastCategory = "";
+    let categoryHasItems = false;
+    
+    for (let i = 0; i < data.length; i++) {
+      const row = data[i];
+      
+      if (row.rowType === "category") {
+        const cat = row.expenseCategory || "";
+        if (cat === lastCategory) continue; // Skip duplicate
+        
+        // Check if this category has any items
+        const hasItems = data.slice(i + 1).some(r => {
+          if (r.rowType === "category") return false;
+          return r.rowType === "item" && r.expenseCategory === cat;
+        });
+        
+        if (hasItems || i === 0) {
+          if (lastCategory && !categoryHasItems && cleanedData.length > 0) {
+            // Remove previous orphan category
+            const lastIdx = cleanedData.length - 1;
+            if (cleanedData[lastIdx].rowType === "category") {
+              cleanedData.pop();
+            }
+          }
+          cleanedData.push(row);
+          lastCategory = cat;
+          categoryHasItems = hasItems;
+        }
+      } else {
+        cleanedData.push(row);
+        categoryHasItems = true;
+      }
+    }
 
-  const handleCellEdit = (rowId: number, field: string, value: string) => {
-    const newEdits = new Map(edits);
-    const rowEdits = newEdits.get(rowId) || {};
-    rowEdits[field] = value;
-    newEdits.set(rowId, rowEdits);
-    setEdits(newEdits);
-  };
+    return cleanedData;
+  }, [expenses, edits, statusFilter, showSubtotals]);
+
+  const categoryGroups = useMemo(() => {
+    const groups: CategoryGroup[] = [];
+    let currentGroup: CategoryGroup | null = null;
+
+    for (const row of normalizedData) {
+      if (row.rowType === "category") {
+        if (currentGroup) groups.push(currentGroup);
+        currentGroup = {
+          category: row.expenseCategory || "Uncategorized",
+          items: [],
+          budgetTotal: 0,
+          actualTotal: 0,
+          variance: 0,
+        };
+      } else if (row.rowType === "item" && currentGroup) {
+        currentGroup.items.push(row);
+        const budget = parseFloat(row.budgetTotal || "0");
+        const actual = parseFloat(row.expenseActualTotal || "0");
+        currentGroup.budgetTotal += budget;
+        currentGroup.actualTotal += actual;
+        currentGroup.variance += budget - actual;
+      } else if (row.rowType === "item" && !currentGroup) {
+        // Items without category - create default group
+        currentGroup = {
+          category: "Uncategorized",
+          items: [row],
+          budgetTotal: parseFloat(row.budgetTotal || "0"),
+          actualTotal: parseFloat(row.expenseActualTotal || "0"),
+          variance: parseFloat(row.budgetTotal || "0") - parseFloat(row.expenseActualTotal || "0"),
+        };
+      }
+    }
+    
+    if (currentGroup) groups.push(currentGroup);
+    return groups;
+  }, [normalizedData]);
+
+  const handleCellEdit = useCallback((rowId: number, field: string, value: string) => {
+    setEdits(prev => {
+      const newEdits = new Map(prev);
+      const rowEdits = newEdits.get(rowId) || {};
+      rowEdits[field] = value;
+      newEdits.set(rowId, rowEdits);
+      return newEdits;
+    });
+  }, []);
 
   const handleSave = async () => {
     const overrides = Array.from(edits.entries()).flatMap(([rowId, rowEdits]) => {
       const originalRow = expenses.find((r) => r.id === rowId);
       if (!originalRow) return [];
-      
       return Object.entries(rowEdits).map(([field, value]) => ({
         projectName,
         rowNumber: originalRow.rowNumber || rowId,
@@ -199,17 +325,31 @@ export function ExpenditureEditableTab({ projectName }: ExpenditureEditableTabPr
     await resetMutation.mutateAsync();
   };
 
-  const toggleCategory = (category: string) => {
-    const newCollapsed = new Set(collapsedCategories);
-    if (newCollapsed.has(category)) {
-      newCollapsed.delete(category);
-    } else {
-      newCollapsed.add(category);
-    }
-    setCollapsedCategories(newCollapsed);
-  };
+  const toggleCategory = useCallback((category: string) => {
+    setCollapsedCategories(prev => {
+      const next = new Set(prev);
+      if (next.has(category)) next.delete(category);
+      else next.add(category);
+      return next;
+    });
+  }, []);
+
+  const expandAll = useCallback(() => setCollapsedCategories(new Set()), []);
+  const collapseAll = useCallback(() => {
+    setCollapsedCategories(new Set(categoryGroups.map(g => g.category)));
+  }, [categoryGroups]);
+
+  const toggleColumn = useCallback((col: ColumnKey) => {
+    setVisibleColumns(prev => {
+      const next = new Set(prev);
+      if (next.has(col)) next.delete(col);
+      else next.add(col);
+      return next;
+    });
+  }, []);
 
   const hasEdits = edits.size > 0;
+  const activeColumns = COLUMNS.filter(c => visibleColumns.has(c.key));
 
   if (isLoading) {
     return (
@@ -231,65 +371,173 @@ export function ExpenditureEditableTab({ projectName }: ExpenditureEditableTabPr
     );
   }
 
-  let currentCategory = "";
+  const EditableCell = ({ rowId, field, value, type = "text" }: { rowId: number; field: string; value: string | null; type?: string }) => {
+    const cellKey = `${rowId}-${field}`;
+    const isEditing = editingCell === cellKey;
+    const displayValue = type === "currency" ? formatCurrency(value) : (type === "date" ? formatDate(value) : (value || "-"));
+
+    return isEditing ? (
+      <Input
+        type={type === "currency" ? "number" : "text"}
+        defaultValue={value || ""}
+        onChange={(e) => handleCellEdit(rowId, field, e.target.value)}
+        onBlur={() => setEditingCell(null)}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") setEditingCell(null); }}
+        autoFocus
+        className="h-6 text-xs w-full"
+      />
+    ) : (
+      <span
+        onClick={() => setEditingCell(cellKey)}
+        className="cursor-pointer hover:bg-blue-50 px-1 py-0.5 rounded block text-xs truncate"
+      >
+        {displayValue}
+      </span>
+    );
+  };
+
+  const renderCellValue = (exp: ProgramExpense, col: ColumnDef) => {
+    const rowId = exp.id;
+    const variance = (parseFloat(exp.budgetTotal || "0") - parseFloat(exp.expenseActualTotal || "0"));
+    
+    switch (col.key) {
+      case "description":
+        return (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="truncate block max-w-[200px] text-xs">{exp.expenseLineItem || "-"}</span>
+              </TooltipTrigger>
+              {exp.expenseLineItem && exp.expenseLineItem.length > 30 && (
+                <TooltipContent side="right" className="max-w-[300px]">
+                  <p className="text-xs">{exp.expenseLineItem}</p>
+                </TooltipContent>
+              )}
+            </Tooltip>
+          </TooltipProvider>
+        );
+      case "budgetQty":
+        return <span className="text-xs font-mono">{exp.budgetQty || "-"}</span>;
+      case "budgetRate":
+        return <span className="text-xs font-mono">{formatCurrency(exp.budgetRateUnit)}</span>;
+      case "budgetTotal":
+        return <span className="text-xs font-mono">{formatCurrency(exp.budgetTotal)}</span>;
+      case "forecastDate":
+        return <span className="text-xs">{formatDate(exp.forecastPaymentDate)}</span>;
+      case "actualTotal":
+        return <span className="text-xs font-mono">{formatCurrency(exp.expenseActualTotal)}</span>;
+      case "poNumber":
+        return <EditableCell rowId={rowId} field="expensePoNumber" value={exp.expensePoNumber} />;
+      case "invoiceNo":
+        return <EditableCell rowId={rowId} field="expenseInvoiceNumber" value={exp.expenseInvoiceNumber} />;
+      case "invoiceDate":
+        return <EditableCell rowId={rowId} field="expenseInvoicedDate" value={exp.expenseInvoicedDate} type="date" />;
+      case "paymentDate":
+        return <EditableCell rowId={rowId} field="expensePaymentDate" value={exp.expensePaymentDate} type="date" />;
+      case "cosTotal":
+        return <span className="text-xs font-mono">{formatCurrency(exp.actualCosTotal)}</span>;
+      case "status":
+        return getStatusBadge(exp.lineStatus);
+      case "variance":
+        return (
+          <span className={`text-xs font-mono ${variance >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+            {formatCurrency(variance)}
+          </span>
+        );
+      default:
+        return "-";
+    }
+  };
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-        <Card>
-          <CardContent className="pt-4">
-            <div className="text-sm text-muted-foreground">Budget Total</div>
-            <div className="text-xl font-bold text-blue-600">{formatCurrency(kpis.totalBudget)}</div>
+      {/* KPI Summary Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+        <Card className="shadow-sm">
+          <CardContent className="p-3">
+            <div className="text-xs text-muted-foreground">Budget Total</div>
+            <div className="text-lg font-bold text-blue-600">{formatCurrency(kpis.totalBudget)}</div>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <div className="text-sm text-muted-foreground">Actual Total</div>
-            <div className="text-xl font-bold">{formatCurrency(kpis.totalActual)}</div>
+        <Card className="shadow-sm">
+          <CardContent className="p-3">
+            <div className="text-xs text-muted-foreground">Actual Total</div>
+            <div className="text-lg font-bold">{formatCurrency(kpis.totalActual)}</div>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <div className="text-sm text-muted-foreground">Variance</div>
-            <div className={`text-xl font-bold ${kpis.variance >= 0 ? "text-green-600" : "text-red-600"}`}>
+        <Card className="shadow-sm">
+          <CardContent className="p-3">
+            <div className="text-xs text-muted-foreground">Variance</div>
+            <div className={`text-lg font-bold ${kpis.variance >= 0 ? "text-emerald-600" : "text-red-600"}`}>
               {formatCurrency(kpis.variance)}
             </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <div className="text-sm text-muted-foreground">COS Realised</div>
-            <div className="text-xl font-bold text-amber-600">{formatCurrency(kpis.totalInvoiced)}</div>
+        <Card className="shadow-sm">
+          <CardContent className="p-3">
+            <div className="text-xs text-muted-foreground">COS Realised</div>
+            <div className="text-lg font-bold text-amber-600">{formatCurrency(kpis.totalInvoiced)}</div>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <div className="text-sm text-muted-foreground">Paid</div>
-            <div className="text-xl font-bold text-green-600">{formatCurrency(kpis.totalPaid)}</div>
+        <Card className="shadow-sm">
+          <CardContent className="p-3">
+            <div className="text-xs text-muted-foreground">Paid</div>
+            <div className="text-lg font-bold text-emerald-600">{formatCurrency(kpis.totalPaid)}</div>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <div className="text-sm text-muted-foreground">Line Items</div>
-            <div className="text-xl font-bold">{kpis.totalItems}</div>
+        <Card className="shadow-sm">
+          <CardContent className="p-3">
+            <div className="text-xs text-muted-foreground">Line Items</div>
+            <div className="text-lg font-bold">{kpis.totalItems}</div>
           </CardContent>
         </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between flex-wrap gap-4">
+      {/* Main Table Card */}
+      <Card className="shadow-sm">
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
-              <CardTitle>Expenditure Breakdown</CardTitle>
-              <CardDescription>
-                Budget vs Actual expenditure with PO/Invoice tracking
-              </CardDescription>
+              <CardTitle className="text-lg">Expenditure Breakdown</CardTitle>
+              <CardDescription className="text-xs">Budget vs Actual with PO/Invoice tracking</CardDescription>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Expand/Collapse All */}
+              <div className="flex gap-1">
+                <Button variant="ghost" size="sm" onClick={expandAll} className="h-8 px-2" title="Expand All">
+                  <ChevronsDownUp className="h-4 w-4" />
+                </Button>
+                <Button variant="ghost" size="sm" onClick={collapseAll} className="h-8 px-2" title="Collapse All">
+                  <ChevronsUpDown className="h-4 w-4" />
+                </Button>
+              </div>
+
+              {/* Column Visibility */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-8">
+                    <Columns className="h-4 w-4 mr-1" />
+                    Columns
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  {COLUMNS.map((col) => (
+                    <DropdownMenuCheckboxItem
+                      key={col.key}
+                      checked={visibleColumns.has(col.key)}
+                      onCheckedChange={() => toggleColumn(col.key)}
+                    >
+                      {col.label}
+                    </DropdownMenuCheckboxItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {/* Status Filter */}
+              <div className="flex items-center gap-1">
                 <Filter className="h-4 w-4 text-muted-foreground" />
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="w-[140px]">
+                  <SelectTrigger className="w-[130px] h-8 text-xs">
                     <SelectValue placeholder="Filter" />
                   </SelectTrigger>
                   <SelectContent>
@@ -301,159 +549,119 @@ export function ExpenditureEditableTab({ projectName }: ExpenditureEditableTabPr
                   </SelectContent>
                 </Select>
               </div>
-              <Button
-                onClick={handleSave}
-                disabled={!hasEdits || saveMutation.isPending}
-                variant="default"
-                size="sm"
-              >
-                <Save className="h-4 w-4 mr-2" />
-                {saveMutation.isPending ? "Saving..." : "Save Changes"}
+
+              {/* Save/Reset */}
+              <Button onClick={handleSave} disabled={!hasEdits || saveMutation.isPending} size="sm" className="h-8">
+                <Save className="h-4 w-4 mr-1" />
+                {saveMutation.isPending ? "Saving..." : "Save"}
               </Button>
-              <Button
-                onClick={handleReset}
-                disabled={resetMutation.isPending}
-                variant="outline"
-                size="sm"
-              >
-                <RotateCcw className="h-4 w-4 mr-2" />
+              <Button onClick={handleReset} disabled={resetMutation.isPending} variant="outline" size="sm" className="h-8">
+                <RotateCcw className="h-4 w-4 mr-1" />
                 Reset
               </Button>
             </div>
           </div>
         </CardHeader>
-        <CardContent>
-          {displayData.length === 0 ? (
-            <p className="text-center text-muted-foreground py-8">
-              No expenditure data available for this project
-            </p>
+
+        <CardContent className="p-0">
+          {categoryGroups.length === 0 ? (
+            <p className="text-center text-muted-foreground py-8">No expenditure data available</p>
           ) : (
-            <div className="rounded-md border overflow-auto max-h-[600px]">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-muted/50">
-                    <TableHead className="sticky left-0 bg-muted/50 z-10 min-w-[200px]">Description</TableHead>
-                    <TableHead className="text-right min-w-[100px]">Budget Qty</TableHead>
-                    <TableHead className="text-right min-w-[100px]">Budget Rate</TableHead>
-                    <TableHead className="text-right min-w-[120px]">Budget Total</TableHead>
-                    <TableHead className="min-w-[100px]">Fcst Pay Date</TableHead>
-                    <TableHead className="text-right min-w-[100px]">Actual Total</TableHead>
-                    <TableHead className="min-w-[100px]">PO Number</TableHead>
-                    <TableHead className="min-w-[100px]">Invoice No</TableHead>
-                    <TableHead className="min-w-[100px]">Invoice Date</TableHead>
-                    <TableHead className="min-w-[100px]">Payment Date</TableHead>
-                    <TableHead className="text-right min-w-[100px]">COS Total</TableHead>
-                    <TableHead className="min-w-[80px]">Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {displayData.map((exp) => {
-                    if (exp.rowType === "category") {
-                      currentCategory = exp.expenseCategory || "";
-                      const isCollapsed = collapsedCategories.has(currentCategory);
-                      return (
-                        <TableRow
-                          key={exp.id}
-                          className="bg-emerald-50 hover:bg-emerald-100 cursor-pointer"
-                          onClick={() => toggleCategory(currentCategory)}
-                        >
-                          <TableCell colSpan={12} className="font-semibold text-emerald-800">
-                            <div className="flex items-center gap-2">
-                              {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                              {exp.expenseCategory}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    }
+            <div 
+              ref={tableContainerRef}
+              className="relative overflow-auto border-t"
+              style={{ maxHeight: "calc(100vh - 380px)", minHeight: "400px" }}
+            >
+              <table className="w-full border-collapse text-sm">
+                {/* Sticky Header */}
+                <thead className="sticky top-0 z-20 bg-slate-50 border-b shadow-sm">
+                  <tr>
+                    {activeColumns.map((col, idx) => (
+                      <th
+                        key={col.key}
+                        className={`px-3 py-2 text-xs font-semibold text-slate-600 whitespace-nowrap border-b
+                          ${col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left"}
+                          ${idx === 0 ? "sticky left-0 z-30 bg-slate-50" : ""}`}
+                        style={{ minWidth: col.minWidth }}
+                      >
+                        {col.label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
 
-                    if (exp.rowType === "subtotal") {
-                      return (
-                        <TableRow key={exp.id} className="bg-gray-100 font-medium">
-                          <TableCell className="sticky left-0 bg-gray-100">{exp.expenseLineItem || "Sub Total"}</TableCell>
-                          <TableCell></TableCell>
-                          <TableCell></TableCell>
-                          <TableCell className="text-right">{formatCurrency(exp.budgetTotal)}</TableCell>
-                          <TableCell></TableCell>
-                          <TableCell className="text-right">{formatCurrency(exp.expenseActualTotal)}</TableCell>
-                          <TableCell></TableCell>
-                          <TableCell></TableCell>
-                          <TableCell></TableCell>
-                          <TableCell></TableCell>
-                          <TableCell className="text-right">{formatCurrency(exp.actualCosTotal)}</TableCell>
-                          <TableCell></TableCell>
-                        </TableRow>
-                      );
-                    }
-
-                    if (collapsedCategories.has(exp.expenseCategory || "")) {
-                      return null;
-                    }
-
-                    const rowId = exp.id;
-                    const EditableCell = ({ field, value, type = "text", align = "left" }: { field: string; value: string | null; type?: string; align?: string }) => {
-                      const cellKey = `${rowId}-${field}`;
-                      const isEditing = editingCell === cellKey;
-                      const displayValue = type === "currency" ? formatCurrency(value) : (type === "date" ? formatDate(value) : (value || "-"));
-
-                      return isEditing ? (
-                        <Input
-                          type={type === "currency" ? "number" : "text"}
-                          defaultValue={value || ""}
-                          onChange={(e) => handleCellEdit(rowId, field, e.target.value)}
-                          onBlur={() => setEditingCell(null)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === "Escape") setEditingCell(null);
-                          }}
-                          autoFocus
-                          className="h-7 text-sm"
-                        />
-                      ) : (
-                        <span
-                          onClick={() => setEditingCell(cellKey)}
-                          className={`cursor-pointer hover:bg-muted/50 px-1 py-0.5 rounded block ${align === "right" ? "text-right font-mono" : ""}`}
-                        >
-                          {displayValue}
-                        </span>
-                      );
-                    };
-
+                <tbody>
+                  {categoryGroups.map((group) => {
+                    const isCollapsed = collapsedCategories.has(group.category);
+                    
                     return (
-                      <TableRow key={rowId} className="hover:bg-muted/30">
-                        <TableCell className="sticky left-0 bg-background z-10">
-                          <div className="max-w-[200px] truncate" title={exp.expenseLineItem || ""}>
-                            {exp.expenseLineItem || "-"}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right font-mono text-sm">{exp.budgetQty || "-"}</TableCell>
-                        <TableCell className="text-right font-mono text-sm">{formatCurrency(exp.budgetRateUnit)}</TableCell>
-                        <TableCell className="text-right font-mono text-sm">{formatCurrency(exp.budgetTotal)}</TableCell>
-                        <TableCell className="text-sm">{formatDate(exp.forecastPaymentDate)}</TableCell>
-                        <TableCell className="text-right font-mono text-sm">{formatCurrency(exp.expenseActualTotal)}</TableCell>
-                        <TableCell>
-                          <EditableCell field="expensePoNumber" value={exp.expensePoNumber} />
-                        </TableCell>
-                        <TableCell>
-                          <EditableCell field="expenseInvoiceNumber" value={exp.expenseInvoiceNumber} />
-                        </TableCell>
-                        <TableCell>
-                          <EditableCell field="expenseInvoicedDate" value={exp.expenseInvoicedDate} type="date" />
-                        </TableCell>
-                        <TableCell>
-                          <EditableCell field="expensePaymentDate" value={exp.expensePaymentDate} type="date" />
-                        </TableCell>
-                        <TableCell className="text-right font-mono text-sm">{formatCurrency(exp.actualCosTotal)}</TableCell>
-                        <TableCell>{getStatusBadge(exp.lineStatus)}</TableCell>
-                      </TableRow>
+                      <React.Fragment key={group.category}>
+                        {/* Category Header Row */}
+                        <tr
+                          className="bg-emerald-50 hover:bg-emerald-100 cursor-pointer border-b border-emerald-100"
+                          onClick={() => toggleCategory(group.category)}
+                        >
+                          <td 
+                            className="sticky left-0 z-10 bg-emerald-50 px-3 py-2"
+                            colSpan={1}
+                          >
+                            <div className="flex items-center gap-2">
+                              {isCollapsed ? (
+                                <ChevronRight className="h-4 w-4 text-emerald-600" />
+                              ) : (
+                                <ChevronDown className="h-4 w-4 text-emerald-600" />
+                              )}
+                              <span className="font-semibold text-emerald-800 text-sm">{group.category}</span>
+                              <Badge variant="outline" className="text-[10px] ml-2 bg-white">
+                                {group.items.length} items
+                              </Badge>
+                            </div>
+                          </td>
+                          {activeColumns.slice(1).map((col) => (
+                            <td key={col.key} className={`px-3 py-2 text-xs font-medium text-emerald-700 
+                              ${col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : ""}`}>
+                              {col.key === "budgetTotal" && formatCurrency(group.budgetTotal)}
+                              {col.key === "actualTotal" && formatCurrency(group.actualTotal)}
+                              {col.key === "variance" && (
+                                <span className={group.variance >= 0 ? "text-emerald-600" : "text-red-600"}>
+                                  {formatCurrency(group.variance)}
+                                </span>
+                              )}
+                            </td>
+                          ))}
+                        </tr>
+
+                        {/* Item Rows */}
+                        {!isCollapsed && group.items.map((exp, rowIdx) => (
+                          <tr
+                            key={exp.id}
+                            className={`border-b border-slate-100 hover:bg-blue-50/50 transition-colors
+                              ${rowIdx % 2 === 0 ? "bg-white" : "bg-slate-50/30"}`}
+                          >
+                            {activeColumns.map((col, colIdx) => (
+                              <td
+                                key={col.key}
+                                className={`px-3 py-1.5
+                                  ${col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left"}
+                                  ${colIdx === 0 ? "sticky left-0 z-10 bg-inherit" : ""}`}
+                                style={{ minWidth: col.minWidth }}
+                              >
+                                {renderCellValue(exp, col)}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </React.Fragment>
                     );
                   })}
-                </TableBody>
-              </Table>
+                </tbody>
+              </table>
             </div>
           )}
+          
           {hasEdits && (
-            <div className="mt-4 text-sm text-muted-foreground">
-              {edits.size} {edits.size === 1 ? "row" : "rows"} modified. Click "Save Changes" to persist edits.
+            <div className="px-4 py-2 text-xs text-muted-foreground border-t bg-amber-50">
+              {edits.size} {edits.size === 1 ? "row" : "rows"} modified. Click "Save" to persist edits.
             </div>
           )}
         </CardContent>
