@@ -23,12 +23,22 @@ Preferred communication style: Simple, everyday language.
 
 The frontend follows a page-based structure under `client/src/pages/` with shared components in `client/src/components/`. Custom hooks in `client/src/hooks/` manage authentication (`use-auth`), program data state (`use-program-data`), and UI utilities.
 
+### Expenditure Breakdown Feature
+- **Dual-Table Structure**: Parses Budget/Costed side and Actual/Finance side from Excel
+- **Budget Fields**: Budget Qty, Budget Rate, Budget Total, Forecasted Payment Date, Budget COS Total
+- **Actual Fields**: Actual Total, PO Number, Invoice Number, Invoice Raised Date, Payment Date, Actual COS Total
+- **Line Status**: Auto-computed as Planned → Committed (has PO) → Invoiced (has invoice number AND date) → Paid (has payment date)
+- **COS Recognition**: Requires BOTH Invoice Number AND Invoice Raised Date for COS to be recognized (per user requirement)
+- **Ex-VAT Values**: All expenditure values are assumed to be ex-VAT (no VAT calculations)
+- **Single Invoice/Payment Per Line**: Each line supports one invoice and one payment entry
+
 ### Cashflow Planning Feature
 - **Editable Planning Grid**: Users can edit Planned Revenue and Planned Expenditure values directly in the UI (inline editing)
 - **Real-time Chart Updates**: Chart reflects edits immediately (before saving) using local state management
 - **Planning Overrides**: Edits are stored as overrides per project + week_start_date + series_name, applied on top of baseline tracker data
 - **Save/Reset**: Save Plan persists overrides to database, Reset Plan clears all overrides for selected project
 - **Multi-project Support**: Edits are automatically cleared when switching projects to prevent cross-project confusion
+- **Forecast Payment Date**: Available in expenditure data for future cashflow planning integration
 
 ### Project Plan View (Scheduling Tool)
 
