@@ -32,6 +32,16 @@ The frontend follows a page-based structure under `client/src/pages/` with share
 - **Ex-VAT Values**: All expenditure values are assumed to be ex-VAT (no VAT calculations)
 - **Single Invoice/Payment Per Line**: Each line supports one invoice and one payment entry
 
+#### Table UX Improvements (Feb 2026)
+- **Sticky Headers**: Column headers remain visible while scrolling vertically
+- **Sticky First Column**: Description column stays visible during horizontal scroll
+- **Collapsible Groups**: Categories display as expandable/collapsible groups with totals
+- **Row Cleanup**: Blank rows and duplicate category headers automatically filtered out
+- **Column Visibility**: Dropdown menu allows toggling column visibility
+- **Zebra Striping**: Alternating row colors for better readability
+- **Tooltips**: Long descriptions truncated with hover tooltips
+- **Status Badges**: Compact colored badges for Planned/Committed/Invoiced/Paid
+
 ### Cashflow Planning Feature
 - **Editable Planning Grid**: Users can edit Planned Revenue and Planned Expenditure values directly in the UI (inline editing)
 - **Real-time Chart Updates**: Chart reflects edits immediately (before saving) using local state management
