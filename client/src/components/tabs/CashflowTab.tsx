@@ -77,12 +77,26 @@ export function CashflowTab({ projectName }: CashflowTabProps) {
     setEdits(new Map());
   }, [projectName]);
 
-  // Get unique weekly dates
+  // Get unique weekly dates (only dates with actual data values)
   const weeklyDates = useMemo(() => {
     const dates = new Set<string>();
-    cashflowPoints.forEach(point => dates.add(point.pointDate));
+    cashflowPoints.forEach(point => {
+      // Only include dates that have actual non-null values
+      if (point.value !== null && point.value !== undefined) {
+        dates.add(point.pointDate);
+      }
+    });
     return Array.from(dates).sort();
   }, [cashflowPoints]);
+
+  // Calculate the actual data date range
+  const dateRange = useMemo(() => {
+    if (weeklyDates.length === 0) return { first: null, last: null };
+    return {
+      first: weeklyDates[0],
+      last: weeklyDates[weeklyDates.length - 1]
+    };
+  }, [weeklyDates]);
 
   // Organize data by series and date
   const seriesData = useMemo(() => {
@@ -108,16 +122,20 @@ export function CashflowTab({ projectName }: CashflowTabProps) {
     return result;
   }, [seriesData, edits]);
 
-  // Prepare chart data
+  // Prepare chart data - only include dates within the actual data range
   const chartData = useMemo(() => {
-    return weeklyDates.map(date => {
-      const point: any = { date: new Date(date).toLocaleDateString() };
-      Object.keys(displayData).forEach(series => {
-        point[series] = displayData[series][date] || 0;
+    if (!dateRange.first || !dateRange.last) return [];
+    
+    return weeklyDates
+      .filter(date => date >= dateRange.first! && date <= dateRange.last!)
+      .map(date => {
+        const point: any = { date: new Date(date).toLocaleDateString() };
+        Object.keys(displayData).forEach(series => {
+          point[series] = displayData[series][date] || 0;
+        });
+        return point;
       });
-      return point;
-    });
-  }, [weeklyDates, displayData]);
+  }, [weeklyDates, displayData, dateRange]);
 
   const handleSavePlan = async () => {
     const overrides = Array.from(edits.entries()).map(([key, value]) => {
