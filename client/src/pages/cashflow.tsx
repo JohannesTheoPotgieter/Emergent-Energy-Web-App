@@ -171,14 +171,10 @@ export default function CashflowPage() {
   }, [projectCashflowPoints, edits]);
 
   const seriesConfig = [
-    { name: "Planned Revenue", color: "#3b82f6", strokeWidth: 2 },
-    { name: "Planned Expenditure", color: "#f59e0b", strokeWidth: 2 },
-    { name: "PLANNED CashFlow", color: "#10b981", strokeWidth: 2 },
-    { name: "Actual + Planned Revenue", color: "#06b6d4", strokeWidth: 2, dash: "5 5" },
-    { name: "Actual + Planned Expenditure", color: "#ef4444", strokeWidth: 2, dash: "5 5" },
-    { name: "ACTUAL CashFlow", color: "#059669", strokeWidth: 3 },
-    { name: "Revenue Recognition", color: "#8b5cf6", strokeWidth: 2 },
-    { name: "Revenue Recognition Cumulative", color: "#ec4899", strokeWidth: 2 },
+    { name: "Planned Revenue", displayName: "Planned Inflow", color: "#3b82f6", strokeWidth: 2 },
+    { name: "Planned Expenditure", displayName: "Planned Outflow", color: "#f59e0b", strokeWidth: 2 },
+    { name: "Actual + Planned Revenue", displayName: "Actual Inflow", color: "#10b981", strokeWidth: 2, dash: "5 5" },
+    { name: "Actual + Planned Expenditure", displayName: "Actual Outflow", color: "#ef4444", strokeWidth: 2, dash: "5 5" },
   ];
 
   const handleCellEdit = (date: string, seriesName: string, value: number) => {
@@ -318,7 +314,7 @@ export default function CashflowPage() {
                           key={series.name}
                           type="monotone"
                           dataKey={series.name}
-                          name={series.name}
+                          name={series.displayName}
                           stroke={series.color}
                           strokeWidth={series.strokeWidth}
                           strokeDasharray={series.dash || undefined}

@@ -147,7 +147,7 @@ export default function BudgetPage() {
                 name="amount"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Budget Amount ($)</FormLabel>
+                    <FormLabel>Budget Amount (R)</FormLabel>
                     <FormControl>
                       <Input type="number" {...field} />
                     </FormControl>
@@ -171,7 +171,7 @@ export default function BudgetPage() {
                 {budgets.slice().reverse().slice(0, 5).map(b => (
                   <div key={b.id} className="flex justify-between items-center text-sm border-b pb-2">
                      <span>{projects.find(p => p.id === b.projectId)?.name} - {b.category}</span>
-                     <span className="font-mono">{b.month}: ${parseFloat(b.amount || '0').toLocaleString()}</span>
+                     <span className="font-mono">{b.month}: R{parseFloat(b.amount || '0').toLocaleString()}</span>
                   </div>
                 ))}
              </div>

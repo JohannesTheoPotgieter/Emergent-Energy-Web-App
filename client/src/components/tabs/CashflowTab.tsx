@@ -209,14 +209,10 @@ export function CashflowTab({ projectName }: CashflowTabProps) {
               <YAxis fontSize={11} tickFormatter={(v) => `R${(v/1000000).toFixed(1)}M`} />
               <Tooltip formatter={(value: number) => [`R${value.toLocaleString()}`, ""]} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Line type="monotone" dataKey="Planned Revenue" stroke="#10b981" strokeWidth={2} />
-              <Line type="monotone" dataKey="Planned Expenditure" stroke="#f59e0b" strokeWidth={2} />
-              <Line type="monotone" dataKey="PLANNED CashFlow" stroke="#3b82f6" strokeWidth={2} />
-              <Line type="monotone" dataKey="Actual + Planned Revenue" stroke="#22c55e" strokeDasharray="5 5" />
-              <Line type="monotone" dataKey="Actual + Planned Expenditure" stroke="#fb923c" strokeDasharray="5 5" />
-              <Line type="monotone" dataKey="ACTUAL CashFlow" stroke="#8b5cf6" strokeDasharray="5 5" />
-              <Line type="monotone" dataKey="Revenue Recognition" stroke="#ec4899" strokeWidth={1} />
-              <Line type="monotone" dataKey="Revenue Recognition Cumulative" stroke="#06b6d4" strokeWidth={1} />
+              <Line type="monotone" dataKey="Planned Revenue" name="Planned Inflow" stroke="#3b82f6" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="Planned Expenditure" name="Planned Outflow" stroke="#f59e0b" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="Actual + Planned Revenue" name="Actual Inflow" stroke="#10b981" strokeWidth={2} strokeDasharray="5 5" dot={false} />
+              <Line type="monotone" dataKey="Actual + Planned Expenditure" name="Actual Outflow" stroke="#ef4444" strokeWidth={2} strokeDasharray="5 5" dot={false} />
             </LineChart>
           </ResponsiveContainer>
         </CardContent>

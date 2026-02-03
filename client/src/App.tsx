@@ -40,7 +40,7 @@ function ProcurementPage() {
           { header: "ID", accessorKey: "id" },
           { header: "Vendor", accessorKey: "vendor" },
           { header: "Description", accessorKey: "description" },
-          { header: "Amount", accessorKey: (i) => `$${parseFloat(i.amount).toLocaleString()}` },
+          { header: "Amount", accessorKey: (i) => `R${parseFloat(i.amount).toLocaleString()}` },
           { header: "Status", accessorKey: "status" },
         ]} 
         onExport={() => window.open("/api/export/expenses", "_blank")}
@@ -68,7 +68,7 @@ function ConstructionPage() {
           { header: "ID", accessorKey: "id" },
           { header: "Category", accessorKey: "category" },
           { header: "Description", accessorKey: "description" },
-          { header: "Amount", accessorKey: (i) => `$${parseFloat(i.amount).toLocaleString()}` },
+          { header: "Amount", accessorKey: (i) => `R${parseFloat(i.amount).toLocaleString()}` },
           { header: "Date", accessorKey: (i) => format(new Date(i.date), "dd MMM yyyy") },
         ]} 
         onExport={() => window.open("/api/export/expenses", "_blank")}
