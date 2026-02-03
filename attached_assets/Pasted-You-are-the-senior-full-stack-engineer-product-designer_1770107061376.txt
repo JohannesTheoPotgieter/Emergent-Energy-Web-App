@@ -1,0 +1,248 @@
+You are the senior full-stack engineer + product designer + QA lead for Emergent Energy’s Program Dashboard web app.
+
+Mission
+1) Build a new HOME page that replaces the Excel “Projects Report” view (portfolio summary + execution summary + financial summary + notes), using the underlying data already in the app/database.
+2) Fix and redesign the Program COS view so:
+   - it looks clean and readable
+   - it never shows NaN/garbage formatting (e.g., “RNanM” or massive repeating decimals)
+   - the numbers are correct and reconcile to the underlying data (and to the FY26 workbook when using fixtures).
+
+Hard rules
+- UI can be improved, but DO NOT change the meaning of the data or calculations.
+- Never show empty/NaN when data exists. If something is missing, show “—” + a data quality warning.
+- FY runs Sep → Aug. Default “This FY” is current FY window.
+- Use Emergent Energy theme (green + white) and logo in header.
+- Add “Last refresh timestamp” + Refresh button on Home + Program COS pages.
+
+Data sources (use what exists in the app already)
+Use the normalized/consolidated tables created from tracker uploads, e.g.:
+- Projects Summary fields (phase/status, kWp, dates, % complete, expected, delta, revenue, expenses, VO totals, outstanding, etc.)
+- ProgramPlan (tasks with Actual%Complete and Expected%Complete per project)
+- ProgramExpense / Expenditure Breakdown normalized lines (category, actual total, invoice date (COS realisation), payment date (cashflow), supplier/invoice, PO)
+- ProgramInflows / Revenue tracking (milestone value, invoice dates, payment received/in bank etc.)
+If the app already has slightly different table names, adapt accordingly but keep the logic identical.
+
+========================================================
+PART A — HOME PAGE (“Projects Report” in web form)
+========================================================
+
+Route + Nav
+- Add a top-level nav item: Home (default landing page).
+- Home must load fast and be scannable in 20 seconds.
+
+Home page layout (match the Excel “Projects Report” sections, but modern)
+1) Header strip
+- Title: “Projects Report”
+- Report Date: auto = today (editable override optional)
+- Prepared by: stored field (editable, default last used name)
+- Global filters:
+  - Filter by: All Projects / Active / Hold / Closed (and/or Phase)
+  - FY date range selector (defaults to This FY)
+  - Quick button: This FY
+- Last refresh timestamp + Refresh button (refetch from DB)
+
+2) Portfolio Summary (left block)
+KPIs (must be computed from real data):
+- Active projects (count)
+- Active capacity (MW) = sum(kWp)/1000 for active projects
+- On schedule rate (%) = % of active projects that are “on schedule” (see definition below)
+- Projects behind plan (count)
+- Contract pack complete (%) (see definition below)
+- On Hold (count)
+- Closed (count)
+
+3) Portfolio Summary (right block)
+Phase distribution table:
+- Phase (use your Phase/Stage field, e.g. “Phase - Manual”)
+- # (count of projects per phase)
+- kW (sum of kWp per phase)
+
+4) “Highlights / Key issues” (editable notes box)
+- Multi-line bullets
+- Persist to DB (one record per report date or rolling “latest”)
+
+5) Upcoming events block (next 10 days)
+Counts from project date fields:
+- Construction start (next 10 days)
+- Commissioning (next 10 days)
+- O&M handover (next 10 days)
+- Client handover (next 10 days)
+
+6) Execution Summary (section)
+KPIs (construction focused):
+- Construction projects (count where phase/stage = Construction)
+- Execution capacity (kW) = sum kWp for construction projects
+- Avg % complete (construction) = avg actual % for construction projects
+- Avg delta vs expected = avg(Actual% - Expected%) for construction projects
+- Behind schedule (construction) count (see definition below)
+
+Right-side notes:
+- “Construction notes / risks” editable bullets (persist)
+
+Also include:
+- “Commissioning due (next 30 days)” count
+- “O&M handover due (next 30 days)” count
+- “Client handover due (next 30 days)” count
+
+7) Top 5 Behind Plan (table)
+- List top 5 projects with worst delta vs expected (most negative)
+- Show project name + delta %
+- Click opens project detail
+
+8) Financial Summary (section)
+KPIs (active projects only, unless filter changes):
+- Actual revenue (active) = sum of actual revenue
+- Actual expenses (active) = sum of actual expenses
+- Gross profit % (active) = (rev-exp)/rev
+- Revenue outstanding (sum)
+- Expenses outstanding (sum)
+- Current VO total (sum)
+
+“This week” block:
+- Inflows (cash received this week) from revenue/payment received fields
+- Outflows (cash paid this week) from expense payment dates
+- Net
+
+“This month” block:
+- Outstanding REV (invoiced but not received, or milestone achieved but not paid—use your best available fields)
+- Outstanding COS (invoiced but not paid, or realised but unpaid—align with COS logic)
+
+Right-side notes:
+- “Finance notes / actions” editable bullets (persist)
+
+Definitions (must be explicit in code + shown in tooltip)
+- “On schedule” definition:
+  Use project-level delta vs expected (Actual% - Expected%).
+  Default rule: on schedule if delta >= 0.
+  (If Excel uses a tolerance, implement same as Excel; confirm by inspecting workbook logic or existing code. Do not guess silently.)
+- “Behind plan”:
+  delta < 0 (or Excel threshold if defined).
+- “Behind schedule (construction)”:
+  same rule but filtered to construction projects.
+- “Contract pack complete”:
+  Use the fields available (EPC Contract Signed / Funding Signed / Cost Proposal Signed etc).
+  Implement the same logic Excel uses if it exists in your dataset. If not available, show “—” and a data quality warning.
+
+Data quality UX (non-negotiable)
+- If any KPI cannot be computed due to missing fields, show “—” and a warning icon.
+- Provide a “Data Quality” panel (collapsed by default) that lists:
+  - missing fields count (e.g. projects missing kWp, missing commissioning date, missing phase)
+  - last upload timestamp
+  - row counts by core tables
+
+========================================================
+PART B — PROGRAM COS VIEW FIX + REDESIGN
+========================================================
+
+Current issues to fix
+- “RNanM” and NaN values: numeric coercion/formatting bug.
+- The big matrix totals are broken (massive repeating digits).
+- The UI is not readable and has low information value.
+
+Required outcomes
+1) Numbers must pull correctly from underlying COS/expense data.
+2) No NaN ever shown. Use safe number handling:
+   - null/undefined -> 0 for sums
+   - if value truly missing, show “—” not NaN
+3) Currency formatting:
+   - South African formatting (R + thousands separators)
+   - no crazy decimals; show 2 decimals max (or 0 for summary cards if you prefer, but consistent)
+4) Make the page scannable and drillable.
+
+Program COS page (new spec)
+Top filter bar (sticky):
+- Project filter (All projects / select project)
+- FY date range (This FY default)
+- Refresh timestamp + refresh button
+
+KPI cards (must be correct)
+- Total COS (Realised) = sum(actual_total where invoice_raised_date within filter range)
+- Cash Paid = sum(actual_total where finance_payment_date within range)
+- Outstanding COS = sum(actual_total where invoice_raised_date exists AND finance_payment_date is null) within range
+- Paid vs Budget = Paid / Budget (budget from imported budget totals if available)
+- At-risk lines count = see rules below
+- Top suppliers count = unique suppliers (derived)
+
+At-risk logic (practical, not vibes)
+Count lines where:
+- invoice_raised_date exists but finance_payment_date is null AND invoice_raised_date older than X days (default 30)
+OR
+- forecast_payment_date exists and is past due AND invoice_raised_date is null (optional if forecast exists)
+Make X configurable.
+
+Top Projects by COS (card/table)
+- Show top N projects by realised COS (within filter).
+- Click drills into project detail, filtered to Expenditure Breakdown.
+
+Top Suppliers by COS
+- Derive supplier name robustly:
+  - If invoice field contains “Supplier: INVxxxx” use text before ":" as supplier
+  - Else use first token before "-" as supplier
+  - Else “Unknown Supplier”
+- Rank suppliers by realised COS
+- Click drills into list of lines for that supplier
+
+Monthly COS by Category (fix this properly)
+- Build a matrix:
+  rows = ExpenseCategory (e.g. “13. Engineering”)
+  columns = months in FY range (Sep…Aug)
+  cell value = sum(actual_total where invoice_raised_date in that month)
+  total column = row total
+- Must not show garbage totals. Ensure values are numeric decimals in DB and formatting happens only in UI.
+
+UI improvements
+- Replace the current weird giant totals with a clean table:
+  - sticky header
+  - right aligned currency
+  - collapse categories
+  - row hover highlight
+- Add a “Show as chart” toggle (optional):
+  - stacked monthly bar by category OR line chart for total COS
+- Add drilldown:
+  clicking a cell opens a drawer showing the underlying lines (project, description, invoice no, invoice date, payment date, amount)
+
+Backend / performance requirements
+- Do aggregations in SQL (group by month/category/project/supplier) for speed and correctness.
+- Ensure date bucketing is consistent (use month start dates).
+- Use decimal types in DB, not float. Never format numbers before storage.
+
+Fix NaN root cause (must do)
+- Identify where NaN originates (likely parsing currency strings, undefined reduce sums, or formatting).
+- Add a safeMoney() helper used everywhere:
+  - input -> number (decimal) or null
+  - sums always guard against undefined
+- Add test cases that fail if NaN appears anywhere in API responses.
+
+========================================================
+TESTS / VERIFICATION (NON-NEGOTIABLE)
+========================================================
+
+1) Unit tests for KPI aggregation
+- sums never return NaN
+- money formatting consistent
+- on schedule rate calculation correct given sample dataset
+- behind plan ranking correct
+
+2) Integration tests (API)
+- /api/home/summary returns all KPI fields with numbers or “null” (never NaN)
+- /api/program/cos returns correct aggregations for months/categories
+
+3) Golden-master checks (recommended)
+If fixtures exist (Program Dashboard FY26.xlsm and trackers):
+- Compare monthly COS totals against “COS Tracker 26” row “Realised COS” for the same period (within tolerance).
+If mismatch, fail test and print diagnostics.
+
+========================================================
+DELIVERABLES
+========================================================
+- New Home page matching the “Projects Report” functionality.
+- Program COS view redesigned and fixed; numbers correct, no NaN, readable UI.
+- Data Quality panel included.
+- Tests passing.
+- Provide a short README section: “Home KPIs definitions” + “Program COS definitions”.
+
+Before coding: ask only what you truly need (do not guess)
+1) What EXACT field represents project phase in the DB? (Phase - Manual?)
+2) What EXACT field represents kWp per project?
+3) Which columns define “contract pack complete” in our data?
+If any of these are missing, implement with “—” + data quality warning and proceed.
