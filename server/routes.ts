@@ -1197,6 +1197,26 @@ export async function registerRoutes(
     }
   });
 
+  // Parameterized route for fetching expenses by project name in URL path
+  app.get("/api/program-expenses/:projectName", async (req, res) => {
+    try {
+      const { projectName } = req.params;
+      const { applyOverrides } = req.query;
+      
+      let expenses = await storage.getProgramExpensesByProject(projectName);
+      
+      // Apply overrides if requested
+      if (applyOverrides === 'true') {
+        const overrides = await storage.getExpenditureOverridesByProject(projectName);
+        expenses = applyExpenditureOverrides(expenses, overrides);
+      }
+
+      res.json(expenses);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch program expenses", message: "Failed to fetch program expenses" });
+    }
+  });
+
   app.get("/api/program-inflows", async (req, res) => {
     try {
       const { projectName, startDate, endDate, applyOverrides } = req.query;
