@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -264,13 +264,18 @@ export default function Home() {
     }
   });
 
-  if (notes && !localNotes.highlightsNotes && !localNotes.constructionNotes && !localNotes.financeNotes) {
-    setLocalNotes({
-      highlightsNotes: notes.highlightsNotes || "",
-      constructionNotes: notes.constructionNotes || "",
-      financeNotes: notes.financeNotes || ""
-    });
-  }
+  const [notesInitialized, setNotesInitialized] = useState(false);
+  
+  useEffect(() => {
+    if (notes && !notesInitialized) {
+      setLocalNotes({
+        highlightsNotes: notes.highlightsNotes || "",
+        constructionNotes: notes.constructionNotes || "",
+        financeNotes: notes.financeNotes || ""
+      });
+      setNotesInitialized(true);
+    }
+  }, [notes, notesInitialized]);
 
   if (summaryLoading) {
     return (
