@@ -217,7 +217,7 @@ export function RevenueTrackingEditableTab({ projectName }: RevenueTrackingEdita
                                   onClick={() => setEditingCell(cellKey)}
                                   className="cursor-pointer hover:bg-muted/50 px-2 py-1 rounded font-mono"
                                 >
-                                  ${Number(value || 0).toLocaleString()}
+                                  R{Number(value || 0).toLocaleString()}
                                 </span>
                               )}
                             </TableCell>
