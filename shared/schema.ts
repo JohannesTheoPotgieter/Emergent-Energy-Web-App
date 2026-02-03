@@ -521,3 +521,18 @@ export const scheduleChangeNotice = pgTable("schedule_change_notice", {
 export const insertScheduleChangeNoticeSchema = createInsertSchema(scheduleChangeNotice).omit({ id: true, createdAt: true });
 export type InsertScheduleChangeNotice = z.infer<typeof insertScheduleChangeNoticeSchema>;
 export type ScheduleChangeNotice = typeof scheduleChangeNotice.$inferSelect;
+
+// Home Notes Table - persisted notes for the Home/Projects Report page
+export const homeNotes = pgTable("home_notes", {
+  id: serial("id").primaryKey(),
+  reportDate: text("report_date").notNull(), // YYYY-MM-DD
+  preparedBy: text("prepared_by"),
+  highlightsNotes: text("highlights_notes"), // Key issues / highlights
+  constructionNotes: text("construction_notes"), // Construction risks / notes
+  financeNotes: text("finance_notes"), // Finance notes / actions
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertHomeNotesSchema = createInsertSchema(homeNotes).omit({ id: true, updatedAt: true });
+export type InsertHomeNotes = z.infer<typeof insertHomeNotesSchema>;
+export type HomeNotes = typeof homeNotes.$inferSelect;

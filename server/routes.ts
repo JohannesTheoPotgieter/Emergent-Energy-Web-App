@@ -570,6 +570,478 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== HOME PAGE API (Projects Report) ====================
+
+  // Helper: safely parse number, return 0 for null/undefined/NaN
+  function safeNum(value: unknown): number {
+    if (value === null || value === undefined || value === '') return 0;
+    const num = typeof value === 'string' ? parseFloat(value) : Number(value);
+    return Number.isFinite(num) ? num : 0;
+  }
+
+  // Helper: check if date is within N days from today (for upcoming events)
+  function isWithinDays(dateStr: string | null | undefined, days: number): boolean {
+    if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return false;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const targetDate = new Date(dateStr);
+    const diffMs = targetDate.getTime() - today.getTime();
+    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+    return diffDays >= 0 && diffDays <= days;
+  }
+
+  // Helper: check if date is within this week (Mon-Sun)
+  function isThisWeek(dateStr: string | null | undefined): boolean {
+    if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return false;
+    const today = new Date();
+    const target = new Date(dateStr);
+    const dayOfWeek = today.getDay();
+    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const monday = new Date(today);
+    monday.setDate(today.getDate() + mondayOffset);
+    monday.setHours(0, 0, 0, 0);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    sunday.setHours(23, 59, 59, 999);
+    return target >= monday && target <= sunday;
+  }
+
+  // Helper: check if date is within this month
+  function isThisMonth(dateStr: string | null | undefined): boolean {
+    if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return false;
+    const today = new Date();
+    const target = new Date(dateStr);
+    return target.getFullYear() === today.getFullYear() && target.getMonth() === today.getMonth();
+  }
+
+  // Get FY date range (Sep 1 - Aug 31)
+  function getFYRange(date: Date = new Date()): { start: string; end: string } {
+    const year = date.getMonth() >= 8 ? date.getFullYear() : date.getFullYear() - 1; // Sep=8
+    return {
+      start: `${year}-09-01`,
+      end: `${year + 1}-08-31`
+    };
+  }
+
+  app.get("/api/home/summary", async (req, res) => {
+    try {
+      const [allProjectInfo, allExpenses, allInflows, allPlans, latestRefresh, revenueSummaries] = await Promise.all([
+        storage.getAllProjectInfo(),
+        storage.getAllProgramExpenses(),
+        storage.getAllProgramInflows(),
+        storage.getAllProjectPlans(),
+        storage.getLatestRefresh(),
+        storage.getAllProjectRevenueSummaries()
+      ]);
+
+      const today = new Date().toISOString().split("T")[0];
+      const fyRange = getFYRange();
+
+      // Active projects = those not in "Closed" or "On Hold" phase
+      const activeProjects = allProjectInfo.filter(p => 
+        p.phase && !p.phase.toLowerCase().includes('closed') && !p.phase.toLowerCase().includes('hold')
+      );
+      const onHoldProjects = allProjectInfo.filter(p => 
+        p.phase && p.phase.toLowerCase().includes('hold')
+      );
+      const closedProjects = allProjectInfo.filter(p => 
+        p.phase && p.phase.toLowerCase().includes('closed')
+      );
+      const constructionProjects = allProjectInfo.filter(p => 
+        p.phase && p.phase.toLowerCase() === 'construction'
+      );
+
+      // Active capacity (MW) = sum(sizeKwp)/1000 for active projects
+      let activeCapacityKw = 0;
+      for (const p of activeProjects) {
+        activeCapacityKw += safeNum(p.sizeKwp);
+      }
+      const activeCapacityMW = activeCapacityKw / 1000;
+
+      // Construction capacity
+      let constructionCapacityKw = 0;
+      for (const p of constructionProjects) {
+        constructionCapacityKw += safeNum(p.sizeKwp);
+      }
+
+      // Phase distribution
+      const phaseDistribution: Record<string, { count: number; kw: number }> = {};
+      for (const p of allProjectInfo) {
+        const phase = p.phase || 'Unknown';
+        if (!phaseDistribution[phase]) {
+          phaseDistribution[phase] = { count: 0, kw: 0 };
+        }
+        phaseDistribution[phase].count++;
+        phaseDistribution[phase].kw += safeNum(p.sizeKwp);
+      }
+
+      // Calculate delta (actual% - expected%) per project from projectPlan
+      const projectDeltas = new Map<string, { actual: number; expected: number; count: number }>();
+      for (const plan of allPlans) {
+        if (plan.actualPctComplete !== null && plan.expectedPctComplete !== null) {
+          if (!projectDeltas.has(plan.projectName)) {
+            projectDeltas.set(plan.projectName, { actual: 0, expected: 0, count: 0 });
+          }
+          const pd = projectDeltas.get(plan.projectName)!;
+          pd.actual += plan.actualPctComplete;
+          pd.expected += plan.expectedPctComplete;
+          pd.count++;
+        }
+      }
+
+      // Compute average delta per project
+      const projectDeltaValues: { projectName: string; delta: number; avgActual: number; avgExpected: number }[] = [];
+      for (const [projectName, pd] of Array.from(projectDeltas.entries())) {
+        if (pd.count > 0) {
+          const avgActual = pd.actual / pd.count;
+          const avgExpected = pd.expected / pd.count;
+          const delta = (avgActual - avgExpected) * 100; // Convert to percentage points
+          projectDeltaValues.push({ projectName, delta, avgActual: avgActual * 100, avgExpected: avgExpected * 100 });
+        }
+      }
+
+      // On schedule = delta >= 0
+      const onScheduleProjects = projectDeltaValues.filter(p => p.delta >= 0);
+      const behindPlanProjects = projectDeltaValues.filter(p => p.delta < 0);
+      const onScheduleRate = projectDeltaValues.length > 0 
+        ? (onScheduleProjects.length / projectDeltaValues.length) * 100 
+        : 0;
+
+      // Top 5 behind plan (most negative delta)
+      const top5BehindPlan = [...behindPlanProjects]
+        .sort((a, b) => a.delta - b.delta)
+        .slice(0, 5);
+
+      // Construction-specific metrics
+      const constructionProjectNames = new Set(constructionProjects.map(p => p.projectName));
+      const constructionDeltas = projectDeltaValues.filter(p => constructionProjectNames.has(p.projectName));
+      const avgConstructionComplete = constructionDeltas.length > 0
+        ? constructionDeltas.reduce((sum, p) => sum + p.avgActual, 0) / constructionDeltas.length
+        : 0;
+      const avgConstructionDelta = constructionDeltas.length > 0
+        ? constructionDeltas.reduce((sum, p) => sum + p.delta, 0) / constructionDeltas.length
+        : 0;
+      const constructionBehindCount = constructionDeltas.filter(p => p.delta < 0).length;
+
+      // Upcoming events (next 10 days)
+      const constructionStartSoon = allProjectInfo.filter(p => isWithinDays(p.constructionStartDate, 10)).length;
+      const commissioningSoon = allProjectInfo.filter(p => isWithinDays(p.commissioningDate, 10)).length;
+      const omHandoverSoon = allProjectInfo.filter(p => isWithinDays(p.omHandoverDate, 10)).length;
+      const clientHandoverSoon = allProjectInfo.filter(p => isWithinDays(p.clientHandoverDate, 10)).length;
+
+      // Due in 30 days
+      const commissioningDue30 = allProjectInfo.filter(p => isWithinDays(p.commissioningDate, 30)).length;
+      const omHandoverDue30 = allProjectInfo.filter(p => isWithinDays(p.omHandoverDate, 30)).length;
+      const clientHandoverDue30 = allProjectInfo.filter(p => isWithinDays(p.clientHandoverDate, 30)).length;
+
+      // Financial summary - from revenue summaries table
+      let actualRevenue = 0, actualExpenses = 0, currentVoTotal = 0;
+      for (const rs of revenueSummaries) {
+        actualRevenue += safeNum(rs.actualRevenue);
+        actualExpenses += safeNum(rs.actualExpenditure);
+        currentVoTotal += safeNum(rs.currentVoTotal);
+      }
+      const grossProfit = actualRevenue - actualExpenses;
+      const grossProfitPercent = actualRevenue > 0 ? (grossProfit / actualRevenue) * 100 : 0;
+
+      // Revenue outstanding = invoiced but not received
+      let revenueOutstanding = 0;
+      for (const inf of allInflows) {
+        if (inf.invoiceRaisedDate && !inf.paymentReceivedDate && inf.milestoneAmount) {
+          revenueOutstanding += safeNum(inf.milestoneAmount);
+        }
+      }
+
+      // Expenses outstanding = invoiced but not paid
+      let expensesOutstanding = 0;
+      for (const exp of allExpenses) {
+        if (exp.expenseInvoicedDate && !exp.expensePaymentDate && exp.expenseActualTotal) {
+          expensesOutstanding += safeNum(exp.expenseActualTotal);
+        }
+      }
+
+      // This week cashflows
+      let weeklyInflows = 0, weeklyOutflows = 0;
+      for (const inf of allInflows) {
+        if (isThisWeek(inf.paymentReceivedDate) && inf.milestoneAmount) {
+          weeklyInflows += safeNum(inf.milestoneAmount);
+        }
+      }
+      for (const exp of allExpenses) {
+        if (isThisWeek(exp.expensePaymentDate) && exp.expenseActualTotal) {
+          weeklyOutflows += safeNum(exp.expenseActualTotal);
+        }
+      }
+
+      // This month outstanding
+      let monthlyRevOutstanding = 0, monthlyCosOutstanding = 0;
+      for (const inf of allInflows) {
+        if (inf.invoiceRaisedDate && !inf.paymentReceivedDate && isThisMonth(inf.invoiceRaisedDate) && inf.milestoneAmount) {
+          monthlyRevOutstanding += safeNum(inf.milestoneAmount);
+        }
+      }
+      for (const exp of allExpenses) {
+        if (exp.expenseInvoicedDate && !exp.expensePaymentDate && isThisMonth(exp.expenseInvoicedDate) && exp.expenseActualTotal) {
+          monthlyCosOutstanding += safeNum(exp.expenseActualTotal);
+        }
+      }
+
+      // Data quality checks
+      const missingPhase = allProjectInfo.filter(p => !p.phase).length;
+      const missingKwp = allProjectInfo.filter(p => !p.sizeKwp || safeNum(p.sizeKwp) === 0).length;
+      const missingCommissioning = allProjectInfo.filter(p => !p.commissioningDate).length;
+
+      res.json({
+        lastRefresh: latestRefresh?.refreshedAt || null,
+        fyRange,
+        portfolio: {
+          activeProjects: activeProjects.length,
+          activeCapacityMW,
+          onScheduleRate,
+          projectsBehindPlan: behindPlanProjects.length,
+          contractPackComplete: null, // Not tracked - will show as "—"
+          onHold: onHoldProjects.length,
+          closed: closedProjects.length,
+          phaseDistribution: Object.entries(phaseDistribution).map(([phase, data]) => ({
+            phase,
+            count: data.count,
+            kw: data.kw
+          }))
+        },
+        upcomingEvents: {
+          constructionStart: constructionStartSoon,
+          commissioning: commissioningSoon,
+          omHandover: omHandoverSoon,
+          clientHandover: clientHandoverSoon
+        },
+        execution: {
+          constructionProjects: constructionProjects.length,
+          executionCapacityKw: constructionCapacityKw,
+          avgPercentComplete: avgConstructionComplete,
+          avgDeltaVsExpected: avgConstructionDelta,
+          behindSchedule: constructionBehindCount,
+          commissioningDue30,
+          omHandoverDue30,
+          clientHandoverDue30
+        },
+        top5BehindPlan,
+        financial: {
+          actualRevenue,
+          actualExpenses,
+          grossProfit,
+          grossProfitPercent,
+          revenueOutstanding,
+          expensesOutstanding,
+          currentVoTotal,
+          thisWeek: {
+            inflows: weeklyInflows,
+            outflows: weeklyOutflows,
+            net: weeklyInflows - weeklyOutflows
+          },
+          thisMonth: {
+            revenueOutstanding: monthlyRevOutstanding,
+            cosOutstanding: monthlyCosOutstanding
+          }
+        },
+        dataQuality: {
+          missingPhase,
+          missingKwp,
+          missingCommissioning,
+          projectCount: allProjectInfo.length,
+          expenseCount: allExpenses.length,
+          inflowCount: allInflows.length,
+          planCount: allPlans.length,
+          lastUpload: latestRefresh?.refreshedAt || null
+        }
+      });
+    } catch (error) {
+      console.error("Home summary error:", error);
+      res.status(500).json({ error: "Failed to fetch home summary" });
+    }
+  });
+
+  // Get/Save home notes
+  app.get("/api/home/notes", async (req, res) => {
+    try {
+      const notes = await storage.getHomeNotes();
+      res.json(notes || { highlightsNotes: '', constructionNotes: '', financeNotes: '', preparedBy: '' });
+    } catch (error) {
+      console.error("Home notes fetch error:", error);
+      res.status(500).json({ error: "Failed to fetch home notes" });
+    }
+  });
+
+  app.post("/api/home/notes", async (req, res) => {
+    try {
+      const { preparedBy, highlightsNotes, constructionNotes, financeNotes } = req.body;
+      const today = new Date().toISOString().split('T')[0];
+      const result = await storage.saveHomeNotes({
+        reportDate: today,
+        preparedBy: preparedBy || null,
+        highlightsNotes: highlightsNotes || null,
+        constructionNotes: constructionNotes || null,
+        financeNotes: financeNotes || null
+      });
+      res.json(result);
+    } catch (error) {
+      console.error("Home notes save error:", error);
+      res.status(500).json({ error: "Failed to save home notes" });
+    }
+  });
+
+  // ==================== PROGRAM COS API (fixed) ====================
+
+  app.get("/api/program/cos", async (req, res) => {
+    try {
+      const { projectName, startDate, endDate, atRiskDays = '30' } = req.query;
+      const atRiskDaysNum = parseInt(atRiskDays as string, 10) || 30;
+      
+      const [allExpenses, latestRefresh] = await Promise.all([
+        storage.getAllProgramExpenses(),
+        storage.getLatestRefresh()
+      ]);
+
+      const today = new Date();
+      const todayStr = today.toISOString().split('T')[0];
+      const fyRange = getFYRange();
+      const filterStart = (startDate as string) || fyRange.start;
+      const filterEnd = (endDate as string) || fyRange.end;
+
+      // Filter expenses
+      let filtered = allExpenses.filter(e => e.rowType === 'item');
+      if (projectName) {
+        filtered = filtered.filter(e => e.projectName === projectName);
+      }
+
+      // Total COS (Realised) = sum where invoice_raised_date exists within range
+      let totalCosRealised = 0;
+      let totalCashPaid = 0;
+      let outstandingCos = 0;
+      let atRiskCount = 0;
+      let totalBudget = 0;
+      const supplierMap = new Map<string, number>();
+      const projectCosMap = new Map<string, number>();
+      const monthlyCategoryMap = new Map<string, Map<string, number>>();
+
+      for (const exp of filtered) {
+        const invoiceDate = exp.expenseInvoicedDate;
+        const paymentDate = exp.expensePaymentDate;
+        const amount = safeNum(exp.expenseActualTotal);
+        const cosAmount = safeNum(exp.actualCosTotal) || amount;
+        const budgetAmount = safeNum(exp.budgetTotal);
+        const category = exp.expenseCategory || 'Uncategorized';
+
+        totalBudget += budgetAmount;
+
+        // COS Realised = has invoice date within range (and invoice number per requirement)
+        if (invoiceDate && exp.expenseInvoiceNumber && invoiceDate >= filterStart && invoiceDate <= filterEnd) {
+          totalCosRealised += cosAmount;
+
+          // Monthly COS by category
+          const monthKey = invoiceDate.substring(0, 7); // YYYY-MM
+          if (!monthlyCategoryMap.has(category)) {
+            monthlyCategoryMap.set(category, new Map());
+          }
+          const categoryMonths = monthlyCategoryMap.get(category)!;
+          categoryMonths.set(monthKey, (categoryMonths.get(monthKey) || 0) + cosAmount);
+
+          // Project COS
+          projectCosMap.set(exp.projectName, (projectCosMap.get(exp.projectName) || 0) + cosAmount);
+
+          // Supplier extraction
+          const invoiceNum = exp.expenseInvoiceNumber || '';
+          let supplier = 'Unknown';
+          if (invoiceNum.includes(':')) {
+            supplier = invoiceNum.split(':')[0].trim();
+          } else if (invoiceNum.includes('-')) {
+            supplier = invoiceNum.split('-')[0].trim();
+          } else if (invoiceNum.length > 0) {
+            supplier = invoiceNum.substring(0, Math.min(20, invoiceNum.length));
+          }
+          supplierMap.set(supplier, (supplierMap.get(supplier) || 0) + cosAmount);
+        }
+
+        // Cash Paid = has payment date within range
+        if (paymentDate && paymentDate >= filterStart && paymentDate <= filterEnd) {
+          totalCashPaid += amount;
+        }
+
+        // Outstanding COS = invoiced but not paid, invoice within range
+        if (invoiceDate && exp.expenseInvoiceNumber && invoiceDate >= filterStart && invoiceDate <= filterEnd && !paymentDate) {
+          outstandingCos += cosAmount;
+
+          // At-risk = invoice older than X days and not paid
+          const invoiceDateObj = new Date(invoiceDate);
+          const daysSinceInvoice = Math.floor((today.getTime() - invoiceDateObj.getTime()) / (1000 * 60 * 60 * 24));
+          if (daysSinceInvoice > atRiskDaysNum) {
+            atRiskCount++;
+          }
+        }
+      }
+
+      // Format top suppliers
+      const topSuppliers = Array.from(supplierMap.entries())
+        .map(([supplier, total]) => ({ supplier, total }))
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 10);
+
+      // Format top projects
+      const topProjects = Array.from(projectCosMap.entries())
+        .map(([project, total]) => ({ project: project.replace('_Tracker', ''), total }))
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 10);
+
+      // Format monthly COS matrix
+      const allMonths = new Set<string>();
+      for (const monthMap of Array.from(monthlyCategoryMap.values())) {
+        for (const month of Array.from(monthMap.keys())) {
+          allMonths.add(month);
+        }
+      }
+      const sortedMonths = Array.from(allMonths).sort();
+
+      const monthlyCosMatrix = Array.from(monthlyCategoryMap.entries())
+        .map(([category, monthMap]) => {
+          const row: Record<string, string | number> = { category };
+          let total = 0;
+          for (const month of sortedMonths) {
+            const value = monthMap.get(month) || 0;
+            row[month] = value;
+            total += value;
+          }
+          row.total = total;
+          return row;
+        })
+        .sort((a, b) => (b.total as number) - (a.total as number));
+
+      const paidVsBudgetPercent = totalBudget > 0 ? (totalCashPaid / totalBudget) * 100 : 0;
+
+      res.json({
+        lastRefresh: latestRefresh?.refreshedAt || null,
+        fyRange,
+        filterRange: { start: filterStart, end: filterEnd },
+        kpis: {
+          totalCosRealised,
+          cashPaid: totalCashPaid,
+          outstandingCos,
+          paidVsBudget: paidVsBudgetPercent,
+          totalBudget,
+          atRiskCount,
+          supplierCount: supplierMap.size
+        },
+        topProjects,
+        topSuppliers,
+        monthlyCosMatrix: {
+          months: sortedMonths,
+          rows: monthlyCosMatrix
+        }
+      });
+    } catch (error) {
+      console.error("Program COS error:", error);
+      res.status(500).json({ error: "Failed to fetch program COS data" });
+    }
+  });
+
   // ==================== PROJECTS SUMMARY API ====================
 
   app.get("/api/projects-summary", async (req, res) => {

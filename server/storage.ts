@@ -8,6 +8,7 @@ import {
   expenditureOverrides, financeRevenueOverrides, financeCosOverrides,
   workingPlanScenario, workingPlanTaskOverride, projectPlanDependency,
   workingPlanDependencyOverride, scheduleChangeNotice,
+  projectRevenueSummary, homeNotes,
   type User, type InsertUser,
   type Project, type InsertProject,
   type Expense, type InsertExpense,
@@ -34,6 +35,8 @@ import {
   type ProjectPlanDependency, type InsertProjectPlanDependency,
   type WorkingPlanDependencyOverride, type InsertWorkingPlanDependencyOverride,
   type ScheduleChangeNotice, type InsertScheduleChangeNotice,
+  type ProjectRevenueSummary, type InsertProjectRevenueSummary,
+  type HomeNotes, type InsertHomeNotes,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -193,6 +196,14 @@ export interface IStorage {
   getChangeNoticesByProject(projectName: string): Promise<ScheduleChangeNotice[]>;
   createChangeNotice(notice: InsertScheduleChangeNotice): Promise<ScheduleChangeNotice>;
   updateChangeNotice(id: number, data: Partial<InsertScheduleChangeNotice>): Promise<ScheduleChangeNotice | undefined>;
+
+  // Project Revenue Summary
+  getAllProjectRevenueSummaries(): Promise<ProjectRevenueSummary[]>;
+  getProjectRevenueSummary(projectName: string): Promise<ProjectRevenueSummary | undefined>;
+
+  // Home Notes
+  getHomeNotes(): Promise<HomeNotes | undefined>;
+  saveHomeNotes(notes: InsertHomeNotes): Promise<HomeNotes>;
 
   // Admin Operations
   clearAllData(): Promise<{ tablesCleared: string[]; filesDeleted: number }>;
@@ -1126,6 +1137,36 @@ export class DatabaseStorage implements IStorage {
     }
 
     return { tablesCleared, filesDeleted };
+  }
+
+  // Project Revenue Summary
+  async getAllProjectRevenueSummaries(): Promise<ProjectRevenueSummary[]> {
+    return this.dbInstance.select().from(projectRevenueSummary);
+  }
+
+  async getProjectRevenueSummary(projectName: string): Promise<ProjectRevenueSummary | undefined> {
+    const results = await this.dbInstance.select().from(projectRevenueSummary).where(eq(projectRevenueSummary.projectName, projectName));
+    return results[0];
+  }
+
+  // Home Notes
+  async getHomeNotes(): Promise<HomeNotes | undefined> {
+    const results = await this.dbInstance.select().from(homeNotes).orderBy(desc(homeNotes.updatedAt)).limit(1);
+    return results[0];
+  }
+
+  async saveHomeNotes(notes: InsertHomeNotes): Promise<HomeNotes> {
+    const existing = await this.getHomeNotes();
+    if (existing) {
+      const updated = await this.dbInstance.update(homeNotes)
+        .set({ ...notes, updatedAt: new Date() })
+        .where(eq(homeNotes.id, existing.id))
+        .returning();
+      return updated[0];
+    } else {
+      const inserted = await this.dbInstance.insert(homeNotes).values(notes).returning();
+      return inserted[0];
+    }
   }
 }
 
