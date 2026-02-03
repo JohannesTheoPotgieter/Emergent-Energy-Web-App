@@ -29,7 +29,7 @@ import { apiRequest } from "@/lib/queryClient";
 
 interface HomeSummary {
   lastRefresh: string | null;
-  fyRange: { start: string; end: string; label: string };
+  fyRange: { start: string; end: string; label?: string };
   portfolio: {
     activeProjects: number;
     activeCapacityMW: number;
@@ -38,33 +38,47 @@ interface HomeSummary {
     contractPackComplete: number | null;
     onHold: number;
     closed: number;
-    phaseDistribution: Record<string, { count: number; kw: number }>;
+    phaseDistribution: Array<{ phase: string; count: number; kw: number }>;
+  };
+  upcomingEvents?: {
+    constructionStart: number;
+    commissioning: number;
+    omHandover: number;
+    clientHandover: number;
   };
   execution: {
     constructionProjects: number;
-    constructionCapacityKw: number;
-    avgPctComplete: number;
-    avgExpectedComplete: number;
-    avgDelta: number;
-    tasksComplete: number;
-    tasksTotal: number;
-    criticalMilestones: Array<{
-      projectName: string;
-      taskName: string;
-      endDate: string;
-      daysFromToday: number;
-    }>;
+    executionCapacityKw: number;
+    avgPercentComplete: number;
+    avgDeltaVsExpected: number;
+    behindSchedule: number;
+    commissioningDue30: number;
+    omHandoverDue30: number;
+    clientHandoverDue30: number;
   };
+  top5BehindPlan?: Array<{
+    projectName: string;
+    delta: number;
+    avgActual: number;
+    avgExpected: number;
+  }>;
   financial: {
-    totalRevenueActual: number;
-    totalRevenueBudget: number;
-    totalExpenseActual: number;
-    totalExpenseBudget: number;
-    netCashflow: number;
-    inflowsPending: number;
-    inflowsReceived: number;
-    cosRealised: number;
-    cosBudget: number;
+    actualRevenue: number;
+    actualExpenses: number;
+    grossProfit: number;
+    grossProfitPercent: number;
+    revenueOutstanding: number;
+    expensesOutstanding: number;
+    currentVoTotal: number;
+    thisWeek: {
+      inflows: number;
+      outflows: number;
+      net: number;
+    };
+    thisMonth: {
+      revenueOutstanding: number;
+      cosOutstanding: number;
+    };
   };
   dataQuality: {
     missingPhase: number;
@@ -270,13 +284,9 @@ export default function Home() {
   const execution = summary?.execution;
   const financial = summary?.financial;
   const dataQuality = summary?.dataQuality;
+  const top5Behind = summary?.top5BehindPlan || [];
 
-  const revenueVsBudget = financial ? 
-    (financial.totalRevenueBudget > 0 ? (financial.totalRevenueActual / financial.totalRevenueBudget) * 100 : 0) : 0;
-  const expenseVsBudget = financial ?
-    (financial.totalExpenseBudget > 0 ? (financial.totalExpenseActual / financial.totalExpenseBudget) * 100 : 0) : 0;
-  const cosVsBudget = financial ?
-    (financial.cosBudget > 0 ? (financial.cosRealised / financial.cosBudget) * 100 : 0) : 0;
+  const netCashflowThisWeek = safeNumber(financial?.thisWeek?.net);
 
   return (
     <div className="container mx-auto py-6 space-y-6" data-testid="home-page">
@@ -339,15 +349,15 @@ export default function Home() {
               />
             </div>
             
-            {portfolio?.phaseDistribution && Object.keys(portfolio.phaseDistribution).length > 0 && (
+            {portfolio?.phaseDistribution && portfolio.phaseDistribution.length > 0 && (
               <>
                 <Separator className="my-4" />
                 <div>
                   <p className="text-sm font-medium mb-3">Phase Distribution</p>
                   <div className="flex flex-wrap gap-2">
-                    {Object.entries(portfolio.phaseDistribution).map(([phase, data]) => (
-                      <Badge key={phase} variant="secondary" className="px-3 py-1">
-                        {phase}: {data.count} ({formatNumber(data.kw / 1000, 1)} MW)
+                    {portfolio.phaseDistribution.map((item) => (
+                      <Badge key={item.phase} variant="secondary" className="px-3 py-1">
+                        {item.phase}: {item.count} ({formatNumber(safeNumber(item.kw) / 1000, 1)} MW)
                       </Badge>
                     ))}
                   </div>
@@ -390,50 +400,43 @@ export default function Home() {
               <StatCard
                 title="In Construction"
                 value={execution?.constructionProjects || 0}
-                subtitle={`${formatNumber((execution?.constructionCapacityKw || 0) / 1000, 1)} MW capacity`}
+                subtitle={`${formatNumber(safeNumber(execution?.executionCapacityKw) / 1000, 1)} MW capacity`}
                 icon={Clock}
               />
               <StatCard
                 title="Avg % Complete"
-                value={formatPercent(execution?.avgPctComplete || 0)}
-                subtitle={`Expected: ${formatPercent(execution?.avgExpectedComplete || 0)}`}
-                trend={execution?.avgDelta ? { value: execution.avgDelta, label: "vs expected" } : undefined}
+                value={formatPercent(execution?.avgPercentComplete || 0)}
+                subtitle={`Delta: ${formatPercent(execution?.avgDeltaVsExpected || 0, { showSign: true })} vs expected`}
+                trend={execution?.avgDeltaVsExpected ? { value: execution.avgDeltaVsExpected, label: "vs expected" } : undefined}
               />
             </div>
             
             <Separator />
             
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-medium">Task Completion</p>
-                <Badge variant="outline">
-                  {execution?.tasksComplete || 0} / {execution?.tasksTotal || 0}
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div className="flex items-center justify-between p-2 rounded bg-muted/50">
+                <span className="text-sm">Behind Schedule</span>
+                <Badge variant={safeNumber(execution?.behindSchedule) > 0 ? "destructive" : "secondary"}>
+                  {execution?.behindSchedule || 0} projects
                 </Badge>
               </div>
-              <div className="w-full bg-muted rounded-full h-2">
-                <div 
-                  className="bg-primary h-2 rounded-full transition-all"
-                  style={{ 
-                    width: `${execution?.tasksTotal ? (execution.tasksComplete / execution.tasksTotal) * 100 : 0}%` 
-                  }}
-                />
+              <div className="flex items-center justify-between p-2 rounded bg-muted/50">
+                <span className="text-sm">Commissioning Due (30d)</span>
+                <Badge variant="outline">{execution?.commissioningDue30 || 0}</Badge>
               </div>
             </div>
 
-            {execution?.criticalMilestones && execution.criticalMilestones.length > 0 && (
+            {top5Behind.length > 0 && (
               <>
                 <Separator />
                 <div>
-                  <p className="text-sm font-medium mb-2">Upcoming Critical Milestones</p>
+                  <p className="text-sm font-medium mb-2">Top 5 Behind Plan</p>
                   <div className="space-y-2">
-                    {execution.criticalMilestones.slice(0, 3).map((m, i) => (
+                    {top5Behind.slice(0, 5).map((p, i) => (
                       <div key={i} className="flex items-center justify-between text-sm p-2 rounded bg-muted/50">
-                        <div className="flex-1 truncate">
-                          <span className="font-medium">{m.projectName.replace('_Tracker', '')}</span>
-                          <span className="text-muted-foreground ml-2">{m.taskName}</span>
-                        </div>
-                        <Badge variant={m.daysFromToday < 7 ? "destructive" : m.daysFromToday < 30 ? "secondary" : "outline"}>
-                          {m.daysFromToday < 0 ? 'Overdue' : `${m.daysFromToday}d`}
+                        <span className="font-medium truncate">{p.projectName.replace('_Tracker', '')}</span>
+                        <Badge variant="destructive">
+                          {formatPercent(p.delta, { showSign: true })}
                         </Badge>
                       </div>
                     ))}
@@ -471,10 +474,10 @@ export default function Home() {
                     <TrendingUp className="h-4 w-4 text-green-600" />
                   </div>
                   <p className="text-xl font-bold text-green-700 dark:text-green-400">
-                    {formatRand(financial?.totalRevenueActual, { compact: true })}
+                    {formatRand(financial?.actualRevenue, { compact: true })}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    Budget: {formatRand(financial?.totalRevenueBudget, { compact: true })} ({formatPercent(revenueVsBudget)})
+                    Outstanding: {formatRand(financial?.revenueOutstanding, { compact: true })}
                   </p>
                 </div>
                 <div className="p-3 rounded-lg border bg-red-50/50 dark:bg-red-950/20">
@@ -483,25 +486,28 @@ export default function Home() {
                     <TrendingDown className="h-4 w-4 text-red-600" />
                   </div>
                   <p className="text-xl font-bold text-red-700 dark:text-red-400">
-                    {formatRand(financial?.totalExpenseActual, { compact: true })}
+                    {formatRand(financial?.actualExpenses, { compact: true })}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    Budget: {formatRand(financial?.totalExpenseBudget, { compact: true })} ({formatPercent(expenseVsBudget)})
+                    Outstanding: {formatRand(financial?.expensesOutstanding, { compact: true })}
                   </p>
                 </div>
               </div>
 
               <div className="p-3 rounded-lg border">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Net Cashflow</span>
-                  {safeNumber(financial?.netCashflow) >= 0 ? (
+                  <span className="text-sm text-muted-foreground">Gross Profit</span>
+                  {safeNumber(financial?.grossProfit) >= 0 ? (
                     <CheckCircle2 className="h-4 w-4 text-green-600" />
                   ) : (
                     <AlertCircle className="h-4 w-4 text-amber-600" />
                   )}
                 </div>
-                <p className={`text-xl font-bold ${safeNumber(financial?.netCashflow) >= 0 ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}`}>
-                  {formatRand(financial?.netCashflow, { compact: true, showSign: true })}
+                <p className={`text-xl font-bold ${safeNumber(financial?.grossProfit) >= 0 ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}`}>
+                  {formatRand(financial?.grossProfit, { compact: true, showSign: true })}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Margin: {formatPercent(financial?.grossProfitPercent || 0)}
                 </p>
               </div>
 
@@ -509,22 +515,22 @@ export default function Home() {
 
               <div className="grid gap-2 sm:grid-cols-2">
                 <div className="flex items-center justify-between p-2 rounded bg-muted/50">
-                  <span className="text-sm">COS Realised</span>
-                  <span className="font-medium">{formatRand(financial?.cosRealised, { compact: true })}</span>
+                  <span className="text-sm">This Week Net</span>
+                  <span className={`font-medium ${netCashflowThisWeek >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {formatRand(financial?.thisWeek?.net, { compact: true, showSign: true })}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between p-2 rounded bg-muted/50">
-                  <span className="text-sm">vs Budget</span>
-                  <Badge variant={cosVsBudget > 100 ? "destructive" : "secondary"}>
-                    {formatPercent(cosVsBudget)}
-                  </Badge>
+                  <span className="text-sm">This Week Outflows</span>
+                  <span className="font-medium">{formatRand(financial?.thisWeek?.outflows, { compact: true })}</span>
                 </div>
                 <div className="flex items-center justify-between p-2 rounded bg-muted/50">
-                  <span className="text-sm">Inflows Received</span>
-                  <span className="font-medium">{formatRand(financial?.inflowsReceived, { compact: true })}</span>
+                  <span className="text-sm">COS Outstanding</span>
+                  <span className="font-medium">{formatRand(financial?.thisMonth?.cosOutstanding, { compact: true })}</span>
                 </div>
                 <div className="flex items-center justify-between p-2 rounded bg-muted/50">
-                  <span className="text-sm">Inflows Pending</span>
-                  <span className="font-medium">{formatRand(financial?.inflowsPending, { compact: true })}</span>
+                  <span className="text-sm">Current VO Total</span>
+                  <span className="font-medium">{formatRand(financial?.currentVoTotal, { compact: true })}</span>
                 </div>
               </div>
             </div>
