@@ -328,17 +328,14 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
     const sheet = workbook.Sheets["Expenditure Breakdown"];
     const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null }) as any[][];
     
-    // Extended header tokens to capture both BUDGET and ACTUAL tables
+    // Core header tokens to find the main expenditure table (more flexible - doesn't require all columns)
     const expenseHeaderTokens = [
       "product/ service",
       "description of work",
-      "budget total",
       "actual total",
       "po number",
       "invoice number",
-      "invoice raised date",
       "finance payment date",
-      "forecasted payment date",
       "total cos"
     ];
     
@@ -403,17 +400,24 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
         let expenseCategory = currentCategory;
         let expenseLineItem = rawDesc ? String(rawDesc) : null;
         
-        // Category header detection (numbered sections like "1. Panels", "2. Inverters")
+        // Category header detection - STRICT: only rows with numbered category name like "1. Panels"
+        // but NO description AND no actual total value (empty data columns)
         if (rawCategory && typeof rawCategory === "string") {
           const catStr = rawCategory.trim();
-          if (/^\d+\.?\s*.+/.test(catStr) && (!rawActualTotal || !rawBudgetTotal)) {
+          // Pattern for category headers: starts with digit(s), followed by period or dot, then text
+          // e.g., "1. Panels", "2. Inverters", "10. Site Logistics"
+          const isCategoryHeader = /^\d+\.\s*[A-Za-z]/.test(catStr) && !rawDesc && !rawActualTotal;
+          
+          if (isCategoryHeader) {
             // This is a category header row
             currentCategory = catStr;
             expenseCategory = catStr;
             rowType = "category";
-            expenseLineItem = null;
           } else {
-            expenseCategory = catStr;
+            // Regular item - inherit current category, use category column value if different
+            if (catStr && catStr !== currentCategory) {
+              expenseCategory = currentCategory; // Keep inherited category
+            }
           }
         }
         

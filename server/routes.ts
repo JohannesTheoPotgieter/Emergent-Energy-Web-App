@@ -68,7 +68,7 @@ function getWeekStartDate(dateStr: string): string {
 }
 
 // Calculate Revenue Recognition series from expense data
-// Revenue is recognized when COS is invoiced (has invoice date and revenue amount)
+// COS is recognized when BOTH Invoice Number AND Invoice Raised Date are present (per user requirement)
 function calculateRevenueRecognition(
   expenses: any[],
   projectName: string | null
@@ -76,19 +76,20 @@ function calculateRevenueRecognition(
   const weekly = new Map<string, Map<string, number>>();
   const cumulative = new Map<string, Map<string, number>>();
   
-  // Filter expenses for the project and those with invoice dates and revenue amounts
+  // Filter expenses for the project: require BOTH invoice number AND invoice date for COS recognition
   const relevantExpenses = expenses.filter(e => 
     (!projectName || e.projectName === projectName) &&
-    e.expenseInvoicedDate && 
-    e.revenueAmount && 
-    parseFloat(e.revenueAmount) !== 0
+    e.expenseInvoiceNumber && // Must have invoice number
+    e.expenseInvoicedDate && // Must have invoice date
+    (e.actualCosTotal || e.expenseActualTotal) &&
+    parseFloat(e.actualCosTotal || e.expenseActualTotal || "0") !== 0
   );
   
-  // Group by project and week
+  // Group by project and week, using actual COS total for recognition
   for (const expense of relevantExpenses) {
     const pName = expense.projectName;
     const weekStart = getWeekStartDate(expense.expenseInvoicedDate);
-    const amount = parseFloat(expense.revenueAmount);
+    const amount = parseFloat(expense.actualCosTotal || expense.expenseActualTotal || "0");
     
     if (!weekly.has(pName)) {
       weekly.set(pName, new Map());
@@ -98,18 +99,18 @@ function calculateRevenueRecognition(
   }
   
   // Calculate cumulative for each project
-  for (const [pName, weeklyData] of weekly) {
+  Array.from(weekly.entries()).forEach(([pName, weeklyData]) => {
     const sortedWeeks = Array.from(weeklyData.keys()).sort();
     let runningTotal = 0;
     const cumulativeData = new Map<string, number>();
     
     for (const week of sortedWeeks) {
       runningTotal += weeklyData.get(week) || 0;
-      cumulativeData.set(week, runningTotal);
+      cumulativeData.set(week as string, runningTotal);
     }
     
     cumulative.set(pName, cumulativeData);
-  }
+  });
   
   return { weekly, cumulative };
 }
@@ -1309,8 +1310,8 @@ export async function registerRoutes(
       const { weekly, cumulative } = calculateRevenueRecognition(expenses, projectName);
       
       // Add Revenue Recognition points to the cashflow data
-      for (const [pName, weeklyData] of weekly) {
-        for (const [weekStart, amount] of weeklyData) {
+      Array.from(weekly.entries()).forEach(([pName, weeklyData]) => {
+        Array.from(weeklyData.entries()).forEach(([weekStart, amount]) => {
           points.push({
             id: null, // Virtual point
             projectName: pName,
@@ -1319,12 +1320,12 @@ export async function registerRoutes(
             value: amount.toString(),
             createdAt: null
           });
-        }
-      }
+        });
+      });
       
       // Add Revenue Recognition Cumulative points
-      for (const [pName, cumulativeData] of cumulative) {
-        for (const [weekStart, amount] of cumulativeData) {
+      Array.from(cumulative.entries()).forEach(([pName, cumulativeData]) => {
+        Array.from(cumulativeData.entries()).forEach(([weekStart, amount]) => {
           points.push({
             id: null, // Virtual point
             projectName: pName,
@@ -1333,8 +1334,8 @@ export async function registerRoutes(
             value: amount.toString(),
             createdAt: null
           });
-        }
-      }
+        });
+      });
 
       if (startDate && typeof startDate === 'string') {
         points = points.filter(p => p.pointDate >= startDate);
