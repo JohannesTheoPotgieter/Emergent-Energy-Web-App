@@ -50,6 +50,77 @@ The frontend follows a page-based structure under `client/src/pages/` with share
 - **Multi-project Support**: Edits are automatically cleared when switching projects to prevent cross-project confusion
 - **Forecast Payment Date**: Available in expenditure data for future cashflow planning integration
 
+### Home Page (Projects Report)
+The Home page serves as the default landing page with a comprehensive FY overview:
+
+#### Portfolio Summary
+- **Active Projects**: Count of projects not in "Closed" or "On Hold" phase
+- **Active Capacity**: Total kWp/MW for active projects (sum of sizeKwp from projectInfo)
+- **On Schedule Rate**: Percentage of projects where actual % complete >= expected % complete
+- **Behind Plan**: Count of projects where delta (actual - expected) < 0
+- **Phase Distribution**: Breakdown by phase (Construction, Handover, QA, etc.)
+
+#### Execution Summary
+- **In Construction**: Count of projects in "Construction" phase
+- **Avg % Complete**: Average of pctComplete across all construction projects
+- **Expected %**: Average of expectedPctComplete (based on current date vs planned dates)
+- **Delta vs Expected**: (actual - expected) * 100, shown as trend indicator
+- **Critical Milestones**: Upcoming milestones due in next 30 days
+
+#### Financial Summary (FY-based)
+- **Revenue (Actual)**: Sum of inflowActualTotal for inflows with receiptDate in FY range
+- **Revenue Budget**: Sum of inflowBudgetTotal for all inflows
+- **Expenses (Actual)**: Sum of expenseActualTotal for expenses with paymentDate in FY range
+- **Expense Budget**: Sum of expenseBudgetTotal for all expenses
+- **Net Cashflow**: Revenue Actual - Expenses Actual
+- **COS Realised**: Sum of expenseActualTotal where BOTH invoiceNumber AND invoicedDate exist
+- **Inflows Received/Pending**: Split based on presence of receiptDate
+
+#### Data Quality Panel
+- Missing Phase / kWp / Commissioning Date counts per project
+- Total row counts: Projects, Expense Lines, Inflow Lines, Plan Tasks
+- Last upload timestamp with link to Upload page
+
+#### Editable Notes
+- Weekly Highlights, Construction Notes, Finance Notes
+- Persisted in homeNotes table, editable inline with Save button
+
+### COS Tracker Page
+Enhanced Cost of Sales tracking with strict recognition rules:
+
+#### COS Recognition Rules
+1. **Planned**: Line exists with budget, no PO number
+2. **Committed**: PO Number exists (goods/services ordered)
+3. **Invoiced (COS)**: Invoice Number AND Invoice Raised Date BOTH present
+4. **Paid**: Payment Date exists (cash left the bank)
+
+**Critical**: COS is only recognized when BOTH Invoice Number AND Invoice Raised Date are present
+
+#### KPIs
+- **COS Realised**: Sum of expenseActualTotal where invoiced (both fields present)
+- **Cash Paid**: Sum of expenseActualTotal where paymentDate exists
+- **Outstanding COS**: Invoiced but not yet paid
+- **Paid vs Budget**: (Cash Paid / Total Budget) * 100
+
+#### Supplier Extraction
+Supplier name extracted from invoice/PO numbers by splitting on ':' or '-' and taking first segment
+
+#### Monthly COS Matrix
+- Rows: Categories from expense data
+- Columns: Months (YYYY-MM) based on invoicedDate
+- Values: Sum of expenseActualTotal per category per month
+
+### SafeMoney Utilities
+Located in `client/src/lib/safeMoney.ts`, provides NaN-safe currency handling:
+- `safeNumber(value)`: Converts any value to number, returns 0 for null/undefined/NaN
+- `safeSum(values[])`: Sums array safely
+- `safeSumField(items[], field)`: Sums a specific field from objects
+- `formatRand(value, options)`: Formats as "R1.23M" with compact/showSign options
+- `formatPercent(value, options)`: Formats as "45.2%" safely
+- `safePercent(num, denom)`: Safe division returning 0 if denominator is 0
+- `formatNumber(value, decimals)`: Number with thousands separators
+- `hasValue(value)`: Returns true if valid non-zero number
+
 ### Project Plan View (Scheduling Tool)
 
 The Project Plan tab provides CPM scheduling with Gantt visualization:
