@@ -93,15 +93,31 @@ export default function CashflowPage() {
     return cashflowPoints.filter(point => point.projectName === activeProject);
   }, [cashflowPoints, activeProject]);
 
-  // Get unique weekly dates for the active project
+  // Get unique weekly dates for the active project (only dates with actual data)
   const weeklyDates = useMemo(() => {
     const dates = new Set<string>();
-    projectCashflowPoints.forEach(point => dates.add(point.pointDate));
+    projectCashflowPoints.forEach(point => {
+      // Only include dates that have actual non-null values
+      if (point.value !== null && point.value !== undefined) {
+        dates.add(point.pointDate);
+      }
+    });
     return Array.from(dates).sort();
   }, [projectCashflowPoints]);
 
+  // Calculate the actual data date range
+  const dateRange = useMemo(() => {
+    if (weeklyDates.length === 0) return { first: null, last: null };
+    return {
+      first: weeklyDates[0],
+      last: weeklyDates[weeklyDates.length - 1]
+    };
+  }, [weeklyDates]);
+
   // Organize data for chart and grid (project-specific)
   const chartData = useMemo(() => {
+    if (!dateRange.first || !dateRange.last) return [];
+    
     const dateMap = new Map<string, Record<string, number>>();
 
     // Apply edits to cashflow points
@@ -114,11 +130,14 @@ export default function CashflowPage() {
     });
 
     pointsWithEdits.forEach(point => {
-      if (!dateMap.has(point.pointDate)) {
-        dateMap.set(point.pointDate, {});
+      // Only include points within the actual data range
+      if (point.pointDate >= dateRange.first! && point.pointDate <= dateRange.last!) {
+        if (!dateMap.has(point.pointDate)) {
+          dateMap.set(point.pointDate, {});
+        }
+        const dateData = dateMap.get(point.pointDate)!;
+        dateData[point.seriesName] = point.value;
       }
-      const dateData = dateMap.get(point.pointDate)!;
-      dateData[point.seriesName] = point.value;
     });
 
     return Array.from(dateMap.entries())
@@ -128,7 +147,7 @@ export default function CashflowPage() {
         ...values,
       }))
       .sort((a, b) => a.date.localeCompare(b.date));
-  }, [projectCashflowPoints, edits]);
+  }, [projectCashflowPoints, edits, dateRange]);
 
   // Extract planning grid data (Planned Revenue and Planned Expenditure only)
   const planningGridData = useMemo(() => {
