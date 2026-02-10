@@ -536,3 +536,54 @@ export const homeNotes = pgTable("home_notes", {
 export const insertHomeNotesSchema = createInsertSchema(homeNotes).omit({ id: true, updatedAt: true });
 export type InsertHomeNotes = z.infer<typeof insertHomeNotesSchema>;
 export type HomeNotes = typeof homeNotes.$inferSelect;
+
+export const projectEditableFields = pgTable("project_editable_fields", {
+  id: serial("id").primaryKey(),
+  projectName: text("project_name").notNull().unique(),
+  costProposalSigned: text("cost_proposal_signed"),
+  fundingSigned: text("funding_signed"),
+  epcContractSigned: text("epc_contract_signed"),
+  currentVoTotal: decimal("current_vo_total", { precision: 15, scale: 2 }),
+  comments: text("comments"),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertProjectEditableFieldsSchema = createInsertSchema(projectEditableFields).omit({ id: true, updatedAt: true });
+export type InsertProjectEditableFields = z.infer<typeof insertProjectEditableFieldsSchema>;
+export type ProjectEditableFields = typeof projectEditableFields.$inferSelect;
+
+export const cashflowWeeklyManual = pgTable("cashflow_weekly_manual", {
+  id: serial("id").primaryKey(),
+  weekStartDate: text("week_start_date").notNull().unique(),
+  openingBalance: decimal("opening_balance", { precision: 15, scale: 2 }),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertCashflowWeeklyManualSchema = createInsertSchema(cashflowWeeklyManual).omit({ id: true, updatedAt: true });
+export type InsertCashflowWeeklyManual = z.infer<typeof insertCashflowWeeklyManualSchema>;
+export type CashflowWeeklyManual = typeof cashflowWeeklyManual.$inferSelect;
+
+export const opexBudgetMonthly = pgTable("opex_budget_monthly", {
+  id: serial("id").primaryKey(),
+  monthKey: text("month_key").notNull().unique(),
+  amount: decimal("amount", { precision: 15, scale: 2 }).notNull().default("0"),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertOpexBudgetMonthlySchema = createInsertSchema(opexBudgetMonthly).omit({ id: true, updatedAt: true });
+export type InsertOpexBudgetMonthly = z.infer<typeof insertOpexBudgetMonthlySchema>;
+export type OpexBudgetMonthly = typeof opexBudgetMonthly.$inferSelect;
+
+export const trackerMonthlyManual = pgTable("tracker_monthly_manual", {
+  id: serial("id").primaryKey(),
+  trackerType: text("tracker_type").notNull(),
+  monthKey: text("month_key").notNull(),
+  realised: decimal("realised", { precision: 15, scale: 2 }),
+  outstanding: decimal("outstanding", { precision: 15, scale: 2 }),
+  budget: decimal("budget", { precision: 15, scale: 2 }),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertTrackerMonthlyManualSchema = createInsertSchema(trackerMonthlyManual).omit({ id: true, updatedAt: true });
+export type InsertTrackerMonthlyManual = z.infer<typeof insertTrackerMonthlyManualSchema>;
+export type TrackerMonthlyManual = typeof trackerMonthlyManual.$inferSelect;
