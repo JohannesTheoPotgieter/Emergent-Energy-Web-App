@@ -70,6 +70,7 @@ export default function AdminPage() {
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [uploadLoading, setUploadLoading] = useState(false);
   const folderInputRef = useRef<HTMLInputElement>(null);
+  const cancelRef = useRef(false);
   const [progressInfo, setProgressInfo] = useState<{ current: number; total: number; currentFile: string } | null>(null);
 
   const [smokeLoading, setSmokeLoading] = useState(false);
@@ -111,12 +112,18 @@ export default function AdminPage() {
     }
     setUploadLoading(true);
     setScanResult(null);
+    cancelRef.current = false;
     setProgressInfo({ current: 0, total: excelFiles.length, currentFile: "" });
 
     const results: ScanResult["results"] = [];
     let totalRecords = 0;
+    let wasCancelled = false;
 
     for (let i = 0; i < excelFiles.length; i++) {
+      if (cancelRef.current) {
+        wasCancelled = true;
+        break;
+      }
       const file = excelFiles[i];
       setProgressInfo({ current: i + 1, total: excelFiles.length, currentFile: file.name });
       try {
@@ -159,12 +166,15 @@ export default function AdminPage() {
 
     const successCount = results.filter((r) => r.status === "success").length;
     const failedCount = results.filter((r) => r.status === "failed").length;
+    const processedTotal = wasCancelled ? results.length : excelFiles.length;
     setScanResult({
-      success: failedCount === 0,
-      message: `${successCount} of ${excelFiles.length} files processed successfully`,
+      success: failedCount === 0 && !wasCancelled,
+      message: wasCancelled
+        ? `Import stopped — ${successCount} of ${processedTotal} files processed before cancellation`
+        : `${successCount} of ${excelFiles.length} files processed successfully`,
       filesProcessed: successCount,
       filesFailed: failedCount,
-      filesTotal: excelFiles.length,
+      filesTotal: processedTotal,
       totalRecordsProcessed: totalRecords,
       latestFileDate: new Date().toISOString(),
       results,
@@ -174,7 +184,13 @@ export default function AdminPage() {
     setUploadLoading(false);
     queryClient.invalidateQueries();
     loadFolderConfig();
-    toast({ title: "Import Complete", description: `${successCount} file(s) processed successfully` });
+    toast({
+      title: wasCancelled ? "Import Stopped" : "Import Complete",
+      description: wasCancelled
+        ? `Stopped after ${successCount} file(s). Already imported files are saved.`
+        : `${successCount} file(s) processed successfully`,
+      variant: wasCancelled ? "destructive" : "default",
+    });
     if (folderInputRef.current) folderInputRef.current.value = "";
   };
 
@@ -290,14 +306,25 @@ export default function AdminPage() {
             </CardHeader>
             {progressInfo && (
               <CardContent>
-                <div className="space-y-2" data-testid="import-progress">
+                <div className="space-y-3" data-testid="import-progress">
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground truncate max-w-[60%]">
+                    <span className="text-muted-foreground truncate max-w-[50%]">
                       Processing: {progressInfo.currentFile}
                     </span>
-                    <span className="font-medium">
-                      {progressInfo.current} of {progressInfo.total}
-                    </span>
+                    <div className="flex items-center gap-3">
+                      <span className="font-medium">
+                        {progressInfo.current} of {progressInfo.total}
+                      </span>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => { cancelRef.current = true; }}
+                        data-testid="button-stop-import"
+                      >
+                        <XCircle className="mr-1 h-4 w-4" />
+                        Stop Import
+                      </Button>
+                    </div>
                   </div>
                   <Progress value={(progressInfo.current / progressInfo.total) * 100} className="h-3" />
                   <p className="text-xs text-muted-foreground text-center">
