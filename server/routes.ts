@@ -734,12 +734,29 @@ export async function registerRoutes(
       const omHandoverDue30 = allProjectInfo.filter(p => isWithinDays(p.omHandoverDate, 30)).length;
       const clientHandoverDue30 = allProjectInfo.filter(p => isWithinDays(p.clientHandoverDate, 30)).length;
 
-      // Financial summary - from revenue summaries table
+      // Financial summary - compute from raw data tables
+      // If revenueSummaries table has data, use it; otherwise compute from raw inflows/expenses
       let actualRevenue = 0, actualExpenses = 0, currentVoTotal = 0;
-      for (const rs of revenueSummaries) {
-        actualRevenue += safeNum(rs.actualRevenue);
-        actualExpenses += safeNum(rs.actualExpenditure);
-        currentVoTotal += safeNum(rs.currentVoTotal);
+      
+      const hasRevenueSummaryData = revenueSummaries.length > 0;
+      if (hasRevenueSummaryData) {
+        for (const rs of revenueSummaries) {
+          actualRevenue += safeNum(rs.actualRevenue);
+          actualExpenses += safeNum(rs.actualExpenditure);
+          currentVoTotal += safeNum(rs.currentVoTotal);
+        }
+      } else {
+        // Fallback: compute from raw program_inflows and program_expense
+        for (const inflow of allInflows) {
+          if (inflow.milestoneAmount) {
+            actualRevenue += safeNum(inflow.milestoneAmount);
+          }
+        }
+        for (const expense of allExpenses) {
+          if (expense.expenseActualTotal) {
+            actualExpenses += safeNum(expense.expenseActualTotal);
+          }
+        }
       }
       const grossProfit = actualRevenue - actualExpenses;
       const grossProfitPercent = actualRevenue > 0 ? (grossProfit / actualRevenue) * 100 : 0;
@@ -2923,6 +2940,221 @@ export async function registerRoutes(
         success: false,
         error: "clear_failed",
         message: error.message || "Failed to clear all data"
+      });
+    }
+  });
+
+  // Get/set folder path for data import
+  app.get("/api/admin/folder-config", async (req, res) => {
+    try {
+      const folderPath = process.env.TRACKER_FOLDER_PATH || path.join(process.cwd(), 'uploads');
+      const exists = fs.existsSync(folderPath);
+      let fileCount = 0;
+      let latestFileDate: string | null = null;
+      
+      if (exists) {
+        const files = fs.readdirSync(folderPath).filter(f => /\.(xlsx|xlsm|xls)$/i.test(f));
+        fileCount = files.length;
+        
+        let maxMtime = 0;
+        for (const file of files) {
+          const stat = fs.statSync(path.join(folderPath, file));
+          if (stat.mtimeMs > maxMtime) {
+            maxMtime = stat.mtimeMs;
+            latestFileDate = stat.mtime.toISOString();
+          }
+        }
+      }
+      
+      res.json({ folderPath, exists, fileCount, latestFileDate });
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to read folder config", message: error.message });
+    }
+  });
+
+  app.post("/api/admin/folder-config", async (req, res) => {
+    try {
+      const { folderPath } = req.body;
+      if (!folderPath) {
+        return res.status(400).json({ error: "folderPath required" });
+      }
+      
+      const resolvedPath = path.resolve(folderPath);
+      const exists = fs.existsSync(resolvedPath);
+      
+      if (!exists) {
+        return res.status(400).json({ error: "Folder does not exist", path: resolvedPath });
+      }
+      
+      process.env.TRACKER_FOLDER_PATH = resolvedPath;
+      
+      const files = fs.readdirSync(resolvedPath).filter(f => /\.(xlsx|xlsm|xls)$/i.test(f));
+      
+      res.json({ 
+        success: true, 
+        folderPath: resolvedPath, 
+        fileCount: files.length,
+        message: `Folder set to ${resolvedPath} (${files.length} Excel files found)` 
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to set folder", message: error.message });
+    }
+  });
+
+  // Scan folder and process all Excel files
+  app.post("/api/admin/scan-folder", async (req, res) => {
+    const startTime = Date.now();
+    
+    try {
+      const folderPath = process.env.TRACKER_FOLDER_PATH || path.join(process.cwd(), 'uploads');
+      
+      if (!fs.existsSync(folderPath)) {
+        return res.status(400).json({ 
+          success: false, 
+          error: "folder_not_found",
+          message: `Folder not found: ${folderPath}` 
+        });
+      }
+      
+      const allFiles = fs.readdirSync(folderPath).filter(f => /\.(xlsx|xlsm|xls)$/i.test(f));
+      
+      if (allFiles.length === 0) {
+        return res.json({
+          success: true,
+          message: "No Excel files found in folder",
+          filesProcessed: 0,
+          filesTotal: 0,
+          results: [],
+          timestamps: {
+            started: new Date(startTime).toISOString(),
+            completed: new Date().toISOString(),
+            durationMs: Date.now() - startTime
+          }
+        });
+      }
+      
+      const results: {
+        fileName: string;
+        projectName: string;
+        status: "success" | "failed";
+        message: string;
+        recordsProcessed?: number;
+        fileDate: string;
+      }[] = [];
+      
+      for (const fileName of allFiles) {
+        const filePath = path.join(folderPath, fileName);
+        let fileDate = "";
+        
+        try {
+          const stat = fs.statSync(filePath);
+          fileDate = stat.mtime.toISOString();
+          
+          const fileBuffer = fs.readFileSync(filePath);
+          const parseResult = parseTrackerFile(fileBuffer, fileName);
+          
+          await storage.transaction(async (txStorage) => {
+            // Delete existing data for this project
+            await txStorage.deleteProgramExpensesByProject(parseResult.projectName);
+            await txStorage.deleteProgramInflowsByProject(parseResult.projectName);
+            await txStorage.deleteProjectPlansByProject(parseResult.projectName);
+            await txStorage.deleteCashflowPointsByProject(parseResult.projectName);
+            await txStorage.deleteFinanceRevenueMonthlyByProject(parseResult.projectName);
+            await txStorage.deleteFinanceCosMonthlyByProject(parseResult.projectName);
+            
+            if (parseResult.projectInfo) {
+              await txStorage.upsertProjectInfo(parseResult.projectInfo);
+            }
+            if (parseResult.expenses.length > 0) {
+              await txStorage.createManyProgramExpenses(parseResult.expenses);
+            }
+            if (parseResult.inflows.length > 0) {
+              await txStorage.createManyProgramInflows(parseResult.inflows);
+            }
+            if (parseResult.planItems.length > 0) {
+              await txStorage.createManyProjectPlans(parseResult.planItems);
+            }
+            if (parseResult.cashflowPoints.length > 0) {
+              await txStorage.createManyCashflowPoints(parseResult.cashflowPoints);
+            }
+            if (parseResult.financeRevenueMonthly.length > 0) {
+              await txStorage.createManyFinanceRevenueMonthly(parseResult.financeRevenueMonthly);
+            }
+            if (parseResult.financeCosMonthly.length > 0) {
+              await txStorage.createManyFinanceCosMonthly(parseResult.financeCosMonthly);
+            }
+          });
+          
+          // Also save a copy to uploads dir and record in upload_metadata
+          const destPath = path.join(uploadDir, `${Date.now()}_${fileName}`);
+          fs.copyFileSync(filePath, destPath);
+          await storage.createUpload({
+            fileName,
+            filePath: destPath,
+          });
+          
+          const recordsProcessed = parseResult.expensesParsed + parseResult.inflowsParsed + 
+            parseResult.planParsed + parseResult.cashflowParsed + 
+            parseResult.financeRevenueParsed + parseResult.financeCosParsed;
+          
+          results.push({
+            fileName,
+            projectName: parseResult.projectName,
+            status: "success",
+            message: `Processed successfully`,
+            recordsProcessed,
+            fileDate
+          });
+          
+        } catch (error: any) {
+          results.push({
+            fileName,
+            projectName: fileName.replace(/\.(xlsx|xlsm|xls)$/i, ''),
+            status: "failed",
+            message: error.message || "Processing failed",
+            fileDate
+          });
+        }
+      }
+      
+      await storage.createRefreshLog({
+        triggeredBy: req.user?.id || null,
+        status: results.every(r => r.status === "success") ? "success" : 
+               results.some(r => r.status === "success") ? "partial" : "failed"
+      });
+      
+      const endTime = Date.now();
+      const successCount = results.filter(r => r.status === "success").length;
+      const failedCount = results.filter(r => r.status === "failed").length;
+      const totalRecords = results.reduce((sum, r) => sum + (r.recordsProcessed || 0), 0);
+      
+      res.json({
+        success: failedCount < results.length,
+        message: `Processed ${successCount}/${allFiles.length} files (${failedCount} failed)`,
+        filesProcessed: successCount,
+        filesFailed: failedCount,
+        filesTotal: allFiles.length,
+        totalRecordsProcessed: totalRecords,
+        latestFileDate: results.reduce((latest, r) => r.fileDate > latest ? r.fileDate : latest, ""),
+        results,
+        timestamps: {
+          started: new Date(startTime).toISOString(),
+          completed: new Date(endTime).toISOString(),
+          durationMs: endTime - startTime
+        }
+      });
+      
+    } catch (error: any) {
+      console.error("Folder scan error:", error);
+      res.status(500).json({ 
+        success: false,
+        error: "scan_failed",
+        message: error.message || "Failed to scan folder",
+        timestamps: {
+          started: new Date(startTime).toISOString(),
+          completed: new Date().toISOString(),
+          durationMs: Date.now() - startTime
+        }
       });
     }
   });

@@ -627,9 +627,9 @@ export default function Home() {
               }
             </span>
             <Button variant="outline" size="sm" asChild>
-              <a href="/upload" data-testid="link-upload">
+              <a href="/admin" data-testid="link-upload">
                 <RefreshCw className="h-3 w-3 mr-1" />
-                Upload Trackers
+                Manage Data
               </a>
             </Button>
           </div>

@@ -1,4 +1,4 @@
-import { Switch, Route } from "wouter";
+import { Switch, Route, Redirect } from "wouter";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "./lib/queryClient";
 import { Toaster } from "@/components/ui/toaster";
@@ -143,7 +143,7 @@ function ProtectedPages() {
         <Route path="/cashflow" component={CashflowPage} />
         <Route path="/revenue" component={RevenueTracker} />
         <Route path="/cos" component={CostTracker} />
-        <Route path="/upload" component={UploadPage} />
+        <Route path="/upload">{() => <Redirect to="/admin" />}</Route>
         <Route path="/admin" component={AdminPage} />
         <Route component={NotFound} />
       </Switch>
