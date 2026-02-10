@@ -1,339 +1,366 @@
-import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { useLocation } from "wouter";
-import { DateRangeBar } from "@/components/DateRangeBar";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { SummaryCard } from "@/components/dashboard/SummaryCard";
-import { financeApi, overviewApi } from "@/lib/api";
-import { format, parseISO, addDays, isWithinInterval, isBefore } from "date-fns";
-import { DollarSign, TrendingUp, AlertTriangle, Calendar, ArrowRight } from "lucide-react";
+import { useState, useMemo, useCallback } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { apiRequest } from "@/lib/queryClient";
+import {
+  BarChart,
+  Bar,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  ComposedChart,
+} from "recharts";
+import {
+  DollarSign,
+  TrendingUp,
+  Target,
+  Activity,
+} from "lucide-react";
+
+interface MonthData {
+  monthKey: string;
+  monthLabel: string;
+  planned: number;
+  realised: number;
+  outstanding: number;
+  budget: number;
+  variance: number;
+  variancePct: number;
+  ytdPlanned: number;
+  ytdRealised: number;
+  ytdOutstanding: number;
+  ytdBudget: number;
+  ytdVariance: number;
+  ytdVariancePct: number;
+}
+
+function formatRand(val: number | null | undefined): string {
+  if (val == null) return "R 0";
+  const abs = Math.abs(val);
+  const sign = val < 0 ? "-" : "";
+  if (abs >= 1_000_000) return `${sign}R ${(abs / 1_000_000).toFixed(2)}M`;
+  if (abs >= 1_000) return `${sign}R ${(abs / 1_000).toFixed(1)}K`;
+  return `${sign}R ${Math.round(abs)}`;
+}
+
+type EditableField = "realised" | "outstanding" | "budget";
+
+interface EditingCell {
+  field: EditableField;
+  monthKey: string;
+  value: string;
+}
+
+const ROW_DEFS: {
+  key: string;
+  label: string;
+  dataKey: keyof MonthData;
+  editable: boolean;
+  colorClass: string;
+  group: "monthly" | "ytd";
+  colorCoded?: boolean;
+}[] = [
+  { key: "planned", label: "Planned", dataKey: "planned", editable: false, colorClass: "text-blue-600", group: "monthly" },
+  { key: "realised", label: "Realised", dataKey: "realised", editable: true, colorClass: "text-green-600", group: "monthly" },
+  { key: "outstanding", label: "Outstanding", dataKey: "outstanding", editable: true, colorClass: "text-amber-600", group: "monthly" },
+  { key: "budget", label: "Budget", dataKey: "budget", editable: true, colorClass: "text-purple-600", group: "monthly" },
+  { key: "variance", label: "Variance", dataKey: "variance", editable: false, colorClass: "", group: "monthly", colorCoded: true },
+  { key: "variancePct", label: "Variance %", dataKey: "variancePct", editable: false, colorClass: "", group: "monthly", colorCoded: true },
+  { key: "ytdPlanned", label: "YTD Planned", dataKey: "ytdPlanned", editable: false, colorClass: "text-blue-600", group: "ytd" },
+  { key: "ytdRealised", label: "YTD Realised", dataKey: "ytdRealised", editable: false, colorClass: "text-green-600", group: "ytd" },
+  { key: "ytdOutstanding", label: "YTD Outstanding", dataKey: "ytdOutstanding", editable: false, colorClass: "text-amber-600", group: "ytd" },
+  { key: "ytdBudget", label: "YTD Budget", dataKey: "ytdBudget", editable: false, colorClass: "text-purple-600", group: "ytd" },
+  { key: "ytdVariance", label: "YTD Variance", dataKey: "ytdVariance", editable: false, colorClass: "", group: "ytd", colorCoded: true },
+  { key: "ytdVariancePct", label: "YTD Variance %", dataKey: "ytdVariancePct", editable: false, colorClass: "", group: "ytd", colorCoded: true },
+];
 
 export default function RevenueTracker() {
-  const [, setLocation] = useLocation();
-  const [selectedProject, setSelectedProject] = useState<string | null>(null);
-  const [startDate, setStartDate] = useState<string | null>(null);
-  const [endDate, setEndDate] = useState<string | null>(null);
+  const qc = useQueryClient();
+  const [editing, setEditing] = useState<EditingCell | null>(null);
 
-  const { data: financeRevenue = [], isLoading: isLoadingFinance } = useQuery({
-    queryKey: ["finance-revenue", selectedProject, startDate, endDate],
-    queryFn: () => financeApi.getRevenue(selectedProject || undefined, startDate || undefined, endDate || undefined),
-    staleTime: 30000,
+  const { data: months = [], isLoading } = useQuery<MonthData[]>({
+    queryKey: ["/api/rev-tracker"],
+    staleTime: 30_000,
   });
 
-  const { data: programInflows = [], isLoading: isLoadingInflows } = useQuery({
-    queryKey: ["program-inflows", selectedProject, startDate, endDate],
-    queryFn: () => overviewApi.getProgramInflows(selectedProject || undefined, startDate || undefined, endDate || undefined),
-    staleTime: 30000,
+  const mutation = useMutation({
+    mutationFn: async (body: { trackerType: string; monthKey: string; realised?: string; outstanding?: string; budget?: string }) => {
+      await apiRequest("POST", "/api/tracker-monthly", body);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/rev-tracker"] });
+    },
   });
 
-  const isLoading = isLoadingFinance || isLoadingInflows;
+  const lastMonth = useMemo(() => {
+    if (!months.length) return null;
+    return months[months.length - 1];
+  }, [months]);
 
-  const filteredData = useMemo(() => {
-    let filtered = financeRevenue;
+  const startEdit = useCallback((field: EditableField, monthKey: string, currentValue: number) => {
+    setEditing({ field, monthKey, value: String(currentValue) });
+  }, []);
 
-    if (startDate) {
-      filtered = filtered.filter(item => item.monthEndDate >= startDate);
-    }
-    if (endDate) {
-      filtered = filtered.filter(item => item.monthEndDate <= endDate);
-    }
-
-    return filtered;
-  }, [financeRevenue, startDate, endDate]);
-
-  const pivotData = useMemo(() => {
-    const categoryMap = new Map<string, Map<string, number>>();
-    const monthSet = new Set<string>();
-
-    filteredData.forEach(item => {
-      monthSet.add(item.monthEndDate);
-      
-      if (!categoryMap.has(item.category)) {
-        categoryMap.set(item.category, new Map());
-      }
-      categoryMap.get(item.category)!.set(item.monthEndDate, item.value);
-    });
-
-    const months = Array.from(monthSet).sort();
-    
-    const rows = Array.from(categoryMap.entries()).map(([category, monthValues]) => {
-      const row: Record<string, string | number> = { category };
-      let total = 0;
-      
-      months.forEach(month => {
-        const value = monthValues.get(month) || 0;
-        row[month] = value;
-        total += value;
-      });
-      
-      row.total = total;
-      return row;
-    });
-
-    return { rows, months };
-  }, [filteredData]);
-
-  const totalRevenue = useMemo(() => {
-    return filteredData.reduce((sum, item) => sum + item.value, 0);
-  }, [filteredData]);
-
-  const inflowMetrics = useMemo(() => {
-    const today = new Date();
-    const next30 = addDays(today, 30);
-    const next60 = addDays(today, 60);
-    const next90 = addDays(today, 90);
-
-    let totalPlanned = 0;
-    let totalReceived = 0;
-    let overdue = 0;
-    let upcoming30 = 0;
-    let upcoming60 = 0;
-    let upcoming90 = 0;
-
-    (programInflows as any[]).forEach((inflow: any) => {
-      const amount = Number(inflow.amount) || 0;
-      totalPlanned += amount;
-
-      if (inflow.is_received) {
-        totalReceived += amount;
-      } else if (inflow.date) {
-        try {
-          const date = new Date(inflow.date);
-          if (isBefore(date, today)) {
-            overdue += amount;
-          } else if (isWithinInterval(date, { start: today, end: next30 })) {
-            upcoming30 += amount;
-          } else if (isWithinInterval(date, { start: today, end: next60 })) {
-            upcoming60 += amount;
-          } else if (isWithinInterval(date, { start: today, end: next90 })) {
-            upcoming90 += amount;
-          }
-        } catch {}
-      }
-    });
-
-    return {
-      totalPlanned,
-      totalReceived,
-      overdue,
-      overdueCount: (programInflows as any[]).filter((i: any) => !i.is_received && i.date && isBefore(new Date(i.date), today)).length,
-      upcoming30,
-      upcoming60,
-      upcoming90,
+  const commitEdit = useCallback(() => {
+    if (!editing) return;
+    const payload: Record<string, string> = {
+      trackerType: "REV",
+      monthKey: editing.monthKey,
     };
-  }, [programInflows]);
+    payload[editing.field] = editing.value;
+    mutation.mutate(payload as any);
+    setEditing(null);
+  }, [editing, mutation]);
 
-  const projectBreakdown = useMemo(() => {
-    const projectMap = new Map<string, number>();
-    filteredData.forEach(item => {
-      const current = projectMap.get(item.projectName) || 0;
-      projectMap.set(item.projectName, current + item.value);
-    });
-    return Array.from(projectMap.entries())
-      .map(([project, total]) => ({ project, total }))
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 5);
-  }, [filteredData]);
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "Enter") commitEdit();
+      if (e.key === "Escape") setEditing(null);
+    },
+    [commitEdit],
+  );
+
+  const chartData = useMemo(
+    () =>
+      months.map((m) => ({
+        month: m.monthLabel,
+        Planned: m.planned,
+        Realised: m.realised,
+        Budget: m.budget,
+        "YTD Variance": m.ytdVariance,
+      })),
+    [months],
+  );
+
+  const getCellColor = (val: number) => (val >= 0 ? "text-green-600" : "text-red-600");
+
+  const formatCell = (row: (typeof ROW_DEFS)[number], val: number) => {
+    if (row.key === "variancePct" || row.key === "ytdVariancePct") {
+      return `${(val * 100).toFixed(1)}%`;
+    }
+    return formatRand(val);
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64 text-muted-foreground" data-testid="loading-indicator">
+        Loading revenue data…
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-0">
       <div className="bg-white border-b border-gray-200 px-6 py-6">
-        <div className="flex flex-col gap-2">
-          <h2 className="text-3xl font-heading font-bold text-foreground">Revenue Tracker (REV)</h2>
-          <p className="text-muted-foreground">
-            Monthly revenue breakdown by category from Finance - Revenue sheets
-          </p>
-        </div>
+        <h2 className="text-3xl font-heading font-bold text-foreground" data-testid="text-page-title">
+          Revenue Tracker FY26
+        </h2>
+        <p className="text-muted-foreground mt-1" data-testid="text-page-subtitle">
+          Monthly revenue tracking with planned vs budget analysis
+        </p>
       </div>
 
-      <DateRangeBar 
-        onDateChange={(start, end) => {
-          setStartDate(start);
-          setEndDate(end);
-        }}
-        onProjectChange={setSelectedProject}
-      />
-
       <div className="p-6 space-y-6">
-        {isLoading ? (
-          <div className="text-center py-12 text-muted-foreground">Loading revenue data...</div>
-        ) : financeRevenue.length === 0 ? (
-          <Card>
-            <CardContent className="py-12">
-              <div className="text-center text-muted-foreground">
-                <p className="text-lg font-medium">No revenue data available</p>
-                <p className="text-sm mt-2">Upload tracker files with Finance - Revenue sheets to see data here</p>
+        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <Card data-testid="card-ytd-planned">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <div className="rounded-lg bg-blue-100 p-2">
+                  <DollarSign className="h-5 w-5 text-blue-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">YTD Revenue (Planned)</p>
+                  <p className="text-2xl font-bold font-mono" data-testid="text-ytd-planned-value">
+                    {formatRand(lastMonth?.ytdPlanned ?? 0)}
+                  </p>
+                </div>
               </div>
             </CardContent>
           </Card>
-        ) : (
-          <>
-            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <SummaryCard
-                title="Total Revenue (Finance)"
-                value={`R${(totalRevenue / 1000000).toFixed(2)}M`}
-                subValue={`${pivotData.rows.length} categories, ${pivotData.months.length} months`}
-                icon={DollarSign}
-                data-testid="card-total-revenue"
-              />
-              <SummaryCard
-                title="Received vs Planned"
-                value={`R${(inflowMetrics.totalReceived / 1000000).toFixed(2)}M`}
-                subValue={`of R${(inflowMetrics.totalPlanned / 1000000).toFixed(2)}M planned`}
-                trend={inflowMetrics.totalPlanned > 0 && inflowMetrics.totalReceived / inflowMetrics.totalPlanned >= 0.8 ? "up" : undefined}
-                icon={TrendingUp}
-                data-testid="card-received-planned"
-              />
-              <SummaryCard
-                title="Overdue Milestones"
-                value={inflowMetrics.overdueCount}
-                subValue={inflowMetrics.overdue > 0 ? `R${(inflowMetrics.overdue / 1000000).toFixed(2)}M outstanding` : "All on track"}
-                icon={AlertTriangle}
-                className={inflowMetrics.overdueCount > 0 ? "border-l-amber-500" : "border-l-emerald-500"}
-                data-testid="card-overdue-milestones"
-              />
-              <SummaryCard
-                title="Next 30 Days"
-                value={`R${(inflowMetrics.upcoming30 / 1000000).toFixed(2)}M`}
-                subValue={`60d: R${(inflowMetrics.upcoming60 / 1000000).toFixed(1)}M • 90d: R${(inflowMetrics.upcoming90 / 1000000).toFixed(1)}M`}
-                icon={Calendar}
-                data-testid="card-upcoming-inflows"
-              />
-            </div>
 
-            {projectBreakdown.length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Top Projects by Revenue</CardTitle>
-                  <CardDescription>Click to drill down into project details</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    {projectBreakdown.map(({ project, total }) => (
-                      <div
-                        key={project}
-                        className="flex items-center justify-between p-3 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors"
-                        onClick={() => setLocation(`/project/${encodeURIComponent(project)}`)}
-                      >
-                        <span className="font-medium">{project.replace("_Tracker", "")}</span>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono">R{(total / 1000000).toFixed(2)}M</span>
-                          <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                        </div>
-                      </div>
+          <Card data-testid="card-ytd-realised">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <div className="rounded-lg bg-green-100 p-2">
+                  <TrendingUp className="h-5 w-5 text-green-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">YTD Revenue (Realised)</p>
+                  <p className="text-2xl font-bold font-mono" data-testid="text-ytd-realised-value">
+                    {formatRand(lastMonth?.ytdRealised ?? 0)}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card data-testid="card-ytd-budget">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <div className="rounded-lg bg-purple-100 p-2">
+                  <Target className="h-5 w-5 text-purple-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">YTD Budget</p>
+                  <p className="text-2xl font-bold font-mono" data-testid="text-ytd-budget-value">
+                    {formatRand(lastMonth?.ytdBudget ?? 0)}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card data-testid="card-ytd-variance">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <div className={`rounded-lg p-2 ${(lastMonth?.ytdVariance ?? 0) >= 0 ? "bg-green-100" : "bg-red-100"}`}>
+                  <Activity className={`h-5 w-5 ${(lastMonth?.ytdVariance ?? 0) >= 0 ? "text-green-600" : "text-red-600"}`} />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">YTD Variance</p>
+                  <p
+                    className={`text-2xl font-bold font-mono ${(lastMonth?.ytdVariance ?? 0) >= 0 ? "text-green-600" : "text-red-600"}`}
+                    data-testid="text-ytd-variance-value"
+                  >
+                    {formatRand(lastMonth?.ytdVariance ?? 0)}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Monthly Revenue Grid</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm" data-testid="table-revenue-grid">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="sticky left-0 z-10 bg-muted/50 px-4 py-3 text-left font-semibold min-w-[160px]">
+                      Metric
+                    </th>
+                    {months.map((m) => (
+                      <th key={m.monthKey} className="px-4 py-3 text-right font-semibold whitespace-nowrap min-w-[110px]">
+                        {m.monthLabel}
+                      </th>
                     ))}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {ROW_DEFS.map((row) => {
+                    const isYtd = row.group === "ytd";
+                    return (
+                      <tr
+                        key={row.key}
+                        className={`border-b ${isYtd ? "bg-slate-50" : "bg-white"} hover:bg-muted/30`}
+                        data-testid={`row-${row.key}`}
+                      >
+                        <td className={`sticky left-0 z-10 px-4 py-2 font-medium ${isYtd ? "bg-slate-50" : "bg-white"}`}>
+                          {row.label}
+                        </td>
+                        {months.map((m) => {
+                          const val = m[row.dataKey] as number;
+                          const isEditing =
+                            editing?.field === row.key && editing?.monthKey === m.monthKey;
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Monthly Revenue by Category</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="font-bold">Category</TableHead>
-                        {pivotData.months.map(month => (
-                          <TableHead key={month} className="text-right font-bold">
-                            {format(parseISO(month), "MMM yy")}
-                          </TableHead>
-                        ))}
-                        <TableHead className="text-right font-bold bg-emerald-50">Total</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {pivotData.rows.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={pivotData.months.length + 2} className="text-center py-8 text-muted-foreground">
-                            No data available for the selected filters
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        pivotData.rows.map((row, idx) => (
-                          <TableRow key={idx}>
-                            <TableCell className="font-medium">{row.category}</TableCell>
-                            {pivotData.months.map(month => (
-                              <TableCell key={month} className="text-right font-mono">
-                                {row[month] ? `R${(row[month] as number).toLocaleString()}` : '-'}
-                              </TableCell>
-                            ))}
-                            <TableCell className="text-right font-mono font-bold bg-emerald-50 text-emerald-900">
-                              R{(row.total as number).toLocaleString()}
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-              </CardContent>
-            </Card>
+                          if (row.editable) {
+                            return (
+                              <td key={m.monthKey} className="px-2 py-1 text-right">
+                                {isEditing ? (
+                                  <Input
+                                    type="number"
+                                    className="h-8 w-full text-right font-mono text-sm"
+                                    value={editing.value}
+                                    onChange={(e) =>
+                                      setEditing({ ...editing, value: e.target.value })
+                                    }
+                                    onBlur={commitEdit}
+                                    onKeyDown={handleKeyDown}
+                                    autoFocus
+                                    data-testid={`input-${row.key}-${m.monthKey}`}
+                                  />
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className={`w-full text-right font-mono cursor-pointer hover:bg-muted rounded px-2 py-1 ${row.colorClass}`}
+                                    onClick={() =>
+                                      startEdit(row.key as EditableField, m.monthKey, val)
+                                    }
+                                    data-testid={`cell-${row.key}-${m.monthKey}`}
+                                  >
+                                    {formatRand(val)}
+                                  </button>
+                                )}
+                              </td>
+                            );
+                          }
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Line-Level Revenue Data (Inflows)</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Project</TableHead>
-                        <TableHead>Milestone</TableHead>
-                        <TableHead>Amount</TableHead>
-                        <TableHead>Planned Payment</TableHead>
-                        <TableHead>Payment Received</TableHead>
-                        <TableHead className="text-right">Status</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {programInflows.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                            No inflow data available
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        programInflows.slice(0, 100).map((item, idx) => (
-                          <TableRow key={idx}>
-                            <TableCell className="font-medium">{item.projectName}</TableCell>
-                            <TableCell>{item.milestoneName || `#${item.milestoneNo}`}</TableCell>
-                            <TableCell className="font-mono text-emerald-700">
-                              R{item.milestoneAmount?.toLocaleString() || '-'}
-                            </TableCell>
-                            <TableCell>
-                              {item.plannedPaymentDate ? format(parseISO(item.plannedPaymentDate), "dd MMM yyyy") : '-'}
-                            </TableCell>
-                            <TableCell>
-                              {item.paymentReceivedDate ? format(parseISO(item.paymentReceivedDate), "dd MMM yyyy") : '-'}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <Badge variant={item.paymentReceivedDate ? "default" : "outline"} className={item.paymentReceivedDate ? "bg-emerald-600" : ""}>
-                                {item.paymentReceivedDate ? "Received" : "Pending"}
-                              </Badge>
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                  {programInflows.length > 100 && (
-                    <div className="text-center py-4 text-sm text-muted-foreground">
-                      Showing first 100 of {programInflows.length} records
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          </>
-        )}
+                          const colorClass = row.colorCoded
+                            ? getCellColor(val)
+                            : row.colorClass;
+
+                          return (
+                            <td
+                              key={m.monthKey}
+                              className={`px-4 py-2 text-right font-mono ${colorClass}`}
+                              data-testid={`cell-${row.key}-${m.monthKey}`}
+                            >
+                              {formatCell(row, val)}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Revenue Overview Chart</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[400px]" data-testid="chart-revenue">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="month" tick={{ fontSize: 12 }} />
+                  <YAxis
+                    tickFormatter={(v: number) => formatRand(v)}
+                    tick={{ fontSize: 12 }}
+                  />
+                  <Tooltip
+                    formatter={(value: number) => formatRand(value)}
+                  />
+                  <Legend />
+                  <Bar dataKey="Planned" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Realised" fill="#22c55e" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Budget" fill="#a855f7" radius={[4, 4, 0, 0]} />
+                  <Line
+                    type="monotone"
+                    dataKey="YTD Variance"
+                    stroke="#ef4444"
+                    strokeWidth={2}
+                    strokeDasharray="5 5"
+                    dot={false}
+                  />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

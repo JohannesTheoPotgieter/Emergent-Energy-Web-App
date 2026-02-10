@@ -1044,58 +1044,67 @@ export async function registerRoutes(
 
   // ==================== PROJECTS SUMMARY API ====================
 
+  // Helper: find max ActualEndDate from plan tasks matching a description pattern
+  function findMaxEndDate(plans: any[], patterns: string[]): string | null {
+    let maxDate: string | null = null;
+    for (const task of plans) {
+      const desc = (task.highLevelProgramme || '').toLowerCase();
+      const matches = patterns.some(p => desc.includes(p.toLowerCase()));
+      if (matches && task.actualEnd && /^\d{4}-\d{2}-\d{2}/.test(task.actualEnd)) {
+        const dateStr = task.actualEnd.substring(0, 10);
+        if (!maxDate || dateStr > maxDate) maxDate = dateStr;
+      }
+    }
+    return maxDate;
+  }
+
+  // Helper: compute DAYS diff between two date strings
+  function daysDiff(a: string | null, b: string | null): number | null {
+    if (!a || !b || !/^\d{4}-\d{2}-\d{2}/.test(a) || !/^\d{4}-\d{2}-\d{2}/.test(b)) return null;
+    const da = new Date(a.substring(0, 10));
+    const db = new Date(b.substring(0, 10));
+    const diff = Math.round((da.getTime() - db.getTime()) / (1000 * 60 * 60 * 24));
+    return diff;
+  }
+
   app.get("/api/projects-summary", async (req, res) => {
     try {
-      const [allProjectInfo, allExpenses, allInflows, allPlans] = await Promise.all([
+      const [allProjectInfo, allExpenses, allInflows, allPlans, allEditableFields] = await Promise.all([
         storage.getAllProjectInfo(),
         storage.getAllProgramExpenses(),
         storage.getAllProgramInflows(),
-        storage.getAllProjectPlans()
+        storage.getAllProjectPlans(),
+        storage.getAllProjectEditableFields()
       ]);
 
       const today = new Date().toISOString().split("T")[0];
 
-      // Group data by project name
       const expensesByProject = new Map<string, typeof allExpenses>();
       for (const expense of allExpenses) {
-        if (!expensesByProject.has(expense.projectName)) {
-          expensesByProject.set(expense.projectName, []);
-        }
+        if (!expensesByProject.has(expense.projectName)) expensesByProject.set(expense.projectName, []);
         expensesByProject.get(expense.projectName)!.push(expense);
       }
 
       const inflowsByProject = new Map<string, typeof allInflows>();
       for (const inflow of allInflows) {
-        if (!inflowsByProject.has(inflow.projectName)) {
-          inflowsByProject.set(inflow.projectName, []);
-        }
+        if (!inflowsByProject.has(inflow.projectName)) inflowsByProject.set(inflow.projectName, []);
         inflowsByProject.get(inflow.projectName)!.push(inflow);
       }
 
       const plansByProject = new Map<string, typeof allPlans>();
       for (const plan of allPlans) {
-        if (!plansByProject.has(plan.projectName)) {
-          plansByProject.set(plan.projectName, []);
-        }
+        if (!plansByProject.has(plan.projectName)) plansByProject.set(plan.projectName, []);
         plansByProject.get(plan.projectName)!.push(plan);
       }
 
-      // Collect all unique project names from all data sources
-      const allProjectNames = new Set<string>();
-      for (const info of allProjectInfo) {
-        allProjectNames.add(info.projectName);
-      }
-      for (const expense of allExpenses) {
-        allProjectNames.add(expense.projectName);
-      }
-      for (const inflow of allInflows) {
-        allProjectNames.add(inflow.projectName);
-      }
-      for (const plan of allPlans) {
-        allProjectNames.add(plan.projectName);
-      }
+      const editableMap = new Map(allEditableFields.map(f => [f.projectName, f]));
 
-      // Create a lookup map for project info
+      const allProjectNames = new Set<string>();
+      for (const info of allProjectInfo) allProjectNames.add(info.projectName);
+      for (const expense of allExpenses) allProjectNames.add(expense.projectName);
+      for (const inflow of allInflows) allProjectNames.add(inflow.projectName);
+      for (const plan of allPlans) allProjectNames.add(plan.projectName);
+
       const projectInfoMap = new Map(allProjectInfo.map(info => [info.projectName, info]));
 
       const projectsSummary = Array.from(allProjectNames).map(projectName => {
@@ -1103,80 +1112,90 @@ export async function registerRoutes(
         const projectExpenses = expensesByProject.get(projectName) || [];
         const projectInflows = inflowsByProject.get(projectName) || [];
         const projectPlans = plansByProject.get(projectName) || [];
+        const editable = editableMap.get(projectName);
 
-        // Calculate actual revenue = SUM(milestone_amount)
+        // Compute milestone dates from plan tasks (Excel spec: max ActualEndDate matching descriptions)
+        const pdHandoverDate = findMaxEndDate(projectPlans, ['bd handover', 'project charter handover']) || info?.pdHandoverDate || null;
+        const constructionStartDate = findMaxEndDate(projectPlans, ['site establishment']) || info?.constructionStartDate || null;
+        const commissioningDate = findMaxEndDate(projectPlans, ['commissioning']) || info?.commissioningDate || null;
+        const omHandoverDate = findMaxEndDate(projectPlans, ['handover to matriarch']) || info?.omHandoverDate || null;
+        const clientHandoverDate = findMaxEndDate(projectPlans, ['handover to client']) || info?.clientHandoverDate || null;
+
+        // Duration = DAYS(Client Handover, Construction Start)
+        const duration = daysDiff(clientHandoverDate, constructionStartDate);
+
+        // kW/Week = Size / DAYS(Commissioning, Construction Start) * 7
+        const sizeKwp = info?.sizeKwp ? parseFloat(info.sizeKwp) : null;
+        const commDays = daysDiff(commissioningDate, constructionStartDate);
+        const kwPerWeek = (sizeKwp && commDays && commDays > 0) ? (sizeKwp / commDays) * 7 : null;
+
+        // Actual Revenue = SUM(MilstoneAmount) from ProgramInflows
         let actualRevenue = 0;
         for (const inflow of projectInflows) {
-          if (inflow.milestoneAmount) {
-            actualRevenue += parseFloat(inflow.milestoneAmount);
-          }
+          if (inflow.milestoneAmount) actualRevenue += parseFloat(inflow.milestoneAmount);
         }
 
-        // Calculate actual expenses = SUM(expense_actual_total)
+        // Actual Expenses = SUM(ExpenseActualTotal) from ProgramExpense
         let actualExpenses = 0;
         for (const expense of projectExpenses) {
-          if (expense.expenseActualTotal) {
-            actualExpenses += parseFloat(expense.expenseActualTotal);
-          }
+          if (expense.expenseActualTotal) actualExpenses += parseFloat(expense.expenseActualTotal);
         }
 
-        // GP % = 1 - (Actual Expenses / Actual Revenue)
-        let gpPercent: number | null = null;
-        if (actualRevenue > 0) {
-          gpPercent = 1 - (actualExpenses / actualRevenue);
-        }
+        // GP % = 1 - (ActualExpenses / ActualRevenue); if revenue = 0 then null
+        const gpPercent = actualRevenue > 0 ? 1 - (actualExpenses / actualRevenue) : null;
 
-        // Project % Complete = avg(actual_pct_complete)
-        let projectPctComplete: number | null = null;
-        let expectedPctComplete: number | null = null;
+        // Project % Complete = avg(actual_pct_complete) across plan tasks
         const validActualPcts = projectPlans.filter(p => p.actualPctComplete !== null);
         const validExpectedPcts = projectPlans.filter(p => p.expectedPctComplete !== null);
-        
-        if (validActualPcts.length > 0) {
-          projectPctComplete = validActualPcts.reduce((sum, p) => sum + (p.actualPctComplete || 0), 0) / validActualPcts.length;
-        }
-        if (validExpectedPcts.length > 0) {
-          expectedPctComplete = validExpectedPcts.reduce((sum, p) => sum + (p.expectedPctComplete || 0), 0) / validExpectedPcts.length;
-        }
+        const projectPctComplete = validActualPcts.length > 0
+          ? validActualPcts.reduce((sum, p) => sum + (p.actualPctComplete || 0), 0) / validActualPcts.length
+          : null;
+        const expectedPctComplete = validExpectedPcts.length > 0
+          ? validExpectedPcts.reduce((sum, p) => sum + (p.expectedPctComplete || 0), 0) / validExpectedPcts.length
+          : null;
+        const deltaVsExpected = (projectPctComplete !== null && expectedPctComplete !== null)
+          ? projectPctComplete - expectedPctComplete : null;
 
-        // Delta vs Expected
-        let deltaVsExpected: number | null = null;
-        if (projectPctComplete !== null && expectedPctComplete !== null) {
-          deltaVsExpected = projectPctComplete - expectedPctComplete;
-        }
-
-        // Revenue Outstanding = SUM(inflows where payment_received_date is empty AND invoice_number is empty)
+        // Revenue Outstanding (Excel spec): SUM(MilstoneAmount) where PaymentRecievedDate <= today AND MilestoneInvoiceNumber is blank
         let revenueOutstanding = 0;
         for (const inflow of projectInflows) {
-          if (!inflow.paymentReceivedDate && !inflow.milestoneInvoiceNumber && inflow.milestoneAmount) {
-            revenueOutstanding += parseFloat(inflow.milestoneAmount);
+          if (inflow.milestoneAmount) {
+            const hasPayment = inflow.paymentReceivedDate && /^\d{4}-\d{2}-\d{2}/.test(inflow.paymentReceivedDate) && inflow.paymentReceivedDate <= today;
+            const noInvoice = !inflow.milestoneInvoiceNumber || inflow.milestoneInvoiceNumber.trim() === '';
+            if (hasPayment && noInvoice) {
+              revenueOutstanding += parseFloat(inflow.milestoneAmount);
+            }
           }
         }
 
-        // Expenses Outstanding = SUM(expenses where payment_date is empty AND invoice_number is empty)
-        let expensesOutstanding = 0;
+        // Expenses Due (Excel spec): SUM(ExpenseActualTotal) where ExpensePaymentDate < today AND ExpenseInvoiceNumber is blank
+        let expensesDue = 0;
         for (const expense of projectExpenses) {
-          if (!expense.expensePaymentDate && !expense.expenseInvoiceNumber && expense.expenseActualTotal) {
-            expensesOutstanding += parseFloat(expense.expenseActualTotal);
+          if (expense.expenseActualTotal) {
+            const hasPastPaymentDate = expense.expensePaymentDate && /^\d{4}-\d{2}-\d{2}/.test(expense.expensePaymentDate) && expense.expensePaymentDate < today;
+            const noInvoice = !expense.expenseInvoiceNumber || expense.expenseInvoiceNumber.trim() === '';
+            if (hasPastPaymentDate && noInvoice) {
+              expensesDue += parseFloat(expense.expenseActualTotal);
+            }
           }
         }
 
         return {
           project_name: projectName,
-          size_kwp: info?.sizeKwp ? parseFloat(info.sizeKwp) : null,
+          size_kwp: sizeKwp,
           pd: info?.pd || null,
           pm: info?.pm || null,
-          cost_proposal_signed: null,
-          funding_signed: null,
-          epc_contract_signed: null,
+          cost_proposal_signed: editable?.costProposalSigned || null,
+          funding_signed: editable?.fundingSigned || null,
+          epc_contract_signed: editable?.epcContractSigned || null,
           phase: info?.phase || null,
-          pd_handover_date: info?.pdHandoverDate || null,
-          construction_start_date: info?.constructionStartDate || null,
-          duration: null,
-          kw_per_week: null,
-          commissioning_date: info?.commissioningDate || null,
-          om_handover_date: info?.omHandoverDate || null,
-          client_handover_date: info?.clientHandoverDate || null,
+          pd_handover_date: pdHandoverDate,
+          construction_start_date: constructionStartDate,
+          duration,
+          kw_per_week: kwPerWeek,
+          commissioning_date: commissioningDate,
+          om_handover_date: omHandoverDate,
+          client_handover_date: clientHandoverDate,
           project_pct_complete: projectPctComplete,
           expected_pct_complete: expectedPctComplete,
           delta_vs_expected: deltaVsExpected,
@@ -1184,8 +1203,9 @@ export async function registerRoutes(
           actual_expenses: actualExpenses,
           gp_percent: gpPercent,
           revenue_outstanding: revenueOutstanding,
-          expenses_outstanding: expensesOutstanding,
-          current_vo_total: 0
+          expenses_due: expensesDue,
+          current_vo_total: editable?.currentVoTotal ? parseFloat(editable.currentVoTotal) : 0,
+          comments: editable?.comments || null
         };
       });
 
@@ -1193,6 +1213,539 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Projects summary fetch error:", error);
       res.status(500).json({ error: "Failed to fetch projects summary", message: "Failed to fetch projects summary" });
+    }
+  });
+
+  // Update project editable fields (Cost Proposal Signed, Funding Signed, EPC Contract Signed, Current VO Total, Comments)
+  app.post("/api/projects-summary/:projectName/edit", requireAuth, async (req, res) => {
+    try {
+      const projectName = decodeURIComponent(req.params.projectName as string);
+      const { costProposalSigned, fundingSigned, epcContractSigned, currentVoTotal, comments } = req.body;
+      const result = await storage.upsertProjectEditableFields({
+        projectName,
+        costProposalSigned: costProposalSigned || null,
+        fundingSigned: fundingSigned || null,
+        epcContractSigned: epcContractSigned || null,
+        currentVoTotal: currentVoTotal != null ? String(currentVoTotal) : null,
+        comments: comments || null,
+      });
+      res.json(result);
+    } catch (error) {
+      console.error("Project edit error:", error);
+      res.status(500).json({ error: "Failed to save project fields", message: "Failed to save project fields" });
+    }
+  });
+
+  // ==================== CASHFLOW 2026 API ====================
+
+  app.get("/api/cashflow-2026", requireAuth, async (req, res) => {
+    try {
+      const projectFilter = req.query.project ? String(req.query.project) : null;
+
+      const [allExpenses, allInflows, manualBalances, opexBudgets] = await Promise.all([
+        storage.getAllProgramExpenses(),
+        storage.getAllProgramInflows(),
+        storage.getAllCashflowWeeklyManual(),
+        storage.getAllOpexBudgetMonthly(),
+      ]);
+
+      const manualMap = new Map(manualBalances.map(m => [m.weekStartDate, parseFloat(m.openingBalance || "0")]));
+      const opexMap = new Map(opexBudgets.map(o => [o.monthKey, parseFloat(o.amount || "0")]));
+
+      const fyStart = new Date(Date.UTC(2025, 8, 1));
+      const fyEnd = new Date(Date.UTC(2026, 7, 31));
+
+      const weeksInMonth = new Map<string, number>();
+      const tempDate = new Date(fyStart);
+      while (tempDate <= fyEnd) {
+        const mk = `${tempDate.getUTCFullYear()}-${String(tempDate.getUTCMonth() + 1).padStart(2, '0')}`;
+        weeksInMonth.set(mk, (weeksInMonth.get(mk) || 0) + 1);
+        tempDate.setUTCDate(tempDate.getUTCDate() + 7);
+      }
+
+      const weeks: any[] = [];
+      const cursor = new Date(fyStart);
+
+      while (cursor <= fyEnd) {
+        const weekStart = cursor.toISOString().split('T')[0];
+        const weekEndDate = new Date(cursor);
+        weekEndDate.setUTCDate(weekEndDate.getUTCDate() + 7);
+        const weekEnd = weekEndDate.toISOString().split('T')[0];
+
+        let projectInflowsSum = 0;
+        for (const inflow of allInflows) {
+          if (projectFilter && inflow.projectName !== projectFilter) continue;
+          const d = inflow.paymentReceivedDate;
+          if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
+          if (d >= weekStart && d < weekEnd && inflow.milestoneAmount) {
+            projectInflowsSum += parseFloat(inflow.milestoneAmount);
+          }
+        }
+
+        let projectOutflowsSum = 0;
+        for (const expense of allExpenses) {
+          if (projectFilter && expense.projectName !== projectFilter) continue;
+          const d = expense.expensePaymentDate;
+          if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
+          if (d >= weekStart && d < weekEnd && expense.expenseActualTotal) {
+            projectOutflowsSum += parseFloat(expense.expenseActualTotal);
+          }
+        }
+
+        const openingBalance = manualMap.get(weekStart) || 0;
+
+        const mk = `${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, '0')}`;
+        const monthlyOpex = opexMap.get(mk) || 0;
+        const weeksCount = weeksInMonth.get(mk) || 1;
+        const opexOutflows = monthlyOpex / weeksCount;
+
+        const closingBalance = openingBalance + projectInflowsSum - opexOutflows - projectOutflowsSum;
+        const availablePayment = openingBalance + projectInflowsSum;
+
+        weeks.push({
+          weekStart,
+          weekEnd,
+          projectInflows: projectInflowsSum,
+          projectOutflows: projectOutflowsSum,
+          openingBalance,
+          opexOutflows,
+          closingBalance,
+          availablePayment,
+        });
+
+        cursor.setUTCDate(cursor.getUTCDate() + 7);
+      }
+
+      res.json(weeks);
+    } catch (error) {
+      console.error("Cashflow 2026 error:", error);
+      res.status(500).json({ error: "Failed to fetch cashflow 2026 data", message: "Failed to fetch cashflow 2026 data" });
+    }
+  });
+
+  app.get("/api/cashflow-2026/detail", requireAuth, async (req, res) => {
+    try {
+      const weekStart = String(req.query.week || "");
+      if (!weekStart || !/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) {
+        return res.status(400).json({ error: "Invalid week parameter", message: "Provide ?week=YYYY-MM-DD" });
+      }
+      const projectFilter = req.query.project ? String(req.query.project) : null;
+
+      const [y, m, d] = weekStart.split('-').map(Number);
+      const wsDate = new Date(Date.UTC(y, m - 1, d));
+      wsDate.setUTCDate(wsDate.getUTCDate() + 7);
+      const weekEnd = wsDate.toISOString().split('T')[0];
+
+      const [allExpenses, allInflows] = await Promise.all([
+        storage.getAllProgramExpenses(),
+        storage.getAllProgramInflows(),
+      ]);
+
+      const outflows = allExpenses
+        .filter(e => {
+          if (projectFilter && e.projectName !== projectFilter) return false;
+          const pd = e.expensePaymentDate;
+          if (!pd || !/^\d{4}-\d{2}-\d{2}$/.test(pd)) return false;
+          return pd >= weekStart && pd < weekEnd;
+        })
+        .map(e => ({
+          projectName: e.projectName,
+          expenseCategory: e.expenseCategory,
+          expenseLineItem: e.expenseLineItem,
+          expenseInvoiceNumber: e.expenseInvoiceNumber,
+          expensePaymentDate: e.expensePaymentDate,
+          expenseActualTotal: e.expenseActualTotal ? parseFloat(e.expenseActualTotal) : 0,
+        }));
+
+      const inflows = allInflows
+        .filter(inf => {
+          if (projectFilter && inf.projectName !== projectFilter) return false;
+          const pd = inf.paymentReceivedDate;
+          if (!pd || !/^\d{4}-\d{2}-\d{2}$/.test(pd)) return false;
+          return pd >= weekStart && pd < weekEnd;
+        })
+        .map(inf => {
+          let daysToReceipt: number | null = null;
+          if (inf.invoiceRaisedDate && inf.paymentReceivedDate &&
+              /^\d{4}-\d{2}-\d{2}$/.test(inf.invoiceRaisedDate) &&
+              /^\d{4}-\d{2}-\d{2}$/.test(inf.paymentReceivedDate)) {
+            const inv = new Date(inf.invoiceRaisedDate);
+            const pay = new Date(inf.paymentReceivedDate);
+            daysToReceipt = Math.round((pay.getTime() - inv.getTime()) / (1000 * 60 * 60 * 24));
+          }
+          return {
+            projectName: inf.projectName,
+            milestoneName: inf.milestoneName,
+            milestoneInvoiceNumber: inf.milestoneInvoiceNumber,
+            paymentReceivedDate: inf.paymentReceivedDate,
+            milestoneAmount: inf.milestoneAmount ? parseFloat(inf.milestoneAmount) : 0,
+            invoiceRaisedDate: inf.invoiceRaisedDate,
+            daysToReceipt,
+          };
+        });
+
+      res.json({ outflows, inflows });
+    } catch (error) {
+      console.error("Cashflow 2026 detail error:", error);
+      res.status(500).json({ error: "Failed to fetch cashflow detail", message: "Failed to fetch cashflow detail" });
+    }
+  });
+
+  // ==================== MANUAL INPUT ENDPOINTS ====================
+
+  app.post("/api/cashflow-2026/opening-balance", requireAuth, async (req, res) => {
+    try {
+      const { weekStartDate, openingBalance } = req.body;
+      if (!weekStartDate || openingBalance == null) {
+        return res.status(400).json({ error: "weekStartDate and openingBalance required" });
+      }
+      const result = await storage.upsertCashflowWeeklyManual(weekStartDate, String(openingBalance));
+      res.json(result);
+    } catch (error) {
+      console.error("Opening balance save error:", error);
+      res.status(500).json({ error: "Failed to save opening balance", message: "Failed to save opening balance" });
+    }
+  });
+
+  app.post("/api/cashflow-2026/opex-budget", requireAuth, async (req, res) => {
+    try {
+      const { monthKey, amount } = req.body;
+      if (!monthKey || amount == null) {
+        return res.status(400).json({ error: "monthKey and amount required" });
+      }
+      const result = await storage.upsertOpexBudgetMonthly(monthKey, String(amount));
+      res.json(result);
+    } catch (error) {
+      console.error("OPEX budget save error:", error);
+      res.status(500).json({ error: "Failed to save OPEX budget", message: "Failed to save OPEX budget" });
+    }
+  });
+
+  app.get("/api/cashflow-2026/opex-budget", requireAuth, async (req, res) => {
+    try {
+      const entries = await storage.getAllOpexBudgetMonthly();
+      res.json(entries);
+    } catch (error) {
+      console.error("OPEX budget fetch error:", error);
+      res.status(500).json({ error: "Failed to fetch OPEX budgets", message: "Failed to fetch OPEX budgets" });
+    }
+  });
+
+  app.post("/api/tracker-monthly", requireAuth, async (req, res) => {
+    try {
+      const { trackerType, monthKey, realised, outstanding, budget } = req.body;
+      if (!trackerType || !monthKey) {
+        return res.status(400).json({ error: "trackerType and monthKey required" });
+      }
+      const result = await storage.upsertTrackerMonthlyManual({
+        trackerType,
+        monthKey,
+        realised: realised != null ? String(realised) : null,
+        outstanding: outstanding != null ? String(outstanding) : null,
+        budget: budget != null ? String(budget) : null,
+      });
+      res.json(result);
+    } catch (error) {
+      console.error("Tracker monthly save error:", error);
+      res.status(500).json({ error: "Failed to save tracker entry", message: "Failed to save tracker entry" });
+    }
+  });
+
+  app.get("/api/tracker-monthly/:type", requireAuth, async (req, res) => {
+    try {
+      const trackerType = (req.params.type as string).toUpperCase();
+      if (trackerType !== 'REV' && trackerType !== 'COS') {
+        return res.status(400).json({ error: "Type must be REV or COS" });
+      }
+      const entries = await storage.getTrackerMonthlyManual(trackerType);
+      res.json(entries);
+    } catch (error) {
+      console.error("Tracker monthly fetch error:", error);
+      res.status(500).json({ error: "Failed to fetch tracker entries", message: "Failed to fetch tracker entries" });
+    }
+  });
+
+  // ==================== REV TRACKER API ====================
+
+  app.get("/api/rev-tracker", requireAuth, async (req, res) => {
+    try {
+      const [allInflows, manualEntries] = await Promise.all([
+        storage.getAllProgramInflows(),
+        storage.getTrackerMonthlyManual('REV'),
+      ]);
+
+      const manualMap = new Map(manualEntries.map(e => [e.monthKey, e]));
+
+      const months: any[] = [];
+      const startMonth = new Date(Date.UTC(2025, 8, 1));
+
+      let ytdPlanned = 0, ytdRealised = 0, ytdOutstanding = 0, ytdBudget = 0;
+
+      for (let i = 0; i < 12; i++) {
+        const monthDate = new Date(startMonth);
+        monthDate.setUTCMonth(monthDate.getUTCMonth() + i);
+        const yr = monthDate.getUTCFullYear();
+        const mo = monthDate.getUTCMonth();
+        const monthKey = `${yr}-${String(mo + 1).padStart(2, '0')}`;
+        const monthStart = `${monthKey}-01`;
+        const nextMonth = new Date(Date.UTC(yr, mo + 1, 1));
+        const monthEnd = nextMonth.toISOString().split('T')[0];
+
+        let planned = 0;
+        for (const inflow of allInflows) {
+          const d = inflow.invoiceRaisedDate;
+          if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
+          if (d >= monthStart && d < monthEnd && inflow.milestoneAmount) {
+            planned += parseFloat(inflow.milestoneAmount);
+          }
+        }
+
+        const manual = manualMap.get(monthKey);
+        const realised = manual?.realised ? parseFloat(manual.realised) : 0;
+        const outstanding = manual?.outstanding ? parseFloat(manual.outstanding) : 0;
+        const budget = manual?.budget ? parseFloat(manual.budget) : 0;
+
+        const variance = planned - budget;
+        const variancePct = budget !== 0 ? (planned - budget) / budget : 0;
+
+        ytdPlanned += planned;
+        ytdRealised += realised;
+        ytdOutstanding += outstanding;
+        ytdBudget += budget;
+        const ytdVariance = ytdPlanned - ytdBudget;
+        const ytdVariancePct = ytdBudget !== 0 ? (ytdPlanned - ytdBudget) / ytdBudget : 0;
+
+        months.push({
+          monthKey,
+          label: monthDate.toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }),
+          planned,
+          realised,
+          outstanding,
+          budget,
+          variance,
+          variancePct,
+          ytdPlanned,
+          ytdRealised,
+          ytdOutstanding,
+          ytdBudget,
+          ytdVariance,
+          ytdVariancePct,
+        });
+      }
+
+      res.json(months);
+    } catch (error) {
+      console.error("REV tracker error:", error);
+      res.status(500).json({ error: "Failed to fetch REV tracker data", message: "Failed to fetch REV tracker data" });
+    }
+  });
+
+  // ==================== COS TRACKER API ====================
+
+  app.get("/api/cos-tracker", requireAuth, async (req, res) => {
+    try {
+      const [allExpenses, manualEntries] = await Promise.all([
+        storage.getAllProgramExpenses(),
+        storage.getTrackerMonthlyManual('COS'),
+      ]);
+
+      const manualMap = new Map(manualEntries.map(e => [e.monthKey, e]));
+
+      const months: any[] = [];
+      const startMonth = new Date(Date.UTC(2025, 8, 1));
+
+      let ytdPlanned = 0, ytdRealised = 0, ytdOutstanding = 0, ytdBudget = 0;
+
+      for (let i = 0; i < 12; i++) {
+        const monthDate = new Date(startMonth);
+        monthDate.setUTCMonth(monthDate.getUTCMonth() + i);
+        const yr = monthDate.getUTCFullYear();
+        const mo = monthDate.getUTCMonth();
+        const monthKey = `${yr}-${String(mo + 1).padStart(2, '0')}`;
+        const monthStart = `${monthKey}-01`;
+        const nextMonth = new Date(Date.UTC(yr, mo + 1, 1));
+        const monthEnd = nextMonth.toISOString().split('T')[0];
+
+        let planned = 0;
+        for (const expense of allExpenses) {
+          if (!expense.expenseInvoiceNumber || !expense.expenseInvoicedDate) continue;
+          const d = expense.expenseInvoicedDate;
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
+          if (d >= monthStart && d < monthEnd && expense.expenseActualTotal) {
+            planned += parseFloat(expense.expenseActualTotal);
+          }
+        }
+
+        const manual = manualMap.get(monthKey);
+        const realised = manual?.realised ? parseFloat(manual.realised) : 0;
+        const outstanding = manual?.outstanding ? parseFloat(manual.outstanding) : 0;
+        const budget = manual?.budget ? parseFloat(manual.budget) : 0;
+
+        const variance = planned - budget;
+        const variancePct = budget !== 0 ? (planned - budget) / budget : 0;
+
+        ytdPlanned += planned;
+        ytdRealised += realised;
+        ytdOutstanding += outstanding;
+        ytdBudget += budget;
+        const ytdVariance = ytdPlanned - ytdBudget;
+        const ytdVariancePct = ytdBudget !== 0 ? (ytdPlanned - ytdBudget) / ytdBudget : 0;
+
+        months.push({
+          monthKey,
+          label: monthDate.toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }),
+          planned,
+          realised,
+          outstanding,
+          budget,
+          variance,
+          variancePct,
+          ytdPlanned,
+          ytdRealised,
+          ytdOutstanding,
+          ytdBudget,
+          ytdVariance,
+          ytdVariancePct,
+        });
+      }
+
+      res.json(months);
+    } catch (error) {
+      console.error("COS tracker error:", error);
+      res.status(500).json({ error: "Failed to fetch COS tracker data", message: "Failed to fetch COS tracker data" });
+    }
+  });
+
+  // ==================== PROGRAM DASHBOARD API ====================
+
+  app.get("/api/program-dashboard", requireAuth, async (req, res) => {
+    try {
+      const [allProjectInfo, allExpenses, allInflows, allPlans, allEditableFields] = await Promise.all([
+        storage.getAllProjectInfo(),
+        storage.getAllProgramExpenses(),
+        storage.getAllProgramInflows(),
+        storage.getAllProjectPlans(),
+        storage.getAllProjectEditableFields(),
+      ]);
+
+      const today = new Date().toISOString().split("T")[0];
+
+      const plansByProject = new Map<string, typeof allPlans>();
+      for (const plan of allPlans) {
+        if (!plansByProject.has(plan.projectName)) plansByProject.set(plan.projectName, []);
+        plansByProject.get(plan.projectName)!.push(plan);
+      }
+
+      const inflowsByProject = new Map<string, typeof allInflows>();
+      for (const inflow of allInflows) {
+        if (!inflowsByProject.has(inflow.projectName)) inflowsByProject.set(inflow.projectName, []);
+        inflowsByProject.get(inflow.projectName)!.push(inflow);
+      }
+
+      const expensesByProject = new Map<string, typeof allExpenses>();
+      for (const expense of allExpenses) {
+        if (!expensesByProject.has(expense.projectName)) expensesByProject.set(expense.projectName, []);
+        expensesByProject.get(expense.projectName)!.push(expense);
+      }
+
+      const projectInfoMap = new Map(allProjectInfo.map(info => [info.projectName, info]));
+
+      const allProjectNames = new Set<string>();
+      for (const info of allProjectInfo) allProjectNames.add(info.projectName);
+      for (const expense of allExpenses) allProjectNames.add(expense.projectName);
+      for (const inflow of allInflows) allProjectNames.add(inflow.projectName);
+      for (const plan of allPlans) allProjectNames.add(plan.projectName);
+
+      let siteEstablishmentNext10 = 0;
+      let commissioningNext10 = 0;
+      let omHandoverNext10 = 0;
+      let clientHandoverNext10 = 0;
+      let revenueOutstanding = 0;
+      let expenseOverdue = 0;
+      let inflowsThisWeek = 0;
+      let outflowsThisWeek = 0;
+
+      const pmStats = new Map<string, { activeProjects: number; commissioningThisMonth: number; clientHandoverThisMonth: number }>();
+
+      for (const projectName of Array.from(allProjectNames)) {
+        const info = projectInfoMap.get(projectName);
+        const projectPlans = plansByProject.get(projectName) || [];
+        const projectInflows = inflowsByProject.get(projectName) || [];
+        const projectExpenses = expensesByProject.get(projectName) || [];
+
+        const constructionStartDate = findMaxEndDate(projectPlans, ['site establishment']) || info?.constructionStartDate || null;
+        const commissioningDate = findMaxEndDate(projectPlans, ['commissioning']) || info?.commissioningDate || null;
+        const omHandoverDate = findMaxEndDate(projectPlans, ['handover to matriarch']) || info?.omHandoverDate || null;
+        const clientHandoverDate = findMaxEndDate(projectPlans, ['handover to client']) || info?.clientHandoverDate || null;
+
+        if (isWithinDays(constructionStartDate, 10)) siteEstablishmentNext10++;
+        if (isWithinDays(commissioningDate, 10)) commissioningNext10++;
+        if (isWithinDays(omHandoverDate, 10)) omHandoverNext10++;
+        if (isWithinDays(clientHandoverDate, 10)) clientHandoverNext10++;
+
+        for (const inflow of projectInflows) {
+          if (inflow.milestoneAmount) {
+            const hasPayment = inflow.paymentReceivedDate && /^\d{4}-\d{2}-\d{2}$/.test(inflow.paymentReceivedDate) && inflow.paymentReceivedDate <= today;
+            const noInvoice = !inflow.milestoneInvoiceNumber || inflow.milestoneInvoiceNumber.trim() === '';
+            if (hasPayment && noInvoice) {
+              revenueOutstanding += parseFloat(inflow.milestoneAmount);
+            }
+          }
+          if (isThisWeek(inflow.paymentReceivedDate) && inflow.milestoneAmount) {
+            inflowsThisWeek += parseFloat(inflow.milestoneAmount);
+          }
+        }
+
+        for (const expense of projectExpenses) {
+          if (expense.expenseActualTotal) {
+            const hasPastPaymentDate = expense.expensePaymentDate && /^\d{4}-\d{2}-\d{2}$/.test(expense.expensePaymentDate) && expense.expensePaymentDate < today;
+            const noInvoice = !expense.expenseInvoiceNumber || expense.expenseInvoiceNumber.trim() === '';
+            if (hasPastPaymentDate && noInvoice) {
+              expenseOverdue += parseFloat(expense.expenseActualTotal);
+            }
+          }
+          if (isThisWeek(expense.expensePaymentDate) && expense.expenseActualTotal) {
+            outflowsThisWeek += parseFloat(expense.expenseActualTotal);
+          }
+        }
+
+        const pm = info?.pm;
+        if (pm) {
+          if (!pmStats.has(pm)) pmStats.set(pm, { activeProjects: 0, commissioningThisMonth: 0, clientHandoverThisMonth: 0 });
+          const stats = pmStats.get(pm)!;
+          if (clientHandoverDate && clientHandoverDate >= today) {
+            stats.activeProjects++;
+          }
+          if (isThisMonth(commissioningDate)) {
+            stats.commissioningThisMonth++;
+          }
+          if (isThisMonth(clientHandoverDate)) {
+            stats.clientHandoverThisMonth++;
+          }
+        }
+      }
+
+      const pmTable = Array.from(pmStats.entries()).map(([pm, stats]) => ({
+        pm,
+        ...stats,
+      }));
+
+      res.json({
+        kpis: {
+          siteEstablishmentNext10,
+          commissioningNext10,
+          omHandoverNext10,
+          clientHandoverNext10,
+          revenueOutstanding,
+          expenseOverdue,
+          inflowsThisWeek,
+          outflowsThisWeek,
+        },
+        pmTable,
+      });
+    } catch (error) {
+      console.error("Program dashboard error:", error);
+      res.status(500).json({ error: "Failed to fetch program dashboard", message: "Failed to fetch program dashboard" });
     }
   });
 

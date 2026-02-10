@@ -1,273 +1,364 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { useLocation } from "wouter";
-import { DateRangeBar } from "@/components/DateRangeBar";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { SummaryCard } from "@/components/dashboard/SummaryCard";
-import { format, parseISO } from "date-fns";
-import { CreditCard, TrendingDown, AlertTriangle, Users, ArrowRight, RefreshCw } from "lucide-react";
-import { formatRand, formatPercent, safeNumber } from "@/lib/safeMoney";
+import { useState, useMemo, useCallback } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { apiRequest } from "@/lib/queryClient";
+import {
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  ComposedChart,
+  Line,
+} from "recharts";
+import {
+  DollarSign,
+  TrendingDown,
+  Target,
+  Activity,
+} from "lucide-react";
 
-interface CosApiResponse {
-  lastRefresh: string | null;
-  fyRange: { start: string; end: string; label: string };
-  filterRange: { start: string; end: string };
-  kpis: {
-    totalCosRealised: number;
-    cashPaid: number;
-    outstandingCos: number;
-    paidVsBudget: number;
-    totalBudget: number;
-    atRiskCount: number;
-    supplierCount: number;
-  };
-  topProjects: Array<{ project: string; total: number }>;
-  topSuppliers: Array<{ supplier: string; total: number }>;
-  monthlyCosMatrix: {
-    months: string[];
-    rows: Array<Record<string, string | number>>;
-  };
+interface MonthData {
+  monthKey: string;
+  monthLabel: string;
+  planned: number;
+  realised: number;
+  outstanding: number;
+  budget: number;
+  variance: number;
+  variancePct: number;
+  ytdPlanned: number;
+  ytdRealised: number;
+  ytdOutstanding: number;
+  ytdBudget: number;
+  ytdVariance: number;
+  ytdVariancePct: number;
 }
 
-export default function CosTracker() {
-  const [, setLocation] = useLocation();
-  const [selectedProject, setSelectedProject] = useState<string | null>(null);
-  const [startDate, setStartDate] = useState<string | null>(null);
-  const [endDate, setEndDate] = useState<string | null>(null);
+function formatRand(val: number | null | undefined): string {
+  if (val == null) return "R 0";
+  const abs = Math.abs(val);
+  const sign = val < 0 ? "-" : "";
+  if (abs >= 1_000_000) return `${sign}R ${(abs / 1_000_000).toFixed(2)}M`;
+  if (abs >= 1_000) return `${sign}R ${(abs / 1_000).toFixed(1)}K`;
+  return `${sign}R ${Math.round(abs)}`;
+}
 
-  const { data, isLoading } = useQuery<CosApiResponse>({
-    queryKey: ["/api/program/cos", selectedProject, startDate, endDate],
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      if (selectedProject) params.set("project", selectedProject);
-      if (startDate) params.set("start", startDate);
-      if (endDate) params.set("end", endDate);
-      const url = `/api/program/cos${params.toString() ? `?${params}` : ""}`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error("Failed to fetch COS data");
-      return res.json();
-    },
-    staleTime: 30000,
+type EditableField = "realised" | "outstanding" | "budget";
+
+interface EditingCell {
+  field: EditableField;
+  monthKey: string;
+  value: string;
+}
+
+const ROW_DEFS: {
+  key: string;
+  label: string;
+  dataKey: keyof MonthData;
+  editable: boolean;
+  colorClass: string;
+  group: "monthly" | "ytd";
+  colorCoded?: boolean;
+}[] = [
+  { key: "planned", label: "Planned", dataKey: "planned", editable: false, colorClass: "text-blue-600", group: "monthly" },
+  { key: "realised", label: "Realised", dataKey: "realised", editable: true, colorClass: "text-green-600", group: "monthly" },
+  { key: "outstanding", label: "Outstanding", dataKey: "outstanding", editable: true, colorClass: "text-amber-600", group: "monthly" },
+  { key: "budget", label: "Budget", dataKey: "budget", editable: true, colorClass: "text-purple-600", group: "monthly" },
+  { key: "variance", label: "Variance", dataKey: "variance", editable: false, colorClass: "", group: "monthly", colorCoded: true },
+  { key: "variancePct", label: "Variance %", dataKey: "variancePct", editable: false, colorClass: "", group: "monthly", colorCoded: true },
+  { key: "ytdPlanned", label: "YTD Planned", dataKey: "ytdPlanned", editable: false, colorClass: "text-blue-600", group: "ytd" },
+  { key: "ytdRealised", label: "YTD Realised", dataKey: "ytdRealised", editable: false, colorClass: "text-green-600", group: "ytd" },
+  { key: "ytdOutstanding", label: "YTD Outstanding", dataKey: "ytdOutstanding", editable: false, colorClass: "text-amber-600", group: "ytd" },
+  { key: "ytdBudget", label: "YTD Budget", dataKey: "ytdBudget", editable: false, colorClass: "text-purple-600", group: "ytd" },
+  { key: "ytdVariance", label: "YTD Variance", dataKey: "ytdVariance", editable: false, colorClass: "", group: "ytd", colorCoded: true },
+  { key: "ytdVariancePct", label: "YTD Variance %", dataKey: "ytdVariancePct", editable: false, colorClass: "", group: "ytd", colorCoded: true },
+];
+
+export default function CosTracker() {
+  const qc = useQueryClient();
+  const [editing, setEditing] = useState<EditingCell | null>(null);
+
+  const { data: months = [], isLoading } = useQuery<MonthData[]>({
+    queryKey: ["/api/cos-tracker"],
+    staleTime: 30_000,
   });
 
-  const kpis = data?.kpis;
-  const topProjects = data?.topProjects || [];
-  const topSuppliers = data?.topSuppliers || [];
-  const monthlyCosMatrix = data?.monthlyCosMatrix || { months: [], rows: [] };
+  const mutation = useMutation({
+    mutationFn: async (body: { trackerType: string; monthKey: string; realised?: string; outstanding?: string; budget?: string }) => {
+      await apiRequest("POST", "/api/tracker-monthly", body);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/cos-tracker"] });
+    },
+  });
+
+  const lastMonth = useMemo(() => {
+    if (!months.length) return null;
+    return months[months.length - 1];
+  }, [months]);
+
+  const startEdit = useCallback((field: EditableField, monthKey: string, currentValue: number) => {
+    setEditing({ field, monthKey, value: String(currentValue) });
+  }, []);
+
+  const commitEdit = useCallback(() => {
+    if (!editing) return;
+    const payload: Record<string, string> = {
+      trackerType: "COS",
+      monthKey: editing.monthKey,
+    };
+    payload[editing.field] = editing.value;
+    mutation.mutate(payload as any);
+    setEditing(null);
+  }, [editing, mutation]);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "Enter") commitEdit();
+      if (e.key === "Escape") setEditing(null);
+    },
+    [commitEdit],
+  );
+
+  const chartData = useMemo(
+    () =>
+      months.map((m) => ({
+        month: m.monthLabel,
+        Planned: m.planned,
+        Realised: m.realised,
+        Budget: m.budget,
+        "YTD Variance": m.ytdVariance,
+      })),
+    [months],
+  );
+
+  const getCellColor = (val: number) => (val > 0 ? "text-red-600" : "text-green-600");
+
+  const formatCell = (row: (typeof ROW_DEFS)[number], val: number) => {
+    if (row.key === "variancePct" || row.key === "ytdVariancePct") {
+      return `${(val * 100).toFixed(1)}%`;
+    }
+    return formatRand(val);
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64 text-muted-foreground" data-testid="loading-indicator">
+        Loading COS data…
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-0">
       <div className="bg-white border-b border-gray-200 px-6 py-6">
-        <div className="flex flex-col gap-2">
-          <h2 className="text-3xl font-heading font-bold text-foreground">Cost of Sales Tracker (COS)</h2>
-          <p className="text-muted-foreground">
-            COS recognition based on Invoice Number + Invoice Raised Date • {data?.fyRange?.label || 'FY26'}
-          </p>
-        </div>
+        <h2 className="text-3xl font-heading font-bold text-foreground" data-testid="text-page-title">
+          Cost of Sales Tracker FY26
+        </h2>
+        <p className="text-muted-foreground mt-1" data-testid="text-page-subtitle">
+          Monthly COS tracking with planned vs budget analysis
+        </p>
       </div>
 
-      <DateRangeBar 
-        onDateChange={(start, end) => {
-          setStartDate(start);
-          setEndDate(end);
-        }}
-        onProjectChange={setSelectedProject}
-      />
-
       <div className="p-6 space-y-6">
-        {isLoading ? (
-          <div className="flex items-center justify-center py-12 text-muted-foreground">
-            <RefreshCw className="h-6 w-6 animate-spin mr-2" />
-            Loading COS data...
-          </div>
-        ) : !data ? (
-          <Card>
-            <CardContent className="py-12">
-              <div className="text-center text-muted-foreground">
-                <p className="text-lg font-medium">No COS data available</p>
-                <p className="text-sm mt-2">Upload tracker files with Expenditure Breakdown sheets to see data here</p>
+        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <Card data-testid="card-ytd-planned">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <div className="rounded-lg bg-blue-100 p-2">
+                  <DollarSign className="h-5 w-5 text-blue-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">YTD COS (Planned)</p>
+                  <p className="text-2xl font-bold font-mono" data-testid="text-ytd-planned-value">
+                    {formatRand(lastMonth?.ytdPlanned ?? 0)}
+                  </p>
+                </div>
               </div>
             </CardContent>
           </Card>
-        ) : (
-          <>
-            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <SummaryCard
-                title="COS Realised (FY)"
-                value={formatRand(kpis?.totalCosRealised, { compact: true })}
-                subValue={`${monthlyCosMatrix.rows.length} categories`}
-                icon={CreditCard}
-                data-testid="card-total-cos"
-              />
-              <SummaryCard
-                title="Cash Paid"
-                value={formatRand(kpis?.cashPaid, { compact: true })}
-                subValue={`${formatPercent(kpis?.paidVsBudget || 0)} of R${formatRand(kpis?.totalBudget, { compact: true }).replace('R', '')} budget`}
-                icon={TrendingDown}
-                data-testid="card-paid-budget"
-              />
-              <SummaryCard
-                title="Outstanding COS"
-                value={formatRand(kpis?.outstandingCos, { compact: true })}
-                subValue={safeNumber(kpis?.atRiskCount) > 0 ? `${kpis?.atRiskCount} at-risk lines` : "All on track"}
-                icon={AlertTriangle}
-                className={safeNumber(kpis?.atRiskCount) > 0 ? "border-l-red-500" : "border-l-emerald-500"}
-                data-testid="card-outstanding-cos"
-              />
-              <SummaryCard
-                title="Suppliers"
-                value={kpis?.supplierCount || 0}
-                subValue={topSuppliers.length > 0 ? `Top: ${topSuppliers[0]?.supplier}` : "No data"}
-                icon={Users}
-                data-testid="card-top-suppliers"
-              />
-            </div>
 
-            <div className="grid lg:grid-cols-2 gap-6">
-              {topProjects.length > 0 && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Top 10 Projects by COS</CardTitle>
-                    <CardDescription>Click to drill down into project details</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2">
-                      {topProjects.map(({ project, total }, idx) => (
-                        <div
-                          key={project}
-                          className="flex items-center justify-between p-3 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors"
-                          onClick={() => setLocation(`/project/${encodeURIComponent(project + "_Tracker")}`)}
-                          data-testid={`project-row-${idx}`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <Badge variant="outline" className="w-6 h-6 flex items-center justify-center p-0 text-xs">
-                              {idx + 1}
-                            </Badge>
-                            <span className="font-medium">{project}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono">{formatRand(total, { compact: true })}</span>
-                            <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {topSuppliers.length > 0 && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Top 10 Suppliers by COS</CardTitle>
-                    <CardDescription>Supplier extracted from Invoice/PO numbers</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2">
-                      {topSuppliers.map(({ supplier, total }, idx) => (
-                        <div
-                          key={supplier}
-                          className="flex items-center justify-between p-3 rounded-lg bg-muted/30"
-                          data-testid={`supplier-row-${idx}`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <Badge variant="secondary" className="w-6 h-6 flex items-center justify-center p-0 text-xs">
-                              {idx + 1}
-                            </Badge>
-                            <span className="font-medium truncate max-w-[200px]">{supplier}</span>
-                          </div>
-                          <span className="font-mono">{formatRand(total, { compact: true })}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Monthly COS by Category</CardTitle>
-                <CardDescription>
-                  Data range: {data?.filterRange?.start && format(parseISO(data.filterRange.start), "MMM yyyy")} - {data?.filterRange?.end && format(parseISO(data.filterRange.end), "MMM yyyy")}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="font-bold sticky left-0 bg-background z-10">Category</TableHead>
-                        {monthlyCosMatrix.months.map(month => (
-                          <TableHead key={month} className="text-right font-bold whitespace-nowrap">
-                            {format(parseISO(month + "-01"), "MMM yy")}
-                          </TableHead>
-                        ))}
-                        <TableHead className="text-right font-bold bg-rose-50">Total</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {monthlyCosMatrix.rows.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={monthlyCosMatrix.months.length + 2} className="text-center text-muted-foreground py-8">
-                            No monthly COS data available for the selected period
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        monthlyCosMatrix.rows.map((row, idx) => (
-                          <TableRow key={String(row.category)} className={idx % 2 === 0 ? "" : "bg-muted/30"}>
-                            <TableCell className="font-medium sticky left-0 bg-background z-10">
-                              {String(row.category)}
-                            </TableCell>
-                            {monthlyCosMatrix.months.map(month => (
-                              <TableCell key={month} className="text-right font-mono text-sm">
-                                {safeNumber(row[month]) > 0 
-                                  ? formatRand(row[month], { compact: true, decimals: 0 })
-                                  : <span className="text-muted-foreground">—</span>
-                                }
-                              </TableCell>
-                            ))}
-                            <TableCell className="text-right font-mono font-bold bg-rose-50">
-                              {formatRand(row.total, { compact: true })}
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
+          <Card data-testid="card-ytd-realised">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <div className="rounded-lg bg-green-100 p-2">
+                  <TrendingDown className="h-5 w-5 text-green-600" />
                 </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>COS Recognition Rules</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div className="p-4 rounded-lg border bg-blue-50/50 dark:bg-blue-950/20">
-                    <Badge variant="outline" className="mb-2">Planned</Badge>
-                    <p className="text-sm text-muted-foreground">Line exists with budget values, no PO issued yet</p>
-                  </div>
-                  <div className="p-4 rounded-lg border bg-amber-50/50 dark:bg-amber-950/20">
-                    <Badge variant="secondary" className="mb-2">Committed</Badge>
-                    <p className="text-sm text-muted-foreground">PO number exists, goods/services ordered</p>
-                  </div>
-                  <div className="p-4 rounded-lg border bg-purple-50/50 dark:bg-purple-950/20">
-                    <Badge className="mb-2 bg-purple-600">Invoiced (COS)</Badge>
-                    <p className="text-sm text-muted-foreground">Invoice Number AND Invoice Raised Date both present</p>
-                  </div>
-                  <div className="p-4 rounded-lg border bg-green-50/50 dark:bg-green-950/20">
-                    <Badge className="mb-2 bg-green-600">Paid</Badge>
-                    <p className="text-sm text-muted-foreground">Payment Date exists - cash has left the bank</p>
-                  </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">YTD COS (Realised)</p>
+                  <p className="text-2xl font-bold font-mono" data-testid="text-ytd-realised-value">
+                    {formatRand(lastMonth?.ytdRealised ?? 0)}
+                  </p>
                 </div>
-              </CardContent>
-            </Card>
-          </>
-        )}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card data-testid="card-ytd-budget">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <div className="rounded-lg bg-purple-100 p-2">
+                  <Target className="h-5 w-5 text-purple-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">YTD Budget</p>
+                  <p className="text-2xl font-bold font-mono" data-testid="text-ytd-budget-value">
+                    {formatRand(lastMonth?.ytdBudget ?? 0)}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card data-testid="card-ytd-variance">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <div className={`rounded-lg p-2 ${(lastMonth?.ytdVariance ?? 0) <= 0 ? "bg-green-100" : "bg-red-100"}`}>
+                  <Activity className={`h-5 w-5 ${(lastMonth?.ytdVariance ?? 0) <= 0 ? "text-green-600" : "text-red-600"}`} />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">YTD Variance</p>
+                  <p
+                    className={`text-2xl font-bold font-mono ${(lastMonth?.ytdVariance ?? 0) <= 0 ? "text-green-600" : "text-red-600"}`}
+                    data-testid="text-ytd-variance-value"
+                  >
+                    {formatRand(lastMonth?.ytdVariance ?? 0)}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Monthly COS Grid</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm" data-testid="table-cos-grid">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="sticky left-0 z-10 bg-muted/50 px-4 py-3 text-left font-semibold min-w-[160px]">
+                      Metric
+                    </th>
+                    {months.map((m) => (
+                      <th key={m.monthKey} className="px-4 py-3 text-right font-semibold whitespace-nowrap min-w-[110px]">
+                        {m.monthLabel}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {ROW_DEFS.map((row) => {
+                    const isYtd = row.group === "ytd";
+                    return (
+                      <tr
+                        key={row.key}
+                        className={`border-b ${isYtd ? "bg-slate-50" : "bg-white"} hover:bg-muted/30`}
+                        data-testid={`row-${row.key}`}
+                      >
+                        <td className={`sticky left-0 z-10 px-4 py-2 font-medium ${isYtd ? "bg-slate-50" : "bg-white"}`}>
+                          {row.label}
+                        </td>
+                        {months.map((m) => {
+                          const val = m[row.dataKey] as number;
+                          const isEditing =
+                            editing?.field === row.key && editing?.monthKey === m.monthKey;
+
+                          if (row.editable) {
+                            return (
+                              <td key={m.monthKey} className="px-2 py-1 text-right">
+                                {isEditing ? (
+                                  <Input
+                                    type="number"
+                                    className="h-8 w-full text-right font-mono text-sm"
+                                    value={editing.value}
+                                    onChange={(e) =>
+                                      setEditing({ ...editing, value: e.target.value })
+                                    }
+                                    onBlur={commitEdit}
+                                    onKeyDown={handleKeyDown}
+                                    autoFocus
+                                    data-testid={`input-${row.key}-${m.monthKey}`}
+                                  />
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className={`w-full text-right font-mono cursor-pointer hover:bg-muted rounded px-2 py-1 ${row.colorClass}`}
+                                    onClick={() =>
+                                      startEdit(row.key as EditableField, m.monthKey, val)
+                                    }
+                                    data-testid={`cell-${row.key}-${m.monthKey}`}
+                                  >
+                                    {formatRand(val)}
+                                  </button>
+                                )}
+                              </td>
+                            );
+                          }
+
+                          const colorClass = row.colorCoded
+                            ? getCellColor(val)
+                            : row.colorClass;
+
+                          return (
+                            <td
+                              key={m.monthKey}
+                              className={`px-4 py-2 text-right font-mono ${colorClass}`}
+                              data-testid={`cell-${row.key}-${m.monthKey}`}
+                            >
+                              {formatCell(row, val)}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>COS Overview Chart</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[400px]" data-testid="chart-cos">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="month" tick={{ fontSize: 12 }} />
+                  <YAxis
+                    tickFormatter={(v: number) => formatRand(v)}
+                    tick={{ fontSize: 12 }}
+                  />
+                  <Tooltip
+                    formatter={(value: number) => formatRand(value)}
+                  />
+                  <Legend />
+                  <Bar dataKey="Planned" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Realised" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Budget" fill="#a855f7" radius={[4, 4, 0, 0]} />
+                  <Line
+                    type="monotone"
+                    dataKey="YTD Variance"
+                    stroke="#ef4444"
+                    strokeWidth={2}
+                    strokeDasharray="5 5"
+                    dot={false}
+                  />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

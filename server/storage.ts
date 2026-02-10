@@ -9,6 +9,7 @@ import {
   workingPlanScenario, workingPlanTaskOverride, projectPlanDependency,
   workingPlanDependencyOverride, scheduleChangeNotice,
   projectRevenueSummary, homeNotes,
+  projectEditableFields, cashflowWeeklyManual, opexBudgetMonthly, trackerMonthlyManual,
   type User, type InsertUser,
   type Project, type InsertProject,
   type Expense, type InsertExpense,
@@ -37,6 +38,10 @@ import {
   type ScheduleChangeNotice, type InsertScheduleChangeNotice,
   type ProjectRevenueSummary, type InsertProjectRevenueSummary,
   type HomeNotes, type InsertHomeNotes,
+  type ProjectEditableFields, type InsertProjectEditableFields,
+  type CashflowWeeklyManual, type InsertCashflowWeeklyManual,
+  type OpexBudgetMonthly, type InsertOpexBudgetMonthly,
+  type TrackerMonthlyManual, type InsertTrackerMonthlyManual,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -204,6 +209,23 @@ export interface IStorage {
   // Home Notes
   getHomeNotes(): Promise<HomeNotes | undefined>;
   saveHomeNotes(notes: InsertHomeNotes): Promise<HomeNotes>;
+
+  // Project Editable Fields
+  getProjectEditableFields(projectName: string): Promise<ProjectEditableFields | undefined>;
+  getAllProjectEditableFields(): Promise<ProjectEditableFields[]>;
+  upsertProjectEditableFields(data: InsertProjectEditableFields): Promise<ProjectEditableFields>;
+
+  // Cashflow Weekly Manual (opening balance)
+  getAllCashflowWeeklyManual(): Promise<CashflowWeeklyManual[]>;
+  upsertCashflowWeeklyManual(weekStartDate: string, openingBalance: string): Promise<CashflowWeeklyManual>;
+
+  // OPEX Budget Monthly
+  getAllOpexBudgetMonthly(): Promise<OpexBudgetMonthly[]>;
+  upsertOpexBudgetMonthly(monthKey: string, amount: string): Promise<OpexBudgetMonthly>;
+
+  // Tracker Monthly Manual (REV/COS)
+  getTrackerMonthlyManual(trackerType: string): Promise<TrackerMonthlyManual[]>;
+  upsertTrackerMonthlyManual(data: InsertTrackerMonthlyManual): Promise<TrackerMonthlyManual>;
 
   // Admin Operations
   clearAllData(): Promise<{ tablesCleared: string[]; filesDeleted: number }>;
@@ -1167,6 +1189,80 @@ export class DatabaseStorage implements IStorage {
       const inserted = await this.dbInstance.insert(homeNotes).values(notes).returning();
       return inserted[0];
     }
+  }
+
+  async getProjectEditableFields(projectName: string): Promise<ProjectEditableFields | undefined> {
+    const results = await this.dbInstance.select().from(projectEditableFields).where(eq(projectEditableFields.projectName, projectName));
+    return results[0];
+  }
+
+  async getAllProjectEditableFields(): Promise<ProjectEditableFields[]> {
+    return this.dbInstance.select().from(projectEditableFields);
+  }
+
+  async upsertProjectEditableFields(data: InsertProjectEditableFields): Promise<ProjectEditableFields> {
+    const existing = await this.getProjectEditableFields(data.projectName);
+    if (existing) {
+      const updated = await this.dbInstance.update(projectEditableFields)
+        .set({ ...data, updatedAt: new Date() })
+        .where(eq(projectEditableFields.id, existing.id))
+        .returning();
+      return updated[0];
+    }
+    const inserted = await this.dbInstance.insert(projectEditableFields).values(data).returning();
+    return inserted[0];
+  }
+
+  async getAllCashflowWeeklyManual(): Promise<CashflowWeeklyManual[]> {
+    return this.dbInstance.select().from(cashflowWeeklyManual);
+  }
+
+  async upsertCashflowWeeklyManual(weekStartDate: string, openingBalance: string): Promise<CashflowWeeklyManual> {
+    const existing = await this.dbInstance.select().from(cashflowWeeklyManual).where(eq(cashflowWeeklyManual.weekStartDate, weekStartDate));
+    if (existing[0]) {
+      const updated = await this.dbInstance.update(cashflowWeeklyManual)
+        .set({ openingBalance, updatedAt: new Date() })
+        .where(eq(cashflowWeeklyManual.id, existing[0].id))
+        .returning();
+      return updated[0];
+    }
+    const inserted = await this.dbInstance.insert(cashflowWeeklyManual).values({ weekStartDate, openingBalance }).returning();
+    return inserted[0];
+  }
+
+  async getAllOpexBudgetMonthly(): Promise<OpexBudgetMonthly[]> {
+    return this.dbInstance.select().from(opexBudgetMonthly);
+  }
+
+  async upsertOpexBudgetMonthly(monthKey: string, amount: string): Promise<OpexBudgetMonthly> {
+    const existing = await this.dbInstance.select().from(opexBudgetMonthly).where(eq(opexBudgetMonthly.monthKey, monthKey));
+    if (existing[0]) {
+      const updated = await this.dbInstance.update(opexBudgetMonthly)
+        .set({ amount, updatedAt: new Date() })
+        .where(eq(opexBudgetMonthly.id, existing[0].id))
+        .returning();
+      return updated[0];
+    }
+    const inserted = await this.dbInstance.insert(opexBudgetMonthly).values({ monthKey, amount }).returning();
+    return inserted[0];
+  }
+
+  async getTrackerMonthlyManual(trackerType: string): Promise<TrackerMonthlyManual[]> {
+    return this.dbInstance.select().from(trackerMonthlyManual).where(eq(trackerMonthlyManual.trackerType, trackerType));
+  }
+
+  async upsertTrackerMonthlyManual(data: InsertTrackerMonthlyManual): Promise<TrackerMonthlyManual> {
+    const existing = await this.dbInstance.select().from(trackerMonthlyManual)
+      .where(and(eq(trackerMonthlyManual.trackerType, data.trackerType), eq(trackerMonthlyManual.monthKey, data.monthKey)));
+    if (existing[0]) {
+      const updated = await this.dbInstance.update(trackerMonthlyManual)
+        .set({ ...data, updatedAt: new Date() })
+        .where(eq(trackerMonthlyManual.id, existing[0].id))
+        .returning();
+      return updated[0];
+    }
+    const inserted = await this.dbInstance.insert(trackerMonthlyManual).values(data).returning();
+    return inserted[0];
   }
 }
 
