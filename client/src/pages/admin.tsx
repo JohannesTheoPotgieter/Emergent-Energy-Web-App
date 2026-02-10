@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { Progress } from "@/components/ui/progress";
 import { CheckCircle, XCircle, Loader2, Play, RefreshCw, FileSpreadsheet, Clock, Database, Trash2, FolderOpen, AlertTriangle } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -69,6 +70,7 @@ export default function AdminPage() {
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [uploadLoading, setUploadLoading] = useState(false);
   const folderInputRef = useRef<HTMLInputElement>(null);
+  const [progressInfo, setProgressInfo] = useState<{ current: number; total: number; currentFile: string } | null>(null);
 
   const [smokeLoading, setSmokeLoading] = useState(false);
   const [smokeResult, setSmokeResult] = useState<SmokeTestResult | null>(null);
@@ -109,52 +111,71 @@ export default function AdminPage() {
     }
     setUploadLoading(true);
     setScanResult(null);
-    try {
-      const formData = new FormData();
-      for (const file of excelFiles) {
+    setProgressInfo({ current: 0, total: excelFiles.length, currentFile: "" });
+
+    const results: ScanResult["results"] = [];
+    let totalRecords = 0;
+
+    for (let i = 0; i < excelFiles.length; i++) {
+      const file = excelFiles[i];
+      setProgressInfo({ current: i + 1, total: excelFiles.length, currentFile: file.name });
+      try {
+        const formData = new FormData();
         formData.append("trackers", file);
-      }
-      formData.append("mode", "refresh");
-      const res = await fetch("/api/upload", { method: "POST", body: formData, credentials: "include" });
-      const data = await res.json();
-      if (res.ok) {
-        const results = (data.results || []).map((r: any) => ({
-          fileName: r.fileName || r.file,
-          projectName: r.projectName || r.file,
-          status: r.status as "success" | "failed",
-          message: r.message || "",
-          recordsProcessed: r.recordsProcessed,
-          fileDate: r.fileDate || new Date().toISOString(),
-        }));
-        const successCount = results.filter((r: any) => r.status === "success").length;
-        const failedCount = results.filter((r: any) => r.status === "failed").length;
-        setScanResult({
-          success: failedCount === 0,
-          message: `${successCount} of ${excelFiles.length} files processed successfully`,
-          filesProcessed: successCount,
-          filesFailed: failedCount,
-          filesTotal: excelFiles.length,
-          totalRecordsProcessed: data.totalRecordsProcessed || 0,
-          latestFileDate: new Date().toISOString(),
-          results,
-          timestamps: {
-            started: new Date().toISOString(),
-            completed: new Date().toISOString(),
-            durationMs: 0,
-          },
+        formData.append("mode", "refresh");
+        const res = await fetch("/api/upload", { method: "POST", body: formData, credentials: "include" });
+        const data = await res.json();
+        if (res.ok && data.results) {
+          for (const r of data.results) {
+            results.push({
+              fileName: r.fileName || r.file || file.name,
+              projectName: r.projectName || file.name,
+              status: r.status as "success" | "failed",
+              message: r.message || "",
+              recordsProcessed: r.recordsProcessed,
+              fileDate: r.fileDate || new Date().toISOString(),
+            });
+            totalRecords += r.recordsProcessed || 0;
+          }
+        } else {
+          results.push({
+            fileName: file.name,
+            projectName: file.name,
+            status: "failed",
+            message: data.message || "Upload failed",
+            fileDate: new Date().toISOString(),
+          });
+        }
+      } catch (err: any) {
+        results.push({
+          fileName: file.name,
+          projectName: file.name,
+          status: "failed",
+          message: err.message || "Upload failed",
+          fileDate: new Date().toISOString(),
         });
-        queryClient.invalidateQueries();
-        loadFolderConfig();
-        toast({ title: "Import Complete", description: `${successCount} file(s) processed successfully` });
-      } else {
-        toast({ title: "Import Failed", description: data.message || "Failed to process files", variant: "destructive" });
       }
-    } catch (err: any) {
-      toast({ title: "Import Failed", description: err.message, variant: "destructive" });
-    } finally {
-      setUploadLoading(false);
-      if (folderInputRef.current) folderInputRef.current.value = "";
     }
+
+    const successCount = results.filter((r) => r.status === "success").length;
+    const failedCount = results.filter((r) => r.status === "failed").length;
+    setScanResult({
+      success: failedCount === 0,
+      message: `${successCount} of ${excelFiles.length} files processed successfully`,
+      filesProcessed: successCount,
+      filesFailed: failedCount,
+      filesTotal: excelFiles.length,
+      totalRecordsProcessed: totalRecords,
+      latestFileDate: new Date().toISOString(),
+      results,
+      timestamps: { started: new Date().toISOString(), completed: new Date().toISOString(), durationMs: 0 },
+    });
+    setProgressInfo(null);
+    setUploadLoading(false);
+    queryClient.invalidateQueries();
+    loadFolderConfig();
+    toast({ title: "Import Complete", description: `${successCount} file(s) processed successfully` });
+    if (folderInputRef.current) folderInputRef.current.value = "";
   };
 
   const runSmokeTest = async () => {
@@ -267,7 +288,25 @@ export default function AdminPage() {
                 </div>
               </div>
             </CardHeader>
-            {folderConfig && (
+            {progressInfo && (
+              <CardContent>
+                <div className="space-y-2" data-testid="import-progress">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground truncate max-w-[60%]">
+                      Processing: {progressInfo.currentFile}
+                    </span>
+                    <span className="font-medium">
+                      {progressInfo.current} of {progressInfo.total}
+                    </span>
+                  </div>
+                  <Progress value={(progressInfo.current / progressInfo.total) * 100} className="h-3" />
+                  <p className="text-xs text-muted-foreground text-center">
+                    {Math.round((progressInfo.current / progressInfo.total) * 100)}% complete
+                  </p>
+                </div>
+              </CardContent>
+            )}
+            {!progressInfo && folderConfig && (
               <CardContent>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="flex items-center gap-2 p-3 rounded-lg border">
@@ -383,15 +422,46 @@ export default function AdminPage() {
                 <Button
                   onClick={async () => {
                     setScanLoading(true);
+                    setProgressInfo({ current: 0, total: 0, currentFile: "Starting..." });
                     try {
-                      const res = await fetch("/api/admin/refresh-data", { method: "POST", credentials: "include" });
-                      const data = await res.json();
-                      toast({ title: "Refresh Complete", description: data.message });
+                      const res = await fetch("/api/admin/refresh-data", {
+                        method: "POST",
+                        credentials: "include",
+                        headers: { "Accept": "text/event-stream" },
+                      });
+                      const reader = res.body?.getReader();
+                      const decoder = new TextDecoder();
+                      if (!reader) throw new Error("No response stream");
+                      let buffer = "";
+                      while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        buffer += decoder.decode(value, { stream: true });
+                        const lines = buffer.split("\n");
+                        buffer = lines.pop() || "";
+                        for (const line of lines) {
+                          if (line.startsWith("data: ")) {
+                            try {
+                              const event = JSON.parse(line.slice(6));
+                              if (event.type === "start") {
+                                setProgressInfo({ current: 0, total: event.total, currentFile: "Starting..." });
+                              } else if (event.type === "progress") {
+                                setProgressInfo({ current: event.current, total: event.total, currentFile: event.projectName || event.fileName });
+                              } else if (event.type === "complete") {
+                                toast({ title: "Refresh Complete", description: `${event.results?.filter((r: any) => r.status === "success").length || 0} projects refreshed` });
+                              } else if (event.type === "error") {
+                                toast({ title: "Refresh Failed", description: event.message, variant: "destructive" });
+                              }
+                            } catch {}
+                          }
+                        }
+                      }
                       queryClient.invalidateQueries();
                     } catch (err: any) {
                       toast({ title: "Refresh Failed", description: err.message, variant: "destructive" });
                     } finally {
                       setScanLoading(false);
+                      setProgressInfo(null);
                     }
                   }}
                   disabled={scanLoading}
@@ -406,6 +476,26 @@ export default function AdminPage() {
                 </Button>
               </div>
             </CardHeader>
+            {scanLoading && progressInfo && (
+              <CardContent>
+                <div className="space-y-2" data-testid="refresh-progress">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground truncate max-w-[60%]">
+                      Processing: {progressInfo.currentFile}
+                    </span>
+                    <span className="font-medium">
+                      {progressInfo.total > 0 ? `${progressInfo.current} of ${progressInfo.total}` : "Preparing..."}
+                    </span>
+                  </div>
+                  <Progress value={progressInfo.total > 0 ? (progressInfo.current / progressInfo.total) * 100 : 0} className="h-3" />
+                  {progressInfo.total > 0 && (
+                    <p className="text-xs text-muted-foreground text-center">
+                      {Math.round((progressInfo.current / progressInfo.total) * 100)}% complete
+                    </p>
+                  )}
+                </div>
+              </CardContent>
+            )}
           </Card>
 
           <Card className="border-destructive/50">
