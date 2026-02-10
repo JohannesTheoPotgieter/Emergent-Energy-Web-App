@@ -2772,10 +2772,81 @@ export async function registerRoutes(
 
   // Admin data refresh - re-process all stored tracker files
   app.post("/api/admin/refresh-data", async (req, res) => {
+    const useSSE = req.headers.accept === 'text/event-stream';
     const startTime = Date.now();
-    
+
+    if (useSSE) {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      });
+      const sendEvent = (data: any) => {
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
+      };
+
+      try {
+        const uploads = await storage.getAllUploads();
+        const projectFiles = new Map<string, { filePath: string; fileName: string; uploadedAt: Date }>();
+        for (const upload of uploads) {
+          if (!upload.filePath) continue;
+          const projectName = upload.fileName.replace(/_Tracker\.(xlsx|xlsm|xls)$/i, '').replace(/^\d+_/, '');
+          const existing = projectFiles.get(projectName);
+          if (!existing || (upload.uploadedAt && existing.uploadedAt < upload.uploadedAt)) {
+            projectFiles.set(projectName, { filePath: upload.filePath, fileName: upload.fileName, uploadedAt: upload.uploadedAt || new Date(0) });
+          }
+        }
+
+        const total = projectFiles.size;
+        sendEvent({ type: 'start', total });
+        const refreshResults: any[] = [];
+        let processed = 0;
+
+        for (const [projectName, fileInfo] of Array.from(projectFiles.entries())) {
+          processed++;
+          try {
+            if (!fs.existsSync(fileInfo.filePath)) {
+              refreshResults.push({ fileName: fileInfo.fileName, projectName, status: "error", message: "Source file not found on disk" });
+              sendEvent({ type: 'progress', current: processed, total, fileName: fileInfo.fileName, projectName, status: 'error' });
+              continue;
+            }
+            const fileBuffer = fs.readFileSync(fileInfo.filePath);
+            const parseResult = parseTrackerFile(fileBuffer, fileInfo.fileName);
+            await storage.transaction(async (txStorage) => {
+              await txStorage.deleteProgramExpensesByProject(parseResult.projectName);
+              await txStorage.deleteProgramInflowsByProject(parseResult.projectName);
+              await txStorage.deleteProjectPlansByProject(parseResult.projectName);
+              await txStorage.deleteCashflowPointsByProject(parseResult.projectName);
+              await txStorage.deleteFinanceRevenueMonthlyByProject(parseResult.projectName);
+              await txStorage.deleteFinanceCosMonthlyByProject(parseResult.projectName);
+              if (parseResult.projectInfo) await txStorage.upsertProjectInfo(parseResult.projectInfo);
+              if (parseResult.expenses.length > 0) await txStorage.createManyProgramExpenses(parseResult.expenses);
+              if (parseResult.inflows.length > 0) await txStorage.createManyProgramInflows(parseResult.inflows);
+              if (parseResult.planItems.length > 0) await txStorage.createManyProjectPlans(parseResult.planItems);
+              if (parseResult.cashflowPoints.length > 0) await txStorage.createManyCashflowPoints(parseResult.cashflowPoints);
+              if (parseResult.financeRevenueMonthly.length > 0) await txStorage.createManyFinanceRevenueMonthly(parseResult.financeRevenueMonthly);
+              if (parseResult.financeCosMonthly.length > 0) await txStorage.createManyFinanceCosMonthly(parseResult.financeCosMonthly);
+            });
+            const recordsProcessed = parseResult.expensesParsed + parseResult.inflowsParsed + parseResult.planParsed + parseResult.cashflowParsed + parseResult.financeRevenueParsed + parseResult.financeCosParsed;
+            refreshResults.push({ fileName: fileInfo.fileName, projectName: parseResult.projectName, status: "success", recordsProcessed });
+            sendEvent({ type: 'progress', current: processed, total, fileName: fileInfo.fileName, projectName: parseResult.projectName, status: 'success' });
+          } catch (error: any) {
+            refreshResults.push({ fileName: fileInfo.fileName, projectName, status: "error", message: error.message || "Refresh failed" });
+            sendEvent({ type: 'progress', current: processed, total, fileName: fileInfo.fileName, projectName, status: 'error' });
+          }
+        }
+
+        await storage.createRefreshLog({ triggeredBy: req.user?.id || null, status: refreshResults.every(r => r.status === "success") ? "success" : "partial" });
+        sendEvent({ type: 'complete', results: refreshResults, durationMs: Date.now() - startTime });
+        res.end();
+      } catch (error: any) {
+        sendEvent({ type: 'error', message: error.message });
+        res.end();
+      }
+      return;
+    }
+
     try {
-      // Get all uploads with file paths
       const uploads = await storage.getAllUploads();
       const refreshResults: { 
         fileName: string; 
@@ -2785,15 +2856,10 @@ export async function registerRoutes(
         recordsProcessed?: number;
       }[] = [];
       
-      // Group by project (use most recent upload per project)
       const projectFiles = new Map<string, { filePath: string; fileName: string; uploadedAt: Date }>();
       for (const upload of uploads) {
         if (!upload.filePath) continue;
-        
-        // Extract project name from filename
         const projectName = upload.fileName.replace(/_Tracker\.(xlsx|xlsm|xls)$/i, '').replace(/^\d+_/, '');
-        
-        // Keep the most recent file for each project
         const existing = projectFiles.get(projectName);
         if (!existing || (upload.uploadedAt && existing.uploadedAt < upload.uploadedAt)) {
           projectFiles.set(projectName, { 
@@ -2804,79 +2870,38 @@ export async function registerRoutes(
         }
       }
       
-      // Reprocess each project's latest file in transaction
       for (const [projectName, fileInfo] of Array.from(projectFiles.entries())) {
         try {
           if (!fs.existsSync(fileInfo.filePath)) {
-            refreshResults.push({
-              fileName: fileInfo.fileName,
-              projectName,
-              status: "error",
-              message: "Source file not found on disk"
-            });
+            refreshResults.push({ fileName: fileInfo.fileName, projectName, status: "error", message: "Source file not found on disk" });
             continue;
           }
-          
           const fileBuffer = fs.readFileSync(fileInfo.filePath);
           const parseResult = parseTrackerFile(fileBuffer, fileInfo.fileName);
-          
-          // Perform refresh in transaction
           await storage.transaction(async (txStorage) => {
-            // Delete existing data for this project
             await txStorage.deleteProgramExpensesByProject(parseResult.projectName);
             await txStorage.deleteProgramInflowsByProject(parseResult.projectName);
             await txStorage.deleteProjectPlansByProject(parseResult.projectName);
             await txStorage.deleteCashflowPointsByProject(parseResult.projectName);
             await txStorage.deleteFinanceRevenueMonthlyByProject(parseResult.projectName);
             await txStorage.deleteFinanceCosMonthlyByProject(parseResult.projectName);
-            
-            // Re-insert all data
-            if (parseResult.projectInfo) {
-              await txStorage.upsertProjectInfo(parseResult.projectInfo);
-            }
-            if (parseResult.expenses.length > 0) {
-              await txStorage.createManyProgramExpenses(parseResult.expenses);
-            }
-            if (parseResult.inflows.length > 0) {
-              await txStorage.createManyProgramInflows(parseResult.inflows);
-            }
-            if (parseResult.planItems.length > 0) {
-              await txStorage.createManyProjectPlans(parseResult.planItems);
-            }
-            if (parseResult.cashflowPoints.length > 0) {
-              await txStorage.createManyCashflowPoints(parseResult.cashflowPoints);
-            }
-            if (parseResult.financeRevenueMonthly.length > 0) {
-              await txStorage.createManyFinanceRevenueMonthly(parseResult.financeRevenueMonthly);
-            }
-            if (parseResult.financeCosMonthly.length > 0) {
-              await txStorage.createManyFinanceCosMonthly(parseResult.financeCosMonthly);
-            }
+            if (parseResult.projectInfo) await txStorage.upsertProjectInfo(parseResult.projectInfo);
+            if (parseResult.expenses.length > 0) await txStorage.createManyProgramExpenses(parseResult.expenses);
+            if (parseResult.inflows.length > 0) await txStorage.createManyProgramInflows(parseResult.inflows);
+            if (parseResult.planItems.length > 0) await txStorage.createManyProjectPlans(parseResult.planItems);
+            if (parseResult.cashflowPoints.length > 0) await txStorage.createManyCashflowPoints(parseResult.cashflowPoints);
+            if (parseResult.financeRevenueMonthly.length > 0) await txStorage.createManyFinanceRevenueMonthly(parseResult.financeRevenueMonthly);
+            if (parseResult.financeCosMonthly.length > 0) await txStorage.createManyFinanceCosMonthly(parseResult.financeCosMonthly);
           });
-          
           const recordsProcessed = parseResult.expensesParsed + parseResult.inflowsParsed + 
             parseResult.planParsed + parseResult.cashflowParsed + 
             parseResult.financeRevenueParsed + parseResult.financeCosParsed;
-          
-          refreshResults.push({
-            fileName: fileInfo.fileName,
-            projectName: parseResult.projectName,
-            status: "success",
-            message: `Refreshed from source`,
-            recordsProcessed
-          });
-          
+          refreshResults.push({ fileName: fileInfo.fileName, projectName: parseResult.projectName, status: "success", message: `Refreshed from source`, recordsProcessed });
         } catch (error: any) {
-          refreshResults.push({
-            fileName: fileInfo.fileName,
-            projectName,
-            status: "error",
-            message: error.message || "Refresh failed"
-          });
+          refreshResults.push({ fileName: fileInfo.fileName, projectName, status: "error", message: error.message || "Refresh failed" });
         }
       }
       
-      // Log the refresh
       await storage.createRefreshLog({
         triggeredBy: req.user?.id || null,
         status: refreshResults.every(r => r.status === "success") ? "success" : "partial"
