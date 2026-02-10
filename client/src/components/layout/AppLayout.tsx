@@ -53,8 +53,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     { label: "Projects", icon: FileSpreadsheet, path: "/projects" },
     { label: "Cashflow", icon: Wallet, path: "/cashflow" },
     { label: "COS Tracker", icon: TrendingUp, path: "/cos", className: "rotate-180" },
-    { label: "Upload", icon: Upload, path: "/upload" },
-    { label: "Admin", icon: Settings, path: "/admin", adminOnly: true },
+    { label: "Admin", icon: Settings, path: "/admin" },
   ];
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {

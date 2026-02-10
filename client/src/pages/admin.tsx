@@ -1,11 +1,44 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { CheckCircle, XCircle, Loader2, Play, RefreshCw, FileSpreadsheet, Clock, Database, Trash2 } from "lucide-react";
+import { CheckCircle, XCircle, Loader2, Play, RefreshCw, FileSpreadsheet, Clock, Database, Trash2, FolderOpen, Upload, AlertTriangle } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
+
+interface FolderConfig {
+  folderPath: string;
+  exists: boolean;
+  fileCount: number;
+  latestFileDate: string | null;
+}
+
+interface ScanResult {
+  success: boolean;
+  message: string;
+  filesProcessed: number;
+  filesFailed: number;
+  filesTotal: number;
+  totalRecordsProcessed: number;
+  latestFileDate: string;
+  results: {
+    fileName: string;
+    projectName: string;
+    status: "success" | "failed";
+    message: string;
+    recordsProcessed?: number;
+    fileDate: string;
+  }[];
+  timestamps: {
+    started: string;
+    completed: string;
+    durationMs: number;
+  };
+}
 
 interface SmokeTestCheck {
   name: string;
@@ -25,91 +58,129 @@ interface SmokeTestResult {
   };
 }
 
-interface RefreshResult {
-  success: boolean;
-  message: string;
-  projectsRefreshed: number;
-  projectsTotal: number;
-  totalRecordsProcessed: number;
-  results: {
-    fileName: string;
-    projectName: string;
-    status: string;
-    message?: string;
-    recordsProcessed?: number;
-  }[];
-  timestamps: {
-    started: string;
-    completed: string;
-    durationMs: number;
-  };
-}
-
-interface RefreshHistory {
-  lastRefresh: string | null;
-  lastRefreshStatus: string | null;
-  sourceFilesCount: number;
-  sourceFiles: {
-    projectName: string;
-    fileName: string;
-    filePath: string;
-    exists: boolean;
-    uploadedAt: string;
-  }[];
-}
-
 export default function AdminPage() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [folderConfig, setFolderConfig] = useState<FolderConfig | null>(null);
+  const [folderLoading, setFolderLoading] = useState(false);
+  const [folderPath, setFolderPath] = useState("");
+  const [scanLoading, setScanLoading] = useState(false);
+  const [scanResult, setScanResult] = useState<ScanResult | null>(null);
+  const [uploadLoading, setUploadLoading] = useState(false);
+
   const [smokeLoading, setSmokeLoading] = useState(false);
   const [smokeResult, setSmokeResult] = useState<SmokeTestResult | null>(null);
   const [smokeError, setSmokeError] = useState<string | null>(null);
 
-  const [refreshLoading, setRefreshLoading] = useState(false);
-  const [refreshResult, setRefreshResult] = useState<RefreshResult | null>(null);
-  const [refreshError, setRefreshError] = useState<string | null>(null);
-  const [refreshHistory, setRefreshHistory] = useState<RefreshHistory | null>(null);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  
   const [clearLoading, setClearLoading] = useState(false);
   const [clearResult, setClearResult] = useState<{ success: boolean; message: string } | null>(null);
   const [clearError, setClearError] = useState<string | null>(null);
 
-  const loadRefreshHistory = async () => {
-    setHistoryLoading(true);
+  const loadFolderConfig = async () => {
+    setFolderLoading(true);
     try {
-      const res = await fetch("/api/admin/refresh-history", { credentials: "include" });
+      const res = await fetch("/api/admin/folder-config", { credentials: "include" });
       if (res.ok) {
         const data = await res.json();
-        setRefreshHistory(data);
+        setFolderConfig(data);
+        setFolderPath(data.folderPath);
       }
     } catch (err) {
-      console.error("Failed to load refresh history:", err);
+      console.error("Failed to load folder config:", err);
     } finally {
-      setHistoryLoading(false);
+      setFolderLoading(false);
     }
   };
 
   useEffect(() => {
-    // Load history on mount (auth removed for stability)
-    loadRefreshHistory();
+    loadFolderConfig();
   }, []);
+
+  const saveFolderPath = async () => {
+    try {
+      const res = await fetch("/api/admin/folder-config", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ folderPath }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast({ title: "Folder Updated", description: data.message });
+        loadFolderConfig();
+      } else {
+        toast({ title: "Error", description: data.error || "Failed to set folder", variant: "destructive" });
+      }
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const runFolderScan = async () => {
+    setScanLoading(true);
+    setScanResult(null);
+    try {
+      const res = await fetch("/api/admin/scan-folder", {
+        method: "POST",
+        credentials: "include",
+      });
+      const data = await res.json();
+      setScanResult(data);
+      queryClient.invalidateQueries();
+      if (data.success) {
+        toast({ title: "Update Complete", description: data.message });
+      } else {
+        toast({ title: "Update Completed with Errors", description: data.message, variant: "destructive" });
+      }
+      loadFolderConfig();
+    } catch (err: any) {
+      toast({ title: "Update Failed", description: err.message, variant: "destructive" });
+    } finally {
+      setScanLoading(false);
+    }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    setUploadLoading(true);
+    try {
+      const formData = new FormData();
+      for (const file of Array.from(e.target.files)) {
+        formData.append("trackers", file);
+      }
+      formData.append("mode", "refresh");
+      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      const data = await res.json();
+      if (res.ok) {
+        const successCount = data.results?.filter((r: any) => r.status === "success").length || 0;
+        toast({ title: "Upload Complete", description: `${successCount} file(s) processed successfully` });
+        queryClient.invalidateQueries();
+        loadFolderConfig();
+      } else {
+        toast({ title: "Upload Failed", description: data.message || "Failed to upload files", variant: "destructive" });
+      }
+    } catch (err: any) {
+      toast({ title: "Upload Failed", description: err.message, variant: "destructive" });
+    } finally {
+      setUploadLoading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
 
   const runSmokeTest = async () => {
     setSmokeLoading(true);
     setSmokeError(null);
     setSmokeResult(null);
-
     try {
       const res = await fetch("/api/admin/smoke-test", { credentials: "include" });
-
       if (!res.ok) {
-        if (res.status === 401) throw new Error("Authentication required. Please log in.");
-        if (res.status === 403) throw new Error("Admin access required.");
+        if (res.status === 401) throw new Error("Authentication required.");
         throw new Error(`Server error: ${res.status}`);
       }
-
-      const data = await res.json();
-      setSmokeResult(data);
+      setSmokeResult(await res.json());
     } catch (err: any) {
       setSmokeError(err?.message || "Failed to run smoke test");
     } finally {
@@ -117,55 +188,20 @@ export default function AdminPage() {
     }
   };
 
-  const runDataRefresh = async () => {
-    setRefreshLoading(true);
-    setRefreshError(null);
-    setRefreshResult(null);
-
-    try {
-      const res = await fetch("/api/admin/refresh-data", {
-        method: "POST",
-        credentials: "include",
-      });
-
-      if (!res.ok) {
-        if (res.status === 401) throw new Error("Authentication required. Please log in.");
-        if (res.status === 403) throw new Error("Admin access required.");
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData?.message || `Server error: ${res.status}`);
-      }
-
-      const data = await res.json();
-      setRefreshResult(data);
-      loadRefreshHistory();
-    } catch (err: any) {
-      setRefreshError(err?.message || "Failed to refresh data");
-    } finally {
-      setRefreshLoading(false);
-    }
-  };
-
   const clearAllData = async () => {
     setClearLoading(true);
     setClearError(null);
     setClearResult(null);
-
     try {
-      const res = await fetch("/api/admin/clear-all-data", {
-        method: "POST",
-        credentials: "include",
-      });
-
+      const res = await fetch("/api/admin/clear-all-data", { method: "POST", credentials: "include" });
       if (!res.ok) {
-        if (res.status === 401) throw new Error("Authentication required. Please log in.");
-        if (res.status === 403) throw new Error("Admin access required.");
         const errorData = await res.json().catch(() => ({}));
         throw new Error(errorData?.message || `Server error: ${res.status}`);
       }
-
       const data = await res.json();
       setClearResult({ success: true, message: data.message });
-      loadRefreshHistory();
+      queryClient.invalidateQueries();
+      loadFolderConfig();
     } catch (err: any) {
       setClearError(err?.message || "Failed to clear data");
     } finally {
@@ -177,19 +213,22 @@ export default function AdminPage() {
     return name.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
   };
 
-  // Auth removed for stability - page accessible to all users
   return (
     <div className="container mx-auto p-6 space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Admin Dashboard</h1>
-        <p className="text-muted-foreground">System health, data refresh, and diagnostics</p>
+        <h1 className="text-2xl font-bold" data-testid="text-admin-title">Admin Dashboard</h1>
+        <p className="text-muted-foreground">Data import, system health, and diagnostics</p>
       </div>
 
-      <Tabs defaultValue="refresh" className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="refresh" data-testid="tab-data-refresh">
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Data Refresh
+      <Tabs defaultValue="import" className="w-full">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="import" data-testid="tab-data-import">
+            <FolderOpen className="h-4 w-4 mr-2" />
+            Data Import
+          </TabsTrigger>
+          <TabsTrigger value="maintenance" data-testid="tab-maintenance">
+            <Database className="h-4 w-4 mr-2" />
+            Maintenance
           </TabsTrigger>
           <TabsTrigger value="smoke" data-testid="tab-smoke-test">
             <Play className="h-4 w-4 mr-2" />
@@ -197,162 +236,197 @@ export default function AdminPage() {
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="refresh" className="space-y-4 mt-4">
+        {/* DATA IMPORT TAB */}
+        <TabsContent value="import" className="space-y-4 mt-4">
+          {/* Folder Configuration */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FolderOpen className="h-5 w-5" />
+                Tracker Folder
+              </CardTitle>
+              <CardDescription>
+                Set the folder path containing your Excel tracker files. All .xlsx, .xlsm, and .xls files will be scanned.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex gap-2">
+                <Input
+                  value={folderPath}
+                  onChange={(e) => setFolderPath(e.target.value)}
+                  placeholder="/path/to/tracker/files"
+                  className="flex-1 font-mono text-sm"
+                  data-testid="input-folder-path"
+                />
+                <Button
+                  onClick={saveFolderPath}
+                  variant="outline"
+                  disabled={!folderPath || folderPath === folderConfig?.folderPath}
+                  data-testid="button-save-folder"
+                >
+                  Save Path
+                </Button>
+              </div>
+
+              {folderConfig && (
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="flex items-center gap-2 p-3 rounded-lg border">
+                    <FolderOpen className="h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Status</p>
+                      <p className="text-sm font-medium">
+                        {folderConfig.exists ? (
+                          <span className="text-green-600">Folder Found</span>
+                        ) : (
+                          <span className="text-red-600">Not Found</span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 p-3 rounded-lg border">
+                    <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Excel Files</p>
+                      <p className="text-sm font-medium">{folderConfig.fileCount} files</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 p-3 rounded-lg border">
+                    <Clock className="h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Latest File Date</p>
+                      <p className="text-sm font-medium">
+                        {folderConfig.latestFileDate
+                          ? new Date(folderConfig.latestFileDate).toLocaleString()
+                          : "N/A"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Update Actions */}
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
                   <CardTitle className="flex items-center gap-2">
-                    <Database className="h-5 w-5" />
-                    Automated Data Refresh
+                    <RefreshCw className="h-5 w-5" />
+                    Update Data
                   </CardTitle>
                   <CardDescription>
-                    Re-process all stored tracker files to update dashboard data
+                    Process all tracker files from the configured folder or upload individual files
                   </CardDescription>
                 </div>
-                <Button
-                  onClick={runDataRefresh}
-                  disabled={refreshLoading}
-                  data-testid="button-refresh-data"
-                >
-                  {refreshLoading ? (
-                    <>
+                <div className="flex gap-2">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".xlsx,.xlsm,.xls"
+                    multiple
+                    onChange={handleFileUpload}
+                    className="hidden"
+                    id="manual-upload"
+                  />
+                  <Button
+                    variant="outline"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploadLoading}
+                    data-testid="button-upload-files"
+                  >
+                    {uploadLoading ? (
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Refreshing...
-                    </>
-                  ) : (
-                    <>
-                      <RefreshCw className="mr-2 h-4 w-4" />
-                      Refresh All Data
-                    </>
-                  )}
-                </Button>
+                    ) : (
+                      <Upload className="mr-2 h-4 w-4" />
+                    )}
+                    Upload Files
+                  </Button>
+                  <Button
+                    onClick={runFolderScan}
+                    disabled={scanLoading || !folderConfig?.exists}
+                    data-testid="button-update-data"
+                  >
+                    {scanLoading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Updating...
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="mr-2 h-4 w-4" />
+                        Update from Folder
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
             </CardHeader>
-            <CardContent>
-              {historyLoading ? (
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Loading source files...
-                </div>
-              ) : refreshHistory ? (
-                <div className="space-y-4">
-                  <div className="flex items-center gap-4 text-sm">
-                    <div className="flex items-center gap-2">
-                      <Clock className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-muted-foreground">Last refresh:</span>
-                      <span className="font-medium">
-                        {refreshHistory.lastRefresh
-                          ? new Date(refreshHistory.lastRefresh).toLocaleString()
-                          : "Never"}
-                      </span>
-                    </div>
-                    {refreshHistory.lastRefreshStatus && (
-                      <Badge variant={refreshHistory.lastRefreshStatus === "success" ? "default" : "secondary"}>
-                        {refreshHistory.lastRefreshStatus}
-                      </Badge>
-                    )}
-                  </div>
-
-                  <div className="border rounded-lg overflow-hidden">
-                    <div className="bg-muted px-4 py-2 border-b">
-                      <h4 className="font-medium text-sm">
-                        Source Files ({refreshHistory.sourceFilesCount})
-                      </h4>
-                    </div>
-                    <div className="divide-y max-h-60 overflow-y-auto">
-                      {refreshHistory.sourceFiles.map((file, idx) => (
-                        <div key={idx} className="px-4 py-2 flex items-center justify-between text-sm">
-                          <div className="flex items-center gap-2">
-                            <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
-                            <span className="font-medium">{file.projectName}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {file.exists ? (
-                              <Badge variant="outline" className="text-green-600 border-green-600">
-                                Available
-                              </Badge>
-                            ) : (
-                              <Badge variant="destructive">Missing</Badge>
-                            )}
-                            <span className="text-xs text-muted-foreground">
-                              {file.uploadedAt
-                                ? new Date(file.uploadedAt).toLocaleDateString()
-                                : ""}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                      {refreshHistory.sourceFiles.length === 0 && (
-                        <div className="px-4 py-8 text-center text-muted-foreground">
-                          No source files found. Upload tracker files first.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-            </CardContent>
           </Card>
 
-          {refreshError && (
-            <Card className="border-destructive">
-              <CardHeader>
-                <CardTitle className="text-destructive flex items-center gap-2">
-                  <XCircle className="h-5 w-5" />
-                  Refresh Failed
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p data-testid="text-refresh-error">{refreshError}</p>
-              </CardContent>
-            </Card>
-          )}
-
-          {refreshResult && (
-            <Card className={refreshResult.success ? "border-green-500" : "border-yellow-500"}>
+          {/* Scan Results */}
+          {scanResult && (
+            <Card className={scanResult.filesFailed > 0 ? "border-yellow-500" : "border-green-500"}>
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <CardTitle className="flex items-center gap-2">
-                    {refreshResult.success ? (
+                    {scanResult.filesFailed === 0 ? (
                       <CheckCircle className="h-6 w-6 text-green-500" />
                     ) : (
-                      <XCircle className="h-6 w-6 text-yellow-500" />
+                      <AlertTriangle className="h-6 w-6 text-yellow-500" />
                     )}
-                    {refreshResult.message}
+                    {scanResult.message}
                   </CardTitle>
-                  <Badge variant={refreshResult.success ? "default" : "secondary"}>
-                    {refreshResult.totalRecordsProcessed.toLocaleString()} records
-                  </Badge>
+                  <div className="flex gap-2">
+                    <Badge variant="default">
+                      {scanResult.totalRecordsProcessed.toLocaleString()} records
+                    </Badge>
+                    <Badge variant="outline">
+                      {scanResult.timestamps.durationMs}ms
+                    </Badge>
+                  </div>
                 </div>
                 <CardDescription>
-                  Completed in {refreshResult.timestamps.durationMs}ms at{" "}
-                  {new Date(refreshResult.timestamps.completed).toLocaleString()}
+                  Completed at {new Date(scanResult.timestamps.completed).toLocaleString()}
+                  {scanResult.latestFileDate && (
+                    <> • Latest file: {new Date(scanResult.latestFileDate).toLocaleString()}</>
+                  )}
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-2">
-                  {refreshResult.results.map((r, idx) => (
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {scanResult.results.map((r, idx) => (
                     <div
                       key={idx}
-                      className="flex items-center justify-between p-2 bg-muted rounded"
+                      className={`flex items-center justify-between p-3 rounded-lg border ${
+                        r.status === "failed" ? "border-red-200 bg-red-50 dark:bg-red-950/20" : "bg-muted/50"
+                      }`}
+                      data-testid={`scan-result-${idx}`}
                     >
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-3">
                         {r.status === "success" ? (
-                          <CheckCircle className="h-4 w-4 text-green-500" />
+                          <CheckCircle className="h-4 w-4 text-green-500 flex-shrink-0" />
                         ) : (
-                          <XCircle className="h-4 w-4 text-destructive" />
+                          <XCircle className="h-4 w-4 text-red-500 flex-shrink-0" />
                         )}
-                        <span className="font-medium">{r.projectName}</span>
+                        <div>
+                          <span className="font-medium text-sm">{r.projectName}</span>
+                          <p className="text-xs text-muted-foreground">{r.fileName}</p>
+                        </div>
                       </div>
                       <div className="flex items-center gap-2 text-sm">
-                        {r.recordsProcessed !== undefined && (
+                        {r.status === "success" && r.recordsProcessed !== undefined && (
                           <span className="text-muted-foreground">
                             {r.recordsProcessed} records
                           </span>
                         )}
-                        {r.message && r.status !== "success" && (
-                          <span className="text-destructive">{r.message}</span>
+                        {r.status === "failed" && (
+                          <Badge variant="destructive">{r.message}</Badge>
+                        )}
+                        {r.fileDate && (
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(r.fileDate).toLocaleDateString()}
+                          </span>
                         )}
                       </div>
                     </div>
@@ -361,6 +435,49 @@ export default function AdminPage() {
               </CardContent>
             </Card>
           )}
+        </TabsContent>
+
+        {/* MAINTENANCE TAB */}
+        <TabsContent value="maintenance" className="space-y-4 mt-4">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Database className="h-5 w-5" />
+                    Re-process Stored Files
+                  </CardTitle>
+                  <CardDescription>
+                    Re-parse all previously uploaded tracker files from the uploads directory
+                  </CardDescription>
+                </div>
+                <Button
+                  onClick={async () => {
+                    setScanLoading(true);
+                    try {
+                      const res = await fetch("/api/admin/refresh-data", { method: "POST", credentials: "include" });
+                      const data = await res.json();
+                      toast({ title: "Refresh Complete", description: data.message });
+                      queryClient.invalidateQueries();
+                    } catch (err: any) {
+                      toast({ title: "Refresh Failed", description: err.message, variant: "destructive" });
+                    } finally {
+                      setScanLoading(false);
+                    }
+                  }}
+                  disabled={scanLoading}
+                  data-testid="button-refresh-data"
+                >
+                  {scanLoading ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                  )}
+                  Refresh All Data
+                </Button>
+              </div>
+            </CardHeader>
+          </Card>
 
           <Card className="border-destructive/50">
             <CardHeader>
@@ -376,22 +493,13 @@ export default function AdminPage() {
                 </div>
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
-                    <Button
-                      variant="destructive"
-                      disabled={clearLoading}
-                      data-testid="button-clear-all-data"
-                    >
+                    <Button variant="destructive" disabled={clearLoading} data-testid="button-clear-all-data">
                       {clearLoading ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Clearing...
-                        </>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       ) : (
-                        <>
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          Clear All Data
-                        </>
+                        <Trash2 className="mr-2 h-4 w-4" />
                       )}
+                      Clear All Data
                     </Button>
                   </AlertDialogTrigger>
                   <AlertDialogContent>
@@ -400,7 +508,6 @@ export default function AdminPage() {
                       <AlertDialogDescription>
                         This action cannot be undone. This will permanently delete all project data,
                         uploaded tracker files, cashflow data, revenue tracking, and all user edits.
-                        You will need to re-upload your tracker files to restore the data.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
@@ -432,23 +539,14 @@ export default function AdminPage() {
           </Card>
         </TabsContent>
 
+        {/* SMOKE TEST TAB */}
         <TabsContent value="smoke" className="space-y-4 mt-4">
           <div className="flex justify-end">
-            <Button
-              onClick={runSmokeTest}
-              disabled={smokeLoading}
-              data-testid="button-run-smoke-test"
-            >
+            <Button onClick={runSmokeTest} disabled={smokeLoading} data-testid="button-run-smoke-test">
               {smokeLoading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Running...
-                </>
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Running...</>
               ) : (
-                <>
-                  <Play className="mr-2 h-4 w-4" />
-                  Run Smoke Test
-                </>
+                <><Play className="mr-2 h-4 w-4" />Run Smoke Test</>
               )}
             </Button>
           </div>
@@ -457,13 +555,10 @@ export default function AdminPage() {
             <Card className="border-destructive">
               <CardHeader>
                 <CardTitle className="text-destructive flex items-center gap-2">
-                  <XCircle className="h-5 w-5" />
-                  Error
+                  <XCircle className="h-5 w-5" />Error
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <p data-testid="text-smoke-test-error">{smokeError}</p>
-              </CardContent>
+              <CardContent><p data-testid="text-smoke-test-error">{smokeError}</p></CardContent>
             </Card>
           )}
 
@@ -480,21 +575,15 @@ export default function AdminPage() {
                       )}
                       Smoke Test {smokeResult.passed ? "Passed" : "Failed"}
                     </CardTitle>
-                    <Badge
-                      variant={smokeResult.passed ? "default" : "destructive"}
-                      data-testid="badge-smoke-test-result"
-                    >
-                      {smokeResult.checks.filter((c) => c.passed).length} /{" "}
-                      {smokeResult.checks.length} checks passed
+                    <Badge variant={smokeResult.passed ? "default" : "destructive"} data-testid="badge-smoke-test-result">
+                      {smokeResult.checks.filter((c) => c.passed).length} / {smokeResult.checks.length} checks passed
                     </Badge>
                   </div>
                   <CardDescription>
-                    Completed in {smokeResult.timestamps.durationMs}ms at{" "}
-                    {new Date(smokeResult.timestamps.completed).toLocaleString()}
+                    Completed in {smokeResult.timestamps.durationMs}ms at {new Date(smokeResult.timestamps.completed).toLocaleString()}
                   </CardDescription>
                 </CardHeader>
               </Card>
-
               <div className="grid gap-4 md:grid-cols-2">
                 {smokeResult.checks.map((check, index) => (
                   <Card key={index} className={check.passed ? "" : "border-destructive/50"}>
@@ -509,10 +598,7 @@ export default function AdminPage() {
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <pre
-                        className="text-xs bg-muted p-2 rounded overflow-x-auto max-h-40"
-                        data-testid={`details-${check.name}`}
-                      >
+                      <pre className="text-xs bg-muted p-2 rounded overflow-x-auto max-h-40" data-testid={`details-${check.name}`}>
                         {JSON.stringify(check.details, null, 2)}
                       </pre>
                     </CardContent>
@@ -527,13 +613,7 @@ export default function AdminPage() {
               <CardContent className="py-12 text-center">
                 <Play className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                 <h3 className="text-lg font-medium mb-2">No Test Results</h3>
-                <p className="text-muted-foreground mb-4">
-                  Click "Run Smoke Test" to validate system health and data integrity.
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  The smoke test checks: database connectivity, authentication, uploads, data
-                  presence, cashflow series, revenue/COS data, and override functionality.
-                </p>
+                <p className="text-muted-foreground">Click "Run Smoke Test" to validate system health.</p>
               </CardContent>
             </Card>
           )}
