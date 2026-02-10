@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { CheckCircle, XCircle, Loader2, Play, RefreshCw, FileSpreadsheet, Clock, Database, Trash2, FolderOpen, Upload, AlertTriangle } from "lucide-react";
+import { CheckCircle, XCircle, Loader2, Play, RefreshCw, FileSpreadsheet, Clock, Database, Trash2, FolderOpen, AlertTriangle } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 
@@ -62,14 +62,13 @@ export default function AdminPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [folderConfig, setFolderConfig] = useState<FolderConfig | null>(null);
   const [folderLoading, setFolderLoading] = useState(false);
-  const [folderPath, setFolderPath] = useState("");
   const [scanLoading, setScanLoading] = useState(false);
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [uploadLoading, setUploadLoading] = useState(false);
+  const folderInputRef = useRef<HTMLInputElement>(null);
 
   const [smokeLoading, setSmokeLoading] = useState(false);
   const [smokeResult, setSmokeResult] = useState<SmokeTestResult | null>(null);
@@ -86,7 +85,6 @@ export default function AdminPage() {
       if (res.ok) {
         const data = await res.json();
         setFolderConfig(data);
-        setFolderPath(data.folderPath);
       }
     } catch (err) {
       console.error("Failed to load folder config:", err);
@@ -99,74 +97,63 @@ export default function AdminPage() {
     loadFolderConfig();
   }, []);
 
-  const saveFolderPath = async () => {
-    try {
-      const res = await fetch("/api/admin/folder-config", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ folderPath }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        toast({ title: "Folder Updated", description: data.message });
-        loadFolderConfig();
-      } else {
-        toast({ title: "Error", description: data.error || "Failed to set folder", variant: "destructive" });
-      }
-    } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+  const handleFolderSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const allFiles = Array.from(e.target.files);
+    const excelFiles = allFiles.filter((f) =>
+      /\.(xlsx|xlsm|xls)$/i.test(f.name)
+    );
+    if (excelFiles.length === 0) {
+      toast({ title: "No Excel Files", description: "The selected folder contains no Excel files (.xlsx, .xlsm, .xls)", variant: "destructive" });
+      return;
     }
-  };
-
-  const runFolderScan = async () => {
-    setScanLoading(true);
+    setUploadLoading(true);
     setScanResult(null);
     try {
-      const res = await fetch("/api/admin/scan-folder", {
-        method: "POST",
-        credentials: "include",
-      });
-      const data = await res.json();
-      setScanResult(data);
-      queryClient.invalidateQueries();
-      if (data.success) {
-        toast({ title: "Update Complete", description: data.message });
-      } else {
-        toast({ title: "Update Completed with Errors", description: data.message, variant: "destructive" });
-      }
-      loadFolderConfig();
-    } catch (err: any) {
-      toast({ title: "Update Failed", description: err.message, variant: "destructive" });
-    } finally {
-      setScanLoading(false);
-    }
-  };
-
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || e.target.files.length === 0) return;
-    setUploadLoading(true);
-    try {
       const formData = new FormData();
-      for (const file of Array.from(e.target.files)) {
+      for (const file of excelFiles) {
         formData.append("trackers", file);
       }
       formData.append("mode", "refresh");
-      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      const res = await fetch("/api/upload", { method: "POST", body: formData, credentials: "include" });
       const data = await res.json();
       if (res.ok) {
-        const successCount = data.results?.filter((r: any) => r.status === "success").length || 0;
-        toast({ title: "Upload Complete", description: `${successCount} file(s) processed successfully` });
+        const results = (data.results || []).map((r: any) => ({
+          fileName: r.fileName || r.file,
+          projectName: r.projectName || r.file,
+          status: r.status as "success" | "failed",
+          message: r.message || "",
+          recordsProcessed: r.recordsProcessed,
+          fileDate: r.fileDate || new Date().toISOString(),
+        }));
+        const successCount = results.filter((r: any) => r.status === "success").length;
+        const failedCount = results.filter((r: any) => r.status === "failed").length;
+        setScanResult({
+          success: failedCount === 0,
+          message: `${successCount} of ${excelFiles.length} files processed successfully`,
+          filesProcessed: successCount,
+          filesFailed: failedCount,
+          filesTotal: excelFiles.length,
+          totalRecordsProcessed: data.totalRecordsProcessed || 0,
+          latestFileDate: new Date().toISOString(),
+          results,
+          timestamps: {
+            started: new Date().toISOString(),
+            completed: new Date().toISOString(),
+            durationMs: 0,
+          },
+        });
         queryClient.invalidateQueries();
         loadFolderConfig();
+        toast({ title: "Import Complete", description: `${successCount} file(s) processed successfully` });
       } else {
-        toast({ title: "Upload Failed", description: data.message || "Failed to upload files", variant: "destructive" });
+        toast({ title: "Import Failed", description: data.message || "Failed to process files", variant: "destructive" });
       }
     } catch (err: any) {
-      toast({ title: "Upload Failed", description: err.message, variant: "destructive" });
+      toast({ title: "Import Failed", description: err.message, variant: "destructive" });
     } finally {
       setUploadLoading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
+      if (folderInputRef.current) folderInputRef.current.value = "";
     }
   };
 
@@ -238,63 +225,63 @@ export default function AdminPage() {
 
         {/* DATA IMPORT TAB */}
         <TabsContent value="import" className="space-y-4 mt-4">
-          {/* Folder Configuration */}
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FolderOpen className="h-5 w-5" />
-                Tracker Folder
-              </CardTitle>
-              <CardDescription>
-                Set the folder path containing your Excel tracker files. All .xlsx, .xlsm, and .xls files will be scanned.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex gap-2">
-                <Input
-                  value={folderPath}
-                  onChange={(e) => setFolderPath(e.target.value)}
-                  placeholder="/path/to/tracker/files"
-                  className="flex-1 font-mono text-sm"
-                  data-testid="input-folder-path"
-                />
-                <Button
-                  onClick={saveFolderPath}
-                  variant="outline"
-                  disabled={!folderPath || folderPath === folderConfig?.folderPath}
-                  data-testid="button-save-folder"
-                >
-                  Save Path
-                </Button>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <FolderOpen className="h-5 w-5" />
+                    Import Tracker Files
+                  </CardTitle>
+                  <CardDescription>
+                    Choose a folder on your computer containing Excel tracker files (.xlsx, .xlsm, .xls). All Excel files in the folder will be imported.
+                  </CardDescription>
+                </div>
+                <div>
+                  <input
+                    ref={folderInputRef}
+                    type="file"
+                    className="hidden"
+                    {...({ webkitdirectory: "true", directory: "" } as any)}
+                    onChange={handleFolderSelect}
+                    data-testid="input-folder-select"
+                  />
+                  <Button
+                    onClick={() => folderInputRef.current?.click()}
+                    disabled={uploadLoading}
+                    size="lg"
+                    data-testid="button-choose-folder"
+                  >
+                    {uploadLoading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Importing...
+                      </>
+                    ) : (
+                      <>
+                        <FolderOpen className="mr-2 h-4 w-4" />
+                        Choose Folder
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
-
-              {folderConfig && (
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <div className="flex items-center gap-2 p-3 rounded-lg border">
-                    <FolderOpen className="h-4 w-4 text-muted-foreground" />
-                    <div>
-                      <p className="text-xs text-muted-foreground">Status</p>
-                      <p className="text-sm font-medium">
-                        {folderConfig.exists ? (
-                          <span className="text-green-600">Folder Found</span>
-                        ) : (
-                          <span className="text-red-600">Not Found</span>
-                        )}
-                      </p>
-                    </div>
-                  </div>
+            </CardHeader>
+            {folderConfig && (
+              <CardContent>
+                <div className="grid gap-3 sm:grid-cols-2">
                   <div className="flex items-center gap-2 p-3 rounded-lg border">
                     <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
                     <div>
-                      <p className="text-xs text-muted-foreground">Excel Files</p>
-                      <p className="text-sm font-medium">{folderConfig.fileCount} files</p>
+                      <p className="text-xs text-muted-foreground">Files in Database</p>
+                      <p className="text-sm font-medium" data-testid="text-file-count">{folderConfig.fileCount} files</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 p-3 rounded-lg border">
                     <Clock className="h-4 w-4 text-muted-foreground" />
                     <div>
-                      <p className="text-xs text-muted-foreground">Latest File Date</p>
-                      <p className="text-sm font-medium">
+                      <p className="text-xs text-muted-foreground">Last Import</p>
+                      <p className="text-sm font-medium" data-testid="text-latest-date">
                         {folderConfig.latestFileDate
                           ? new Date(folderConfig.latestFileDate).toLocaleString()
                           : "N/A"}
@@ -302,66 +289,8 @@ export default function AdminPage() {
                     </div>
                   </div>
                 </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Update Actions */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <RefreshCw className="h-5 w-5" />
-                    Update Data
-                  </CardTitle>
-                  <CardDescription>
-                    Process all tracker files from the configured folder or upload individual files
-                  </CardDescription>
-                </div>
-                <div className="flex gap-2">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".xlsx,.xlsm,.xls"
-                    multiple
-                    onChange={handleFileUpload}
-                    className="hidden"
-                    id="manual-upload"
-                  />
-                  <Button
-                    variant="outline"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={uploadLoading}
-                    data-testid="button-upload-files"
-                  >
-                    {uploadLoading ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <Upload className="mr-2 h-4 w-4" />
-                    )}
-                    Upload Files
-                  </Button>
-                  <Button
-                    onClick={runFolderScan}
-                    disabled={scanLoading || !folderConfig?.exists}
-                    data-testid="button-update-data"
-                  >
-                    {scanLoading ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Updating...
-                      </>
-                    ) : (
-                      <>
-                        <RefreshCw className="mr-2 h-4 w-4" />
-                        Update from Folder
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </div>
-            </CardHeader>
+              </CardContent>
+            )}
           </Card>
 
           {/* Scan Results */}

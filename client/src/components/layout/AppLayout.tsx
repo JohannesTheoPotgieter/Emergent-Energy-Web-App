@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { 
@@ -13,9 +13,7 @@ import {
   Settings,
   LogOut,
   Menu,
-  RefreshCw,
   Search,
-  Upload,
   Database,
   Home
 } from "lucide-react";
@@ -35,8 +33,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [showValidationReport, setShowValidationReport] = useState(false);
   const { data, overview, refreshData, isLoading, importFiles, lastUploadResult } = useProgramData();
   const { user, logout } = useAuth();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  
   // Fetch health status to show DB mode
   const { data: healthStatus } = useQuery({
     queryKey: ["health"],
@@ -55,17 +51,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     { label: "COS Tracker", icon: TrendingUp, path: "/cos", className: "rotate-180" },
     { label: "Admin", icon: Settings, path: "/admin" },
   ];
-
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const filesArray = Array.from(e.target.files);
-      await importFiles(filesArray);
-      setShowValidationReport(true);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
-    }
-  };
 
   return (
     <div className="min-h-screen bg-background flex overflow-hidden">
@@ -172,35 +157,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                </span>
             </div>
             
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              className="hidden" 
-              accept=".xlsx,.xls,.xlsm"
-              multiple
-              onChange={handleFileUpload}
-            />
-            
-            <Button 
-              size="sm" 
-              variant="outline"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isLoading}
-              className={cn("gap-2 border-primary/20 text-primary hover:bg-primary/5")}
-            >
-              <Upload className="w-4 h-4" />
-              <span className="hidden sm:inline">Upload Tracker</span>
-            </Button>
-
-            <Button 
-              size="sm" 
-              onClick={refreshData} 
-              disabled={isLoading}
-              className={cn("gap-2 transition-all", isLoading && "opacity-80")}
-            >
-              <RefreshCw className={cn("w-4 h-4", isLoading && "animate-spin")} />
-              <span className="hidden sm:inline">{isLoading ? "Refreshing..." : "Refresh"}</span>
-            </Button>
           </div>
         </header>
 
