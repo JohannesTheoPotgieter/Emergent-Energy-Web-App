@@ -17,6 +17,7 @@ import { scoreExpenseConfidence, scoreInflowConfidence, getAssumptionDriver } fr
 import { aggregateCOS, aggregateCOSByProject } from "./lib/calculations/cosAggregator";
 import { computeWeeklyCashflow, getLinesForWeek, type CashflowLineItem } from "./lib/calculations/cashflow";
 import { runDataQualityChecks } from "./lib/calculations/dataQuality";
+import { buildOverrideMap, applyOverridesToCashflowLines, applyOverridesToCOSLines, computeMonthlyBuckets, getEffectiveDate } from "./lib/calculations/scenarioResolver";
 
 // Ensure uploads directory exists
 const uploadDir = path.join(process.cwd(), 'uploads');
@@ -4828,6 +4829,723 @@ export async function registerRoutes(
       res.json({ projects: projectData, total: projectData.length });
     } catch (err: any) {
       console.error('[Planning Board] projects error:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ============ SCENARIO ENGINE API ============
+
+  app.get("/api/scenarios", requireAuth, async (req, res) => {
+    try {
+      const all = await storage.getAllScenarios();
+      res.json({ scenarios: all });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/scenarios", requireAuth, async (req, res) => {
+    try {
+      const { name, description } = req.body;
+      if (!name) return res.status(400).json({ error: "Name is required" });
+      const userId = (req.user as any)?.id;
+      const scenario = await storage.createScenario({ name, description, createdBy: userId, isDefault: false });
+      res.json(scenario);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/scenarios/:id/duplicate", requireAuth, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { name } = req.body;
+      if (!name) return res.status(400).json({ error: "Name is required" });
+      const dup = await storage.duplicateScenario(id, name);
+      res.json(dup);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/scenarios/:id", requireAuth, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteScenario(id);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/scenarios/:id/reset", requireAuth, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.clearDateOverrides(id);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/scenarios/:id/overrides", requireAuth, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const overrides = await storage.getDateOverridesByScenario(id);
+      res.json({ overrides });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/scenarios/:id/overrides", requireAuth, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { entityType, entityId, fieldName, originalDate, overrideDate, reason } = req.body;
+      if (!entityType || !entityId || !fieldName || !overrideDate || !reason) {
+        return res.status(400).json({ error: "entityType, entityId, fieldName, overrideDate, and reason are required" });
+      }
+      const userId = (req.user as any)?.id;
+      const override = await storage.createDateOverride({
+        scenarioId: id, entityType, entityId, fieldName, originalDate, overrideDate, reason, createdBy: userId,
+      });
+      res.json(override);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/overrides/:id", requireAuth, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteDateOverride(id);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ============ SCENARIO-AWARE COS CONTROL API ============
+
+  app.get("/api/cos-control/scenario-monthly", requireAuth, async (req, res) => {
+    try {
+      const scenarioId = req.query.scenarioId ? parseInt(req.query.scenarioId as string) : null;
+      const allExpenses = await db.select().from(programExpense);
+      const items = allExpenses.filter((e: any) => e.rowType === 'item' || !e.rowType);
+
+      const cosLines: any[] = items.map((e: any) => ({
+        id: e.id,
+        projectName: e.projectName,
+        expenseCategory: e.expenseCategory,
+        expenseLineItem: e.expenseLineItem,
+        amount: Math.abs(parseFloat(e.expenseActualTotal || e.budgetTotal || '0')),
+        state: e.computedState || classifyExpenseState({
+          poNumber: e.expensePoNumber, invoiceNumber: e.expenseInvoiceNumber,
+          invoicedDate: e.expenseInvoicedDate, paymentDate: e.expensePaymentDate,
+        }),
+        invoiceNumber: e.expenseInvoiceNumber,
+        poNumber: e.expensePoNumber,
+        invoicedDate: e.expenseInvoicedDate,
+        paymentDate: e.expensePaymentDate,
+        forecastPaymentDate: e.computedForecastPaymentDate || e.forecastPaymentDate,
+        supplierName: e.supplierName,
+        confidence: scoreExpenseConfidence(e),
+        assumptionDriver: getAssumptionDriver(e),
+        hash: e.expenseLineHash,
+      }));
+
+      let scenarioLines = cosLines;
+      let baselineMonthly = computeMonthlyBuckets(cosLines);
+
+      if (scenarioId) {
+        const overrides = await storage.getDateOverridesByScenario(scenarioId);
+        const overrideMap = buildOverrideMap(overrides);
+        scenarioLines = applyOverridesToCOSLines(cosLines, overrideMap);
+      }
+
+      const scenarioMonthly = computeMonthlyBuckets(scenarioLines);
+
+      const allMonths = new Set([...baselineMonthly.keys(), ...scenarioMonthly.keys()]);
+      const sortedMonths = Array.from(allMonths).sort();
+
+      const monthlyData = sortedMonths.map(month => {
+        const baseline = baselineMonthly.get(month) || { planned: 0, committed: 0, invoiced: 0, paid: 0 };
+        const scenario = scenarioMonthly.get(month) || { planned: 0, committed: 0, invoiced: 0, paid: 0 };
+        const baseTotal = baseline.planned + baseline.committed + baseline.invoiced + baseline.paid;
+        const scenTotal = scenario.planned + scenario.committed + scenario.invoiced + scenario.paid;
+        return {
+          month,
+          ...scenario,
+          total: scenTotal,
+          baselinePlanned: baseline.planned,
+          baselineCommitted: baseline.committed,
+          baselineInvoiced: baseline.invoiced,
+          baselinePaid: baseline.paid,
+          baselineTotal: baseTotal,
+          delta: scenTotal - baseTotal,
+        };
+      });
+
+      const summary = aggregateCOS(scenarioLines);
+
+      res.json({ monthly: monthlyData, summary, lineCount: scenarioLines.length });
+    } catch (err: any) {
+      console.error('[COS Control Scenario Monthly]', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/cos-control/scenario-invoices", requireAuth, async (req, res) => {
+    try {
+      const scenarioId = req.query.scenarioId ? parseInt(req.query.scenarioId as string) : null;
+      const search = (req.query.search as string || '').toLowerCase();
+      const project = req.query.project as string || '';
+      const state = req.query.state as string || '';
+
+      const allExpenses = await db.select().from(programExpense);
+      const items = allExpenses.filter((e: any) => e.rowType === 'item' || !e.rowType);
+
+      let overrideMap: any = {};
+      if (scenarioId) {
+        const overrides = await storage.getDateOverridesByScenario(scenarioId);
+        overrideMap = buildOverrideMap(overrides);
+      }
+
+      const invoiceMap = new Map<string, any>();
+
+      for (const e of items) {
+        const amount = Math.abs(parseFloat(e.expenseActualTotal || e.budgetTotal || '0'));
+        if (amount === 0) continue;
+
+        const lineState = e.computedState || classifyExpenseState({
+          poNumber: e.expensePoNumber, invoiceNumber: e.expenseInvoiceNumber,
+          invoicedDate: e.expenseInvoicedDate, paymentDate: e.expensePaymentDate,
+        });
+
+        const entityKey = `expense_line::${e.id}`;
+        const effectiveInvoiceDate = overrideMap[entityKey]?.['invoice_date'] || e.expenseInvoicedDate;
+        const effectivePaymentDate = overrideMap[entityKey]?.['payment_date'] || e.expensePaymentDate;
+        const effectiveForecastDate = overrideMap[entityKey]?.['payment_date'] || e.computedForecastPaymentDate || e.forecastPaymentDate;
+
+        const cosDateStr = effectivePaymentDate || effectiveForecastDate || effectiveInvoiceDate;
+        let monthBucket = '';
+        if (cosDateStr) {
+          const d = new Date(cosDateStr);
+          if (!isNaN(d.getTime())) {
+            monthBucket = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+          }
+        }
+
+        const groupKey = e.expenseInvoiceNumber || `line_${e.id}`;
+
+        if (!invoiceMap.has(groupKey)) {
+          invoiceMap.set(groupKey, {
+            id: e.id,
+            invoiceNumber: e.expenseInvoiceNumber || null,
+            supplierName: e.supplierName || null,
+            projects: [e.projectName],
+            invoicedDate: effectiveInvoiceDate,
+            paymentDate: effectivePaymentDate,
+            forecastPaymentDate: effectiveForecastDate,
+            amount,
+            state: lineState,
+            monthBucket,
+            poNumber: e.expensePoNumber,
+            category: e.expenseCategory,
+            lineItem: e.expenseLineItem,
+            confidence: scoreExpenseConfidence(e),
+            lineCount: 1,
+            originalInvoicedDate: e.expenseInvoicedDate,
+            originalPaymentDate: e.expensePaymentDate,
+          });
+        } else {
+          const existing = invoiceMap.get(groupKey)!;
+          existing.amount += amount;
+          existing.lineCount++;
+          if (!existing.projects.includes(e.projectName)) existing.projects.push(e.projectName);
+        }
+      }
+
+      let invoices = Array.from(invoiceMap.values());
+
+      if (search) {
+        invoices = invoices.filter(inv =>
+          (inv.invoiceNumber || '').toLowerCase().includes(search) ||
+          (inv.supplierName || '').toLowerCase().includes(search) ||
+          (inv.poNumber || '').toLowerCase().includes(search) ||
+          inv.projects.some((p: string) => p.toLowerCase().includes(search))
+        );
+      }
+      if (project) invoices = invoices.filter(inv => inv.projects.includes(project));
+      if (state) invoices = invoices.filter(inv => inv.state === state);
+
+      invoices.sort((a, b) => b.amount - a.amount);
+
+      res.json({ invoices, total: invoices.length });
+    } catch (err: any) {
+      console.error('[COS Control Scenario Invoices]', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/cos-control/scenario-lines", requireAuth, async (req, res) => {
+    try {
+      const scenarioId = req.query.scenarioId ? parseInt(req.query.scenarioId as string) : null;
+      const search = (req.query.search as string || '').toLowerCase();
+      const project = req.query.project as string || '';
+      const state = req.query.state as string || '';
+
+      const allExpenses = await db.select().from(programExpense);
+      const items = allExpenses.filter((e: any) => e.rowType === 'item' || !e.rowType);
+
+      let overrideMap: any = {};
+      if (scenarioId) {
+        const overrides = await storage.getDateOverridesByScenario(scenarioId);
+        overrideMap = buildOverrideMap(overrides);
+      }
+
+      let lines = items.map((e: any) => {
+        const amount = Math.abs(parseFloat(e.expenseActualTotal || e.budgetTotal || '0'));
+        const lineState = e.computedState || classifyExpenseState({
+          poNumber: e.expensePoNumber, invoiceNumber: e.expenseInvoiceNumber,
+          invoicedDate: e.expenseInvoicedDate, paymentDate: e.expensePaymentDate,
+        });
+
+        const entityKey = `expense_line::${e.id}`;
+        const effectiveInvoiceDate = overrideMap[entityKey]?.['invoice_date'] || e.expenseInvoicedDate;
+        const effectivePaymentDate = overrideMap[entityKey]?.['payment_date'] || e.expensePaymentDate;
+        const effectiveForecastDate = overrideMap[entityKey]?.['payment_date'] || e.computedForecastPaymentDate || e.forecastPaymentDate;
+
+        const cosDateStr = effectivePaymentDate || effectiveForecastDate || effectiveInvoiceDate;
+        let monthBucket = '';
+        if (cosDateStr) {
+          const d = new Date(cosDateStr);
+          if (!isNaN(d.getTime())) {
+            monthBucket = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+          }
+        }
+
+        return {
+          id: e.id,
+          hash: e.expenseLineHash,
+          projectName: e.projectName,
+          category: e.expenseCategory,
+          lineItem: e.expenseLineItem,
+          amount,
+          state: lineState,
+          invoiceNumber: e.expenseInvoiceNumber,
+          poNumber: e.expensePoNumber,
+          invoicedDate: effectiveInvoiceDate,
+          paymentDate: effectivePaymentDate,
+          forecastPaymentDate: effectiveForecastDate,
+          supplierName: e.supplierName,
+          monthBucket,
+          confidence: scoreExpenseConfidence(e),
+          originalInvoicedDate: e.expenseInvoicedDate,
+          originalPaymentDate: e.expensePaymentDate,
+        };
+      }).filter((l: any) => l.amount > 0);
+
+      if (search) {
+        lines = lines.filter((l: any) =>
+          (l.invoiceNumber || '').toLowerCase().includes(search) ||
+          (l.poNumber || '').toLowerCase().includes(search) ||
+          (l.projectName || '').toLowerCase().includes(search) ||
+          (l.supplierName || '').toLowerCase().includes(search) ||
+          (l.lineItem || '').toLowerCase().includes(search)
+        );
+      }
+      if (project) lines = lines.filter((l: any) => l.projectName === project);
+      if (state) lines = lines.filter((l: any) => l.state === state);
+
+      lines.sort((a: any, b: any) => b.amount - a.amount);
+
+      res.json({ lines, total: lines.length });
+    } catch (err: any) {
+      console.error('[COS Control Scenario Lines]', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/cos-control/scenario-impact", requireAuth, async (req, res) => {
+    try {
+      const scenarioId = req.query.scenarioId ? parseInt(req.query.scenarioId as string) : null;
+      if (!scenarioId) return res.json({ shifts: [], cashflowDelta: [] });
+
+      const allExpenses = await db.select().from(programExpense);
+      const items = allExpenses.filter((e: any) => e.rowType === 'item' || !e.rowType);
+      const overrides = await storage.getDateOverridesByScenario(scenarioId);
+      const overrideMap = buildOverrideMap(overrides);
+
+      const shifts: any[] = [];
+      for (const ov of overrides) {
+        if (ov.entityType === 'expense_line') {
+          const expense = items.find((e: any) => String(e.id) === ov.entityId);
+          if (expense) {
+            const amount = Math.abs(parseFloat(expense.expenseActualTotal || expense.budgetTotal || '0'));
+            const origDate = ov.originalDate || expense.expensePaymentDate || expense.computedForecastPaymentDate;
+            const origMonth = origDate ? new Date(origDate).toISOString().slice(0, 7) : 'Unknown';
+            const newMonth = new Date(ov.overrideDate).toISOString().slice(0, 7);
+            if (origMonth !== newMonth) {
+              shifts.push({
+                entityId: ov.entityId,
+                description: expense.expenseLineItem || expense.expenseInvoiceNumber || `Line #${expense.id}`,
+                fromMonth: origMonth,
+                toMonth: newMonth,
+                amount,
+              });
+            }
+          }
+        }
+      }
+
+      shifts.sort((a, b) => b.amount - a.amount);
+
+      res.json({ shifts: shifts.slice(0, 10), totalShifts: shifts.length });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ============ SCENARIO-AWARE CASHFLOW FORECAST API ============
+
+  app.get("/api/cashflow-forecast/scenario-weekly", requireAuth, async (req, res) => {
+    try {
+      const scenarioId = req.query.scenarioId ? parseInt(req.query.scenarioId as string) : null;
+      const projectFilter = req.query.project as string || '';
+
+      let allExpenses = await db.select().from(programExpense);
+      let allInflows = await db.select().from(programInflows);
+
+      if (projectFilter) {
+        allExpenses = allExpenses.filter((e: any) => e.projectName === projectFilter);
+        allInflows = allInflows.filter((i: any) => i.projectName === projectFilter);
+      }
+
+      const expenseItems = allExpenses.filter((e: any) => e.rowType === 'item' || !e.rowType);
+
+      const buildCashflowLines = (expenses: any[], inflows: any[], overrideMap: any = {}): { inflowLines: CashflowLineItem[]; outflowLines: CashflowLineItem[] } => {
+        const outflowLines: CashflowLineItem[] = expenses.map((e: any) => {
+          const amount = Math.abs(parseFloat(e.expenseActualTotal || e.budgetTotal || '0'));
+          if (amount === 0) return null;
+
+          const entityKey = `expense_line::${e.id}`;
+          const paymentDate = overrideMap[entityKey]?.['payment_date'] || e.expensePaymentDate;
+          const forecastDate = overrideMap[entityKey]?.['payment_date'] || e.computedForecastPaymentDate || e.forecastPaymentDate;
+
+          return {
+            id: e.id,
+            projectName: e.projectName,
+            type: 'outflow' as const,
+            amount,
+            actualDate: paymentDate && !overrideMap[entityKey]?.['payment_date'] ? e.expensePaymentDate : null,
+            forecastDate: paymentDate || forecastDate || null,
+            confidence: scoreExpenseConfidence(e) as 'High' | 'Medium' | 'Low',
+            assumptionDriver: getAssumptionDriver(e),
+            description: e.expenseLineItem || e.expenseCategory || 'Expense',
+            invoiceNumber: e.expenseInvoiceNumber,
+            poNumber: e.expensePoNumber,
+            category: e.expenseCategory,
+            supplierName: e.supplierName,
+          };
+        }).filter(Boolean) as CashflowLineItem[];
+
+        const inflowLines: CashflowLineItem[] = inflows.map((inf: any) => {
+          const amount = Math.abs(parseFloat(inf.milestoneAmount || '0'));
+          if (amount === 0) return null;
+
+          const entityKey = `inflow_line::${inf.id}`;
+          const receiptDate = overrideMap[entityKey]?.['receipt_date'] || inf.paymentReceivedDate;
+          const forecastDate = overrideMap[entityKey]?.['receipt_date'] || inf.computedForecastReceiptDate || inf.plannedPaymentDate;
+
+          return {
+            id: inf.id,
+            projectName: inf.projectName,
+            type: 'inflow' as const,
+            amount,
+            actualDate: receiptDate && !overrideMap[entityKey]?.['receipt_date'] ? inf.paymentReceivedDate : null,
+            forecastDate: receiptDate || forecastDate || null,
+            confidence: scoreInflowConfidence(inf) as 'High' | 'Medium' | 'Low',
+            assumptionDriver: getAssumptionDriver(inf),
+            description: inf.milestoneName || `Milestone ${inf.milestoneNo || ''}`,
+            invoiceNumber: inf.milestoneInvoiceNumber,
+            poNumber: null,
+            category: 'Revenue',
+            supplierName: null,
+          };
+        }).filter(Boolean) as CashflowLineItem[];
+
+        return { inflowLines, outflowLines };
+      };
+
+      const manualBalances = await storage.getAllCashflowWeeklyManual();
+      const openingBalance = manualBalances.length > 0 ? parseFloat(manualBalances[0].openingBalance || '0') : 0;
+
+      const baseline = buildCashflowLines(expenseItems, allInflows);
+      const baselineWeeks = computeWeeklyCashflow(baseline.inflowLines, baseline.outflowLines, '2025-03-03', 52, openingBalance);
+
+      let scenarioWeeks = baselineWeeks;
+      if (scenarioId) {
+        const overrides = await storage.getDateOverridesByScenario(scenarioId);
+        const overrideMap = buildOverrideMap(overrides);
+        const scenarioData = buildCashflowLines(expenseItems, allInflows, overrideMap);
+        scenarioWeeks = computeWeeklyCashflow(scenarioData.inflowLines, scenarioData.outflowLines, '2025-03-03', 52, openingBalance);
+      }
+
+      const weeklyData = scenarioWeeks.map((sw, i) => {
+        const bw = baselineWeeks[i];
+        return {
+          ...sw,
+          baselineClosingBalance: bw?.closingBalance ?? 0,
+          baselineInflowsTotal: (bw?.inflowsActual ?? 0) + (bw?.inflowsForecast ?? 0),
+          baselineOutflowsTotal: (bw?.outflowsActual ?? 0) + (bw?.outflowsForecast ?? 0),
+          deltaInflows: ((sw.inflowsActual + sw.inflowsForecast) - ((bw?.inflowsActual ?? 0) + (bw?.inflowsForecast ?? 0))),
+          deltaOutflows: ((sw.outflowsActual + sw.outflowsForecast) - ((bw?.outflowsActual ?? 0) + (bw?.outflowsForecast ?? 0))),
+          deltaClosingBalance: sw.closingBalance - (bw?.closingBalance ?? 0),
+        };
+      });
+
+      res.json({ weeks: weeklyData });
+    } catch (err: any) {
+      console.error('[Cashflow Forecast Scenario Weekly]', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/cashflow-forecast/scenario-week-detail", requireAuth, async (req, res) => {
+    try {
+      const scenarioId = req.query.scenarioId ? parseInt(req.query.scenarioId as string) : null;
+      const weekStart = req.query.weekStart as string;
+      const weekEnd = req.query.weekEnd as string;
+
+      if (!weekStart || !weekEnd) return res.status(400).json({ error: "weekStart and weekEnd required" });
+
+      const allExpenses = await db.select().from(programExpense);
+      const allInflows = await db.select().from(programInflows);
+      const expenseItems = allExpenses.filter((e: any) => e.rowType === 'item' || !e.rowType);
+
+      let overrideMap: any = {};
+      if (scenarioId) {
+        const overrides = await storage.getDateOverridesByScenario(scenarioId);
+        overrideMap = buildOverrideMap(overrides);
+      }
+
+      const lines: any[] = [];
+
+      for (const e of expenseItems) {
+        const amount = Math.abs(parseFloat(e.expenseActualTotal || e.budgetTotal || '0'));
+        if (amount === 0) continue;
+
+        const entityKey = `expense_line::${e.id}`;
+        const paymentDate = overrideMap[entityKey]?.['payment_date'] || e.expensePaymentDate;
+        const forecastDate = overrideMap[entityKey]?.['payment_date'] || e.computedForecastPaymentDate || e.forecastPaymentDate;
+        const effectiveDate = paymentDate || forecastDate;
+        if (!effectiveDate) continue;
+
+        const d = new Date(effectiveDate);
+        if (isNaN(d.getTime())) continue;
+        const ws = new Date(weekStart); ws.setHours(0,0,0,0);
+        const we = new Date(weekEnd); we.setHours(0,0,0,0);
+        d.setHours(0,0,0,0);
+        if (d < ws || d > we) continue;
+
+        lines.push({
+          id: e.id,
+          type: 'outflow',
+          projectName: e.projectName,
+          description: e.expenseLineItem || e.expenseCategory || 'Expense',
+          amount,
+          actualDate: e.expensePaymentDate,
+          forecastDate: forecastDate,
+          effectiveDate,
+          invoiceNumber: e.expenseInvoiceNumber,
+          poNumber: e.expensePoNumber,
+          category: e.expenseCategory,
+          supplierName: e.supplierName,
+          confidence: scoreExpenseConfidence(e),
+          hasOverride: !!overrideMap[entityKey],
+          originalDate: e.expensePaymentDate || e.computedForecastPaymentDate || e.forecastPaymentDate,
+        });
+      }
+
+      for (const inf of allInflows) {
+        const amount = Math.abs(parseFloat(inf.milestoneAmount || '0'));
+        if (amount === 0) continue;
+
+        const entityKey = `inflow_line::${inf.id}`;
+        const receiptDate = overrideMap[entityKey]?.['receipt_date'] || inf.paymentReceivedDate;
+        const forecastDate = overrideMap[entityKey]?.['receipt_date'] || inf.computedForecastReceiptDate || inf.plannedPaymentDate;
+        const effectiveDate = receiptDate || forecastDate;
+        if (!effectiveDate) continue;
+
+        const d = new Date(effectiveDate);
+        if (isNaN(d.getTime())) continue;
+        const ws = new Date(weekStart); ws.setHours(0,0,0,0);
+        const we = new Date(weekEnd); we.setHours(0,0,0,0);
+        d.setHours(0,0,0,0);
+        if (d < ws || d > we) continue;
+
+        lines.push({
+          id: inf.id,
+          type: 'inflow',
+          projectName: inf.projectName,
+          description: inf.milestoneName || `Milestone ${inf.milestoneNo || ''}`,
+          amount,
+          actualDate: inf.paymentReceivedDate,
+          forecastDate: forecastDate,
+          effectiveDate,
+          invoiceNumber: inf.milestoneInvoiceNumber,
+          poNumber: null,
+          category: 'Revenue',
+          supplierName: null,
+          confidence: scoreInflowConfidence(inf),
+          hasOverride: !!overrideMap[entityKey],
+          originalDate: inf.paymentReceivedDate || inf.computedForecastReceiptDate || inf.plannedPaymentDate,
+        });
+      }
+
+      lines.sort((a, b) => b.amount - a.amount);
+
+      const inflowTotal = lines.filter(l => l.type === 'inflow').reduce((s, l) => s + l.amount, 0);
+      const outflowTotal = lines.filter(l => l.type === 'outflow').reduce((s, l) => s + l.amount, 0);
+
+      res.json({
+        lines,
+        total: lines.length,
+        inflowTotal,
+        outflowTotal,
+        inflowCount: lines.filter(l => l.type === 'inflow').length,
+        outflowCount: lines.filter(l => l.type === 'outflow').length,
+      });
+    } catch (err: any) {
+      console.error('[Cashflow Forecast Scenario Week Detail]', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ============ SCENARIO-AWARE PLANNING API ============
+
+  app.get("/api/planning-board/scenario-projects", requireAuth, async (req, res) => {
+    try {
+      const scenarioId = req.query.scenarioId ? parseInt(req.query.scenarioId as string) : null;
+      const projects = await db.select().from(projectInfo);
+
+      let overrideMap: any = {};
+      if (scenarioId) {
+        const overrides = await storage.getDateOverridesByScenario(scenarioId);
+        overrideMap = buildOverrideMap(overrides);
+      }
+
+      const projectData = projects.map((p: any) => {
+        const entityKey = `project_keydate::${p.projectName}`;
+        const effectiveConstructionStart = overrideMap[entityKey]?.['construction_start'] || p.constructionStartDate;
+        const effectiveCommissioning = overrideMap[entityKey]?.['commissioning_date'] || p.commissioningDate;
+        const effectiveOmHandover = overrideMap[entityKey]?.['om_handover_date'] || p.omHandoverDate;
+        const effectiveClientHandover = overrideMap[entityKey]?.['client_handover_date'] || p.clientHandoverDate;
+
+        return {
+          projectName: p.projectName,
+          pm: p.pm,
+          phase: p.phase,
+          sizeKwp: p.sizeKwp,
+          constructionStartDate: effectiveConstructionStart,
+          commissioningDate: effectiveCommissioning,
+          omHandoverDate: effectiveOmHandover,
+          clientHandoverDate: effectiveClientHandover,
+          originalConstructionStart: p.constructionStartDate,
+          originalCommissioning: p.commissioningDate,
+          originalOmHandover: p.omHandoverDate,
+          originalClientHandover: p.clientHandoverDate,
+          hasOverride: !!overrideMap[entityKey],
+          isActive: p.isActive,
+        };
+      });
+
+      res.json({ projects: projectData });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/planning-board/scenario-capacity", requireAuth, async (req, res) => {
+    try {
+      const scenarioId = req.query.scenarioId ? parseInt(req.query.scenarioId as string) : null;
+      const resourceType = (req.query.resourceType as string) || 'PM';
+
+      const projects = await db.select().from(projectInfo);
+
+      let overrideMap: any = {};
+      if (scenarioId) {
+        const overrides = await storage.getDateOverridesByScenario(scenarioId);
+        overrideMap = buildOverrideMap(overrides);
+      }
+
+      const weeklyDemand = new Map<string, { total: number; projects: string[] }>();
+      const startDate = new Date('2025-03-03');
+
+      for (let w = 0; w < 52; w++) {
+        const weekStart = new Date(startDate);
+        weekStart.setDate(startDate.getDate() + w * 7);
+        const weekKey = weekStart.toISOString().split('T')[0];
+        weeklyDemand.set(weekKey, { total: 0, projects: [] });
+      }
+
+      for (const p of projects) {
+        if (!p.isActive) continue;
+
+        const entityKey = `project_keydate::${p.projectName}`;
+        const startStr = overrideMap[entityKey]?.['construction_start'] || p.constructionStartDate;
+        const endStr = overrideMap[entityKey]?.['client_handover_date'] || p.clientHandoverDate || overrideMap[entityKey]?.['commissioning_date'] || p.commissioningDate;
+
+        if (!startStr || !endStr) continue;
+
+        const projStart = new Date(startStr);
+        const projEnd = new Date(endStr);
+        if (isNaN(projStart.getTime()) || isNaN(projEnd.getTime())) continue;
+
+        for (const [weekKey, demand] of weeklyDemand.entries()) {
+          const weekDate = new Date(weekKey);
+          const weekEnd = new Date(weekDate);
+          weekEnd.setDate(weekDate.getDate() + 6);
+
+          if (projStart <= weekEnd && projEnd >= weekDate) {
+            if (resourceType === 'PM') {
+              const pm = p.pm || 'Unassigned';
+              demand.total += 1;
+              demand.projects.push(p.projectName);
+            } else if (resourceType === 'Installer') {
+              const sizeKwp = parseFloat(p.sizeKwp || '0');
+              const durationWeeks = Math.max(1, Math.ceil((projEnd.getTime() - projStart.getTime()) / (7 * 86400000)));
+              const weeklyKwp = sizeKwp / durationWeeks;
+              demand.total += weeklyKwp;
+              demand.projects.push(p.projectName);
+            }
+          }
+        }
+      }
+
+      const capacityData = Array.from(weeklyDemand.entries()).map(([weekKey, d]) => ({
+        weekStart: weekKey,
+        demand: d.total,
+        projects: d.projects,
+        projectCount: d.projects.length,
+        capacity: resourceType === 'PM' ? 5 : 500,
+        overCapacity: resourceType === 'PM' ? d.total > 5 : d.total > 500,
+      }));
+
+      const clashes = capacityData
+        .filter(c => c.overCapacity)
+        .map(c => ({
+          weekStart: c.weekStart,
+          demand: c.demand,
+          capacity: c.capacity,
+          excess: c.demand - c.capacity,
+          projects: c.projects,
+          message: `${resourceType} over capacity week of ${c.weekStart}: ${c.projects.join(', ')}`,
+        }));
+
+      res.json({ capacity: capacityData, clashes, resourceType });
+    } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
   });

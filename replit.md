@@ -20,10 +20,11 @@ Preferred communication style: Simple, everyday language.
     -   **Home Page**: Navigation hub with quick-link tiles to all major sections.
     -   **Dashboard**: High Priority panel with severity-classified alerts (overdue expenses, outstanding revenue, behind-plan projects, upcoming milestones), clickable drilldown items.
     -   **COS Tracker Page**: Monthly COS matrix with KPIs, reconciliation mode toggle, clickable month cells opening slide-out drawer with contributing line items (searchable/filterable by state, project, invoice #, PO #).
-    -   **COS Control Tower**: Line-item state machine (Planned/Committed/Invoiced/Paid) with KPI cards, per-project breakdown, filterable line-item explorer, invoice rollup, PO rollup, and data quality scanner.
+    -   **COS Control Tower**: Scenario-aware what-if COS shifting tool with By Month stacked chart (baseline overlay), Invoices view with editable dates and quick-shift buttons (+7d/+14d/+30d), Line Items view with expandable details, and impact panel showing COS month shifts. Supports create/duplicate/reset/delete scenarios.
     -   **Cashflow Page**: Chart-first layout (trend chart above grid), weekly cashflow timeline with project filter, OPEX budget modal, expandable week detail with inline search across inflows/outflows and reconciliation totals.
-    -   **Cashflow Forecast**: Weekly line-item-driven forecast with actual/forecast split, weekly chart, weekly grid with drilldown to individual line items showing confidence scoring and assumption drivers.
-    -   **Planning Board**: Tabbed interface with Projects tab (filterable overview with PM/phase/risk filters, sortable columns, budget variance, revenue realization %, automated risk flags) and PM Capacity tab (weekly heatmap showing concurrent project allocations per PM with color-coded cells).
+    -   **Cashflow Forecast**: Scenario-aware weekly forecast with baseline vs scenario balance overlay on chart, delta columns (Δ Inflows/Outflows/Balance) in grid, editable line-item dates in week detail panel with override indicators, and reconciliation summary.
+    -   **Planning Board**: Scenario-aware with Gantt-lite timeline (visual project bars), Key Dates tab (editable construction start, commissioning, O&M handover, client handover with override tracking), and Capacity tab with demand heatmap and clash detection for PM/Installer resources.
+    -   **Scenario System**: Reusable ScenarioSelector component (create/select/duplicate/reset/delete), unified `scenarios` + `dateOverrides` tables, effective date resolver merging overrides with imported baseline data at calculation layer. All three main pages (COS Control, Forecast, Planning) support scenario mode.
     -   **Risks & Flags**: Severity-ranked data quality issues table with searchable flags, project links, and actionable detail.
     -   **Project Plan View**: CPM scheduling tool with Gantt visualization, critical path calculation, task grid with inline editing, task detail panel, and dependency management. Features include hover sync between grid/Gantt and schedule governance warnings for critical path changes.
     -   **SafeMoney Utilities**: Frontend utilities for NaN-safe currency handling and formatting.
@@ -58,6 +59,7 @@ Auto-runs on server startup to populate computed columns (hash, state, forecast 
 -   `projectPlan`: Project task and milestone data.
 -   `cashflowPlanningOverrides`: Stores user-defined cashflow adjustments.
 -   `planningOverrides`, `paymentTerms`, `lineItemOverrides`, `resourceCapacity`: New tables for planning board overrides, configurable payment terms, per-line overrides, and resource capacity management.
+-   `scenarios`, `dateOverrides`: Scenario/what-if system tables for creating named scenarios with date overrides on expense lines, inflow lines, and project key dates.
 -   `uploadMetadata`, `refreshLogs`: Audit trails for data ingestion.
 
 ### New API Endpoints
@@ -66,11 +68,19 @@ Auto-runs on server startup to populate computed columns (hash, state, forecast 
 -   `/api/cos-control/lines`: Filterable line-item explorer with state, confidence, and forecast data.
 -   `/api/cos-control/invoices`: Invoice-level rollup view.
 -   `/api/cos-control/pos`: Purchase order-level rollup view.
+-   `/api/cos-control/scenario-monthly`: COS KPI aggregation (Planned/Committed/Invoiced/Paid/Outstanding + forecast horizons).
+-   `/api/cos-control/scenario-invoices`: Invoice-level rollup view.
+-   `/api/cos-control/scenario-lines`: Filterable line-item explorer with state, confidence, and forecast data.
+-   `/api/cos-control/scenario-impact`: COS shift impact analysis for a scenario.
 -   `/api/cashflow-forecast/weekly`: Weekly cashflow grid with actual/forecast split.
 -   `/api/cashflow-forecast/week-detail`: Per-week line-item drilldown.
+-   `/api/cashflow-forecast/scenario-weekly`: Weekly cashflow grid with scenario overlay and delta columns.
+-   `/api/cashflow-forecast/scenario-week-detail`: Per-week line-item drilldown with override indicators.
 -   `/api/data-quality/scan`: Data quality rule engine with issue counts and affected items.
 -   `/api/planning-board/projects`: Project overview with risk flags and financial summary.
 -   `/api/planning-board/pm-capacity`: PM capacity heatmap with weekly project allocation counts.
+-   `/api/planning-board/scenario-projects`: Project overview with scenario-applied key dates.
+-   `/api/planning-board/scenario-capacity`: Resource capacity heatmap with clash detection.
 -   `/api/dashboard/high-priority`: Severity-classified alerts (overdue expenses, outstanding revenue, behind-plan, milestones).
 -   `/api/cos-tracker/month-detail`: Line-item drilldown for COS tracker month cells.
 -   `/api/admin/backfill`: Manual trigger for computed field backfill.

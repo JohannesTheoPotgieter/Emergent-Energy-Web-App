@@ -10,6 +10,9 @@ import {
   workingPlanDependencyOverride, scheduleChangeNotice,
   projectRevenueSummary, homeNotes,
   projectEditableFields, cashflowWeeklyManual, opexBudgetMonthly, trackerMonthlyManual,
+  scenarios, dateOverrides,
+  type Scenario, type InsertScenario,
+  type DateOverride, type InsertDateOverride,
   type User, type InsertUser,
   type Project, type InsertProject,
   type Expense, type InsertExpense,
@@ -228,6 +231,19 @@ export interface IStorage {
   // Tracker Monthly Manual (REV/COS)
   getTrackerMonthlyManual(trackerType: string): Promise<TrackerMonthlyManual[]>;
   upsertTrackerMonthlyManual(data: InsertTrackerMonthlyManual): Promise<TrackerMonthlyManual>;
+
+  // Scenarios
+  getAllScenarios(): Promise<Scenario[]>;
+  getScenario(id: number): Promise<Scenario | undefined>;
+  createScenario(scenario: InsertScenario): Promise<Scenario>;
+  deleteScenario(id: number): Promise<void>;
+  duplicateScenario(id: number, newName: string): Promise<Scenario>;
+
+  // Date Overrides
+  getDateOverridesByScenario(scenarioId: number): Promise<DateOverride[]>;
+  createDateOverride(override: InsertDateOverride): Promise<DateOverride>;
+  deleteDateOverride(id: number): Promise<void>;
+  clearDateOverrides(scenarioId: number): Promise<void>;
 
   // Admin Operations
   clearAllData(): Promise<{ tablesCleared: string[]; filesDeleted: number }>;
@@ -1290,6 +1306,61 @@ export class DatabaseStorage implements IStorage {
     }
     const inserted = await this.dbInstance.insert(trackerMonthlyManual).values(data).returning();
     return inserted[0];
+  }
+
+  async getAllScenarios(): Promise<Scenario[]> {
+    return this.dbInstance.select().from(scenarios).orderBy(desc(scenarios.createdAt));
+  }
+
+  async getScenario(id: number): Promise<Scenario | undefined> {
+    const rows = await this.dbInstance.select().from(scenarios).where(eq(scenarios.id, id));
+    return rows[0];
+  }
+
+  async createScenario(scenario: InsertScenario): Promise<Scenario> {
+    const inserted = await this.dbInstance.insert(scenarios).values(scenario).returning();
+    return inserted[0];
+  }
+
+  async deleteScenario(id: number): Promise<void> {
+    await this.dbInstance.delete(scenarios).where(eq(scenarios.id, id));
+  }
+
+  async duplicateScenario(id: number, newName: string): Promise<Scenario> {
+    const source = await this.getScenario(id);
+    if (!source) throw new Error('Scenario not found');
+    const newScenario = await this.createScenario({ name: newName, description: source.description, createdBy: source.createdBy, isDefault: false });
+    const overrides = await this.getDateOverridesByScenario(id);
+    for (const ov of overrides) {
+      await this.createDateOverride({
+        scenarioId: newScenario.id,
+        entityType: ov.entityType,
+        entityId: ov.entityId,
+        fieldName: ov.fieldName,
+        originalDate: ov.originalDate,
+        overrideDate: ov.overrideDate,
+        reason: ov.reason,
+        createdBy: ov.createdBy,
+      });
+    }
+    return newScenario;
+  }
+
+  async getDateOverridesByScenario(scenarioId: number): Promise<DateOverride[]> {
+    return this.dbInstance.select().from(dateOverrides).where(eq(dateOverrides.scenarioId, scenarioId));
+  }
+
+  async createDateOverride(override: InsertDateOverride): Promise<DateOverride> {
+    const inserted = await this.dbInstance.insert(dateOverrides).values(override).returning();
+    return inserted[0];
+  }
+
+  async deleteDateOverride(id: number): Promise<void> {
+    await this.dbInstance.delete(dateOverrides).where(eq(dateOverrides.id, id));
+  }
+
+  async clearDateOverrides(scenarioId: number): Promise<void> {
+    await this.dbInstance.delete(dateOverrides).where(eq(dateOverrides.scenarioId, scenarioId));
   }
 }
 

@@ -1,0 +1,240 @@
+You are a senior full-stack engineer + product engineer. You are working in an existing web app for a solar EPC. Three pages are currently unusable for their intended purpose:
+- COS Control (should be a what-if tool for moving invoice/payment dates and seeing COS move across months + long-term impact)
+- Forecast (should allow editing and moving dates to see the impact on weekly cashflow)
+- Planning (should allow moving project dates + assigning resources and showing capacity clashes)
+
+Your job is to make these three modules functional. Not prettier. Functional.
+
+NON-NEGOTIABLE RULES
+1) Baseline imported data is read-only. Never overwrite imported truth.
+2) Any number on screen must be traceable to underlying line items (invoice # / PO # / tracker locator).
+3) Any “what-if” change must be stored as a scenario override with audit trail.
+4) After a change, the app must immediately recompute and show the delta impact on:
+   - weekly cashflow (inflows/outflows/closing balance)
+   - monthly COS buckets (planned/committed/invoiced/paid/outstanding) where applicable
+5) Add tests proving reconciliation.
+
+========================================================
+A) BUILD A SCENARIO / OVERRIDE ENGINE (FOUNDATION)
+========================================================
+Before touching UI, implement a scenario system that every what-if tool uses.
+
+Data model (DB tables):
+1) scenarios
+- id (uuid)
+- name
+- description (optional)
+- created_by
+- created_at
+- is_default (bool)
+
+2) date_overrides
+- id (uuid)
+- scenario_id (fk scenarios)
+- entity_type ENUM('expense_line','expense_invoice','expense_po','inflow_line','project_milestone','project_keydate')
+- entity_id (stable ID, see below)
+- field_name ENUM('invoice_date','payment_date','receipt_date','start_date','commissioning_date','handover_date', etc)
+- override_date (date)
+- reason (required)
+- created_by
+- created_at
+
+Stable IDs (required):
+- expense_line_id = hash(ProjectName + TrackerLocator + ExpenseCategory + ExpenseLineItem + Amount + ExpenseInvoiceNumber + ExpenseInvoicedDate)
+- inflow_line_id = hash(ProjectName + MilestoneDescription + MilestoneAmount + MilestoneInvoiceNumber + MilestoneInvoiceRaisedDate)
+- expense_invoice_id = normalize(invoice_number) + supplier(optional) + project(optional) hash (must be stable)
+- expense_po_id = normalize(po_number) hash
+
+Effective dates logic:
+- For any line, compute effective_* dates = override date (if exists in selected scenario) else imported date.
+- Baseline scenario = “no overrides” (scenario_id = null) OR a default scenario with no overrides.
+
+Expose Scenario selector in UI header on the 3 pages:
+- Baseline
+- + Create scenario
+- Duplicate scenario
+- Reset scenario (clear overrides)
+
+========================================================
+B) FORECAST PAGE: MUST ALLOW EDITING/MOVING DATES AND SHOW CASHFLOW IMPACT
+========================================================
+Current Forecast page shows a chart + weekly grid + right-side drilldown, but I cannot move dates.
+
+Required features:
+
+1) Editable forecast dates (line-item level)
+- In the right-side detail drawer (when week selected), each inflow/outflow line must have:
+  - “Edit date” action (date picker)
+  - Applies to:
+     Inflow lines: effective receipt date
+     Outflow lines: effective payment date (and optionally invoice date)
+  - Save creates date_overrides row with reason.
+
+2) Drag/drop moving between weeks (fast planning)
+- Add “Drag to week” capability:
+  - In the right-side panel list items, allow dragging an item onto a week row in the weekly grid.
+  - Dropping sets that line’s effective date to the start date of the target week (or user selects exact date within that week).
+  - Must immediately update chart + grid + closing balances.
+
+3) Baseline vs Scenario overlay
+- Weekly chart must support overlay:
+  - Baseline closing balance line (thin/grey)
+  - Scenario closing balance line (current)
+- Weekly grid adds delta columns:
+  - Δ Inflows, Δ Outflows, Δ Closing Balance (scenario - baseline)
+
+4) Provenance and reconciliation
+- Every week total must equal SUM(detail lines).
+- Add “Reconciliation” toggle:
+  - show line count and total amount for selected week.
+  - show excluded lines and why (invalid date, missing amount, etc).
+
+Acceptance criteria:
+- I can click week → see all lines.
+- I can edit a line’s date → it moves to another week and totals update instantly.
+- I can drag a line to a new week.
+- I can see baseline vs scenario differences.
+- All totals reconcile to line items.
+
+========================================================
+C) COS CONTROL: REBUILD AS A WHAT-IF COS SHIFTING TOOL (NOT A REPORT)
+========================================================
+Current COS Control is a report with tabs. It does not let me do what-if shifting. Fix it.
+
+Core job:
+“I move invoice/payment dates, COS shifts across months, show long-term impact.”
+
+Required UI structure (single page):
+Top bar:
+- Scenario selector (Baseline / scenario)
+- Search (invoice # / PO # / project / supplier)
+- Toggle: View = “By Month” | “Invoices” | “Line Items”
+
+1) By Month (default view)
+- Monthly stacked chart showing COS buckets by month:
+  - Paid (actual)
+  - Invoiced (unpaid)
+  - Committed (PO not invoiced)
+  - Planned (no PO)
+- Overlay baseline vs scenario line for YTD paid and YTD forecast (if you have it).
+- Clicking a month opens a drawer with the contributing invoices/lines.
+
+2) Invoices view (the main working table)
+Table columns:
+- Invoice #
+- Supplier (if available)
+- Project(s)
+- Invoice date (effective)
+- Payment date (effective)
+- Amount
+- State (Planned/Committed/Invoiced/Paid)
+- Month bucket (which month it lands in, based on effective payment date for realised; based on invoice date/payment date rule for forecast)
+- Actions:
+  - Edit invoice date
+  - Edit payment date
+  - Shift +7/+14/+30 days
+  - Drag to month (see below)
+
+Drag-to-month:
+- Allow dragging an invoice row onto a month “bucket” strip (Jan/Feb/…).
+- Dropping sets invoice date or payment date (user chooses which) to a date within that month.
+
+3) Line Items view
+Same as invoices but at TrackerLocator + line level, editable dates as above.
+
+Rules for COS month allocation (be explicit and consistent):
+- Paid COS month = effective payment date month
+- Invoiced but unpaid: forecast month = effective invoice date + terms (configurable) → payment forecast month
+- PO but no invoice: forecast month = user-planned invoice month OR a simple rule (e.g., midpoint of project construction window) but must be labeled “Low confidence”
+- Planned: stays planned until user assigns a planned month (optional)
+
+Must show Impact panel (right side or top):
+- “COS moved this scenario”:
+  - From month → To month totals (top 5 shifts)
+- “Cashflow impact” summary:
+  - Show Δ weekly outflows for next 8/13/26 weeks (scenario vs baseline)
+
+Acceptance criteria:
+- I can search invoice # and edit its date.
+- When i push an invoice date out, COS moves months immediately.
+- I can see the long-term chart change.
+- I can drill down from month → invoices → line items and reconcile amounts.
+
+========================================================
+D) PLANNING PAGE: MUST BE REAL PLANNING (DATES + RESOURCES + CLASHES)
+========================================================
+Current Planning Board is basically a report table. It must become an interactive planning module.
+
+Required components:
+
+1) Project Key Dates editor (per project)
+Editable key dates (forecast):
+- Construction start
+- Commissioning
+- O&M handover
+- Client handover
+These edits create date_overrides with entity_type='project_keydate'.
+
+2) Gantt-lite timeline (must have drag)
+- A timeline view (weeks) where each project is a bar from construction start → commissioning (or handover).
+- Drag project bar left/right to shift dates.
+- On drop:
+  - update forecast key dates (scenario overrides)
+  - recompute cashflow forecast + COS forecast impact indicators
+
+3) Resource assignment + capacity
+Resources to plan:
+- PM
+- Installer team
+- Supplier (optional v1)
+
+Create planning tables if missing:
+- resource_capacity (resource_type, resource_name, week_start, capacity_units)
+- project_resource_assignment (project_id, resource_type, resource_name, effective_from, effective_to)
+
+Capacity views:
+- Tabs: PM / Installers / Suppliers
+- Weekly heatmap demand vs capacity
+- Over-capacity weeks highlighted red
+- Click a week → list projects causing overload
+- Allow quick fix action: move one project’s dates (drag) or reassign resource
+
+Demand model (simple v1, but must exist):
+- PM demand: 1 unit per active project per week (between construction start and client handover)
+- Installer demand: use kWp/week = project size / duration weeks (or stored planned rate)
+- Supplier demand: use forecast spend (optional v1)
+
+Clash detection (must show exact causes):
+- “PM over capacity week of X: projects A,B,C”
+- “Installer over capacity week of X: projects D,E”
+- “Date clashes: multiple commissioning in same week for same installer”
+
+Acceptance criteria:
+- I can drag a project to a later week and immediately see capacity change + cashflow change.
+- I can see which exact projects cause a clash.
+- Planning changes are scenario-based and auditable.
+
+========================================================
+E) TESTING + RECONCILIATION (MANDATORY)
+========================================================
+Add:
+- Unit tests for scenario effective-date resolution.
+- Reconciliation tests:
+  - Weekly cashflow totals == sum of line items with effective dates.
+  - Monthly COS totals == sum of invoices/line items in that month by effective dates.
+- E2E smoke tests:
+  - Create scenario
+  - Move an outflow line to another week
+  - Verify weekly totals change and match detail sum
+  - Move an invoice to another month in COS Control
+  - Verify month totals change and match invoice sum
+  - Drag project in Planning and see clashes update
+
+========================================================
+START WORK ORDER
+1) Implement scenario + date_overrides + effective date resolver
+2) Upgrade Forecast page to edit/drag dates and show baseline vs scenario deltas
+3) Rebuild COS Control into invoice-driven what-if tool with month shifting + impact
+4) Replace Planning page with Gantt-lite + capacity heatmaps + clash explanations
+5) Add reconciliation mode and tests
+6) Produce a short “How to use what-if planning” doc in the repo
