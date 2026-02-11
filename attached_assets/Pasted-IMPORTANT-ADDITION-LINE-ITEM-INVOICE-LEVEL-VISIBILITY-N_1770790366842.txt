@@ -1,0 +1,121 @@
+IMPORTANT ADDITION — LINE ITEM + INVOICE LEVEL VISIBILITY (NON-NEGOTIABLE)
+
+For BOTH Cashflow and COS planning/forecasting, the system must support drilldown to:
+- individual expense line items (TrackerLocator + Category + LineItem)
+- individual invoices (InvoiceNumber) and POs (PONumber)
+- individual inflow milestones (Milestone + InvoiceNumber)
+
+No weekly/monthly totals are acceptable unless they are provably the SUM of visible underlying line items.
+
+1) REQUIRED IDENTIFIERS (to guarantee drilldown)
+For every imported row, create stable IDs:
+- expense_line_id = hash(ProjectName + TrackerLocator + ExpenseCategory + ExpenseLineItem + ExpenseActualTotal + ExpenseInvoicedDate + ExpenseInvoiceNumber)
+- inflow_line_id = hash(ProjectName + MilestoneDescription + MilestoneAmount + MilestoneInvoiceRaisedDate + MilestoneInvoiceNumber)
+Also store the raw TrackerLocator as a first-class field (not optional).
+
+2) CASHFLOW — MUST BE LINE-ITEM DRIVEN
+Cashflow weekly view must be computed as:
+- Inflow lines included when:
+   Actual: PaymentRecievedDate is within week
+   Forecast: ForecastReceiptDate is within week
+- Outflow lines included when:
+   Actual: ExpensePaymentDate is within week
+   Forecast: ForecastPaymentDate is within week
+
+Each line displayed in drilldown must show:
+INFLOW LINE FIELDS
+- ProjectName
+- MilestoneDescription
+- MilestoneAmount
+- MilestoneInvoiceNumber
+- MilestoneInvoiceRaisedDate
+- PaymentRecievedDate (actual)
+- ForecastReceiptDate (if no actual payment date)
+- Confidence (High/Medium/Low)
+- Assumption driver (e.g., “invoiceRaisedDate + 30 days”, “planned commissioning date + 14 days”)
+- Notes / override indicator
+
+OUTFLOW LINE FIELDS
+- ProjectName
+- ExpenseCategory
+- ExpenseLineItem
+- TrackerLocator
+- ExpensePONumber
+- ExpenseInvoiceNumber
+- ExpenseInvoicedDate
+- ExpensePaymentDate (actual)
+- ForecastPaymentDate (if no actual payment date)
+- Amount (ExpenseActualTotal)
+- Supplier (if mapped)
+- Confidence + assumption driver
+- Notes / override indicator
+
+UI requirements:
+- Weekly cashflow table row click opens a side panel with TWO tabs: “Inflows” and “Outflows”
+- Each tab is a searchable, sortable line-item table
+- Include totals at bottom that reconcile exactly to the weekly summary numbers
+- Filters: Project, Region, PM, Installer, Supplier, Category, InvoiceNumber, PONumber, TrackerLocator, Date range
+- Quick search box that matches InvoiceNumber/PONumber/TrackerLocator
+
+3) COS — MUST BE INVOICE-AWARE + LINE-ITEM STATE MACHINE
+Every ProgramExpense line must be classified and reported at line and invoice level:
+
+States (per line item):
+- Planned: no PO and no Invoice
+- Committed: PO exists; no Invoice
+- Invoiced: Invoice exists; no PaymentDate
+- Paid: PaymentDate exists
+
+For each expense line item show:
+- ProjectName, Region, PM
+- ExpenseCategory, ExpenseLineItem, TrackerLocator
+- Supplier (mapped or blank with “missing mapping” flag)
+- ExpensePONumber
+- ExpenseInvoiceNumber
+- ExpenseInvoicedDate
+- ExpensePaymentDate
+- Amount (ExpenseActualTotal)
+- State (Planned/Committed/Invoiced/Paid)
+- ForecastInvoiceDate (if PO exists but no invoice)
+- ForecastPaymentDate (if invoice exists but no payment OR PO exists with forecast invoice)
+- TermsDaysUsed + Source (supplier terms default vs override)
+- Confidence + assumption driver
+- Audit trail marker if any manual override affects this line
+
+Invoice-level rollups:
+- Provide an “Invoices” view that groups expense lines by ExpenseInvoiceNumber with:
+  - Invoice total, project(s), supplier, invoice date, forecast payment date, payment status
+  - Under it, expandable to show the constituent line items
+- Same for PO-level: group by ExpensePONumber with expandable lines
+
+COS Forecast outputs must be computed as SUM of forecasted payment dates per line item, not top-down curves.
+
+4) MANUAL OVERRIDES MUST BE LINE-LEVEL AND AUDITED
+If a user overrides a forecast, it must be saved per line item (expense_line_id / inflow_line_id), not per week/month:
+- override_forecast_date
+- override_terms_days
+- override_amount (only if explicitly allowed; default should be locked)
+- override_reason (required)
+- user, timestamp
+
+5) RECONCILIATION TESTS (MANDATORY)
+Automated tests must prove reconciliation:
+- Weekly cashflow totals == SUM(drilldown inflow lines) and SUM(drilldown outflow lines)
+- Monthly COS realised/forecast == SUM(line items by payment date buckets)
+- Invoice rollups == SUM(line items grouped by invoice number
+- No “orphan totals” allowed (any summary number must have line-item provenance)
+
+6) DATA QUALITY FLAGS (SHOW THEM, DON’T HIDE THEM)
+Add a “Data Gaps” panel that counts and lists:
+- expense lines missing TrackerLocator
+- invoices without invoice date
+- payment dates earlier than invoice date (flag, don’t crash)
+- duplicate invoice numbers across suppliers/projects (flag for review)
+- missing supplier mapping where PO/invoice exists
+- negative or zero amounts (flag rules configurable)
+Each issue must link to the affected line items.
+
+DEFINITION OF DONE (ADDED)
+- I can click any week/month total and see every underlying line item and invoice that creates it.
+- I can search for an invoice number and see where it lands in cashflow + COS (actual or forecast).
+- Any forecast number shows its assumption driver and confidence.

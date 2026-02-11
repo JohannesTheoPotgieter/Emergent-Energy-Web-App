@@ -15,7 +15,10 @@ import {
   Menu,
   Search,
   Database,
-  Home
+  Home,
+  Target,
+  BarChart3,
+  Kanban,
 } from "lucide-react";
 import { useProgramData } from "@/hooks/use-program-data";
 import { useAuth } from "@/hooks/use-auth";
@@ -49,6 +52,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     { label: "Projects", icon: FileSpreadsheet, path: "/projects" },
     { label: "Cashflow", icon: Wallet, path: "/cashflow" },
     { label: "COS Tracker", icon: TrendingUp, path: "/cos", className: "rotate-180" },
+    { label: "COS Control", icon: Target, path: "/cos-control" },
+    { label: "Forecast", icon: BarChart3, path: "/cashflow-forecast" },
+    { label: "Planning", icon: Kanban, path: "/planning" },
     { label: "Admin", icon: Settings, path: "/admin" },
   ];
 

@@ -18,6 +18,9 @@ import UploadPage from "@/pages/upload";
 import NotFound from "@/pages/not-found";
 import ProjectDetailPage from "@/pages/project-detail";
 import AdminPage from "@/pages/admin";
+import CosControlPage from "@/pages/cos-control";
+import CashflowForecastPage from "@/pages/cashflow-forecast";
+import PlanningBoardPage from "@/pages/planning-board";
 import { useProgramData } from "@/hooks/use-program-data";
 import { TrackerTable } from "@/components/dashboard/TrackerTable";
 import { format } from "date-fns";
@@ -143,6 +146,9 @@ function ProtectedPages() {
         <Route path="/cashflow" component={CashflowPage} />
         <Route path="/revenue" component={RevenueTracker} />
         <Route path="/cos" component={CostTracker} />
+        <Route path="/cos-control" component={CosControlPage} />
+        <Route path="/cashflow-forecast" component={CashflowForecastPage} />
+        <Route path="/planning" component={PlanningBoardPage} />
         <Route path="/upload">{() => <Redirect to="/admin" />}</Route>
         <Route path="/admin" component={AdminPage} />
         <Route component={NotFound} />

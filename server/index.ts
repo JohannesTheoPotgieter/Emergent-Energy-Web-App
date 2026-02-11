@@ -11,6 +11,7 @@ import connectPgSimple from "connect-pg-simple";
 import MemoryStore from "memorystore";
 import pg from "pg";
 import { dbMode, dbConfig, initializeDatabase } from "./db";
+import { runBackfill } from "./lib/backfill";
 
 const app = express();
 const httpServer = createServer(app);
@@ -252,6 +253,7 @@ async function seedAdminUser() {
     },
     () => {
       log(`serving on port ${port}`);
+      runBackfill().catch(err => console.error('[Backfill] startup error:', err));
     },
   );
 })();
