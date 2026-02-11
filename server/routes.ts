@@ -1567,8 +1567,7 @@ export async function registerRoutes(
 
   app.get("/api/cos-tracker", requireAuth, async (req, res) => {
     try {
-      const [allCosMonthly, allExpenses, manualEntries] = await Promise.all([
-        storage.getAllFinanceCosMonthly(),
+      const [allExpenses, manualEntries] = await Promise.all([
         storage.getAllProgramExpenses(),
         storage.getTrackerMonthlyManual('COS'),
       ]);
@@ -1577,38 +1576,55 @@ export async function registerRoutes(
 
       type Bucket = { total: number; projects: Map<string, number> };
 
-      const cosByMonth = new Map<string, Bucket>();
-      for (const row of allCosMonthly) {
-        if (!row.monthEndDate || !row.value) continue;
-        const val = parseFloat(row.value as string);
-        if (isNaN(val) || val === 0) continue;
-        const d = new Date(row.monthEndDate);
-        const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-        if (!cosByMonth.has(monthKey)) {
-          cosByMonth.set(monthKey, { total: 0, projects: new Map() });
+      const getExpenseMonthKey = (exp: any): string | null => {
+        const payDate = exp.expensePaymentDate as string | null;
+        if (payDate) {
+          const match = payDate.match(/^(\d{4})-(\d{2})/);
+          if (match) return `${match[1]}-${match[2]}`;
         }
-        const bucket = cosByMonth.get(monthKey)!;
-        bucket.total += val;
-        const pName = row.projectName.replace(/_Tracker$/i, '');
-        bucket.projects.set(pName, (bucket.projects.get(pName) || 0) + val);
+        const forecastDate = exp.computedForecastPaymentDate as string | null;
+        if (forecastDate) {
+          const match = forecastDate.match(/^(\d{4})-(\d{2})/);
+          if (match) return `${match[1]}-${match[2]}`;
+        }
+        const invDate = exp.expenseInvoicedDate as string | null;
+        if (invDate) {
+          const match = invDate.match(/^(\d{4})-(\d{2})/);
+          if (match) return `${match[1]}-${match[2]}`;
+        }
+        return null;
       }
 
+      const plannedByMonth = new Map<string, Bucket>();
       const realisedByMonth = new Map<string, Bucket>();
+
       for (const exp of allExpenses) {
-        if (!exp.expenseInvoiceNumber || !exp.expenseInvoicedDate) continue;
         const total = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
         if (isNaN(total) || total === 0) continue;
-        const invDate = exp.expenseInvoicedDate;
-        const match = invDate.match(/^(\d{4})-(\d{2})/);
-        if (!match) continue;
-        const monthKey = `${match[1]}-${match[2]}`;
-        if (!realisedByMonth.has(monthKey)) {
-          realisedByMonth.set(monthKey, { total: 0, projects: new Map() });
-        }
-        const bucket = realisedByMonth.get(monthKey)!;
-        bucket.total += total;
         const pName = exp.projectName.replace(/_Tracker$/i, '');
-        bucket.projects.set(pName, (bucket.projects.get(pName) || 0) + total);
+
+        const monthKey = getExpenseMonthKey(exp);
+        if (monthKey) {
+          if (!plannedByMonth.has(monthKey)) {
+            plannedByMonth.set(monthKey, { total: 0, projects: new Map() });
+          }
+          const bucket = plannedByMonth.get(monthKey)!;
+          bucket.total += total;
+          bucket.projects.set(pName, (bucket.projects.get(pName) || 0) + total);
+        }
+
+        if (exp.expenseInvoiceNumber && exp.expenseInvoicedDate) {
+          const invMatch = (exp.expenseInvoicedDate as string).match(/^(\d{4})-(\d{2})/);
+          if (invMatch) {
+            const invMonthKey = `${invMatch[1]}-${invMatch[2]}`;
+            if (!realisedByMonth.has(invMonthKey)) {
+              realisedByMonth.set(invMonthKey, { total: 0, projects: new Map() });
+            }
+            const rBucket = realisedByMonth.get(invMonthKey)!;
+            rBucket.total += total;
+            rBucket.projects.set(pName, (rBucket.projects.get(pName) || 0) + total);
+          }
+        }
       }
 
       const months: any[] = [];
@@ -1623,12 +1639,12 @@ export async function registerRoutes(
         const mo = monthDate.getUTCMonth();
         const monthKey = `${yr}-${String(mo + 1).padStart(2, '0')}`;
 
-        const cosBucket = cosByMonth.get(monthKey);
-        const planned = cosBucket?.total ?? 0;
+        const plannedBucket = plannedByMonth.get(monthKey);
+        const planned = plannedBucket?.total ?? 0;
 
         const plannedProjects: { projectName: string; value: number }[] = [];
-        if (cosBucket) {
-          cosBucket.projects.forEach((pVal, pName) => {
+        if (plannedBucket) {
+          plannedBucket.projects.forEach((pVal, pName) => {
             plannedProjects.push({ projectName: pName, value: pVal });
           });
           plannedProjects.sort((a, b) => b.value - a.value);
@@ -1652,7 +1668,7 @@ export async function registerRoutes(
         plannedProjects.forEach(p => allProjNames.add(p.projectName));
         realisedProjects.forEach(p => allProjNames.add(p.projectName));
         Array.from(allProjNames).forEach((pName) => {
-          const pPlanned = cosBucket?.projects.get(pName) ?? 0;
+          const pPlanned = plannedBucket?.projects.get(pName) ?? 0;
           const pRealised = realisedBucket?.projects.get(pName) ?? 0;
           const pOutstanding = pPlanned - pRealised;
           if (pOutstanding !== 0) {
