@@ -151,10 +151,10 @@ export default function BoardView({ projectName, onTaskClick }: BoardViewProps) 
                 {columnTasks.map((task: any) => (
                   <Card
                     key={task.id}
-                    draggable
-                    onDragStart={(e) => handleDragStart(e, task.id)}
-                    onClick={() => onTaskClick(task.id)}
-                    className={`cursor-pointer border-l-4 ${PRIORITY_BORDER[task.priority] || PRIORITY_BORDER.Normal} hover:shadow-md transition-shadow ${
+                    draggable={task.id > 0}
+                    onDragStart={(e) => task.id > 0 && handleDragStart(e, task.id)}
+                    onClick={() => task.id > 0 && onTaskClick(task.id)}
+                    className={`${task.id > 0 ? "cursor-pointer" : "cursor-default"} border-l-4 ${PRIORITY_BORDER[task.priority] || PRIORITY_BORDER.Normal} hover:shadow-md transition-shadow ${
                       draggedTaskId === task.id ? "opacity-50" : ""
                     }`}
                     data-testid={`task-card-${task.id}`}

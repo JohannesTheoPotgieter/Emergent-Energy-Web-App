@@ -5590,8 +5590,57 @@ export async function registerRoutes(
 
   app.get("/api/operational-tasks/:projectName", requireAuth, async (req: Request, res: Response) => {
     try {
-      const tasks = await storage.getOperationalTasksByProject(req.params.projectName);
-      res.json(tasks);
+      const projectName = req.params.projectName;
+      const [operationalTasks, planTasks] = await Promise.all([
+        storage.getOperationalTasksByProject(projectName),
+        storage.getProjectPlansByProject(projectName),
+      ]);
+
+      const linkedImportedIds = new Set(
+        operationalTasks
+          .filter((t: any) => t.importedTaskId != null)
+          .map((t: any) => t.importedTaskId)
+      );
+
+      const baselineTasks = planTasks
+        .filter((pt: any) => !linkedImportedIds.has(pt.id))
+        .map((pt: any) => {
+          const pctComplete = pt.actualPctComplete != null ? Math.round(pt.actualPctComplete * 100) : 0;
+          let status = "Not Started";
+          if (pctComplete >= 100) status = "Done";
+          else if (pctComplete > 0) status = "In Progress";
+
+          return {
+            id: -pt.id,
+            projectName: pt.projectName,
+            importedTaskId: pt.id,
+            taskNumber: pt.taskNo || String(pt.rowNumber || ""),
+            parentTaskId: null,
+            title: pt.highLevelProgramme || `Task ${pt.taskNo || pt.rowNumber}`,
+            description: null,
+            status,
+            priority: "Normal",
+            startDate: pt.actualStart || null,
+            dueDate: pt.actualEnd || null,
+            durationDays: pt.durationDays || null,
+            percentComplete: pctComplete,
+            expectedPercentComplete: pt.expectedPctComplete != null ? Math.round(pt.expectedPctComplete * 100) : null,
+            assignees: null,
+            tags: null,
+            blockerReason: null,
+            plannedHours: null,
+            actualHours: null,
+            sortOrder: pt.rowNumber || 0,
+            isBaseline: true,
+            createdBy: null,
+            createdAt: pt.createdAt,
+            updatedAt: pt.createdAt,
+          };
+        });
+
+      const merged = [...baselineTasks, ...operationalTasks];
+      merged.sort((a: any, b: any) => (a.sortOrder || 0) - (b.sortOrder || 0));
+      res.json(merged);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
