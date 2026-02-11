@@ -1561,12 +1561,28 @@ export async function registerRoutes(
 
   app.get("/api/cos-tracker", requireAuth, async (req, res) => {
     try {
-      const [allExpenses, manualEntries] = await Promise.all([
-        storage.getAllProgramExpenses(),
+      const [allCosMonthly, manualEntries] = await Promise.all([
+        storage.getAllFinanceCosMonthly(),
         storage.getTrackerMonthlyManual('COS'),
       ]);
 
       const manualMap = new Map(manualEntries.map(e => [e.monthKey, e]));
+
+      const cosByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
+      for (const row of allCosMonthly) {
+        if (!row.monthEndDate || !row.value) continue;
+        const val = parseFloat(row.value as string);
+        if (isNaN(val) || val === 0) continue;
+        const d = new Date(row.monthEndDate);
+        const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        if (!cosByMonth.has(monthKey)) {
+          cosByMonth.set(monthKey, { total: 0, projects: new Map() });
+        }
+        const bucket = cosByMonth.get(monthKey)!;
+        bucket.total += val;
+        const pName = row.projectName.replace(/_Tracker$/i, '');
+        bucket.projects.set(pName, (bucket.projects.get(pName) || 0) + val);
+      }
 
       const months: any[] = [];
       const startMonth = new Date(Date.UTC(2025, 8, 1));
@@ -1579,18 +1595,16 @@ export async function registerRoutes(
         const yr = monthDate.getUTCFullYear();
         const mo = monthDate.getUTCMonth();
         const monthKey = `${yr}-${String(mo + 1).padStart(2, '0')}`;
-        const monthStart = `${monthKey}-01`;
-        const nextMonth = new Date(Date.UTC(yr, mo + 1, 1));
-        const monthEnd = nextMonth.toISOString().split('T')[0];
 
-        let planned = 0;
-        for (const expense of allExpenses) {
-          if (!expense.expenseInvoiceNumber || !expense.expenseInvoicedDate) continue;
-          const d = expense.expenseInvoicedDate;
-          if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
-          if (d >= monthStart && d < monthEnd && expense.expenseActualTotal) {
-            planned += parseFloat(expense.expenseActualTotal);
-          }
+        const cosBucket = cosByMonth.get(monthKey);
+        const planned = cosBucket?.total ?? 0;
+
+        const projectBreakdown: { projectName: string; value: number }[] = [];
+        if (cosBucket) {
+          cosBucket.projects.forEach((pVal, pName) => {
+            projectBreakdown.push({ projectName: pName, value: pVal });
+          });
+          projectBreakdown.sort((a, b) => b.value - a.value);
         }
 
         const manual = manualMap.get(monthKey);
@@ -1610,7 +1624,7 @@ export async function registerRoutes(
 
         months.push({
           monthKey,
-          label: monthDate.toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }),
+          monthLabel: monthDate.toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }),
           planned,
           realised,
           outstanding,
@@ -1623,6 +1637,7 @@ export async function registerRoutes(
           ytdBudget,
           ytdVariance,
           ytdVariancePct,
+          projects: projectBreakdown,
         });
       }
 
