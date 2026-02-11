@@ -11,6 +11,7 @@ import {
   projectRevenueSummary, homeNotes,
   projectEditableFields, cashflowWeeklyManual, opexBudgetMonthly, trackerMonthlyManual,
   scenarios, dateOverrides,
+  operationalTasks, taskComments, taskChecklists, taskChecklistItems, taskAttachments, taskActivityLog, writebackMappings, writebackAuditLog,
   type Scenario, type InsertScenario,
   type DateOverride, type InsertDateOverride,
   type User, type InsertUser,
@@ -45,6 +46,14 @@ import {
   type CashflowWeeklyManual, type InsertCashflowWeeklyManual,
   type OpexBudgetMonthly, type InsertOpexBudgetMonthly,
   type TrackerMonthlyManual, type InsertTrackerMonthlyManual,
+  type OperationalTask, type InsertOperationalTask,
+  type TaskComment, type InsertTaskComment,
+  type TaskChecklist, type InsertTaskChecklist,
+  type TaskChecklistItem, type InsertTaskChecklistItem,
+  type TaskAttachment, type InsertTaskAttachment,
+  type TaskActivityLog, type InsertTaskActivityLog,
+  type WritebackMapping, type InsertWritebackMapping,
+  type WritebackAuditLog, type InsertWritebackAuditLog,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -244,6 +253,50 @@ export interface IStorage {
   createDateOverride(override: InsertDateOverride): Promise<DateOverride>;
   deleteDateOverride(id: number): Promise<void>;
   clearDateOverrides(scenarioId: number): Promise<void>;
+
+  // Operational Tasks
+  getOperationalTasksByProject(projectName: string): Promise<OperationalTask[]>;
+  getOperationalTask(id: number): Promise<OperationalTask | undefined>;
+  createOperationalTask(data: InsertOperationalTask): Promise<OperationalTask>;
+  updateOperationalTask(id: number, data: Partial<InsertOperationalTask>): Promise<OperationalTask>;
+  deleteOperationalTask(id: number): Promise<void>;
+
+  // Task Comments
+  getTaskComments(taskId: number): Promise<TaskComment[]>;
+  createTaskComment(data: InsertTaskComment): Promise<TaskComment>;
+  deleteTaskComment(id: number): Promise<void>;
+
+  // Task Checklists
+  getTaskChecklists(taskId: number): Promise<TaskChecklist[]>;
+  createTaskChecklist(data: InsertTaskChecklist): Promise<TaskChecklist>;
+  deleteTaskChecklist(id: number): Promise<void>;
+
+  // Task Checklist Items
+  getChecklistItems(checklistId: number): Promise<TaskChecklistItem[]>;
+  createChecklistItem(data: InsertTaskChecklistItem): Promise<TaskChecklistItem>;
+  updateChecklistItem(id: number, data: Partial<InsertTaskChecklistItem>): Promise<TaskChecklistItem>;
+  deleteChecklistItem(id: number): Promise<void>;
+
+  // Task Attachments
+  getTaskAttachments(taskId: number): Promise<TaskAttachment[]>;
+  createTaskAttachment(data: InsertTaskAttachment): Promise<TaskAttachment>;
+  deleteTaskAttachment(id: number): Promise<void>;
+
+  // Task Activity Log
+  getTaskActivityLog(taskId: number): Promise<TaskActivityLog[]>;
+  createTaskActivityLog(data: InsertTaskActivityLog): Promise<TaskActivityLog>;
+
+  // Writeback Mappings
+  getAllWritebackMappings(): Promise<WritebackMapping[]>;
+  getWritebackMapping(id: number): Promise<WritebackMapping | undefined>;
+  createWritebackMapping(data: InsertWritebackMapping): Promise<WritebackMapping>;
+  updateWritebackMapping(id: number, data: Partial<InsertWritebackMapping>): Promise<WritebackMapping>;
+  deleteWritebackMapping(id: number): Promise<void>;
+
+  // Writeback Audit Log
+  getWritebackAuditLogs(mappingId?: number): Promise<WritebackAuditLog[]>;
+  createWritebackAuditLog(data: InsertWritebackAuditLog): Promise<WritebackAuditLog>;
+  updateWritebackAuditLog(id: number, data: Partial<InsertWritebackAuditLog>): Promise<WritebackAuditLog>;
 
   // Admin Operations
   clearAllData(): Promise<{ tablesCleared: string[]; filesDeleted: number }>;
@@ -1361,6 +1414,145 @@ export class DatabaseStorage implements IStorage {
 
   async clearDateOverrides(scenarioId: number): Promise<void> {
     await this.dbInstance.delete(dateOverrides).where(eq(dateOverrides.scenarioId, scenarioId));
+  }
+
+  // Operational Tasks
+  async getOperationalTasksByProject(projectName: string): Promise<OperationalTask[]> {
+    return this.dbInstance.select().from(operationalTasks).where(eq(operationalTasks.projectName, projectName)).orderBy(operationalTasks.sortOrder);
+  }
+
+  async getOperationalTask(id: number): Promise<OperationalTask | undefined> {
+    const [task] = await this.dbInstance.select().from(operationalTasks).where(eq(operationalTasks.id, id));
+    return task;
+  }
+
+  async createOperationalTask(data: InsertOperationalTask): Promise<OperationalTask> {
+    const now = new Date();
+    const [created] = await this.dbInstance.insert(operationalTasks).values({ ...data, createdAt: now, updatedAt: now }).returning();
+    return created;
+  }
+
+  async updateOperationalTask(id: number, data: Partial<InsertOperationalTask>): Promise<OperationalTask> {
+    const [updated] = await this.dbInstance.update(operationalTasks).set({ ...data, updatedAt: new Date() }).where(eq(operationalTasks.id, id)).returning();
+    return updated;
+  }
+
+  async deleteOperationalTask(id: number): Promise<void> {
+    await this.dbInstance.delete(operationalTasks).where(eq(operationalTasks.id, id));
+  }
+
+  // Task Comments
+  async getTaskComments(taskId: number): Promise<TaskComment[]> {
+    return this.dbInstance.select().from(taskComments).where(eq(taskComments.taskId, taskId)).orderBy(desc(taskComments.createdAt));
+  }
+
+  async createTaskComment(data: InsertTaskComment): Promise<TaskComment> {
+    const [created] = await this.dbInstance.insert(taskComments).values({ ...data, createdAt: new Date() }).returning();
+    return created;
+  }
+
+  async deleteTaskComment(id: number): Promise<void> {
+    await this.dbInstance.delete(taskComments).where(eq(taskComments.id, id));
+  }
+
+  // Task Checklists
+  async getTaskChecklists(taskId: number): Promise<TaskChecklist[]> {
+    return this.dbInstance.select().from(taskChecklists).where(eq(taskChecklists.taskId, taskId)).orderBy(taskChecklists.sortOrder);
+  }
+
+  async createTaskChecklist(data: InsertTaskChecklist): Promise<TaskChecklist> {
+    const [created] = await this.dbInstance.insert(taskChecklists).values({ ...data, createdAt: new Date() }).returning();
+    return created;
+  }
+
+  async deleteTaskChecklist(id: number): Promise<void> {
+    await this.dbInstance.delete(taskChecklists).where(eq(taskChecklists.id, id));
+  }
+
+  // Task Checklist Items
+  async getChecklistItems(checklistId: number): Promise<TaskChecklistItem[]> {
+    return this.dbInstance.select().from(taskChecklistItems).where(eq(taskChecklistItems.checklistId, checklistId)).orderBy(taskChecklistItems.sortOrder);
+  }
+
+  async createChecklistItem(data: InsertTaskChecklistItem): Promise<TaskChecklistItem> {
+    const [created] = await this.dbInstance.insert(taskChecklistItems).values({ ...data, createdAt: new Date() }).returning();
+    return created;
+  }
+
+  async updateChecklistItem(id: number, data: Partial<InsertTaskChecklistItem>): Promise<TaskChecklistItem> {
+    const [updated] = await this.dbInstance.update(taskChecklistItems).set(data).where(eq(taskChecklistItems.id, id)).returning();
+    return updated;
+  }
+
+  async deleteChecklistItem(id: number): Promise<void> {
+    await this.dbInstance.delete(taskChecklistItems).where(eq(taskChecklistItems.id, id));
+  }
+
+  // Task Attachments
+  async getTaskAttachments(taskId: number): Promise<TaskAttachment[]> {
+    return this.dbInstance.select().from(taskAttachments).where(eq(taskAttachments.taskId, taskId)).orderBy(desc(taskAttachments.createdAt));
+  }
+
+  async createTaskAttachment(data: InsertTaskAttachment): Promise<TaskAttachment> {
+    const [created] = await this.dbInstance.insert(taskAttachments).values({ ...data, createdAt: new Date() }).returning();
+    return created;
+  }
+
+  async deleteTaskAttachment(id: number): Promise<void> {
+    await this.dbInstance.delete(taskAttachments).where(eq(taskAttachments.id, id));
+  }
+
+  // Task Activity Log
+  async getTaskActivityLog(taskId: number): Promise<TaskActivityLog[]> {
+    return this.dbInstance.select().from(taskActivityLog).where(eq(taskActivityLog.taskId, taskId)).orderBy(desc(taskActivityLog.createdAt));
+  }
+
+  async createTaskActivityLog(data: InsertTaskActivityLog): Promise<TaskActivityLog> {
+    const [created] = await this.dbInstance.insert(taskActivityLog).values({ ...data, createdAt: new Date() }).returning();
+    return created;
+  }
+
+  // Writeback Mappings
+  async getAllWritebackMappings(): Promise<WritebackMapping[]> {
+    return this.dbInstance.select().from(writebackMappings).orderBy(desc(writebackMappings.createdAt));
+  }
+
+  async getWritebackMapping(id: number): Promise<WritebackMapping | undefined> {
+    const [mapping] = await this.dbInstance.select().from(writebackMappings).where(eq(writebackMappings.id, id));
+    return mapping;
+  }
+
+  async createWritebackMapping(data: InsertWritebackMapping): Promise<WritebackMapping> {
+    const now = new Date();
+    const [created] = await this.dbInstance.insert(writebackMappings).values({ ...data, createdAt: now, updatedAt: now }).returning();
+    return created;
+  }
+
+  async updateWritebackMapping(id: number, data: Partial<InsertWritebackMapping>): Promise<WritebackMapping> {
+    const [updated] = await this.dbInstance.update(writebackMappings).set({ ...data, updatedAt: new Date() }).where(eq(writebackMappings.id, id)).returning();
+    return updated;
+  }
+
+  async deleteWritebackMapping(id: number): Promise<void> {
+    await this.dbInstance.delete(writebackMappings).where(eq(writebackMappings.id, id));
+  }
+
+  // Writeback Audit Log
+  async getWritebackAuditLogs(mappingId?: number): Promise<WritebackAuditLog[]> {
+    if (mappingId !== undefined) {
+      return this.dbInstance.select().from(writebackAuditLog).where(eq(writebackAuditLog.mappingId, mappingId)).orderBy(desc(writebackAuditLog.appliedAt));
+    }
+    return this.dbInstance.select().from(writebackAuditLog).orderBy(desc(writebackAuditLog.appliedAt));
+  }
+
+  async createWritebackAuditLog(data: InsertWritebackAuditLog): Promise<WritebackAuditLog> {
+    const [created] = await this.dbInstance.insert(writebackAuditLog).values({ ...data, appliedAt: new Date() }).returning();
+    return created;
+  }
+
+  async updateWritebackAuditLog(id: number, data: Partial<InsertWritebackAuditLog>): Promise<WritebackAuditLog> {
+    const [updated] = await this.dbInstance.update(writebackAuditLog).set(data).where(eq(writebackAuditLog.id, id)).returning();
+    return updated;
   }
 }
 

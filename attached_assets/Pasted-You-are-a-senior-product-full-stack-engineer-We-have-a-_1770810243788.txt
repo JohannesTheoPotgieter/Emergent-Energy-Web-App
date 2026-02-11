@@ -1,0 +1,205 @@
+You are a senior product + full-stack engineer. We have a Project Drilldown screen (Project Management view) that currently shows a task grid + gantt + dependencies and basic editing.
+
+Your job: upgrade this Project Drilldown so it includes the core “basic ClickUp functionality” needed to run an EPC project day-to-day, AND add functionality to push selected data back to a specific Excel workbook/sheet/cell reliably.
+
+Do NOT rebuild the app. Extend the existing project drilldown.
+
+NON-NEGOTIABLE PRINCIPLES
+- Baseline data imported from Excel stays read-only.
+- Operational edits live in the app DB (tasks, status, assignees, comments, attachments, etc.).
+- If a user chooses to write back to Excel, it must be explicit, auditable, and reversible.
+- Every writeback must specify workbook + sheet + cell/range + value + timestamp + user.
+
+========================================================
+PART 1 — “BASIC CLICKUP FUNCTIONALITY” FOR TASKS (MVP)
+========================================================
+
+A) Task data model (must support ClickUp basics)
+Implement/extend task fields (if not already):
+- task_id (stable uuid)
+- project_id / project_name
+- task_number (supports hierarchy like 1, 1.1, 1.2)
+- title / description (rich text if feasible)
+- status (customizable per project: e.g. Not Started, In Progress, Blocked, Done)
+- priority (Urgent/High/Normal/Low)
+- start_date, due_date (end_date)
+- duration_days (optional derived)
+- percent_complete (0–100)
+- expected_percent_complete (optional)
+- assignees (multi-user)
+- watchers/followers (optional v1)
+- dependencies (FS default; optional SS/FF later)
+- tags
+- checklist items (subtasks or checklist)
+- time tracking (optional v1: planned hours, actual hours)
+- custom fields (key-value)
+- attachments (files + links)
+- comments (threaded)
+- activity log (who changed what and when)
+- blockers (explicit field OR status=Blocked with reason)
+
+B) Views (ClickUp “core”)
+In the drilldown tabs, implement:
+1) List/Task Grid (already exists but must be ClickUp-grade)
+   - inline edit for status, assignee, dates, priority, % complete
+   - bulk actions (change status/assignee/dates, add tag, delete)
+   - filtering (status, assignee, priority, tag, due date range, critical)
+   - sorting (due date, priority, status, slack, % complete)
+   - grouping (by status, by assignee, by phase)
+   - quick add task + add subtask
+
+2) Gantt (already exists but must be functional)
+   - drag task bars to move start/end
+   - drag end to change duration
+   - show dependencies lines
+   - critical path toggle (basic: based on dependencies and dates)
+   - baseline vs forecast overlay (optional v1: baseline from imported plan, forecast from app edits)
+
+3) Board (Kanban)
+   - columns by status
+   - drag cards between statuses
+   - quick edit card fields
+
+4) Calendar view
+   - tasks plotted by due date
+   - drag to reschedule
+
+5) Docs/Notes (lightweight)
+   - project notes page with sections
+   - link tasks to notes
+
+C) ClickUp-like “Task detail drawer”
+Clicking a task opens a right-side drawer with:
+- title, status, priority
+- assignees
+- dates + time estimate
+- description
+- checklist/subtasks
+- comments
+- attachments/links
+- dependencies
+- activity log
+This drawer is where “real work” happens.
+
+D) Notifications (minimum viable)
+- @mentions in comments
+- “Assigned to me” list (user scope)
+- Due soon / overdue indicators in UI (no emails needed v1)
+
+E) Governance (important)
+- Imported ProgramPlan tasks are “baseline”.
+- App tasks are “operational”.
+- Show a clear badge: BASELINE vs OPERATIONAL.
+- Allow linking an operational task to a baseline task (so edits don’t corrupt import).
+- All edits logged.
+
+========================================================
+PART 2 — WRITE-BACK TO EXCEL (WORKBOOK/SHEET/CELL)
+========================================================
+We need the ability to push specific values back to a specific Excel file, sheet, and cell (or range).
+
+This is high-risk. Implement it safely.
+
+A) Supported writeback modes (MVP)
+1) “Manual push” only (no automatic sync).
+2) User selects:
+   - Target workbook (preconfigured path or uploaded file)
+   - Target sheet name
+   - Target cell (A1) or named range
+   - Value to write (picked from allowed fields)
+3) Confirm dialog shows:
+   - current cell value (read it first)
+   - new value
+   - user + timestamp
+   - scenario/project context
+
+B) Writeback mapping templates
+Create a “Writeback Mappings” admin screen where we define:
+- mapping_id
+- name (e.g., “Update Project Tracker: Commissioning Date”)
+- workbook reference (stored path or storage key)
+- sheet name
+- cell/range
+- source field (e.g., project.forecast_commissioning_date)
+- transform (date format / number / text)
+- validation rule (e.g., must be a date)
+- allowed roles (who can push)
+
+Then in the project screen, users choose a mapping and press “Push to Excel”.
+
+C) Audit + rollback
+Log every writeback:
+- writeback_id
+- mapping_id
+- workbook, sheet, cell
+- previous_value
+- new_value
+- user_id
+- timestamp
+- project_id
+- success/failure + error message
+
+Rollback:
+- “Revert” button to write back the previous_value.
+
+D) Technical constraints
+- This must work for .xlsx and .xlsm.
+- Preserve macros: do NOT destroy the .xlsm file. Use a library that can edit cell values while keeping VBA content intact.
+  - If using Python: openpyxl can read/write xlsx; xlsm support exists but must preserve VBA using keep_vba=True.
+  - If Node: many libs break macros; verify before shipping.
+- Concurrency:
+  - Implement a file lock or queue so two people cannot write to the same workbook simultaneously.
+- Validation:
+  - Reject invalid cell addresses and sheet names.
+  - Reject writing formulas unless explicitly allowed.
+
+E) Security
+- Only Admin can configure mappings.
+- Only permitted roles can run a mapping.
+- Workbook storage must be controlled (no arbitrary filesystem write).
+
+========================================================
+PART 3 — ACCEPTANCE CRITERIA
+========================================================
+1) Task Management
+- I can run a project in the drilldown without leaving the app:
+  - add/edit tasks
+  - assign people
+  - comment
+  - move tasks on a gantt
+  - use board view
+  - filter and bulk edit
+- Baseline vs Operational is clear and separated.
+- Every change is logged.
+
+2) Excel Writeback
+- I can select a mapping and push a value to Excel sheet/cell.
+- App shows the previous value before writing.
+- After writing, it confirms success and logs it.
+- I can rollback.
+
+3) Tests
+- Unit tests for:
+  - task CRUD + audit log
+  - dependency integrity (no cycles)
+  - writeback validation
+- Integration tests for:
+  - writeback performs read-then-write and logs
+  - rollback restores previous value
+- E2E smoke test:
+  - edit a task date → push to Excel mapping → verify cell updated
+
+========================================================
+PART 4 — IMPLEMENTATION ORDER (DO THIS FIRST)
+========================================================
+1) Add/confirm task model and activity log
+2) Build task detail drawer (comments/checklist/attachments)
+3) Add Board + Calendar views
+4) Add bulk edit + filters improvements on task grid
+5) Implement writeback engine + mappings admin + audit log + rollback
+6) Add tests + “how to use” doc
+
+Start by producing:
+- A short “ClickUp parity checklist” (what we support vs not)
+- A writeback design doc (data model + safety + library choice)
+Then implement.

@@ -686,3 +686,142 @@ export const dateOverrides = pgTable("date_overrides", {
 export const insertDateOverrideSchema = createInsertSchema(dateOverrides).omit({ id: true, createdAt: true });
 export type InsertDateOverride = z.infer<typeof insertDateOverrideSchema>;
 export type DateOverride = typeof dateOverrides.$inferSelect;
+
+export const operationalTasks = pgTable("operational_tasks", {
+  id: serial("id").primaryKey(),
+  projectName: text("project_name").notNull(),
+  importedTaskId: integer("imported_task_id"),
+  taskNumber: text("task_number"),
+  parentTaskId: integer("parent_task_id"),
+  title: text("title").notNull(),
+  description: text("description"),
+  status: text("status").notNull().default("Not Started"),
+  priority: text("priority").notNull().default("Normal"),
+  startDate: text("start_date"),
+  dueDate: text("due_date"),
+  durationDays: integer("duration_days"),
+  percentComplete: integer("percent_complete").notNull().default(0),
+  expectedPercentComplete: integer("expected_percent_complete"),
+  assignees: text("assignees").array(),
+  tags: text("tags").array(),
+  blockerReason: text("blocker_reason"),
+  plannedHours: real("planned_hours"),
+  actualHours: real("actual_hours"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  isBaseline: boolean("is_baseline").notNull().default(false),
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertOperationalTaskSchema = createInsertSchema(operationalTasks).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertOperationalTask = z.infer<typeof insertOperationalTaskSchema>;
+export type OperationalTask = typeof operationalTasks.$inferSelect;
+
+export const taskComments = pgTable("task_comments", {
+  id: serial("id").primaryKey(),
+  taskId: integer("task_id").notNull().references(() => operationalTasks.id, { onDelete: 'cascade' }),
+  authorId: integer("author_id").references(() => users.id),
+  body: text("body").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertTaskCommentSchema = createInsertSchema(taskComments).omit({ id: true, createdAt: true });
+export type InsertTaskComment = z.infer<typeof insertTaskCommentSchema>;
+export type TaskComment = typeof taskComments.$inferSelect;
+
+export const taskChecklists = pgTable("task_checklists", {
+  id: serial("id").primaryKey(),
+  taskId: integer("task_id").notNull().references(() => operationalTasks.id, { onDelete: 'cascade' }),
+  title: text("title").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertTaskChecklistSchema = createInsertSchema(taskChecklists).omit({ id: true, createdAt: true });
+export type InsertTaskChecklist = z.infer<typeof insertTaskChecklistSchema>;
+export type TaskChecklist = typeof taskChecklists.$inferSelect;
+
+export const taskChecklistItems = pgTable("task_checklist_items", {
+  id: serial("id").primaryKey(),
+  checklistId: integer("checklist_id").notNull().references(() => taskChecklists.id, { onDelete: 'cascade' }),
+  content: text("content").notNull(),
+  isDone: boolean("is_done").notNull().default(false),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertTaskChecklistItemSchema = createInsertSchema(taskChecklistItems).omit({ id: true, createdAt: true });
+export type InsertTaskChecklistItem = z.infer<typeof insertTaskChecklistItemSchema>;
+export type TaskChecklistItem = typeof taskChecklistItems.$inferSelect;
+
+export const taskAttachments = pgTable("task_attachments", {
+  id: serial("id").primaryKey(),
+  taskId: integer("task_id").notNull().references(() => operationalTasks.id, { onDelete: 'cascade' }),
+  filename: text("filename").notNull(),
+  url: text("url").notNull(),
+  mimeType: text("mime_type"),
+  sizeBytes: integer("size_bytes"),
+  uploadedBy: integer("uploaded_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertTaskAttachmentSchema = createInsertSchema(taskAttachments).omit({ id: true, createdAt: true });
+export type InsertTaskAttachment = z.infer<typeof insertTaskAttachmentSchema>;
+export type TaskAttachment = typeof taskAttachments.$inferSelect;
+
+export const taskActivityLog = pgTable("task_activity_log", {
+  id: serial("id").primaryKey(),
+  taskId: integer("task_id").notNull().references(() => operationalTasks.id, { onDelete: 'cascade' }),
+  actorId: integer("actor_id").references(() => users.id),
+  actionType: text("action_type").notNull(),
+  fieldName: text("field_name"),
+  oldValue: text("old_value"),
+  newValue: text("new_value"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertTaskActivityLogSchema = createInsertSchema(taskActivityLog).omit({ id: true, createdAt: true });
+export type InsertTaskActivityLog = z.infer<typeof insertTaskActivityLogSchema>;
+export type TaskActivityLog = typeof taskActivityLog.$inferSelect;
+
+export const writebackMappings = pgTable("writeback_mappings", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  projectName: text("project_name"),
+  workbookPath: text("workbook_path").notNull(),
+  sheetName: text("sheet_name").notNull(),
+  cellAddress: text("cell_address").notNull(),
+  sourceField: text("source_field").notNull(),
+  entityType: text("entity_type").notNull(),
+  dataTransform: text("data_transform"),
+  validationRule: text("validation_rule"),
+  allowedRoles: text("allowed_roles").array(),
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertWritebackMappingSchema = createInsertSchema(writebackMappings).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertWritebackMapping = z.infer<typeof insertWritebackMappingSchema>;
+export type WritebackMapping = typeof writebackMappings.$inferSelect;
+
+export const writebackAuditLog = pgTable("writeback_audit_log", {
+  id: serial("id").primaryKey(),
+  mappingId: integer("mapping_id").references(() => writebackMappings.id),
+  workbookPath: text("workbook_path").notNull(),
+  sheetName: text("sheet_name").notNull(),
+  cellAddress: text("cell_address").notNull(),
+  previousValue: text("previous_value"),
+  newValue: text("new_value").notNull(),
+  status: text("status").notNull().default("applied"),
+  projectId: text("project_id"),
+  actorId: integer("actor_id").references(() => users.id),
+  errorMessage: text("error_message"),
+  appliedAt: timestamp("applied_at").notNull().defaultNow(),
+  rolledBackAt: timestamp("rolled_back_at"),
+});
+
+export const insertWritebackAuditLogSchema = createInsertSchema(writebackAuditLog).omit({ id: true, appliedAt: true });
+export type InsertWritebackAuditLog = z.infer<typeof insertWritebackAuditLogSchema>;
+export type WritebackAuditLog = typeof writebackAuditLog.$inferSelect;

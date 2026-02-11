@@ -1,26 +1,37 @@
+import { useState } from "react";
 import { useRoute, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { FileText, DollarSign, CreditCard, TrendingUp, BarChart3, Activity, ArrowLeft, User, Calendar, CheckCircle, AlertCircle, Upload } from "lucide-react";
+import { FileText, DollarSign, CreditCard, TrendingUp, BarChart3, Activity, ArrowLeft, User, Calendar, CheckCircle, AlertCircle, Columns, CalendarDays, ListTodo } from "lucide-react";
 import { ProjectPlanTab } from "@/components/tabs/ProjectPlanTab";
 import { RevenueTrackingTab } from "@/components/tabs/RevenueTrackingTab";
 import { ExpenditureEditableTab } from "@/components/tabs/ExpenditureEditableTab";
 import { FinanceRevenueTab } from "@/components/tabs/FinanceRevenueTab";
 import { FinanceCosTab } from "@/components/tabs/FinanceCosTab";
 import { CashflowTab } from "@/components/tabs/CashflowTab";
+import TaskDetailDrawer from "@/components/TaskDetailDrawer";
+import BoardView from "@/components/BoardView";
+import CalendarView from "@/components/CalendarView";
+import TaskGridView from "@/components/TaskGridView";
 import { useProgramData } from "@/hooks/use-program-data";
-import { format } from "date-fns";
 
 export default function ProjectDetailPage() {
   const [, params] = useRoute("/project/:projectName");
   const [, setLocation] = useLocation();
   const projectName = params?.projectName ? decodeURIComponent(params.projectName) : "";
   const { projectsSummary } = useProgramData();
+  const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const projectInfo = projectsSummary?.find(p => p.project_name === projectName);
+
+  const handleTaskClick = (taskId: number) => {
+    setSelectedTaskId(taskId);
+    setDrawerOpen(true);
+  };
 
   const { data: projectPlanData = [] } = useQuery({
     queryKey: ["project-plan", projectName],
@@ -101,36 +112,12 @@ export default function ProjectDetailPage() {
     : "—";
 
   const dataHealth = [
-    { 
-      name: "Project Plan", 
-      rows: (projectPlanData as any[]).length, 
-      present: (projectPlanData as any[]).length > 0 
-    },
-    { 
-      name: "Revenue Tracking", 
-      rows: (revenueData as any[]).length, 
-      present: (revenueData as any[]).length > 0 
-    },
-    { 
-      name: "Expenditure Breakdown", 
-      rows: (expenseData as any[]).length, 
-      present: (expenseData as any[]).length > 0 
-    },
-    { 
-      name: "Finance - Revenue", 
-      rows: (financeRevData as any[]).length, 
-      present: (financeRevData as any[]).length > 0 
-    },
-    { 
-      name: "Finance - COS", 
-      rows: (financeCosData as any[]).length, 
-      present: (financeCosData as any[]).length > 0 
-    },
-    { 
-      name: "Cashflow", 
-      rows: (cashflowData as any[]).length, 
-      present: (cashflowData as any[]).length > 0 
-    },
+    { name: "Project Plan", rows: (projectPlanData as any[]).length, present: (projectPlanData as any[]).length > 0 },
+    { name: "Revenue Tracking", rows: (revenueData as any[]).length, present: (revenueData as any[]).length > 0 },
+    { name: "Expenditure Breakdown", rows: (expenseData as any[]).length, present: (expenseData as any[]).length > 0 },
+    { name: "Finance - Revenue", rows: (financeRevData as any[]).length, present: (financeRevData as any[]).length > 0 },
+    { name: "Finance - COS", rows: (financeCosData as any[]).length, present: (financeCosData as any[]).length > 0 },
+    { name: "Cashflow", rows: (cashflowData as any[]).length, present: (cashflowData as any[]).length > 0 },
   ];
 
   const sheetsPresent = dataHealth.filter(s => s.present).length;
@@ -138,42 +125,27 @@ export default function ProjectDetailPage() {
 
   return (
     <div className="space-y-6">
-      {/* Back Button */}
-      <Button variant="ghost" size="sm" onClick={() => setLocation("/projects")} className="gap-2">
+      <Button variant="ghost" size="sm" onClick={() => setLocation("/projects")} className="gap-2" data-testid="button-back">
         <ArrowLeft className="h-4 w-4" />
         Back to Projects
       </Button>
 
-      {/* Project Header */}
       <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
         <div className="space-y-2">
           <div className="flex items-center gap-3">
-            <h2 className="text-3xl font-heading font-bold text-foreground">{displayName}</h2>
+            <h2 className="text-3xl font-heading font-bold text-foreground" data-testid="text-project-name">{displayName}</h2>
             <Badge variant={phase === "Construction" ? "default" : phase === "Handover" ? "secondary" : "outline"}>
               {phase}
             </Badge>
           </div>
           <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <User className="h-4 w-4" />
-              PD: {pd}
-            </span>
-            <span className="flex items-center gap-1">
-              <User className="h-4 w-4" />
-              PM: {pm}
-            </span>
-            <span className="flex items-center gap-1">
-              <Activity className="h-4 w-4" />
-              {sizeKwp}
-            </span>
-            <span className="flex items-center gap-1">
-              <TrendingUp className="h-4 w-4" />
-              {completion} complete
-            </span>
+            <span className="flex items-center gap-1"><User className="h-4 w-4" /> PD: {pd}</span>
+            <span className="flex items-center gap-1"><User className="h-4 w-4" /> PM: {pm}</span>
+            <span className="flex items-center gap-1"><Activity className="h-4 w-4" /> {sizeKwp}</span>
+            <span className="flex items-center gap-1"><TrendingUp className="h-4 w-4" /> {completion} complete</span>
           </div>
         </div>
 
-        {/* Data Health Summary */}
         <Card className="lg:w-auto">
           <CardContent className="p-4">
             <div className="flex items-center gap-4">
@@ -194,11 +166,7 @@ export default function ProjectDetailPage() {
                     variant={sheet.present ? "default" : "outline"}
                     className={`text-xs ${!sheet.present && "opacity-50"}`}
                   >
-                    {sheet.present ? (
-                      <CheckCircle className="h-3 w-3 mr-1" />
-                    ) : (
-                      <AlertCircle className="h-3 w-3 mr-1" />
-                    )}
+                    {sheet.present ? <CheckCircle className="h-3 w-3 mr-1" /> : <AlertCircle className="h-3 w-3 mr-1" />}
                     {sheet.name.split(" ")[0]}
                   </Badge>
                 ))}
@@ -208,34 +176,57 @@ export default function ProjectDetailPage() {
         </Card>
       </div>
 
-      {/* 6-Tab Navigation */}
-      <Tabs defaultValue="project-plan" className="w-full">
-        <TabsList className="grid w-full grid-cols-6 lg:w-auto">
-          <TabsTrigger value="project-plan" className="flex items-center gap-2">
-            <FileText className="h-4 w-4" />
-            <span className="hidden sm:inline">Project Plan</span>
+      <Tabs defaultValue="task-grid" className="w-full">
+        <TabsList className="flex flex-wrap gap-1 h-auto p-1">
+          <TabsTrigger value="task-grid" className="flex items-center gap-1.5 text-xs" data-testid="tab-task-grid">
+            <ListTodo className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Tasks</span>
           </TabsTrigger>
-          <TabsTrigger value="revenue-tracking" className="flex items-center gap-2">
-            <DollarSign className="h-4 w-4" />
-            <span className="hidden sm:inline">Revenue Tracking</span>
+          <TabsTrigger value="board" className="flex items-center gap-1.5 text-xs" data-testid="tab-board">
+            <Columns className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Board</span>
           </TabsTrigger>
-          <TabsTrigger value="expenditure" className="flex items-center gap-2">
-            <CreditCard className="h-4 w-4" />
-            <span className="hidden sm:inline">Expenditure Breakdown</span>
+          <TabsTrigger value="calendar" className="flex items-center gap-1.5 text-xs" data-testid="tab-calendar">
+            <CalendarDays className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Calendar</span>
           </TabsTrigger>
-          <TabsTrigger value="finance-revenue" className="flex items-center gap-2">
-            <TrendingUp className="h-4 w-4" />
-            <span className="hidden sm:inline">Finance - Revenue</span>
+          <TabsTrigger value="project-plan" className="flex items-center gap-1.5 text-xs" data-testid="tab-project-plan">
+            <FileText className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Gantt</span>
           </TabsTrigger>
-          <TabsTrigger value="finance-cos" className="flex items-center gap-2">
-            <BarChart3 className="h-4 w-4" />
-            <span className="hidden sm:inline">Finance - COS</span>
+          <TabsTrigger value="revenue-tracking" className="flex items-center gap-1.5 text-xs" data-testid="tab-revenue">
+            <DollarSign className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Revenue</span>
           </TabsTrigger>
-          <TabsTrigger value="cashflow" className="flex items-center gap-2">
-            <Activity className="h-4 w-4" />
+          <TabsTrigger value="expenditure" className="flex items-center gap-1.5 text-xs" data-testid="tab-expenditure">
+            <CreditCard className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Expenditure</span>
+          </TabsTrigger>
+          <TabsTrigger value="finance-revenue" className="flex items-center gap-1.5 text-xs" data-testid="tab-finance-rev">
+            <TrendingUp className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Fin-Rev</span>
+          </TabsTrigger>
+          <TabsTrigger value="finance-cos" className="flex items-center gap-1.5 text-xs" data-testid="tab-finance-cos">
+            <BarChart3 className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Fin-COS</span>
+          </TabsTrigger>
+          <TabsTrigger value="cashflow" className="flex items-center gap-1.5 text-xs" data-testid="tab-cashflow">
+            <Activity className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Cashflow</span>
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="task-grid" className="space-y-4">
+          <TaskGridView projectName={projectName} onTaskClick={handleTaskClick} />
+        </TabsContent>
+
+        <TabsContent value="board" className="space-y-4">
+          <BoardView projectName={projectName} onTaskClick={handleTaskClick} />
+        </TabsContent>
+
+        <TabsContent value="calendar" className="space-y-4">
+          <CalendarView projectName={projectName} onTaskClick={handleTaskClick} />
+        </TabsContent>
 
         <TabsContent value="project-plan" className="space-y-4">
           <ProjectPlanTab projectName={projectName} />
@@ -261,6 +252,13 @@ export default function ProjectDetailPage() {
           <CashflowTab projectName={projectName} />
         </TabsContent>
       </Tabs>
+
+      <TaskDetailDrawer
+        taskId={selectedTaskId}
+        open={drawerOpen}
+        onClose={() => { setDrawerOpen(false); setSelectedTaskId(null); }}
+        projectName={projectName}
+      />
     </div>
   );
 }
