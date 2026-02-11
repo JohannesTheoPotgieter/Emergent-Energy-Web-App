@@ -208,7 +208,7 @@ export default function Dashboard() {
             High Priority Actions
           </CardTitle>
           <p className="text-xs text-muted-foreground mt-1">
-            Rules: overdue expenses (unpaid past date), revenue outstanding (no payment received), projects behind plan (delta &lt; -5%), milestones in next 10 business days
+            Rules: overdue expenses (unpaid past date), revenue outstanding (no payment received), projects behind plan (delta &lt; -5%), milestones in next 7 days
           </p>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -312,7 +312,7 @@ export default function Dashboard() {
                   {kpis?.siteEstablishmentNext10 ?? 0}
                 </p>
                 <p className="text-sm font-medium text-amber-700 dark:text-amber-400">Site Establishment</p>
-                <p className="text-xs text-amber-600 dark:text-amber-500">Next 10 Business Days</p>
+                <p className="text-xs text-amber-600 dark:text-amber-500">Next 7 Days</p>
               </div>
             </div>
           </CardContent>
@@ -329,7 +329,7 @@ export default function Dashboard() {
                   {kpis?.commissioningNext10 ?? 0}
                 </p>
                 <p className="text-sm font-medium text-blue-700 dark:text-blue-400">Commissioning</p>
-                <p className="text-xs text-blue-600 dark:text-blue-500">Next 10 Business Days</p>
+                <p className="text-xs text-blue-600 dark:text-blue-500">Next 7 Days</p>
               </div>
             </div>
           </CardContent>
@@ -346,7 +346,7 @@ export default function Dashboard() {
                   {kpis?.omHandoverNext10 ?? 0}
                 </p>
                 <p className="text-sm font-medium text-green-700 dark:text-green-400">O&M Handover</p>
-                <p className="text-xs text-green-600 dark:text-green-500">Next 10 Business Days</p>
+                <p className="text-xs text-green-600 dark:text-green-500">Next 7 Days</p>
               </div>
             </div>
           </CardContent>
@@ -363,7 +363,7 @@ export default function Dashboard() {
                   {kpis?.clientHandoverNext10 ?? 0}
                 </p>
                 <p className="text-sm font-medium text-purple-700 dark:text-purple-400">Client Handover</p>
-                <p className="text-xs text-purple-600 dark:text-purple-500">Next 10 Business Days</p>
+                <p className="text-xs text-purple-600 dark:text-purple-500">Next 7 Days</p>
               </div>
             </div>
           </CardContent>
