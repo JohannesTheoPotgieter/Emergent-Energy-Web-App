@@ -656,3 +656,33 @@ export const resourceCapacity = pgTable("resource_capacity", {
 export const insertResourceCapacitySchema = createInsertSchema(resourceCapacity).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertResourceCapacity = z.infer<typeof insertResourceCapacitySchema>;
 export type ResourceCapacity = typeof resourceCapacity.$inferSelect;
+
+export const scenarios = pgTable("scenarios", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  createdBy: integer("created_by").references(() => users.id),
+  isDefault: boolean("is_default").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertScenarioSchema = createInsertSchema(scenarios).omit({ id: true, createdAt: true });
+export type InsertScenario = z.infer<typeof insertScenarioSchema>;
+export type Scenario = typeof scenarios.$inferSelect;
+
+export const dateOverrides = pgTable("date_overrides", {
+  id: serial("id").primaryKey(),
+  scenarioId: integer("scenario_id").notNull().references(() => scenarios.id, { onDelete: 'cascade' }),
+  entityType: text("entity_type").notNull(),
+  entityId: text("entity_id").notNull(),
+  fieldName: text("field_name").notNull(),
+  originalDate: text("original_date"),
+  overrideDate: text("override_date").notNull(),
+  reason: text("reason").notNull(),
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertDateOverrideSchema = createInsertSchema(dateOverrides).omit({ id: true, createdAt: true });
+export type InsertDateOverride = z.infer<typeof insertDateOverrideSchema>;
+export type DateOverride = typeof dateOverrides.$inferSelect;
