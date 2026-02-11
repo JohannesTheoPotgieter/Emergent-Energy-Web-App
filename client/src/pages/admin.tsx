@@ -135,15 +135,16 @@ export default function AdminPage() {
         const data = await res.json();
         if (res.ok && data.results) {
           for (const r of data.results) {
+            const recCount = r.recordsProcessed ?? ((r.expensesParsed || 0) + (r.inflowsParsed || 0) + (r.planParsed || 0) + (r.cashflowParsed || 0) + (r.financeRevenueParsed || 0) + (r.financeCosParsed || 0));
             results.push({
               fileName: r.fileName || r.file || file.name,
-              projectName: r.projectName || file.name,
+              projectName: r.project_name || r.projectName || file.name.replace(/\.(xlsx|xlsm|xls)$/i, ''),
               status: r.status as "success" | "failed",
               message: r.message || "",
-              recordsProcessed: r.recordsProcessed,
+              recordsProcessed: recCount,
               fileDate: r.fileDate || new Date().toISOString(),
             });
-            totalRecords += r.recordsProcessed || 0;
+            totalRecords += recCount;
           }
         } else {
           results.push({
