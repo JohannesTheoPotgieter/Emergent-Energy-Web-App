@@ -2837,6 +2837,8 @@ export async function registerRoutes(
         }
 
         await storage.createRefreshLog({ triggeredBy: req.user?.id || null, status: refreshResults.every(r => r.status === "success") ? "success" : "partial" });
+        const refreshActiveNames = refreshResults.filter(r => r.status === "success").map(r => r.projectName);
+        if (refreshActiveNames.length > 0) await storage.markProjectsActive(refreshActiveNames);
         sendEvent({ type: 'complete', results: refreshResults, durationMs: Date.now() - startTime });
         res.end();
       } catch (error: any) {
@@ -2906,6 +2908,9 @@ export async function registerRoutes(
         triggeredBy: req.user?.id || null,
         status: refreshResults.every(r => r.status === "success") ? "success" : "partial"
       });
+
+      const refreshActiveNamesNonSSE = refreshResults.filter(r => r.status === "success").map(r => r.projectName);
+      if (refreshActiveNamesNonSSE.length > 0) await storage.markProjectsActive(refreshActiveNamesNonSSE);
       
       const endTime = Date.now();
       const successCount = refreshResults.filter(r => r.status === "success").length;
