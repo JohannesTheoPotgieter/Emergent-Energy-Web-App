@@ -73,8 +73,11 @@ export const programExpense = pgTable("program_expense", {
   expenseInvoicedDate: text("expense_invoiced_date"),
   expensePaymentDate: text("expense_payment_date"),
   actualCosTotal: decimal("actual_cos_total", { precision: 15, scale: 2 }),
-  // Computed status field
-  lineStatus: text("line_status"), // 'Planned', 'Committed', 'Invoiced', 'Paid'
+  lineStatus: text("line_status"),
+  expenseLineHash: text("expense_line_hash"),
+  computedState: text("computed_state"),
+  computedForecastPaymentDate: text("computed_forecast_payment_date"),
+  supplierName: text("supplier_name"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -98,6 +101,8 @@ export const programInflows = pgTable("program_inflows", {
   milestoneNotes: text("milestone_notes"),
   documentsReceived: text("documents_received"),
   inBank: integer("in_bank").default(0),
+  inflowLineHash: text("inflow_line_hash"),
+  computedForecastReceiptDate: text("computed_forecast_receipt_date"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -588,3 +593,66 @@ export const trackerMonthlyManual = pgTable("tracker_monthly_manual", {
 export const insertTrackerMonthlyManualSchema = createInsertSchema(trackerMonthlyManual).omit({ id: true, updatedAt: true });
 export type InsertTrackerMonthlyManual = z.infer<typeof insertTrackerMonthlyManualSchema>;
 export type TrackerMonthlyManual = typeof trackerMonthlyManual.$inferSelect;
+
+export const planningOverrides = pgTable("planning_overrides", {
+  id: serial("id").primaryKey(),
+  entityType: text("entity_type").notNull(),
+  entityId: text("entity_id").notNull(),
+  fieldName: text("field_name").notNull(),
+  value: text("value"),
+  effectiveFrom: text("effective_from"),
+  effectiveTo: text("effective_to"),
+  createdBy: text("created_by").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertPlanningOverrideSchema = createInsertSchema(planningOverrides).omit({ id: true, createdAt: true });
+export type InsertPlanningOverride = z.infer<typeof insertPlanningOverrideSchema>;
+export type PlanningOverride = typeof planningOverrides.$inferSelect;
+
+export const paymentTerms = pgTable("payment_terms", {
+  id: serial("id").primaryKey(),
+  entityType: text("entity_type").notNull(),
+  entityName: text("entity_name").notNull(),
+  termsDays: integer("terms_days").notNull(),
+  scenario: text("scenario").notNull().default("base"),
+  createdBy: text("created_by"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertPaymentTermsSchema = createInsertSchema(paymentTerms).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertPaymentTerms = z.infer<typeof insertPaymentTermsSchema>;
+export type PaymentTerms = typeof paymentTerms.$inferSelect;
+
+export const lineItemOverrides = pgTable("line_item_overrides", {
+  id: serial("id").primaryKey(),
+  lineType: text("line_type").notNull(),
+  lineId: integer("line_id").notNull(),
+  overrideForecastDate: text("override_forecast_date"),
+  overrideTermsDays: integer("override_terms_days"),
+  overrideAmount: decimal("override_amount", { precision: 15, scale: 2 }),
+  overrideReason: text("override_reason").notNull(),
+  createdBy: text("created_by").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertLineItemOverrideSchema = createInsertSchema(lineItemOverrides).omit({ id: true, createdAt: true });
+export type InsertLineItemOverride = z.infer<typeof insertLineItemOverrideSchema>;
+export type LineItemOverride = typeof lineItemOverrides.$inferSelect;
+
+export const resourceCapacity = pgTable("resource_capacity", {
+  id: serial("id").primaryKey(),
+  resourceType: text("resource_type").notNull(),
+  resourceName: text("resource_name").notNull(),
+  weekStart: text("week_start").notNull(),
+  capacityValue: decimal("capacity_value", { precision: 12, scale: 2 }),
+  capacityUnit: text("capacity_unit"),
+  createdBy: text("created_by"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+})
+
+export const insertResourceCapacitySchema = createInsertSchema(resourceCapacity).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertResourceCapacity = z.infer<typeof insertResourceCapacitySchema>;
+export type ResourceCapacity = typeof resourceCapacity.$inferSelect;

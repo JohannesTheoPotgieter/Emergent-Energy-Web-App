@@ -6,11 +6,17 @@ import fs from "fs";
 import path from "path";
 import { storage } from "./storage";
 import { parseTrackerFile } from "./excelParser";
-import { insertBudgetSchema } from "@shared/schema";
+import { insertBudgetSchema, programExpense, programInflows, projectInfo } from "@shared/schema";
+import { db } from "./db";
 import { z } from "zod";
 import { format } from "date-fns";
 import { generateToken, verifyToken } from "./jwt";
 import { calculateCPM, applyOverridesToTasks, applyOverridesToDependencies, type CPMDependency } from "./cpmEngine";
+import { classifyExpenseState } from "./lib/calculations/stateClassifier";
+import { scoreExpenseConfidence, scoreInflowConfidence, getAssumptionDriver } from "./lib/calculations/confidence";
+import { aggregateCOS, aggregateCOSByProject } from "./lib/calculations/cosAggregator";
+import { computeWeeklyCashflow, getLinesForWeek, type CashflowLineItem } from "./lib/calculations/cashflow";
+import { runDataQualityChecks } from "./lib/calculations/dataQuality";
 
 // Ensure uploads directory exists
 const uploadDir = path.join(process.cwd(), 'uploads');
@@ -4067,6 +4073,463 @@ export async function registerRoutes(
       code: errorCode,
       detail: process.env.NODE_ENV === 'development' ? err.stack : undefined
     });
+  });
+
+  // =========================================================================
+  // COS CONTROL TOWER APIs
+  // =========================================================================
+
+  app.get("/api/cos-control/summary", requireAuth, async (req, res) => {
+    try {
+      const expenses = await db.select().from(programExpense);
+      const lines = expenses
+        .filter((e: any) => e.rowType === 'item' || !e.rowType)
+        .filter((e: any) => {
+          const amt = parseFloat(e.expenseActualTotal || e.budgetTotal || '0');
+          return !isNaN(amt) && amt !== 0;
+        })
+        .map((e: any) => ({
+          id: e.id,
+          projectName: e.projectName,
+          expenseCategory: e.expenseCategory,
+          expenseLineItem: e.expenseLineItem,
+          amount: Math.abs(parseFloat(e.expenseActualTotal || e.budgetTotal || '0')),
+          state: e.computedState || classifyExpenseState(e),
+          invoiceNumber: e.expenseInvoiceNumber,
+          poNumber: e.expensePoNumber,
+          invoicedDate: e.expenseInvoicedDate,
+          paymentDate: e.expensePaymentDate,
+          forecastPaymentDate: e.computedForecastPaymentDate,
+          supplierName: e.supplierName,
+          confidence: scoreExpenseConfidence(e),
+          assumptionDriver: getAssumptionDriver(e, 30),
+        }));
+
+      const summary = aggregateCOS(lines as any);
+      res.json(summary);
+    } catch (err: any) {
+      console.error('[COS Control] summary error:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/cos-control/by-project", requireAuth, async (req, res) => {
+    try {
+
+      const expenses = await db.select().from(programExpense);
+      const lines = expenses
+        .filter((e: any) => e.rowType === 'item' || !e.rowType)
+        .filter((e: any) => {
+          const amt = parseFloat(e.expenseActualTotal || e.budgetTotal || '0');
+          return !isNaN(amt) && amt !== 0;
+        })
+        .map((e: any) => ({
+          id: e.id,
+          projectName: e.projectName,
+          expenseCategory: e.expenseCategory,
+          expenseLineItem: e.expenseLineItem,
+          amount: Math.abs(parseFloat(e.expenseActualTotal || e.budgetTotal || '0')),
+          state: e.computedState || classifyExpenseState(e),
+          invoiceNumber: e.expenseInvoiceNumber,
+          poNumber: e.expensePoNumber,
+          invoicedDate: e.expenseInvoicedDate,
+          paymentDate: e.expensePaymentDate,
+          forecastPaymentDate: e.computedForecastPaymentDate,
+          supplierName: e.supplierName,
+          confidence: scoreExpenseConfidence(e),
+          assumptionDriver: getAssumptionDriver(e, 30),
+        }));
+
+      const byProject = aggregateCOSByProject(lines as any);
+      res.json(byProject);
+    } catch (err: any) {
+      console.error('[COS Control] by-project error:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/cos-control/lines", requireAuth, async (req, res) => {
+    try {
+
+      const { project, state, supplier, search } = req.query;
+      let expenses = await db.select().from(programExpense);
+
+      let lines = expenses
+        .filter((e: any) => e.rowType === 'item' || !e.rowType)
+        .filter((e: any) => {
+          const amt = parseFloat(e.expenseActualTotal || e.budgetTotal || '0');
+          return !isNaN(amt) && amt !== 0;
+        })
+        .map((e: any) => ({
+          id: e.id,
+          hash: e.expenseLineHash,
+          projectName: e.projectName,
+          category: e.expenseCategory,
+          lineItem: e.expenseLineItem,
+          budgetTotal: parseFloat(e.budgetTotal || '0'),
+          actualTotal: parseFloat(e.expenseActualTotal || '0'),
+          state: e.computedState || classifyExpenseState(e),
+          poNumber: e.expensePoNumber,
+          invoiceNumber: e.expenseInvoiceNumber,
+          invoicedDate: e.expenseInvoicedDate,
+          paymentDate: e.expensePaymentDate,
+          forecastPaymentDate: e.computedForecastPaymentDate,
+          supplierName: e.supplierName,
+          confidence: scoreExpenseConfidence(e),
+          assumptionDriver: getAssumptionDriver(e, 30),
+        }));
+
+      if (project) lines = lines.filter((l: any) => l.projectName === project);
+      if (state) lines = lines.filter((l: any) => l.state === state);
+      if (supplier) lines = lines.filter((l: any) => l.supplierName === supplier);
+      if (search) {
+        const q = String(search).toLowerCase();
+        lines = lines.filter((l: any) =>
+          (l.lineItem && l.lineItem.toLowerCase().includes(q)) ||
+          (l.invoiceNumber && l.invoiceNumber.toLowerCase().includes(q)) ||
+          (l.poNumber && l.poNumber.toLowerCase().includes(q)) ||
+          (l.supplierName && l.supplierName.toLowerCase().includes(q))
+        );
+      }
+
+      res.json({ lines, total: lines.length });
+    } catch (err: any) {
+      console.error('[COS Control] lines error:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/cos-control/invoices", requireAuth, async (req, res) => {
+    try {
+
+      const expenses = await db.select().from(programExpense);
+      const invoiceMap = new Map<string, any>();
+
+      for (const e of expenses) {
+        if (!e.expenseInvoiceNumber || !e.expenseInvoiceNumber.trim()) continue;
+        const inv = e.expenseInvoiceNumber.trim();
+        if (!invoiceMap.has(inv)) {
+          invoiceMap.set(inv, {
+            invoiceNumber: inv,
+            totalAmount: 0,
+            projects: new Set<string>(),
+            state: e.computedState || classifyExpenseState(e),
+            invoicedDate: e.expenseInvoicedDate,
+            paymentDate: e.expensePaymentDate,
+            supplierName: e.supplierName,
+            lineCount: 0,
+          });
+        }
+        const entry = invoiceMap.get(inv)!;
+        entry.totalAmount += Math.abs(parseFloat(e.expenseActualTotal || '0'));
+        entry.projects.add(e.projectName);
+        entry.lineCount++;
+      }
+
+      const invoices = Array.from(invoiceMap.values()).map(i => ({
+        ...i,
+        projects: Array.from(i.projects),
+      })).sort((a, b) => b.totalAmount - a.totalAmount);
+
+      res.json({ invoices, total: invoices.length });
+    } catch (err: any) {
+      console.error('[COS Control] invoices error:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/cos-control/pos", requireAuth, async (req, res) => {
+    try {
+      const expenses = await db.select().from(programExpense);
+      const poMap = new Map<string, any>();
+
+      for (const e of expenses) {
+        if (!e.expensePoNumber || !e.expensePoNumber.trim()) continue;
+        const po = e.expensePoNumber.trim();
+        if (!poMap.has(po)) {
+          poMap.set(po, {
+            poNumber: po,
+            totalAmount: 0,
+            projects: new Set<string>(),
+            invoiceNumbers: new Set<string>(),
+            supplierName: e.supplierName,
+            lineCount: 0,
+          });
+        }
+        const entry = poMap.get(po)!;
+        entry.totalAmount += Math.abs(parseFloat(e.expenseActualTotal || e.budgetTotal || '0'));
+        entry.projects.add(e.projectName);
+        if (e.expenseInvoiceNumber) entry.invoiceNumbers.add(e.expenseInvoiceNumber);
+        entry.lineCount++;
+      }
+
+      const pos = Array.from(poMap.values()).map(p => ({
+        ...p,
+        projects: Array.from(p.projects),
+        invoiceNumbers: Array.from(p.invoiceNumbers),
+      })).sort((a, b) => b.totalAmount - a.totalAmount);
+
+      res.json({ pos, total: pos.length });
+    } catch (err: any) {
+      console.error('[COS Control] POs error:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // =========================================================================
+  // CASHFLOW FORECAST APIs
+  // =========================================================================
+
+  app.get("/api/cashflow-forecast/weekly", requireAuth, async (req, res) => {
+    try {
+
+      const weeks = parseInt(String(req.query.weeks || '52'));
+      const startDate = String(req.query.start || new Date().toISOString().split('T')[0]);
+
+      const expenses = await db.select().from(programExpense);
+      const inflows = await db.select().from(programInflows);
+
+      const outflowLines: CashflowLineItem[] = expenses
+        .filter((e: any) => e.rowType === 'item' || !e.rowType)
+        .filter((e: any) => {
+          const amt = parseFloat(e.expenseActualTotal || e.budgetTotal || '0');
+          return !isNaN(amt) && amt !== 0;
+        })
+        .map((e: any) => ({
+          id: e.id,
+          projectName: e.projectName,
+          type: 'outflow' as const,
+          amount: Math.abs(parseFloat(e.expenseActualTotal || e.budgetTotal || '0')),
+          actualDate: e.expensePaymentDate || null,
+          forecastDate: e.computedForecastPaymentDate || null,
+          confidence: scoreExpenseConfidence(e),
+          assumptionDriver: getAssumptionDriver(e, 30),
+          description: e.expenseLineItem || e.expenseCategory || 'Unknown',
+          invoiceNumber: e.expenseInvoiceNumber,
+          poNumber: e.expensePoNumber,
+          category: e.expenseCategory,
+          supplierName: e.supplierName,
+        }));
+
+      const inflowLines: CashflowLineItem[] = inflows
+        .filter((inf: any) => {
+          const amt = parseFloat(inf.milestoneAmount || '0');
+          return !isNaN(amt) && amt !== 0;
+        })
+        .map((inf: any) => ({
+          id: inf.id,
+          projectName: inf.projectName,
+          type: 'inflow' as const,
+          amount: Math.abs(parseFloat(inf.milestoneAmount || '0')),
+          actualDate: inf.paymentReceivedDate || null,
+          forecastDate: inf.computedForecastReceiptDate || null,
+          confidence: scoreInflowConfidence(inf),
+          assumptionDriver: inf.paymentReceivedDate ? 'Actual receipt' : (inf.invoiceRaisedDate ? 'Invoice raised + terms' : 'Planned date'),
+          description: inf.milestoneName || 'Revenue milestone',
+          invoiceNumber: inf.milestoneInvoiceNumber,
+          poNumber: null,
+          category: 'Revenue',
+          supplierName: null,
+        }));
+
+      const weeklyData = computeWeeklyCashflow(inflowLines, outflowLines, startDate, weeks);
+      res.json({ weeks: weeklyData, totalInflows: inflowLines.length, totalOutflows: outflowLines.length });
+    } catch (err: any) {
+      console.error('[Cashflow Forecast] weekly error:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/cashflow-forecast/week-detail", requireAuth, async (req, res) => {
+    try {
+
+      const weekStart = String(req.query.weekStart);
+      const weekEnd = String(req.query.weekEnd);
+
+      if (!weekStart || !weekEnd) {
+        return res.status(400).json({ error: 'weekStart and weekEnd required' });
+      }
+
+      const expenses = await db.select().from(programExpense);
+      const inflows = await db.select().from(programInflows);
+
+      const outflowLines: CashflowLineItem[] = expenses
+        .filter((e: any) => e.rowType === 'item' || !e.rowType)
+        .filter((e: any) => {
+          const amt = parseFloat(e.expenseActualTotal || e.budgetTotal || '0');
+          return !isNaN(amt) && amt !== 0;
+        })
+        .map((e: any) => ({
+          id: e.id,
+          projectName: e.projectName,
+          type: 'outflow' as const,
+          amount: Math.abs(parseFloat(e.expenseActualTotal || e.budgetTotal || '0')),
+          actualDate: e.expensePaymentDate || null,
+          forecastDate: e.computedForecastPaymentDate || null,
+          confidence: scoreExpenseConfidence(e),
+          assumptionDriver: getAssumptionDriver(e, 30),
+          description: e.expenseLineItem || e.expenseCategory || 'Unknown',
+          invoiceNumber: e.expenseInvoiceNumber,
+          poNumber: e.expensePoNumber,
+          category: e.expenseCategory,
+          supplierName: e.supplierName,
+        }));
+
+      const inflowLines: CashflowLineItem[] = inflows
+        .filter((inf: any) => {
+          const amt = parseFloat(inf.milestoneAmount || '0');
+          return !isNaN(amt) && amt !== 0;
+        })
+        .map((inf: any) => ({
+          id: inf.id,
+          projectName: inf.projectName,
+          type: 'inflow' as const,
+          amount: Math.abs(parseFloat(inf.milestoneAmount || '0')),
+          actualDate: inf.paymentReceivedDate || null,
+          forecastDate: inf.computedForecastReceiptDate || null,
+          confidence: scoreInflowConfidence(inf),
+          assumptionDriver: inf.paymentReceivedDate ? 'Actual receipt' : (inf.invoiceRaisedDate ? 'Invoice raised + terms' : 'Planned date'),
+          description: inf.milestoneName || 'Revenue milestone',
+          invoiceNumber: inf.milestoneInvoiceNumber,
+          poNumber: null,
+          category: 'Revenue',
+          supplierName: null,
+        }));
+
+      const allLines = [...inflowLines, ...outflowLines];
+      const weekLines = getLinesForWeek(allLines, weekStart, weekEnd);
+      res.json({ lines: weekLines, total: weekLines.length });
+    } catch (err: any) {
+      console.error('[Cashflow Forecast] week-detail error:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // =========================================================================
+  // DATA QUALITY APIs
+  // =========================================================================
+
+  app.get("/api/data-quality/scan", requireAuth, async (req, res) => {
+    try {
+
+      const expenses = await db.select().from(programExpense);
+      const inflows = await db.select().from(programInflows);
+      const projects = await db.select().from(projectInfo);
+
+      const expenseInputs = expenses
+        .filter((e: any) => e.rowType === 'item' || !e.rowType)
+        .map((e: any) => ({
+          id: e.id,
+          projectName: e.projectName,
+          expenseCategory: e.expenseCategory,
+          expenseLineItem: e.expenseLineItem,
+          expenseActualTotal: e.expenseActualTotal,
+          expenseInvoiceNumber: e.expenseInvoiceNumber,
+          expenseInvoicedDate: e.expenseInvoicedDate,
+          expensePaymentDate: e.expensePaymentDate,
+          expensePoNumber: e.expensePoNumber,
+          supplierName: e.supplierName,
+        }));
+
+      const inflowInputs = inflows.map((inf: any) => ({
+        id: inf.id,
+        projectName: inf.projectName,
+        milestoneName: inf.milestoneName,
+        milestoneAmount: inf.milestoneAmount,
+        milestoneInvoiceNumber: inf.milestoneInvoiceNumber,
+        invoiceRaisedDate: inf.invoiceRaisedDate,
+        paymentReceivedDate: inf.paymentReceivedDate,
+      }));
+
+      const projectInputs = projects.map((p: any) => ({
+        projectName: p.projectName,
+        pm: p.pm,
+        constructionStartDate: p.constructionStartDate,
+        commissioningDate: p.commissioningDate,
+      }));
+
+      const issues = runDataQualityChecks(expenseInputs, inflowInputs, projectInputs);
+      const errorCount = issues.filter(i => i.severity === 'Error').reduce((s, i) => s + i.count, 0);
+      const warningCount = issues.filter(i => i.severity === 'Warning').reduce((s, i) => s + i.count, 0);
+      const infoCount = issues.filter(i => i.severity === 'Info').reduce((s, i) => s + i.count, 0);
+
+      res.json({
+        issues,
+        summary: { errorCount, warningCount, infoCount, totalIssues: errorCount + warningCount + infoCount },
+      });
+    } catch (err: any) {
+      console.error('[Data Quality] scan error:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // =========================================================================
+  // BACKFILL TRIGGER
+  // =========================================================================
+
+  app.post("/api/admin/backfill", requireAuth, async (req, res) => {
+    try {
+      const { runBackfill } = await import("./lib/backfill");
+      await runBackfill();
+      res.json({ success: true, message: 'Backfill completed' });
+    } catch (err: any) {
+      console.error('[Admin] backfill error:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // =========================================================================
+  // PLANNING BOARD APIs
+  // =========================================================================
+
+  app.get("/api/planning-board/projects", requireAuth, async (req, res) => {
+    try {
+      const projects = await db.select().from(projectInfo);
+      const expenses = await db.select().from(programExpense);
+      const inflows = await db.select().from(programInflows);
+
+      const projectData = projects.map((p: any) => {
+        const projExpenses = expenses.filter((e: any) => e.projectName === p.projectName && (e.rowType === 'item' || !e.rowType));
+        const projInflows = inflows.filter((inf: any) => inf.projectName === p.projectName);
+
+        const totalBudget = projExpenses.reduce((sum: number, e: any) => sum + Math.abs(parseFloat(e.budgetTotal || '0')), 0);
+        const totalActual = projExpenses.reduce((sum: number, e: any) => sum + Math.abs(parseFloat(e.expenseActualTotal || '0')), 0);
+        const totalRevenue = projInflows.reduce((sum: number, inf: any) => sum + Math.abs(parseFloat(inf.milestoneAmount || '0')), 0);
+        const totalReceived = projInflows
+          .filter((inf: any) => inf.paymentReceivedDate)
+          .reduce((sum: number, inf: any) => sum + Math.abs(parseFloat(inf.milestoneAmount || '0')), 0);
+
+        const riskFlags: string[] = [];
+        if (totalActual > totalBudget * 1.1 && totalBudget > 0) riskFlags.push('Over budget');
+        if (!p.constructionStartDate) riskFlags.push('No start date');
+        if (!p.commissioningDate) riskFlags.push('No commissioning date');
+        if (!p.pm) riskFlags.push('No PM assigned');
+        if (totalReceived === 0 && totalRevenue > 0) riskFlags.push('No revenue received');
+
+        return {
+          projectName: p.projectName,
+          pm: p.pm,
+          phase: p.phase,
+          sizeKwp: p.sizeKwp,
+          constructionStartDate: p.constructionStartDate,
+          commissioningDate: p.commissioningDate,
+          totalBudget,
+          totalActual,
+          totalRevenue,
+          totalReceived,
+          budgetVariance: totalBudget > 0 ? ((totalActual - totalBudget) / totalBudget * 100) : 0,
+          revenueRealized: totalRevenue > 0 ? (totalReceived / totalRevenue * 100) : 0,
+          expenseLineCount: projExpenses.length,
+          inflowLineCount: projInflows.length,
+          riskFlags,
+        };
+      }).sort((a: any, b: any) => b.riskFlags.length - a.riskFlags.length);
+
+      res.json({ projects: projectData, total: projectData.length });
+    } catch (err: any) {
+      console.error('[Planning Board] projects error:', err);
+      res.status(500).json({ error: err.message });
+    }
   });
 
   return httpServer;
