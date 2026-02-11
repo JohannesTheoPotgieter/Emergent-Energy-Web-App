@@ -1,5 +1,5 @@
 import { db, getDbMode } from "./db";
-import { eq, desc, and, gte, lte, isNotNull, isNull, sql } from "drizzle-orm";
+import { eq, desc, and, gte, lte, isNotNull, isNull, sql, inArray, count, not } from "drizzle-orm";
 import {
   users, projects, expenses, revenues, tasks, budgets, uploadMetadata, refreshLogs,
   projectInfo, programExpense, programInflows, projectPlan,
@@ -101,6 +101,8 @@ export interface IStorage {
   getAllProjectInfo(): Promise<ProjectInfo[]>;
   upsertProjectInfo(info: InsertProjectInfo): Promise<ProjectInfo>;
   deleteProjectInfo(projectName: string): Promise<void>;
+  markProjectsActive(activeNames: string[]): Promise<void>;
+  getProjectCounts(): Promise<{ active: number; historical: number; total: number }>;
 
   // Program Expense (new)
   getAllProgramExpenses(): Promise<ProgramExpense[]>;
@@ -493,6 +495,31 @@ export class DatabaseStorage implements IStorage {
 
   async deleteProjectInfo(projectName: string): Promise<void> {
     await this.dbInstance.delete(projectInfo).where(eq(projectInfo.projectName, projectName));
+  }
+
+  async markProjectsActive(activeNames: string[]): Promise<void> {
+    if (activeNames.length === 0) return;
+    await this.dbInstance
+      .update(projectInfo)
+      .set({ isActive: true, updatedAt: new Date() })
+      .where(inArray(projectInfo.projectName, activeNames));
+    await this.dbInstance
+      .update(projectInfo)
+      .set({ isActive: false })
+      .where(not(inArray(projectInfo.projectName, activeNames)));
+  }
+
+  async getProjectCounts(): Promise<{ active: number; historical: number; total: number }> {
+    const [activeResult] = await this.dbInstance
+      .select({ count: count() })
+      .from(projectInfo)
+      .where(eq(projectInfo.isActive, true));
+    const [totalResult] = await this.dbInstance
+      .select({ count: count() })
+      .from(projectInfo);
+    const active = activeResult?.count || 0;
+    const total = totalResult?.count || 0;
+    return { active, historical: total - active, total };
   }
 
   // Program Expense (new)
