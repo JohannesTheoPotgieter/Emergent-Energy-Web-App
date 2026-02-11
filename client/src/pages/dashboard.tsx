@@ -1,11 +1,16 @@
-import { useState, useMemo, useEffect } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
+import { useState, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { getQueryFn } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { Construction, Zap, Wrench, UserCheck, DollarSign, AlertCircle, TrendingDown, TrendingUp, ArrowRight } from "lucide-react";
-import { useLocation } from "wouter";
+import { 
+  Construction, Zap, Wrench, UserCheck, DollarSign, AlertCircle, 
+  TrendingDown, TrendingUp, ArrowRight, AlertTriangle, Clock,
+  ChevronDown, ChevronRight,
+} from "lucide-react";
+import { useLocation, Link } from "wouter";
+import { format } from "date-fns";
 
 function formatRand(val: number): string {
   if (val >= 1_000_000) return `R ${(val / 1_000_000).toFixed(2)}M`;
@@ -14,13 +19,122 @@ function formatRand(val: number): string {
 }
 
 function formatPct(val: number | null): string {
-  if (val === null || val === undefined) return "—";
+  if (val === null || val === undefined) return "--";
   return `${(val * 100).toFixed(1)}%`;
+}
+
+interface HighPriority {
+  overdueExpenses: Array<{
+    projectName: string;
+    lineItem: string | null;
+    invoiceNumber: string | null;
+    poNumber: string | null;
+    amount: number;
+    paymentDate: string;
+    severity: string;
+  }>;
+  revenueOutstanding: Array<{
+    projectName: string;
+    milestoneName: string | null;
+    invoiceNumber: string | null;
+    amount: number;
+    dueDate: string | null;
+    severity: string;
+  }>;
+  projectsBehindPlan: Array<{
+    projectName: string;
+    phase: string | null;
+    pm: string | null;
+    delta: number;
+    avgActual: number;
+    avgExpected: number;
+    severity: string;
+  }>;
+  upcomingMilestones: Array<{
+    projectName: string;
+    milestoneType: string;
+    date: string;
+    pm: string | null;
+  }>;
+}
+
+const severityColors: Record<string, string> = {
+  Critical: "bg-red-100 text-red-800 border-red-200",
+  High: "bg-amber-100 text-amber-800 border-amber-200",
+  Medium: "bg-blue-100 text-blue-800 border-blue-200",
+};
+
+function SeverityBadge({ severity }: { severity: string }) {
+  return (
+    <Badge className={`${severityColors[severity] || severityColors.Medium} text-[10px] font-semibold`} variant="outline">
+      {severity}
+    </Badge>
+  );
+}
+
+function PrioritySection({ 
+  title, 
+  icon: Icon, 
+  iconColor,
+  items,
+  viewAllPath,
+  renderItem,
+  expanded,
+  onToggle,
+}: { 
+  title: string;
+  icon: any;
+  iconColor: string;
+  items: any[];
+  viewAllPath: string;
+  renderItem: (item: any, i: number) => React.ReactNode;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const displayItems = expanded ? items : items.slice(0, 5);
+
+  return (
+    <div className="space-y-2">
+      <button
+        className="flex items-center gap-2 w-full text-left group"
+        onClick={onToggle}
+        data-testid={`toggle-${title.toLowerCase().replace(/\s+/g, '-')}`}
+      >
+        <Icon className={`h-4 w-4 ${iconColor}`} />
+        <span className="font-semibold text-sm flex-1">{title}</span>
+        <Badge variant="secondary" className="text-xs">{items.length}</Badge>
+        {items.length > 5 && (
+          expanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />
+        )}
+      </button>
+      {items.length === 0 ? (
+        <p className="text-sm text-muted-foreground pl-6">No items</p>
+      ) : (
+        <div className="space-y-1">
+          {displayItems.map((item, i) => renderItem(item, i))}
+          {items.length > 5 && !expanded && (
+            <div className="pl-6">
+              <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={onToggle}>
+                +{items.length - 5} more
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+      <div className="pl-6">
+        <Link href={viewAllPath}>
+          <Button variant="link" size="sm" className="h-auto p-0 text-xs" data-testid={`link-viewall-${title.toLowerCase().replace(/\s+/g, '-')}`}>
+            View all <ArrowRight className="h-3 w-3 ml-1" />
+          </Button>
+        </Link>
+      </div>
+    </div>
+  );
 }
 
 export default function Dashboard() {
   const [, setLocation] = useLocation();
-  const qc = useQueryClient();
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   const { data: dashboardData, isLoading: dashLoading } = useQuery<{
     kpis: {
@@ -38,37 +152,13 @@ export default function Dashboard() {
     queryKey: ["/api/program-dashboard"],
   });
 
-  const { data: projectsSummary = [], isLoading: projLoading } = useQuery<any[]>({
+  const { data: highPriority, isLoading: hpLoading } = useQuery<HighPriority>({
+    queryKey: ["/api/dashboard/high-priority"],
+    queryFn: getQueryFn({ on401: "throw" }),
+  });
+
+  const { data: projectsSummary = [] } = useQuery<any[]>({
     queryKey: ["/api/projects-summary"],
-  });
-
-  const { data: homeNotes } = useQuery<{
-    weeklyHighlights: string;
-    constructionNotes: string;
-    financeNotes: string;
-  }>({
-    queryKey: ["/api/home/notes"],
-  });
-
-  const [weeklyHighlights, setWeeklyHighlights] = useState("");
-  const [constructionNotes, setConstructionNotes] = useState("");
-  const [financeNotes, setFinanceNotes] = useState("");
-
-  useEffect(() => {
-    if (homeNotes) {
-      setWeeklyHighlights(homeNotes.weeklyHighlights || "");
-      setConstructionNotes(homeNotes.constructionNotes || "");
-      setFinanceNotes(homeNotes.financeNotes || "");
-    }
-  }, [homeNotes]);
-
-  const saveNotesMutation = useMutation({
-    mutationFn: async (notes: { weeklyHighlights: string; constructionNotes: string; financeNotes: string }) => {
-      await apiRequest("POST", "/api/home/notes", notes);
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/home/notes"] });
-    },
   });
 
   const kpis = dashboardData?.kpis;
@@ -92,6 +182,8 @@ export default function Dashboard() {
     );
   }, [pmTable]);
 
+  const toggle = (key: string) => setExpanded(prev => ({ ...prev, [key]: !prev[key] }));
+
   if (dashLoading && !dashboardData) {
     return (
       <div className="space-y-6">
@@ -109,7 +201,105 @@ export default function Dashboard() {
     <div className="space-y-6">
       <h2 className="text-3xl font-heading font-bold text-foreground" data-testid="text-page-title">Program Dashboard</h2>
 
-      {/* Row 1: Milestone KPI Cards */}
+      <Card className="border-red-200 dark:border-red-800 bg-red-50/30 dark:bg-red-950/10" data-testid="card-high-priority">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <AlertTriangle className="h-5 w-5 text-red-600" />
+            High Priority Actions
+          </CardTitle>
+          <p className="text-xs text-muted-foreground mt-1">
+            Rules: overdue expenses (unpaid past date), revenue outstanding (no payment received), projects behind plan (delta &lt; -5%), milestones in next 10 business days
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {hpLoading ? (
+            <div className="text-sm text-muted-foreground">Loading priority items...</div>
+          ) : highPriority ? (
+            <div className="grid gap-6 lg:grid-cols-2">
+              <PrioritySection
+                title="Overdue Expenses"
+                icon={AlertCircle}
+                iconColor="text-red-600"
+                items={highPriority.overdueExpenses}
+                viewAllPath="/projects"
+                expanded={!!expanded.overdue}
+                onToggle={() => toggle("overdue")}
+                renderItem={(item, i) => (
+                  <Link key={i} href={`/project/${encodeURIComponent(item.projectName)}`}>
+                    <div className="flex items-center gap-2 pl-6 py-1.5 rounded hover:bg-white/50 cursor-pointer group" data-testid={`item-overdue-${i}`}>
+                      <SeverityBadge severity={item.severity} />
+                      <span className="text-sm truncate flex-1 group-hover:text-blue-600">{item.projectName.replace('_Tracker', '')}</span>
+                      <span className="text-sm font-mono font-medium text-red-700">{formatRand(item.amount)}</span>
+                      <span className="text-xs text-muted-foreground">{item.paymentDate}</span>
+                    </div>
+                  </Link>
+                )}
+              />
+
+              <PrioritySection
+                title="Revenue Outstanding"
+                icon={DollarSign}
+                iconColor="text-amber-600"
+                items={highPriority.revenueOutstanding}
+                viewAllPath="/projects"
+                expanded={!!expanded.revenue}
+                onToggle={() => toggle("revenue")}
+                renderItem={(item, i) => (
+                  <Link key={i} href={`/project/${encodeURIComponent(item.projectName)}`}>
+                    <div className="flex items-center gap-2 pl-6 py-1.5 rounded hover:bg-white/50 cursor-pointer group" data-testid={`item-revenue-${i}`}>
+                      <SeverityBadge severity={item.severity} />
+                      <span className="text-sm truncate flex-1 group-hover:text-blue-600">{item.projectName.replace('_Tracker', '')}</span>
+                      <span className="text-sm font-mono font-medium text-amber-700">{formatRand(item.amount)}</span>
+                      {item.milestoneName && <span className="text-xs text-muted-foreground truncate max-w-[120px]">{item.milestoneName}</span>}
+                    </div>
+                  </Link>
+                )}
+              />
+
+              <PrioritySection
+                title="Projects Behind Plan"
+                icon={TrendingDown}
+                iconColor="text-orange-600"
+                items={highPriority.projectsBehindPlan}
+                viewAllPath="/projects"
+                expanded={!!expanded.behind}
+                onToggle={() => toggle("behind")}
+                renderItem={(item, i) => (
+                  <Link key={i} href={`/project/${encodeURIComponent(item.projectName)}`}>
+                    <div className="flex items-center gap-2 pl-6 py-1.5 rounded hover:bg-white/50 cursor-pointer group" data-testid={`item-behind-${i}`}>
+                      <SeverityBadge severity={item.severity} />
+                      <span className="text-sm truncate flex-1 group-hover:text-blue-600">{item.projectName.replace('_Tracker', '')}</span>
+                      <Badge variant="destructive" className="text-xs">{formatPct(item.delta)}</Badge>
+                      {item.pm && <span className="text-xs text-muted-foreground">{item.pm}</span>}
+                    </div>
+                  </Link>
+                )}
+              />
+
+              <PrioritySection
+                title="Upcoming Milestones (10 days)"
+                icon={Clock}
+                iconColor="text-blue-600"
+                items={highPriority.upcomingMilestones}
+                viewAllPath="/projects"
+                expanded={!!expanded.milestones}
+                onToggle={() => toggle("milestones")}
+                renderItem={(item, i) => (
+                  <Link key={i} href={`/project/${encodeURIComponent(item.projectName)}`}>
+                    <div className="flex items-center gap-2 pl-6 py-1.5 rounded hover:bg-white/50 cursor-pointer group" data-testid={`item-milestone-${i}`}>
+                      <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-[10px]" variant="outline">{item.milestoneType}</Badge>
+                      <span className="text-sm truncate flex-1 group-hover:text-blue-600">{item.projectName.replace('_Tracker', '')}</span>
+                      <span className="text-xs text-muted-foreground font-mono">{item.date}</span>
+                      {item.pm && <span className="text-xs text-muted-foreground">{item.pm}</span>}
+                    </div>
+                  </Link>
+                )}
+              />
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
+
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card className="bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800" data-testid="card-site-establishment">
           <CardContent className="pt-6">
@@ -180,7 +370,6 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* Row 2: Financial KPI Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card className="bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800" data-testid="card-revenue-outstanding">
           <CardContent className="pt-6">
@@ -247,7 +436,6 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* Row 3: PM Summary Table */}
       <Card data-testid="card-pm-summary">
         <CardHeader>
           <CardTitle>Project Manager Summary</CardTitle>
@@ -286,7 +474,6 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
-      {/* Row 4: Projects Summary Mini Table */}
       <Card data-testid="card-projects-overview">
         <CardHeader>
           <CardTitle>Active Projects Overview</CardTitle>
@@ -313,7 +500,7 @@ export default function Dashboard() {
                     data-testid={`row-project-${i}`}
                   >
                     <td className="py-2 px-3 font-medium">{(p.project_name || "").replace("_Tracker", "")}</td>
-                    <td className="py-2 px-3">{p.phase || "—"}</td>
+                    <td className="py-2 px-3">{p.phase || "--"}</td>
                     <td className="py-2 px-3 text-right font-mono">{formatPct(p.project_pct_complete)}</td>
                     <td className={`py-2 px-3 text-right font-mono ${(p.delta_vs_expected ?? 0) < 0 ? "text-red-600" : "text-green-600"}`}>
                       {formatPct(p.delta_vs_expected)}
@@ -332,78 +519,6 @@ export default function Dashboard() {
           </div>
         </CardContent>
       </Card>
-
-      {/* Row 5: Editable Notes */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card data-testid="card-weekly-highlights">
-          <CardHeader>
-            <CardTitle className="text-base">Weekly Highlights</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <Textarea
-              value={weeklyHighlights}
-              onChange={(e) => setWeeklyHighlights(e.target.value)}
-              rows={6}
-              placeholder="Enter weekly highlights..."
-              data-testid="textarea-weekly-highlights"
-            />
-            <Button
-              size="sm"
-              onClick={() => saveNotesMutation.mutate({ weeklyHighlights, constructionNotes, financeNotes })}
-              disabled={saveNotesMutation.isPending}
-              data-testid="button-save-weekly-highlights"
-            >
-              {saveNotesMutation.isPending ? "Saving..." : "Save"}
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card data-testid="card-construction-notes">
-          <CardHeader>
-            <CardTitle className="text-base">Construction Notes</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <Textarea
-              value={constructionNotes}
-              onChange={(e) => setConstructionNotes(e.target.value)}
-              rows={6}
-              placeholder="Enter construction notes..."
-              data-testid="textarea-construction-notes"
-            />
-            <Button
-              size="sm"
-              onClick={() => saveNotesMutation.mutate({ weeklyHighlights, constructionNotes, financeNotes })}
-              disabled={saveNotesMutation.isPending}
-              data-testid="button-save-construction-notes"
-            >
-              {saveNotesMutation.isPending ? "Saving..." : "Save"}
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card data-testid="card-finance-notes">
-          <CardHeader>
-            <CardTitle className="text-base">Finance Notes</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <Textarea
-              value={financeNotes}
-              onChange={(e) => setFinanceNotes(e.target.value)}
-              rows={6}
-              placeholder="Enter finance notes..."
-              data-testid="textarea-finance-notes"
-            />
-            <Button
-              size="sm"
-              onClick={() => saveNotesMutation.mutate({ weeklyHighlights, constructionNotes, financeNotes })}
-              disabled={saveNotesMutation.isPending}
-              data-testid="button-save-finance-notes"
-            >
-              {saveNotesMutation.isPending ? "Saving..." : "Save"}
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
     </div>
   );
 }

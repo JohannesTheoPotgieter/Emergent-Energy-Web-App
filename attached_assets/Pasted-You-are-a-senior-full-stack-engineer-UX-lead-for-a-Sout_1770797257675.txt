@@ -1,0 +1,258 @@
+You are a senior full-stack engineer + UX lead for a South African C&I solar EPC “Program Dashboard” app.
+
+Goal: Improve the UI/IA (information architecture) and make the app usable as an operating tool, not just reporting.
+Do NOT rebuild from scratch. Work inside the existing codebase and components.
+
+NON-NEGOTIABLES
+- All numbers must reconcile to the underlying imported data.
+- Any summary number must be clickable to show the exact contributing line items (incl invoice # / PO # / tracker locator).
+- Where “planning/what-if” inputs exist, they must not overwrite imported truth. Store as overrides with audit trail.
+- Add tests and a reconciliation report before calling it done.
+
+========================================================
+1) NAVIGATION + HOME PAGE REWORK (Screenshot 1)
+========================================================
+Replace the current “Home” page (remove all its data/cards) and make it a simple navigation landing page.
+
+Left sidebar becomes the primary navigation, grouped as:
+
+CURRENT
+- Dashboard
+- Project Summary
+- Cashflow
+- COS Tracker
+
+WIP
+- COS Control
+- Forecast
+- Planning
+
+ADMIN
+- Admin
+
+Home page content:
+- A clean “Navigation” landing with large tiles/quick links for the CURRENT section.
+- Show nothing that looks like KPIs here. It’s just a hub.
+
+Acceptance:
+- Clicking sidebar routes correctly.
+- CURRENT/WIP headings visible in sidebar.
+- Home page no longer duplicates report data.
+
+========================================================
+2) DASHBOARD UX FIX (Screenshot 2)
+========================================================
+Keep the dashboard page but make it more user friendly and action-oriented.
+
+Changes:
+- Clearly show “High Priority” items at the top (a dedicated panel).
+- Remove “comments/notes” sections at the bottom (delete those widgets entirely).
+
+High Priority logic (must be explicit and visible as rules in UI):
+- Overdue expenses (unpaid where payment date < today) – show top N by value
+- Revenue outstanding (invoice missing where milestone due/paid date rule triggers) – show top N by value
+- Projects behind plan (delta vs expected < threshold, e.g. -5%) – show top N worst
+- Next 10 business days: site establishment / commissioning / O&M handover / client handover
+
+Interaction:
+- Every item in High Priority is clickable → goes to that project’s detail page AND opens the relevant drilldown (e.g. invoice list filtered).
+- Add “View all” links to take me to Project Summary filtered to that issue.
+
+UI:
+- Use clear severity labels (Critical / High / Medium).
+- Put value + due date next to each item.
+- Don’t bury the “what should i do next” behind pretty cards.
+
+========================================================
+3) PROJECT SUMMARY (Screenshot 3)
+========================================================
+Leave as is. No redesign. Only ensure links/drilldowns work and numbers reconcile.
+
+========================================================
+4) CASHFLOW: MERGE SCREENSHOT 4 + 5 (Prefer look & feel of 5)
+========================================================
+Merge the Forecast chart/grid (Screenshot 4) into the Cashflow page (Screenshot 5 styling).
+Cashflow remains under CURRENT section.
+
+Target Cashflow page layout (based on Screenshot 5):
+- Top: weekly summary grid (opening, inflows, opex, project outflows, closing)
+- Below: expanded detail area showing inflow lines and outflow lines for the selected week
+- Add the cashflow chart from Screenshot 4 above the weekly grid (same page)
+
+Controls:
+- Project filter dropdown (All Projects)
+- Toggle: Show Detail (like screenshot 5)
+- Toggle: Actual vs Actual+Forecast (forecast can be WIP but the toggle must exist)
+- Button: OPEX Budget
+
+Drilldowns (non-negotiable):
+- Clicking a week row must show ALL inflow/outflow lines for that week with:
+  - Project, Category, Line item, Invoice #, PO #, Date, Amount, TrackerLocator
+- Add quick search in the detail tables: invoice # / PO # / tracker locator.
+- Totals in the detail table must exactly match the week totals shown above.
+
+Note on navigation:
+- “Forecast” remains a WIP menu item in sidebar.
+- For now, Forecast can route to the same combined Cashflow page OR to an “advanced forecast assumptions” view. But do not remove it.
+
+========================================================
+5) COS TRACKER NUMBERS WRONG (Screenshot 6)
+========================================================
+The COS Tracker monthly numbers do not match the data. Fix the calculations and prove it.
+
+Requirements:
+- Add a “Reconciliation mode” toggle that shows:
+  - Total lines counted
+  - Total amount summed
+  - Any excluded lines (with reason)
+- Every month cell must be clickable → open a drawer with the exact contributing line items:
+  - Project, Supplier (if mapped), Category, Line item, Invoice #, PO #, Invoice date, Payment date, Amount, TrackerLocator
+- If an amount is in “Planned / Realised / Outstanding”, I must be able to see exactly why (state rules below).
+
+State rules (line-item state machine):
+- Planned: no PO and no invoice
+- Committed: PO exists; no invoice
+- Invoiced: invoice exists; no payment date
+- Paid: payment date exists
+
+Planned/Realised/Outstanding must be derived strictly from these states unless a clearly flagged manual override exists.
+
+========================================================
+6) COS CONTROL: MAKE IT A WHAT-IF CONTROL TOWER (Screenshot 7)
+========================================================
+Right now this page is confusing. Redesign the interaction around one core job:
+“I want to see the impact if I move invoice dates out → COS shifts months → what happens long term.”
+
+Must-have features:
+A) Scenario Sandbox
+- Baseline = imported truth
+- Scenario = date overrides stored separately (never overwrite import)
+- Ability to create/select scenarios (e.g. “Push invoices 30 days”, “Supplier delay Feb”)
+- Show Baseline vs Scenario deltas (monthly and YTD)
+
+B) Invoice date shifting tools
+- Invoice list view (searchable by invoice # / PO # / project / supplier)
+- For any invoice (or line item), allow:
+  - Override invoice date
+  - Override payment date (optional)
+  - Require a reason
+- When you move dates, immediately recompute:
+  - Monthly COS buckets
+  - YTD curves
+  - Forecast cashflow impact (at least in the COS view; deeper cashflow can be phased)
+
+C) Long-term graph
+- Monthly graph: Baseline vs Scenario (stacked or side-by-side)
+  - Paid (actual)
+  - Outstanding
+  - Forecast
+- Show where COS moved from/to (delta by month)
+
+D) Drilldown everywhere
+- Clicking any month bar or total shows contributing invoices/lines.
+
+Outcome:
+- This page becomes a true “control tower” where I can answer:
+  - “If I delay these invoices, what does my COS profile look like next 6–12 months?”
+
+========================================================
+7) DATA QUALITY → RISKS & FLAGS SCREEN (Screenshot 8)
+========================================================
+This page is good, but change its purpose:
+Make it a “Risks & Flags” screen that shows exact issues and where they occur.
+
+Requirements:
+- Table of flags with:
+  - Severity
+  - Flag type
+  - Project
+  - Affected invoice/PO/tracker locator
+  - Amount
+  - Date(s)
+  - Description (plain language)
+  - Link: “Open detail” → takes me to the exact line item/invoice drawer
+
+Examples of flags:
+- Payment date earlier than invoice date
+- Missing invoice date where invoice # exists
+- Missing PO where category requires it (configurable)
+- Duplicate invoice numbers across suppliers/projects
+- Null/invalid dates causing exclusions
+- Negative/zero amounts (configurable)
+- Missing supplier mapping
+- Project missing PM / region / installer assignment (planning gaps)
+
+========================================================
+8) PLANNING MODULE (WIP)
+========================================================
+Add a Planning module that lets me move dates and resources and see capacity + clashes.
+
+Core planning objects:
+- Projects: region, PM, installer, key suppliers
+- Schedule: baseline dates and forecast dates (task derived where possible)
+- Resources:
+  - PM capacity per week (configurable)
+  - Installer capacity per week (kWp/week or team-days/week)
+  - Supplier capacity constraints (optional v1)
+
+Features:
+A) Planning Board (per project)
+- Editable forecast dates (construction start, commissioning, handovers)
+- Editable assignments (PM, installer, supplier)
+- Show clashes:
+  - PM over capacity in a week
+  - Installer over capacity in a week
+  - Multiple projects in same region exceeding installer capacity
+- Show “why” and “which projects cause it”
+
+B) Capacity views
+- Tabs: PM / Installers / Suppliers
+- Weekly heatmap: demand vs capacity
+- Click a week → list projects driving demand
+- Allow “move” actions (shift forecast dates) and show immediate capacity impact
+
+C) Impact links
+- When a forecast date changes, show expected impact on:
+  - milestone timing (inflows forecast) if applicable
+  - COS timing (outflows forecast) if linked through invoice/PO plan rules
+This can be v1 as “estimated impact”, but it must be explicit.
+
+Governance:
+- All planning changes stored as overrides with audit trail (who/when/why).
+- Baseline always visible and recoverable.
+
+========================================================
+9) UI CONSISTENCY
+========================================================
+Keep Emergent theme.
+- Use the look/feel of Screenshot 5 as the standard for tables + layouts.
+- Keep typography tight, spacing clean, actions obvious.
+- Reduce noise. “Actionable > pretty.”
+
+========================================================
+10) TESTING + RECONCILIATION (MANDATORY)
+========================================================
+Add automated tests and reconciliation checks:
+- Cashflow week totals == SUM(detail inflow lines) and SUM(detail outflow lines)
+- COS month totals == SUM(detail invoice/line items)
+- Scenario deltas in COS Control == recomputed sums with overrides applied
+- Basic e2e smoke tests:
+  - Navigate via sidebar
+  - Dashboard High Priority links open correct project detail and filtered drawer
+  - Cashflow week click shows detail and totals match
+  - COS month click shows detail and totals match
+  - COS Control scenario change shifts month totals
+
+Deliverables (must commit to repo):
+- A short “UI Change Spec” doc mapping each screenshot request to implementation.
+- A “Reconciliation Report” doc showing before/after mismatches and how resolved.
+- Tests runnable in CI.
+
+START WITH:
+1) Audit current routes/pages and data models
+2) Implement navigation + Home change
+3) Fix COS tracker reconciliation
+4) Merge Cashflow + Forecast page
+5) Redesign COS Control into scenario-driven what-if tool
+6) Build Risks & Flags
+7) Add Planning module (WIP)

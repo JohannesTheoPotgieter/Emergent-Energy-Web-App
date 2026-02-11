@@ -17,11 +17,14 @@ Preferred communication style: Simple, everyday language.
 - **Core Features**:
     -   **Expenditure Breakdown**: Dual-table parsing of budget/costed vs. actual/finance data from Excel, with auto-computed line statuses (Planned, Committed, Invoiced, Paid) and strict COS recognition rules (Invoice Number AND Invoice Raised Date required). Includes UI/UX enhancements like sticky headers, collapsible groups, and column visibility toggles.
     -   **Cashflow Planning**: Editable planning grid for revenue and expenditure, with real-time chart updates, override persistence, and multi-project support.
-    -   **Home Page (Projects Report)**: Comprehensive FY overview including Portfolio Summary (active projects, capacity, schedule adherence), Execution Summary (construction progress, milestones), Financial Summary (revenue, expenses, net cashflow, COS realized), Data Quality Panel, and editable project notes.
-    -   **COS Tracker Page**: Detailed Cost of Sales tracking with KPIs (COS Realised, Cash Paid, Outstanding COS), supplier extraction, and a monthly COS matrix.
+    -   **Home Page**: Navigation hub with quick-link tiles to all major sections.
+    -   **Dashboard**: High Priority panel with severity-classified alerts (overdue expenses, outstanding revenue, behind-plan projects, upcoming milestones), clickable drilldown items.
+    -   **COS Tracker Page**: Monthly COS matrix with KPIs, reconciliation mode toggle, clickable month cells opening slide-out drawer with contributing line items (searchable/filterable by state, project, invoice #, PO #).
     -   **COS Control Tower**: Line-item state machine (Planned/Committed/Invoiced/Paid) with KPI cards, per-project breakdown, filterable line-item explorer, invoice rollup, PO rollup, and data quality scanner.
+    -   **Cashflow Page**: Chart-first layout (trend chart above grid), weekly cashflow timeline with project filter, OPEX budget modal, expandable week detail with inline search across inflows/outflows and reconciliation totals.
     -   **Cashflow Forecast**: Weekly line-item-driven forecast with actual/forecast split, weekly chart, weekly grid with drilldown to individual line items showing confidence scoring and assumption drivers.
-    -   **Planning Board**: Filterable project overview with PM/phase/risk filters, sortable columns, budget variance, revenue realization %, and automated risk flags (over budget, missing dates, no PM, no revenue received).
+    -   **Planning Board**: Tabbed interface with Projects tab (filterable overview with PM/phase/risk filters, sortable columns, budget variance, revenue realization %, automated risk flags) and PM Capacity tab (weekly heatmap showing concurrent project allocations per PM with color-coded cells).
+    -   **Risks & Flags**: Severity-ranked data quality issues table with searchable flags, project links, and actionable detail.
     -   **Project Plan View**: CPM scheduling tool with Gantt visualization, critical path calculation, task grid with inline editing, task detail panel, and dependency management. Features include hover sync between grid/Gantt and schedule governance warnings for critical path changes.
     -   **SafeMoney Utilities**: Frontend utilities for NaN-safe currency handling and formatting.
 
@@ -67,6 +70,9 @@ Auto-runs on server startup to populate computed columns (hash, state, forecast 
 -   `/api/cashflow-forecast/week-detail`: Per-week line-item drilldown.
 -   `/api/data-quality/scan`: Data quality rule engine with issue counts and affected items.
 -   `/api/planning-board/projects`: Project overview with risk flags and financial summary.
+-   `/api/planning-board/pm-capacity`: PM capacity heatmap with weekly project allocation counts.
+-   `/api/dashboard/high-priority`: Severity-classified alerts (overdue expenses, outstanding revenue, behind-plan, milestones).
+-   `/api/cos-tracker/month-detail`: Line-item drilldown for COS tracker month cells.
 -   `/api/admin/backfill`: Manual trigger for computed field backfill.
 
 ## External Dependencies

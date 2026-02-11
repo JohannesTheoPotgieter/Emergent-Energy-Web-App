@@ -1702,6 +1702,89 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
+    try {
+      const { monthKey, state } = req.query as { monthKey?: string; state?: string };
+      if (!monthKey) return res.status(400).json({ error: "monthKey required" });
+
+      const allExpenses = await storage.getAllProgramExpenses();
+      const match = monthKey.match(/^(\d{4})-(\d{2})$/);
+      if (!match) return res.status(400).json({ error: "Invalid monthKey format" });
+
+      const items: Array<{
+        id: number;
+        projectName: string;
+        category: string | null;
+        lineItem: string | null;
+        invoiceNumber: string | null;
+        poNumber: string | null;
+        invoicedDate: string | null;
+        paymentDate: string | null;
+        amount: number;
+        state: string;
+        supplierName: string | null;
+        trackerLocator: string;
+      }> = [];
+
+      for (const exp of allExpenses) {
+        const total = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
+        if (isNaN(total) || total === 0) continue;
+
+        let lineState = "Planned";
+        if (exp.expensePaymentDate && /^\d{4}-\d{2}/.test(exp.expensePaymentDate)) {
+          lineState = "Paid";
+        } else if (exp.expenseInvoiceNumber && exp.expenseInvoiceNumber.trim() !== '' && exp.expenseInvoicedDate) {
+          lineState = "Invoiced";
+        } else if (exp.expensePoNumber && exp.expensePoNumber.trim() !== '') {
+          lineState = "Committed";
+        }
+
+        let dateForMonth: string | null = null;
+        if (lineState === "Paid" || lineState === "Invoiced") {
+          dateForMonth = exp.expenseInvoicedDate || exp.expensePaymentDate;
+        } else {
+          dateForMonth = exp.expensePaymentDate || exp.expenseInvoicedDate;
+        }
+
+        if (!dateForMonth) continue;
+        const dateMatch = dateForMonth.match(/^(\d{4})-(\d{2})/);
+        if (!dateMatch) continue;
+        const lineMonthKey = `${dateMatch[1]}-${dateMatch[2]}`;
+
+        if (lineMonthKey !== monthKey) continue;
+        if (state && lineState !== state) continue;
+
+        items.push({
+          id: exp.id,
+          projectName: exp.projectName.replace(/_Tracker$/i, ''),
+          category: exp.expenseCategory,
+          lineItem: exp.expenseLineItem,
+          invoiceNumber: exp.expenseInvoiceNumber,
+          poNumber: exp.expensePoNumber,
+          invoicedDate: exp.expenseInvoicedDate,
+          paymentDate: exp.expensePaymentDate,
+          amount: total,
+          state: lineState,
+          supplierName: (exp as any).supplierName || null,
+          trackerLocator: `${exp.projectName}:row${exp.rowNumber || exp.id}`,
+        });
+      }
+
+      items.sort((a, b) => b.amount - a.amount);
+
+      res.json({
+        monthKey,
+        state: state || "all",
+        lineCount: items.length,
+        totalAmount: items.reduce((s, i) => s + i.amount, 0),
+        items,
+      });
+    } catch (error) {
+      console.error("COS month detail error:", error);
+      res.status(500).json({ error: "Failed to fetch COS month detail" });
+    }
+  });
+
   // ==================== PROGRAM DASHBOARD API ====================
 
   app.get("/api/program-dashboard", requireAuth, async (req, res) => {
@@ -1832,6 +1915,152 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Program dashboard error:", error);
       res.status(500).json({ error: "Failed to fetch program dashboard", message: "Failed to fetch program dashboard" });
+    }
+  });
+
+  app.get("/api/dashboard/high-priority", requireAuth, async (req, res) => {
+    try {
+      const [allProjectInfo, allExpenses, allInflows, allPlans] = await Promise.all([
+        storage.getAllProjectInfo(),
+        storage.getAllProgramExpenses(),
+        storage.getAllProgramInflows(),
+        storage.getAllProjectPlans(),
+      ]);
+
+      const today = new Date().toISOString().split("T")[0];
+      const projectInfoMap = new Map(allProjectInfo.map(info => [info.projectName, info]));
+
+      const overdueExpenses: Array<{
+        projectName: string;
+        lineItem: string | null;
+        invoiceNumber: string | null;
+        poNumber: string | null;
+        amount: number;
+        paymentDate: string;
+        severity: string;
+      }> = [];
+
+      for (const expense of allExpenses) {
+        if (expense.expenseActualTotal && expense.expensePaymentDate) {
+          const amt = parseFloat(expense.expenseActualTotal);
+          if (amt > 0 && expense.expensePaymentDate < today && (!expense.expenseInvoiceNumber || expense.expenseInvoiceNumber.trim() === '')) {
+            overdueExpenses.push({
+              projectName: expense.projectName,
+              lineItem: expense.expenseLineItem,
+              invoiceNumber: expense.expenseInvoiceNumber,
+              poNumber: expense.expensePoNumber,
+              amount: amt,
+              paymentDate: expense.expensePaymentDate,
+              severity: amt >= 500000 ? "Critical" : amt >= 100000 ? "High" : "Medium",
+            });
+          }
+        }
+      }
+      overdueExpenses.sort((a, b) => b.amount - a.amount);
+
+      const revenueOutstanding: Array<{
+        projectName: string;
+        milestoneName: string | null;
+        invoiceNumber: string | null;
+        amount: number;
+        dueDate: string | null;
+        severity: string;
+      }> = [];
+
+      for (const inflow of allInflows) {
+        if (inflow.milestoneAmount) {
+          const amt = parseFloat(inflow.milestoneAmount);
+          if (amt > 0 && !inflow.paymentReceivedDate) {
+            revenueOutstanding.push({
+              projectName: inflow.projectName,
+              milestoneName: inflow.milestoneName,
+              invoiceNumber: inflow.milestoneInvoiceNumber,
+              amount: amt,
+              dueDate: inflow.invoiceRaisedDate || null,
+              severity: amt >= 1000000 ? "Critical" : amt >= 250000 ? "High" : "Medium",
+            });
+          }
+        }
+      }
+      revenueOutstanding.sort((a, b) => b.amount - a.amount);
+
+      const projectsBehindPlan: Array<{
+        projectName: string;
+        phase: string | null;
+        pm: string | null;
+        delta: number;
+        avgActual: number;
+        avgExpected: number;
+        severity: string;
+      }> = [];
+
+      const plansByProject = new Map<string, typeof allPlans>();
+      for (const plan of allPlans) {
+        if (!plansByProject.has(plan.projectName)) plansByProject.set(plan.projectName, []);
+        plansByProject.get(plan.projectName)!.push(plan);
+      }
+
+      for (const [projectName, plans] of Array.from(plansByProject.entries())) {
+        const completions = plans.filter((p: any) => p.percentComplete != null && p.expectedProgress != null);
+        if (completions.length > 0) {
+          const avgActual = completions.reduce((sum: number, p: any) => sum + (parseFloat(p.percentComplete) || 0), 0) / completions.length;
+          const avgExpected = completions.reduce((sum: number, p: any) => sum + (parseFloat(p.expectedProgress) || 0), 0) / completions.length;
+          const delta = avgActual - avgExpected;
+          if (delta < -0.05) {
+            const info = projectInfoMap.get(projectName);
+            projectsBehindPlan.push({
+              projectName,
+              phase: info?.phase || null,
+              pm: info?.pm || null,
+              delta,
+              avgActual,
+              avgExpected,
+              severity: delta < -0.2 ? "Critical" : delta < -0.1 ? "High" : "Medium",
+            });
+          }
+        }
+      }
+      projectsBehindPlan.sort((a, b) => a.delta - b.delta);
+
+      const upcomingMilestones: Array<{
+        projectName: string;
+        milestoneType: string;
+        date: string;
+        pm: string | null;
+      }> = [];
+
+      const milestoneTypes = [
+        { patterns: ['site establishment'], label: 'Site Establishment' },
+        { patterns: ['commissioning'], label: 'Commissioning' },
+        { patterns: ['handover to matriarch', 'o&m handover'], label: 'O&M Handover' },
+        { patterns: ['handover to client', 'client handover'], label: 'Client Handover' },
+      ];
+
+      for (const [projectName, plans] of Array.from(plansByProject.entries())) {
+        const info = projectInfoMap.get(projectName);
+        for (const mt of milestoneTypes) {
+          const endDate = findMaxEndDate(plans, mt.patterns);
+          if (endDate && isWithinDays(endDate, 10)) {
+            upcomingMilestones.push({
+              projectName,
+              milestoneType: mt.label,
+              date: endDate,
+              pm: info?.pm || null,
+            });
+          }
+        }
+      }
+      upcomingMilestones.sort((a, b) => a.date.localeCompare(b.date));
+
+      res.json({
+        overdueExpenses: overdueExpenses.slice(0, 15),
+        revenueOutstanding: revenueOutstanding.slice(0, 15),
+        projectsBehindPlan: projectsBehindPlan.slice(0, 10),
+        upcomingMilestones,
+      });
+    } catch (error) {
+      console.error("High priority API error:", error);
+      res.status(500).json({ error: "Failed to fetch high priority items" });
     }
   });
 
@@ -4481,6 +4710,61 @@ export async function registerRoutes(
   // =========================================================================
   // PLANNING BOARD APIs
   // =========================================================================
+
+  app.get("/api/planning-board/pm-capacity", requireAuth, async (req, res) => {
+    try {
+      const projects = await db.select().from(projectInfo);
+
+      const pms = new Map<string, { pm: string; projects: { projectName: string; start: string | null; end: string | null; phase: string | null }[] }>();
+
+      for (const p of projects) {
+        const pmName = (p as any).pm || "Unassigned";
+        if (!pms.has(pmName)) {
+          pms.set(pmName, { pm: pmName, projects: [] });
+        }
+        pms.get(pmName)!.projects.push({
+          projectName: p.projectName,
+          start: (p as any).constructionStartDate,
+          end: (p as any).commissioningDate,
+          phase: (p as any).phase,
+        });
+      }
+
+      const startDate = new Date(2025, 8, 1);
+      const weeks: string[] = [];
+      for (let i = 0; i < 52; i++) {
+        const wk = new Date(startDate);
+        wk.setDate(wk.getDate() + i * 7);
+        weeks.push(wk.toISOString().split('T')[0]);
+      }
+
+      const heatmap = Array.from(pms.values()).map(entry => {
+        const weekCounts = weeks.map(weekStart => {
+          const ws = new Date(weekStart);
+          const we = new Date(ws);
+          we.setDate(we.getDate() + 7);
+          let count = 0;
+          for (const proj of entry.projects) {
+            if (!proj.start && !proj.end) continue;
+            const ps = proj.start ? new Date(proj.start) : new Date(0);
+            const pe = proj.end ? new Date(proj.end) : new Date(2030, 0, 1);
+            if (ps < we && pe > ws) count++;
+          }
+          return count;
+        });
+        return {
+          pm: entry.pm,
+          projectCount: entry.projects.length,
+          weekCounts,
+        };
+      }).sort((a, b) => b.projectCount - a.projectCount);
+
+      res.json({ weeks, heatmap });
+    } catch (err: any) {
+      console.error('[Planning Board] capacity error:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
 
   app.get("/api/planning-board/projects", requireAuth, async (req, res) => {
     try {
