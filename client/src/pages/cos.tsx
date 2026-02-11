@@ -19,7 +19,14 @@ import {
   TrendingDown,
   Target,
   Activity,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
+
+interface ProjectBreakdown {
+  projectName: string;
+  value: number;
+}
 
 interface MonthData {
   monthKey: string;
@@ -36,6 +43,7 @@ interface MonthData {
   ytdBudget: number;
   ytdVariance: number;
   ytdVariancePct: number;
+  projects: ProjectBreakdown[];
 }
 
 function formatRand(val: number | null | undefined): string {
@@ -63,8 +71,9 @@ const ROW_DEFS: {
   colorClass: string;
   group: "monthly" | "ytd";
   colorCoded?: boolean;
+  expandable?: boolean;
 }[] = [
-  { key: "planned", label: "Planned", dataKey: "planned", editable: false, colorClass: "text-blue-600", group: "monthly" },
+  { key: "planned", label: "Planned", dataKey: "planned", editable: false, colorClass: "text-blue-600", group: "monthly", expandable: true },
   { key: "realised", label: "Realised", dataKey: "realised", editable: true, colorClass: "text-green-600", group: "monthly" },
   { key: "outstanding", label: "Outstanding", dataKey: "outstanding", editable: true, colorClass: "text-amber-600", group: "monthly" },
   { key: "budget", label: "Budget", dataKey: "budget", editable: true, colorClass: "text-purple-600", group: "monthly" },
@@ -81,6 +90,7 @@ const ROW_DEFS: {
 export default function CosTracker() {
   const qc = useQueryClient();
   const [editing, setEditing] = useState<EditingCell | null>(null);
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
   const { data: months = [], isLoading } = useQuery<MonthData[]>({
     queryKey: ["/api/cos-tracker"],
@@ -100,6 +110,25 @@ export default function CosTracker() {
     if (!months.length) return null;
     return months[months.length - 1];
   }, [months]);
+
+  const allProjectNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const m of months) {
+      for (const p of m.projects || []) {
+        names.add(p.projectName);
+      }
+    }
+    return Array.from(names).sort();
+  }, [months]);
+
+  const toggleRow = useCallback((key: string) => {
+    setExpandedRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
 
   const startEdit = useCallback((field: EditableField, monthKey: string, currentValue: number) => {
     setEditing({ field, monthKey, value: String(currentValue) });
@@ -243,7 +272,7 @@ export default function CosTracker() {
               <table className="w-full text-sm" data-testid="table-cos-grid">
                 <thead>
                   <tr className="border-b bg-muted/50">
-                    <th className="sticky left-0 z-10 bg-muted/50 px-4 py-3 text-left font-semibold min-w-[160px]">
+                    <th className="sticky left-0 z-10 bg-muted/50 px-4 py-3 text-left font-semibold min-w-[200px]">
                       Metric
                     </th>
                     {months.map((m) => (
@@ -256,67 +285,110 @@ export default function CosTracker() {
                 <tbody>
                   {ROW_DEFS.map((row) => {
                     const isYtd = row.group === "ytd";
+                    const isExpanded = expandedRows.has(row.key);
                     return (
-                      <tr
-                        key={row.key}
-                        className={`border-b ${isYtd ? "bg-slate-50" : "bg-white"} hover:bg-muted/30`}
-                        data-testid={`row-${row.key}`}
-                      >
-                        <td className={`sticky left-0 z-10 px-4 py-2 font-medium ${isYtd ? "bg-slate-50" : "bg-white"}`}>
-                          {row.label}
-                        </td>
-                        {months.map((m) => {
-                          const val = m[row.dataKey] as number;
-                          const isEditing =
-                            editing?.field === row.key && editing?.monthKey === m.monthKey;
-
-                          if (row.editable) {
-                            return (
-                              <td key={m.monthKey} className="px-2 py-1 text-right">
-                                {isEditing ? (
-                                  <Input
-                                    type="number"
-                                    className="h-8 w-full text-right font-mono text-sm"
-                                    value={editing.value}
-                                    onChange={(e) =>
-                                      setEditing({ ...editing, value: e.target.value })
-                                    }
-                                    onBlur={commitEdit}
-                                    onKeyDown={handleKeyDown}
-                                    autoFocus
-                                    data-testid={`input-${row.key}-${m.monthKey}`}
-                                  />
+                      <>
+                        <tr
+                          key={row.key}
+                          className={`border-b ${isYtd ? "bg-slate-50" : "bg-white"} hover:bg-muted/30`}
+                          data-testid={`row-${row.key}`}
+                        >
+                          <td className={`sticky left-0 z-10 px-4 py-2 font-medium ${isYtd ? "bg-slate-50" : "bg-white"}`}>
+                            {row.expandable ? (
+                              <button
+                                type="button"
+                                className="flex items-center gap-1 hover:text-blue-600 transition-colors"
+                                onClick={() => toggleRow(row.key)}
+                                data-testid={`toggle-${row.key}`}
+                              >
+                                {isExpanded ? (
+                                  <ChevronDown className="h-4 w-4" />
                                 ) : (
-                                  <button
-                                    type="button"
-                                    className={`w-full text-right font-mono cursor-pointer hover:bg-muted rounded px-2 py-1 ${row.colorClass}`}
-                                    onClick={() =>
-                                      startEdit(row.key as EditableField, m.monthKey, val)
-                                    }
-                                    data-testid={`cell-${row.key}-${m.monthKey}`}
-                                  >
-                                    {formatRand(val)}
-                                  </button>
+                                  <ChevronRight className="h-4 w-4" />
                                 )}
+                                {row.label}
+                              </button>
+                            ) : (
+                              row.label
+                            )}
+                          </td>
+                          {months.map((m) => {
+                            const val = m[row.dataKey] as number;
+                            const isEditingCell =
+                              editing?.field === row.key && editing?.monthKey === m.monthKey;
+
+                            if (row.editable) {
+                              return (
+                                <td key={m.monthKey} className="px-2 py-1 text-right">
+                                  {isEditingCell ? (
+                                    <Input
+                                      type="number"
+                                      className="h-8 w-full text-right font-mono text-sm"
+                                      value={editing.value}
+                                      onChange={(e) =>
+                                        setEditing({ ...editing, value: e.target.value })
+                                      }
+                                      onBlur={commitEdit}
+                                      onKeyDown={handleKeyDown}
+                                      autoFocus
+                                      data-testid={`input-${row.key}-${m.monthKey}`}
+                                    />
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      className={`w-full text-right font-mono cursor-pointer hover:bg-muted rounded px-2 py-1 ${row.colorClass}`}
+                                      onClick={() =>
+                                        startEdit(row.key as EditableField, m.monthKey, val)
+                                      }
+                                      data-testid={`cell-${row.key}-${m.monthKey}`}
+                                    >
+                                      {formatRand(val)}
+                                    </button>
+                                  )}
+                                </td>
+                              );
+                            }
+
+                            const colorClass = row.colorCoded
+                              ? getCellColor(val)
+                              : row.colorClass;
+
+                            return (
+                              <td
+                                key={m.monthKey}
+                                className={`px-4 py-2 text-right font-mono ${colorClass}`}
+                                data-testid={`cell-${row.key}-${m.monthKey}`}
+                              >
+                                {formatCell(row, val)}
                               </td>
                             );
-                          }
-
-                          const colorClass = row.colorCoded
-                            ? getCellColor(val)
-                            : row.colorClass;
-
-                          return (
-                            <td
-                              key={m.monthKey}
-                              className={`px-4 py-2 text-right font-mono ${colorClass}`}
-                              data-testid={`cell-${row.key}-${m.monthKey}`}
-                            >
-                              {formatCell(row, val)}
+                          })}
+                        </tr>
+                        {row.expandable && isExpanded && allProjectNames.map((pName) => (
+                          <tr
+                            key={`${row.key}-${pName}`}
+                            className="border-b bg-blue-50/30 hover:bg-blue-50/60"
+                            data-testid={`row-detail-${row.key}-${pName}`}
+                          >
+                            <td className="sticky left-0 z-10 bg-blue-50/30 pl-10 pr-4 py-1.5 text-xs text-muted-foreground truncate max-w-[200px]" title={pName}>
+                              {pName}
                             </td>
-                          );
-                        })}
-                      </tr>
+                            {months.map((m) => {
+                              const proj = m.projects?.find((p) => p.projectName === pName);
+                              const val = proj?.value ?? 0;
+                              return (
+                                <td
+                                  key={m.monthKey}
+                                  className="px-4 py-1.5 text-right font-mono text-xs text-blue-600/80"
+                                  data-testid={`cell-detail-${row.key}-${pName}-${m.monthKey}`}
+                                >
+                                  {val !== 0 ? formatRand(val) : ""}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </>
                     );
                   })}
                 </tbody>
