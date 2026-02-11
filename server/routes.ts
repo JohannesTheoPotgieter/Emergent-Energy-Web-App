@@ -1628,8 +1628,23 @@ export async function registerRoutes(
         }
       }
 
+      const staticCosBudget: Record<string, number> = {
+        '2025-04': 8081066.99,
+        '2025-05': 16346671.77,
+        '2025-06': 20803804.86,
+        '2025-07': 12381055.48,
+        '2025-08': 12395435.22,
+        '2025-09': 20724666.08,
+        '2025-10': 30199956.69,
+        '2025-11': 21137178.14,
+        '2025-12': 31405517.81,
+        '2026-01': 41720854.07,
+        '2026-02': 30116780.50,
+        '2026-03': 73983803.91,
+      };
+
       const months: any[] = [];
-      const startMonth = new Date(Date.UTC(2025, 8, 1));
+      const startMonth = new Date(Date.UTC(2025, 3, 1));
 
       let ytdPlanned = 0, ytdRealised = 0, ytdOutstanding = 0, ytdBudget = 0;
 
@@ -1679,7 +1694,7 @@ export async function registerRoutes(
         outstandingProjects.sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
 
         const manual = manualMap.get(monthKey);
-        const budget = manual?.budget ? parseFloat(manual.budget) : 0;
+        const budget = manual?.budget ? parseFloat(manual.budget) : (staticCosBudget[monthKey] ?? 0);
 
         const variance = planned - budget;
         const variancePct = budget !== 0 ? (planned - budget) / budget : 0;
