@@ -730,11 +730,11 @@ export async function registerRoutes(
         : 0;
       const constructionBehindCount = constructionDeltas.filter(p => p.delta < 0).length;
 
-      // Upcoming events (next 10 days)
-      const constructionStartSoon = allProjectInfo.filter(p => isWithinDays(p.constructionStartDate, 10)).length;
-      const commissioningSoon = allProjectInfo.filter(p => isWithinDays(p.commissioningDate, 10)).length;
-      const omHandoverSoon = allProjectInfo.filter(p => isWithinDays(p.omHandoverDate, 10)).length;
-      const clientHandoverSoon = allProjectInfo.filter(p => isWithinDays(p.clientHandoverDate, 10)).length;
+      // Upcoming events (next 7 days)
+      const constructionStartSoon = allProjectInfo.filter(p => isWithinDays(p.constructionStartDate, 7)).length;
+      const commissioningSoon = allProjectInfo.filter(p => isWithinDays(p.commissioningDate, 7)).length;
+      const omHandoverSoon = allProjectInfo.filter(p => isWithinDays(p.omHandoverDate, 7)).length;
+      const clientHandoverSoon = allProjectInfo.filter(p => isWithinDays(p.clientHandoverDate, 7)).length;
 
       // Due in 30 days
       const commissioningDue30 = allProjectInfo.filter(p => isWithinDays(p.commissioningDate, 30)).length;
