@@ -5565,6 +5565,308 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== OPERATIONAL TASKS ====================
+
+  app.get("/api/operational-tasks/task/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const task = await storage.getOperationalTask(id);
+      if (!task) return res.status(404).json({ error: "Task not found" });
+      const [comments, checklists, attachments, activity] = await Promise.all([
+        storage.getTaskComments(id),
+        storage.getTaskChecklists(id),
+        storage.getTaskAttachments(id),
+        storage.getTaskActivityLog(id),
+      ]);
+      const checklistsWithItems = await Promise.all(checklists.map(async cl => ({
+        ...cl,
+        items: await storage.getChecklistItems(cl.id),
+      })));
+      res.json({ task, comments, checklists: checklistsWithItems, attachments, activity });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/operational-tasks/:projectName", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const tasks = await storage.getOperationalTasksByProject(req.params.projectName);
+      res.json(tasks);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/operational-tasks", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const task = await storage.createOperationalTask(req.body);
+      await storage.createTaskActivityLog({
+        taskId: task.id,
+        actorId: (req.user as any)?.id || null,
+        actionType: 'created',
+        fieldName: null,
+        oldValue: null,
+        newValue: null,
+      });
+      res.json(task);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/operational-tasks/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const oldTask = await storage.getOperationalTask(id);
+      if (!oldTask) return res.status(404).json({ error: "Task not found" });
+      const updates = req.body;
+      const updated = await storage.updateOperationalTask(id, updates);
+      for (const [key, value] of Object.entries(updates)) {
+        if ((oldTask as any)[key] !== value) {
+          await storage.createTaskActivityLog({
+            taskId: id,
+            actorId: (req.user as any)?.id || null,
+            actionType: 'updated',
+            fieldName: key,
+            oldValue: String((oldTask as any)[key] ?? ''),
+            newValue: String(value ?? ''),
+          });
+        }
+      }
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/operational-tasks/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const task = await storage.getOperationalTask(id);
+      if (task) {
+        await storage.createTaskActivityLog({
+          taskId: id,
+          actorId: (req.user as any)?.id || null,
+          actionType: 'deleted',
+          fieldName: null,
+          oldValue: task.title,
+          newValue: null,
+        });
+      }
+      await storage.deleteOperationalTask(id);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/operational-tasks/bulk-update", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { taskIds, updates } = req.body as { taskIds: number[]; updates: Record<string, any> };
+      const results = [];
+      for (const taskId of taskIds) {
+        const oldTask = await storage.getOperationalTask(taskId);
+        if (!oldTask) continue;
+        const updated = await storage.updateOperationalTask(taskId, updates);
+        for (const [key, value] of Object.entries(updates)) {
+          if ((oldTask as any)[key] !== value) {
+            await storage.createTaskActivityLog({
+              taskId,
+              actorId: (req.user as any)?.id || null,
+              actionType: 'updated',
+              fieldName: key,
+              oldValue: String((oldTask as any)[key] ?? ''),
+              newValue: String(value ?? ''),
+            });
+          }
+        }
+        results.push(updated);
+      }
+      res.json(results);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ==================== TASK COMMENTS ====================
+
+  app.get("/api/task-comments/:taskId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const comments = await storage.getTaskComments(parseInt(req.params.taskId));
+      res.json(comments);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/task-comments", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const comment = await storage.createTaskComment(req.body);
+      res.json(comment);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/task-comments/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      await storage.deleteTaskComment(parseInt(req.params.id));
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ==================== TASK CHECKLISTS ====================
+
+  app.get("/api/task-checklists/:taskId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const checklists = await storage.getTaskChecklists(parseInt(req.params.taskId));
+      const checklistsWithItems = await Promise.all(checklists.map(async cl => ({
+        ...cl,
+        items: await storage.getChecklistItems(cl.id),
+      })));
+      res.json(checklistsWithItems);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/task-checklists", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const checklist = await storage.createTaskChecklist(req.body);
+      res.json(checklist);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/task-checklists/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      await storage.deleteTaskChecklist(parseInt(req.params.id));
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/task-checklist-items", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const item = await storage.createChecklistItem(req.body);
+      res.json(item);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/task-checklist-items/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const updated = await storage.updateChecklistItem(parseInt(req.params.id), req.body);
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/task-checklist-items/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      await storage.deleteChecklistItem(parseInt(req.params.id));
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ==================== TASK ATTACHMENTS ====================
+
+  app.get("/api/task-attachments/:taskId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const attachments = await storage.getTaskAttachments(parseInt(req.params.taskId));
+      res.json(attachments);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/task-attachments", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const attachment = await storage.createTaskAttachment(req.body);
+      res.json(attachment);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/task-attachments/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      await storage.deleteTaskAttachment(parseInt(req.params.id));
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ==================== TASK ACTIVITY LOG ====================
+
+  app.get("/api/task-activity/:taskId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const activity = await storage.getTaskActivityLog(parseInt(req.params.taskId));
+      res.json(activity);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ==================== WRITEBACK MAPPINGS ====================
+
+  app.get("/api/writeback-mappings", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const mappings = await storage.getAllWritebackMappings();
+      res.json(mappings);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/writeback-mappings", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const mapping = await storage.createWritebackMapping(req.body);
+      res.json(mapping);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/writeback-mappings/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const updated = await storage.updateWritebackMapping(parseInt(req.params.id), req.body);
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/writeback-mappings/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      await storage.deleteWritebackMapping(parseInt(req.params.id));
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ==================== WRITEBACK AUDIT LOG ====================
+
+  app.get("/api/writeback-audit", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const mappingId = req.query.mappingId ? parseInt(req.query.mappingId as string) : undefined;
+      const logs = await storage.getWritebackAuditLogs(mappingId);
+      res.json(logs);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   return httpServer;
 }
 
