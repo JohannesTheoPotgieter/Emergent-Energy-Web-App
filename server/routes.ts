@@ -1561,14 +1561,17 @@ export async function registerRoutes(
 
   app.get("/api/cos-tracker", requireAuth, async (req, res) => {
     try {
-      const [allCosMonthly, manualEntries] = await Promise.all([
+      const [allCosMonthly, allExpenses, manualEntries] = await Promise.all([
         storage.getAllFinanceCosMonthly(),
+        storage.getAllProgramExpenses(),
         storage.getTrackerMonthlyManual('COS'),
       ]);
 
       const manualMap = new Map(manualEntries.map(e => [e.monthKey, e]));
 
-      const cosByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
+      type Bucket = { total: number; projects: Map<string, number> };
+
+      const cosByMonth = new Map<string, Bucket>();
       for (const row of allCosMonthly) {
         if (!row.monthEndDate || !row.value) continue;
         const val = parseFloat(row.value as string);
@@ -1582,6 +1585,24 @@ export async function registerRoutes(
         bucket.total += val;
         const pName = row.projectName.replace(/_Tracker$/i, '');
         bucket.projects.set(pName, (bucket.projects.get(pName) || 0) + val);
+      }
+
+      const realisedByMonth = new Map<string, Bucket>();
+      for (const exp of allExpenses) {
+        if (!exp.expenseInvoiceNumber || !exp.expenseInvoicedDate) continue;
+        const total = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
+        if (isNaN(total) || total === 0) continue;
+        const invDate = exp.expenseInvoicedDate;
+        const match = invDate.match(/^(\d{4})-(\d{2})/);
+        if (!match) continue;
+        const monthKey = `${match[1]}-${match[2]}`;
+        if (!realisedByMonth.has(monthKey)) {
+          realisedByMonth.set(monthKey, { total: 0, projects: new Map() });
+        }
+        const bucket = realisedByMonth.get(monthKey)!;
+        bucket.total += total;
+        const pName = exp.projectName.replace(/_Tracker$/i, '');
+        bucket.projects.set(pName, (bucket.projects.get(pName) || 0) + total);
       }
 
       const months: any[] = [];
@@ -1599,17 +1620,42 @@ export async function registerRoutes(
         const cosBucket = cosByMonth.get(monthKey);
         const planned = cosBucket?.total ?? 0;
 
-        const projectBreakdown: { projectName: string; value: number }[] = [];
+        const plannedProjects: { projectName: string; value: number }[] = [];
         if (cosBucket) {
           cosBucket.projects.forEach((pVal, pName) => {
-            projectBreakdown.push({ projectName: pName, value: pVal });
+            plannedProjects.push({ projectName: pName, value: pVal });
           });
-          projectBreakdown.sort((a, b) => b.value - a.value);
+          plannedProjects.sort((a, b) => b.value - a.value);
         }
 
+        const realisedBucket = realisedByMonth.get(monthKey);
+        const realised = realisedBucket?.total ?? 0;
+
+        const realisedProjects: { projectName: string; value: number }[] = [];
+        if (realisedBucket) {
+          realisedBucket.projects.forEach((pVal, pName) => {
+            realisedProjects.push({ projectName: pName, value: pVal });
+          });
+          realisedProjects.sort((a, b) => b.value - a.value);
+        }
+
+        const outstanding = planned - realised;
+
+        const outstandingProjects: { projectName: string; value: number }[] = [];
+        const allProjNames = new Set<string>();
+        plannedProjects.forEach(p => allProjNames.add(p.projectName));
+        realisedProjects.forEach(p => allProjNames.add(p.projectName));
+        Array.from(allProjNames).forEach((pName) => {
+          const pPlanned = cosBucket?.projects.get(pName) ?? 0;
+          const pRealised = realisedBucket?.projects.get(pName) ?? 0;
+          const pOutstanding = pPlanned - pRealised;
+          if (pOutstanding !== 0) {
+            outstandingProjects.push({ projectName: pName, value: pOutstanding });
+          }
+        });
+        outstandingProjects.sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+
         const manual = manualMap.get(monthKey);
-        const realised = manual?.realised ? parseFloat(manual.realised) : 0;
-        const outstanding = manual?.outstanding ? parseFloat(manual.outstanding) : 0;
         const budget = manual?.budget ? parseFloat(manual.budget) : 0;
 
         const variance = planned - budget;
@@ -1637,7 +1683,9 @@ export async function registerRoutes(
           ytdBudget,
           ytdVariance,
           ytdVariancePct,
-          projects: projectBreakdown,
+          plannedProjects,
+          realisedProjects,
+          outstandingProjects,
         });
       }
 

@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -43,7 +43,9 @@ interface MonthData {
   ytdBudget: number;
   ytdVariance: number;
   ytdVariancePct: number;
-  projects: ProjectBreakdown[];
+  plannedProjects: ProjectBreakdown[];
+  realisedProjects: ProjectBreakdown[];
+  outstandingProjects: ProjectBreakdown[];
 }
 
 function formatRand(val: number | null | undefined): string {
@@ -72,10 +74,11 @@ const ROW_DEFS: {
   group: "monthly" | "ytd";
   colorCoded?: boolean;
   expandable?: boolean;
+  projectsKey?: "plannedProjects" | "realisedProjects" | "outstandingProjects";
 }[] = [
-  { key: "planned", label: "Planned", dataKey: "planned", editable: false, colorClass: "text-blue-600", group: "monthly", expandable: true },
-  { key: "realised", label: "Realised", dataKey: "realised", editable: true, colorClass: "text-green-600", group: "monthly" },
-  { key: "outstanding", label: "Outstanding", dataKey: "outstanding", editable: true, colorClass: "text-amber-600", group: "monthly" },
+  { key: "planned", label: "Planned", dataKey: "planned", editable: false, colorClass: "text-blue-600", group: "monthly", expandable: true, projectsKey: "plannedProjects" as const },
+  { key: "realised", label: "Realised", dataKey: "realised", editable: false, colorClass: "text-green-600", group: "monthly", expandable: true, projectsKey: "realisedProjects" as const },
+  { key: "outstanding", label: "Outstanding", dataKey: "outstanding", editable: false, colorClass: "text-amber-600", group: "monthly", expandable: true, projectsKey: "outstandingProjects" as const },
   { key: "budget", label: "Budget", dataKey: "budget", editable: true, colorClass: "text-purple-600", group: "monthly" },
   { key: "variance", label: "Variance", dataKey: "variance", editable: false, colorClass: "", group: "monthly", colorCoded: true },
   { key: "variancePct", label: "Variance %", dataKey: "variancePct", editable: false, colorClass: "", group: "monthly", colorCoded: true },
@@ -111,14 +114,19 @@ export default function CosTracker() {
     return months[months.length - 1];
   }, [months]);
 
-  const allProjectNames = useMemo(() => {
-    const names = new Set<string>();
-    for (const m of months) {
-      for (const p of m.projects || []) {
-        names.add(p.projectName);
+  const projectNamesByRow = useMemo(() => {
+    const result: Record<string, string[]> = {};
+    const keys = ["plannedProjects", "realisedProjects", "outstandingProjects"] as const;
+    for (const k of keys) {
+      const names = new Set<string>();
+      for (const m of months) {
+        for (const p of m[k] || []) {
+          names.add(p.projectName);
+        }
       }
+      result[k] = Array.from(names).sort();
     }
-    return Array.from(names).sort();
+    return result;
   }, [months]);
 
   const toggleRow = useCallback((key: string) => {
@@ -287,9 +295,8 @@ export default function CosTracker() {
                     const isYtd = row.group === "ytd";
                     const isExpanded = expandedRows.has(row.key);
                     return (
-                      <>
+                      <React.Fragment key={row.key}>
                         <tr
-                          key={row.key}
                           className={`border-b ${isYtd ? "bg-slate-50" : "bg-white"} hover:bg-muted/30`}
                           data-testid={`row-${row.key}`}
                         >
@@ -364,7 +371,7 @@ export default function CosTracker() {
                             );
                           })}
                         </tr>
-                        {row.expandable && isExpanded && allProjectNames.map((pName) => (
+                        {row.expandable && isExpanded && row.projectsKey && (projectNamesByRow[row.projectsKey] || []).map((pName) => (
                           <tr
                             key={`${row.key}-${pName}`}
                             className="border-b bg-blue-50/30 hover:bg-blue-50/60"
@@ -374,7 +381,8 @@ export default function CosTracker() {
                               {pName}
                             </td>
                             {months.map((m) => {
-                              const proj = m.projects?.find((p) => p.projectName === pName);
+                              const projArr = row.projectsKey ? m[row.projectsKey] : [];
+                              const proj = projArr?.find((p: ProjectBreakdown) => p.projectName === pName);
                               const val = proj?.value ?? 0;
                               return (
                                 <td
@@ -388,7 +396,7 @@ export default function CosTracker() {
                             })}
                           </tr>
                         ))}
-                      </>
+                      </React.Fragment>
                     );
                   })}
                 </tbody>
