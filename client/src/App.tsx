@@ -22,6 +22,7 @@ import CosControlPage from "@/pages/cos-control";
 import CashflowForecastPage from "@/pages/cashflow-forecast";
 import PlanningBoardPage from "@/pages/planning-board";
 import RisksFlagsPage from "@/pages/risks-flags";
+import WritebackAdminPage from "@/pages/writeback-admin";
 import { useProgramData } from "@/hooks/use-program-data";
 import { TrackerTable } from "@/components/dashboard/TrackerTable";
 import { format } from "date-fns";
@@ -151,6 +152,7 @@ function ProtectedPages() {
         <Route path="/cashflow-forecast" component={CashflowForecastPage} />
         <Route path="/planning" component={PlanningBoardPage} />
         <Route path="/risks-flags" component={RisksFlagsPage} />
+        <Route path="/writeback-admin" component={WritebackAdminPage} />
         <Route path="/upload">{() => <Redirect to="/admin" />}</Route>
         <Route path="/admin" component={AdminPage} />
         <Route component={NotFound} />

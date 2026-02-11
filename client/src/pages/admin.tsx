@@ -256,9 +256,17 @@ export default function AdminPage() {
 
   return (
     <div className="container mx-auto p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold" data-testid="text-admin-title">Admin Dashboard</h1>
-        <p className="text-muted-foreground">Data import, system health, and diagnostics</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold" data-testid="text-admin-title">Admin Dashboard</h1>
+          <p className="text-muted-foreground">Data import, system health, and diagnostics</p>
+        </div>
+        <a href="/writeback-admin">
+          <Button variant="outline" data-testid="button-writeback-admin">
+            <FileSpreadsheet className="h-4 w-4 mr-2" />
+            Excel Writeback
+          </Button>
+        </a>
       </div>
 
       <Tabs defaultValue="import" className="w-full">

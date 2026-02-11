@@ -27,6 +27,8 @@ Preferred communication style: Simple, everyday language.
     -   **Scenario System**: Reusable ScenarioSelector component (create/select/duplicate/reset/delete), unified `scenarios` + `dateOverrides` tables, effective date resolver merging overrides with imported baseline data at calculation layer. All three main pages (COS Control, Forecast, Planning) support scenario mode.
     -   **Risks & Flags**: Severity-ranked data quality issues table with searchable flags, project links, and actionable detail.
     -   **Project Plan View**: CPM scheduling tool with Gantt visualization, critical path calculation, task grid with inline editing, task detail panel, and dependency management. Features include hover sync between grid/Gantt and schedule governance warnings for critical path changes.
+    -   **Operational Task Management**: ClickUp-style task system with four views per project: Tasks (spreadsheet grid with inline editing, filtering, sorting, grouping, bulk actions), Board (Kanban drag-drop), Calendar (monthly grid), and detail drawer with comments, checklists, attachments, and activity log. Source badges distinguish BASELINE (imported) vs OPERATIONAL (app-created) tasks.
+    -   **Excel Writeback Manager**: Admin UI for configuring cell mappings, previewing changes, executing writebacks to Excel files, and rolling back individual changes via audit log.
     -   **SafeMoney Utilities**: Frontend utilities for NaN-safe currency handling and formatting.
 
 ### Backend
@@ -60,6 +62,11 @@ Auto-runs on server startup to populate computed columns (hash, state, forecast 
 -   `cashflowPlanningOverrides`: Stores user-defined cashflow adjustments.
 -   `planningOverrides`, `paymentTerms`, `lineItemOverrides`, `resourceCapacity`: New tables for planning board overrides, configurable payment terms, per-line overrides, and resource capacity management.
 -   `scenarios`, `dateOverrides`: Scenario/what-if system tables for creating named scenarios with date overrides on expense lines, inflow lines, and project key dates.
+-   `operationalTasks`: ClickUp-style task tracking with status, priority, assignees, tags, dates, percent complete, and source (baseline/operational).
+-   `taskComments`, `taskChecklists`, `taskChecklistItems`, `taskAttachments`: Task detail entities for comments, checklists, and file attachments.
+-   `taskActivityLog`: Automatic activity logging for all task changes.
+-   `writebackMappings`: Cell mapping configurations for Excel writeback (workbook path, sheet, cell, source field, transforms, validation).
+-   `writebackAuditLog`: Audit trail for writeback operations with rollback support.
 -   `uploadMetadata`, `refreshLogs`: Audit trails for data ingestion.
 
 ### New API Endpoints
@@ -84,6 +91,17 @@ Auto-runs on server startup to populate computed columns (hash, state, forecast 
 -   `/api/dashboard/high-priority`: Severity-classified alerts (overdue expenses, outstanding revenue, behind-plan, milestones).
 -   `/api/cos-tracker/month-detail`: Line-item drilldown for COS tracker month cells.
 -   `/api/admin/backfill`: Manual trigger for computed field backfill.
+-   `/api/operational-tasks/:projectName`: CRUD for operational tasks (GET list, POST create).
+-   `/api/operational-tasks/:id`: PATCH update, DELETE individual tasks.
+-   `/api/operational-tasks/bulk-update`: POST batch update for multiple tasks.
+-   `/api/task-comments/:taskId`: GET/POST comments for a task.
+-   `/api/task-checklists/:taskId`: GET/POST checklists, with nested checklist items.
+-   `/api/task-activity/:taskId`: GET activity log for a task.
+-   `/api/writeback-mappings`: CRUD for writeback cell mapping configurations.
+-   `/api/writeback-audit`: GET audit log for writeback operations.
+-   `/api/writeback/preview`: POST preview changes before executing writeback.
+-   `/api/writeback/execute`: POST execute writeback to Excel file.
+-   `/api/writeback/rollback/:auditId`: POST rollback individual writeback change.
 
 ## External Dependencies
 

@@ -5867,6 +5867,168 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== WRITEBACK EXECUTION ====================
+
+  const safeUploadsDir = path.resolve(process.cwd(), 'uploads');
+  function validateWorkbookPath(wbPath: string): { safe: boolean; resolved: string; error?: string } {
+    const resolved = path.resolve(safeUploadsDir, wbPath);
+    if (!resolved.startsWith(safeUploadsDir)) {
+      return { safe: false, resolved, error: "Path must be within the uploads directory" };
+    }
+    return { safe: true, resolved };
+  }
+
+  app.get("/api/writeback/workbook-sheets", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { path: wbPath } = req.query;
+      if (!wbPath) return res.status(400).json({ error: "path query param required" });
+      const check = validateWorkbookPath(wbPath as string);
+      if (!check.safe) return res.status(400).json({ error: check.error });
+      const { getWorkbookSheets } = await import("./lib/writebackEngine");
+      const sheets = getWorkbookSheets(check.resolved);
+      res.json({ sheets });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  async function buildDataByEntity(): Promise<Record<string, any[]>> {
+    const projects = await storage.getAllProjects();
+    const expenses = await storage.getAllExpenses();
+    const inflows = await storage.getAllProgramInflows();
+    return { project: projects, expense: expenses, inflow: inflows, plan: [] };
+  }
+
+  app.post("/api/writeback/preview", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { workbookPath, mappingIds } = req.body;
+      if (!workbookPath) return res.status(400).json({ error: "workbookPath required" });
+      const check = validateWorkbookPath(workbookPath);
+      if (!check.safe) return res.status(400).json({ error: check.error });
+
+      let mappings = await storage.getAllWritebackMappings();
+      if (mappingIds && Array.isArray(mappingIds)) {
+        mappings = mappings.filter((m: any) => mappingIds.includes(m.id));
+      }
+      mappings = mappings.filter((m: any) => m.workbookPath === workbookPath);
+
+      const dataByEntity = await buildDataByEntity();
+
+      const { previewWriteback } = await import("./lib/writebackEngine");
+      const preview = previewWriteback(check.resolved, mappings, dataByEntity);
+      res.json(preview);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/writeback/execute", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { workbookPath, mappingIds, outputPath } = req.body;
+      if (!workbookPath) return res.status(400).json({ error: "workbookPath required" });
+      const check = validateWorkbookPath(workbookPath);
+      if (!check.safe) return res.status(400).json({ error: check.error });
+      if (outputPath) {
+        const outCheck = validateWorkbookPath(outputPath);
+        if (!outCheck.safe) return res.status(400).json({ error: outCheck.error });
+      }
+
+      let mappings = await storage.getAllWritebackMappings();
+      if (mappingIds && Array.isArray(mappingIds)) {
+        mappings = mappings.filter((m: any) => mappingIds.includes(m.id));
+      }
+      mappings = mappings.filter((m: any) => m.workbookPath === workbookPath);
+
+      if (mappings.length === 0) {
+        return res.status(400).json({ error: "No mappings found for this workbook" });
+      }
+
+      const dataByEntity = await buildDataByEntity();
+
+      const { executeWriteback, writeToWorkbook } = await import("./lib/writebackEngine");
+      const batchResults = executeWriteback(mappings, dataByEntity);
+
+      const writes: Array<{ sheetName: string; cellAddress: string; value: string }> = [];
+      for (const batch of batchResults) {
+        for (const result of batch.results) {
+          if (result.status === "applied") {
+            const mapping = mappings.find((m: any) => m.id === result.mappingId);
+            if (mapping) {
+              writes.push({
+                sheetName: mapping.sheetName,
+                cellAddress: result.cellAddress,
+                value: result.newValue,
+              });
+            }
+          }
+        }
+      }
+
+      const resolvedOutputPath = outputPath ? validateWorkbookPath(outputPath).resolved : undefined;
+      const writeResult = writeToWorkbook(check.resolved, writes, resolvedOutputPath);
+
+      const userId = (req as any).user?.id;
+      for (const batch of batchResults) {
+        for (const result of batch.results) {
+          const mapping = mappings.find((m: any) => m.id === result.mappingId);
+          if (mapping) {
+            const prevVal = writeResult.previousValues.get(`${mapping.sheetName}!${result.cellAddress}`);
+            await storage.createWritebackAuditLog({
+              mappingId: mapping.id,
+              workbookPath: batch.workbookPath,
+              sheetName: mapping.sheetName,
+              cellAddress: result.cellAddress,
+              previousValue: prevVal ?? result.previousValue,
+              newValue: result.newValue,
+              status: writeResult.success ? result.status : "failed",
+              projectId: mapping.projectName,
+              actorId: userId,
+              errorMessage: result.errorMessage || writeResult.error || null,
+            });
+          }
+        }
+      }
+
+      res.json({
+        success: writeResult.success,
+        error: writeResult.error,
+        batches: batchResults,
+        outputPath: outputPath || workbookPath,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/writeback/rollback/:auditId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const auditId = parseInt(req.params.auditId);
+      const logs = await storage.getWritebackAuditLogs();
+      const auditEntry = logs.find((l: any) => l.id === auditId);
+      if (!auditEntry) return res.status(404).json({ error: "Audit entry not found" });
+      if (auditEntry.rolledBackAt) return res.status(400).json({ error: "Already rolled back" });
+      if (auditEntry.previousValue === null) return res.status(400).json({ error: "No previous value to restore" });
+
+      const rollbackCheck = validateWorkbookPath(auditEntry.workbookPath);
+      if (!rollbackCheck.safe) return res.status(400).json({ error: rollbackCheck.error });
+
+      const { writeToWorkbook } = await import("./lib/writebackEngine");
+      const result = writeToWorkbook(rollbackCheck.resolved, [{
+        sheetName: auditEntry.sheetName,
+        cellAddress: auditEntry.cellAddress,
+        value: auditEntry.previousValue,
+      }]);
+
+      if (result.success) {
+        await storage.updateWritebackAuditLog(auditId, { rolledBackAt: new Date() });
+      }
+
+      res.json({ success: result.success, error: result.error });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   return httpServer;
 }
 
