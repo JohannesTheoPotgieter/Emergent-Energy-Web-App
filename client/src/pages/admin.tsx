@@ -16,6 +16,7 @@ interface FolderConfig {
   exists: boolean;
   fileCount: number;
   latestFileDate: string | null;
+  projectCounts?: { active: number; historical: number; total: number };
 }
 
 interface ScanResult {
@@ -167,6 +168,21 @@ export default function AdminPage() {
     const successCount = results.filter((r) => r.status === "success").length;
     const failedCount = results.filter((r) => r.status === "failed").length;
     const processedTotal = wasCancelled ? results.length : excelFiles.length;
+
+    const activeProjectNames = results
+      .filter((r) => r.status === "success" && r.projectName)
+      .map((r) => r.projectName);
+    if (activeProjectNames.length > 0) {
+      try {
+        await fetch("/api/admin/mark-active", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectNames: activeProjectNames }),
+          credentials: "include",
+        });
+      } catch {}
+    }
+
     setScanResult({
       success: failedCount === 0 && !wasCancelled,
       message: wasCancelled
@@ -335,12 +351,26 @@ export default function AdminPage() {
             )}
             {!progressInfo && folderConfig && (
               <CardContent>
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                   <div className="flex items-center gap-2 p-3 rounded-lg border">
-                    <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
+                    <Database className="h-4 w-4 text-blue-500" />
                     <div>
-                      <p className="text-xs text-muted-foreground">Files in Database</p>
-                      <p className="text-sm font-medium" data-testid="text-file-count">{folderConfig.fileCount} files</p>
+                      <p className="text-xs text-muted-foreground">Total Projects</p>
+                      <p className="text-sm font-medium" data-testid="text-total-projects">{folderConfig.projectCounts?.total ?? 0}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 p-3 rounded-lg border border-green-200 dark:border-green-900">
+                    <CheckCircle className="h-4 w-4 text-green-500" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Active Projects</p>
+                      <p className="text-sm font-medium text-green-600" data-testid="text-active-projects">{folderConfig.projectCounts?.active ?? 0}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 p-3 rounded-lg border border-orange-200 dark:border-orange-900">
+                    <Clock className="h-4 w-4 text-orange-500" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Historical Projects</p>
+                      <p className="text-sm font-medium text-orange-600" data-testid="text-historical-projects">{folderConfig.projectCounts?.historical ?? 0}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 p-3 rounded-lg border">

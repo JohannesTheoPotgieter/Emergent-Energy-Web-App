@@ -2990,8 +2990,10 @@ export async function registerRoutes(
           }
         }
       }
+
+      const projectCounts = await storage.getProjectCounts();
       
-      res.json({ folderPath, exists, fileCount, latestFileDate });
+      res.json({ folderPath, exists, fileCount, latestFileDate, projectCounts });
     } catch (error: any) {
       res.status(500).json({ error: "Failed to read folder config", message: error.message });
     }
@@ -3147,6 +3149,13 @@ export async function registerRoutes(
         status: results.every(r => r.status === "success") ? "success" : 
                results.some(r => r.status === "success") ? "partial" : "failed"
       });
+
+      const activeProjectNames = results
+        .filter(r => r.status === "success")
+        .map(r => r.projectName);
+      if (activeProjectNames.length > 0) {
+        await storage.markProjectsActive(activeProjectNames);
+      }
       
       const endTime = Date.now();
       const successCount = results.filter(r => r.status === "success").length;
@@ -3181,6 +3190,20 @@ export async function registerRoutes(
           durationMs: Date.now() - startTime
         }
       });
+    }
+  });
+
+  app.post("/api/admin/mark-active", async (req, res) => {
+    try {
+      const { projectNames } = req.body;
+      if (!Array.isArray(projectNames)) {
+        return res.status(400).json({ error: "projectNames must be an array" });
+      }
+      await storage.markProjectsActive(projectNames);
+      const counts = await storage.getProjectCounts();
+      res.json({ success: true, projectCounts: counts });
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to mark projects active", message: error.message });
     }
   });
 
