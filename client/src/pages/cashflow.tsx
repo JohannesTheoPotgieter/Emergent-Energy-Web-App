@@ -105,6 +105,7 @@ function isCurrentWeek(weekStart: string, weekEnd: string): boolean {
 }
 
 function DetailRow({ weekStart, project }: { weekStart: string; project: string }) {
+  const [detailSearch, setDetailSearch] = useState("");
   const params = new URLSearchParams({ week: weekStart });
   if (project !== "all") params.set("project", project);
 
@@ -134,14 +135,48 @@ function DetailRow({ weekStart, project }: { weekStart: string; project: string 
 
   if (!data) return null;
 
+  const q = detailSearch.toLowerCase();
+  const filteredInflows = q
+    ? data.inflows.filter(
+        (inf) =>
+          inf.projectName.toLowerCase().includes(q) ||
+          (inf.milestoneName || "").toLowerCase().includes(q) ||
+          (inf.milestoneInvoiceNumber || "").toLowerCase().includes(q)
+      )
+    : data.inflows;
+  const filteredOutflows = q
+    ? data.outflows.filter(
+        (out) =>
+          out.projectName.toLowerCase().includes(q) ||
+          (out.expenseCategory || "").toLowerCase().includes(q) ||
+          (out.expenseLineItem || "").toLowerCase().includes(q) ||
+          (out.expenseInvoiceNumber || "").toLowerCase().includes(q)
+      )
+    : data.outflows;
+
+  const inflowTotal = filteredInflows.reduce((s, i) => s + (i.milestoneAmount || 0), 0);
+  const outflowTotal = filteredOutflows.reduce((s, o) => s + (o.expenseActualTotal || 0), 0);
+
   return (
     <tr>
       <td colSpan={8} className="p-0">
         <div className="bg-slate-50 border-y border-slate-200 p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Input
+              placeholder="Search inflows/outflows..."
+              value={detailSearch}
+              onChange={(e) => setDetailSearch(e.target.value)}
+              className="max-w-xs h-8 text-xs"
+              data-testid={`input-detail-search-${weekStart}`}
+            />
+            <span className="text-xs text-muted-foreground">
+              {filteredInflows.length} inflows ({formatRand(inflowTotal)}) | {filteredOutflows.length} outflows ({formatRand(outflowTotal)})
+            </span>
+          </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div>
               <h4 className="text-sm font-semibold text-green-700 mb-2">Inflows</h4>
-              {data.inflows.length === 0 ? (
+              {filteredInflows.length === 0 ? (
                 <p className="text-xs text-muted-foreground">No inflows this week</p>
               ) : (
                 <table className="w-full text-xs border-collapse">
@@ -156,7 +191,7 @@ function DetailRow({ weekStart, project }: { weekStart: string; project: string 
                     </tr>
                   </thead>
                   <tbody>
-                    {data.inflows.map((inf, i) => (
+                    {filteredInflows.map((inf, i) => (
                       <tr key={i} className="border-b border-slate-200">
                         <td className="p-1">{inf.projectName}</td>
                         <td className="p-1">{inf.milestoneName}</td>
@@ -172,7 +207,7 @@ function DetailRow({ weekStart, project }: { weekStart: string; project: string 
             </div>
             <div>
               <h4 className="text-sm font-semibold text-red-700 mb-2">Outflows</h4>
-              {data.outflows.length === 0 ? (
+              {filteredOutflows.length === 0 ? (
                 <p className="text-xs text-muted-foreground">No outflows this week</p>
               ) : (
                 <table className="w-full text-xs border-collapse">
@@ -187,7 +222,7 @@ function DetailRow({ weekStart, project }: { weekStart: string; project: string 
                     </tr>
                   </thead>
                   <tbody>
-                    {data.outflows.map((out, i) => (
+                    {filteredOutflows.map((out, i) => (
                       <tr key={i} className="border-b border-slate-200">
                         <td className="p-1">{out.projectName}</td>
                         <td className="p-1">{out.expenseCategory}</td>
@@ -461,6 +496,54 @@ export default function CashflowPage() {
         ) : (
           <>
             <Card className="border-none shadow-sm">
+              <CardHeader>
+                <CardTitle className="text-lg">Cashflow Trend</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="h-[280px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={chartData} margin={{ top: 10, right: 30, left: 60, bottom: 40 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                      <XAxis
+                        dataKey="week"
+                        fontSize={11}
+                        tickLine={false}
+                        axisLine={false}
+                        angle={-45}
+                        textAnchor="end"
+                        height={60}
+                      />
+                      <YAxis
+                        fontSize={11}
+                        tickLine={false}
+                        axisLine={false}
+                        tickFormatter={(val) => {
+                          const abs = Math.abs(val);
+                          if (abs >= 1_000_000) return `R${(val / 1_000_000).toFixed(1)}M`;
+                          if (abs >= 1_000) return `R${(val / 1_000).toFixed(0)}K`;
+                          return `R${val}`;
+                        }}
+                      />
+                      <Tooltip
+                        formatter={(value: number, name: string) => [formatRand(value), name]}
+                        contentStyle={{
+                          borderRadius: "8px",
+                          border: "none",
+                          boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+                        }}
+                      />
+                      <Legend wrapperStyle={{ paddingTop: "10px" }} iconType="line" />
+                      <Line type="monotone" dataKey="Opening Balance" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="Project Inflows" stroke="#10b981" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="Total Outflows" stroke="#ef4444" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="Closing Balance" stroke="#8b5cf6" strokeWidth={2} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-none shadow-sm">
               <CardContent className="p-0">
                 <div className="overflow-x-auto">
                   <table className="w-full border-collapse text-sm" data-testid="table-cashflow">
@@ -581,77 +664,6 @@ export default function CashflowPage() {
               </CardContent>
             </Card>
 
-            <Card className="border-none shadow-sm">
-              <CardHeader>
-                <CardTitle className="text-lg">Cashflow Trend</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="h-[300px] w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={chartData} margin={{ top: 10, right: 30, left: 60, bottom: 40 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                      <XAxis
-                        dataKey="week"
-                        fontSize={11}
-                        tickLine={false}
-                        axisLine={false}
-                        angle={-45}
-                        textAnchor="end"
-                        height={60}
-                      />
-                      <YAxis
-                        fontSize={11}
-                        tickLine={false}
-                        axisLine={false}
-                        tickFormatter={(val) => {
-                          const abs = Math.abs(val);
-                          if (abs >= 1_000_000) return `R${(val / 1_000_000).toFixed(1)}M`;
-                          if (abs >= 1_000) return `R${(val / 1_000).toFixed(0)}K`;
-                          return `R${val}`;
-                        }}
-                      />
-                      <Tooltip
-                        formatter={(value: number, name: string) => [formatRand(value), name]}
-                        contentStyle={{
-                          borderRadius: "8px",
-                          border: "none",
-                          boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
-                        }}
-                      />
-                      <Legend wrapperStyle={{ paddingTop: "10px" }} iconType="line" />
-                      <Line
-                        type="monotone"
-                        dataKey="Opening Balance"
-                        stroke="#3b82f6"
-                        strokeWidth={2}
-                        dot={false}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="Project Inflows"
-                        stroke="#10b981"
-                        strokeWidth={2}
-                        dot={false}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="Total Outflows"
-                        stroke="#ef4444"
-                        strokeWidth={2}
-                        dot={false}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="Closing Balance"
-                        stroke="#8b5cf6"
-                        strokeWidth={2}
-                        dot={false}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              </CardContent>
-            </Card>
           </>
         )}
       </div>
