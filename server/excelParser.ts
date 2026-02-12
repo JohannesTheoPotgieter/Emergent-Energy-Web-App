@@ -300,7 +300,8 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
         if (!taskNo && !highLevelProgramme) continue;
         
         const actualStart = actualStartCol >= 0 ? parseDate(row[actualStartCol]) : null;
-        const durationDays = durationCol >= 0 && row[durationCol] ? parseInt(String(row[durationCol])) : null;
+        const rawDuration = durationCol >= 0 && row[durationCol] ? parseInt(String(row[durationCol])) : null;
+        const durationDays = rawDuration !== null && !isNaN(rawDuration) ? rawDuration : null;
         const actualEnd = actualEndCol >= 0 ? parseDate(row[actualEndCol]) : null;
         const actualPctComplete = statusCols[0] >= 0 ? parseStatus(row[statusCols[0]]) : null;
         const expectedPctComplete = statusCols[1] >= 0 ? parseStatus(row[statusCols[1]]) : null;
