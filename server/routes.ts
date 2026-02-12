@@ -2968,12 +2968,13 @@ export async function registerRoutes(
     try {
       const projectName = req.params.projectName;
 
-      const [rawInflows, overrides, projectInfoList, savedSummary, operationalTasks, taskLinks] = await Promise.all([
+      const [rawInflows, overrides, projectInfoList, savedSummary, operationalTasks, planTasks, taskLinks] = await Promise.all([
         storage.getProgramInflowsByProject(projectName),
         storage.getRevenueTrackingOverridesByProject(projectName),
         storage.getAllProjectInfo(),
         storage.getProjectRevenueSummary(projectName),
         storage.getOperationalTasksByProject(projectName),
+        storage.getProjectPlansByProject(projectName),
         storage.getMilestoneTaskLinks(projectName),
       ]);
 
@@ -3021,11 +3022,32 @@ export async function registerRoutes(
         const hasOverride = overrides.some((o: any) => o.rowNumber === r.rowNumber);
 
         const link = taskLinks.find((l: any) => l.milestoneRowNumber === r.rowNumber);
-        const linkedTask = link ? operationalTasks.find((t: any) => t.id === link.taskId) : null;
+        let linkedTask: any = null;
+        if (link) {
+          if (link.taskId > 0) {
+            linkedTask = operationalTasks.find((t: any) => t.id === link.taskId);
+          } else {
+            const planTask = planTasks.find((pt: any) => pt.id === Math.abs(link.taskId));
+            if (planTask) {
+              const pctComplete = (planTask as any).actualPctComplete != null ? Math.round((planTask as any).actualPctComplete * 100) : 0;
+              let taskStatus = "Not Started";
+              if (pctComplete >= 100) taskStatus = "Done";
+              else if (pctComplete > 0) taskStatus = "In Progress";
+              linkedTask = {
+                id: link.taskId,
+                title: (planTask as any).highLevelProgramme || `Task ${(planTask as any).taskNo || (planTask as any).rowNumber}`,
+                status: taskStatus,
+                dueDate: (planTask as any).actualEnd || null,
+              };
+            }
+          }
+        }
 
         let effectiveDate = date;
-        if (linkedTask && (linkedTask as any).dueDate) {
-          effectiveDate = (linkedTask as any).dueDate;
+        if (link?.dateOverride) {
+          effectiveDate = link.dateOverride;
+        } else if (linkedTask && linkedTask.dueDate) {
+          effectiveDate = linkedTask.dueDate;
         }
 
         return {
@@ -3044,7 +3066,9 @@ export async function registerRoutes(
           flags,
           hasOverride,
           milestoneNotes: r.milestoneNotes,
-          dependentTask: linkedTask ? { id: (linkedTask as any).id, title: (linkedTask as any).title, status: (linkedTask as any).status, dueDate: (linkedTask as any).dueDate } : null,
+          dependentTask: linkedTask ? { id: linkedTask.id, title: linkedTask.title, status: linkedTask.status, dueDate: linkedTask.dueDate } : null,
+          dateOverride: link?.dateOverride || null,
+          dateOverrideReason: link?.dateOverrideReason || null,
         };
       });
 
@@ -3187,6 +3211,30 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Link task error:", error);
       res.status(500).json({ error: "Failed to link task" });
+    }
+  });
+
+  app.post("/api/revenue-tab/:projectName/date-override", requireAuth, async (req, res) => {
+    try {
+      const projectName = req.params.projectName;
+      const { milestoneRowNumber, dateOverride, reason } = req.body;
+      if (!milestoneRowNumber || !dateOverride) {
+        return res.status(400).json({ error: "milestoneRowNumber and dateOverride are required" });
+      }
+      const existing = await storage.getMilestoneTaskLinks(projectName);
+      const link = existing.find((l: any) => l.milestoneRowNumber === milestoneRowNumber);
+      if (link) {
+        const updated = await storage.upsertMilestoneTaskLink(projectName, milestoneRowNumber, link.taskId);
+        await storage.updateMilestoneDateOverride(projectName, milestoneRowNumber, dateOverride, reason || null);
+        res.json({ success: true });
+      } else {
+        await storage.upsertMilestoneTaskLink(projectName, milestoneRowNumber, 0);
+        await storage.updateMilestoneDateOverride(projectName, milestoneRowNumber, dateOverride, reason || null);
+        res.json({ success: true });
+      }
+    } catch (error) {
+      console.error("Date override error:", error);
+      res.status(500).json({ error: "Failed to save date override" });
     }
   });
 

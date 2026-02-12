@@ -226,6 +226,7 @@ export interface IStorage {
   getMilestoneTaskLinks(projectName: string): Promise<MilestoneTaskLink[]>;
   upsertMilestoneTaskLink(projectName: string, milestoneRowNumber: number, taskId: number): Promise<MilestoneTaskLink>;
   deleteMilestoneTaskLink(projectName: string, milestoneRowNumber: number): Promise<void>;
+  updateMilestoneDateOverride(projectName: string, milestoneRowNumber: number, dateOverride: string | null, reason: string | null): Promise<void>;
 
   // Home Notes
   getHomeNotes(): Promise<HomeNotes | undefined>;
@@ -1309,6 +1310,12 @@ export class DatabaseStorage implements IStorage {
 
   async deleteMilestoneTaskLink(projectName: string, milestoneRowNumber: number): Promise<void> {
     await this.dbInstance.delete(milestoneTaskLinks)
+      .where(and(eq(milestoneTaskLinks.projectName, projectName), eq(milestoneTaskLinks.milestoneRowNumber, milestoneRowNumber)));
+  }
+
+  async updateMilestoneDateOverride(projectName: string, milestoneRowNumber: number, dateOverride: string | null, reason: string | null): Promise<void> {
+    await this.dbInstance.update(milestoneTaskLinks)
+      .set({ dateOverride, dateOverrideReason: reason })
       .where(and(eq(milestoneTaskLinks.projectName, projectName), eq(milestoneTaskLinks.milestoneRowNumber, milestoneRowNumber)));
   }
 

@@ -46,6 +46,8 @@ interface Milestone {
   hasOverride: boolean;
   milestoneNotes: string | null;
   dependentTask: DependentTask | null;
+  dateOverride: string | null;
+  dateOverrideReason: string | null;
 }
 
 interface TaskAlert {
@@ -87,6 +89,8 @@ export function RevenueTrackingTab({ projectName }: RevenueTrackingTabProps) {
   const [costedValues, setCostedValues] = useState({ revenue: "", expenditure: "" });
   const [linkingRow, setLinkingRow] = useState<number | null>(null);
   const [taskSearchTerm, setTaskSearchTerm] = useState("");
+  const [dateOverrideRow, setDateOverrideRow] = useState<number | null>(null);
+  const [dateOverrideValues, setDateOverrideValues] = useState({ date: "", reason: "" });
   const [expandedSections, setExpandedSections] = useState({
     highlevel: true,
     contract: true,
@@ -178,6 +182,27 @@ export function RevenueTrackingTab({ projectName }: RevenueTrackingTabProps) {
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to unlink task", variant: "destructive" });
+    },
+  });
+
+  const dateOverrideMutation = useMutation({
+    mutationFn: async ({ milestoneRowNumber, dateOverride, reason }: { milestoneRowNumber: number; dateOverride: string; reason: string }) => {
+      const res = await fetch(`/api/revenue-tab/${encodeURIComponent(projectName)}/date-override`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ milestoneRowNumber, dateOverride, reason }),
+      });
+      if (!res.ok) throw new Error("Failed to save date override");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["revenue-tab", projectName] });
+      setDateOverrideRow(null);
+      setDateOverrideValues({ date: "", reason: "" });
+      toast({ title: "Date updated", description: "Date override saved with reason" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to save date override", variant: "destructive" });
     },
   });
 
@@ -544,13 +569,51 @@ export function RevenueTrackingTab({ projectName }: RevenueTrackingTabProps) {
 
                           {/* Single DATE column - red = planned/unconfirmed, black = in bank */}
                           <TableCell className="text-xs">
-                            {isEditing ? (
-                              <Input type="date" value={editValues.date} onChange={(e) => setEditValues({ ...editValues, date: e.target.value })}
-                                className="h-7 text-xs w-[110px]" data-testid={`input-date-${m.rowNumber}`} />
+                            {dateOverrideRow === m.rowNumber ? (
+                              <div className="space-y-1">
+                                <Input type="date" value={dateOverrideValues.date}
+                                  onChange={(e) => setDateOverrideValues(v => ({ ...v, date: e.target.value }))}
+                                  className="h-6 text-[11px] w-[120px]" autoFocus data-testid={`input-date-override-${m.rowNumber}`} />
+                                <Input placeholder="Reason for change..."
+                                  value={dateOverrideValues.reason}
+                                  onChange={(e) => setDateOverrideValues(v => ({ ...v, reason: e.target.value }))}
+                                  className="h-6 text-[11px] w-[160px]" data-testid={`input-date-reason-${m.rowNumber}`} />
+                                <div className="flex gap-1">
+                                  <Button size="sm" variant="ghost" className="h-5 px-1.5 text-[10px]"
+                                    onClick={() => {
+                                      if (dateOverrideValues.date && dateOverrideValues.reason) {
+                                        dateOverrideMutation.mutate({ milestoneRowNumber: m.rowNumber, dateOverride: dateOverrideValues.date, reason: dateOverrideValues.reason });
+                                      } else {
+                                        toast({ title: "Required", description: "Both date and reason are required", variant: "destructive" });
+                                      }
+                                    }}
+                                    data-testid={`button-save-date-override-${m.rowNumber}`}>
+                                    <Save className="h-3 w-3 mr-0.5" /> Save
+                                  </Button>
+                                  <Button size="sm" variant="ghost" className="h-5 px-1.5 text-[10px]"
+                                    onClick={() => { setDateOverrideRow(null); setDateOverrideValues({ date: "", reason: "" }); }}>
+                                    <X className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                              </div>
                             ) : (
-                              <span className={m.isRed ? "text-red-500 font-medium" : "text-foreground"}>
-                                {formatDate(m.date)}
-                              </span>
+                              <div className="flex items-center gap-1 group">
+                                <span className={m.isRed ? "text-red-500 font-medium" : "text-foreground"}>
+                                  {formatDate(m.date)}
+                                </span>
+                                {m.dateOverrideReason && (
+                                  <span className="text-[9px] text-orange-500" title={`Override reason: ${m.dateOverrideReason}`}>*</span>
+                                )}
+                                <Button
+                                  variant="ghost" size="sm"
+                                  className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                                  onClick={() => { setDateOverrideRow(m.rowNumber); setDateOverrideValues({ date: formatDateForInput(m.date), reason: m.dateOverrideReason || "" }); }}
+                                  title="Override date with reason"
+                                  data-testid={`button-date-override-${m.rowNumber}`}
+                                >
+                                  <Edit2 className="h-3 w-3 text-gray-400" />
+                                </Button>
+                              </div>
                             )}
                           </TableCell>
 
