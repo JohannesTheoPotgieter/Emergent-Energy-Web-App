@@ -1,0 +1,191 @@
+You are a senior product engineer + full-stack developer. We are implementing the “Revenue” tab inside the Project Drilldown (e.g., Steelpark). This tab must mirror the structure and headings of the Excel “Revenue Tracking” sheet shown in the screenshot.
+
+IMPORTANT
+- Do NOT assume business rules that are not explicitly stated below.
+- If any rule or mapping is unclear from the existing DB/import tables, you must stop and write a short “Questions / Unknowns” section BEFORE coding that part.
+- Imported data is baseline truth and read-only. User edits are stored as overrides with audit trail.
+
+========================================================
+1) UI: REVENUE TAB STRUCTURE (MATCH EXCEL LOOK + HEADINGS)
+========================================================
+The Revenue tab must follow the same sections and headings as the Excel layout:
+
+A) HIGH LEVEL PROJECT REVENUE TRACKING (top summary table)
+Rows (headings must match Excel):
+1. Planned Revenue
+2. Planned Expenditure
+3. Planned Profit
+4. Planned Margin
+
+Columns:
+- COSTED (planned/budgeted numbers derived from contract/milestones and costed data)
+- ACTUAL (actual numbers derived from real receipts/invoices)
+
+Include:
+- VO PM LIMIT
+- CURRENT VO Total
+
+B) CONTRACT (Payment Milestones table)
+Table columns (headings must match Excel):
+- No.
+- PAYMENT MILESTONE
+- %
+- VALUE
+
+C) PLANNED PAYMENT DATE (side table)
+- Planned payment date per milestone row
+
+D) INVOICE DETAILS (3 side tables)
+- INVOICE NUMBER
+- INVOICE RAISED DATE
+- PAYMENT RECEIVED DATE
+
+E) KEY / LEGEND
+We can show the “meaning” as badges instead of Excel font colors, but it must preserve the same logic:
+- Red date in Payment Received Date = planned only (not realised)
+- Black date without invoice number = issue
+- Black date with invoice number = settled and in bank
+
+In the web UI, translate this into:
+- explicit Status column + Flags
+- optional color styling consistent with Emergent theme (do not rely on “font color only” to communicate meaning)
+
+========================================================
+2) DATA MODEL (PROJECT-LEVEL REVENUE MILESTONES)
+========================================================
+We need one row per project milestone. This can come from imported ProgramInflows or equivalent.
+
+Create/confirm a table/view: project_revenue_milestones with:
+- milestone_id (stable uuid)
+- project_id / project_name
+- milestone_no (int)
+- milestone_name (string)
+- milestone_percent (decimal)
+- milestone_value (money)
+
+Dates and invoice fields:
+- planned_payment_date (date, may be imported or derived)
+- invoice_number (string)
+- invoice_raised_date (date)
+- payment_received_date (date)  // “actual receipt date” when realised
+
+Bank confirmation:
+- in_bank (boolean)  // whether we confirm it is in bank / settled
+
+Notes:
+- comment/notes (optional)
+- data_source (import batch/file)
+- source_row_hash (for duplicate detection)
+
+Overrides (scenario-safe + auditable):
+- revenue_overrides table (milestone_id, field_name, override_value, reason, user, timestamp)
+
+========================================================
+3) BUSINESS LOGIC (NO ASSUMPTIONS)
+========================================================
+
+A) Status logic for each milestone row (must be visible in UI)
+Using ONLY the rules provided:
+
+1) Planned only (NOT realised)
+- payment_received_date is empty
+=> show as Planned (and the UI indicator equivalent of “red date”)
+
+2) Issue
+- payment_received_date exists BUT invoice_number is empty
+=> Flag: “Receipt date exists but invoice number missing” (this is the “black without invoice number” issue)
+
+3) Settled / In bank
+- payment_received_date exists AND invoice_number exists
+=> Status: Settled
+=> in_bank should default to TRUE (unless you find an existing “in bank” field; if it exists, respect it)
+
+If any of the above conflicts with existing app semantics (“Received” vs “In bank”), pause and list the conflict as a question before changing logic.
+
+B) High-level totals (cards/summary)
+Compute:
+- Total Contract = sum(milestone_value)
+- Invoiced = sum(milestone_value where invoice_number exists)
+- Received = sum(milestone_value where payment_received_date exists)
+- In Bank = sum(milestone_value where in_bank = true)
+- Pending = sum(milestone_value where payment_received_date is empty)
+
+C) High-level COSTED vs ACTUAL table
+- Planned Revenue (COSTED) = Total Contract
+- Planned Expenditure (COSTED) = from project costed/budget value (if it exists in current data model)
+- Planned Profit (COSTED) = Planned Revenue - Planned Expenditure
+- Planned Margin (COSTED) = Planned Profit / Planned Revenue
+
+- Actual Revenue (ACTUAL) = sum of milestones where payment_received_date exists (or in_bank true, if your finance definition uses banked only — if unclear, ask)
+- Actual Expenditure (ACTUAL) = from actual costs already captured in expenditure tables for this project (existing app source)
+- Actual Profit/Margin computed accordingly
+
+VO PM LIMIT and CURRENT VO Total:
+- Use existing app values if already implemented.
+- If not present, add placeholders and list the missing source as a question.
+
+========================================================
+4) IMPORT RULES + DUPLICATE HANDLING (CRITICAL)
+========================================================
+When uploading/importing a revenue tracking sheet for a project:
+- Do NOT create duplicate milestone rows.
+- Implement duplicate detection:
+  - unique key candidate: (project_name + milestone_name + milestone_value + milestone_percent + planned_payment_date)
+  - also store source_row_hash to detect repeated uploads
+- Add a column/flag: is_duplicate (boolean) and duplicate_of_milestone_id
+- Duplicates must NOT affect totals.
+- Duplicates must be visible in a “Data Quality” drawer/table so we can see what got excluded and why.
+
+If the Excel has placeholder rows like “-” with 0% / 0 value:
+- Do NOT treat them as real milestones for totals.
+- Keep them either hidden or displayed as placeholders but excluded from totals with reason “placeholder row”.
+
+========================================================
+5) EDITING BEHAVIOR (ONLY WHERE ALLOWED)
+========================================================
+The user must be able to edit (with audit trail):
+- invoice_number
+- invoice_raised_date
+- payment_received_date
+- in_bank toggle (only if needed; default auto-set per rules)
+- planned_payment_date (if it is not reliably imported)
+
+Edits must:
+- write to overrides, not overwrite baseline import.
+- record reason (required).
+
+========================================================
+6) DRILLDOWN + TRACEABILITY (NON-NEGOTIABLE)
+========================================================
+Every number shown must trace to the exact milestone row(s).
+- Clicking summary card values opens a drawer listing the contributing milestones.
+- Clicking “Issue” flags opens the exact rows with the missing fields highlighted.
+
+========================================================
+7) DELIVERABLES + TESTS
+========================================================
+Deliverables:
+- Revenue tab UI matching Excel structure/headings.
+- Import + dedupe + placeholder handling.
+- Status logic and flags per above.
+- Audit trail for edits.
+
+Tests:
+- Unit tests for status classification:
+  - Planned-only
+  - Issue (receipt date without invoice number)
+  - Settled/in bank
+- Tests that totals equal sum of included (non-duplicate, non-placeholder) rows.
+- Import test: upload same file twice → duplicates flagged → totals unchanged.
+
+========================================================
+8) FIRST STEP (REQUIRED BEFORE CODING)
+========================================================
+Audit the current database/import schema and confirm:
+- Where milestone rows are stored now
+- Whether planned_payment_date exists or must be derived
+- Whether “in_bank” exists or must be created
+- Where planned/actual expenditure values come from
+
+If any of those are unknown, produce a short “Questions / Unknowns” list and propose the safest mapping options.
+Then implement.
