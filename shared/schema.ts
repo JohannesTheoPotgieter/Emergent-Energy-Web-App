@@ -834,7 +834,9 @@ export const milestoneTaskLinks = pgTable("milestone_task_links", {
   id: serial("id").primaryKey(),
   projectName: text("project_name").notNull(),
   milestoneRowNumber: integer("milestone_row_number").notNull(),
-  taskId: integer("task_id").notNull().references(() => operationalTasks.id, { onDelete: 'cascade' }),
+  taskId: integer("task_id").notNull(),
+  dateOverride: text("date_override"),
+  dateOverrideReason: text("date_override_reason"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
