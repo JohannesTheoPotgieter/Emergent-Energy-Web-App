@@ -2964,6 +2964,139 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/revenue-tab/:projectName", async (req, res) => {
+    try {
+      const projectName = req.params.projectName;
+
+      const [rawInflows, overrides, projectInfoList] = await Promise.all([
+        storage.getProgramInflowsByProject(projectName),
+        storage.getRevenueTrackingOverridesByProject(projectName),
+        storage.getAllProjectInfo(),
+      ]);
+
+      const inflows = applyRevenueTrackingOverrides(rawInflows, overrides);
+
+      const isRealMilestone = (r: any) => {
+        const no = r.milestoneNo;
+        if (!no) return false;
+        if (/^\d+$/.test(String(no).trim())) {
+          const amt = parseFloat(r.milestoneAmount) || 0;
+          const pct = parseFloat(r.milestonePercent) || 0;
+          const name = (r.milestoneName || '').trim();
+          if (name === '-' && amt === 0 && pct === 0) return false;
+          return true;
+        }
+        return false;
+      };
+
+      const milestones = inflows.filter(isRealMilestone).map((r: any) => {
+        const hasInvoice = !!(r.milestoneInvoiceNumber && r.milestoneInvoiceNumber.trim());
+        const hasInvoiceDate = !!(r.invoiceRaisedDate && r.invoiceRaisedDate.trim());
+        const hasReceivedDate = !!(r.paymentReceivedDate && r.paymentReceivedDate.trim());
+        const inBank = r.inBank === 1 || r.inBank === '1' || r.inBank === true;
+
+        let status: string;
+        let flags: string[] = [];
+
+        if (inBank && hasReceivedDate && hasInvoice) {
+          status = 'inBank';
+        } else if (hasReceivedDate && hasInvoice) {
+          status = 'received';
+        } else if (hasReceivedDate && !hasInvoice) {
+          status = 'issue';
+          flags.push('Receipt date exists but invoice number missing');
+        } else if (hasInvoice || hasInvoiceDate) {
+          status = 'invoiced';
+        } else {
+          status = 'planned';
+        }
+
+        const hasOverride = overrides.some((o: any) => o.rowNumber === r.rowNumber);
+
+        return {
+          id: r.id,
+          rowNumber: r.rowNumber,
+          milestoneNo: r.milestoneNo,
+          milestoneName: r.milestoneName,
+          milestonePercent: r.milestonePercent,
+          milestoneAmount: r.milestoneAmount,
+          plannedPaymentDate: r.plannedPaymentDate,
+          milestoneInvoiceNumber: r.milestoneInvoiceNumber,
+          invoiceRaisedDate: r.invoiceRaisedDate,
+          paymentReceivedDate: r.paymentReceivedDate,
+          inBank,
+          status,
+          flags,
+          hasOverride,
+          documentsReceived: r.documentsReceived,
+          milestoneNotes: r.milestoneNotes,
+        };
+      });
+
+      const totalContract = milestones.reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
+      const invoiced = milestones.filter((m: any) => m.status === 'invoiced').reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
+      const received = milestones.filter((m: any) => m.status === 'received').reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
+      const inBankTotal = milestones.filter((m: any) => m.status === 'inBank').reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
+      const issueTotal = milestones.filter((m: any) => m.status === 'issue').reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
+      const pending = milestones.filter((m: any) => m.status === 'planned').reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
+
+      const pInfo = projectInfoList.find((p: any) => p.projectName === projectName);
+      const contractValue = pInfo ? parseFloat(String(pInfo.contractValue || '0')) : 0;
+
+      let costedExpenditure = 0;
+      let actualExpenditure = 0;
+      try {
+        const expenseRows = await storage.getProgramExpensesByProject(projectName);
+        for (const row of expenseRows) {
+          if ((row as any).rowType === 'item') {
+            costedExpenditure += parseFloat(String((row as any).budgetTotal || 0)) || 0;
+            actualExpenditure += parseFloat(String((row as any).expenseActualTotal || 0)) || 0;
+          }
+        }
+      } catch (e) {}
+
+      const plannedRevenue = contractValue || totalContract;
+      const plannedProfit = plannedRevenue - costedExpenditure;
+      const plannedMargin = plannedRevenue > 0 ? plannedProfit / plannedRevenue : 0;
+
+      const actualRevenue = inBankTotal + received + issueTotal;
+      const actualProfit = actualRevenue - actualExpenditure;
+      const actualMargin = actualRevenue > 0 ? actualProfit / actualRevenue : 0;
+
+      res.json({
+        milestones,
+        summary: {
+          totalContract,
+          invoiced,
+          received,
+          inBank: inBankTotal,
+          pending,
+          milestoneCount: milestones.length,
+          issueCount: milestones.filter((m: any) => m.status === 'issue').length,
+        },
+        highlevel: {
+          costed: {
+            revenue: plannedRevenue,
+            expenditure: costedExpenditure,
+            profit: plannedProfit,
+            margin: plannedMargin,
+          },
+          actual: {
+            revenue: actualRevenue,
+            expenditure: actualExpenditure,
+            profit: actualProfit,
+            margin: actualMargin,
+          },
+          voPmLimit: null,
+          currentVoTotal: null,
+        },
+      });
+    } catch (error) {
+      console.error("Revenue tab error:", error);
+      res.status(500).json({ error: "Failed to fetch revenue tab data" });
+    }
+  });
+
   // Expenditure Overrides API
   app.get("/api/expenditure/overrides", async (req, res) => {
     try {
