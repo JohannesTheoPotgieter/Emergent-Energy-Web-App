@@ -119,18 +119,14 @@ const ROW_DEFS: {
   expandable?: boolean;
   projectsKey?: "plannedProjects" | "committedProjects" | "invoicedProjects" | "paidProjects";
 }[] = [
-  { key: "planned", label: "Planned", dataKey: "planned", editable: false, colorClass: "text-gray-600", group: "monthly", expandable: true, projectsKey: "plannedProjects" },
-  { key: "committed", label: "Committed", dataKey: "committed", editable: false, colorClass: "text-blue-600", group: "monthly", expandable: true, projectsKey: "committedProjects" },
-  { key: "invoiced", label: "Invoiced", dataKey: "invoiced", editable: false, colorClass: "text-amber-600", group: "monthly", expandable: true, projectsKey: "invoicedProjects" },
+  { key: "invoiced", label: "Invoiced (Unpaid)", dataKey: "invoiced", editable: false, colorClass: "text-amber-600", group: "monthly", expandable: true, projectsKey: "invoicedProjects" },
   { key: "paid", label: "Paid", dataKey: "paid", editable: false, colorClass: "text-green-600", group: "monthly", expandable: true, projectsKey: "paidProjects" },
   { key: "totalCOS", label: "Total COS", dataKey: "totalCOS", editable: false, colorClass: "text-foreground font-bold", group: "monthly" },
   { key: "outstanding", label: "Outstanding", dataKey: "outstanding", editable: false, colorClass: "text-red-600", group: "monthly" },
   { key: "budget", label: "Budget", dataKey: "budget", editable: true, colorClass: "text-purple-600", group: "monthly" },
   { key: "variance", label: "Variance", dataKey: "variance", editable: false, colorClass: "", group: "monthly", colorCoded: true },
   { key: "variancePct", label: "Variance %", dataKey: "variancePct", editable: false, colorClass: "", group: "monthly", colorCoded: true },
-  { key: "ytdPlanned", label: "YTD Planned", dataKey: "ytdPlanned", editable: false, colorClass: "text-gray-600", group: "ytd" },
-  { key: "ytdCommitted", label: "YTD Committed", dataKey: "ytdCommitted", editable: false, colorClass: "text-blue-600", group: "ytd" },
-  { key: "ytdInvoiced", label: "YTD Invoiced", dataKey: "ytdInvoiced", editable: false, colorClass: "text-amber-600", group: "ytd" },
+  { key: "ytdInvoiced", label: "YTD Invoiced (Unpaid)", dataKey: "ytdInvoiced", editable: false, colorClass: "text-amber-600", group: "ytd" },
   { key: "ytdPaid", label: "YTD Paid", dataKey: "ytdPaid", editable: false, colorClass: "text-green-600", group: "ytd" },
   { key: "ytdTotalCOS", label: "YTD Total COS", dataKey: "ytdTotalCOS", editable: false, colorClass: "text-foreground font-bold", group: "ytd" },
   { key: "ytdOutstanding", label: "YTD Outstanding", dataKey: "ytdOutstanding", editable: false, colorClass: "text-red-600", group: "ytd" },
@@ -196,7 +192,7 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose }: { monthKey: string
               data-testid="input-search-detail"
             />
           </div>
-          {["all", "Planned", "Committed", "Invoiced", "Paid"].map((s) => (
+          {["all", "Invoiced", "Paid"].map((s) => (
             <Button
               key={s}
               variant={stateFilter === s ? "default" : "outline"}
@@ -334,8 +330,6 @@ export default function CosTracker() {
     () =>
       months.map((m) => ({
         month: m.monthLabel,
-        Planned: m.planned,
-        Committed: m.committed,
         Invoiced: m.invoiced,
         Paid: m.paid,
         Budget: m.budget,
@@ -355,16 +349,14 @@ export default function CosTracker() {
 
   const reconciliation = useMemo(() => {
     if (!months.length) return null;
-    let totalPlanned = 0, totalCommitted = 0, totalInvoiced = 0, totalPaid = 0, totalOutstanding = 0, totalCOS = 0;
+    let totalInvoiced = 0, totalPaid = 0, totalOutstanding = 0, totalCOS = 0;
     for (const m of months) {
-      totalPlanned += m.planned;
-      totalCommitted += m.committed;
       totalInvoiced += m.invoiced;
       totalPaid += m.paid;
       totalOutstanding += m.outstanding;
       totalCOS += m.totalCOS;
     }
-    return { totalPlanned, totalCommitted, totalInvoiced, totalPaid, totalOutstanding, totalCOS, monthCount: months.length };
+    return { totalInvoiced, totalPaid, totalOutstanding, totalCOS, monthCount: months.length };
   }, [months]);
 
   if (isLoading) {
@@ -406,21 +398,13 @@ export default function CosTracker() {
                 <Info className="h-4 w-4 text-blue-600" />
                 <span className="font-semibold text-sm text-blue-800">Reconciliation Mode</span>
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 text-sm">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 text-sm">
                 <div>
                   <p className="text-muted-foreground">Months</p>
                   <p className="font-mono font-bold">{reconciliation.monthCount}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground">Planned</p>
-                  <p className="font-mono font-bold text-gray-700">{formatRand(reconciliation.totalPlanned)}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Committed</p>
-                  <p className="font-mono font-bold text-blue-700">{formatRand(reconciliation.totalCommitted)}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Invoiced</p>
+                  <p className="text-muted-foreground">Invoiced (Unpaid)</p>
                   <p className="font-mono font-bold text-amber-700">{formatRand(reconciliation.totalInvoiced)}</p>
                 </div>
                 <div>
@@ -437,9 +421,9 @@ export default function CosTracker() {
                 </div>
               </div>
               <p className="text-xs text-muted-foreground mt-3">
-                State Machine: Planned (no PO) &rarr; Committed (has PO) &rarr; Invoiced (Invoice # + Date) &rarr; Paid (Payment Date).
-                Month assigned by effective date: Payment Date &gt; Forecast Date &gt; Invoice Date.
-                Click any month value to drill down to contributing line items.
+                COS Recognition: Items with Invoice # + Invoice Date are included.
+                Invoiced = awaiting payment. Paid = payment received.
+                Month assigned by Invoice Date. Click any month value to drill down.
               </p>
             </CardContent>
           </Card>
@@ -700,8 +684,6 @@ export default function CosTracker() {
                     formatter={(value: number) => formatRand(value)}
                   />
                   <Legend />
-                  <Bar dataKey="Planned" stackId="cos" fill="#9ca3af" />
-                  <Bar dataKey="Committed" stackId="cos" fill="#3b82f6" />
                   <Bar dataKey="Invoiced" stackId="cos" fill="#f59e0b" />
                   <Bar dataKey="Paid" stackId="cos" fill="#22c55e" radius={[4, 4, 0, 0]} />
                   <Bar dataKey="Budget" fill="#a855f7" opacity={0.3} radius={[4, 4, 0, 0]} />

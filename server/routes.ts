@@ -1597,46 +1597,28 @@ export async function registerRoutes(
       }
 
       for (const exp of allExpenses) {
-        if (exp.rowType && exp.rowType !== 'item') continue;
-        const amount = Math.abs(parseFloat(exp.expenseActualTotal as string || exp.budgetTotal as string || '0'));
-        if (isNaN(amount) || amount === 0) continue;
-
+        const total = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
+        if (isNaN(total) || total === 0) continue;
         const pName = exp.projectName.replace(/_Tracker$/i, '');
-        const state = (exp as any).computedState || classifyExpenseState({
-          expensePaymentDate: exp.expensePaymentDate,
-          expenseInvoiceNumber: exp.expenseInvoiceNumber,
-          expenseInvoicedDate: exp.expenseInvoicedDate,
-          expensePoNumber: exp.expensePoNumber,
-        });
 
-        const effectiveDate = exp.expensePaymentDate
-          || (exp as any).computedForecastPaymentDate
-          || exp.expenseInvoicedDate;
-        if (!effectiveDate) continue;
+        const hasInvoice = exp.expenseInvoiceNumber && (exp.expenseInvoiceNumber as string).trim() !== '';
+        const invDateStr = exp.expenseInvoicedDate as string | null;
 
-        const d = new Date(effectiveDate as string);
-        if (isNaN(d.getTime())) continue;
-        const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        if (hasInvoice && invDateStr) {
+          const invMatch = invDateStr.match(/^(\d{4})-(\d{2})/);
+          if (invMatch) {
+            const invMonthKey = `${invMatch[1]}-${invMatch[2]}`;
+            const bucket = ensureBucket(invMonthKey);
 
-        const bucket = ensureBucket(monthKey);
-
-        switch (state) {
-          case 'Planned':
-            bucket.planned += amount;
-            bucket.plannedProjects.set(pName, (bucket.plannedProjects.get(pName) || 0) + amount);
-            break;
-          case 'Committed':
-            bucket.committed += amount;
-            bucket.committedProjects.set(pName, (bucket.committedProjects.get(pName) || 0) + amount);
-            break;
-          case 'Invoiced':
-            bucket.invoiced += amount;
-            bucket.invoicedProjects.set(pName, (bucket.invoicedProjects.get(pName) || 0) + amount);
-            break;
-          case 'Paid':
-            bucket.paid += amount;
-            bucket.paidProjects.set(pName, (bucket.paidProjects.get(pName) || 0) + amount);
-            break;
+            const hasPaid = exp.expensePaymentDate && /^\d{4}-\d{2}/.test(exp.expensePaymentDate as string);
+            if (hasPaid) {
+              bucket.paid += total;
+              bucket.paidProjects.set(pName, (bucket.paidProjects.get(pName) || 0) + total);
+            } else {
+              bucket.invoiced += total;
+              bucket.invoicedProjects.set(pName, (bucket.invoicedProjects.get(pName) || 0) + total);
+            }
+          }
         }
       }
 
@@ -1757,26 +1739,20 @@ export async function registerRoutes(
       }> = [];
 
       for (const exp of allExpenses) {
-        if (exp.rowType && exp.rowType !== 'item') continue;
-        const amount = Math.abs(parseFloat(exp.expenseActualTotal as string || exp.budgetTotal as string || '0'));
-        if (isNaN(amount) || amount === 0) continue;
+        const total = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
+        if (isNaN(total) || total === 0) continue;
 
-        const lineState = (exp as any).computedState || classifyExpenseState({
-          expensePaymentDate: exp.expensePaymentDate,
-          expenseInvoiceNumber: exp.expenseInvoiceNumber,
-          expenseInvoicedDate: exp.expenseInvoicedDate,
-          expensePoNumber: exp.expensePoNumber,
-        });
+        const hasInvoice = exp.expenseInvoiceNumber && (exp.expenseInvoiceNumber as string).trim() !== '';
+        const invDateStr = exp.expenseInvoicedDate as string | null;
+        if (!hasInvoice || !invDateStr) continue;
 
-        const effectiveDate = exp.expensePaymentDate
-          || (exp as any).computedForecastPaymentDate
-          || exp.expenseInvoicedDate;
-        if (!effectiveDate) continue;
-
-        const d = new Date(effectiveDate as string);
-        if (isNaN(d.getTime())) continue;
-        const lineMonthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        const dateMatch = invDateStr.match(/^(\d{4})-(\d{2})/);
+        if (!dateMatch) continue;
+        const lineMonthKey = `${dateMatch[1]}-${dateMatch[2]}`;
         if (lineMonthKey !== monthKey) continue;
+
+        const hasPaid = exp.expensePaymentDate && /^\d{4}-\d{2}/.test(exp.expensePaymentDate as string);
+        const lineState = hasPaid ? "Paid" : "Invoiced";
 
         if (state && state !== "all" && lineState !== state) continue;
 
@@ -1789,7 +1765,7 @@ export async function registerRoutes(
           poNumber: exp.expensePoNumber,
           invoicedDate: exp.expenseInvoicedDate,
           paymentDate: exp.expensePaymentDate,
-          amount,
+          amount: total,
           state: lineState,
           supplierName: (exp as any).supplierName || null,
           trackerLocator: `${exp.projectName}:row${exp.rowNumber || exp.id}`,
