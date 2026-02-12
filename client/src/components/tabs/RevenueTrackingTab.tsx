@@ -5,7 +5,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
   Loader2, Clock, AlertTriangle, Save, XCircle,
@@ -24,6 +23,12 @@ interface RevenueOverride {
   overrideValue: string | null;
 }
 
+interface DependentTask {
+  id: number;
+  title: string;
+  status: string;
+}
+
 interface Milestone {
   id: number;
   rowNumber: number;
@@ -40,6 +45,7 @@ interface Milestone {
   flags: string[];
   hasOverride: boolean;
   milestoneNotes: string | null;
+  dependentTask: DependentTask | null;
 }
 
 interface TaskAlert {
@@ -178,7 +184,6 @@ export function RevenueTrackingTab({ projectName }: RevenueTrackingTabProps) {
       invoiceNumber: row.milestoneInvoiceNumber || "",
       invoiceRaisedDate: formatDateForInput(row.invoiceRaisedDate),
       date: formatDateForInput(row.date),
-      inBank: row.inBank,
     });
   };
 
@@ -193,8 +198,6 @@ export function RevenueTrackingTab({ projectName }: RevenueTrackingTabProps) {
     if (editValues.date !== undefined) {
       overrides.push({ rowNumber, fieldName: "plannedPaymentDate", overrideValue: editValues.date || null });
     }
-    if (editValues.inBank !== undefined)
-      overrides.push({ rowNumber, fieldName: "inBank", overrideValue: editValues.inBank ? "1" : "0" });
     saveMutation.mutate(overrides);
     setEditingRow(null);
     setEditValues({});
@@ -455,7 +458,7 @@ export function RevenueTrackingTab({ projectName }: RevenueTrackingTabProps) {
                       <TableHead className="w-[100px] text-xs">DATE</TableHead>
                       <TableHead className="w-[100px] text-xs">INVOICE NO.</TableHead>
                       <TableHead className="w-[100px] text-xs">INVOICE DATE</TableHead>
-                      <TableHead className="w-[55px] text-center text-xs">IN BANK</TableHead>
+                      <TableHead className="min-w-[140px] text-xs">DEPENDENT TASK</TableHead>
                       <TableHead className="w-[80px] text-xs">STATUS</TableHead>
                       <TableHead className="w-[50px] text-xs">EDIT</TableHead>
                     </TableRow>
@@ -515,15 +518,29 @@ export function RevenueTrackingTab({ projectName }: RevenueTrackingTabProps) {
                             )}
                           </TableCell>
 
-                          {/* In Bank */}
-                          <TableCell className="text-center">
-                            {isEditing ? (
-                              <Checkbox checked={editValues.inBank} onCheckedChange={(checked) => setEditValues({ ...editValues, inBank: !!checked })}
-                                data-testid={`checkbox-inbank-${m.rowNumber}`} />
-                            ) : (
-                              <div className="flex justify-center">
-                                {m.inBank ? <Check className="h-4 w-4 text-green-600" /> : <span className="text-muted-foreground text-xs">-</span>}
+                          {/* Dependent Task */}
+                          <TableCell className="text-xs">
+                            {m.dependentTask ? (
+                              <div className="flex items-center gap-1.5">
+                                <Badge
+                                  variant="outline"
+                                  className={`text-[9px] px-1.5 py-0 shrink-0 ${
+                                    m.dependentTask.status === "complete"
+                                      ? "bg-green-50 text-green-700 border-green-300"
+                                      : m.dependentTask.status === "in_progress"
+                                      ? "bg-blue-50 text-blue-700 border-blue-300"
+                                      : "bg-gray-50 text-gray-600 border-gray-300"
+                                  }`}
+                                  data-testid={`badge-task-status-${m.rowNumber}`}
+                                >
+                                  {m.dependentTask.status === "complete" ? "Done" : m.dependentTask.status === "in_progress" ? "In Progress" : "To Do"}
+                                </Badge>
+                                <span className="truncate max-w-[120px]" title={m.dependentTask.title} data-testid={`text-task-title-${m.rowNumber}`}>
+                                  {m.dependentTask.title}
+                                </span>
                               </div>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
                             )}
                           </TableCell>
 

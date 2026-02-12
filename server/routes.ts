@@ -2968,11 +2968,12 @@ export async function registerRoutes(
     try {
       const projectName = req.params.projectName;
 
-      const [rawInflows, overrides, projectInfoList, savedSummary] = await Promise.all([
+      const [rawInflows, overrides, projectInfoList, savedSummary, operationalTasks] = await Promise.all([
         storage.getProgramInflowsByProject(projectName),
         storage.getRevenueTrackingOverridesByProject(projectName),
         storage.getAllProjectInfo(),
         storage.getProjectRevenueSummary(projectName),
+        storage.getOperationalTasksByProject(projectName),
       ]);
 
       const inflows = applyRevenueTrackingOverrides(rawInflows, overrides);
@@ -3018,6 +3019,14 @@ export async function registerRoutes(
 
         const hasOverride = overrides.some((o: any) => o.rowNumber === r.rowNumber);
 
+        const name = (r.milestoneName || '').trim();
+        const linkedTask = operationalTasks.find((t: any) =>
+          t.title && name && name !== '-' && (
+            t.title.toLowerCase().includes(name.toLowerCase()) ||
+            name.toLowerCase().includes(t.title.toLowerCase())
+          )
+        );
+
         return {
           id: r.id,
           rowNumber: r.rowNumber,
@@ -3034,6 +3043,7 @@ export async function registerRoutes(
           flags,
           hasOverride,
           milestoneNotes: r.milestoneNotes,
+          dependentTask: linkedTask ? { id: (linkedTask as any).id, title: (linkedTask as any).title, status: (linkedTask as any).status } : null,
         };
       });
 
