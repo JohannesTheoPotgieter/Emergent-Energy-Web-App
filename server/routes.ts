@@ -2968,12 +2968,13 @@ export async function registerRoutes(
     try {
       const projectName = req.params.projectName;
 
-      const [rawInflows, overrides, projectInfoList, savedSummary, operationalTasks] = await Promise.all([
+      const [rawInflows, overrides, projectInfoList, savedSummary, operationalTasks, taskLinks] = await Promise.all([
         storage.getProgramInflowsByProject(projectName),
         storage.getRevenueTrackingOverridesByProject(projectName),
         storage.getAllProjectInfo(),
         storage.getProjectRevenueSummary(projectName),
         storage.getOperationalTasksByProject(projectName),
+        storage.getMilestoneTaskLinks(projectName),
       ]);
 
       const inflows = applyRevenueTrackingOverrides(rawInflows, overrides);
@@ -3019,13 +3020,13 @@ export async function registerRoutes(
 
         const hasOverride = overrides.some((o: any) => o.rowNumber === r.rowNumber);
 
-        const name = (r.milestoneName || '').trim();
-        const linkedTask = operationalTasks.find((t: any) =>
-          t.title && name && name !== '-' && (
-            t.title.toLowerCase().includes(name.toLowerCase()) ||
-            name.toLowerCase().includes(t.title.toLowerCase())
-          )
-        );
+        const link = taskLinks.find((l: any) => l.milestoneRowNumber === r.rowNumber);
+        const linkedTask = link ? operationalTasks.find((t: any) => t.id === link.taskId) : null;
+
+        let effectiveDate = date;
+        if (linkedTask && (linkedTask as any).dueDate) {
+          effectiveDate = (linkedTask as any).dueDate;
+        }
 
         return {
           id: r.id,
@@ -3034,7 +3035,7 @@ export async function registerRoutes(
           milestoneName: r.milestoneName,
           milestonePercent: r.milestonePercent,
           milestoneAmount: r.milestoneAmount,
-          date,
+          date: effectiveDate,
           isRed,
           milestoneInvoiceNumber: r.milestoneInvoiceNumber,
           invoiceRaisedDate: r.invoiceRaisedDate,
@@ -3043,7 +3044,7 @@ export async function registerRoutes(
           flags,
           hasOverride,
           milestoneNotes: r.milestoneNotes,
-          dependentTask: linkedTask ? { id: (linkedTask as any).id, title: (linkedTask as any).title, status: (linkedTask as any).status } : null,
+          dependentTask: linkedTask ? { id: (linkedTask as any).id, title: (linkedTask as any).title, status: (linkedTask as any).status, dueDate: (linkedTask as any).dueDate } : null,
         };
       });
 
@@ -3087,7 +3088,7 @@ export async function registerRoutes(
           pending,
           overdue: overdueTotal,
           milestoneCount: milestones.length,
-          issueCount: milestones.filter((m: any) => m.status === 'overdue' || m.status === 'invoiced').length,
+          issueCount: milestones.filter((m: any) => m.status === 'overdue' || m.status === 'invoiced' || !m.dependentTask).length,
         },
         highlevel: {
           costed: {
@@ -3140,8 +3141,11 @@ export async function registerRoutes(
   app.get("/api/revenue-tab/:projectName/task-alerts", requireAuth, async (req, res) => {
     try {
       const projectName = req.params.projectName;
-      const tasks = await storage.getOperationalTasksByProject(projectName);
-      const inflows = await storage.getProgramInflowsByProject(projectName);
+      const [tasks, inflows, taskLinks] = await Promise.all([
+        storage.getOperationalTasksByProject(projectName),
+        storage.getProgramInflowsByProject(projectName),
+        storage.getMilestoneTaskLinks(projectName),
+      ]);
 
       const alerts: any[] = [];
       for (const milestone of inflows) {
@@ -3149,21 +3153,17 @@ export async function registerRoutes(
         const name = (milestone.milestoneName || '').trim();
         if (name === '-') continue;
 
-        const matchingTask = tasks.find((t: any) =>
-          t.title && name && (
-            t.title.toLowerCase().includes(name.toLowerCase()) ||
-            name.toLowerCase().includes(t.title.toLowerCase())
-          )
-        );
+        const link = taskLinks.find((l: any) => l.milestoneRowNumber === milestone.rowNumber);
+        const linkedTask = link ? tasks.find((t: any) => t.id === link.taskId) : null;
 
-        if (matchingTask && (matchingTask as any).status === 'complete' && !milestone.milestoneInvoiceNumber) {
+        if (linkedTask && ((linkedTask as any).status === 'complete' || (linkedTask as any).status === 'Complete') && !milestone.milestoneInvoiceNumber) {
           alerts.push({
             milestoneNo: milestone.milestoneNo,
             milestoneName: name,
             milestoneAmount: milestone.milestoneAmount,
-            taskTitle: (matchingTask as any).title,
-            taskId: (matchingTask as any).id,
-            message: `Task "${(matchingTask as any).title}" is complete — invoice needs to be raised for milestone ${milestone.milestoneNo}`,
+            taskTitle: (linkedTask as any).title,
+            taskId: (linkedTask as any).id,
+            message: `Task "${(linkedTask as any).title}" is complete — invoice needs to be raised for milestone ${milestone.milestoneNo}`,
           });
         }
       }
@@ -3171,6 +3171,34 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Task alerts error:", error);
       res.status(500).json({ error: "Failed to fetch task alerts" });
+    }
+  });
+
+  // Milestone Task Link API
+  app.post("/api/revenue-tab/:projectName/link-task", requireAuth, async (req, res) => {
+    try {
+      const projectName = req.params.projectName;
+      const { milestoneRowNumber, taskId } = req.body;
+      if (!milestoneRowNumber || !taskId) {
+        return res.status(400).json({ error: "milestoneRowNumber and taskId are required" });
+      }
+      const link = await storage.upsertMilestoneTaskLink(projectName, milestoneRowNumber, taskId);
+      res.json(link);
+    } catch (error) {
+      console.error("Link task error:", error);
+      res.status(500).json({ error: "Failed to link task" });
+    }
+  });
+
+  app.delete("/api/revenue-tab/:projectName/link-task/:milestoneRowNumber", requireAuth, async (req, res) => {
+    try {
+      const projectName = req.params.projectName;
+      const milestoneRowNumber = parseInt(req.params.milestoneRowNumber);
+      await storage.deleteMilestoneTaskLink(projectName, milestoneRowNumber);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Unlink task error:", error);
+      res.status(500).json({ error: "Failed to unlink task" });
     }
   });
 
