@@ -80,7 +80,7 @@ const COLUMNS: ColumnDef[] = [
   { key: "description", label: "Description", defaultVisible: true, align: "left", minWidth: "200px" },
   { key: "budgetQty", label: "Budget Qty", defaultVisible: false, align: "right", minWidth: "90px" },
   { key: "budgetRate", label: "Budget Rate", defaultVisible: false, align: "right", minWidth: "100px" },
-  { key: "budgetTotal", label: "Budget Total", defaultVisible: true, align: "right", minWidth: "120px" },
+  { key: "budgetTotal", label: "Budget Total", defaultVisible: false, align: "right", minWidth: "120px" },
   { key: "forecastDate", label: "Fcst Pay Date", defaultVisible: false, align: "center", minWidth: "100px" },
   { key: "actualTotal", label: "Actual Total", defaultVisible: true, align: "right", minWidth: "120px" },
   { key: "poNumber", label: "PO Number", defaultVisible: true, align: "left", minWidth: "120px" },
