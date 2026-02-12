@@ -265,39 +265,38 @@ export function ExpenditureEditableTab({ projectName }: ExpenditureEditableTabPr
   }, [expenses, edits, statusFilter, showSubtotals]);
 
   const categoryGroups = useMemo(() => {
-    const groups: CategoryGroup[] = [];
-    let currentGroup: CategoryGroup | null = null;
+    const groupMap = new Map<string, CategoryGroup>();
+    const groupOrder: string[] = [];
+    let currentCategoryName = "";
+
+    const firstCategory = normalizedData.find(r => r.rowType === "category" && r.expenseCategory);
+    const defaultCategory = firstCategory?.expenseCategory || "1. Panels";
 
     for (const row of normalizedData) {
       if (row.rowType === "category") {
-        if (currentGroup) groups.push(currentGroup);
-        currentGroup = {
-          category: row.expenseCategory || "Panels",
-          items: [],
-          budgetTotal: 0,
-          actualTotal: 0,
-          variance: 0,
-        };
-      } else if (row.rowType === "item" && currentGroup) {
-        currentGroup.items.push(row);
+        const cat = row.expenseCategory || defaultCategory;
+        currentCategoryName = cat;
+        if (!groupMap.has(cat)) {
+          groupMap.set(cat, { category: cat, items: [], budgetTotal: 0, actualTotal: 0, variance: 0 });
+          groupOrder.push(cat);
+        }
+      } else if (row.rowType === "item") {
+        const cat = currentCategoryName || defaultCategory;
+        if (!groupMap.has(cat)) {
+          groupMap.set(cat, { category: cat, items: [], budgetTotal: 0, actualTotal: 0, variance: 0 });
+          groupOrder.push(cat);
+        }
+        const group = groupMap.get(cat)!;
+        group.items.push(row);
         const budget = parseFloat(row.budgetTotal || "0");
         const actual = parseFloat(row.expenseActualTotal || "0");
-        currentGroup.budgetTotal += budget;
-        currentGroup.actualTotal += actual;
-        currentGroup.variance += budget - actual;
-      } else if (row.rowType === "item" && !currentGroup) {
-        currentGroup = {
-          category: "Panels",
-          items: [row],
-          budgetTotal: parseFloat(row.budgetTotal || "0"),
-          actualTotal: parseFloat(row.expenseActualTotal || "0"),
-          variance: parseFloat(row.budgetTotal || "0") - parseFloat(row.expenseActualTotal || "0"),
-        };
+        group.budgetTotal += budget;
+        group.actualTotal += actual;
+        group.variance += budget - actual;
       }
     }
-    
-    if (currentGroup) groups.push(currentGroup);
-    return groups;
+
+    return groupOrder.map(name => groupMap.get(name)!).filter(g => g.items.length > 0);
   }, [normalizedData]);
 
   const handleCellEdit = useCallback((rowId: number, field: string, value: string) => {
