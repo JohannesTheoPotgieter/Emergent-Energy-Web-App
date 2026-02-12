@@ -216,6 +216,79 @@ function applyRevenueTrackingOverrides(
   });
 }
 
+/**
+ * Resolve effective dates for all inflows by applying the Revenue tab date hierarchy:
+ *   1. dateOverride from milestone_task_links (manual override)
+ *   2. Linked operational/plan task dueDate
+ *   3. Original planned/forecast date
+ * 
+ * Returns inflows with additional `effectiveDate` field representing the best-known
+ * expected receipt date for cashflow calculations. `paymentReceivedDate` (actual receipt)
+ * is never overridden - it represents confirmed bank receipt.
+ */
+function resolveInflowEffectiveDates(
+  inflows: any[],
+  taskLinks: any[],
+  operationalTasks: any[],
+  planTasks: any[]
+): any[] {
+  if (taskLinks.length === 0) {
+    return inflows.map(inf => ({
+      ...inf,
+      effectiveDate: inf.paymentReceivedDate || inf.computedForecastReceiptDate || inf.plannedPaymentDate || null,
+    }));
+  }
+
+  const linkMap = new Map<string, any>();
+  for (const link of taskLinks) {
+    linkMap.set(`${link.projectName}::${link.milestoneRowNumber}`, link);
+  }
+
+  const opTaskMap = new Map<number, any>();
+  for (const t of operationalTasks) {
+    opTaskMap.set(t.id, t);
+  }
+
+  const planTaskMap = new Map<number, any>();
+  for (const t of planTasks) {
+    planTaskMap.set(t.id, t);
+  }
+
+  return inflows.map(inf => {
+    const key = `${inf.projectName}::${inf.rowNumber}`;
+    const link = linkMap.get(key);
+
+    if (inf.paymentReceivedDate && /^\d{4}-\d{2}-\d{2}/.test(inf.paymentReceivedDate)) {
+      return { ...inf, effectiveDate: inf.paymentReceivedDate };
+    }
+
+    if (link) {
+      if (link.dateOverride && /^\d{4}-\d{2}-\d{2}/.test(link.dateOverride)) {
+        return { ...inf, effectiveDate: link.dateOverride };
+      }
+
+      const taskId = link.taskId;
+      if (taskId > 0) {
+        const opTask = opTaskMap.get(taskId);
+        if (opTask?.dueDate && /^\d{4}-\d{2}-\d{2}/.test(opTask.dueDate)) {
+          return { ...inf, effectiveDate: opTask.dueDate };
+        }
+      } else if (taskId < 0) {
+        const planTask = planTaskMap.get(Math.abs(taskId));
+        const dueDate = (planTask as any)?.actualEnd || (planTask as any)?.baselineEnd || null;
+        if (dueDate && /^\d{4}-\d{2}-\d{2}/.test(dueDate)) {
+          return { ...inf, effectiveDate: dueDate };
+        }
+      }
+    }
+
+    return {
+      ...inf,
+      effectiveDate: inf.computedForecastReceiptDate || inf.plannedPaymentDate || null,
+    };
+  });
+}
+
 // Apply expenditure overrides
 function applyExpenditureOverrides(
   baselineRows: any[],
@@ -504,13 +577,17 @@ export async function registerRoutes(
 
   app.get("/api/overview", async (req, res) => {
     try {
-      const [allProjectInfo, allExpenses, allInflows, allPlans, latestRefresh] = await Promise.all([
+      const [allProjectInfo, allExpenses, rawInflows, allPlans, latestRefresh, allTaskLinks, allOpTasks] = await Promise.all([
         storage.getAllProjectInfo(),
         storage.getAllProgramExpenses(),
         storage.getAllProgramInflows(),
         storage.getAllProjectPlans(),
-        storage.getLatestRefresh()
+        storage.getLatestRefresh(),
+        storage.getAllMilestoneTaskLinks(),
+        storage.getAllOperationalTasks(),
       ]);
+
+      const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
 
       const today = new Date().toISOString().split("T")[0];
 
@@ -540,10 +617,10 @@ export async function registerRoutes(
         }
       }
 
-      // revenue_realised = SUM(milestone_amount where payment_received_date is valid YYYY-MM-DD and <= today)
+      // revenue_realised = SUM(milestone_amount where effective date is valid and <= today)
       let revenueRealised = 0;
       for (const inflow of allInflows) {
-        const paymentDate = inflow.paymentReceivedDate;
+        const paymentDate = inflow.effectiveDate;
         if (paymentDate && /^\d{4}-\d{2}-\d{2}$/.test(paymentDate) && paymentDate <= today && inflow.milestoneAmount) {
           revenueRealised += parseFloat(inflow.milestoneAmount);
         }
@@ -632,14 +709,17 @@ export async function registerRoutes(
 
   app.get("/api/home/summary", async (req, res) => {
     try {
-      const [allProjectInfo, allExpenses, allInflows, allPlans, latestRefresh, revenueSummaries] = await Promise.all([
+      const [allProjectInfo, allExpenses, rawInflows, allPlans, latestRefresh, revenueSummaries, allTaskLinks, allOpTasks] = await Promise.all([
         storage.getAllProjectInfo(),
         storage.getAllProgramExpenses(),
         storage.getAllProgramInflows(),
         storage.getAllProjectPlans(),
         storage.getLatestRefresh(),
-        storage.getAllProjectRevenueSummaries()
+        storage.getAllProjectRevenueSummaries(),
+        storage.getAllMilestoneTaskLinks(),
+        storage.getAllOperationalTasks(),
       ]);
+      const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
 
       const today = new Date().toISOString().split("T")[0];
       const fyRange = getFYRange();
@@ -784,10 +864,10 @@ export async function registerRoutes(
         }
       }
 
-      // This week cashflows
+      // This week cashflows (uses effective date from revenue tab hierarchy)
       let weeklyInflows = 0, weeklyOutflows = 0;
       for (const inf of allInflows) {
-        if (isThisWeek(inf.paymentReceivedDate) && inf.milestoneAmount) {
+        if (isThisWeek(inf.effectiveDate) && inf.milestoneAmount) {
           weeklyInflows += safeNum(inf.milestoneAmount);
         }
       }
@@ -1093,13 +1173,16 @@ export async function registerRoutes(
 
   app.get("/api/projects-summary", async (req, res) => {
     try {
-      const [allProjectInfo, allExpenses, allInflows, allPlans, allEditableFields] = await Promise.all([
+      const [allProjectInfo, allExpenses, rawInflows, allPlans, allEditableFields, allTaskLinks, allOpTasks] = await Promise.all([
         storage.getAllProjectInfo(),
         storage.getAllProgramExpenses(),
         storage.getAllProgramInflows(),
         storage.getAllProjectPlans(),
-        storage.getAllProjectEditableFields()
+        storage.getAllProjectEditableFields(),
+        storage.getAllMilestoneTaskLinks(),
+        storage.getAllOperationalTasks(),
       ]);
+      const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
 
       const today = new Date().toISOString().split("T")[0];
 
@@ -1266,12 +1349,17 @@ export async function registerRoutes(
     try {
       const projectFilter = req.query.project ? String(req.query.project) : null;
 
-      const [allExpenses, allInflows, manualBalances, opexBudgets] = await Promise.all([
+      const [allExpenses, rawInflows, manualBalances, opexBudgets, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
         storage.getAllProgramExpenses(),
         storage.getAllProgramInflows(),
         storage.getAllCashflowWeeklyManual(),
         storage.getAllOpexBudgetMonthly(),
+        storage.getAllMilestoneTaskLinks(),
+        storage.getAllOperationalTasks(),
+        storage.getAllProjectPlans(),
       ]);
+
+      const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlanTasks);
 
       const manualMap = new Map(manualBalances.map(m => [m.weekStartDate, parseFloat(m.openingBalance || "0")]));
       const opexMap = new Map(opexBudgets.map(o => [o.monthKey, parseFloat(o.amount || "0")]));
@@ -1299,7 +1387,7 @@ export async function registerRoutes(
         let projectInflowsSum = 0;
         for (const inflow of allInflows) {
           if (projectFilter && inflow.projectName !== projectFilter) continue;
-          const d = inflow.paymentReceivedDate;
+          const d = inflow.effectiveDate;
           if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
           if (d >= weekStart && d < weekEnd && inflow.milestoneAmount) {
             projectInflowsSum += parseFloat(inflow.milestoneAmount);
@@ -1360,10 +1448,15 @@ export async function registerRoutes(
       wsDate.setUTCDate(wsDate.getUTCDate() + 7);
       const weekEnd = wsDate.toISOString().split('T')[0];
 
-      const [allExpenses, allInflows] = await Promise.all([
+      const [allExpenses, rawInflows, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
         storage.getAllProgramExpenses(),
         storage.getAllProgramInflows(),
+        storage.getAllMilestoneTaskLinks(),
+        storage.getAllOperationalTasks(),
+        storage.getAllProjectPlans(),
       ]);
+
+      const resolvedInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlanTasks);
 
       const outflows = allExpenses
         .filter(e => {
@@ -1381,14 +1474,14 @@ export async function registerRoutes(
           expenseActualTotal: e.expenseActualTotal ? parseFloat(e.expenseActualTotal) : 0,
         }));
 
-      const inflows = allInflows
-        .filter(inf => {
+      const inflows = resolvedInflows
+        .filter((inf: any) => {
           if (projectFilter && inf.projectName !== projectFilter) return false;
-          const pd = inf.paymentReceivedDate;
+          const pd = inf.effectiveDate;
           if (!pd || !/^\d{4}-\d{2}-\d{2}$/.test(pd)) return false;
           return pd >= weekStart && pd < weekEnd;
         })
-        .map(inf => {
+        .map((inf: any) => {
           let daysToReceipt: number | null = null;
           if (inf.invoiceRaisedDate && inf.paymentReceivedDate &&
               /^\d{4}-\d{2}-\d{2}$/.test(inf.invoiceRaisedDate) &&
@@ -1401,10 +1494,11 @@ export async function registerRoutes(
             projectName: inf.projectName,
             milestoneName: inf.milestoneName,
             milestoneInvoiceNumber: inf.milestoneInvoiceNumber,
-            paymentReceivedDate: inf.paymentReceivedDate,
+            paymentReceivedDate: inf.effectiveDate,
             milestoneAmount: inf.milestoneAmount ? parseFloat(inf.milestoneAmount) : 0,
             invoiceRaisedDate: inf.invoiceRaisedDate,
             daysToReceipt,
+            isOverride: inf.effectiveDate !== inf.paymentReceivedDate,
           };
         });
 
@@ -1813,13 +1907,16 @@ export async function registerRoutes(
 
   app.get("/api/program-dashboard", requireAuth, async (req, res) => {
     try {
-      const [allProjectInfo, allExpenses, allInflows, allPlans, allEditableFields] = await Promise.all([
+      const [allProjectInfo, allExpenses, rawInflows, allPlans, allEditableFields, allTaskLinks, allOpTasks] = await Promise.all([
         storage.getAllProjectInfo(),
         storage.getAllProgramExpenses(),
         storage.getAllProgramInflows(),
         storage.getAllProjectPlans(),
         storage.getAllProjectEditableFields(),
+        storage.getAllMilestoneTaskLinks(),
+        storage.getAllOperationalTasks(),
       ]);
+      const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
 
       const today = new Date().toISOString().split("T")[0];
 
@@ -1908,7 +2005,7 @@ export async function registerRoutes(
               projRevOutstanding += amt;
             }
           }
-          if (isThisWeek(inflow.paymentReceivedDate) && inflow.milestoneAmount) {
+          if (isThisWeek(inflow.effectiveDate) && inflow.milestoneAmount) {
             inflowsThisWeek += parseFloat(inflow.milestoneAmount);
           }
         }
@@ -1919,7 +2016,7 @@ export async function registerRoutes(
         let projInflowsWeek = 0;
         let projOutflowsWeek = 0;
         for (const inflow of projectInflows) {
-          if (isThisWeek(inflow.paymentReceivedDate) && inflow.milestoneAmount) {
+          if (isThisWeek(inflow.effectiveDate) && inflow.milestoneAmount) {
             projInflowsWeek += parseFloat(inflow.milestoneAmount);
           }
         }
@@ -2002,12 +2099,16 @@ export async function registerRoutes(
 
   app.get("/api/dashboard/high-priority", requireAuth, async (req, res) => {
     try {
-      const [allProjectInfo, allExpenses, allInflows, allPlans] = await Promise.all([
+      const [allProjectInfo, allExpenses, rawInflows, allPlans, allTaskLinks, allOpTasks] = await Promise.all([
         storage.getAllProjectInfo(),
         storage.getAllProgramExpenses(),
         storage.getAllProgramInflows(),
         storage.getAllProjectPlans(),
+        storage.getAllMilestoneTaskLinks(),
+        storage.getAllOperationalTasks(),
       ]);
+
+      const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
 
       const today = new Date().toISOString().split("T")[0];
       const projectInfoMap = new Map(allProjectInfo.map(info => [info.projectName, info]));
@@ -2058,7 +2159,7 @@ export async function registerRoutes(
               milestoneName: inflow.milestoneName,
               invoiceNumber: inflow.milestoneInvoiceNumber,
               amount: amt,
-              dueDate: inflow.invoiceRaisedDate || null,
+              dueDate: inflow.effectiveDate || inflow.invoiceRaisedDate || null,
               severity: amt >= 1000000 ? "Critical" : amt >= 250000 ? "High" : "Medium",
             });
           }
@@ -4909,8 +5010,15 @@ export async function registerRoutes(
       const weeks = parseInt(String(req.query.weeks || '52'));
       const startDate = String(req.query.start || new Date().toISOString().split('T')[0]);
 
-      const expenses = await db.select().from(programExpense);
-      const inflows = await db.select().from(programInflows);
+      const [expenses, rawInflows, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
+        db.select().from(programExpense),
+        db.select().from(programInflows),
+        storage.getAllMilestoneTaskLinks(),
+        storage.getAllOperationalTasks(),
+        storage.getAllProjectPlans(),
+      ]);
+
+      const resolvedInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlanTasks);
 
       const outflowLines: CashflowLineItem[] = expenses
         .filter((e: any) => e.rowType === 'item' || !e.rowType)
@@ -4934,7 +5042,7 @@ export async function registerRoutes(
           supplierName: e.supplierName,
         }));
 
-      const inflowLines: CashflowLineItem[] = inflows
+      const inflowLines: CashflowLineItem[] = resolvedInflows
         .filter((inf: any) => {
           const amt = parseFloat(inf.milestoneAmount || '0');
           return !isNaN(amt) && amt !== 0;
@@ -4945,9 +5053,9 @@ export async function registerRoutes(
           type: 'inflow' as const,
           amount: Math.abs(parseFloat(inf.milestoneAmount || '0')),
           actualDate: inf.paymentReceivedDate || null,
-          forecastDate: inf.computedForecastReceiptDate || null,
+          forecastDate: inf.effectiveDate !== inf.paymentReceivedDate ? inf.effectiveDate : (inf.computedForecastReceiptDate || null),
           confidence: scoreInflowConfidence(inf),
-          assumptionDriver: inf.paymentReceivedDate ? 'Actual receipt' : (inf.invoiceRaisedDate ? 'Invoice raised + terms' : 'Planned date'),
+          assumptionDriver: inf.paymentReceivedDate ? 'Actual receipt' : (inf.effectiveDate !== inf.computedForecastReceiptDate && inf.effectiveDate !== inf.plannedPaymentDate ? 'Override/linked task' : (inf.invoiceRaisedDate ? 'Invoice raised + terms' : 'Planned date')),
           description: inf.milestoneName || 'Revenue milestone',
           invoiceNumber: inf.milestoneInvoiceNumber,
           poNumber: null,
@@ -4973,8 +5081,15 @@ export async function registerRoutes(
         return res.status(400).json({ error: 'weekStart and weekEnd required' });
       }
 
-      const expenses = await db.select().from(programExpense);
-      const inflows = await db.select().from(programInflows);
+      const [expenses, rawInflows, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
+        db.select().from(programExpense),
+        db.select().from(programInflows),
+        storage.getAllMilestoneTaskLinks(),
+        storage.getAllOperationalTasks(),
+        storage.getAllProjectPlans(),
+      ]);
+
+      const resolvedInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlanTasks);
 
       const outflowLines: CashflowLineItem[] = expenses
         .filter((e: any) => e.rowType === 'item' || !e.rowType)
@@ -4998,7 +5113,7 @@ export async function registerRoutes(
           supplierName: e.supplierName,
         }));
 
-      const inflowLines: CashflowLineItem[] = inflows
+      const inflowLines: CashflowLineItem[] = resolvedInflows
         .filter((inf: any) => {
           const amt = parseFloat(inf.milestoneAmount || '0');
           return !isNaN(amt) && amt !== 0;
@@ -5009,7 +5124,7 @@ export async function registerRoutes(
           type: 'inflow' as const,
           amount: Math.abs(parseFloat(inf.milestoneAmount || '0')),
           actualDate: inf.paymentReceivedDate || null,
-          forecastDate: inf.computedForecastReceiptDate || null,
+          forecastDate: inf.effectiveDate !== inf.paymentReceivedDate ? inf.effectiveDate : (inf.computedForecastReceiptDate || null),
           confidence: scoreInflowConfidence(inf),
           assumptionDriver: inf.paymentReceivedDate ? 'Actual receipt' : (inf.invoiceRaisedDate ? 'Invoice raised + terms' : 'Planned date'),
           description: inf.milestoneName || 'Revenue milestone',
@@ -5604,7 +5719,14 @@ export async function registerRoutes(
       const projectFilter = req.query.project as string || '';
 
       let allExpenses = await db.select().from(programExpense);
-      let allInflows = await db.select().from(programInflows);
+      const rawInflows = await db.select().from(programInflows);
+      const [allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
+        storage.getAllMilestoneTaskLinks(),
+        storage.getAllOperationalTasks(),
+        storage.getAllProjectPlans(),
+      ]);
+
+      let allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlanTasks);
 
       if (projectFilter) {
         allExpenses = allExpenses.filter((e: any) => e.projectName === projectFilter);
@@ -5644,16 +5766,17 @@ export async function registerRoutes(
           if (amount === 0) return null;
 
           const entityKey = `inflow_line::${inf.id}`;
-          const receiptDate = overrideMap[entityKey]?.['receipt_date'] || inf.paymentReceivedDate;
-          const forecastDate = overrideMap[entityKey]?.['receipt_date'] || inf.computedForecastReceiptDate || inf.plannedPaymentDate;
+          const scenarioReceiptDate = overrideMap[entityKey]?.['receipt_date'];
+          const receiptDate = scenarioReceiptDate || inf.paymentReceivedDate;
+          const forecastDate = scenarioReceiptDate || inf.effectiveDate || inf.computedForecastReceiptDate || inf.plannedPaymentDate;
 
           return {
             id: inf.id,
             projectName: inf.projectName,
             type: 'inflow' as const,
             amount,
-            actualDate: receiptDate && !overrideMap[entityKey]?.['receipt_date'] ? inf.paymentReceivedDate : null,
-            forecastDate: receiptDate || forecastDate || null,
+            actualDate: receiptDate && !scenarioReceiptDate ? inf.paymentReceivedDate : null,
+            forecastDate: forecastDate || null,
             confidence: scoreInflowConfidence(inf) as 'High' | 'Medium' | 'Low',
             assumptionDriver: getAssumptionDriver(inf),
             description: inf.milestoneName || `Milestone ${inf.milestoneNo || ''}`,
@@ -5709,8 +5832,14 @@ export async function registerRoutes(
 
       if (!weekStart || !weekEnd) return res.status(400).json({ error: "weekStart and weekEnd required" });
 
-      const allExpenses = await db.select().from(programExpense);
-      const allInflows = await db.select().from(programInflows);
+      const [allExpenses, rawInflows, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
+        db.select().from(programExpense),
+        db.select().from(programInflows),
+        storage.getAllMilestoneTaskLinks(),
+        storage.getAllOperationalTasks(),
+        storage.getAllProjectPlans(),
+      ]);
+      const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlanTasks);
       const expenseItems = allExpenses.filter((e: any) => e.rowType === 'item' || !e.rowType);
 
       let overrideMap: any = {};
@@ -5762,8 +5891,9 @@ export async function registerRoutes(
         if (amount === 0) continue;
 
         const entityKey = `inflow_line::${inf.id}`;
-        const receiptDate = overrideMap[entityKey]?.['receipt_date'] || inf.paymentReceivedDate;
-        const forecastDate = overrideMap[entityKey]?.['receipt_date'] || inf.computedForecastReceiptDate || inf.plannedPaymentDate;
+        const scenarioReceiptDate = overrideMap[entityKey]?.['receipt_date'];
+        const receiptDate = scenarioReceiptDate || inf.paymentReceivedDate;
+        const forecastDate = scenarioReceiptDate || inf.effectiveDate || inf.computedForecastReceiptDate || inf.plannedPaymentDate;
         const effectiveDate = receiptDate || forecastDate;
         if (!effectiveDate) continue;
 
@@ -5788,7 +5918,7 @@ export async function registerRoutes(
           category: 'Revenue',
           supplierName: null,
           confidence: scoreInflowConfidence(inf),
-          hasOverride: !!overrideMap[entityKey],
+          hasOverride: !!overrideMap[entityKey] || (inf.effectiveDate !== inf.paymentReceivedDate && inf.effectiveDate !== inf.computedForecastReceiptDate),
           originalDate: inf.paymentReceivedDate || inf.computedForecastReceiptDate || inf.plannedPaymentDate,
         });
       }
