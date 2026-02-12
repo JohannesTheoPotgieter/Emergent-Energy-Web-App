@@ -1577,25 +1577,6 @@ export async function registerRoutes(
 
       type Bucket = { total: number; projects: Map<string, number> };
 
-      const getExpenseMonthKey = (exp: any): string | null => {
-        const payDate = exp.expensePaymentDate as string | null;
-        if (payDate) {
-          const match = payDate.match(/^(\d{4})-(\d{2})/);
-          if (match) return `${match[1]}-${match[2]}`;
-        }
-        const forecastDate = exp.computedForecastPaymentDate as string | null;
-        if (forecastDate) {
-          const match = forecastDate.match(/^(\d{4})-(\d{2})/);
-          if (match) return `${match[1]}-${match[2]}`;
-        }
-        const invDate = exp.expenseInvoicedDate as string | null;
-        if (invDate) {
-          const match = invDate.match(/^(\d{4})-(\d{2})/);
-          if (match) return `${match[1]}-${match[2]}`;
-        }
-        return null;
-      }
-
       const plannedByMonth = new Map<string, Bucket>();
       const realisedByMonth = new Map<string, Bucket>();
 
@@ -1604,47 +1585,51 @@ export async function registerRoutes(
         if (isNaN(total) || total === 0) continue;
         const pName = exp.projectName.replace(/_Tracker$/i, '');
 
-        const monthKey = getExpenseMonthKey(exp);
-        if (monthKey) {
-          if (!plannedByMonth.has(monthKey)) {
-            plannedByMonth.set(monthKey, { total: 0, projects: new Map() });
-          }
-          const bucket = plannedByMonth.get(monthKey)!;
-          bucket.total += total;
-          bucket.projects.set(pName, (bucket.projects.get(pName) || 0) + total);
-        }
+        const hasInvoice = exp.expenseInvoiceNumber && (exp.expenseInvoiceNumber as string).trim() !== '';
+        const invDateStr = exp.expenseInvoicedDate as string | null;
 
-        if (exp.expenseInvoiceNumber && exp.expenseInvoicedDate) {
-          const invMatch = (exp.expenseInvoicedDate as string).match(/^(\d{4})-(\d{2})/);
+        if (hasInvoice && invDateStr) {
+          const invMatch = invDateStr.match(/^(\d{4})-(\d{2})/);
           if (invMatch) {
             const invMonthKey = `${invMatch[1]}-${invMatch[2]}`;
-            if (!realisedByMonth.has(invMonthKey)) {
-              realisedByMonth.set(invMonthKey, { total: 0, projects: new Map() });
+
+            if (!plannedByMonth.has(invMonthKey)) {
+              plannedByMonth.set(invMonthKey, { total: 0, projects: new Map() });
             }
-            const rBucket = realisedByMonth.get(invMonthKey)!;
-            rBucket.total += total;
-            rBucket.projects.set(pName, (rBucket.projects.get(pName) || 0) + total);
+            const pBucket = plannedByMonth.get(invMonthKey)!;
+            pBucket.total += total;
+            pBucket.projects.set(pName, (pBucket.projects.get(pName) || 0) + total);
+
+            const payDateStr = exp.expensePaymentDate as string | null;
+            if (payDateStr) {
+              if (!realisedByMonth.has(invMonthKey)) {
+                realisedByMonth.set(invMonthKey, { total: 0, projects: new Map() });
+              }
+              const rBucket = realisedByMonth.get(invMonthKey)!;
+              rBucket.total += total;
+              rBucket.projects.set(pName, (rBucket.projects.get(pName) || 0) + total);
+            }
           }
         }
       }
 
       const staticCosBudget: Record<string, number> = {
-        '2025-04': 8081066.99,
-        '2025-05': 16346671.77,
-        '2025-06': 20803804.86,
-        '2025-07': 12381055.48,
-        '2025-08': 12395435.22,
-        '2025-09': 20724666.08,
-        '2025-10': 30199956.69,
-        '2025-11': 21137178.14,
-        '2025-12': 31405517.81,
-        '2026-01': 41720854.07,
-        '2026-02': 30116780.50,
-        '2026-03': 73983803.91,
+        '2025-09': 8083466.99,
+        '2025-10': 16346971.77,
+        '2025-11': 20803804.86,
+        '2025-12': 12381055.48,
+        '2026-01': 12395435.22,
+        '2026-02': 20724666.08,
+        '2026-03': 30199956.69,
+        '2026-04': 21137178.14,
+        '2026-05': 31405517.81,
+        '2026-06': 41720854.07,
+        '2026-07': 30116780.50,
+        '2026-08': 73983803.91,
       };
 
       const months: any[] = [];
-      const startMonth = new Date(Date.UTC(2025, 3, 1));
+      const startMonth = new Date(Date.UTC(2025, 8, 1));
 
       let ytdPlanned = 0, ytdRealised = 0, ytdOutstanding = 0, ytdBudget = 0;
 
@@ -1677,7 +1662,7 @@ export async function registerRoutes(
           realisedProjects.sort((a, b) => b.value - a.value);
         }
 
-        const outstanding = planned - realised;
+        const outstanding = Math.max(0, planned - realised);
 
         const outstandingProjects: { projectName: string; value: number }[] = [];
         const allProjNames = new Set<string>();
@@ -1686,8 +1671,8 @@ export async function registerRoutes(
         Array.from(allProjNames).forEach((pName) => {
           const pPlanned = plannedBucket?.projects.get(pName) ?? 0;
           const pRealised = realisedBucket?.projects.get(pName) ?? 0;
-          const pOutstanding = pPlanned - pRealised;
-          if (pOutstanding !== 0) {
+          const pOutstanding = Math.max(0, pPlanned - pRealised);
+          if (pOutstanding > 0) {
             outstandingProjects.push({ projectName: pName, value: pOutstanding });
           }
         });
@@ -1762,29 +1747,21 @@ export async function registerRoutes(
         const total = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
         if (isNaN(total) || total === 0) continue;
 
-        let lineState = "Planned";
-        if (exp.expensePaymentDate && /^\d{4}-\d{2}/.test(exp.expensePaymentDate)) {
-          lineState = "Paid";
-        } else if (exp.expenseInvoiceNumber && exp.expenseInvoiceNumber.trim() !== '' && exp.expenseInvoicedDate) {
-          lineState = "Invoiced";
-        } else if (exp.expensePoNumber && exp.expensePoNumber.trim() !== '') {
-          lineState = "Committed";
-        }
+        const hasInvoice = exp.expenseInvoiceNumber && (exp.expenseInvoiceNumber as string).trim() !== '';
+        const invDateStr = exp.expenseInvoicedDate as string | null;
+        if (!hasInvoice || !invDateStr) continue;
 
-        let dateForMonth: string | null = null;
-        if (lineState === "Paid" || lineState === "Invoiced") {
-          dateForMonth = exp.expenseInvoicedDate || exp.expensePaymentDate;
-        } else {
-          dateForMonth = exp.expensePaymentDate || exp.expenseInvoicedDate;
-        }
-
-        if (!dateForMonth) continue;
-        const dateMatch = dateForMonth.match(/^(\d{4})-(\d{2})/);
+        const dateMatch = invDateStr.match(/^(\d{4})-(\d{2})/);
         if (!dateMatch) continue;
         const lineMonthKey = `${dateMatch[1]}-${dateMatch[2]}`;
-
         if (lineMonthKey !== monthKey) continue;
-        if (state && lineState !== state) continue;
+
+        let lineState = "Planned";
+        if (exp.expensePaymentDate && /^\d{4}-\d{2}/.test(exp.expensePaymentDate as string)) {
+          lineState = "Realised";
+        }
+
+        if (state && state !== "all" && lineState !== state) continue;
 
         items.push({
           id: exp.id,
@@ -1866,6 +1843,15 @@ export async function registerRoutes(
       let inflowsThisWeek = 0;
       let outflowsThisWeek = 0;
 
+      const siteEstablishmentProjects: Array<{ projectName: string; date: string; pm: string | null }> = [];
+      const commissioningProjects: Array<{ projectName: string; date: string; pm: string | null }> = [];
+      const omHandoverProjects: Array<{ projectName: string; date: string; pm: string | null }> = [];
+      const clientHandoverProjects: Array<{ projectName: string; date: string; pm: string | null }> = [];
+      const revenueOutstandingProjects: Array<{ projectName: string; amount: number; milestone: string | null }> = [];
+      const expenseOverdueProjects: Array<{ projectName: string; amount: number; lineItem: string | null }> = [];
+      const inflowProjects: Array<{ projectName: string; amount: number }> = [];
+      const outflowProjects: Array<{ projectName: string; amount: number }> = [];
+
       const pmStats = new Map<string, { activeProjects: number; commissioningThisMonth: number; clientHandoverThisMonth: number }>();
 
       for (const projectName of Array.from(allProjectNames)) {
@@ -1879,35 +1865,73 @@ export async function registerRoutes(
         const omHandoverDate = findMaxEndDate(projectPlans, ['handover to matriarch']) || info?.omHandoverDate || null;
         const clientHandoverDate = findMaxEndDate(projectPlans, ['handover to client']) || info?.clientHandoverDate || null;
 
-        if (isWithinDays(constructionStartDate, 10)) siteEstablishmentNext10++;
-        if (isWithinDays(commissioningDate, 10)) commissioningNext10++;
-        if (isWithinDays(omHandoverDate, 10)) omHandoverNext10++;
-        if (isWithinDays(clientHandoverDate, 10)) clientHandoverNext10++;
+        if (isWithinDays(constructionStartDate, 10)) {
+          siteEstablishmentNext10++;
+          siteEstablishmentProjects.push({ projectName, date: constructionStartDate!, pm: info?.pm || null });
+        }
+        if (isWithinDays(commissioningDate, 10)) {
+          commissioningNext10++;
+          commissioningProjects.push({ projectName, date: commissioningDate!, pm: info?.pm || null });
+        }
+        if (isWithinDays(omHandoverDate, 10)) {
+          omHandoverNext10++;
+          omHandoverProjects.push({ projectName, date: omHandoverDate!, pm: info?.pm || null });
+        }
+        if (isWithinDays(clientHandoverDate, 10)) {
+          clientHandoverNext10++;
+          clientHandoverProjects.push({ projectName, date: clientHandoverDate!, pm: info?.pm || null });
+        }
 
+        let projRevOutstanding = 0;
         for (const inflow of projectInflows) {
           if (inflow.milestoneAmount) {
             const hasPayment = inflow.paymentReceivedDate && /^\d{4}-\d{2}-\d{2}$/.test(inflow.paymentReceivedDate) && inflow.paymentReceivedDate <= today;
             const noInvoice = !inflow.milestoneInvoiceNumber || inflow.milestoneInvoiceNumber.trim() === '';
             if (hasPayment && noInvoice) {
-              revenueOutstanding += parseFloat(inflow.milestoneAmount);
+              const amt = parseFloat(inflow.milestoneAmount);
+              revenueOutstanding += amt;
+              projRevOutstanding += amt;
             }
           }
           if (isThisWeek(inflow.paymentReceivedDate) && inflow.milestoneAmount) {
             inflowsThisWeek += parseFloat(inflow.milestoneAmount);
           }
         }
+        if (projRevOutstanding > 0) {
+          revenueOutstandingProjects.push({ projectName, amount: projRevOutstanding, milestone: null });
+        }
 
+        let projInflowsWeek = 0;
+        let projOutflowsWeek = 0;
+        for (const inflow of projectInflows) {
+          if (isThisWeek(inflow.paymentReceivedDate) && inflow.milestoneAmount) {
+            projInflowsWeek += parseFloat(inflow.milestoneAmount);
+          }
+        }
+        if (projInflowsWeek > 0) {
+          inflowProjects.push({ projectName, amount: projInflowsWeek });
+        }
+
+        let projExpOverdue = 0;
         for (const expense of projectExpenses) {
           if (expense.expenseActualTotal) {
             const hasPastPaymentDate = expense.expensePaymentDate && /^\d{4}-\d{2}-\d{2}$/.test(expense.expensePaymentDate) && expense.expensePaymentDate < today;
             const noInvoice = !expense.expenseInvoiceNumber || expense.expenseInvoiceNumber.trim() === '';
             if (hasPastPaymentDate && noInvoice) {
-              expenseOverdue += parseFloat(expense.expenseActualTotal);
+              const amt = parseFloat(expense.expenseActualTotal);
+              expenseOverdue += amt;
+              projExpOverdue += amt;
             }
           }
           if (isThisWeek(expense.expensePaymentDate) && expense.expenseActualTotal) {
-            outflowsThisWeek += parseFloat(expense.expenseActualTotal);
+            projOutflowsWeek += parseFloat(expense.expenseActualTotal);
           }
+        }
+        if (projExpOverdue > 0) {
+          expenseOverdueProjects.push({ projectName, amount: projExpOverdue, lineItem: null });
+        }
+        if (projOutflowsWeek > 0) {
+          outflowProjects.push({ projectName, amount: projOutflowsWeek });
         }
 
         const pm = info?.pm;
@@ -1941,6 +1965,16 @@ export async function registerRoutes(
           expenseOverdue,
           inflowsThisWeek,
           outflowsThisWeek,
+        },
+        kpiDetails: {
+          siteEstablishmentProjects,
+          commissioningProjects,
+          omHandoverProjects,
+          clientHandoverProjects,
+          revenueOutstandingProjects: revenueOutstandingProjects.sort((a, b) => b.amount - a.amount),
+          expenseOverdueProjects: expenseOverdueProjects.sort((a, b) => b.amount - a.amount),
+          inflowProjects: inflowProjects.sort((a, b) => b.amount - a.amount),
+          outflowProjects: outflowProjects.sort((a, b) => b.amount - a.amount),
         },
         pmTable,
       });
@@ -5570,6 +5604,54 @@ export async function registerRoutes(
   app.get("/api/operational-tasks/task/:id", requireAuth, async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
+
+      if (id < 0) {
+        const planId = -id;
+        let planTask: any = null;
+        const allProjects = await storage.getAllProjectInfo();
+        for (const proj of allProjects) {
+          const plans = await storage.getProjectPlansByProject(proj.projectName);
+          planTask = plans.find((t: any) => t.id === planId);
+          if (planTask) break;
+        }
+        if (!planTask) return res.status(404).json({ error: "Baseline task not found" });
+
+        const pctComplete = planTask.actualPctComplete != null ? Math.round(planTask.actualPctComplete * 100) : 0;
+        let status = "Not Started";
+        if (pctComplete >= 100) status = "Done";
+        else if (pctComplete > 0) status = "In Progress";
+
+        const syntheticTask = {
+          id: -planTask.id,
+          projectName: planTask.projectName,
+          importedTaskId: planTask.id,
+          taskNumber: planTask.taskNo || String(planTask.rowNumber || ""),
+          parentTaskId: null,
+          title: planTask.highLevelProgramme || `Task ${planTask.taskNo || planTask.rowNumber}`,
+          description: null,
+          status,
+          priority: "Normal",
+          startDate: planTask.actualStart || null,
+          dueDate: planTask.actualEnd || null,
+          durationDays: planTask.durationDays || null,
+          percentComplete: pctComplete,
+          expectedPercentComplete: planTask.expectedPctComplete != null ? Math.round(planTask.expectedPctComplete * 100) : null,
+          assignees: null,
+          tags: null,
+          blockerReason: null,
+          plannedHours: null,
+          actualHours: null,
+          sortOrder: planTask.rowNumber || 0,
+          isBaseline: true,
+          source: "baseline",
+          createdBy: null,
+          createdAt: planTask.createdAt,
+          updatedAt: planTask.createdAt,
+        };
+        res.json({ task: syntheticTask, comments: [], checklists: [], attachments: [], activity: [] });
+        return;
+      }
+
       const task = await storage.getOperationalTask(id);
       if (!task) return res.status(404).json({ error: "Task not found" });
       const [comments, checklists, attachments, activity] = await Promise.all([
@@ -5666,9 +5748,72 @@ export async function registerRoutes(
   app.patch("/api/operational-tasks/:id", requireAuth, async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
+      const updates = req.body;
+
+      if (id < 0) {
+        const planId = -id;
+        const planTasks = await storage.getProjectPlansByProject("");
+        const pt = planTasks.find((t: any) => t.id === planId) ||
+          (await (async () => {
+            const allPlans = await storage.getProjectPlansByProject("");
+            return allPlans.find((t: any) => t.id === planId);
+          })());
+
+        let planTask: any = null;
+        try {
+          const allProjects = await storage.getAllProjectInfo();
+          for (const proj of allProjects) {
+            const plans = await storage.getProjectPlansByProject(proj.projectName);
+            planTask = plans.find((t: any) => t.id === planId);
+            if (planTask) break;
+          }
+        } catch {}
+
+        if (!planTask) return res.status(404).json({ error: "Baseline task not found" });
+
+        const pctComplete = planTask.actualPctComplete != null ? Math.round(planTask.actualPctComplete * 100) : 0;
+        let status = "Not Started";
+        if (pctComplete >= 100) status = "Done";
+        else if (pctComplete > 0) status = "In Progress";
+
+        const newTask = await storage.createOperationalTask({
+          projectName: planTask.projectName,
+          importedTaskId: planTask.id,
+          taskNumber: planTask.taskNo || String(planTask.rowNumber || ""),
+          title: planTask.highLevelProgramme || `Task ${planTask.taskNo || planTask.rowNumber}`,
+          description: null,
+          status,
+          priority: "Normal",
+          startDate: planTask.actualStart || null,
+          dueDate: planTask.actualEnd || null,
+          durationDays: planTask.durationDays || null,
+          percentComplete: pctComplete,
+          assignees: null,
+          tags: null,
+          blockerReason: null,
+          plannedHours: null,
+          actualHours: null,
+          sortOrder: planTask.rowNumber || 0,
+          source: "baseline",
+          createdBy: (req.user as any)?.id || null,
+          ...updates,
+        });
+
+        await storage.createTaskActivityLog({
+          taskId: newTask.id,
+          actorId: (req.user as any)?.id || null,
+          actionType: 'promoted',
+          fieldName: null,
+          oldValue: `baseline:${planId}`,
+          newValue: JSON.stringify(updates),
+        });
+
+        res.json({ ...newTask, isBaseline: true, _promotedFrom: planId });
+        return;
+      }
+
       const oldTask = await storage.getOperationalTask(id);
       if (!oldTask) return res.status(404).json({ error: "Task not found" });
-      const updates = req.body;
       const updated = await storage.updateOperationalTask(id, updates);
       for (const [key, value] of Object.entries(updates)) {
         if ((oldTask as any)[key] !== value) {
@@ -5714,6 +5859,49 @@ export async function registerRoutes(
       const { taskIds, updates } = req.body as { taskIds: number[]; updates: Record<string, any> };
       const results = [];
       for (const taskId of taskIds) {
+        if (taskId < 0) {
+          const planId = -taskId;
+          let planTask: any = null;
+          try {
+            const allProjects = await storage.getAllProjectInfo();
+            for (const proj of allProjects) {
+              const plans = await storage.getProjectPlansByProject(proj.projectName);
+              planTask = plans.find((t: any) => t.id === planId);
+              if (planTask) break;
+            }
+          } catch {}
+          if (!planTask) continue;
+
+          const pctComplete = planTask.actualPctComplete != null ? Math.round(planTask.actualPctComplete * 100) : 0;
+          let status = "Not Started";
+          if (pctComplete >= 100) status = "Done";
+          else if (pctComplete > 0) status = "In Progress";
+
+          const newTask = await storage.createOperationalTask({
+            projectName: planTask.projectName,
+            importedTaskId: planTask.id,
+            taskNumber: planTask.taskNo || String(planTask.rowNumber || ""),
+            title: planTask.highLevelProgramme || `Task ${planTask.taskNo || planTask.rowNumber}`,
+            description: null,
+            status,
+            priority: "Normal",
+            startDate: planTask.actualStart || null,
+            dueDate: planTask.actualEnd || null,
+            durationDays: planTask.durationDays || null,
+            percentComplete: pctComplete,
+            assignees: null,
+            tags: null,
+            blockerReason: null,
+            plannedHours: null,
+            actualHours: null,
+            sortOrder: planTask.rowNumber || 0,
+            source: "baseline",
+            createdBy: (req.user as any)?.id || null,
+            ...updates,
+          });
+          results.push(newTask);
+          continue;
+        }
         const oldTask = await storage.getOperationalTask(taskId);
         if (!oldTask) continue;
         const updated = await storage.updateOperationalTask(taskId, updates);

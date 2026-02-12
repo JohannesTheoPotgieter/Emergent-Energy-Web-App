@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { 
   Construction, Zap, Wrench, UserCheck, DollarSign, AlertCircle, 
   TrendingDown, TrendingUp, ArrowRight, AlertTriangle, Clock,
-  ChevronDown, ChevronRight,
+  ChevronDown, ChevronRight, X,
 } from "lucide-react";
 import { useLocation, Link } from "wouter";
 import { format } from "date-fns";
@@ -132,9 +132,61 @@ function PrioritySection({
   );
 }
 
+function KpiDrilldown({ 
+  items, 
+  type, 
+  onClose,
+  onNavigate 
+}: { 
+  items: any[]; 
+  type: string;
+  onClose: () => void;
+  onNavigate: (projectName: string) => void;
+}) {
+  if (!items || items.length === 0) {
+    return (
+      <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white dark:bg-gray-900 border rounded-lg shadow-lg p-3">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs font-semibold text-muted-foreground">No projects</span>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-3 w-3" /></button>
+        </div>
+      </div>
+    );
+  }
+
+  const isFinancial = type === 'revenue' || type === 'expense' || type === 'inflows' || type === 'outflows';
+
+  return (
+    <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white dark:bg-gray-900 border rounded-lg shadow-lg p-3 max-h-64 overflow-y-auto min-w-[280px]">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-semibold text-muted-foreground">{items.length} project{items.length !== 1 ? 's' : ''}</span>
+        <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-3 w-3" /></button>
+      </div>
+      <div className="space-y-1">
+        {items.map((item: any, i: number) => (
+          <button
+            key={i}
+            className="w-full text-left flex items-center justify-between gap-2 py-1.5 px-2 rounded hover:bg-muted/50 text-sm transition-colors"
+            onClick={() => onNavigate(item.projectName)}
+            data-testid={`drilldown-item-${i}`}
+          >
+            <span className="truncate font-medium text-primary">{(item.projectName || '').replace('_Tracker', '')}</span>
+            {isFinancial ? (
+              <span className="text-xs font-mono text-muted-foreground whitespace-nowrap">{formatRand(item.amount)}</span>
+            ) : (
+              <span className="text-xs text-muted-foreground whitespace-nowrap">{item.date}</span>
+            )}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const [, setLocation] = useLocation();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [activeDrilldown, setActiveDrilldown] = useState<string | null>(null);
 
   const { data: dashboardData, isLoading: dashLoading } = useQuery<{
     kpis: {
@@ -146,6 +198,16 @@ export default function Dashboard() {
       expenseOverdue: number;
       inflowsThisWeek: number;
       outflowsThisWeek: number;
+    };
+    kpiDetails: {
+      siteEstablishmentProjects: Array<{ projectName: string; date: string; pm: string | null }>;
+      commissioningProjects: Array<{ projectName: string; date: string; pm: string | null }>;
+      omHandoverProjects: Array<{ projectName: string; date: string; pm: string | null }>;
+      clientHandoverProjects: Array<{ projectName: string; date: string; pm: string | null }>;
+      revenueOutstandingProjects: Array<{ projectName: string; amount: number }>;
+      expenseOverdueProjects: Array<{ projectName: string; amount: number }>;
+      inflowProjects: Array<{ projectName: string; amount: number }>;
+      outflowProjects: Array<{ projectName: string; amount: number }>;
     };
     pmTable: Array<{ pm: string; activeProjects: number; commissioningThisMonth: number; clientHandoverThisMonth: number }>;
   }>({
@@ -162,6 +224,7 @@ export default function Dashboard() {
   });
 
   const kpis = dashboardData?.kpis;
+  const kpiDetails = dashboardData?.kpiDetails;
   const pmTable = dashboardData?.pmTable || [];
 
   const top10Projects = useMemo(() => {
@@ -184,10 +247,20 @@ export default function Dashboard() {
 
   const toggle = (key: string) => setExpanded(prev => ({ ...prev, [key]: !prev[key] }));
 
+  const toggleDrilldown = (key: string) => {
+    setActiveDrilldown(prev => prev === key ? null : key);
+  };
+
+  const navigateToProject = (projectName: string) => {
+    setActiveDrilldown(null);
+    setLocation(`/project/${encodeURIComponent(projectName)}`);
+  };
+
   if (dashLoading && !dashboardData) {
     return (
       <div className="space-y-6">
         <h2 className="text-3xl font-heading font-bold text-foreground" data-testid="text-page-title">Program Dashboard</h2>
+        <p className="text-sm text-muted-foreground">FY26: 1 Sep 2025 - 31 Aug 2026</p>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
             <div key={i} className="h-32 bg-muted/20 animate-pulse rounded-lg" />
@@ -199,7 +272,12 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-3xl font-heading font-bold text-foreground" data-testid="text-page-title">Program Dashboard</h2>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-3xl font-heading font-bold text-foreground" data-testid="text-page-title">Program Dashboard</h2>
+          <p className="text-sm text-muted-foreground mt-1">FY26: 1 Sep 2025 - 31 Aug 2026</p>
+        </div>
+      </div>
 
       <Card className="border-red-200 dark:border-red-800 bg-red-50/30 dark:bg-red-950/10" data-testid="card-high-priority">
         <CardHeader className="pb-3">
@@ -301,139 +379,251 @@ export default function Dashboard() {
       </Card>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card className="bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800" data-testid="card-site-establishment">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="p-3 rounded-lg bg-amber-100 dark:bg-amber-900/40">
-                <Construction className="w-6 h-6 text-amber-700 dark:text-amber-400" />
+        <div className="relative">
+          <Card 
+            className="bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 cursor-pointer hover:shadow-md transition-shadow" 
+            data-testid="card-site-establishment"
+            onClick={() => toggleDrilldown('site')}
+          >
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <div className="p-3 rounded-lg bg-amber-100 dark:bg-amber-900/40">
+                  <Construction className="w-6 h-6 text-amber-700 dark:text-amber-400" />
+                </div>
+                <div>
+                  <p className="text-3xl font-bold text-amber-800 dark:text-amber-300" data-testid="value-site-establishment">
+                    {kpis?.siteEstablishmentNext10 ?? 0}
+                  </p>
+                  <p className="text-sm font-medium text-amber-700 dark:text-amber-400">Site Establishment</p>
+                  <p className="text-xs text-amber-600 dark:text-amber-500">Next 7 Days</p>
+                </div>
               </div>
-              <div>
-                <p className="text-3xl font-bold text-amber-800 dark:text-amber-300" data-testid="value-site-establishment">
-                  {kpis?.siteEstablishmentNext10 ?? 0}
-                </p>
-                <p className="text-sm font-medium text-amber-700 dark:text-amber-400">Site Establishment</p>
-                <p className="text-xs text-amber-600 dark:text-amber-500">Next 7 Days</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+          {activeDrilldown === 'site' && kpiDetails && (
+            <KpiDrilldown
+              items={kpiDetails.siteEstablishmentProjects}
+              type="milestone"
+              onClose={() => setActiveDrilldown(null)}
+              onNavigate={navigateToProject}
+            />
+          )}
+        </div>
 
-        <Card className="bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800" data-testid="card-commissioning">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="p-3 rounded-lg bg-blue-100 dark:bg-blue-900/40">
-                <Zap className="w-6 h-6 text-blue-700 dark:text-blue-400" />
+        <div className="relative">
+          <Card 
+            className="bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 cursor-pointer hover:shadow-md transition-shadow" 
+            data-testid="card-commissioning"
+            onClick={() => toggleDrilldown('commissioning')}
+          >
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <div className="p-3 rounded-lg bg-blue-100 dark:bg-blue-900/40">
+                  <Zap className="w-6 h-6 text-blue-700 dark:text-blue-400" />
+                </div>
+                <div>
+                  <p className="text-3xl font-bold text-blue-800 dark:text-blue-300" data-testid="value-commissioning">
+                    {kpis?.commissioningNext10 ?? 0}
+                  </p>
+                  <p className="text-sm font-medium text-blue-700 dark:text-blue-400">Commissioning</p>
+                  <p className="text-xs text-blue-600 dark:text-blue-500">Next 7 Days</p>
+                </div>
               </div>
-              <div>
-                <p className="text-3xl font-bold text-blue-800 dark:text-blue-300" data-testid="value-commissioning">
-                  {kpis?.commissioningNext10 ?? 0}
-                </p>
-                <p className="text-sm font-medium text-blue-700 dark:text-blue-400">Commissioning</p>
-                <p className="text-xs text-blue-600 dark:text-blue-500">Next 7 Days</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+          {activeDrilldown === 'commissioning' && kpiDetails && (
+            <KpiDrilldown
+              items={kpiDetails.commissioningProjects}
+              type="milestone"
+              onClose={() => setActiveDrilldown(null)}
+              onNavigate={navigateToProject}
+            />
+          )}
+        </div>
 
-        <Card className="bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800" data-testid="card-om-handover">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="p-3 rounded-lg bg-green-100 dark:bg-green-900/40">
-                <Wrench className="w-6 h-6 text-green-700 dark:text-green-400" />
+        <div className="relative">
+          <Card 
+            className="bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 cursor-pointer hover:shadow-md transition-shadow" 
+            data-testid="card-om-handover"
+            onClick={() => toggleDrilldown('om')}
+          >
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <div className="p-3 rounded-lg bg-green-100 dark:bg-green-900/40">
+                  <Wrench className="w-6 h-6 text-green-700 dark:text-green-400" />
+                </div>
+                <div>
+                  <p className="text-3xl font-bold text-green-800 dark:text-green-300" data-testid="value-om-handover">
+                    {kpis?.omHandoverNext10 ?? 0}
+                  </p>
+                  <p className="text-sm font-medium text-green-700 dark:text-green-400">O&M Handover</p>
+                  <p className="text-xs text-green-600 dark:text-green-500">Next 7 Days</p>
+                </div>
               </div>
-              <div>
-                <p className="text-3xl font-bold text-green-800 dark:text-green-300" data-testid="value-om-handover">
-                  {kpis?.omHandoverNext10 ?? 0}
-                </p>
-                <p className="text-sm font-medium text-green-700 dark:text-green-400">O&M Handover</p>
-                <p className="text-xs text-green-600 dark:text-green-500">Next 7 Days</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+          {activeDrilldown === 'om' && kpiDetails && (
+            <KpiDrilldown
+              items={kpiDetails.omHandoverProjects}
+              type="milestone"
+              onClose={() => setActiveDrilldown(null)}
+              onNavigate={navigateToProject}
+            />
+          )}
+        </div>
 
-        <Card className="bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-800" data-testid="card-client-handover">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="p-3 rounded-lg bg-purple-100 dark:bg-purple-900/40">
-                <UserCheck className="w-6 h-6 text-purple-700 dark:text-purple-400" />
+        <div className="relative">
+          <Card 
+            className="bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-800 cursor-pointer hover:shadow-md transition-shadow" 
+            data-testid="card-client-handover"
+            onClick={() => toggleDrilldown('client')}
+          >
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <div className="p-3 rounded-lg bg-purple-100 dark:bg-purple-900/40">
+                  <UserCheck className="w-6 h-6 text-purple-700 dark:text-purple-400" />
+                </div>
+                <div>
+                  <p className="text-3xl font-bold text-purple-800 dark:text-purple-300" data-testid="value-client-handover">
+                    {kpis?.clientHandoverNext10 ?? 0}
+                  </p>
+                  <p className="text-sm font-medium text-purple-700 dark:text-purple-400">Client Handover</p>
+                  <p className="text-xs text-purple-600 dark:text-purple-500">Next 7 Days</p>
+                </div>
               </div>
-              <div>
-                <p className="text-3xl font-bold text-purple-800 dark:text-purple-300" data-testid="value-client-handover">
-                  {kpis?.clientHandoverNext10 ?? 0}
-                </p>
-                <p className="text-sm font-medium text-purple-700 dark:text-purple-400">Client Handover</p>
-                <p className="text-xs text-purple-600 dark:text-purple-500">Next 7 Days</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+          {activeDrilldown === 'client' && kpiDetails && (
+            <KpiDrilldown
+              items={kpiDetails.clientHandoverProjects}
+              type="milestone"
+              onClose={() => setActiveDrilldown(null)}
+              onNavigate={navigateToProject}
+            />
+          )}
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card className="bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800" data-testid="card-revenue-outstanding">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="p-3 rounded-lg bg-amber-100 dark:bg-amber-900/40">
-                <DollarSign className="w-6 h-6 text-amber-700 dark:text-amber-400" />
+        <div className="relative">
+          <Card 
+            className="bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 cursor-pointer hover:shadow-md transition-shadow" 
+            data-testid="card-revenue-outstanding"
+            onClick={() => toggleDrilldown('revOutstanding')}
+          >
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <div className="p-3 rounded-lg bg-amber-100 dark:bg-amber-900/40">
+                  <DollarSign className="w-6 h-6 text-amber-700 dark:text-amber-400" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-amber-800 dark:text-amber-300" data-testid="value-revenue-outstanding">
+                    {formatRand(kpis?.revenueOutstanding ?? 0)}
+                  </p>
+                  <p className="text-sm font-medium text-amber-700 dark:text-amber-400">Revenue Outstanding</p>
+                </div>
               </div>
-              <div>
-                <p className="text-2xl font-bold text-amber-800 dark:text-amber-300" data-testid="value-revenue-outstanding">
-                  {formatRand(kpis?.revenueOutstanding ?? 0)}
-                </p>
-                <p className="text-sm font-medium text-amber-700 dark:text-amber-400">Revenue Outstanding</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+          {activeDrilldown === 'revOutstanding' && kpiDetails && (
+            <KpiDrilldown
+              items={kpiDetails.revenueOutstandingProjects}
+              type="revenue"
+              onClose={() => setActiveDrilldown(null)}
+              onNavigate={navigateToProject}
+            />
+          )}
+        </div>
 
-        <Card className="bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800" data-testid="card-expenses-overdue">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="p-3 rounded-lg bg-red-100 dark:bg-red-900/40">
-                <AlertCircle className="w-6 h-6 text-red-700 dark:text-red-400" />
+        <div className="relative">
+          <Card 
+            className="bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 cursor-pointer hover:shadow-md transition-shadow" 
+            data-testid="card-expenses-overdue"
+            onClick={() => toggleDrilldown('expOverdue')}
+          >
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <div className="p-3 rounded-lg bg-red-100 dark:bg-red-900/40">
+                  <AlertCircle className="w-6 h-6 text-red-700 dark:text-red-400" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-red-800 dark:text-red-300" data-testid="value-expenses-overdue">
+                    {formatRand(kpis?.expenseOverdue ?? 0)}
+                  </p>
+                  <p className="text-sm font-medium text-red-700 dark:text-red-400">Expenses Overdue</p>
+                </div>
               </div>
-              <div>
-                <p className="text-2xl font-bold text-red-800 dark:text-red-300" data-testid="value-expenses-overdue">
-                  {formatRand(kpis?.expenseOverdue ?? 0)}
-                </p>
-                <p className="text-sm font-medium text-red-700 dark:text-red-400">Expenses Overdue</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+          {activeDrilldown === 'expOverdue' && kpiDetails && (
+            <KpiDrilldown
+              items={kpiDetails.expenseOverdueProjects}
+              type="expense"
+              onClose={() => setActiveDrilldown(null)}
+              onNavigate={navigateToProject}
+            />
+          )}
+        </div>
 
-        <Card className="bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800" data-testid="card-inflows-this-week">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="p-3 rounded-lg bg-green-100 dark:bg-green-900/40">
-                <TrendingUp className="w-6 h-6 text-green-700 dark:text-green-400" />
+        <div className="relative">
+          <Card 
+            className="bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 cursor-pointer hover:shadow-md transition-shadow" 
+            data-testid="card-inflows-this-week"
+            onClick={() => toggleDrilldown('inflows')}
+          >
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <div className="p-3 rounded-lg bg-green-100 dark:bg-green-900/40">
+                  <TrendingUp className="w-6 h-6 text-green-700 dark:text-green-400" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-green-800 dark:text-green-300" data-testid="value-inflows-this-week">
+                    {formatRand(kpis?.inflowsThisWeek ?? 0)}
+                  </p>
+                  <p className="text-sm font-medium text-green-700 dark:text-green-400">Inflows This Week</p>
+                </div>
               </div>
-              <div>
-                <p className="text-2xl font-bold text-green-800 dark:text-green-300" data-testid="value-inflows-this-week">
-                  {formatRand(kpis?.inflowsThisWeek ?? 0)}
-                </p>
-                <p className="text-sm font-medium text-green-700 dark:text-green-400">Inflows This Week</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+          {activeDrilldown === 'inflows' && kpiDetails && (
+            <KpiDrilldown
+              items={kpiDetails.inflowProjects}
+              type="inflows"
+              onClose={() => setActiveDrilldown(null)}
+              onNavigate={navigateToProject}
+            />
+          )}
+        </div>
 
-        <Card className="bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800" data-testid="card-outflows-this-week">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="p-3 rounded-lg bg-red-100 dark:bg-red-900/40">
-                <TrendingDown className="w-6 h-6 text-red-700 dark:text-red-400" />
+        <div className="relative">
+          <Card 
+            className="bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 cursor-pointer hover:shadow-md transition-shadow" 
+            data-testid="card-outflows-this-week"
+            onClick={() => toggleDrilldown('outflows')}
+          >
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <div className="p-3 rounded-lg bg-red-100 dark:bg-red-900/40">
+                  <TrendingDown className="w-6 h-6 text-red-700 dark:text-red-400" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-red-800 dark:text-red-300" data-testid="value-outflows-this-week">
+                    {formatRand(kpis?.outflowsThisWeek ?? 0)}
+                  </p>
+                  <p className="text-sm font-medium text-red-700 dark:text-red-400">Outflows This Week</p>
+                </div>
               </div>
-              <div>
-                <p className="text-2xl font-bold text-red-800 dark:text-red-300" data-testid="value-outflows-this-week">
-                  {formatRand(kpis?.outflowsThisWeek ?? 0)}
-                </p>
-                <p className="text-sm font-medium text-red-700 dark:text-red-400">Outflows This Week</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+          {activeDrilldown === 'outflows' && kpiDetails && (
+            <KpiDrilldown
+              items={kpiDetails.outflowProjects}
+              type="outflows"
+              onClose={() => setActiveDrilldown(null)}
+              onNavigate={navigateToProject}
+            />
+          )}
+        </div>
       </div>
 
       <Card data-testid="card-pm-summary">
