@@ -157,14 +157,12 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
     });
   };
 
-  const editableTasks = filtered.filter((t) => t.id > 0);
-  const allSelected = editableTasks.length > 0 && editableTasks.every((t) => selectedIds.has(t.id));
+  const allSelected = filtered.length > 0 && filtered.every((t) => selectedIds.has(t.id));
   const toggleAll = () => {
     if (allSelected) setSelectedIds(new Set());
-    else setSelectedIds(new Set(editableTasks.map((t) => t.id)));
+    else setSelectedIds(new Set(filtered.map((t) => t.id)));
   };
   const toggleOne = (id: number) => {
-    if (id < 0) return;
     setSelectedIds((prev) => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
@@ -198,149 +196,109 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
   };
 
   const renderRow = (task: OperationalTask) => {
-    const isReadOnly = task.id < 0;
     return (
       <TableRow key={task.id} data-testid={`row-task-${task.id}`} className="group hover:bg-muted/50">
         <TableCell className="w-10">
-          {!isReadOnly && (
-            <Checkbox
-              data-testid={`checkbox-task-${task.id}`}
-              checked={selectedIds.has(task.id)}
-              onCheckedChange={() => toggleOne(task.id)}
-            />
-          )}
+          <Checkbox
+            data-testid={`checkbox-task-${task.id}`}
+            checked={selectedIds.has(task.id)}
+            onCheckedChange={() => toggleOne(task.id)}
+          />
         </TableCell>
         <TableCell className="w-16 text-xs text-muted-foreground font-mono" data-testid={`text-tasknum-${task.id}`}>
           {task.taskNumber || "—"}
         </TableCell>
         <TableCell className="min-w-[200px]">
-          {isReadOnly ? (
-            <span className="font-medium text-foreground">{task.title}</span>
-          ) : (
-            <button
-              data-testid={`link-task-${task.id}`}
-              className="text-left font-medium text-primary hover:underline cursor-pointer bg-transparent border-none p-0"
-              onClick={() => onTaskClick(task.id)}
-            >
-              {task.title}
-            </button>
-          )}
+          <button
+            data-testid={`link-task-${task.id}`}
+            className="text-left font-medium text-primary hover:underline cursor-pointer bg-transparent border-none p-0"
+            onClick={() => onTaskClick(task.id)}
+          >
+            {task.title}
+          </button>
         </TableCell>
         <TableCell className="w-36">
-          {isReadOnly ? (
-            <Badge variant="outline" className={`text-xs ${STATUS_COLORS[task.status] || ""}`}>
-              {task.status}
-            </Badge>
-          ) : (
-            <Select
-              value={task.status}
-              onValueChange={(v) => handleInlineUpdate(task.id, "status", v)}
-            >
-              <SelectTrigger data-testid={`select-status-${task.id}`} className="h-7 text-xs border-0 shadow-none">
-                <Badge variant="outline" className={`text-xs ${STATUS_COLORS[task.status] || ""}`}>
-                  {task.status}
-                </Badge>
-              </SelectTrigger>
-              <SelectContent>
-                {STATUSES.map((s) => (
-                  <SelectItem key={s} value={s}>
-                    <Badge variant="outline" className={`text-xs ${STATUS_COLORS[s]}`}>{s}</Badge>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
+          <Select
+            value={task.status}
+            onValueChange={(v) => handleInlineUpdate(task.id, "status", v)}
+          >
+            <SelectTrigger data-testid={`select-status-${task.id}`} className="h-7 text-xs border-0 shadow-none">
+              <Badge variant="outline" className={`text-xs ${STATUS_COLORS[task.status] || ""}`}>
+                {task.status}
+              </Badge>
+            </SelectTrigger>
+            <SelectContent>
+              {STATUSES.map((s) => (
+                <SelectItem key={s} value={s}>
+                  <Badge variant="outline" className={`text-xs ${STATUS_COLORS[s]}`}>{s}</Badge>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </TableCell>
         <TableCell className="w-28">
-          {isReadOnly ? (
-            <Badge variant="outline" className={`text-xs ${PRIORITY_COLORS[task.priority] || ""}`}>
-              {task.priority}
-            </Badge>
-          ) : (
-            <Select
-              value={task.priority}
-              onValueChange={(v) => handleInlineUpdate(task.id, "priority", v)}
-            >
-              <SelectTrigger data-testid={`select-priority-${task.id}`} className="h-7 text-xs border-0 shadow-none">
-                <Badge variant="outline" className={`text-xs ${PRIORITY_COLORS[task.priority] || ""}`}>
-                  {task.priority}
-                </Badge>
-              </SelectTrigger>
-              <SelectContent>
-                {PRIORITIES.map((p) => (
-                  <SelectItem key={p} value={p}>
-                    <Badge variant="outline" className={`text-xs ${PRIORITY_COLORS[p]}`}>{p}</Badge>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
+          <Select
+            value={task.priority}
+            onValueChange={(v) => handleInlineUpdate(task.id, "priority", v)}
+          >
+            <SelectTrigger data-testid={`select-priority-${task.id}`} className="h-7 text-xs border-0 shadow-none">
+              <Badge variant="outline" className={`text-xs ${PRIORITY_COLORS[task.priority] || ""}`}>
+                {task.priority}
+              </Badge>
+            </SelectTrigger>
+            <SelectContent>
+              {PRIORITIES.map((p) => (
+                <SelectItem key={p} value={p}>
+                  <Badge variant="outline" className={`text-xs ${PRIORITY_COLORS[p]}`}>{p}</Badge>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </TableCell>
         <TableCell className="w-32">
-          {isReadOnly ? (
-            <span className="text-xs text-muted-foreground">{task.assignees?.join(", ") || "—"}</span>
-          ) : (
-            <Input
-              data-testid={`input-assignees-${task.id}`}
-              className="h-7 text-xs border-0 shadow-none bg-transparent"
-              defaultValue={task.assignees?.join(", ") || ""}
-              onBlur={(e) => {
-                const val = e.target.value.split(",").map((s) => s.trim()).filter(Boolean);
-                handleInlineUpdate(task.id, "assignees", val);
-              }}
-            />
-          )}
+          <Input
+            data-testid={`input-assignees-${task.id}`}
+            className="h-7 text-xs border-0 shadow-none bg-transparent"
+            defaultValue={task.assignees?.join(", ") || ""}
+            onBlur={(e) => {
+              const val = e.target.value.split(",").map((s) => s.trim()).filter(Boolean);
+              handleInlineUpdate(task.id, "assignees", val);
+            }}
+          />
         </TableCell>
         <TableCell className="w-32">
-          {isReadOnly ? (
-            <span className="text-xs">{formatDateForDisplay(task.startDate)}</span>
-          ) : (
-            <Input
-              data-testid={`input-startdate-${task.id}`}
-              type="date"
-              className="h-7 text-xs border-0 shadow-none bg-transparent"
-              defaultValue={formatDateForDisplay(task.startDate)}
-              onChange={(e) => handleInlineUpdate(task.id, "startDate", e.target.value)}
-            />
-          )}
+          <Input
+            data-testid={`input-startdate-${task.id}`}
+            type="date"
+            className="h-7 text-xs border-0 shadow-none bg-transparent"
+            defaultValue={formatDateForDisplay(task.startDate)}
+            onChange={(e) => handleInlineUpdate(task.id, "startDate", e.target.value)}
+          />
         </TableCell>
         <TableCell className="w-32">
-          {isReadOnly ? (
-            <span className="text-xs">{formatDateForDisplay(task.dueDate)}</span>
-          ) : (
-            <Input
-              data-testid={`input-duedate-${task.id}`}
-              type="date"
-              className="h-7 text-xs border-0 shadow-none bg-transparent"
-              defaultValue={formatDateForDisplay(task.dueDate)}
-              onChange={(e) => handleInlineUpdate(task.id, "dueDate", e.target.value)}
-            />
-          )}
+          <Input
+            data-testid={`input-duedate-${task.id}`}
+            type="date"
+            className="h-7 text-xs border-0 shadow-none bg-transparent"
+            defaultValue={formatDateForDisplay(task.dueDate)}
+            onChange={(e) => handleInlineUpdate(task.id, "dueDate", e.target.value)}
+          />
         </TableCell>
         <TableCell className="w-28">
           <div className="flex items-center gap-1">
-            {isReadOnly ? (
-              <>
-                <span className="text-xs w-14">{task.percentComplete}%</span>
-                <Progress value={task.percentComplete} className="h-2 w-12" data-testid={`progress-${task.id}`} />
-              </>
-            ) : (
-              <>
-                <Input
-                  data-testid={`input-percent-${task.id}`}
-                  type="number"
-                  min={0}
-                  max={100}
-                  className="h-7 w-14 text-xs border-0 shadow-none bg-transparent"
-                  defaultValue={task.percentComplete}
-                  onBlur={(e) => {
-                    const v = Math.max(0, Math.min(100, Number(e.target.value)));
-                    handleInlineUpdate(task.id, "percentComplete", v);
-                  }}
-                />
-                <Progress value={task.percentComplete} className="h-2 w-12" data-testid={`progress-${task.id}`} />
-              </>
-            )}
+            <Input
+              data-testid={`input-percent-${task.id}`}
+              type="number"
+              min={0}
+              max={100}
+              className="h-7 w-14 text-xs border-0 shadow-none bg-transparent"
+              defaultValue={task.percentComplete}
+              onBlur={(e) => {
+                const v = Math.max(0, Math.min(100, Number(e.target.value)));
+                handleInlineUpdate(task.id, "percentComplete", v);
+              }}
+            />
+            <Progress value={task.percentComplete} className="h-2 w-12" data-testid={`progress-${task.id}`} />
           </div>
         </TableCell>
         <TableCell className="w-24">

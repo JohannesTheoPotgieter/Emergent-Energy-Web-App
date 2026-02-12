@@ -95,10 +95,8 @@ interface EditingCell {
 }
 
 const stateBadgeColors: Record<string, string> = {
-  Planned: "bg-slate-100 text-slate-700",
-  Committed: "bg-amber-100 text-amber-700",
-  Invoiced: "bg-blue-100 text-blue-700",
-  Paid: "bg-green-100 text-green-700",
+  Planned: "bg-blue-100 text-blue-700",
+  Realised: "bg-green-100 text-green-700",
 };
 
 const ROW_DEFS: {
@@ -183,7 +181,7 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose }: { monthKey: string
               data-testid="input-search-detail"
             />
           </div>
-          {["all", "Planned", "Committed", "Invoiced", "Paid"].map((s) => (
+          {["all", "Planned", "Realised"].map((s) => (
             <Button
               key={s}
               variant={stateFilter === s ? "default" : "outline"}
@@ -407,7 +405,7 @@ export default function CosTracker() {
                 </div>
               </div>
               <p className="text-xs text-muted-foreground mt-3">
-                State rules: Planned (no PO, no invoice) | Committed (PO exists, no invoice) | Invoiced (invoice exists, no payment) | Paid (payment date exists).
+                COS Recognition: Planned = Invoice Number + Invoice Date in month | Realised = Planned items that have been paid.
                 Click any month value to drill down to exact contributing line items.
               </p>
             </CardContent>
