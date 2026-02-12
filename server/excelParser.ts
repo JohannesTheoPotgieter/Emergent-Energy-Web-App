@@ -435,6 +435,20 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
         const invoiceDate = invoiceDateCol >= 0 ? parseDate(row[invoiceDateCol]) : null;
         const paymentDate = paymentDateCol >= 0 ? parseDate(row[paymentDateCol]) : null;
         
+        let invoiceDateConfirmed = false;
+        if (invoiceDateCol >= 0 && invoiceDate) {
+          const cellAddr = XLSX.utils.encode_cell({ r: rowIdx, c: invoiceDateCol });
+          const cell = sheet[cellAddr];
+          if (cell && cell.s && cell.s.font && cell.s.font.color) {
+            const fontColor = cell.s.font.color.rgb || cell.s.font.color.argb || "";
+            const isRed = fontColor.toLowerCase().includes("ff0000") || 
+                         fontColor.toLowerCase().endsWith("ff0000");
+            invoiceDateConfirmed = !isRed;
+          } else if (cell && cell.v) {
+            invoiceDateConfirmed = true;
+          }
+        }
+
         let lineStatus = "Planned";
         if (paymentDate) {
           lineStatus = "Paid";
@@ -450,19 +464,18 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
           rowType,
           expenseCategory: expenseCategory || null,
           expenseLineItem,
-          // Budget side
           budgetQty: budgetQtyCol >= 0 ? parseNumber(row[budgetQtyCol]) : null,
           budgetRateUnit: budgetRateCol >= 0 ? parseNumber(row[budgetRateCol]) : null,
           budgetTotal: budgetTotalCol >= 0 ? parseNumber(row[budgetTotalCol]) : null,
           forecastPaymentDate: forecastPayDateCol >= 0 ? parseDate(row[forecastPayDateCol]) : null,
           budgetCosTotal: budgetCosCol >= 0 ? parseNumber(row[budgetCosCol]) : null,
-          // Actual side
           expenseQty: budgetQtyCol >= 0 ? parseNumber(row[budgetQtyCol]) : null,
           expenseRateUnit: budgetRateCol >= 0 ? parseNumber(row[budgetRateCol]) : null,
           expenseActualTotal: actualTotalCol >= 0 ? parseNumber(row[actualTotalCol]) : null,
           expensePoNumber: poNumber,
           expenseInvoiceNumber: invoiceNumber,
           expenseInvoicedDate: invoiceDate,
+          invoiceDateConfirmed,
           expensePaymentDate: paymentDate,
           actualCosTotal: actualCosCol >= 0 ? parseNumber(row[actualCosCol]) : null,
           lineStatus,

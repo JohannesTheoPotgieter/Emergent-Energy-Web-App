@@ -38,14 +38,19 @@ interface MonthData {
   monthKey: string;
   monthLabel: string;
   totalCOS: number;
+  realisedCOS: number;
+  unrealisedCOS: number;
   budget: number;
   variance: number;
   variancePct: number;
   ytdCOS: number;
+  ytdRealised: number;
+  ytdUnrealised: number;
   ytdBudget: number;
   ytdVariance: number;
   ytdVariancePct: number;
   cosProjects: ProjectBreakdown[];
+  realisedProjects: ProjectBreakdown[];
 }
 
 interface MonthDetailItem {
@@ -88,13 +93,17 @@ const ROW_DEFS: {
   group: "monthly" | "ytd";
   colorCoded?: boolean;
   expandable?: boolean;
-  projectsKey?: "cosProjects";
+  projectsKey?: "cosProjects" | "realisedProjects";
 }[] = [
   { key: "totalCOS", label: "COS (Finance)", dataKey: "totalCOS", editable: false, colorClass: "text-foreground font-bold", group: "monthly", expandable: true, projectsKey: "cosProjects" },
+  { key: "realisedCOS", label: "Realised COS", dataKey: "realisedCOS", editable: false, colorClass: "text-green-700 font-semibold", group: "monthly", expandable: true, projectsKey: "realisedProjects" },
+  { key: "unrealisedCOS", label: "Unrealised COS", dataKey: "unrealisedCOS", editable: false, colorClass: "text-amber-600 font-semibold", group: "monthly" },
   { key: "budget", label: "Budget", dataKey: "budget", editable: true, colorClass: "text-purple-600", group: "monthly" },
   { key: "variance", label: "Variance", dataKey: "variance", editable: false, colorClass: "", group: "monthly", colorCoded: true },
   { key: "variancePct", label: "Variance %", dataKey: "variancePct", editable: false, colorClass: "", group: "monthly", colorCoded: true },
   { key: "ytdCOS", label: "YTD COS", dataKey: "ytdCOS", editable: false, colorClass: "text-foreground font-bold", group: "ytd" },
+  { key: "ytdRealised", label: "YTD Realised", dataKey: "ytdRealised", editable: false, colorClass: "text-green-700", group: "ytd" },
+  { key: "ytdUnrealised", label: "YTD Unrealised", dataKey: "ytdUnrealised", editable: false, colorClass: "text-amber-600", group: "ytd" },
   { key: "ytdBudget", label: "YTD Budget", dataKey: "ytdBudget", editable: false, colorClass: "text-purple-600", group: "ytd" },
   { key: "ytdVariance", label: "YTD Variance", dataKey: "ytdVariance", editable: false, colorClass: "", group: "ytd", colorCoded: true },
   { key: "ytdVariancePct", label: "YTD Variance %", dataKey: "ytdVariancePct", editable: false, colorClass: "", group: "ytd", colorCoded: true },
@@ -214,13 +223,15 @@ export default function CosTracker() {
 
   const projectNamesByRow = useMemo(() => {
     const result: Record<string, string[]> = {};
-    const names = new Set<string>();
-    for (const m of months) {
-      for (const p of m.cosProjects || []) {
-        names.add(p.projectName);
+    for (const key of ["cosProjects", "realisedProjects"] as const) {
+      const names = new Set<string>();
+      for (const m of months) {
+        for (const p of m[key] || []) {
+          names.add(p.projectName);
+        }
       }
+      result[key] = Array.from(names).sort();
     }
-    result["cosProjects"] = Array.from(names).sort();
     return result;
   }, [months]);
 
@@ -260,7 +271,8 @@ export default function CosTracker() {
     () =>
       months.map((m) => ({
         month: m.monthLabel,
-        "Finance COS": m.totalCOS,
+        "Realised": m.realisedCOS,
+        "Unrealised": m.unrealisedCOS,
         Budget: m.budget,
         "YTD Variance": m.ytdVariance,
       })),
@@ -278,12 +290,14 @@ export default function CosTracker() {
 
   const reconciliation = useMemo(() => {
     if (!months.length) return null;
-    let totalCOS = 0, totalBudget = 0;
+    let totalCOS = 0, totalBudget = 0, totalRealised = 0, totalUnrealised = 0;
     for (const m of months) {
       totalCOS += m.totalCOS;
       totalBudget += m.budget;
+      totalRealised += m.realisedCOS;
+      totalUnrealised += m.unrealisedCOS;
     }
-    return { totalCOS, totalBudget, variance: totalCOS - totalBudget, monthCount: months.length };
+    return { totalCOS, totalBudget, totalRealised, totalUnrealised, variance: totalCOS - totalBudget, monthCount: months.length };
   }, [months]);
 
   if (isLoading) {
@@ -324,8 +338,8 @@ export default function CosTracker() {
               <Activity className="h-5 w-5 text-amber-700" />
             </div>
             <div>
-              <p className="font-semibold text-amber-800">Work in Progress</p>
-              <p className="text-sm text-amber-700">This page is being rebuilt to use Finance - COS data from the project trackers. Data shown is sourced from the Finance - COS sheets.</p>
+              <p className="font-semibold text-amber-800">COS Realisation Tracker</p>
+              <p className="text-sm text-amber-700">COS is "Realised" when the matching expenditure line has an Invoice Number AND the Invoice Raised Date has black font colour. Data sourced from Finance - COS sheets and Expenditure Breakdown.</p>
             </div>
           </CardContent>
         </Card>
@@ -337,7 +351,7 @@ export default function CosTracker() {
                 <Info className="h-4 w-4 text-blue-600" />
                 <span className="font-semibold text-sm text-blue-800">Reconciliation Mode</span>
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 text-sm">
                 <div>
                   <p className="text-muted-foreground">Months</p>
                   <p className="font-mono font-bold">{reconciliation.monthCount}</p>
@@ -345,6 +359,14 @@ export default function CosTracker() {
                 <div>
                   <p className="text-muted-foreground">Total COS (Finance)</p>
                   <p className="font-mono font-bold">{formatRand(reconciliation.totalCOS)}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Realised</p>
+                  <p className="font-mono font-bold text-green-700">{formatRand(reconciliation.totalRealised)}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Unrealised</p>
+                  <p className="font-mono font-bold text-amber-600">{formatRand(reconciliation.totalUnrealised)}</p>
                 </div>
                 <div>
                   <p className="text-muted-foreground">Total Budget</p>
@@ -358,15 +380,15 @@ export default function CosTracker() {
                 </div>
               </div>
               <p className="text-xs text-muted-foreground mt-3">
-                Data sourced from Finance - COS sheets in project trackers.
-                Each project's monthly COS is the sum of all categories for that month.
-                Click any month value to drill down to contributing categories and projects.
+                Realised = Invoice Number captured + Invoice Raised Date confirmed (black font).
+                Unrealised = Finance COS minus Realised COS.
+                Click any month value to drill down.
               </p>
             </CardContent>
           </Card>
         )}
 
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
           <Card data-testid="card-ytd-total-cos">
             <CardContent className="pt-6">
               <div className="flex items-center gap-3">
@@ -377,6 +399,38 @@ export default function CosTracker() {
                   <p className="text-sm text-muted-foreground">YTD COS (Finance)</p>
                   <p className="text-2xl font-bold font-mono" data-testid="text-ytd-total-cos-value">
                     {formatRand(lastMonth?.ytdCOS ?? 0)}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card data-testid="card-ytd-realised" className="border-green-200">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <div className="rounded-lg bg-green-100 p-2">
+                  <TrendingDown className="h-5 w-5 text-green-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">YTD Realised</p>
+                  <p className="text-2xl font-bold font-mono text-green-700" data-testid="text-ytd-realised-value">
+                    {formatRand(lastMonth?.ytdRealised ?? 0)}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card data-testid="card-ytd-unrealised" className="border-amber-200">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <div className="rounded-lg bg-amber-100 p-2">
+                  <Activity className="h-5 w-5 text-amber-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">YTD Unrealised</p>
+                  <p className="text-2xl font-bold font-mono text-amber-600" data-testid="text-ytd-unrealised-value">
+                    {formatRand(lastMonth?.ytdUnrealised ?? 0)}
                   </p>
                 </div>
               </div>
@@ -592,7 +646,8 @@ export default function CosTracker() {
                     formatter={(value: number) => formatRand(value)}
                   />
                   <Legend />
-                  <Bar dataKey="Finance COS" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Realised" stackId="cos" fill="#22c55e" />
+                  <Bar dataKey="Unrealised" stackId="cos" fill="#f59e0b" radius={[4, 4, 0, 0]} />
                   <Bar dataKey="Budget" fill="#a855f7" opacity={0.3} radius={[4, 4, 0, 0]} />
                   <Line
                     type="monotone"
