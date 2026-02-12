@@ -1602,7 +1602,7 @@ export async function registerRoutes(
 
       for (const exp of allExpenses) {
         if (exp.rowType !== 'item') continue;
-        const cosTotal = exp.actualCosTotal ? parseFloat(exp.actualCosTotal as string) : 0;
+        const cosTotal = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
         if (isNaN(cosTotal) || cosTotal === 0) continue;
 
         const hasInvoice = !!exp.expenseInvoiceNumber;
