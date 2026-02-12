@@ -829,3 +829,15 @@ export const writebackAuditLog = pgTable("writeback_audit_log", {
 export const insertWritebackAuditLogSchema = createInsertSchema(writebackAuditLog).omit({ id: true, appliedAt: true });
 export type InsertWritebackAuditLog = z.infer<typeof insertWritebackAuditLogSchema>;
 export type WritebackAuditLog = typeof writebackAuditLog.$inferSelect;
+
+export const milestoneTaskLinks = pgTable("milestone_task_links", {
+  id: serial("id").primaryKey(),
+  projectName: text("project_name").notNull(),
+  milestoneRowNumber: integer("milestone_row_number").notNull(),
+  taskId: integer("task_id").notNull().references(() => operationalTasks.id, { onDelete: 'cascade' }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertMilestoneTaskLinkSchema = createInsertSchema(milestoneTaskLinks).omit({ id: true, createdAt: true });
+export type InsertMilestoneTaskLink = z.infer<typeof insertMilestoneTaskLinkSchema>;
+export type MilestoneTaskLink = typeof milestoneTaskLinks.$inferSelect;

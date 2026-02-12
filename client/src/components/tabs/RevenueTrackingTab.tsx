@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -9,7 +9,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import {
   Loader2, Clock, AlertTriangle, Save, XCircle,
   Edit2, FileText, DollarSign, TrendingUp, BanknoteIcon, Check,
-  ChevronDown, ChevronRight, Info, Bell, X
+  ChevronDown, ChevronRight, Info, Bell, X, Link, Unlink
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -85,6 +85,8 @@ export function RevenueTrackingTab({ projectName }: RevenueTrackingTabProps) {
   const [drawerFilter, setDrawerFilter] = useState<string | null>(null);
   const [editingCosted, setEditingCosted] = useState(false);
   const [costedValues, setCostedValues] = useState({ revenue: "", expenditure: "" });
+  const [linkingRow, setLinkingRow] = useState<number | null>(null);
+  const [taskSearchTerm, setTaskSearchTerm] = useState("");
   const [expandedSections, setExpandedSections] = useState({
     highlevel: true,
     contract: true,
@@ -130,6 +132,60 @@ export function RevenueTrackingTab({ projectName }: RevenueTrackingTabProps) {
       toast({ title: "Error", description: "Failed to save changes", variant: "destructive" });
     },
   });
+
+  const { data: projectTasks = [] } = useQuery<any[]>({
+    queryKey: ["operational-tasks", projectName],
+    queryFn: async () => {
+      const res = await fetch(`/api/operational-tasks/${encodeURIComponent(projectName)}`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!projectName,
+  });
+
+  const linkTaskMutation = useMutation({
+    mutationFn: async ({ milestoneRowNumber, taskId }: { milestoneRowNumber: number; taskId: number }) => {
+      const res = await fetch(`/api/revenue-tab/${encodeURIComponent(projectName)}/link-task`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ milestoneRowNumber, taskId }),
+      });
+      if (!res.ok) throw new Error("Failed to link task");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["revenue-tab", projectName] });
+      setLinkingRow(null);
+      setTaskSearchTerm("");
+      toast({ title: "Task linked", description: "Milestone linked to task successfully" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to link task", variant: "destructive" });
+    },
+  });
+
+  const unlinkTaskMutation = useMutation({
+    mutationFn: async (milestoneRowNumber: number) => {
+      const res = await fetch(`/api/revenue-tab/${encodeURIComponent(projectName)}/link-task/${milestoneRowNumber}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Failed to unlink task");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["revenue-tab", projectName] });
+      toast({ title: "Task unlinked", description: "Milestone unlinked from task" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to unlink task", variant: "destructive" });
+    },
+  });
+
+  const filteredTasks = useMemo(() => {
+    if (!taskSearchTerm.trim()) return projectTasks;
+    const term = taskSearchTerm.toLowerCase();
+    return projectTasks.filter((t: any) => t.title?.toLowerCase().includes(term));
+  }, [projectTasks, taskSearchTerm]);
 
   const saveCostedMutation = useMutation({
     mutationFn: async (values: { revenue: string; expenditure: string }) => {
@@ -521,26 +577,83 @@ export function RevenueTrackingTab({ projectName }: RevenueTrackingTabProps) {
                           {/* Dependent Task */}
                           <TableCell className="text-xs">
                             {m.dependentTask ? (
-                              <div className="flex items-center gap-1.5">
+                              <div className="flex items-center gap-1.5 group">
                                 <Badge
                                   variant="outline"
                                   className={`text-[9px] px-1.5 py-0 shrink-0 ${
-                                    m.dependentTask.status === "complete"
+                                    m.dependentTask.status === "complete" || m.dependentTask.status === "Complete"
                                       ? "bg-green-50 text-green-700 border-green-300"
-                                      : m.dependentTask.status === "in_progress"
+                                      : m.dependentTask.status === "in_progress" || m.dependentTask.status === "In Progress"
                                       ? "bg-blue-50 text-blue-700 border-blue-300"
                                       : "bg-gray-50 text-gray-600 border-gray-300"
                                   }`}
                                   data-testid={`badge-task-status-${m.rowNumber}`}
                                 >
-                                  {m.dependentTask.status === "complete" ? "Done" : m.dependentTask.status === "in_progress" ? "In Progress" : "To Do"}
+                                  {(m.dependentTask.status === "complete" || m.dependentTask.status === "Complete") ? "Done" : (m.dependentTask.status === "in_progress" || m.dependentTask.status === "In Progress") ? "In Progress" : "To Do"}
                                 </Badge>
-                                <span className="truncate max-w-[120px]" title={m.dependentTask.title} data-testid={`text-task-title-${m.rowNumber}`}>
+                                <span className="truncate max-w-[100px]" title={m.dependentTask.title} data-testid={`text-task-title-${m.rowNumber}`}>
                                   {m.dependentTask.title}
                                 </span>
+                                <Button
+                                  variant="ghost" size="sm"
+                                  className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                                  onClick={() => unlinkTaskMutation.mutate(m.rowNumber)}
+                                  title="Unlink task"
+                                  data-testid={`button-unlink-${m.rowNumber}`}
+                                >
+                                  <Unlink className="h-3 w-3 text-gray-400 hover:text-red-500" />
+                                </Button>
+                              </div>
+                            ) : linkingRow === m.rowNumber ? (
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-1">
+                                  <Input
+                                    placeholder="Search tasks..."
+                                    value={taskSearchTerm}
+                                    onChange={(e) => setTaskSearchTerm(e.target.value)}
+                                    className="h-6 text-[11px] w-[130px]"
+                                    autoFocus
+                                    data-testid={`input-task-search-${m.rowNumber}`}
+                                  />
+                                  <Button variant="ghost" size="sm" className="h-6 w-6 p-0"
+                                    onClick={() => { setLinkingRow(null); setTaskSearchTerm(""); }}>
+                                    <X className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                                <div className="max-h-[120px] overflow-y-auto border rounded-md bg-white shadow-sm">
+                                  {filteredTasks.length === 0 ? (
+                                    <p className="text-[10px] text-muted-foreground p-2">No tasks found</p>
+                                  ) : (
+                                    filteredTasks.slice(0, 10).map((t: any) => (
+                                      <button
+                                        key={t.id}
+                                        className="w-full text-left px-2 py-1.5 text-[11px] hover:bg-blue-50 border-b last:border-b-0 flex items-center gap-1.5"
+                                        onClick={() => linkTaskMutation.mutate({ milestoneRowNumber: m.rowNumber, taskId: t.id })}
+                                        data-testid={`option-task-${t.id}`}
+                                      >
+                                        <Badge variant="outline" className={`text-[8px] px-1 py-0 shrink-0 ${
+                                          t.status === "Complete" || t.status === "complete" ? "bg-green-50 text-green-700 border-green-300" :
+                                          t.status === "In Progress" || t.status === "in_progress" ? "bg-blue-50 text-blue-700 border-blue-300" :
+                                          "bg-gray-50 text-gray-600 border-gray-300"
+                                        }`}>
+                                          {t.status === "Complete" || t.status === "complete" ? "Done" : t.status === "In Progress" || t.status === "in_progress" ? "WIP" : "ToDo"}
+                                        </Badge>
+                                        <span className="truncate">{t.title}</span>
+                                      </button>
+                                    ))
+                                  )}
+                                </div>
                               </div>
                             ) : (
-                              <span className="text-muted-foreground">-</span>
+                              <Button
+                                variant="ghost" size="sm"
+                                className="h-6 px-2 text-[10px] text-amber-600 hover:text-amber-700 hover:bg-amber-50 gap-1"
+                                onClick={() => { setLinkingRow(m.rowNumber); setTaskSearchTerm(""); }}
+                                data-testid={`button-link-task-${m.rowNumber}`}
+                              >
+                                <AlertTriangle className="h-3 w-3" />
+                                Link Task
+                              </Button>
                             )}
                           </TableCell>
 

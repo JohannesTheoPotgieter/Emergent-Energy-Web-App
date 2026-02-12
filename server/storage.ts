@@ -54,6 +54,8 @@ import {
   type TaskActivityLog, type InsertTaskActivityLog,
   type WritebackMapping, type InsertWritebackMapping,
   type WritebackAuditLog, type InsertWritebackAuditLog,
+  milestoneTaskLinks,
+  type MilestoneTaskLink, type InsertMilestoneTaskLink,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -219,6 +221,11 @@ export interface IStorage {
   // Project Revenue Summary
   getAllProjectRevenueSummaries(): Promise<ProjectRevenueSummary[]>;
   getProjectRevenueSummary(projectName: string): Promise<ProjectRevenueSummary | undefined>;
+
+  // Milestone Task Links
+  getMilestoneTaskLinks(projectName: string): Promise<MilestoneTaskLink[]>;
+  upsertMilestoneTaskLink(projectName: string, milestoneRowNumber: number, taskId: number): Promise<MilestoneTaskLink>;
+  deleteMilestoneTaskLink(projectName: string, milestoneRowNumber: number): Promise<void>;
 
   // Home Notes
   getHomeNotes(): Promise<HomeNotes | undefined>;
@@ -1279,6 +1286,30 @@ export class DatabaseStorage implements IStorage {
       const inserted = await this.dbInstance.insert(projectRevenueSummary).values(data).returning();
       return inserted[0];
     }
+  }
+
+  // Milestone Task Links
+  async getMilestoneTaskLinks(projectName: string): Promise<MilestoneTaskLink[]> {
+    return await this.dbInstance.select().from(milestoneTaskLinks).where(eq(milestoneTaskLinks.projectName, projectName));
+  }
+
+  async upsertMilestoneTaskLink(projectName: string, milestoneRowNumber: number, taskId: number): Promise<MilestoneTaskLink> {
+    const existing = await this.dbInstance.select().from(milestoneTaskLinks)
+      .where(and(eq(milestoneTaskLinks.projectName, projectName), eq(milestoneTaskLinks.milestoneRowNumber, milestoneRowNumber)));
+    if (existing.length > 0) {
+      const updated = await this.dbInstance.update(milestoneTaskLinks)
+        .set({ taskId })
+        .where(and(eq(milestoneTaskLinks.projectName, projectName), eq(milestoneTaskLinks.milestoneRowNumber, milestoneRowNumber)))
+        .returning();
+      return updated[0];
+    }
+    const inserted = await this.dbInstance.insert(milestoneTaskLinks).values({ projectName, milestoneRowNumber, taskId }).returning();
+    return inserted[0];
+  }
+
+  async deleteMilestoneTaskLink(projectName: string, milestoneRowNumber: number): Promise<void> {
+    await this.dbInstance.delete(milestoneTaskLinks)
+      .where(and(eq(milestoneTaskLinks.projectName, projectName), eq(milestoneTaskLinks.milestoneRowNumber, milestoneRowNumber)));
   }
 
   // Home Notes
