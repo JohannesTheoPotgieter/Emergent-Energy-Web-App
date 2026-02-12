@@ -1930,6 +1930,7 @@ export async function registerRoutes(
         if (projExpOverdue > 0) {
           expenseOverdueProjects.push({ projectName, amount: projExpOverdue, lineItem: null });
         }
+        outflowsThisWeek += projOutflowsWeek;
         if (projOutflowsWeek > 0) {
           outflowProjects.push({ projectName, amount: projOutflowsWeek });
         }
