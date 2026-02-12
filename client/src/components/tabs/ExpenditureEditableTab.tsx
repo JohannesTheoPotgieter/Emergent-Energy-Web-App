@@ -267,21 +267,10 @@ export function ExpenditureEditableTab({ projectName }: ExpenditureEditableTabPr
   const categoryGroups = useMemo(() => {
     const groupMap = new Map<string, CategoryGroup>();
     const groupOrder: string[] = [];
-    let currentCategoryName = "";
-
-    const firstCategory = normalizedData.find(r => r.rowType === "category" && r.expenseCategory);
-    const defaultCategory = firstCategory?.expenseCategory || "1. Panels";
 
     for (const row of normalizedData) {
-      if (row.rowType === "category") {
-        const cat = row.expenseCategory || defaultCategory;
-        currentCategoryName = cat;
-        if (!groupMap.has(cat)) {
-          groupMap.set(cat, { category: cat, items: [], budgetTotal: 0, actualTotal: 0, variance: 0 });
-          groupOrder.push(cat);
-        }
-      } else if (row.rowType === "item") {
-        const cat = currentCategoryName || defaultCategory;
+      if (row.rowType === "item") {
+        const cat = row.expenseCategory || "Uncategorized";
         if (!groupMap.has(cat)) {
           groupMap.set(cat, { category: cat, items: [], budgetTotal: 0, actualTotal: 0, variance: 0 });
           groupOrder.push(cat);
@@ -295,6 +284,12 @@ export function ExpenditureEditableTab({ projectName }: ExpenditureEditableTabPr
         group.variance += budget - actual;
       }
     }
+
+    groupOrder.sort((a, b) => {
+      const numA = parseInt(a.match(/^(\d+)/)?.[1] || "999");
+      const numB = parseInt(b.match(/^(\d+)/)?.[1] || "999");
+      return numA - numB;
+    });
 
     return groupOrder.map(name => groupMap.get(name)!).filter(g => g.items.length > 0);
   }, [normalizedData]);

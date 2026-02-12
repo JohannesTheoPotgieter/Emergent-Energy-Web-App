@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import type { 
   InsertProjectInfo, 
   InsertProgramExpense, 
@@ -445,37 +446,8 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
         
         let invoiceDateConfirmed = false;
         let invoiceDateFontColor: string | null = null;
-        if (invoiceDateCol >= 0 && invoiceDate) {
-          const cellAddr = XLSX.utils.encode_cell({ r: rowIdx, c: invoiceDateCol });
-          const cell = sheet[cellAddr];
-          if (cell && cell.s && cell.s.font && cell.s.font.color) {
-            const fontColor = cell.s.font.color.rgb || cell.s.font.color.argb || "";
-            const isRed = fontColor.toLowerCase().includes("ff0000") || 
-                         fontColor.toLowerCase().endsWith("ff0000");
-            invoiceDateConfirmed = !isRed;
-            invoiceDateFontColor = isRed ? "red" : "black";
-          } else if (cell && cell.v) {
-            invoiceDateConfirmed = true;
-            invoiceDateFontColor = "black";
-          }
-        }
-
         let paymentDateConfirmed = false;
         let paymentDateFontColor: string | null = null;
-        if (paymentDateCol >= 0 && paymentDate) {
-          const cellAddr = XLSX.utils.encode_cell({ r: rowIdx, c: paymentDateCol });
-          const cell = sheet[cellAddr];
-          if (cell && cell.s && cell.s.font && cell.s.font.color) {
-            const fontColor = cell.s.font.color.rgb || cell.s.font.color.argb || "";
-            const isRed = fontColor.toLowerCase().includes("ff0000") || 
-                         fontColor.toLowerCase().endsWith("ff0000");
-            paymentDateConfirmed = !isRed;
-            paymentDateFontColor = isRed ? "red" : "black";
-          } else if (cell && cell.v) {
-            paymentDateConfirmed = true;
-            paymentDateFontColor = "black";
-          }
-        }
 
         let lineStatus = "Planned";
         if (paymentDate) {
@@ -929,4 +901,97 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
     financeRevenueParsed: financeRevenueMonthly.length,
     financeCosParsed: financeCosMonthly.length,
   };
+}
+
+function isRedColor(argb: string): boolean {
+  if (!argb) return false;
+  const upper = argb.toUpperCase();
+  if (upper.length === 8) {
+    const rgb = upper.substring(2);
+    return rgb === "FF0000";
+  }
+  if (upper.length === 6) {
+    return upper === "FF0000";
+  }
+  return false;
+}
+
+export async function extractFontColors(buffer: Buffer): Promise<Map<string, { invoiceColor: string | null; paymentColor: string | null }>> {
+  const colorMap = new Map<string, { invoiceColor: string | null; paymentColor: string | null }>();
+  
+  try {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer);
+    
+    const ws = workbook.getWorksheet("Expenditure Breakdown");
+    if (!ws) return colorMap;
+    
+    let invoiceDateCol = -1;
+    let paymentDateCol = -1;
+    
+    ws.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+      if (invoiceDateCol < 0 || paymentDateCol < 0) {
+        row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+          const val = String(cell.value || "").toLowerCase().trim();
+          if (val.includes("invoice raised date") || val === "invoice date") {
+            invoiceDateCol = colNumber;
+          }
+          if (val.includes("finance payment date") || val === "payment date") {
+            paymentDateCol = colNumber;
+          }
+        });
+        if (invoiceDateCol < 0 && paymentDateCol < 0) return;
+      }
+      
+      let invoiceColor: string | null = null;
+      let paymentColor: string | null = null;
+      
+      if (invoiceDateCol > 0) {
+        const cell = row.getCell(invoiceDateCol);
+        if (cell.value) {
+          const font = cell.font;
+          const argb = font?.color?.argb || "";
+          invoiceColor = isRedColor(argb) ? "red" : "black";
+        }
+      }
+      
+      if (paymentDateCol > 0) {
+        const cell = row.getCell(paymentDateCol);
+        if (cell.value) {
+          const font = cell.font;
+          const argb = font?.color?.argb || "";
+          paymentColor = isRedColor(argb) ? "red" : "black";
+        }
+      }
+      
+      if (invoiceColor || paymentColor) {
+        colorMap.set(String(rowNumber), { invoiceColor, paymentColor });
+      }
+    });
+  } catch (err) {
+    console.error("ExcelJS font color extraction error:", err);
+  }
+  
+  return colorMap;
+}
+
+export async function applyFontColors(expenses: InsertProgramExpense[], buffer: Buffer): Promise<InsertProgramExpense[]> {
+  const colorMap = await extractFontColors(buffer);
+  
+  for (const exp of expenses) {
+    const rowKey = String(exp.rowNumber);
+    const colors = colorMap.get(rowKey);
+    if (colors) {
+      if (colors.invoiceColor && exp.expenseInvoicedDate) {
+        (exp as any).invoiceDateFontColor = colors.invoiceColor;
+        (exp as any).invoiceDateConfirmed = colors.invoiceColor !== "red";
+      }
+      if (colors.paymentColor && exp.expensePaymentDate) {
+        (exp as any).paymentDateFontColor = colors.paymentColor;
+        (exp as any).paymentDateConfirmed = colors.paymentColor !== "red";
+      }
+    }
+  }
+  
+  return expenses;
 }
