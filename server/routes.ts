@@ -5,7 +5,7 @@ import multer from "multer";
 import fs from "fs";
 import path from "path";
 import { storage } from "./storage";
-import { parseTrackerFile } from "./excelParser";
+import { parseTrackerFile, applyFontColors } from "./excelParser";
 import { insertBudgetSchema, programExpense, programInflows, projectInfo } from "@shared/schema";
 import { db } from "./db";
 import { z } from "zod";
@@ -2291,6 +2291,8 @@ export async function registerRoutes(
           const fileBuffer = fs.readFileSync(file.path);
           const parseResult = parseTrackerFile(fileBuffer, file.originalname);
           
+          await applyFontColors(parseResult.expenses, fileBuffer);
+          
           // Handle duplicate mode: append timestamp to make project name unique
           let targetProjectName = parseResult.projectName;
           if (mode === 'duplicate') {
@@ -2470,6 +2472,8 @@ export async function registerRoutes(
           
           const fileBuffer = fs.readFileSync(fileInfo.filePath);
           const parseResult = parseTrackerFile(fileBuffer, fileInfo.fileName);
+          
+          await applyFontColors(parseResult.expenses, fileBuffer);
           
           // Delete existing data for this project
           await storage.deleteProgramExpensesByProject(parseResult.projectName);
@@ -3144,6 +3148,7 @@ export async function registerRoutes(
             }
             const fileBuffer = fs.readFileSync(fileInfo.filePath);
             const parseResult = parseTrackerFile(fileBuffer, fileInfo.fileName);
+            await applyFontColors(parseResult.expenses, fileBuffer);
             await storage.transaction(async (txStorage) => {
               await txStorage.deleteProgramExpensesByProject(parseResult.projectName);
               await txStorage.deleteProgramInflowsByProject(parseResult.projectName);
@@ -3212,6 +3217,7 @@ export async function registerRoutes(
           }
           const fileBuffer = fs.readFileSync(fileInfo.filePath);
           const parseResult = parseTrackerFile(fileBuffer, fileInfo.fileName);
+          await applyFontColors(parseResult.expenses, fileBuffer);
           await storage.transaction(async (txStorage) => {
             await txStorage.deleteProgramExpensesByProject(parseResult.projectName);
             await txStorage.deleteProgramInflowsByProject(parseResult.projectName);
@@ -3416,6 +3422,7 @@ export async function registerRoutes(
           
           const fileBuffer = fs.readFileSync(filePath);
           const parseResult = parseTrackerFile(fileBuffer, fileName);
+          await applyFontColors(parseResult.expenses, fileBuffer);
           
           await storage.transaction(async (txStorage) => {
             // Delete existing data for this project
