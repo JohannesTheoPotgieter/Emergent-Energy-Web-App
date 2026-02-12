@@ -436,6 +436,7 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
         const paymentDate = paymentDateCol >= 0 ? parseDate(row[paymentDateCol]) : null;
         
         let invoiceDateConfirmed = false;
+        let invoiceDateFontColor: string | null = null;
         if (invoiceDateCol >= 0 && invoiceDate) {
           const cellAddr = XLSX.utils.encode_cell({ r: rowIdx, c: invoiceDateCol });
           const cell = sheet[cellAddr];
@@ -444,8 +445,27 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
             const isRed = fontColor.toLowerCase().includes("ff0000") || 
                          fontColor.toLowerCase().endsWith("ff0000");
             invoiceDateConfirmed = !isRed;
+            invoiceDateFontColor = isRed ? "red" : "black";
           } else if (cell && cell.v) {
             invoiceDateConfirmed = true;
+            invoiceDateFontColor = "black";
+          }
+        }
+
+        let paymentDateConfirmed = false;
+        let paymentDateFontColor: string | null = null;
+        if (paymentDateCol >= 0 && paymentDate) {
+          const cellAddr = XLSX.utils.encode_cell({ r: rowIdx, c: paymentDateCol });
+          const cell = sheet[cellAddr];
+          if (cell && cell.s && cell.s.font && cell.s.font.color) {
+            const fontColor = cell.s.font.color.rgb || cell.s.font.color.argb || "";
+            const isRed = fontColor.toLowerCase().includes("ff0000") || 
+                         fontColor.toLowerCase().endsWith("ff0000");
+            paymentDateConfirmed = !isRed;
+            paymentDateFontColor = isRed ? "red" : "black";
+          } else if (cell && cell.v) {
+            paymentDateConfirmed = true;
+            paymentDateFontColor = "black";
           }
         }
 
@@ -476,7 +496,10 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
           expenseInvoiceNumber: invoiceNumber,
           expenseInvoicedDate: invoiceDate,
           invoiceDateConfirmed,
+          invoiceDateFontColor,
           expensePaymentDate: paymentDate,
+          paymentDateConfirmed,
+          paymentDateFontColor,
           actualCosTotal: actualCosCol >= 0 ? parseNumber(row[actualCosCol]) : null,
           lineStatus,
         });

@@ -42,7 +42,11 @@ interface ProgramExpense {
   expensePoNumber: string | null;
   expenseInvoiceNumber: string | null;
   expenseInvoicedDate: string | null;
+  invoiceDateConfirmed: boolean | null;
+  invoiceDateFontColor: string | null;
   expensePaymentDate: string | null;
+  paymentDateConfirmed: boolean | null;
+  paymentDateFontColor: string | null;
   actualCosTotal: string | null;
   lineStatus: string | null;
 }
@@ -77,7 +81,7 @@ const COLUMNS: ColumnDef[] = [
   { key: "budgetQty", label: "Budget Qty", defaultVisible: false, align: "right", minWidth: "90px" },
   { key: "budgetRate", label: "Budget Rate", defaultVisible: false, align: "right", minWidth: "100px" },
   { key: "budgetTotal", label: "Budget Total", defaultVisible: true, align: "right", minWidth: "120px" },
-  { key: "forecastDate", label: "Fcst Pay Date", defaultVisible: true, align: "center", minWidth: "100px" },
+  { key: "forecastDate", label: "Fcst Pay Date", defaultVisible: false, align: "center", minWidth: "100px" },
   { key: "actualTotal", label: "Actual Total", defaultVisible: true, align: "right", minWidth: "120px" },
   { key: "poNumber", label: "PO Number", defaultVisible: true, align: "left", minWidth: "120px" },
   { key: "invoiceNo", label: "Invoice No", defaultVisible: true, align: "left", minWidth: "120px" },
@@ -268,7 +272,7 @@ export function ExpenditureEditableTab({ projectName }: ExpenditureEditableTabPr
       if (row.rowType === "category") {
         if (currentGroup) groups.push(currentGroup);
         currentGroup = {
-          category: row.expenseCategory || "Uncategorized",
+          category: row.expenseCategory || "Panels",
           items: [],
           budgetTotal: 0,
           actualTotal: 0,
@@ -282,9 +286,8 @@ export function ExpenditureEditableTab({ projectName }: ExpenditureEditableTabPr
         currentGroup.actualTotal += actual;
         currentGroup.variance += budget - actual;
       } else if (row.rowType === "item" && !currentGroup) {
-        // Items without category - create default group
         currentGroup = {
-          category: "Uncategorized",
+          category: "Panels",
           items: [row],
           budgetTotal: parseFloat(row.budgetTotal || "0"),
           actualTotal: parseFloat(row.expenseActualTotal || "0"),
@@ -371,7 +374,7 @@ export function ExpenditureEditableTab({ projectName }: ExpenditureEditableTabPr
     );
   }
 
-  const EditableCell = ({ rowId, field, value, type = "text" }: { rowId: number; field: string; value: string | null; type?: string }) => {
+  const EditableCell = ({ rowId, field, value, type = "text", colorClass = "" }: { rowId: number; field: string; value: string | null; type?: string; colorClass?: string }) => {
     const cellKey = `${rowId}-${field}`;
     const isEditing = editingCell === cellKey;
     const displayValue = type === "currency" ? formatCurrency(value) : (type === "date" ? formatDate(value) : (value || "-"));
@@ -389,7 +392,7 @@ export function ExpenditureEditableTab({ projectName }: ExpenditureEditableTabPr
     ) : (
       <span
         onClick={() => setEditingCell(cellKey)}
-        className="cursor-pointer hover:bg-blue-50 px-1 py-0.5 rounded block text-xs truncate"
+        className={`cursor-pointer hover:bg-blue-50 px-1 py-0.5 rounded block text-xs truncate ${colorClass}`}
       >
         {displayValue}
       </span>
@@ -431,9 +434,9 @@ export function ExpenditureEditableTab({ projectName }: ExpenditureEditableTabPr
       case "invoiceNo":
         return <EditableCell rowId={rowId} field="expenseInvoiceNumber" value={exp.expenseInvoiceNumber} />;
       case "invoiceDate":
-        return <EditableCell rowId={rowId} field="expenseInvoicedDate" value={exp.expenseInvoicedDate} type="date" />;
+        return <EditableCell rowId={rowId} field="expenseInvoicedDate" value={exp.expenseInvoicedDate} type="date" colorClass={exp.invoiceDateFontColor === "red" ? "text-red-500" : ""} />;
       case "paymentDate":
-        return <EditableCell rowId={rowId} field="expensePaymentDate" value={exp.expensePaymentDate} type="date" />;
+        return <EditableCell rowId={rowId} field="expensePaymentDate" value={exp.expensePaymentDate} type="date" colorClass={exp.paymentDateFontColor === "red" ? "text-red-500" : ""} />;
       case "cosTotal":
         return <span className="text-xs font-mono">{formatCurrency(exp.actualCosTotal)}</span>;
       case "status":

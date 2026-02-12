@@ -10,6 +10,20 @@ function getColumnIndex(colMap: Record<string, number>, names: string[]): number
   return -1;
 }
 
+function detectFontColor(sheet: any, rowIdx: number, col: number): { confirmed: boolean; color: string | null } {
+  const cellAddr = XLSX.utils.encode_cell({ r: rowIdx, c: col });
+  const cell = sheet[cellAddr];
+  if (cell && cell.s && cell.s.font && cell.s.font.color) {
+    const fontColor = cell.s.font.color.rgb || cell.s.font.color.argb || "";
+    const isRed = fontColor.toLowerCase().includes("ff0000") || 
+                 fontColor.toLowerCase().endsWith("ff0000");
+    return { confirmed: !isRed, color: isRed ? "red" : "black" };
+  } else if (cell && cell.v) {
+    return { confirmed: true, color: "black" };
+  }
+  return { confirmed: false, color: null };
+}
+
 export async function backfillInvoiceDateConfirmed(): Promise<{ updated: number; skipped: number; errors: string[] }> {
   const uploadDir = path.join(process.cwd(), "uploads");
   const errors: string[] = [];
@@ -93,8 +107,9 @@ export async function backfillInvoiceDateConfirmed(): Promise<{ updated: number;
 
       const invoiceDateCol = getColumnIndex(colMap, ["invoice raised date"]);
       const invoiceCol = getColumnIndex(colMap, ["invoice number"]);
+      const paymentDateCol = getColumnIndex(colMap, ["finance payment date", "payment date"]);
 
-      if (invoiceDateCol < 0) {
+      if (invoiceDateCol < 0 && paymentDateCol < 0) {
         totalSkipped++;
         continue;
       }
@@ -107,50 +122,42 @@ export async function backfillInvoiceDateConfirmed(): Promise<{ updated: number;
         }
       }
 
-      const confirmedRows: number[] = [];
-      const unconfirmedRows: number[] = [];
-
       for (let rowIdx = dataStartRow; rowIdx < data.length; rowIdx++) {
         const row = data[rowIdx];
         if (!row) continue;
 
-        const hasInvoiceNumber = invoiceCol >= 0 && row[invoiceCol] && String(row[invoiceCol]).trim() !== "";
-        if (!hasInvoiceNumber) continue;
+        const rowNum = rowIdx + 1;
+        const updates: string[] = [];
+        const params: any[] = [projectName, rowNum];
+        let paramIdx = 3;
 
-        const hasInvoiceDate = row[invoiceDateCol] != null && String(row[invoiceDateCol]).trim() !== "";
-        if (!hasInvoiceDate) continue;
-
-        let isConfirmed = false;
-        const cellAddr = XLSX.utils.encode_cell({ r: rowIdx, c: invoiceDateCol });
-        const cell = sheet[cellAddr];
-        
-        if (cell && cell.s && cell.s.font && cell.s.font.color) {
-          const fontColor = cell.s.font.color.rgb || cell.s.font.color.argb || "";
-          const isRed = fontColor.toLowerCase().includes("ff0000") || 
-                       fontColor.toLowerCase().endsWith("ff0000");
-          isConfirmed = !isRed;
-        } else if (cell && cell.v) {
-          isConfirmed = true;
+        if (invoiceDateCol >= 0 && row[invoiceDateCol] != null && String(row[invoiceDateCol]).trim() !== "") {
+          const { confirmed, color } = detectFontColor(sheet, rowIdx, invoiceDateCol);
+          updates.push(`invoice_date_confirmed = $${paramIdx}`);
+          params.push(confirmed);
+          paramIdx++;
+          updates.push(`invoice_date_font_color = $${paramIdx}`);
+          params.push(color);
+          paramIdx++;
         }
 
-        if (isConfirmed) {
-          confirmedRows.push(rowIdx + 1);
-        } else {
-          unconfirmedRows.push(rowIdx + 1);
+        if (paymentDateCol >= 0 && row[paymentDateCol] != null && String(row[paymentDateCol]).trim() !== "") {
+          const { confirmed, color } = detectFontColor(sheet, rowIdx, paymentDateCol);
+          updates.push(`payment_date_confirmed = $${paramIdx}`);
+          params.push(confirmed);
+          paramIdx++;
+          updates.push(`payment_date_font_color = $${paramIdx}`);
+          params.push(color);
+          paramIdx++;
         }
-      }
 
-      if (confirmedRows.length > 0) {
-        const batchSize = 500;
-        for (let i = 0; i < confirmedRows.length; i += batchSize) {
-          const batch = confirmedRows.slice(i, i + batchSize);
-          const placeholders = batch.map((_, idx) => `$${idx + 2}`).join(",");
+        if (updates.length > 0) {
           await pool.query(
-            `UPDATE program_expense SET invoice_date_confirmed = true WHERE project_name = $1 AND row_number IN (${placeholders})`,
-            [projectName, ...batch]
+            `UPDATE program_expense SET ${updates.join(", ")} WHERE project_name = $1 AND row_number = $2`,
+            params
           );
+          totalUpdated++;
         }
-        totalUpdated += confirmedRows.length;
       }
     } catch (err: any) {
       errors.push(`Error processing ${fileName}: ${err.message}`);

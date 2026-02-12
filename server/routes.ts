@@ -953,7 +953,7 @@ export async function registerRoutes(
         const amount = safeNum(exp.expenseActualTotal);
         const cosAmount = safeNum(exp.actualCosTotal) || amount;
         const budgetAmount = safeNum(exp.budgetTotal);
-        const category = exp.expenseCategory || 'Uncategorized';
+        const category = exp.expenseCategory || 'Panels';
 
         totalBudget += budgetAmount;
 
