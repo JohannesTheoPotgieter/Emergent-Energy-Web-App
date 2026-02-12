@@ -66,7 +66,7 @@ function formatDate(d: string | null): string {
 
 
 function GanttTimeline({ projects, scenarioId }: { projects: ScenarioProject[]; scenarioId: number | null }) {
-  const timelineStart = new Date('2025-01-06');
+  const timelineStart = new Date('2025-09-01');
   const numWeeks = 52;
   const weekWidth = 24;
   const rowHeight = 28;

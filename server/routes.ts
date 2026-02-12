@@ -5331,14 +5331,14 @@ export async function registerRoutes(
       const openingBalance = manualBalances.length > 0 ? parseFloat(manualBalances[0].openingBalance || '0') : 0;
 
       const baseline = buildCashflowLines(expenseItems, allInflows);
-      const baselineWeeks = computeWeeklyCashflow(baseline.inflowLines, baseline.outflowLines, '2025-03-03', 52, openingBalance);
+      const baselineWeeks = computeWeeklyCashflow(baseline.inflowLines, baseline.outflowLines, '2025-09-01', 52, openingBalance);
 
       let scenarioWeeks = baselineWeeks;
       if (scenarioId) {
         const overrides = await storage.getDateOverridesByScenario(scenarioId);
         const overrideMap = buildOverrideMap(overrides);
         const scenarioData = buildCashflowLines(expenseItems, allInflows, overrideMap);
-        scenarioWeeks = computeWeeklyCashflow(scenarioData.inflowLines, scenarioData.outflowLines, '2025-03-03', 52, openingBalance);
+        scenarioWeeks = computeWeeklyCashflow(scenarioData.inflowLines, scenarioData.outflowLines, '2025-09-01', 52, openingBalance);
       }
 
       const weeklyData = scenarioWeeks.map((sw, i) => {
@@ -5530,7 +5530,7 @@ export async function registerRoutes(
       }
 
       const weeklyDemand = new Map<string, { total: number; projects: string[] }>();
-      const startDate = new Date('2025-03-03');
+      const startDate = new Date('2025-09-01');
 
       for (let w = 0; w < 52; w++) {
         const weekStart = new Date(startDate);
