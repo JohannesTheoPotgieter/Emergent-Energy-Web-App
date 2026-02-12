@@ -2968,10 +2968,11 @@ export async function registerRoutes(
     try {
       const projectName = req.params.projectName;
 
-      const [rawInflows, overrides, projectInfoList] = await Promise.all([
+      const [rawInflows, overrides, projectInfoList, savedSummary] = await Promise.all([
         storage.getProgramInflowsByProject(projectName),
         storage.getRevenueTrackingOverridesByProject(projectName),
         storage.getAllProjectInfo(),
+        storage.getProjectRevenueSummary(projectName),
       ]);
 
       const inflows = applyRevenueTrackingOverrides(rawInflows, overrides);
@@ -2989,24 +2990,28 @@ export async function registerRoutes(
         return false;
       };
 
+      const today = new Date().toISOString().split('T')[0];
+
       const milestones = inflows.filter(isRealMilestone).map((r: any) => {
         const hasInvoice = !!(r.milestoneInvoiceNumber && r.milestoneInvoiceNumber.trim());
-        const hasInvoiceDate = !!(r.invoiceRaisedDate && r.invoiceRaisedDate.trim());
-        const hasReceivedDate = !!(r.paymentReceivedDate && r.paymentReceivedDate.trim());
         const inBank = r.inBank === 1 || r.inBank === '1' || r.inBank === true;
+
+        const date = r.paymentReceivedDate || r.plannedPaymentDate || null;
+        const isConfirmed = inBank && hasInvoice;
+        const isRed = !isConfirmed;
+        const isPast = date ? date < today : false;
 
         let status: string;
         let flags: string[] = [];
 
-        if (inBank && hasReceivedDate && hasInvoice) {
+        if (!isRed && hasInvoice) {
           status = 'inBank';
-        } else if (hasReceivedDate && hasInvoice) {
-          status = 'received';
-        } else if (hasReceivedDate && !hasInvoice) {
-          status = 'issue';
-          flags.push('Receipt date exists but invoice number missing');
-        } else if (hasInvoice || hasInvoiceDate) {
+        } else if (isRed && hasInvoice) {
           status = 'invoiced';
+          flags.push('Invoice raised, payment outstanding');
+        } else if (isRed && !hasInvoice && isPast) {
+          status = 'overdue';
+          flags.push('Payment date has passed without invoice');
         } else {
           status = 'planned';
         }
@@ -3020,25 +3025,23 @@ export async function registerRoutes(
           milestoneName: r.milestoneName,
           milestonePercent: r.milestonePercent,
           milestoneAmount: r.milestoneAmount,
-          plannedPaymentDate: r.plannedPaymentDate,
+          date,
+          isRed,
           milestoneInvoiceNumber: r.milestoneInvoiceNumber,
           invoiceRaisedDate: r.invoiceRaisedDate,
-          paymentReceivedDate: r.paymentReceivedDate,
           inBank,
           status,
           flags,
           hasOverride,
-          documentsReceived: r.documentsReceived,
           milestoneNotes: r.milestoneNotes,
         };
       });
 
       const totalContract = milestones.reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
       const invoiced = milestones.filter((m: any) => m.status === 'invoiced').reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
-      const received = milestones.filter((m: any) => m.status === 'received').reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
       const inBankTotal = milestones.filter((m: any) => m.status === 'inBank').reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
-      const issueTotal = milestones.filter((m: any) => m.status === 'issue').reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
-      const pending = milestones.filter((m: any) => m.status === 'planned').reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
+      const pending = milestones.filter((m: any) => m.status === 'planned' || m.status === 'overdue').reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
+      const overdueTotal = milestones.filter((m: any) => m.status === 'overdue').reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
 
       const pInfo = projectInfoList.find((p: any) => p.projectName === projectName);
       const contractValue = pInfo ? parseFloat(String(pInfo.contractValue || '0')) : 0;
@@ -3055,11 +3058,13 @@ export async function registerRoutes(
         }
       } catch (e) {}
 
-      const plannedRevenue = contractValue || totalContract;
-      const plannedProfit = plannedRevenue - costedExpenditure;
+      const plannedRevenue = savedSummary?.plannedRevenue ? parseFloat(String(savedSummary.plannedRevenue)) : (contractValue || totalContract);
+      const plannedExpenditureVal = savedSummary?.plannedExpenditure ? parseFloat(String(savedSummary.plannedExpenditure)) : costedExpenditure;
+      const plannedProfit = plannedRevenue - plannedExpenditureVal;
       const plannedMargin = plannedRevenue > 0 ? plannedProfit / plannedRevenue : 0;
+      const costedExpenditureFinal = plannedExpenditureVal;
 
-      const actualRevenue = inBankTotal + received + issueTotal;
+      const actualRevenue = inBankTotal;
       const actualProfit = actualRevenue - actualExpenditure;
       const actualMargin = actualRevenue > 0 ? actualProfit / actualRevenue : 0;
 
@@ -3068,18 +3073,19 @@ export async function registerRoutes(
         summary: {
           totalContract,
           invoiced,
-          received,
           inBank: inBankTotal,
           pending,
+          overdue: overdueTotal,
           milestoneCount: milestones.length,
-          issueCount: milestones.filter((m: any) => m.status === 'issue').length,
+          issueCount: milestones.filter((m: any) => m.status === 'overdue' || m.status === 'invoiced').length,
         },
         highlevel: {
           costed: {
             revenue: plannedRevenue,
-            expenditure: costedExpenditure,
+            expenditure: costedExpenditureFinal,
             profit: plannedProfit,
             margin: plannedMargin,
+            isManualOverride: !!savedSummary?.plannedRevenue || !!savedSummary?.plannedExpenditure,
           },
           actual: {
             revenue: actualRevenue,
@@ -3094,6 +3100,67 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Revenue tab error:", error);
       res.status(500).json({ error: "Failed to fetch revenue tab data" });
+    }
+  });
+
+  app.post("/api/revenue-tab/:projectName/costed", requireAuth, async (req, res) => {
+    try {
+      const projectName = req.params.projectName;
+      const { revenue, expenditure } = req.body;
+      const saved = await storage.upsertProjectRevenueSummary({
+        projectName,
+        plannedRevenue: revenue?.toString() ?? null,
+        plannedExpenditure: expenditure?.toString() ?? null,
+        plannedProfit: (revenue && expenditure) ? (parseFloat(revenue) - parseFloat(expenditure)).toString() : null,
+        plannedMargin: (revenue && expenditure && parseFloat(revenue) > 0) ? ((parseFloat(revenue) - parseFloat(expenditure)) / parseFloat(revenue)).toString() : null,
+        actualRevenue: null,
+        actualExpenditure: null,
+        actualProfit: null,
+        actualMargin: null,
+        voPmLimit: null,
+        currentVoTotal: null,
+      });
+      res.json(saved);
+    } catch (error) {
+      console.error("Save costed error:", error);
+      res.status(500).json({ error: "Failed to save costed values" });
+    }
+  });
+
+  app.get("/api/revenue-tab/:projectName/task-alerts", requireAuth, async (req, res) => {
+    try {
+      const projectName = req.params.projectName;
+      const tasks = await storage.getOperationalTasksByProject(projectName);
+      const inflows = await storage.getProgramInflowsByProject(projectName);
+
+      const alerts: any[] = [];
+      for (const milestone of inflows) {
+        if (!milestone.milestoneNo || !/^\d+$/.test(String(milestone.milestoneNo).trim())) continue;
+        const name = (milestone.milestoneName || '').trim();
+        if (name === '-') continue;
+
+        const matchingTask = tasks.find((t: any) =>
+          t.title && name && (
+            t.title.toLowerCase().includes(name.toLowerCase()) ||
+            name.toLowerCase().includes(t.title.toLowerCase())
+          )
+        );
+
+        if (matchingTask && (matchingTask as any).status === 'complete' && !milestone.milestoneInvoiceNumber) {
+          alerts.push({
+            milestoneNo: milestone.milestoneNo,
+            milestoneName: name,
+            milestoneAmount: milestone.milestoneAmount,
+            taskTitle: (matchingTask as any).title,
+            taskId: (matchingTask as any).id,
+            message: `Task "${(matchingTask as any).title}" is complete — invoice needs to be raised for milestone ${milestone.milestoneNo}`,
+          });
+        }
+      }
+      res.json(alerts);
+    } catch (error) {
+      console.error("Task alerts error:", error);
+      res.status(500).json({ error: "Failed to fetch task alerts" });
     }
   });
 

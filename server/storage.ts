@@ -1267,6 +1267,20 @@ export class DatabaseStorage implements IStorage {
     return results[0];
   }
 
+  async upsertProjectRevenueSummary(data: InsertProjectRevenueSummary): Promise<ProjectRevenueSummary> {
+    const existing = await this.getProjectRevenueSummary(data.projectName);
+    if (existing) {
+      const updated = await this.dbInstance.update(projectRevenueSummary)
+        .set({ ...data, capturedAt: new Date() })
+        .where(eq(projectRevenueSummary.projectName, data.projectName))
+        .returning();
+      return updated[0];
+    } else {
+      const inserted = await this.dbInstance.insert(projectRevenueSummary).values(data).returning();
+      return inserted[0];
+    }
+  }
+
   // Home Notes
   async getHomeNotes(): Promise<HomeNotes | undefined> {
     const results = await this.dbInstance.select().from(homeNotes).orderBy(desc(homeNotes.updatedAt)).limit(1);
