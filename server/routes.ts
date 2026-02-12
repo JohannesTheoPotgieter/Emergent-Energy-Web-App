@@ -2340,6 +2340,25 @@ export async function registerRoutes(
           const parseResult = parseTrackerFile(fileBuffer, file.originalname);
           
           await applyFontColors(parseResult.expenses, fileBuffer);
+
+          function sanitizeRecord(record: Record<string, any>) {
+            for (const key of Object.keys(record)) {
+              const val = record[key];
+              if (typeof val === 'number' && (isNaN(val) || !isFinite(val))) {
+                record[key] = null;
+              }
+              if (typeof val === 'string' && (val === 'NaN' || val === 'Infinity' || val === '-Infinity')) {
+                record[key] = null;
+              }
+            }
+          }
+          parseResult.expenses.forEach(sanitizeRecord);
+          parseResult.inflows.forEach(sanitizeRecord);
+          parseResult.planItems.forEach(sanitizeRecord);
+          parseResult.cashflowPoints.forEach(sanitizeRecord);
+          parseResult.financeRevenueMonthly.forEach(sanitizeRecord);
+          parseResult.financeCosMonthly.forEach(sanitizeRecord);
+          if (parseResult.projectInfo) sanitizeRecord(parseResult.projectInfo);
           
           // Handle duplicate mode: append timestamp to make project name unique
           let targetProjectName = parseResult.projectName;
