@@ -4741,6 +4741,18 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/admin/backfill-invoice-confirmed", requireAuth, async (req, res) => {
+    try {
+      const { backfillInvoiceDateConfirmed } = await import("./backfillInvoiceConfirmed");
+      const result = await backfillInvoiceDateConfirmed();
+      console.log('[Admin] Invoice date confirmed backfill:', result);
+      res.json({ success: true, ...result });
+    } catch (err: any) {
+      console.error('[Admin] invoice confirmed backfill error:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // =========================================================================
   // PLANNING BOARD APIs
   // =========================================================================
