@@ -385,6 +385,7 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
       }
       
       let currentCategory = "";
+      const emittedCategories = new Set<string>();
       
       for (let rowIdx = dataStartRow; rowIdx < data.length; rowIdx++) {
         const row = data[rowIdx];
@@ -395,28 +396,35 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
         const rawBudgetTotal = budgetTotalCol >= 0 ? row[budgetTotalCol] : null;
         const rawActualTotal = actualTotalCol >= 0 ? row[actualTotalCol] : null;
         
-        // Determine row type
         let rowType = "item";
         let expenseCategory = currentCategory;
         let expenseLineItem = rawDesc ? String(rawDesc) : null;
         
-        // Category header detection - STRICT: only rows with numbered category name like "1. Panels"
-        // but NO description AND no actual total value (empty data columns)
         if (rawCategory && typeof rawCategory === "string") {
           const catStr = rawCategory.trim();
-          // Pattern for category headers: starts with digit(s), followed by period or dot, then text
-          // e.g., "1. Panels", "2. Inverters", "10. Site Logistics"
-          const isCategoryHeader = /^\d+\.\s*[A-Za-z]/.test(catStr) && !rawDesc && !rawActualTotal;
+          const isCategoryPattern = /^\d+\.?\s*[A-Za-z]/.test(catStr);
           
-          if (isCategoryHeader) {
-            // This is a category header row
-            currentCategory = catStr;
-            expenseCategory = catStr;
-            rowType = "category";
-          } else {
-            // Regular item - inherit current category, use category column value if different
-            if (catStr && catStr !== currentCategory) {
-              expenseCategory = currentCategory; // Keep inherited category
+          if (isCategoryPattern) {
+            if (catStr !== currentCategory) {
+              currentCategory = catStr;
+            }
+            expenseCategory = currentCategory;
+            
+            if (!rawDesc && !rawActualTotal) {
+              const hasPO = poCol >= 0 && row[poCol] && String(row[poCol]).trim();
+              const hasInvoice = invoiceCol >= 0 && row[invoiceCol] && String(row[invoiceCol]).trim();
+              const hasInvoiceDate = invoiceDateCol >= 0 && row[invoiceDateCol];
+              const hasPaymentDate = paymentDateCol >= 0 && row[paymentDateCol];
+              const hasBudget = rawBudgetTotal && parseFloat(String(rawBudgetTotal)) !== 0;
+              
+              if (hasPO || hasInvoice || hasInvoiceDate || hasPaymentDate || hasBudget) {
+                rowType = "item";
+              } else if (!emittedCategories.has(currentCategory)) {
+                emittedCategories.add(currentCategory);
+                rowType = "category";
+              } else {
+                continue;
+              }
             }
           }
         }
