@@ -57,13 +57,28 @@ interface MonthDetailItem {
   id: number;
   projectName: string;
   category: string | null;
+  lineItem: string | null;
   amount: number;
+  invoiceNumber: string | null;
+  poNumber: string | null;
+  invoiceDate: string | null;
+  invoiceDateConfirmed: boolean;
+  paymentDate: string | null;
+  paymentDateConfirmed: boolean;
+  supplier: string | null;
+  isRealised: boolean;
+  realisedMonth: string | null;
+  cosState: string;
 }
 
 interface MonthDetail {
   monthKey: string;
   lineCount: number;
   totalAmount: number;
+  realisedTotal: number;
+  unrealisedTotal: number;
+  realisedCount: number;
+  unrealisedCount: number;
   items: MonthDetailItem[];
 }
 
@@ -109,38 +124,65 @@ const ROW_DEFS: {
   { key: "ytdVariancePct", label: "YTD Variance %", dataKey: "ytdVariancePct", editable: false, colorClass: "", group: "ytd", colorCoded: true },
 ];
 
-function MonthDetailDrawer({ monthKey, monthLabel, onClose }: { monthKey: string; monthLabel: string; onClose: () => void }) {
+function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all" }: { monthKey: string; monthLabel: string; onClose: () => void; defaultFilter?: "all" | "realised" | "unrealised" }) {
   const [search, setSearch] = useState("");
+  const [stateFilter, setStateFilter] = useState<"all" | "realised" | "unrealised">(defaultFilter);
+  const [projectFilter, setProjectFilter] = useState<string>("all");
+  const [expandedId, setExpandedId] = useState<number | null>(null);
 
   const { data, isLoading } = useQuery<MonthDetail>({
     queryKey: [`/api/cos-tracker/month-detail?monthKey=${monthKey}`],
     queryFn: getQueryFn({ on401: "throw" }),
   });
 
+  const allProjects = useMemo(() => {
+    if (!data?.items) return [];
+    const names = new Set(data.items.map(i => i.projectName));
+    return Array.from(names).sort();
+  }, [data]);
+
   const filtered = useMemo(() => {
     if (!data?.items) return [];
     let items = data.items;
+    if (stateFilter === "realised") items = items.filter(i => i.isRealised);
+    if (stateFilter === "unrealised") items = items.filter(i => !i.isRealised);
+    if (projectFilter !== "all") items = items.filter(i => i.projectName === projectFilter);
     if (search.trim()) {
       const q = search.toLowerCase();
       items = items.filter(i =>
         i.projectName.toLowerCase().includes(q) ||
-        (i.category || "").toLowerCase().includes(q)
+        (i.category || "").toLowerCase().includes(q) ||
+        (i.lineItem || "").toLowerCase().includes(q) ||
+        (i.invoiceNumber || "").toLowerCase().includes(q) ||
+        (i.poNumber || "").toLowerCase().includes(q) ||
+        (i.supplier || "").toLowerCase().includes(q)
       );
     }
     return items;
-  }, [data, search]);
+  }, [data, search, stateFilter, projectFilter]);
 
   const filteredTotal = useMemo(() => filtered.reduce((s, i) => s + i.amount, 0), [filtered]);
+  const filteredRealised = useMemo(() => filtered.filter(i => i.isRealised).reduce((s, i) => s + i.amount, 0), [filtered]);
+  const filteredUnrealised = useMemo(() => filtered.filter(i => !i.isRealised).reduce((s, i) => s + i.amount, 0), [filtered]);
+
+  const stateBadgeColor = (state: string) => {
+    switch (state) {
+      case 'Paid': return 'bg-blue-100 text-blue-800';
+      case 'Invoiced': return 'bg-green-100 text-green-800';
+      case 'Committed': return 'bg-amber-100 text-amber-800';
+      default: return 'bg-gray-100 text-gray-700';
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex" data-testid="drawer-month-detail">
       <div className="absolute inset-0 bg-black/30" onClick={onClose} />
-      <div className="ml-auto relative w-full max-w-3xl bg-background border-l shadow-2xl flex flex-col h-full">
+      <div className="ml-auto relative w-full max-w-5xl bg-background border-l shadow-2xl flex flex-col h-full">
         <div className="p-4 border-b flex items-center justify-between bg-muted/50">
           <div>
-            <h3 className="font-bold text-lg">{monthLabel} - Finance COS Detail</h3>
+            <h3 className="font-bold text-lg" data-testid="text-drawer-title">{monthLabel} - COS Line Item Detail</h3>
             <p className="text-sm text-muted-foreground">
-              {data?.lineCount ?? 0} entries totalling {formatRand(data?.totalAmount ?? 0)}
+              {data?.lineCount ?? 0} line items totalling {formatRand(data?.totalAmount ?? 0)}
             </p>
           </div>
           <button onClick={onClose} className="p-1 hover:bg-muted rounded" data-testid="button-close-drawer">
@@ -148,43 +190,183 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose }: { monthKey: string
           </button>
         </div>
 
-        <div className="p-3 border-b flex items-center gap-2">
-          <div className="relative flex-1">
+        <div className="p-3 border-b grid grid-cols-1 md:grid-cols-3 gap-3 bg-muted/20">
+          <div className="flex items-center gap-2 rounded-lg bg-green-50 border border-green-200 px-3 py-2">
+            <div className="w-2 h-2 rounded-full bg-green-500" />
+            <div>
+              <p className="text-xs text-green-700">Realised</p>
+              <p className="font-mono font-bold text-green-800 text-sm" data-testid="text-realised-total">{formatRand(data?.realisedTotal ?? 0)}</p>
+            </div>
+            <Badge variant="secondary" className="ml-auto text-xs">{data?.realisedCount ?? 0}</Badge>
+          </div>
+          <div className="flex items-center gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
+            <div className="w-2 h-2 rounded-full bg-amber-500" />
+            <div>
+              <p className="text-xs text-amber-700">Unrealised</p>
+              <p className="font-mono font-bold text-amber-800 text-sm" data-testid="text-unrealised-total">{formatRand(data?.unrealisedTotal ?? 0)}</p>
+            </div>
+            <Badge variant="secondary" className="ml-auto text-xs">{data?.unrealisedCount ?? 0}</Badge>
+          </div>
+          <div className="flex items-center gap-2 rounded-lg bg-slate-50 border border-slate-200 px-3 py-2">
+            <div className="w-2 h-2 rounded-full bg-slate-500" />
+            <div>
+              <p className="text-xs text-slate-600">Total</p>
+              <p className="font-mono font-bold text-slate-800 text-sm">{formatRand(data?.totalAmount ?? 0)}</p>
+            </div>
+            <Badge variant="secondary" className="ml-auto text-xs">{data?.lineCount ?? 0}</Badge>
+          </div>
+        </div>
+
+        <div className="p-3 border-b flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 min-w-[200px]">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search project or category..."
+              placeholder="Search project, category, invoice #, PO #..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-9 h-9"
               data-testid="input-search-detail"
             />
           </div>
+          <select
+            value={stateFilter}
+            onChange={(e) => setStateFilter(e.target.value as any)}
+            className="h-9 px-3 text-sm border rounded-md bg-background"
+            data-testid="select-state-filter"
+          >
+            <option value="all">All States</option>
+            <option value="realised">Realised Only</option>
+            <option value="unrealised">Unrealised Only</option>
+          </select>
+          <select
+            value={projectFilter}
+            onChange={(e) => setProjectFilter(e.target.value)}
+            className="h-9 px-3 text-sm border rounded-md bg-background max-w-[200px]"
+            data-testid="select-project-filter"
+          >
+            <option value="all">All Projects</option>
+            {allProjects.map(p => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
         </div>
 
-        <div className="p-3 border-b bg-muted/30 flex items-center justify-between text-sm">
+        <div className="px-3 py-2 border-b bg-muted/30 flex items-center justify-between text-sm">
           <span className="font-medium">Showing {filtered.length} items</span>
-          <span className="font-mono font-bold">{formatRand(filteredTotal)}</span>
+          <div className="flex items-center gap-4">
+            <span className="text-green-700 font-mono text-xs">Realised: {formatRand(filteredRealised)}</span>
+            <span className="text-amber-700 font-mono text-xs">Unrealised: {formatRand(filteredUnrealised)}</span>
+            <span className="font-mono font-bold">{formatRand(filteredTotal)}</span>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto">
           {isLoading ? (
-            <div className="p-8 text-center text-muted-foreground">Loading detail...</div>
+            <div className="p-8 text-center text-muted-foreground">Loading line items...</div>
+          ) : filtered.length === 0 ? (
+            <div className="p-8 text-center text-muted-foreground">No line items found for this month.</div>
           ) : (
             <table className="w-full text-xs">
-              <thead className="sticky top-0 bg-muted/80 backdrop-blur">
+              <thead className="sticky top-0 bg-muted/90 backdrop-blur z-10">
                 <tr className="border-b">
+                  <th className="text-left p-2 font-semibold w-8"></th>
                   <th className="text-left p-2 font-semibold">Project</th>
                   <th className="text-left p-2 font-semibold">Category</th>
+                  <th className="text-left p-2 font-semibold">Line Item</th>
+                  <th className="text-center p-2 font-semibold">Status</th>
+                  <th className="text-center p-2 font-semibold">Realised</th>
                   <th className="text-right p-2 font-semibold">Amount</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.slice(0, 500).map((item, i) => (
-                  <tr key={item.id} className="border-b hover:bg-muted/30" data-testid={`row-detail-${i}`}>
-                    <td className="p-2 max-w-[180px] truncate" title={item.projectName}>{item.projectName}</td>
-                    <td className="p-2 text-muted-foreground">{item.category || "--"}</td>
-                    <td className="p-2 text-right font-mono font-medium">{formatRand(item.amount)}</td>
-                  </tr>
+                  <React.Fragment key={item.id}>
+                    <tr
+                      className={`border-b hover:bg-muted/30 cursor-pointer ${expandedId === item.id ? 'bg-blue-50/50' : ''}`}
+                      onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}
+                      data-testid={`row-detail-${i}`}
+                    >
+                      <td className="p-2 text-muted-foreground">
+                        {expandedId === item.id ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                      </td>
+                      <td className="p-2 max-w-[140px] truncate" title={item.projectName}>{item.projectName}</td>
+                      <td className="p-2 text-muted-foreground max-w-[100px] truncate" title={item.category || ""}>{item.category || "--"}</td>
+                      <td className="p-2 max-w-[200px] truncate" title={item.lineItem || ""}>{item.lineItem || "--"}</td>
+                      <td className="p-2 text-center">
+                        <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium ${stateBadgeColor(item.cosState)}`}>
+                          {item.cosState}
+                        </span>
+                      </td>
+                      <td className="p-2 text-center">
+                        {item.isRealised ? (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-green-100 text-green-800 text-[10px] font-medium" title={`Realised in ${item.realisedMonth}`}>
+                            {item.realisedMonth || 'Yes'}
+                          </span>
+                        ) : (
+                          <span className="inline-flex px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 text-[10px] font-medium">
+                            No
+                          </span>
+                        )}
+                      </td>
+                      <td className="p-2 text-right font-mono font-medium">{formatRand(item.amount)}</td>
+                    </tr>
+                    {expandedId === item.id && (
+                      <tr className="border-b bg-blue-50/30">
+                        <td colSpan={7} className="p-3">
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                            <div>
+                              <p className="text-muted-foreground mb-0.5">Invoice #</p>
+                              <p className="font-medium">{item.invoiceNumber || "--"}</p>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground mb-0.5">PO #</p>
+                              <p className="font-medium">{item.poNumber || "--"}</p>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground mb-0.5">Invoice Date</p>
+                              <p className="font-medium flex items-center gap-1">
+                                {item.invoiceDate || "--"}
+                                {item.invoiceDate && (
+                                  <span className={`inline-block w-2 h-2 rounded-full ${item.invoiceDateConfirmed ? 'bg-green-500' : 'bg-red-400'}`}
+                                    title={item.invoiceDateConfirmed ? 'Confirmed' : 'Forecast'} />
+                                )}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground mb-0.5">Payment Date</p>
+                              <p className="font-medium flex items-center gap-1">
+                                {item.paymentDate || "--"}
+                                {item.paymentDate && (
+                                  <span className={`inline-block w-2 h-2 rounded-full ${item.paymentDateConfirmed ? 'bg-green-500' : 'bg-red-400'}`}
+                                    title={item.paymentDateConfirmed ? 'Confirmed' : 'Forecast'} />
+                                )}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground mb-0.5">Supplier</p>
+                              <p className="font-medium">{item.supplier || "--"}</p>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground mb-0.5">Realised Month</p>
+                              <p className="font-medium">{item.realisedMonth || "Not realised"}</p>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground mb-0.5">COS State</p>
+                              <p className="font-medium">
+                                <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium ${stateBadgeColor(item.cosState)}`}>
+                                  {item.cosState}
+                                </span>
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground mb-0.5">Amount</p>
+                              <p className="font-mono font-bold">{formatRand(item.amount)}</p>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 ))}
               </tbody>
             </table>
@@ -200,7 +382,7 @@ export default function CosTracker() {
   const [editing, setEditing] = useState<EditingCell | null>(null);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [reconciliationMode, setReconciliationMode] = useState(false);
-  const [drawerMonth, setDrawerMonth] = useState<{ monthKey: string; monthLabel: string } | null>(null);
+  const [drawerMonth, setDrawerMonth] = useState<{ monthKey: string; monthLabel: string; defaultFilter?: "all" | "realised" | "unrealised" } | null>(null);
 
   const { data: months = [], isLoading } = useQuery<MonthData[]>({
     queryKey: ["/api/cos-tracker"],
@@ -515,7 +697,7 @@ export default function CosTracker() {
                   {ROW_DEFS.map((row) => {
                     const isYtd = row.group === "ytd";
                     const isExpanded = expandedRows.has(row.key);
-                    const isClickable = ["planned", "committed", "invoiced", "paid", "totalCOS", "outstanding"].includes(row.key);
+                    const isClickable = ["totalCOS", "realisedCOS", "unrealisedCOS"].includes(row.key);
                     return (
                       <React.Fragment key={row.key}>
                         <tr
@@ -586,7 +768,11 @@ export default function CosTracker() {
                               <td
                                 key={m.monthKey}
                                 className={`px-4 py-2 text-right font-mono ${colorClass} ${isClickable ? "cursor-pointer hover:bg-blue-50 hover:underline" : ""}`}
-                                onClick={isClickable ? () => setDrawerMonth({ monthKey: m.monthKey, monthLabel: m.monthLabel }) : undefined}
+                                onClick={isClickable ? () => setDrawerMonth({
+                                  monthKey: m.monthKey,
+                                  monthLabel: m.monthLabel,
+                                  defaultFilter: row.key === 'realisedCOS' ? 'realised' : row.key === 'unrealisedCOS' ? 'unrealised' : 'all'
+                                }) : undefined}
                                 data-testid={`cell-${row.key}-${m.monthKey}`}
                               >
                                 {formatCell(row, val)}
@@ -666,8 +852,10 @@ export default function CosTracker() {
 
       {drawerMonth && (
         <MonthDetailDrawer
+          key={`${drawerMonth.monthKey}-${drawerMonth.defaultFilter}`}
           monthKey={drawerMonth.monthKey}
           monthLabel={drawerMonth.monthLabel}
+          defaultFilter={drawerMonth.defaultFilter}
           onClose={() => setDrawerMonth(null)}
         />
       )}
