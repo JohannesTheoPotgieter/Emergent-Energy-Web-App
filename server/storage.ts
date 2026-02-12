@@ -224,6 +224,7 @@ export interface IStorage {
 
   // Milestone Task Links
   getMilestoneTaskLinks(projectName: string): Promise<MilestoneTaskLink[]>;
+  getAllMilestoneTaskLinks(): Promise<MilestoneTaskLink[]>;
   upsertMilestoneTaskLink(projectName: string, milestoneRowNumber: number, taskId: number): Promise<MilestoneTaskLink>;
   deleteMilestoneTaskLink(projectName: string, milestoneRowNumber: number): Promise<void>;
   updateMilestoneDateOverride(projectName: string, milestoneRowNumber: number, dateOverride: string | null, reason: string | null): Promise<void>;
@@ -263,6 +264,7 @@ export interface IStorage {
   clearDateOverrides(scenarioId: number): Promise<void>;
 
   // Operational Tasks
+  getAllOperationalTasks(): Promise<OperationalTask[]>;
   getOperationalTasksByProject(projectName: string): Promise<OperationalTask[]>;
   getOperationalTask(id: number): Promise<OperationalTask | undefined>;
   createOperationalTask(data: InsertOperationalTask): Promise<OperationalTask>;
@@ -1290,6 +1292,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Milestone Task Links
+  async getAllMilestoneTaskLinks(): Promise<MilestoneTaskLink[]> {
+    return await this.dbInstance.select().from(milestoneTaskLinks);
+  }
+
   async getMilestoneTaskLinks(projectName: string): Promise<MilestoneTaskLink[]> {
     return await this.dbInstance.select().from(milestoneTaskLinks).where(eq(milestoneTaskLinks.projectName, projectName));
   }
@@ -1469,6 +1475,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Operational Tasks
+  async getAllOperationalTasks(): Promise<OperationalTask[]> {
+    return this.dbInstance.select().from(operationalTasks);
+  }
+
   async getOperationalTasksByProject(projectName: string): Promise<OperationalTask[]> {
     return this.dbInstance.select().from(operationalTasks).where(eq(operationalTasks.projectName, projectName)).orderBy(operationalTasks.sortOrder);
   }
