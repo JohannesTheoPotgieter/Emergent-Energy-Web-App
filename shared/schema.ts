@@ -71,6 +71,7 @@ export const programExpense = pgTable("program_expense", {
   expensePoNumber: text("expense_po_number"),
   expenseInvoiceNumber: text("expense_invoice_number"),
   expenseInvoicedDate: text("expense_invoiced_date"),
+  invoiceDateConfirmed: boolean("invoice_date_confirmed").default(false),
   expensePaymentDate: text("expense_payment_date"),
   actualCosTotal: decimal("actual_cos_total", { precision: 15, scale: 2 }),
   lineStatus: text("line_status"),

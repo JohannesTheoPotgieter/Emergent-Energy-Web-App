@@ -1568,9 +1568,10 @@ export async function registerRoutes(
 
   app.get("/api/cos-tracker", requireAuth, async (req, res) => {
     try {
-      const [allFinanceCos, manualEntries] = await Promise.all([
+      const [allFinanceCos, manualEntries, allExpenses] = await Promise.all([
         storage.getAllFinanceCosMonthly(),
         storage.getTrackerMonthlyManual('COS'),
+        storage.getAllExpenses(),
       ]);
 
       const manualMap = new Map(manualEntries.map(e => [e.monthKey, e]));
@@ -1597,6 +1598,34 @@ export async function registerRoutes(
         bucket.projects.set(pName, (bucket.projects.get(pName) || 0) + val);
       }
 
+      const realisedByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
+
+      for (const exp of allExpenses) {
+        if (exp.rowType !== 'item') continue;
+        const cosTotal = exp.actualCosTotal ? parseFloat(exp.actualCosTotal as string) : 0;
+        if (isNaN(cosTotal) || cosTotal === 0) continue;
+
+        const hasInvoice = !!exp.expenseInvoiceNumber;
+        const dateConfirmed = exp.invoiceDateConfirmed === true;
+        const isRealised = hasInvoice && dateConfirmed;
+        if (!isRealised) continue;
+
+        const invDate = exp.expenseInvoicedDate;
+        if (!invDate) continue;
+        const dateMatch = invDate.match(/^(\d{4})-(\d{2})/);
+        if (!dateMatch) continue;
+        const monthKey = `${dateMatch[1]}-${dateMatch[2]}`;
+
+        const pName = (exp.projectName || '').replace(/_Tracker$/i, '');
+
+        if (!realisedByMonth.has(monthKey)) {
+          realisedByMonth.set(monthKey, { total: 0, projects: new Map() });
+        }
+        const bucket = realisedByMonth.get(monthKey)!;
+        bucket.total += cosTotal;
+        bucket.projects.set(pName, (bucket.projects.get(pName) || 0) + cosTotal);
+      }
+
       const staticCosBudget: Record<string, number> = {
         '2025-09': 8083466.99,
         '2025-10': 16346971.77,
@@ -1615,7 +1644,7 @@ export async function registerRoutes(
       const months: any[] = [];
       const startMonth = new Date(Date.UTC(2025, 8, 1));
 
-      let ytdCOS = 0, ytdBudget = 0;
+      let ytdCOS = 0, ytdBudget = 0, ytdRealised = 0;
 
       function mapToArray(m: Map<string, number>): { projectName: string; value: number }[] {
         const arr: { projectName: string; value: number }[] = [];
@@ -1633,6 +1662,10 @@ export async function registerRoutes(
         const bucket = cosByMonth.get(monthKey);
         const totalCOS = bucket?.total ?? 0;
 
+        const realisedBucket = realisedByMonth.get(monthKey);
+        const realisedCOS = realisedBucket?.total ?? 0;
+        const unrealisedCOS = totalCOS - realisedCOS;
+
         const manual = manualMap.get(monthKey);
         const budget = manual?.budget ? parseFloat(manual.budget) : (staticCosBudget[monthKey] ?? 0);
 
@@ -1640,7 +1673,9 @@ export async function registerRoutes(
         const variancePct = budget !== 0 ? variance / budget : 0;
 
         ytdCOS += totalCOS;
+        ytdRealised += realisedCOS;
         ytdBudget += budget;
+        const ytdUnrealised = ytdCOS - ytdRealised;
         const ytdVariance = ytdCOS - ytdBudget;
         const ytdVariancePct = ytdBudget !== 0 ? ytdVariance / ytdBudget : 0;
 
@@ -1648,14 +1683,19 @@ export async function registerRoutes(
           monthKey,
           monthLabel: monthDate.toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }),
           totalCOS,
+          realisedCOS,
+          unrealisedCOS,
           budget,
           variance,
           variancePct,
           ytdCOS,
+          ytdRealised,
+          ytdUnrealised,
           ytdBudget,
           ytdVariance,
           ytdVariancePct,
           cosProjects: mapToArray(bucket?.projects ?? new Map()),
+          realisedProjects: mapToArray(realisedBucket?.projects ?? new Map()),
         });
       }
 
