@@ -1568,49 +1568,22 @@ export async function registerRoutes(
 
   app.get("/api/cos-tracker", requireAuth, async (req, res) => {
     try {
-      const [allFinanceCos, manualEntries, allExpenses] = await Promise.all([
-        storage.getAllFinanceCosMonthly(),
+      const [allProgramExpenses, manualEntries] = await Promise.all([
+        storage.getAllProgramExpenses(),
         storage.getTrackerMonthlyManual('COS'),
-        storage.getAllExpenses(),
       ]);
 
       const manualMap = new Map(manualEntries.map(e => [e.monthKey, e]));
 
       const cosByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
-
-      for (const row of allFinanceCos) {
-        const val = row.value ? parseFloat(row.value as string) : 0;
-        if (isNaN(val) || val === 0) continue;
-
-        const dateStr = row.monthEndDate as string;
-        if (!dateStr) continue;
-        const dateMatch = dateStr.match(/^(\d{4})-(\d{2})/);
-        if (!dateMatch) continue;
-        const monthKey = `${dateMatch[1]}-${dateMatch[2]}`;
-
-        const pName = (row.projectName || '').replace(/_Tracker$/i, '');
-
-        if (!cosByMonth.has(monthKey)) {
-          cosByMonth.set(monthKey, { total: 0, projects: new Map() });
-        }
-        const bucket = cosByMonth.get(monthKey)!;
-        bucket.total += val;
-        bucket.projects.set(pName, (bucket.projects.get(pName) || 0) + val);
-      }
-
       const realisedByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
 
-      for (const exp of allExpenses) {
+      for (const exp of allProgramExpenses) {
         if (exp.rowType !== 'item') continue;
-        const cosTotal = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
-        if (isNaN(cosTotal) || cosTotal === 0) continue;
+        const amount = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
+        if (isNaN(amount) || amount === 0) continue;
 
-        const hasInvoice = !!exp.expenseInvoiceNumber;
-        const dateConfirmed = exp.invoiceDateConfirmed === true;
-        const isRealised = hasInvoice && dateConfirmed;
-        if (!isRealised) continue;
-
-        const invDate = exp.expenseInvoicedDate;
+        const invDate = exp.expenseInvoicedDate as string | null;
         if (!invDate) continue;
         const dateMatch = invDate.match(/^(\d{4})-(\d{2})/);
         if (!dateMatch) continue;
@@ -1618,12 +1591,25 @@ export async function registerRoutes(
 
         const pName = (exp.projectName || '').replace(/_Tracker$/i, '');
 
-        if (!realisedByMonth.has(monthKey)) {
-          realisedByMonth.set(monthKey, { total: 0, projects: new Map() });
+        if (!cosByMonth.has(monthKey)) {
+          cosByMonth.set(monthKey, { total: 0, projects: new Map() });
         }
-        const bucket = realisedByMonth.get(monthKey)!;
-        bucket.total += cosTotal;
-        bucket.projects.set(pName, (bucket.projects.get(pName) || 0) + cosTotal);
+        const cosBucket = cosByMonth.get(monthKey)!;
+        cosBucket.total += amount;
+        cosBucket.projects.set(pName, (cosBucket.projects.get(pName) || 0) + amount);
+
+        const hasInvoice = !!exp.expenseInvoiceNumber;
+        const dateConfirmed = exp.invoiceDateConfirmed === true;
+        const isRealised = hasInvoice && dateConfirmed;
+
+        if (isRealised) {
+          if (!realisedByMonth.has(monthKey)) {
+            realisedByMonth.set(monthKey, { total: 0, projects: new Map() });
+          }
+          const realBucket = realisedByMonth.get(monthKey)!;
+          realBucket.total += amount;
+          realBucket.projects.set(pName, (realBucket.projects.get(pName) || 0) + amount);
+        }
       }
 
       const staticCosBudget: Record<string, number> = {
@@ -1714,7 +1700,7 @@ export async function registerRoutes(
       const match = monthKey.match(/^(\d{4})-(\d{2})$/);
       if (!match) return res.status(400).json({ error: "Invalid monthKey format" });
 
-      const allExpenses = await storage.getAllExpenses();
+      const allExpenses = await storage.getAllProgramExpenses();
 
       interface LineItem {
         id: number;
