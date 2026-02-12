@@ -1575,41 +1575,68 @@ export async function registerRoutes(
 
       const manualMap = new Map(manualEntries.map(e => [e.monthKey, e]));
 
-      type Bucket = { total: number; projects: Map<string, number> };
+      type StateBucket = {
+        planned: number; committed: number; invoiced: number; paid: number;
+        plannedProjects: Map<string, number>;
+        committedProjects: Map<string, number>;
+        invoicedProjects: Map<string, number>;
+        paidProjects: Map<string, number>;
+      };
 
-      const plannedByMonth = new Map<string, Bucket>();
-      const realisedByMonth = new Map<string, Bucket>();
+      const byMonth = new Map<string, StateBucket>();
+
+      function ensureBucket(mk: string): StateBucket {
+        if (!byMonth.has(mk)) {
+          byMonth.set(mk, {
+            planned: 0, committed: 0, invoiced: 0, paid: 0,
+            plannedProjects: new Map(), committedProjects: new Map(),
+            invoicedProjects: new Map(), paidProjects: new Map(),
+          });
+        }
+        return byMonth.get(mk)!;
+      }
 
       for (const exp of allExpenses) {
-        const total = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
-        if (isNaN(total) || total === 0) continue;
+        if (exp.rowType && exp.rowType !== 'item') continue;
+        const amount = Math.abs(parseFloat(exp.expenseActualTotal as string || exp.budgetTotal as string || '0'));
+        if (isNaN(amount) || amount === 0) continue;
+
         const pName = exp.projectName.replace(/_Tracker$/i, '');
+        const state = (exp as any).computedState || classifyExpenseState({
+          expensePaymentDate: exp.expensePaymentDate,
+          expenseInvoiceNumber: exp.expenseInvoiceNumber,
+          expenseInvoicedDate: exp.expenseInvoicedDate,
+          expensePoNumber: exp.expensePoNumber,
+        });
 
-        const hasInvoice = exp.expenseInvoiceNumber && (exp.expenseInvoiceNumber as string).trim() !== '';
-        const invDateStr = exp.expenseInvoicedDate as string | null;
+        const effectiveDate = exp.expensePaymentDate
+          || (exp as any).computedForecastPaymentDate
+          || exp.expenseInvoicedDate;
+        if (!effectiveDate) continue;
 
-        if (hasInvoice && invDateStr) {
-          const invMatch = invDateStr.match(/^(\d{4})-(\d{2})/);
-          if (invMatch) {
-            const invMonthKey = `${invMatch[1]}-${invMatch[2]}`;
+        const d = new Date(effectiveDate as string);
+        if (isNaN(d.getTime())) continue;
+        const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 
-            if (!plannedByMonth.has(invMonthKey)) {
-              plannedByMonth.set(invMonthKey, { total: 0, projects: new Map() });
-            }
-            const pBucket = plannedByMonth.get(invMonthKey)!;
-            pBucket.total += total;
-            pBucket.projects.set(pName, (pBucket.projects.get(pName) || 0) + total);
+        const bucket = ensureBucket(monthKey);
 
-            const payDateStr = exp.expensePaymentDate as string | null;
-            if (payDateStr) {
-              if (!realisedByMonth.has(invMonthKey)) {
-                realisedByMonth.set(invMonthKey, { total: 0, projects: new Map() });
-              }
-              const rBucket = realisedByMonth.get(invMonthKey)!;
-              rBucket.total += total;
-              rBucket.projects.set(pName, (rBucket.projects.get(pName) || 0) + total);
-            }
-          }
+        switch (state) {
+          case 'Planned':
+            bucket.planned += amount;
+            bucket.plannedProjects.set(pName, (bucket.plannedProjects.get(pName) || 0) + amount);
+            break;
+          case 'Committed':
+            bucket.committed += amount;
+            bucket.committedProjects.set(pName, (bucket.committedProjects.get(pName) || 0) + amount);
+            break;
+          case 'Invoiced':
+            bucket.invoiced += amount;
+            bucket.invoicedProjects.set(pName, (bucket.invoicedProjects.get(pName) || 0) + amount);
+            break;
+          case 'Paid':
+            bucket.paid += amount;
+            bucket.paidProjects.set(pName, (bucket.paidProjects.get(pName) || 0) + amount);
+            break;
         }
       }
 
@@ -1631,7 +1658,13 @@ export async function registerRoutes(
       const months: any[] = [];
       const startMonth = new Date(Date.UTC(2025, 8, 1));
 
-      let ytdPlanned = 0, ytdRealised = 0, ytdOutstanding = 0, ytdBudget = 0;
+      let ytdPlanned = 0, ytdCommitted = 0, ytdInvoiced = 0, ytdPaid = 0, ytdBudget = 0;
+
+      function mapToArray(m: Map<string, number>): { projectName: string; value: number }[] {
+        const arr: { projectName: string; value: number }[] = [];
+        m.forEach((v, k) => arr.push({ projectName: k, value: v }));
+        return arr.sort((a, b) => b.value - a.value);
+      }
 
       for (let i = 0; i < 12; i++) {
         const monthDate = new Date(startMonth);
@@ -1640,75 +1673,55 @@ export async function registerRoutes(
         const mo = monthDate.getUTCMonth();
         const monthKey = `${yr}-${String(mo + 1).padStart(2, '0')}`;
 
-        const plannedBucket = plannedByMonth.get(monthKey);
-        const planned = plannedBucket?.total ?? 0;
-
-        const plannedProjects: { projectName: string; value: number }[] = [];
-        if (plannedBucket) {
-          plannedBucket.projects.forEach((pVal, pName) => {
-            plannedProjects.push({ projectName: pName, value: pVal });
-          });
-          plannedProjects.sort((a, b) => b.value - a.value);
-        }
-
-        const realisedBucket = realisedByMonth.get(monthKey);
-        const realised = realisedBucket?.total ?? 0;
-
-        const realisedProjects: { projectName: string; value: number }[] = [];
-        if (realisedBucket) {
-          realisedBucket.projects.forEach((pVal, pName) => {
-            realisedProjects.push({ projectName: pName, value: pVal });
-          });
-          realisedProjects.sort((a, b) => b.value - a.value);
-        }
-
-        const outstanding = Math.max(0, planned - realised);
-
-        const outstandingProjects: { projectName: string; value: number }[] = [];
-        const allProjNames = new Set<string>();
-        plannedProjects.forEach(p => allProjNames.add(p.projectName));
-        realisedProjects.forEach(p => allProjNames.add(p.projectName));
-        Array.from(allProjNames).forEach((pName) => {
-          const pPlanned = plannedBucket?.projects.get(pName) ?? 0;
-          const pRealised = realisedBucket?.projects.get(pName) ?? 0;
-          const pOutstanding = Math.max(0, pPlanned - pRealised);
-          if (pOutstanding > 0) {
-            outstandingProjects.push({ projectName: pName, value: pOutstanding });
-          }
-        });
-        outstandingProjects.sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+        const bucket = byMonth.get(monthKey);
+        const planned = bucket?.planned ?? 0;
+        const committed = bucket?.committed ?? 0;
+        const invoiced = bucket?.invoiced ?? 0;
+        const paid = bucket?.paid ?? 0;
+        const totalCOS = planned + committed + invoiced + paid;
+        const outstanding = committed + invoiced;
 
         const manual = manualMap.get(monthKey);
         const budget = manual?.budget ? parseFloat(manual.budget) : (staticCosBudget[monthKey] ?? 0);
 
-        const variance = planned - budget;
-        const variancePct = budget !== 0 ? (planned - budget) / budget : 0;
+        const variance = totalCOS - budget;
+        const variancePct = budget !== 0 ? variance / budget : 0;
 
         ytdPlanned += planned;
-        ytdRealised += realised;
-        ytdOutstanding += outstanding;
+        ytdCommitted += committed;
+        ytdInvoiced += invoiced;
+        ytdPaid += paid;
         ytdBudget += budget;
-        const ytdVariance = ytdPlanned - ytdBudget;
-        const ytdVariancePct = ytdBudget !== 0 ? (ytdPlanned - ytdBudget) / ytdBudget : 0;
+        const ytdTotalCOS = ytdPlanned + ytdCommitted + ytdInvoiced + ytdPaid;
+        const ytdOutstanding = ytdCommitted + ytdInvoiced;
+        const ytdVariance = ytdTotalCOS - ytdBudget;
+        const ytdVariancePct = ytdBudget !== 0 ? ytdVariance / ytdBudget : 0;
 
         months.push({
           monthKey,
           monthLabel: monthDate.toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }),
           planned,
-          realised,
+          committed,
+          invoiced,
+          paid,
+          totalCOS,
           outstanding,
           budget,
           variance,
           variancePct,
           ytdPlanned,
-          ytdRealised,
+          ytdCommitted,
+          ytdInvoiced,
+          ytdPaid,
+          ytdTotalCOS,
           ytdOutstanding,
           ytdBudget,
           ytdVariance,
           ytdVariancePct,
-          plannedProjects,
-          realisedProjects,
-          outstandingProjects,
+          plannedProjects: mapToArray(bucket?.plannedProjects ?? new Map()),
+          committedProjects: mapToArray(bucket?.committedProjects ?? new Map()),
+          invoicedProjects: mapToArray(bucket?.invoicedProjects ?? new Map()),
+          paidProjects: mapToArray(bucket?.paidProjects ?? new Map()),
         });
       }
 
@@ -1744,22 +1757,26 @@ export async function registerRoutes(
       }> = [];
 
       for (const exp of allExpenses) {
-        const total = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
-        if (isNaN(total) || total === 0) continue;
+        if (exp.rowType && exp.rowType !== 'item') continue;
+        const amount = Math.abs(parseFloat(exp.expenseActualTotal as string || exp.budgetTotal as string || '0'));
+        if (isNaN(amount) || amount === 0) continue;
 
-        const hasInvoice = exp.expenseInvoiceNumber && (exp.expenseInvoiceNumber as string).trim() !== '';
-        const invDateStr = exp.expenseInvoicedDate as string | null;
-        if (!hasInvoice || !invDateStr) continue;
+        const lineState = (exp as any).computedState || classifyExpenseState({
+          expensePaymentDate: exp.expensePaymentDate,
+          expenseInvoiceNumber: exp.expenseInvoiceNumber,
+          expenseInvoicedDate: exp.expenseInvoicedDate,
+          expensePoNumber: exp.expensePoNumber,
+        });
 
-        const dateMatch = invDateStr.match(/^(\d{4})-(\d{2})/);
-        if (!dateMatch) continue;
-        const lineMonthKey = `${dateMatch[1]}-${dateMatch[2]}`;
+        const effectiveDate = exp.expensePaymentDate
+          || (exp as any).computedForecastPaymentDate
+          || exp.expenseInvoicedDate;
+        if (!effectiveDate) continue;
+
+        const d = new Date(effectiveDate as string);
+        if (isNaN(d.getTime())) continue;
+        const lineMonthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
         if (lineMonthKey !== monthKey) continue;
-
-        let lineState = "Planned";
-        if (exp.expensePaymentDate && /^\d{4}-\d{2}/.test(exp.expensePaymentDate as string)) {
-          lineState = "Realised";
-        }
 
         if (state && state !== "all" && lineState !== state) continue;
 
@@ -1772,7 +1789,7 @@ export async function registerRoutes(
           poNumber: exp.expensePoNumber,
           invoicedDate: exp.expenseInvoicedDate,
           paymentDate: exp.expensePaymentDate,
-          amount: total,
+          amount,
           state: lineState,
           supplierName: (exp as any).supplierName || null,
           trackerLocator: `${exp.projectName}:row${exp.rowNumber || exp.id}`,

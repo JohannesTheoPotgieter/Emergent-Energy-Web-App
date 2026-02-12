@@ -38,20 +38,27 @@ interface MonthData {
   monthKey: string;
   monthLabel: string;
   planned: number;
-  realised: number;
+  committed: number;
+  invoiced: number;
+  paid: number;
+  totalCOS: number;
   outstanding: number;
   budget: number;
   variance: number;
   variancePct: number;
   ytdPlanned: number;
-  ytdRealised: number;
+  ytdCommitted: number;
+  ytdInvoiced: number;
+  ytdPaid: number;
+  ytdTotalCOS: number;
   ytdOutstanding: number;
   ytdBudget: number;
   ytdVariance: number;
   ytdVariancePct: number;
   plannedProjects: ProjectBreakdown[];
-  realisedProjects: ProjectBreakdown[];
-  outstandingProjects: ProjectBreakdown[];
+  committedProjects: ProjectBreakdown[];
+  invoicedProjects: ProjectBreakdown[];
+  paidProjects: ProjectBreakdown[];
 }
 
 interface MonthDetailItem {
@@ -86,7 +93,7 @@ function formatRand(val: number | null | undefined): string {
   return `${sign}R ${Math.round(abs)}`;
 }
 
-type EditableField = "realised" | "outstanding" | "budget";
+type EditableField = "budget";
 
 interface EditingCell {
   field: EditableField;
@@ -95,8 +102,10 @@ interface EditingCell {
 }
 
 const stateBadgeColors: Record<string, string> = {
-  Planned: "bg-blue-100 text-blue-700",
-  Realised: "bg-green-100 text-green-700",
+  Planned: "bg-gray-100 text-gray-700",
+  Committed: "bg-blue-100 text-blue-700",
+  Invoiced: "bg-amber-100 text-amber-700",
+  Paid: "bg-green-100 text-green-700",
 };
 
 const ROW_DEFS: {
@@ -108,17 +117,23 @@ const ROW_DEFS: {
   group: "monthly" | "ytd";
   colorCoded?: boolean;
   expandable?: boolean;
-  projectsKey?: "plannedProjects" | "realisedProjects" | "outstandingProjects";
+  projectsKey?: "plannedProjects" | "committedProjects" | "invoicedProjects" | "paidProjects";
 }[] = [
-  { key: "planned", label: "Planned", dataKey: "planned", editable: false, colorClass: "text-blue-600", group: "monthly", expandable: true, projectsKey: "plannedProjects" as const },
-  { key: "realised", label: "Realised", dataKey: "realised", editable: false, colorClass: "text-green-600", group: "monthly", expandable: true, projectsKey: "realisedProjects" as const },
-  { key: "outstanding", label: "Outstanding", dataKey: "outstanding", editable: false, colorClass: "text-amber-600", group: "monthly", expandable: true, projectsKey: "outstandingProjects" as const },
+  { key: "planned", label: "Planned", dataKey: "planned", editable: false, colorClass: "text-gray-600", group: "monthly", expandable: true, projectsKey: "plannedProjects" },
+  { key: "committed", label: "Committed", dataKey: "committed", editable: false, colorClass: "text-blue-600", group: "monthly", expandable: true, projectsKey: "committedProjects" },
+  { key: "invoiced", label: "Invoiced", dataKey: "invoiced", editable: false, colorClass: "text-amber-600", group: "monthly", expandable: true, projectsKey: "invoicedProjects" },
+  { key: "paid", label: "Paid", dataKey: "paid", editable: false, colorClass: "text-green-600", group: "monthly", expandable: true, projectsKey: "paidProjects" },
+  { key: "totalCOS", label: "Total COS", dataKey: "totalCOS", editable: false, colorClass: "text-foreground font-bold", group: "monthly" },
+  { key: "outstanding", label: "Outstanding", dataKey: "outstanding", editable: false, colorClass: "text-red-600", group: "monthly" },
   { key: "budget", label: "Budget", dataKey: "budget", editable: true, colorClass: "text-purple-600", group: "monthly" },
   { key: "variance", label: "Variance", dataKey: "variance", editable: false, colorClass: "", group: "monthly", colorCoded: true },
   { key: "variancePct", label: "Variance %", dataKey: "variancePct", editable: false, colorClass: "", group: "monthly", colorCoded: true },
-  { key: "ytdPlanned", label: "YTD Planned", dataKey: "ytdPlanned", editable: false, colorClass: "text-blue-600", group: "ytd" },
-  { key: "ytdRealised", label: "YTD Realised", dataKey: "ytdRealised", editable: false, colorClass: "text-green-600", group: "ytd" },
-  { key: "ytdOutstanding", label: "YTD Outstanding", dataKey: "ytdOutstanding", editable: false, colorClass: "text-amber-600", group: "ytd" },
+  { key: "ytdPlanned", label: "YTD Planned", dataKey: "ytdPlanned", editable: false, colorClass: "text-gray-600", group: "ytd" },
+  { key: "ytdCommitted", label: "YTD Committed", dataKey: "ytdCommitted", editable: false, colorClass: "text-blue-600", group: "ytd" },
+  { key: "ytdInvoiced", label: "YTD Invoiced", dataKey: "ytdInvoiced", editable: false, colorClass: "text-amber-600", group: "ytd" },
+  { key: "ytdPaid", label: "YTD Paid", dataKey: "ytdPaid", editable: false, colorClass: "text-green-600", group: "ytd" },
+  { key: "ytdTotalCOS", label: "YTD Total COS", dataKey: "ytdTotalCOS", editable: false, colorClass: "text-foreground font-bold", group: "ytd" },
+  { key: "ytdOutstanding", label: "YTD Outstanding", dataKey: "ytdOutstanding", editable: false, colorClass: "text-red-600", group: "ytd" },
   { key: "ytdBudget", label: "YTD Budget", dataKey: "ytdBudget", editable: false, colorClass: "text-purple-600", group: "ytd" },
   { key: "ytdVariance", label: "YTD Variance", dataKey: "ytdVariance", editable: false, colorClass: "", group: "ytd", colorCoded: true },
   { key: "ytdVariancePct", label: "YTD Variance %", dataKey: "ytdVariancePct", editable: false, colorClass: "", group: "ytd", colorCoded: true },
@@ -181,7 +196,7 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose }: { monthKey: string
               data-testid="input-search-detail"
             />
           </div>
-          {["all", "Planned", "Realised"].map((s) => (
+          {["all", "Planned", "Committed", "Invoiced", "Paid"].map((s) => (
             <Button
               key={s}
               variant={stateFilter === s ? "default" : "outline"}
@@ -255,7 +270,7 @@ export default function CosTracker() {
   });
 
   const mutation = useMutation({
-    mutationFn: async (body: { trackerType: string; monthKey: string; realised?: string; outstanding?: string; budget?: string }) => {
+    mutationFn: async (body: { trackerType: string; monthKey: string; budget?: string }) => {
       await apiRequest("POST", "/api/tracker-monthly", body);
     },
     onSuccess: () => {
@@ -270,7 +285,7 @@ export default function CosTracker() {
 
   const projectNamesByRow = useMemo(() => {
     const result: Record<string, string[]> = {};
-    const keys = ["plannedProjects", "realisedProjects", "outstandingProjects"] as const;
+    const keys = ["plannedProjects", "committedProjects", "invoicedProjects", "paidProjects"] as const;
     for (const k of keys) {
       const names = new Set<string>();
       for (const m of months) {
@@ -320,7 +335,9 @@ export default function CosTracker() {
       months.map((m) => ({
         month: m.monthLabel,
         Planned: m.planned,
-        Realised: m.realised,
+        Committed: m.committed,
+        Invoiced: m.invoiced,
+        Paid: m.paid,
         Budget: m.budget,
         "YTD Variance": m.ytdVariance,
       })),
@@ -338,13 +355,16 @@ export default function CosTracker() {
 
   const reconciliation = useMemo(() => {
     if (!months.length) return null;
-    let totalPlanned = 0, totalRealised = 0, totalOutstanding = 0;
+    let totalPlanned = 0, totalCommitted = 0, totalInvoiced = 0, totalPaid = 0, totalOutstanding = 0, totalCOS = 0;
     for (const m of months) {
       totalPlanned += m.planned;
-      totalRealised += m.realised;
+      totalCommitted += m.committed;
+      totalInvoiced += m.invoiced;
+      totalPaid += m.paid;
       totalOutstanding += m.outstanding;
+      totalCOS += m.totalCOS;
     }
-    return { totalPlanned, totalRealised, totalOutstanding, monthCount: months.length };
+    return { totalPlanned, totalCommitted, totalInvoiced, totalPaid, totalOutstanding, totalCOS, monthCount: months.length };
   }, [months]);
 
   if (isLoading) {
@@ -386,59 +406,104 @@ export default function CosTracker() {
                 <Info className="h-4 w-4 text-blue-600" />
                 <span className="font-semibold text-sm text-blue-800">Reconciliation Mode</span>
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 text-sm">
                 <div>
-                  <p className="text-muted-foreground">Months Counted</p>
+                  <p className="text-muted-foreground">Months</p>
                   <p className="font-mono font-bold">{reconciliation.monthCount}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground">Total Planned (YTD)</p>
-                  <p className="font-mono font-bold text-blue-700">{formatRand(reconciliation.totalPlanned)}</p>
+                  <p className="text-muted-foreground">Planned</p>
+                  <p className="font-mono font-bold text-gray-700">{formatRand(reconciliation.totalPlanned)}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground">Total Realised (YTD)</p>
-                  <p className="font-mono font-bold text-green-700">{formatRand(reconciliation.totalRealised)}</p>
+                  <p className="text-muted-foreground">Committed</p>
+                  <p className="font-mono font-bold text-blue-700">{formatRand(reconciliation.totalCommitted)}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground">Total Outstanding (YTD)</p>
-                  <p className="font-mono font-bold text-amber-700">{formatRand(reconciliation.totalOutstanding)}</p>
+                  <p className="text-muted-foreground">Invoiced</p>
+                  <p className="font-mono font-bold text-amber-700">{formatRand(reconciliation.totalInvoiced)}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Paid</p>
+                  <p className="font-mono font-bold text-green-700">{formatRand(reconciliation.totalPaid)}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Total COS</p>
+                  <p className="font-mono font-bold">{formatRand(reconciliation.totalCOS)}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Outstanding</p>
+                  <p className="font-mono font-bold text-red-700">{formatRand(reconciliation.totalOutstanding)}</p>
                 </div>
               </div>
               <p className="text-xs text-muted-foreground mt-3">
-                COS Recognition: Planned = Invoice Number + Invoice Date in month | Realised = Planned items that have been paid.
-                Click any month value to drill down to exact contributing line items.
+                State Machine: Planned (no PO) &rarr; Committed (has PO) &rarr; Invoiced (Invoice # + Date) &rarr; Paid (Payment Date).
+                Month assigned by effective date: Payment Date &gt; Forecast Date &gt; Invoice Date.
+                Click any month value to drill down to contributing line items.
               </p>
             </CardContent>
           </Card>
         )}
 
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card data-testid="card-ytd-planned">
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+          <Card data-testid="card-ytd-total-cos">
             <CardContent className="pt-6">
               <div className="flex items-center gap-3">
-                <div className="rounded-lg bg-blue-100 p-2">
-                  <DollarSign className="h-5 w-5 text-blue-600" />
+                <div className="rounded-lg bg-slate-100 p-2">
+                  <DollarSign className="h-5 w-5 text-slate-700" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">YTD COS (Planned)</p>
-                  <p className="text-2xl font-bold font-mono" data-testid="text-ytd-planned-value">
-                    {formatRand(lastMonth?.ytdPlanned ?? 0)}
+                  <p className="text-sm text-muted-foreground">YTD Total COS</p>
+                  <p className="text-2xl font-bold font-mono" data-testid="text-ytd-total-cos-value">
+                    {formatRand(lastMonth?.ytdTotalCOS ?? 0)}
                   </p>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card data-testid="card-ytd-realised">
+          <Card data-testid="card-ytd-paid">
             <CardContent className="pt-6">
               <div className="flex items-center gap-3">
                 <div className="rounded-lg bg-green-100 p-2">
                   <TrendingDown className="h-5 w-5 text-green-600" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">YTD COS (Realised)</p>
-                  <p className="text-2xl font-bold font-mono" data-testid="text-ytd-realised-value">
-                    {formatRand(lastMonth?.ytdRealised ?? 0)}
+                  <p className="text-sm text-muted-foreground">YTD Paid</p>
+                  <p className="text-2xl font-bold font-mono" data-testid="text-ytd-paid-value">
+                    {formatRand(lastMonth?.ytdPaid ?? 0)}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card data-testid="card-ytd-invoiced">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <div className="rounded-lg bg-amber-100 p-2">
+                  <Activity className="h-5 w-5 text-amber-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">YTD Invoiced</p>
+                  <p className="text-2xl font-bold font-mono" data-testid="text-ytd-invoiced-value">
+                    {formatRand(lastMonth?.ytdInvoiced ?? 0)}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card data-testid="card-ytd-outstanding">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <div className="rounded-lg bg-red-100 p-2">
+                  <Activity className="h-5 w-5 text-red-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">YTD Outstanding</p>
+                  <p className="text-2xl font-bold font-mono text-red-600" data-testid="text-ytd-outstanding-value">
+                    {formatRand(lastMonth?.ytdOutstanding ?? 0)}
                   </p>
                 </div>
               </div>
@@ -504,7 +569,7 @@ export default function CosTracker() {
                   {ROW_DEFS.map((row) => {
                     const isYtd = row.group === "ytd";
                     const isExpanded = expandedRows.has(row.key);
-                    const isClickable = ["planned", "realised", "outstanding"].includes(row.key);
+                    const isClickable = ["planned", "committed", "invoiced", "paid", "totalCOS", "outstanding"].includes(row.key);
                     return (
                       <React.Fragment key={row.key}>
                         <tr
@@ -635,9 +700,11 @@ export default function CosTracker() {
                     formatter={(value: number) => formatRand(value)}
                   />
                   <Legend />
-                  <Bar dataKey="Planned" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="Realised" fill="#ef4444" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="Budget" fill="#a855f7" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Planned" stackId="cos" fill="#9ca3af" />
+                  <Bar dataKey="Committed" stackId="cos" fill="#3b82f6" />
+                  <Bar dataKey="Invoiced" stackId="cos" fill="#f59e0b" />
+                  <Bar dataKey="Paid" stackId="cos" fill="#22c55e" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Budget" fill="#a855f7" opacity={0.3} radius={[4, 4, 0, 0]} />
                   <Line
                     type="monotone"
                     dataKey="YTD Variance"
