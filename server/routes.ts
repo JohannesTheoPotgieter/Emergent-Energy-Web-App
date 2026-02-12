@@ -1708,51 +1708,113 @@ export async function registerRoutes(
 
   app.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
     try {
-      const { monthKey, project } = req.query as { monthKey?: string; project?: string };
+      const { monthKey, project, state: stateFilter } = req.query as { monthKey?: string; project?: string; state?: string };
       if (!monthKey) return res.status(400).json({ error: "monthKey required" });
 
       const match = monthKey.match(/^(\d{4})-(\d{2})$/);
       if (!match) return res.status(400).json({ error: "Invalid monthKey format" });
 
-      const allFinanceCos = await storage.getAllFinanceCosMonthly();
+      const allExpenses = await storage.getAllExpenses();
 
-      const targetMonthEnd = `${monthKey}-${new Date(parseInt(match[1]), parseInt(match[2]), 0).getDate()}`;
-
-      const items: Array<{
+      interface LineItem {
         id: number;
         projectName: string;
         category: string | null;
+        lineItem: string | null;
         amount: number;
-      }> = [];
+        invoiceNumber: string | null;
+        poNumber: string | null;
+        invoiceDate: string | null;
+        invoiceDateConfirmed: boolean;
+        paymentDate: string | null;
+        paymentDateConfirmed: boolean;
+        supplier: string | null;
+        isRealised: boolean;
+        realisedMonth: string | null;
+        cosState: string;
+      }
 
-      for (const row of allFinanceCos) {
-        const dateStr = row.monthEndDate as string;
-        if (!dateStr) continue;
-        const dateMatch = dateStr.match(/^(\d{4})-(\d{2})/);
-        if (!dateMatch) continue;
-        const rowMonthKey = `${dateMatch[1]}-${dateMatch[2]}`;
-        if (rowMonthKey !== monthKey) continue;
+      const items: LineItem[] = [];
 
-        const val = row.value ? parseFloat(row.value as string) : 0;
-        if (isNaN(val) || val === 0) continue;
+      for (const exp of allExpenses) {
+        if (exp.rowType !== 'item') continue;
+        const cosTotal = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
+        if (isNaN(cosTotal) || cosTotal === 0) continue;
 
-        const pName = (row.projectName || '').replace(/_Tracker$/i, '');
+        const hasInvoice = !!exp.expenseInvoiceNumber;
+        const dateConfirmed = exp.invoiceDateConfirmed === true;
+        const isRealised = hasInvoice && dateConfirmed;
+
+        let cosState = 'Planned';
+        if (exp.expensePaymentDate && exp.paymentDateConfirmed) {
+          cosState = 'Paid';
+        } else if (hasInvoice && dateConfirmed) {
+          cosState = 'Invoiced';
+        } else if (exp.expensePoNumber) {
+          cosState = 'Committed';
+        }
+
+        const invDate = exp.expenseInvoicedDate as string | null;
+        const payDate = exp.expensePaymentDate as string | null;
+        const forecastDate = exp.forecastPaymentDate as string | null;
+
+        let itemMonthKey: string | null = null;
+        if (invDate) {
+          const dm = invDate.match(/^(\d{4})-(\d{2})/);
+          if (dm) itemMonthKey = `${dm[1]}-${dm[2]}`;
+        } else if (forecastDate) {
+          const dm = forecastDate.match(/^(\d{4})-(\d{2})/);
+          if (dm) itemMonthKey = `${dm[1]}-${dm[2]}`;
+        }
+
+        if (itemMonthKey !== monthKey) continue;
+
+        let realisedMonth: string | null = null;
+        if (isRealised && invDate) {
+          const dm = invDate.match(/^(\d{4})-(\d{2})/);
+          if (dm) {
+            const d = new Date(Date.UTC(parseInt(dm[1]), parseInt(dm[2]) - 1, 1));
+            realisedMonth = d.toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+          }
+        }
+
+        const pName = (exp.projectName || '').replace(/_Tracker$/i, '');
         if (project && pName !== project) continue;
+        if (stateFilter === 'realised' && !isRealised) continue;
+        if (stateFilter === 'unrealised' && isRealised) continue;
 
         items.push({
-          id: row.id,
+          id: exp.id,
           projectName: pName,
-          category: row.category,
-          amount: val,
+          category: exp.expenseCategory || null,
+          lineItem: exp.expenseLineItem || null,
+          amount: cosTotal,
+          invoiceNumber: exp.expenseInvoiceNumber || null,
+          poNumber: exp.expensePoNumber || null,
+          invoiceDate: invDate,
+          invoiceDateConfirmed: dateConfirmed,
+          paymentDate: payDate,
+          paymentDateConfirmed: exp.paymentDateConfirmed === true,
+          supplier: exp.supplierName || null,
+          isRealised,
+          realisedMonth,
+          cosState,
         });
       }
 
       items.sort((a, b) => b.amount - a.amount);
 
+      const realisedTotal = items.filter(i => i.isRealised).reduce((s, i) => s + i.amount, 0);
+      const unrealisedTotal = items.filter(i => !i.isRealised).reduce((s, i) => s + i.amount, 0);
+
       res.json({
         monthKey,
         lineCount: items.length,
         totalAmount: items.reduce((s, i) => s + i.amount, 0),
+        realisedTotal,
+        unrealisedTotal,
+        realisedCount: items.filter(i => i.isRealised).length,
+        unrealisedCount: items.filter(i => !i.isRealised).length,
         items,
       });
     } catch (error) {
