@@ -72,6 +72,7 @@ interface RevenueTabData {
   };
   highlevel: {
     costed: { revenue: number; expenditure: number; profit: number; margin: number; isManualOverride: boolean };
+    planned: { revenue: number; expenditure: number; profit: number; margin: number };
     actual: { revenue: number; expenditure: number; profit: number; margin: number };
     voPmLimit: number | null;
     currentVoTotal: number | null;
@@ -409,22 +410,31 @@ export function RevenueTrackingTab({ projectName }: RevenueTrackingTabProps) {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted/50">
-                    <TableHead className="w-[200px] font-semibold">Metric</TableHead>
-                    <TableHead className="text-right w-[160px] font-semibold">COSTED</TableHead>
-                    <TableHead className="text-right w-[160px] font-semibold">ACTUAL</TableHead>
-                    <TableHead className="text-right w-[160px] font-semibold">Variance</TableHead>
+                    <TableHead className="w-[160px] font-semibold">Metric</TableHead>
+                    <TableHead className="text-right w-[140px] font-semibold">COSTED</TableHead>
+                    <TableHead className="text-right w-[140px] font-semibold">
+                      <div className="flex items-center justify-end gap-1">
+                        PLANNED
+                        <span className="text-[9px] font-normal text-muted-foreground" title="Live amounts not yet realised or paid">(live)</span>
+                      </div>
+                    </TableHead>
+                    <TableHead className="text-right w-[140px] font-semibold">ACTUAL</TableHead>
+                    <TableHead className="text-right w-[140px] font-semibold">Variance</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   <TableRow>
-                    <TableCell className="font-medium">Planned Revenue</TableCell>
+                    <TableCell className="font-medium">Revenue</TableCell>
                     <TableCell className="text-right font-mono">
                       {editingCosted ? (
                         <Input type="number" value={costedValues.revenue} onChange={e => setCostedValues(v => ({ ...v, revenue: e.target.value }))}
-                          className="h-7 text-right text-xs w-[140px] ml-auto" data-testid="input-costed-revenue" />
+                          className="h-7 text-right text-xs w-[120px] ml-auto" data-testid="input-costed-revenue" />
                       ) : (
                         <span>{formatCurrency(highlevel.costed.revenue)}</span>
                       )}
+                    </TableCell>
+                    <TableCell className="text-right font-mono text-amber-700 bg-amber-50/30" data-testid="text-planned-revenue">
+                      {formatCurrency(highlevel.planned.revenue)}
                     </TableCell>
                     <TableCell className="text-right font-mono">{formatCurrency(highlevel.actual.revenue)}</TableCell>
                     <TableCell className={`text-right font-mono ${highlevel.actual.revenue - highlevel.costed.revenue < 0 ? "text-red-600" : "text-green-600"}`}>
@@ -432,14 +442,17 @@ export function RevenueTrackingTab({ projectName }: RevenueTrackingTabProps) {
                     </TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableCell className="font-medium">Planned Expenditure</TableCell>
+                    <TableCell className="font-medium">Expenditure</TableCell>
                     <TableCell className="text-right font-mono">
                       {editingCosted ? (
                         <Input type="number" value={costedValues.expenditure} onChange={e => setCostedValues(v => ({ ...v, expenditure: e.target.value }))}
-                          className="h-7 text-right text-xs w-[140px] ml-auto" data-testid="input-costed-expenditure" />
+                          className="h-7 text-right text-xs w-[120px] ml-auto" data-testid="input-costed-expenditure" />
                       ) : (
                         <span>{formatCurrency(highlevel.costed.expenditure)}</span>
                       )}
+                    </TableCell>
+                    <TableCell className="text-right font-mono text-amber-700 bg-amber-50/30" data-testid="text-planned-expenditure">
+                      {formatCurrency(highlevel.planned.expenditure)}
                     </TableCell>
                     <TableCell className="text-right font-mono">{formatCurrency(highlevel.actual.expenditure)}</TableCell>
                     <TableCell className={`text-right font-mono ${highlevel.actual.expenditure - highlevel.costed.expenditure > 0 ? "text-red-600" : "text-green-600"}`}>
@@ -447,16 +460,22 @@ export function RevenueTrackingTab({ projectName }: RevenueTrackingTabProps) {
                     </TableCell>
                   </TableRow>
                   <TableRow className="bg-muted/30 font-semibold">
-                    <TableCell className="font-semibold">Planned Profit</TableCell>
+                    <TableCell className="font-semibold">Profit</TableCell>
                     <TableCell className="text-right font-mono">{formatCurrency(highlevel.costed.profit)}</TableCell>
+                    <TableCell className="text-right font-mono text-amber-700 bg-amber-50/30" data-testid="text-planned-profit">
+                      {formatCurrency(highlevel.planned.profit)}
+                    </TableCell>
                     <TableCell className="text-right font-mono">{formatCurrency(highlevel.actual.profit)}</TableCell>
                     <TableCell className={`text-right font-mono ${highlevel.actual.profit - highlevel.costed.profit < 0 ? "text-red-600" : "text-green-600"}`}>
                       {formatCurrency(highlevel.actual.profit - highlevel.costed.profit)}
                     </TableCell>
                   </TableRow>
                   <TableRow className="bg-muted/30">
-                    <TableCell className="font-semibold">Planned Margin</TableCell>
+                    <TableCell className="font-semibold">Margin</TableCell>
                     <TableCell className="text-right font-mono">{formatPercent(highlevel.costed.margin)}</TableCell>
+                    <TableCell className="text-right font-mono text-amber-700 bg-amber-50/30" data-testid="text-planned-margin">
+                      {formatPercent(highlevel.planned.margin)}
+                    </TableCell>
                     <TableCell className="text-right font-mono">{formatPercent(highlevel.actual.margin)}</TableCell>
                     <TableCell className={`text-right font-mono ${(highlevel.actual.margin - highlevel.costed.margin) < 0 ? "text-red-600" : "text-green-600"}`}>
                       {formatPercent(highlevel.actual.margin - highlevel.costed.margin)}

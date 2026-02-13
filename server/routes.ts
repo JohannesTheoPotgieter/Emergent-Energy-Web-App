@@ -3184,12 +3184,18 @@ export async function registerRoutes(
 
       let costedExpenditure = 0;
       let actualExpenditure = 0;
+      let liveUnpaidExpenditure = 0;
       try {
         const expenseRows = await storage.getProgramExpensesByProject(projectName);
         for (const row of expenseRows) {
           if ((row as any).rowType === 'item') {
             costedExpenditure += parseFloat(String((row as any).budgetTotal || 0)) || 0;
-            actualExpenditure += parseFloat(String((row as any).expenseActualTotal || 0)) || 0;
+            const actualAmt = parseFloat(String((row as any).expenseActualTotal || 0)) || 0;
+            actualExpenditure += actualAmt;
+            const hasPaid = !!(row as any).expensePaymentDate && /^\d{4}-\d{2}-\d{2}/.test((row as any).expensePaymentDate);
+            if (!hasPaid && actualAmt > 0) {
+              liveUnpaidExpenditure += actualAmt;
+            }
           }
         }
       } catch (e) {}
@@ -3203,6 +3209,10 @@ export async function registerRoutes(
       const actualRevenue = inBankTotal;
       const actualProfit = actualRevenue - actualExpenditure;
       const actualMargin = actualRevenue > 0 ? actualProfit / actualRevenue : 0;
+
+      const liveRevenue = milestones.filter((m: any) => m.status !== 'inBank').reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
+      const liveProfit = liveRevenue - liveUnpaidExpenditure;
+      const liveMargin = liveRevenue > 0 ? liveProfit / liveRevenue : 0;
 
       res.json({
         milestones,
@@ -3222,6 +3232,12 @@ export async function registerRoutes(
             profit: plannedProfit,
             margin: plannedMargin,
             isManualOverride: !!savedSummary?.plannedRevenue || !!savedSummary?.plannedExpenditure,
+          },
+          planned: {
+            revenue: liveRevenue,
+            expenditure: liveUnpaidExpenditure,
+            profit: liveProfit,
+            margin: liveMargin,
           },
           actual: {
             revenue: actualRevenue,
