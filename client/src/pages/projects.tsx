@@ -745,7 +745,7 @@ export default function ProjectsSummary() {
             <p className="text-sm text-slate-500">Loading portfolio data...</p>
           </div>
         </div>
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[1,2,3,4].map(i => <div key={i} className="h-24 bg-slate-100 animate-pulse rounded-xl" />)}
         </div>
         <div className="h-96 bg-slate-100 animate-pulse rounded-xl" />
@@ -1002,16 +1002,16 @@ export default function ProjectsSummary() {
 
   return (
     <div className="space-y-5 p-1">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-sm">
-            <BarChart3 className="w-5 h-5 text-white" />
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-sm shrink-0">
+            <BarChart3 className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
           </div>
-          <div>
-            <h2 className="text-2xl font-bold text-slate-900" data-testid="text-page-title">
+          <div className="min-w-0">
+            <h2 className="text-lg sm:text-2xl font-bold text-slate-900 truncate" data-testid="text-page-title">
               Projects Summary
             </h2>
-            <p className="text-sm text-slate-500">
+            <p className="text-xs sm:text-sm text-slate-500">
               {sorted.length} of {projects.length} projects
               {(pmFilter !== "all" || phaseFilter !== "all" || searchTerm) && " (filtered)"}
             </p>
@@ -1022,10 +1022,10 @@ export default function ProjectsSummary() {
           size="sm"
           onClick={handleExport}
           data-testid="button-export"
-          className="h-9 gap-1.5 text-slate-600 border-slate-200 hover:bg-slate-50"
+          className="h-8 sm:h-9 gap-1 sm:gap-1.5 text-slate-600 border-slate-200 hover:bg-slate-50 shrink-0"
         >
           <Download className="w-4 h-4" />
-          Export
+          <span className="hidden sm:inline">Export</span>
         </Button>
       </div>
 
@@ -1088,19 +1088,19 @@ export default function ProjectsSummary() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative">
+        <div className="relative flex-1 min-w-[140px] sm:flex-none">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <Input
             data-testid="input-search"
             placeholder="Search projects..."
-            className="pl-9 h-9 w-56 text-sm border-slate-200 bg-white"
+            className="pl-9 h-9 w-full sm:w-56 text-sm border-slate-200 bg-white"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
 
         <Select value={pmFilter} onValueChange={setPmFilter}>
-          <SelectTrigger className="h-9 w-40 text-sm border-slate-200" data-testid="select-pm-filter">
+          <SelectTrigger className="h-9 w-[calc(50%-0.25rem)] sm:w-40 text-sm border-slate-200" data-testid="select-pm-filter">
             <SelectValue placeholder="All PMs" />
           </SelectTrigger>
           <SelectContent>
@@ -1112,7 +1112,7 @@ export default function ProjectsSummary() {
         </Select>
 
         <Select value={phaseFilter} onValueChange={setPhaseFilter}>
-          <SelectTrigger className="h-9 w-40 text-sm border-slate-200" data-testid="select-phase-filter">
+          <SelectTrigger className="h-9 w-[calc(50%-0.25rem)] sm:w-40 text-sm border-slate-200" data-testid="select-phase-filter">
             <SelectValue placeholder="All Phases" />
           </SelectTrigger>
           <SelectContent>
@@ -1137,7 +1137,7 @@ export default function ProjectsSummary() {
       </div>
 
       <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm bg-white">
-        <div className="overflow-x-auto max-h-[calc(100vh-340px)]">
+        <div className="overflow-x-auto max-h-[calc(100vh-280px)] sm:max-h-[calc(100vh-340px)]">
           <table className="w-full text-[11px] border-collapse min-w-[2200px]">
             <thead className="sticky top-0 z-20">
               <tr>

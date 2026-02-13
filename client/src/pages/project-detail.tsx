@@ -145,17 +145,17 @@ export default function ProjectDetailPage() {
 
       <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
         <div className="space-y-2">
-          <div className="flex items-center gap-3">
-            <h2 className="text-3xl font-heading font-bold text-foreground" data-testid="text-project-name">{displayName}</h2>
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+            <h2 className="text-xl sm:text-3xl font-heading font-bold text-foreground" data-testid="text-project-name">{displayName}</h2>
             <Badge variant={phase === "Construction" ? "default" : phase === "Handover" ? "secondary" : "outline"}>
               {phase}
             </Badge>
           </div>
-          <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-            <span className="flex items-center gap-1"><User className="h-4 w-4" /> PD: {pd}</span>
-            <span className="flex items-center gap-1"><User className="h-4 w-4" /> PM: {pm}</span>
-            <span className="flex items-center gap-1"><Activity className="h-4 w-4" /> {sizeKwp}</span>
-            <span className="flex items-center gap-1"><TrendingUp className="h-4 w-4" /> {completion} complete</span>
+          <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs sm:text-sm text-muted-foreground">
+            <span className="flex items-center gap-1"><User className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> PD: {pd}</span>
+            <span className="flex items-center gap-1"><User className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> PM: {pm}</span>
+            <span className="flex items-center gap-1"><Activity className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> {sizeKwp}</span>
+            <span className="flex items-center gap-1"><TrendingUp className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> {completion} complete</span>
           </div>
         </div>
 
@@ -190,7 +190,7 @@ export default function ProjectDetailPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="flex flex-wrap gap-1 h-auto p-1">
+        <TabsList className="flex overflow-x-auto gap-1 h-auto p-1 w-full no-scrollbar">
           <TabsTrigger value="task-grid" className="flex items-center gap-1.5 text-xs" data-testid="tab-task-grid">
             <ListTodo className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Tasks</span>

@@ -103,47 +103,47 @@ export default function RisksFlagsPage() {
 
   return (
     <div className="space-y-0" data-testid="risks-flags-page">
-      <div className="bg-white border-b border-gray-200 px-6 py-6">
-        <h2 className="text-3xl font-heading font-bold text-foreground" data-testid="text-page-title">
+      <div className="bg-white border-b border-gray-200 px-3 sm:px-6 py-4 sm:py-6">
+        <h2 className="text-xl sm:text-3xl font-heading font-bold text-foreground" data-testid="text-page-title">
           Risks & Flags
         </h2>
-        <p className="text-muted-foreground mt-1">
+        <p className="text-muted-foreground mt-1 text-sm">
           Data quality issues and actionable risk flags across all projects
         </p>
       </div>
 
-      <div className="p-6 space-y-4">
-        <div className="grid grid-cols-3 gap-4">
+      <div className="p-3 sm:p-6 space-y-4">
+        <div className="grid grid-cols-3 gap-2 sm:gap-4">
           <Card className="bg-red-50 dark:bg-red-950/30 border-red-200" data-testid="card-error-count">
-            <CardContent className="p-4 flex items-center gap-3">
-              <AlertCircle className="h-8 w-8 text-red-600" />
-              <div>
-                <p className="text-2xl font-bold text-red-700">{severityCounts.Error || 0}</p>
-                <p className="text-sm text-red-600 font-medium">Critical / Error</p>
+            <CardContent className="p-3 sm:p-4 flex items-center gap-2 sm:gap-3">
+              <AlertCircle className="h-6 w-6 sm:h-8 sm:w-8 text-red-600 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-lg sm:text-2xl font-bold text-red-700">{severityCounts.Error || 0}</p>
+                <p className="text-xs sm:text-sm text-red-600 font-medium truncate">Critical</p>
               </div>
             </CardContent>
           </Card>
           <Card className="bg-amber-50 dark:bg-amber-950/30 border-amber-200" data-testid="card-warning-count">
-            <CardContent className="p-4 flex items-center gap-3">
-              <AlertTriangle className="h-8 w-8 text-amber-600" />
-              <div>
-                <p className="text-2xl font-bold text-amber-700">{severityCounts.Warning || 0}</p>
-                <p className="text-sm text-amber-600 font-medium">Warnings</p>
+            <CardContent className="p-3 sm:p-4 flex items-center gap-2 sm:gap-3">
+              <AlertTriangle className="h-6 w-6 sm:h-8 sm:w-8 text-amber-600 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-lg sm:text-2xl font-bold text-amber-700">{severityCounts.Warning || 0}</p>
+                <p className="text-xs sm:text-sm text-amber-600 font-medium truncate">Warnings</p>
               </div>
             </CardContent>
           </Card>
           <Card className="bg-blue-50 dark:bg-blue-950/30 border-blue-200" data-testid="card-info-count">
-            <CardContent className="p-4 flex items-center gap-3">
-              <Info className="h-8 w-8 text-blue-600" />
-              <div>
-                <p className="text-2xl font-bold text-blue-700">{severityCounts.Info || 0}</p>
-                <p className="text-sm text-blue-600 font-medium">Info</p>
+            <CardContent className="p-3 sm:p-4 flex items-center gap-2 sm:gap-3">
+              <Info className="h-6 w-6 sm:h-8 sm:w-8 text-blue-600 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-lg sm:text-2xl font-bold text-blue-700">{severityCounts.Info || 0}</p>
+                <p className="text-xs sm:text-sm text-blue-600 font-medium truncate">Info</p>
               </div>
             </CardContent>
           </Card>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
           <div className="relative flex-1">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
