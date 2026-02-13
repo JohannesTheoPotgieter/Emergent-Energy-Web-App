@@ -19,9 +19,18 @@ import {
   Search,
   AlertCircle,
   Check,
+  Link2,
+  Ban,
+  Clock,
+  CheckCircle2,
+  ExternalLink,
+  X,
+  FileText,
+  Shield,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
+import { useAuth } from "@/hooks/use-auth";
 
 interface ProjectSummary {
   project_name: string;
@@ -29,8 +38,18 @@ interface ProjectSummary {
   pd: string | null;
   pm: string | null;
   cost_proposal_signed: string | null;
+  cost_proposal_type: string | null;
+  cost_proposal_link: string | null;
+  cost_proposal_na_reason: string | null;
   funding_signed: string | null;
+  funding_type: string | null;
+  funding_link: string | null;
+  funding_na_reason: string | null;
   epc_contract_signed: string | null;
+  epc_contract_type: string | null;
+  epc_contract_link: string | null;
+  epc_contract_na_reason: string | null;
+  financial_close_achieved: boolean;
   phase: string | null;
   pd_handover_date: string | null;
   construction_start_date: string | null;
@@ -174,6 +193,231 @@ function EditableCell({
   );
 }
 
+type FinCloseMode = "link" | "na" | null;
+
+function FinancialCloseCell({
+  projectName,
+  fieldPrefix,
+  type,
+  link,
+  naReason,
+  isAdmin,
+}: {
+  projectName: string;
+  fieldPrefix: "costProposal" | "funding" | "epcContract";
+  type: string | null;
+  link: string | null;
+  naReason: string | null;
+  isAdmin: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState<FinCloseMode>((type as FinCloseMode) || null);
+  const [linkVal, setLinkVal] = useState(link || "");
+  const [reason, setReason] = useState(naReason || "");
+  const [saved, setSaved] = useState(false);
+  const qc = useQueryClient();
+
+  const mutation = useMutation({
+    mutationFn: async (payload: Record<string, string | null>) => {
+      await apiRequest("POST", `/api/projects-summary/${encodeURIComponent(projectName)}/edit`, payload);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/projects-summary"] });
+      setSaved(true);
+      setOpen(false);
+      setTimeout(() => setSaved(false), 2000);
+    },
+  });
+
+  const handleSave = () => {
+    const payload: Record<string, string | null> = {};
+    payload[`${fieldPrefix}Type`] = mode;
+    payload[`${fieldPrefix}Link`] = mode === "link" ? linkVal : null;
+    payload[`${fieldPrefix}NaReason`] = mode === "na" ? reason : null;
+    mutation.mutate(payload);
+  };
+
+  const handleClear = () => {
+    const payload: Record<string, string | null> = {};
+    payload[`${fieldPrefix}Type`] = null;
+    payload[`${fieldPrefix}Link`] = null;
+    payload[`${fieldPrefix}NaReason`] = null;
+    mutation.mutate(payload);
+  };
+
+  const openDialog = () => {
+    setMode((type as FinCloseMode) || null);
+    setLinkVal(link || "");
+    setReason(naReason || "");
+    setOpen(true);
+  };
+
+  const label = fieldPrefix === "costProposal" ? "Cost Proposal" : fieldPrefix === "funding" ? "Funding" : "EPC Contract";
+
+  if (type === "link") {
+    return (
+      <div className="flex items-center gap-1" data-testid={`fclose-${fieldPrefix}-${projectName}`}>
+        <a
+          href={link || "#"}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 text-[10px] font-medium transition-colors max-w-[120px] truncate"
+          title={link || ""}
+          data-testid={`link-fclose-${fieldPrefix}-${projectName}`}
+        >
+          <Link2 className="w-3 h-3 shrink-0" />
+          <span className="truncate">{link ? "SharePoint" : "Linked"}</span>
+          <ExternalLink className="w-2.5 h-2.5 shrink-0" />
+        </a>
+        {isAdmin && (
+          <button onClick={openDialog} className="p-0.5 hover:bg-slate-100 rounded transition-colors" data-testid={`btn-edit-${fieldPrefix}-${projectName}`}>
+            <FileText className="w-3 h-3 text-slate-400" />
+          </button>
+        )}
+        {saved && <Check className="w-3 h-3 text-green-500" />}
+      </div>
+    );
+  }
+
+  if (type === "na") {
+    return (
+      <div className="flex items-center gap-1" data-testid={`fclose-${fieldPrefix}-${projectName}`}>
+        <span
+          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200 text-[10px] font-medium cursor-help"
+          title={`N/A: ${naReason || "No reason provided"}`}
+        >
+          <Ban className="w-3 h-3" />
+          N/A
+        </span>
+        {isAdmin && (
+          <button onClick={openDialog} className="p-0.5 hover:bg-slate-100 rounded transition-colors" data-testid={`btn-edit-${fieldPrefix}-${projectName}`}>
+            <FileText className="w-3 h-3 text-slate-400" />
+          </button>
+        )}
+        {saved && <Check className="w-3 h-3 text-green-500" />}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="flex items-center gap-1" data-testid={`fclose-${fieldPrefix}-${projectName}`}>
+        {isAdmin ? (
+          <button
+            onClick={openDialog}
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 hover:bg-amber-100 border border-amber-200 text-[10px] font-medium transition-colors"
+            data-testid={`btn-set-${fieldPrefix}-${projectName}`}
+          >
+            <Clock className="w-3 h-3" />
+            Pending
+          </button>
+        ) : (
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 border border-amber-200 text-[10px] font-medium">
+            <Clock className="w-3 h-3" />
+            Pending
+          </span>
+        )}
+        {saved && <Check className="w-3 h-3 text-green-500" />}
+      </div>
+
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" data-testid={`dialog-fclose-${fieldPrefix}`}>
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setOpen(false)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+            <div className="bg-gradient-to-r from-slate-50 to-white px-6 py-5 border-b flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Shield className="w-5 h-5 text-blue-600" />
+                <h3 className="font-bold text-lg">{label} Signed</h3>
+              </div>
+              <button onClick={() => setOpen(false)} className="p-1.5 hover:bg-slate-100 rounded-full transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              <p className="text-sm text-slate-600">
+                Project: <strong>{projectName.replace(/_Tracker.*$/i, '')}</strong>
+              </p>
+
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => setMode("link")}
+                  className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
+                    mode === "link" ? "border-emerald-500 bg-emerald-50 shadow-sm" : "border-slate-200 hover:border-slate-300 bg-white"
+                  }`}
+                  data-testid="btn-mode-link"
+                >
+                  <Link2 className={`w-6 h-6 ${mode === "link" ? "text-emerald-600" : "text-slate-400"}`} />
+                  <span className={`text-sm font-semibold ${mode === "link" ? "text-emerald-700" : "text-slate-600"}`}>Link File</span>
+                  <span className="text-[10px] text-slate-400">SharePoint path</span>
+                </button>
+                <button
+                  onClick={() => setMode("na")}
+                  className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
+                    mode === "na" ? "border-slate-500 bg-slate-50 shadow-sm" : "border-slate-200 hover:border-slate-300 bg-white"
+                  }`}
+                  data-testid="btn-mode-na"
+                >
+                  <Ban className={`w-6 h-6 ${mode === "na" ? "text-slate-600" : "text-slate-400"}`} />
+                  <span className={`text-sm font-semibold ${mode === "na" ? "text-slate-700" : "text-slate-600"}`}>Not Applicable</span>
+                  <span className="text-[10px] text-slate-400">With reason</span>
+                </button>
+              </div>
+
+              {mode === "link" && (
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-slate-600">SharePoint Folder / File Path</label>
+                  <Input
+                    placeholder="https://company.sharepoint.com/sites/..."
+                    value={linkVal}
+                    onChange={(e) => setLinkVal(e.target.value)}
+                    className="text-sm"
+                    data-testid="input-sharepoint-link"
+                  />
+                  <p className="text-[10px] text-slate-400">Paste the full SharePoint URL or folder path where the signed document is stored</p>
+                </div>
+              )}
+
+              {mode === "na" && (
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-slate-600">Reason for N/A</label>
+                  <Input
+                    placeholder="e.g. Self-funded, no external funding required"
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    className="text-sm"
+                    data-testid="input-na-reason"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-4 border-t bg-slate-50/50 flex items-center justify-between">
+              {type && (
+                <Button variant="ghost" size="sm" onClick={handleClear} className="text-red-600 hover:text-red-700 hover:bg-red-50" data-testid="btn-clear">
+                  Clear
+                </Button>
+              )}
+              <div className="flex items-center gap-2 ml-auto">
+                <Button variant="outline" size="sm" onClick={() => setOpen(false)} data-testid="btn-cancel">
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleSave}
+                  disabled={!mode || (mode === "link" && !linkVal.trim()) || (mode === "na" && !reason.trim()) || mutation.isPending}
+                  data-testid="btn-save-fclose"
+                >
+                  {mutation.isPending ? "Saving…" : "Save"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 export default function ProjectsSummary() {
   const [, setLocation] = useLocation();
   const [searchTerm, setSearchTerm] = useState("");
@@ -181,6 +425,7 @@ export default function ProjectsSummary() {
   const [phaseFilter, setPhaseFilter] = useState("all");
   const [sortKey, setSortKey] = useState<SortKey>("project_name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const { isAdmin } = useAuth();
 
   const { data: projects = [], isLoading } = useQuery<ProjectSummary[]>({
     queryKey: ["/api/projects-summary"],
@@ -327,42 +572,65 @@ export default function ProjectsSummary() {
     { key: "pm", header: "PM", render: (p) => p.pm || "—" },
     {
       key: "cost_proposal_signed",
-      header: "Cost Proposal Signed",
+      header: "Cost Proposal",
       render: (p) => (
-        <EditableCell
-          value={p.cost_proposal_signed}
-          type="date"
+        <FinancialCloseCell
           projectName={p.project_name}
-          field="cost_proposal_signed"
-          displayValue={formatDate(p.cost_proposal_signed)}
+          fieldPrefix="costProposal"
+          type={p.cost_proposal_type}
+          link={p.cost_proposal_link}
+          naReason={p.cost_proposal_na_reason}
+          isAdmin={isAdmin}
         />
       ),
     },
     {
       key: "funding_signed",
-      header: "Funding Signed",
+      header: "Funding",
       render: (p) => (
-        <EditableCell
-          value={p.funding_signed}
-          type="date"
+        <FinancialCloseCell
           projectName={p.project_name}
-          field="funding_signed"
-          displayValue={formatDate(p.funding_signed)}
+          fieldPrefix="funding"
+          type={p.funding_type}
+          link={p.funding_link}
+          naReason={p.funding_na_reason}
+          isAdmin={isAdmin}
         />
       ),
     },
     {
       key: "epc_contract_signed",
-      header: "EPC Contract Signed",
+      header: "EPC Contract",
       render: (p) => (
-        <EditableCell
-          value={p.epc_contract_signed}
-          type="date"
+        <FinancialCloseCell
           projectName={p.project_name}
-          field="epc_contract_signed"
-          displayValue={formatDate(p.epc_contract_signed)}
+          fieldPrefix="epcContract"
+          type={p.epc_contract_type}
+          link={p.epc_contract_link}
+          naReason={p.epc_contract_na_reason}
+          isAdmin={isAdmin}
         />
       ),
+    },
+    {
+      key: "financial_close",
+      header: "Financial Close",
+      render: (p) => {
+        const achieved = p.financial_close_achieved;
+        return (
+          <span
+            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+              achieved
+                ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                : "bg-red-50 text-red-600 border border-red-200"
+            }`}
+            data-testid={`badge-fclose-${p.project_name}`}
+          >
+            {achieved ? <CheckCircle2 className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
+            {achieved ? "Achieved" : "Incomplete"}
+          </span>
+        );
+      },
     },
     {
       key: "phase",

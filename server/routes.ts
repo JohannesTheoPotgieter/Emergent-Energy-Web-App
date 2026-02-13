@@ -1293,8 +1293,22 @@ export async function registerRoutes(
           pd: info?.pd || null,
           pm: info?.pm || null,
           cost_proposal_signed: editable?.costProposalSigned || null,
+          cost_proposal_type: editable?.costProposalType || null,
+          cost_proposal_link: editable?.costProposalLink || null,
+          cost_proposal_na_reason: editable?.costProposalNaReason || null,
           funding_signed: editable?.fundingSigned || null,
+          funding_type: editable?.fundingType || null,
+          funding_link: editable?.fundingLink || null,
+          funding_na_reason: editable?.fundingNaReason || null,
           epc_contract_signed: editable?.epcContractSigned || null,
+          epc_contract_type: editable?.epcContractType || null,
+          epc_contract_link: editable?.epcContractLink || null,
+          epc_contract_na_reason: editable?.epcContractNaReason || null,
+          financial_close_achieved: !!(
+            (editable?.costProposalType === 'link' || editable?.costProposalType === 'na') &&
+            (editable?.fundingType === 'link' || editable?.fundingType === 'na') &&
+            (editable?.epcContractType === 'link' || editable?.epcContractType === 'na')
+          ),
           phase: info?.phase || null,
           pd_handover_date: pdHandoverDate,
           construction_start_date: constructionStartDate,
@@ -1327,15 +1341,32 @@ export async function registerRoutes(
   app.post("/api/projects-summary/:projectName/edit", requireAuth, requireAdmin, async (req, res) => {
     try {
       const projectName = decodeURIComponent(req.params.projectName as string);
-      const { costProposalSigned, fundingSigned, epcContractSigned, currentVoTotal, comments } = req.body;
-      const result = await storage.upsertProjectEditableFields({
-        projectName,
-        costProposalSigned: costProposalSigned || null,
-        fundingSigned: fundingSigned || null,
-        epcContractSigned: epcContractSigned || null,
-        currentVoTotal: currentVoTotal != null ? String(currentVoTotal) : null,
-        comments: comments || null,
-      });
+      const editSchema = z.object({
+        costProposalSigned: z.string().nullable().optional(),
+        fundingSigned: z.string().nullable().optional(),
+        epcContractSigned: z.string().nullable().optional(),
+        costProposalType: z.enum(["link", "na"]).nullable().optional(),
+        costProposalLink: z.string().nullable().optional(),
+        costProposalNaReason: z.string().nullable().optional(),
+        fundingType: z.enum(["link", "na"]).nullable().optional(),
+        fundingLink: z.string().nullable().optional(),
+        fundingNaReason: z.string().nullable().optional(),
+        epcContractType: z.enum(["link", "na"]).nullable().optional(),
+        epcContractLink: z.string().nullable().optional(),
+        epcContractNaReason: z.string().nullable().optional(),
+        currentVoTotal: z.union([z.string(), z.number()]).nullable().optional(),
+        comments: z.string().nullable().optional(),
+      }).strict();
+      const parsed = editSchema.parse(req.body);
+      const data: Record<string, any> = { projectName };
+      for (const [key, value] of Object.entries(parsed)) {
+        if (key === 'currentVoTotal') {
+          data[key] = value != null ? String(value) : null;
+        } else {
+          data[key] = value ?? null;
+        }
+      }
+      const result = await storage.upsertProjectEditableFields(data as any);
       res.json(result);
     } catch (error) {
       console.error("Project edit error:", error);
