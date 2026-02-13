@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -30,6 +30,12 @@ import {
   Upload,
   Loader2,
   Paperclip,
+  Zap,
+  TrendingDown,
+  TrendingUp,
+  Activity,
+  BarChart3,
+  Calendar,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
@@ -83,12 +89,8 @@ interface ProjectSummary {
 type SortDir = "asc" | "desc";
 type SortKey = string;
 
-function formatRand(val: number | null): string {
-  if (val === null || val === undefined || !Number.isFinite(val)) return "—";
-  const abs = Math.abs(val);
-  if (abs >= 1_000_000) return `R ${(val / 1_000_000).toFixed(2)}M`;
-  if (abs >= 1_000) return `R ${(val / 1_000).toFixed(1)}K`;
-  return `R ${val.toFixed(0)}`;
+function cleanName(name: string): string {
+  return name.replace(/_Tracker.*$/i, "").replace(/_/g, " ");
 }
 
 function formatDate(val: string | null): string {
@@ -115,92 +117,28 @@ function safeNum(val: number | null): number {
   return val !== null && val !== undefined && Number.isFinite(val) ? val : 0;
 }
 
-function phaseColor(phase: string | null): string {
+function phaseConfig(phase: string | null): { bg: string; text: string; border: string; dot: string } {
   switch (phase) {
-    case "Construction": return "bg-blue-100 text-blue-800 border-blue-200";
-    case "Development": return "bg-purple-100 text-purple-800 border-purple-200";
-    case "Commissioning": return "bg-green-100 text-green-800 border-green-200";
-    case "Complete": return "bg-emerald-100 text-emerald-800 border-emerald-200";
-    case "O&M": return "bg-teal-100 text-teal-800 border-teal-200";
-    default: return "bg-gray-100 text-gray-800 border-gray-200";
+    case "Development": return { bg: "bg-violet-50", text: "text-violet-700", border: "border-violet-200", dot: "bg-violet-500" };
+    case "Construction": return { bg: "bg-blue-50", text: "text-blue-700", border: "border-blue-200", dot: "bg-blue-500" };
+    case "Commissioning": return { bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-200", dot: "bg-amber-500" };
+    case "Complete": return { bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200", dot: "bg-emerald-500" };
+    case "O&M": return { bg: "bg-teal-50", text: "text-teal-700", border: "border-teal-200", dot: "bg-teal-500" };
+    default: return { bg: "bg-slate-50", text: "text-slate-600", border: "border-slate-200", dot: "bg-slate-400" };
   }
 }
 
-function EditableCell({
-  value,
-  type,
-  projectName,
-  field,
-  displayValue,
-}: {
-  value: string | number | null;
-  type: "text" | "date" | "number";
-  projectName: string;
-  field: string;
-  displayValue: string;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [localVal, setLocalVal] = useState(value ?? "");
-  const [saved, setSaved] = useState(false);
-  const qc = useQueryClient();
+function progressColor(pct: number): string {
+  if (pct >= 90) return "bg-emerald-500";
+  if (pct >= 60) return "bg-blue-500";
+  if (pct >= 30) return "bg-amber-500";
+  return "bg-slate-400";
+}
 
-  const mutation = useMutation({
-    mutationFn: async (newVal: string | number | null) => {
-      await apiRequest("POST", `/api/projects-summary/${encodeURIComponent(projectName)}/edit`, {
-        [field]: newVal,
-      });
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/projects-summary"] });
-      setSaved(true);
-      setTimeout(() => setSaved(false), 1500);
-    },
-  });
-
-  const save = useCallback(() => {
-    setEditing(false);
-    let submitVal: string | number | null = localVal;
-    if (type === "number") {
-      submitVal = localVal === "" ? null : Number(localVal);
-    } else if (type === "date") {
-      submitVal = localVal === "" ? null : String(localVal);
-    } else {
-      submitVal = localVal === "" ? null : String(localVal);
-    }
-    if (submitVal !== value) {
-      mutation.mutate(submitVal);
-    }
-  }, [localVal, value, type, mutation]);
-
-  if (editing) {
-    return (
-      <input
-        data-testid={`edit-input-${field}-${projectName}`}
-        type={type === "number" ? "number" : type === "date" ? "date" : "text"}
-        className="w-full h-6 text-xs border border-blue-300 rounded px-1 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
-        value={localVal}
-        onChange={(e) => setLocalVal(e.target.value)}
-        onBlur={save}
-        onKeyDown={(e) => { if (e.key === "Enter") save(); }}
-        autoFocus
-      />
-    );
-  }
-
-  return (
-    <div
-      data-testid={`editable-${field}-${projectName}`}
-      className="cursor-pointer hover:bg-blue-50 rounded px-1 py-0.5 min-h-[20px] flex items-center gap-1"
-      onClick={() => {
-        setLocalVal(value ?? "");
-        setEditing(true);
-      }}
-    >
-      <span className="text-xs">{displayValue}</span>
-      {saved && <Check className="w-3 h-3 text-green-500" />}
-      {mutation.isPending && <span className="w-3 h-3 border-2 border-blue-300 border-t-transparent rounded-full animate-spin inline-block" />}
-    </div>
-  );
+function deltaColor(val: number): { text: string; bg: string } {
+  if (val >= 0) return { text: "text-emerald-700", bg: "bg-emerald-50" };
+  if (val > -5) return { text: "text-amber-700", bg: "bg-amber-50" };
+  return { text: "text-rose-700", bg: "bg-rose-50" };
 }
 
 type FinCloseMode = "link" | "na" | null;
@@ -316,13 +254,12 @@ function FinancialCloseCell({
           href={link || "#"}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 text-[10px] font-medium transition-colors max-w-[120px] truncate"
+          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 text-[10px] font-medium transition-colors max-w-[100px] truncate"
           title={link || ""}
           data-testid={`link-fclose-${fieldPrefix}-${projectName}`}
         >
           {isFile ? <Paperclip className="w-3 h-3 shrink-0" /> : <Link2 className="w-3 h-3 shrink-0" />}
-          <span className="truncate">{isFile ? "Document" : "SharePoint"}</span>
-          <ExternalLink className="w-2.5 h-2.5 shrink-0" />
+          <span className="truncate">{isFile ? "File" : "Link"}</span>
         </a>
         {isAdmin && (
           <button onClick={openDialog} className="p-0.5 hover:bg-slate-100 rounded transition-colors" data-testid={`btn-edit-${fieldPrefix}-${projectName}`}>
@@ -338,7 +275,7 @@ function FinancialCloseCell({
     return (
       <div className="flex items-center gap-1" data-testid={`fclose-${fieldPrefix}-${projectName}`}>
         <span
-          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200 text-[10px] font-medium cursor-help"
+          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-500 border border-slate-200 text-[10px] font-medium cursor-help"
           title={`N/A: ${naReason || "No reason provided"}`}
         >
           <Ban className="w-3 h-3" />
@@ -360,14 +297,14 @@ function FinancialCloseCell({
         {isAdmin ? (
           <button
             onClick={openDialog}
-            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 hover:bg-amber-100 border border-amber-200 text-[10px] font-medium transition-colors"
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-600 hover:bg-amber-100 border border-amber-200 text-[10px] font-medium transition-colors"
             data-testid={`btn-set-${fieldPrefix}-${projectName}`}
           >
             <Clock className="w-3 h-3" />
             Pending
           </button>
         ) : (
-          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 border border-amber-200 text-[10px] font-medium">
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-600 border border-amber-200 text-[10px] font-medium">
             <Clock className="w-3 h-3" />
             Pending
           </span>
@@ -390,7 +327,7 @@ function FinancialCloseCell({
             </div>
             <div className="px-6 py-5 space-y-4">
               <p className="text-sm text-slate-600">
-                Project: <strong>{projectName.replace(/_Tracker.*$/i, '')}</strong>
+                Project: <strong>{cleanName(projectName)}</strong>
               </p>
 
               <div className="grid grid-cols-2 gap-3">
@@ -588,15 +525,23 @@ export default function ProjectsSummary() {
   };
 
   const SortIcon = ({ col }: { col: string }) => {
-    if (sortKey !== col) return <ArrowUpDown className="w-3 h-3 ml-1 opacity-30" />;
+    if (sortKey !== col) return <ArrowUpDown className="w-3 h-3 ml-1 opacity-20" />;
     return sortDir === "asc"
       ? <ArrowUp className="w-3 h-3 ml-1 text-blue-600" />
       : <ArrowDown className="w-3 h-3 ml-1 text-blue-600" />;
   };
 
-  const totals = useMemo(() => ({
-    size_kwp: sorted.reduce((s, p) => s + safeNum(p.size_kwp), 0),
-  }), [sorted]);
+  const stats = useMemo(() => {
+    const total = sorted.length;
+    const totalKwp = sorted.reduce((s, p) => s + safeNum(p.size_kwp), 0);
+    const withCompletion = sorted.filter(p => p.project_pct_complete != null);
+    const avgCompletion = withCompletion.length > 0
+      ? withCompletion.reduce((s, p) => s + safeNum(p.project_pct_complete), 0) / withCompletion.length * 100
+      : 0;
+    const behindSchedule = sorted.filter(p => p.delta_vs_expected != null && p.delta_vs_expected < -0.05).length;
+    const finCloseCount = sorted.filter(p => p.financial_close_achieved).length;
+    return { total, totalKwp, avgCompletion, behindSchedule, finCloseCount };
+  }, [sorted]);
 
   const handleExport = () => {
     window.location.href = "/api/export/projects-summary";
@@ -604,27 +549,44 @@ export default function ProjectsSummary() {
 
   if (isLoading) {
     return (
-      <div className="space-y-6">
-        <h2 className="text-3xl font-heading font-bold text-foreground">Projects Summary</h2>
-        <div className="h-96 bg-muted/20 animate-pulse rounded-lg" />
+      <div className="space-y-6 p-1">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
+            <BarChart3 className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h2 className="text-2xl font-bold text-slate-900" data-testid="text-page-title">Projects Summary</h2>
+            <p className="text-sm text-slate-500">Loading portfolio data...</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-4 gap-4">
+          {[1,2,3,4].map(i => <div key={i} className="h-24 bg-slate-100 animate-pulse rounded-xl" />)}
+        </div>
+        <div className="h-96 bg-slate-100 animate-pulse rounded-xl" />
       </div>
     );
   }
 
   if (projects.length === 0) {
     return (
-      <div className="space-y-6">
-        <div className="flex flex-col gap-2">
-          <h2 className="text-3xl font-heading font-bold text-foreground">Projects Summary</h2>
-          <p className="text-muted-foreground">Portfolio status, financial progress, and key performance indicators.</p>
+      <div className="space-y-6 p-1">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
+            <BarChart3 className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h2 className="text-2xl font-bold text-slate-900" data-testid="text-page-title">Projects Summary</h2>
+            <p className="text-sm text-slate-500">Portfolio overview</p>
+          </div>
         </div>
-        <Card className="border-2 border-dashed border-muted">
-          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-            <AlertCircle className="w-12 h-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-semibold mb-2">No Projects Available</h3>
-            <p className="text-sm text-muted-foreground max-w-md">
-              Upload tracker files to populate the Projects Summary dashboard with financial metrics,
-              progress tracking, and outstanding items.
+        <Card className="border-2 border-dashed border-slate-200">
+          <CardContent className="flex flex-col items-center justify-center py-16 text-center">
+            <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
+              <AlertCircle className="w-8 h-8 text-slate-400" />
+            </div>
+            <h3 className="text-lg font-semibold text-slate-700 mb-2">No Projects Available</h3>
+            <p className="text-sm text-slate-500 max-w-md">
+              Upload tracker files to populate the Projects Summary dashboard with progress tracking and key dates.
             </p>
           </CardContent>
         </Card>
@@ -632,25 +594,33 @@ export default function ProjectsSummary() {
     );
   }
 
+  const columnGroups: { label: string; colSpan: number; color: string; stickyFirst?: boolean }[] = [
+    { label: "Project Info", colSpan: 4, color: "bg-slate-50 text-slate-600", stickyFirst: true },
+    { label: "Financial Close", colSpan: 4, color: "bg-emerald-50 text-emerald-700" },
+    { label: "Phase & Schedule", colSpan: 8, color: "bg-blue-50 text-blue-700" },
+    { label: "Progress", colSpan: 3, color: "bg-violet-50 text-violet-700" },
+  ];
+
   const columns: {
     key: string;
     header: string;
     sticky?: boolean;
     align?: string;
+    minW?: string;
     render: (p: ProjectSummary) => React.ReactNode;
-    summaryValue?: React.ReactNode;
   }[] = [
     {
       key: "project_name",
-      header: "Project Name",
+      header: "Project",
       sticky: true,
+      minW: "min-w-[180px]",
       render: (p) => (
         <button
           data-testid={`link-project-${p.project_name}`}
-          className="text-left font-semibold text-blue-700 hover:text-blue-900 hover:underline truncate max-w-[200px] block"
+          className="text-left font-semibold text-blue-700 hover:text-blue-900 hover:underline truncate max-w-[180px] block text-[11px]"
           onClick={() => setLocation(`/project/${encodeURIComponent(p.project_name)}`)}
         >
-          {p.project_name}
+          {cleanName(p.project_name)}
         </button>
       ),
     },
@@ -658,14 +628,13 @@ export default function ProjectsSummary() {
       key: "size_kwp",
       header: "kWp",
       align: "right",
-      render: (p) => <span className="font-mono">{p.size_kwp != null ? p.size_kwp.toFixed(0) : "—"}</span>,
-      summaryValue: <span className="font-mono font-bold">{totals.size_kwp.toFixed(0)}</span>,
+      render: (p) => <span className="font-mono text-slate-700">{p.size_kwp != null ? p.size_kwp.toFixed(0) : "—"}</span>,
     },
-    { key: "pd", header: "PD", render: (p) => p.pd || "—" },
-    { key: "pm", header: "PM", render: (p) => p.pm || "—" },
+    { key: "pd", header: "PD", render: (p) => <span className="text-slate-600">{p.pd || "—"}</span> },
+    { key: "pm", header: "PM", render: (p) => <span className="text-slate-600">{p.pm || "—"}</span> },
     {
       key: "cost_proposal_signed",
-      header: "Cost Proposal",
+      header: "Cost Prop.",
       render: (p) => (
         <FinancialCloseCell
           projectName={p.project_name}
@@ -693,7 +662,7 @@ export default function ProjectsSummary() {
     },
     {
       key: "epc_contract_signed",
-      header: "EPC Contract",
+      header: "EPC",
       render: (p) => (
         <FinancialCloseCell
           projectName={p.project_name}
@@ -707,20 +676,20 @@ export default function ProjectsSummary() {
     },
     {
       key: "financial_close",
-      header: "Financial Close",
+      header: "Status",
       render: (p) => {
         const achieved = p.financial_close_achieved;
         return (
           <span
-            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+            className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-bold ${
               achieved
-                ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                ? "bg-emerald-100 text-emerald-700 border border-emerald-200"
                 : "bg-red-50 text-red-600 border border-red-200"
             }`}
             data-testid={`badge-fclose-${p.project_name}`}
           >
             {achieved ? <CheckCircle2 className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
-            {achieved ? "Achieved" : "Incomplete"}
+            {achieved ? "Done" : "Open"}
           </span>
         );
       },
@@ -728,68 +697,73 @@ export default function ProjectsSummary() {
     {
       key: "phase",
       header: "Phase",
-      render: (p) => (
-        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${phaseColor(p.phase)}`}>
-          {p.phase || "Unknown"}
-        </span>
-      ),
+      render: (p) => {
+        const cfg = phaseConfig(p.phase);
+        return (
+          <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${cfg.bg} ${cfg.text} ${cfg.border}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
+            {p.phase || "—"}
+          </span>
+        );
+      },
     },
     { key: "pd_handover_date", header: "PD Handover", render: (p) => (
-      <span className="flex items-center gap-1" title={p.date_sources?.pd_handover === 'plan' ? 'From project plan' : p.date_sources?.pd_handover === 'info' ? 'From info table' : ''}>
+      <span className="flex items-center gap-1 text-slate-600" title={p.date_sources?.pd_handover === 'plan' ? 'From project plan' : p.date_sources?.pd_handover === 'info' ? 'From info table' : ''}>
         {formatDate(p.pd_handover_date)}
-        {p.date_sources?.pd_handover === 'plan' && <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" title="From project plan" />}
+        {p.date_sources?.pd_handover === 'plan' && <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block flex-shrink-0" title="From project plan" />}
       </span>
     )},
-    { key: "construction_start_date", header: "Construction Start", render: (p) => (
-      <span className="flex items-center gap-1" title={p.date_sources?.construction_start === 'plan' ? 'From project plan (Site Establishment actual start)' : p.date_sources?.construction_start === 'info' ? 'From info table' : ''}>
+    { key: "construction_start_date", header: "Constr. Start", render: (p) => (
+      <span className="flex items-center gap-1 text-slate-600" title={p.date_sources?.construction_start === 'plan' ? 'From project plan' : p.date_sources?.construction_start === 'info' ? 'From info table' : ''}>
         {formatDate(p.construction_start_date)}
-        {p.date_sources?.construction_start === 'plan' && <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" title="From project plan" />}
+        {p.date_sources?.construction_start === 'plan' && <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block flex-shrink-0" title="From project plan" />}
+      </span>
+    )},
+    { key: "commissioning_date", header: "Commission", render: (p) => (
+      <span className="flex items-center gap-1 text-slate-600" title={p.date_sources?.commissioning === 'plan' ? 'From project plan' : p.date_sources?.commissioning === 'info' ? 'From info table' : ''}>
+        {formatDate(p.commissioning_date)}
+        {p.date_sources?.commissioning === 'plan' && <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block flex-shrink-0" title="From project plan" />}
+      </span>
+    )},
+    { key: "om_handover_date", header: "O&M Handover", render: (p) => (
+      <span className="flex items-center gap-1 text-slate-600" title={p.date_sources?.om_handover === 'plan' ? 'From project plan' : p.date_sources?.om_handover === 'info' ? 'From info table' : ''}>
+        {formatDate(p.om_handover_date)}
+        {p.date_sources?.om_handover === 'plan' && <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block flex-shrink-0" title="From project plan" />}
+      </span>
+    )},
+    { key: "client_handover_date", header: "Client Handover", render: (p) => (
+      <span className="flex items-center gap-1 text-slate-600" title={p.date_sources?.client_handover === 'plan' ? 'From project plan' : p.date_sources?.client_handover === 'info' ? 'From info table' : ''}>
+        {formatDate(p.client_handover_date)}
+        {p.date_sources?.client_handover === 'plan' && <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block flex-shrink-0" title="From project plan" />}
       </span>
     )},
     {
       key: "duration",
-      header: "Duration (SA working days)",
+      header: "Days",
       align: "right",
-      render: (p) => <span className="font-mono">{p.duration != null ? p.duration : "—"}</span>,
+      render: (p) => <span className="font-mono text-slate-600">{p.duration != null ? p.duration : "—"}</span>,
     },
     {
       key: "kw_per_week",
-      header: "kW/Week",
+      header: "kW/Wk",
       align: "right",
-      render: (p) => <span className="font-mono">{p.kw_per_week != null ? p.kw_per_week.toFixed(1) : "—"}</span>,
+      render: (p) => <span className="font-mono text-slate-600">{p.kw_per_week != null ? p.kw_per_week.toFixed(1) : "—"}</span>,
     },
-    { key: "commissioning_date", header: "Commissioning", render: (p) => (
-      <span className="flex items-center gap-1" title={p.date_sources?.commissioning === 'plan' ? 'From project plan' : p.date_sources?.commissioning === 'info' ? 'From info table' : ''}>
-        {formatDate(p.commissioning_date)}
-        {p.date_sources?.commissioning === 'plan' && <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" title="From project plan" />}
-      </span>
-    )},
-    { key: "om_handover_date", header: "O&M Handover", render: (p) => (
-      <span className="flex items-center gap-1" title={p.date_sources?.om_handover === 'plan' ? 'From project plan' : p.date_sources?.om_handover === 'info' ? 'From info table' : ''}>
-        {formatDate(p.om_handover_date)}
-        {p.date_sources?.om_handover === 'plan' && <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" title="From project plan" />}
-      </span>
-    )},
-    { key: "client_handover_date", header: "Client Handover", render: (p) => (
-      <span className="flex items-center gap-1" title={p.date_sources?.client_handover === 'plan' ? 'From project plan' : p.date_sources?.client_handover === 'info' ? 'From info table' : ''}>
-        {formatDate(p.client_handover_date)}
-        {p.date_sources?.client_handover === 'plan' && <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" title="From project plan" />}
-      </span>
-    )},
     {
       key: "project_pct_complete",
-      header: "% Complete",
+      header: "Actual %",
+      minW: "min-w-[110px]",
       render: (p) => {
         const pct = p.project_pct_complete != null ? p.project_pct_complete * 100 : 0;
         return (
-          <div className="flex items-center gap-1 min-w-[80px]">
-            <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
+          <div className="flex items-center gap-1.5 min-w-[100px]">
+            <div className="flex-1 h-2.5 bg-slate-100 rounded-full overflow-hidden">
               <div
-                className="h-full bg-blue-500 rounded-full transition-all"
+                className={`h-full rounded-full transition-all duration-500 ${progressColor(pct)}`}
                 style={{ width: `${Math.min(pct, 100)}%` }}
               />
             </div>
-            <span className="font-mono text-[10px] w-10 text-right">{pct.toFixed(1)}%</span>
+            <span className="font-mono text-[11px] w-10 text-right font-medium text-slate-700">{pct.toFixed(0)}%</span>
           </div>
         );
       },
@@ -798,47 +772,129 @@ export default function ProjectsSummary() {
       key: "expected_pct_complete",
       header: "Expected %",
       align: "right",
-      render: (p) => <span className="font-mono">{formatPct(p.expected_pct_complete)}</span>,
+      render: (p) => <span className="font-mono text-slate-600">{formatPct(p.expected_pct_complete)}</span>,
     },
     {
       key: "delta_vs_expected",
       header: "Delta",
       align: "right",
       render: (p) => {
-        if (p.delta_vs_expected == null) return "—";
+        if (p.delta_vs_expected == null) return <span className="text-slate-400">—</span>;
         const val = p.delta_vs_expected * 100;
-        const color = val >= 0 ? "text-emerald-600" : "text-rose-600";
+        const { text, bg } = deltaColor(val);
         const sign = val >= 0 ? "+" : "";
-        return <span className={`font-mono ${color}`}>{sign}{val.toFixed(1)}%</span>;
+        const Icon = val >= 0 ? TrendingUp : TrendingDown;
+        return (
+          <span className={`inline-flex items-center gap-0.5 font-mono text-[11px] font-semibold px-1.5 py-0.5 rounded-md ${text} ${bg}`}>
+            <Icon className="w-3 h-3" />
+            {sign}{val.toFixed(1)}%
+          </span>
+        );
       },
     },
   ];
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-2">
-        <h2 className="text-3xl font-heading font-bold text-foreground" data-testid="text-page-title">
-          Projects Summary
-        </h2>
-        <p className="text-muted-foreground text-sm">
-          Excel-aligned portfolio overview — {sorted.length} of {projects.length} projects shown
-        </p>
+    <div className="space-y-5 p-1">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-sm">
+            <BarChart3 className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h2 className="text-2xl font-bold text-slate-900" data-testid="text-page-title">
+              Projects Summary
+            </h2>
+            <p className="text-sm text-slate-500">
+              {sorted.length} of {projects.length} projects
+              {(pmFilter !== "all" || phaseFilter !== "all" || searchTerm) && " (filtered)"}
+            </p>
+          </div>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleExport}
+          data-testid="button-export"
+          className="h-9 gap-1.5 text-slate-600 border-slate-200 hover:bg-slate-50"
+        >
+          <Download className="w-4 h-4" />
+          Export
+        </Button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Card className="border-slate-200 shadow-sm overflow-hidden">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">Total Projects</span>
+              <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
+                <BarChart3 className="w-4 h-4 text-blue-600" />
+              </div>
+            </div>
+            <div className="text-2xl font-bold text-slate-900" data-testid="stat-total-projects">{stats.total}</div>
+            <div className="text-xs text-slate-500 mt-1">{stats.totalKwp.toLocaleString()} kWp total capacity</div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-slate-200 shadow-sm overflow-hidden">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">Avg. Completion</span>
+              <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
+                <Activity className="w-4 h-4 text-emerald-600" />
+              </div>
+            </div>
+            <div className="text-2xl font-bold text-slate-900" data-testid="stat-avg-completion">{stats.avgCompletion.toFixed(0)}%</div>
+            <div className="w-full h-1.5 bg-slate-100 rounded-full mt-2 overflow-hidden">
+              <div className={`h-full rounded-full ${progressColor(stats.avgCompletion)}`} style={{ width: `${Math.min(stats.avgCompletion, 100)}%` }} />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-slate-200 shadow-sm overflow-hidden">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">Behind Schedule</span>
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${stats.behindSchedule > 0 ? "bg-rose-50" : "bg-emerald-50"}`}>
+                <TrendingDown className={`w-4 h-4 ${stats.behindSchedule > 0 ? "text-rose-600" : "text-emerald-600"}`} />
+              </div>
+            </div>
+            <div className={`text-2xl font-bold ${stats.behindSchedule > 0 ? "text-rose-600" : "text-emerald-600"}`} data-testid="stat-behind-schedule">
+              {stats.behindSchedule}
+            </div>
+            <div className="text-xs text-slate-500 mt-1">of {stats.total} projects ({stats.total > 0 ? ((stats.behindSchedule / stats.total) * 100).toFixed(0) : 0}%)</div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-slate-200 shadow-sm overflow-hidden">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">Financial Close</span>
+              <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center">
+                <Zap className="w-4 h-4 text-violet-600" />
+              </div>
+            </div>
+            <div className="text-2xl font-bold text-slate-900" data-testid="stat-fin-close">{stats.finCloseCount}</div>
+            <div className="text-xs text-slate-500 mt-1">of {stats.total} achieved ({stats.total > 0 ? ((stats.finCloseCount / stats.total) * 100).toFixed(0) : 0}%)</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
         <div className="relative">
-          <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <Input
             data-testid="input-search"
-            placeholder="Search project name..."
-            className="pl-8 h-8 w-52 text-sm"
+            placeholder="Search projects..."
+            className="pl-9 h-9 w-56 text-sm border-slate-200 bg-white"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
 
         <Select value={pmFilter} onValueChange={setPmFilter}>
-          <SelectTrigger className="h-8 w-40 text-sm" data-testid="select-pm-filter">
+          <SelectTrigger className="h-9 w-40 text-sm border-slate-200" data-testid="select-pm-filter">
             <SelectValue placeholder="All PMs" />
           </SelectTrigger>
           <SelectContent>
@@ -850,7 +906,7 @@ export default function ProjectsSummary() {
         </Select>
 
         <Select value={phaseFilter} onValueChange={setPhaseFilter}>
-          <SelectTrigger className="h-8 w-40 text-sm" data-testid="select-phase-filter">
+          <SelectTrigger className="h-9 w-40 text-sm border-slate-200" data-testid="select-phase-filter">
             <SelectValue placeholder="All Phases" />
           </SelectTrigger>
           <SelectContent>
@@ -861,33 +917,47 @@ export default function ProjectsSummary() {
           </SelectContent>
         </Select>
 
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleExport}
-          data-testid="button-export"
-          className="h-8"
-        >
-          <Download className="w-4 h-4 mr-1" />
-          Export
-        </Button>
+        {(searchTerm || pmFilter !== "all" || phaseFilter !== "all") && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => { setSearchTerm(""); setPmFilter("all"); setPhaseFilter("all"); }}
+            className="h-9 text-xs text-slate-500 hover:text-slate-700"
+          >
+            <X className="w-3 h-3 mr-1" />
+            Clear filters
+          </Button>
+        )}
       </div>
 
-      <div className="border rounded-lg overflow-hidden">
-        <div className="overflow-x-auto max-h-[calc(100vh-220px)]">
-          <table className="w-full text-xs border-collapse min-w-[2400px]">
-            <thead className="sticky top-0 z-20 bg-white">
-              <tr className="border-b border-gray-200">
+      <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm bg-white">
+        <div className="overflow-x-auto max-h-[calc(100vh-340px)]">
+          <table className="w-full text-[11px] border-collapse min-w-[2200px]">
+            <thead className="sticky top-0 z-20">
+              <tr>
+                {columnGroups.map((g, i) => (
+                  <th
+                    key={i}
+                    colSpan={g.colSpan}
+                    className={`px-2 py-1.5 text-[10px] font-bold uppercase tracking-wider border-b border-slate-200 ${g.color} ${
+                      g.stickyFirst ? "sticky left-0 z-30" : ""
+                    } ${i > 0 ? "border-l border-slate-200" : ""}`}
+                  >
+                    {g.label}
+                  </th>
+                ))}
+              </tr>
+              <tr className="bg-white border-b-2 border-slate-200">
                 {columns.map((col) => (
                   <th
                     key={col.key}
-                    className={`px-2 py-2 text-left font-semibold text-gray-700 whitespace-nowrap cursor-pointer hover:bg-gray-50 select-none border-b-2 border-gray-200 ${
-                      col.sticky ? "sticky left-0 z-30 bg-white shadow-[2px_0_4px_-2px_rgba(0,0,0,0.1)]" : ""
-                    } ${col.align === "right" ? "text-right" : ""}`}
+                    className={`px-2.5 py-2 text-left font-semibold text-slate-600 whitespace-nowrap cursor-pointer hover:bg-slate-50 select-none transition-colors ${
+                      col.sticky ? "sticky left-0 z-30 bg-white shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]" : ""
+                    } ${col.align === "right" ? "text-right" : ""} ${col.minW || ""}`}
                     onClick={() => handleSort(col.key)}
                     data-testid={`sort-${col.key}`}
                   >
-                    <div className={`inline-flex items-center ${col.align === "right" ? "justify-end" : ""}`}>
+                    <div className={`inline-flex items-center gap-0.5 ${col.align === "right" ? "justify-end" : ""}`}>
                       {col.header}
                       <SortIcon col={col.key} />
                     </div>
@@ -899,17 +969,17 @@ export default function ProjectsSummary() {
               {sorted.map((project, idx) => (
                 <tr
                   key={project.project_name}
-                  className={`border-b border-gray-100 hover:bg-blue-50/50 transition-colors ${
-                    idx % 2 === 0 ? "bg-white" : "bg-gray-50/50"
+                  className={`border-b border-slate-100 hover:bg-blue-50/40 transition-colors ${
+                    idx % 2 === 0 ? "bg-white" : "bg-slate-50/30"
                   }`}
                   data-testid={`row-project-${idx}`}
                 >
                   {columns.map((col) => (
                     <td
                       key={col.key}
-                      className={`px-2 py-1.5 whitespace-nowrap ${
-                        col.sticky ? "sticky left-0 z-10 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.1)]" : ""
-                      } ${col.sticky ? (idx % 2 === 0 ? "bg-white" : "bg-gray-50") : ""} ${
+                      className={`px-2.5 py-2 whitespace-nowrap ${
+                        col.sticky ? "sticky left-0 z-10 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]" : ""
+                      } ${col.sticky ? (idx % 2 === 0 ? "bg-white" : "bg-slate-50/80") : ""} ${
                         col.align === "right" ? "text-right" : ""
                       }`}
                     >
@@ -918,24 +988,25 @@ export default function ProjectsSummary() {
                   ))}
                 </tr>
               ))}
-
-              <tr className="border-t-2 border-gray-300 bg-gray-100 font-semibold sticky bottom-0 z-10">
+            </tbody>
+            <tfoot className="sticky bottom-0 z-10">
+              <tr className="border-t-2 border-slate-300 bg-slate-50 font-semibold">
                 {columns.map((col) => (
                   <td
                     key={col.key}
-                    className={`px-2 py-2 whitespace-nowrap ${
-                      col.sticky ? "sticky left-0 z-10 bg-gray-100 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.1)]" : ""
+                    className={`px-2.5 py-2.5 whitespace-nowrap ${
+                      col.sticky ? "sticky left-0 z-10 bg-slate-50 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]" : ""
                     } ${col.align === "right" ? "text-right" : ""}`}
                   >
                     {col.key === "project_name" ? (
-                      <span className="font-bold text-xs">Totals ({sorted.length})</span>
-                    ) : col.summaryValue ? (
-                      col.summaryValue
+                      <span className="font-bold text-slate-700 text-xs">Portfolio ({sorted.length} projects)</span>
+                    ) : col.key === "size_kwp" ? (
+                      <span className="font-mono font-bold text-slate-700">{stats.totalKwp.toFixed(0)}</span>
                     ) : null}
                   </td>
                 ))}
               </tr>
-            </tbody>
+            </tfoot>
           </table>
         </div>
       </div>
