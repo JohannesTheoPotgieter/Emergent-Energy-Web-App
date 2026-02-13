@@ -35,6 +35,7 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   ArrowRight,
+  X,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
@@ -542,17 +543,31 @@ export default function CashflowPage() {
   }, [projectsSummary]);
 
   const balanceMutation = useMutation({
-    mutationFn: async (body: { weekStartDate: string; openingBalance: number; computedValue: number }) => {
+    mutationFn: async (body: { weekStartDate: string; openingBalance: number; computedValue: number; clearForward: boolean }) => {
       await apiRequest("POST", "/api/cashflow-2026/opening-balance", body);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026"] });
       queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026/balance-history"] });
       setEditingBalance(null);
-      toast({ title: "Opening Balance Saved" });
+      toast({ title: "Opening Balance Saved", description: "All forward weeks recalculated" });
     },
     onError: () => {
       toast({ title: "Save Failed", variant: "destructive" });
+    },
+  });
+
+  const clearOverrideMutation = useMutation({
+    mutationFn: async (weekStartDate: string) => {
+      await apiRequest("DELETE", "/api/cashflow-2026/opening-balance", { weekStartDate });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026/balance-history"] });
+      toast({ title: "Override Cleared", description: "Balance now uses cascaded value" });
+    },
+    onError: () => {
+      toast({ title: "Clear Failed", variant: "destructive" });
     },
   });
 
@@ -560,7 +575,7 @@ export default function CashflowPage() {
     (weekStart: string, computedValue: number) => {
       const val = parseFloat(editingValue);
       if (!Number.isFinite(val)) return;
-      balanceMutation.mutate({ weekStartDate: weekStart, openingBalance: val, computedValue });
+      balanceMutation.mutate({ weekStartDate: weekStart, openingBalance: val, computedValue, clearForward: true });
     },
     [editingValue, balanceMutation]
   );
@@ -906,22 +921,35 @@ export default function CashflowPage() {
                                         {formatRand(week.openingBalance)}
                                       </span>
                                       {week.hasManualOverride && (
-                                        <span
-                                          className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold cursor-pointer ${
-                                            week.balanceDelta >= 0
-                                              ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                                              : "bg-red-50 text-red-700 hover:bg-red-100"
-                                          }`}
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setHistoryWeek(week.weekStart);
-                                          }}
-                                          title={`Manual override: ${week.balanceDelta >= 0 ? "+" : ""}${formatRand(week.balanceDelta)} vs computed (${formatRand(week.computedOpening)}). Click for history.`}
-                                          data-testid={`badge-delta-${week.weekStart}`}
-                                        >
-                                          {week.balanceDelta >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
-                                          {formatRand(Math.abs(week.balanceDelta))}
-                                        </span>
+                                        <>
+                                          <span
+                                            className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold cursor-pointer ${
+                                              week.balanceDelta >= 0
+                                                ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                                                : "bg-red-50 text-red-700 hover:bg-red-100"
+                                            }`}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setHistoryWeek(week.weekStart);
+                                            }}
+                                            title={`Manual override: ${week.balanceDelta >= 0 ? "+" : ""}${formatRand(week.balanceDelta)} vs computed (${formatRand(week.computedOpening)}). Click for history.`}
+                                            data-testid={`badge-delta-${week.weekStart}`}
+                                          >
+                                            {week.balanceDelta >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                                            {formatRand(Math.abs(week.balanceDelta))}
+                                          </span>
+                                          <button
+                                            className="p-0.5 rounded hover:bg-red-100 text-red-400 hover:text-red-600 transition-colors"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              clearOverrideMutation.mutate(week.weekStart);
+                                            }}
+                                            title="Clear manual override — use cascaded value"
+                                            data-testid={`button-clear-override-${week.weekStart}`}
+                                          >
+                                            <X className="h-3 w-3" />
+                                          </button>
+                                        </>
                                       )}
                                     </>
                                   )}

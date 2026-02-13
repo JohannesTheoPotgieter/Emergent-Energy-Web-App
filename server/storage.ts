@@ -257,6 +257,9 @@ export interface IStorage {
   getAllCashflowWeeklyManual(): Promise<CashflowWeeklyManual[]>;
   upsertCashflowWeeklyManual(weekStartDate: string, openingBalance: string): Promise<CashflowWeeklyManual>;
 
+  deleteCashflowWeeklyManual(weekStartDate: string): Promise<void>;
+  deleteAllCashflowWeeklyManualAfter(weekStartDate: string): Promise<string[]>;
+
   // Cashflow Balance History
   getBalanceHistory(weekStartDate: string): Promise<CashflowBalanceHistory[]>;
   getAllBalanceHistory(): Promise<CashflowBalanceHistory[]>;
@@ -1440,6 +1443,23 @@ export class DatabaseStorage implements IStorage {
     }
     const inserted = await this.dbInstance.insert(cashflowWeeklyManual).values({ weekStartDate, openingBalance }).returning();
     return inserted[0];
+  }
+
+  async deleteCashflowWeeklyManual(weekStartDate: string): Promise<void> {
+    await this.dbInstance.delete(cashflowWeeklyManual)
+      .where(eq(cashflowWeeklyManual.weekStartDate, weekStartDate));
+  }
+
+  async deleteAllCashflowWeeklyManualAfter(weekStartDate: string): Promise<string[]> {
+    const toDelete = await this.dbInstance.select({ weekStartDate: cashflowWeeklyManual.weekStartDate })
+      .from(cashflowWeeklyManual)
+      .where(gte(cashflowWeeklyManual.weekStartDate, weekStartDate));
+    const weeks = toDelete.map((r: { weekStartDate: string }) => r.weekStartDate);
+    if (weeks.length > 0) {
+      await this.dbInstance.delete(cashflowWeeklyManual)
+        .where(gte(cashflowWeeklyManual.weekStartDate, weekStartDate));
+    }
+    return weeks;
   }
 
   async getBalanceHistory(weekStartDate: string): Promise<CashflowBalanceHistory[]> {
