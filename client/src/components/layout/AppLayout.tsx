@@ -107,7 +107,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             {sidebarOpen && <span>Home</span>}
           </Link>
 
-          {navGroups.filter(group => group.heading !== "ADMIN" || user?.role === "admin").map((group) => (
+          {navGroups.filter(group => (group.heading !== "ADMIN" && group.heading !== "WIP") || user?.role === "admin").map((group) => (
             <div key={group.heading} className="pt-4">
               {sidebarOpen && (
                 <p className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-sidebar-foreground/40">
