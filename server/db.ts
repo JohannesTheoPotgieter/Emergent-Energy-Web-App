@@ -27,14 +27,14 @@ async function initializeDatabase(): Promise<void> {
     console.log(`[DB] Testing PostgreSQL connection to ${config.dbHost}...`);
     
     try {
-      const isConnectable = await testPostgresConnection(config.connectionString, 1500);
+      const isConnectable = await testPostgresConnection(config.connectionString, 10000);
       
       if (isConnectable) {
         // Use Postgres
         const pool = new pg.Pool({ 
           connectionString: config.connectionString,
-          connectionTimeoutMillis: 2000,
-          query_timeout: 5000,
+          connectionTimeoutMillis: 10000,
+          query_timeout: 30000,
         });
         db = drizzle(pool, { schema });
         dbMode = 'postgres';
@@ -64,12 +64,12 @@ async function initializeDatabase(): Promise<void> {
   isInitialized = true;
 }
 
-function testPostgresConnection(connectionString: string, timeoutMs: number = 1500): Promise<boolean> {
+function testPostgresConnection(connectionString: string, timeoutMs: number = 10000): Promise<boolean> {
   return new Promise((resolve) => {
     const pool = new pg.Pool({ 
       connectionString, 
       connectionTimeoutMillis: timeoutMs,
-      max: 1, // Only test with one connection
+      max: 1,
     });
     
     const timeout = setTimeout(() => {
