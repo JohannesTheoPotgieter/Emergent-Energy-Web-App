@@ -1377,6 +1377,7 @@ export async function registerRoutes(
 
       const weeks: any[] = [];
       const cursor = new Date(fyStart);
+      let runningBalance = 0;
 
       while (cursor <= fyEnd) {
         const weekStart = cursor.toISOString().split('T')[0];
@@ -1404,7 +1405,10 @@ export async function registerRoutes(
           }
         }
 
-        const openingBalance = manualMap.get(weekStart) || 0;
+        const computedOpening = runningBalance;
+        const hasManualOverride = manualMap.has(weekStart);
+        const openingBalance = hasManualOverride ? manualMap.get(weekStart)! : computedOpening;
+        const balanceDelta = hasManualOverride ? openingBalance - computedOpening : 0;
 
         const mk = `${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, '0')}`;
         const monthlyOpex = opexMap.get(mk) || 0;
@@ -1420,11 +1424,15 @@ export async function registerRoutes(
           projectInflows: projectInflowsSum,
           projectOutflows: projectOutflowsSum,
           openingBalance,
+          computedOpening,
+          hasManualOverride,
+          balanceDelta,
           opexOutflows,
           closingBalance,
           availablePayment,
         });
 
+        runningBalance = closingBalance;
         cursor.setUTCDate(cursor.getUTCDate() + 7);
       }
 
@@ -1513,15 +1521,74 @@ export async function registerRoutes(
 
   app.post("/api/cashflow-2026/opening-balance", requireAuth, async (req, res) => {
     try {
-      const { weekStartDate, openingBalance } = req.body;
+      const { weekStartDate, openingBalance, computedValue } = req.body;
       if (!weekStartDate || openingBalance == null) {
         return res.status(400).json({ error: "weekStartDate and openingBalance required" });
       }
+
+      const existingManuals = await storage.getAllCashflowWeeklyManual();
+      const existing = existingManuals.find(m => m.weekStartDate === weekStartDate);
+      const previousValue = existing ? existing.openingBalance : null;
+      const newVal = parseFloat(String(openingBalance));
+      const compVal = computedValue != null ? parseFloat(String(computedValue)) : null;
+      const delta = compVal != null ? newVal - compVal : null;
+
+      const user = req.user as any;
+      await storage.addBalanceHistory({
+        weekStartDate,
+        previousValue: previousValue || null,
+        newValue: String(newVal),
+        computedValue: compVal != null ? String(compVal) : null,
+        delta: delta != null ? String(delta) : null,
+        changedBy: user?.username || null,
+      });
+
       const result = await storage.upsertCashflowWeeklyManual(weekStartDate, String(openingBalance));
       res.json(result);
     } catch (error) {
       console.error("Opening balance save error:", error);
       res.status(500).json({ error: "Failed to save opening balance", message: "Failed to save opening balance" });
+    }
+  });
+
+  app.get("/api/cashflow-2026/balance-history", requireAuth, async (req, res) => {
+    try {
+      const weekStart = req.query.week ? String(req.query.week) : null;
+      if (weekStart) {
+        const history = await storage.getBalanceHistory(weekStart);
+        return res.json(history);
+      }
+      const allHistory = await storage.getAllBalanceHistory();
+      res.json(allHistory);
+    } catch (error) {
+      console.error("Balance history error:", error);
+      res.status(500).json({ error: "Failed to fetch balance history" });
+    }
+  });
+
+  app.delete("/api/cashflow-2026/opening-balance", requireAuth, async (req, res) => {
+    try {
+      const { weekStartDate } = req.body;
+      if (!weekStartDate) {
+        return res.status(400).json({ error: "weekStartDate required" });
+      }
+      const existingManuals = await storage.getAllCashflowWeeklyManual();
+      const existing = existingManuals.find(m => m.weekStartDate === weekStartDate);
+      if (existing) {
+        const user = req.user as any;
+        await storage.addBalanceHistory({
+          weekStartDate,
+          previousValue: existing.openingBalance || null,
+          newValue: "0",
+          computedValue: null,
+          delta: null,
+          changedBy: user?.username || null,
+        });
+      }
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("Opening balance delete error:", error);
+      res.status(500).json({ error: "Failed to delete opening balance" });
     }
   });
 

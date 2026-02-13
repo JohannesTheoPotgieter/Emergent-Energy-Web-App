@@ -34,6 +34,7 @@ import {
   TrendingDown,
   ArrowUpRight,
   ArrowDownRight,
+  ArrowRight,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
@@ -41,11 +42,25 @@ interface CashflowWeek {
   weekStart: string;
   weekEnd: string;
   openingBalance: number;
+  computedOpening: number;
+  hasManualOverride: boolean;
+  balanceDelta: number;
   projectInflows: number;
   opexOutflows: number;
   projectOutflows: number;
   closingBalance: number;
   availablePayment: number;
+}
+
+interface BalanceHistoryEntry {
+  id: number;
+  weekStartDate: string;
+  previousValue: string | null;
+  newValue: string;
+  computedValue: string | null;
+  delta: string | null;
+  changedAt: string;
+  changedBy: string | null;
 }
 
 interface DetailInflow {
@@ -480,6 +495,7 @@ export default function CashflowPage() {
   const [opexOpen, setOpexOpen] = useState(false);
   const [editingBalance, setEditingBalance] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState("");
+  const [historyWeek, setHistoryWeek] = useState<string | null>(null);
 
   const projectParam = selectedProject !== "all" ? selectedProject : undefined;
 
@@ -493,6 +509,19 @@ export default function CashflowPage() {
       if (!res.ok) throw new Error("Failed to fetch cashflow data");
       return res.json();
     },
+  });
+
+  const { data: balanceHistory = [] } = useQuery<BalanceHistoryEntry[]>({
+    queryKey: ["/api/cashflow-2026/balance-history", historyWeek],
+    queryFn: async () => {
+      const url = historyWeek
+        ? `/api/cashflow-2026/balance-history?week=${historyWeek}`
+        : "/api/cashflow-2026/balance-history";
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch balance history");
+      return res.json();
+    },
+    enabled: !!historyWeek,
   });
 
   const { data: projectsSummary = [] } = useQuery<{ projectName: string }[]>({
@@ -513,11 +542,12 @@ export default function CashflowPage() {
   }, [projectsSummary]);
 
   const balanceMutation = useMutation({
-    mutationFn: async (body: { weekStartDate: string; openingBalance: number }) => {
+    mutationFn: async (body: { weekStartDate: string; openingBalance: number; computedValue: number }) => {
       await apiRequest("POST", "/api/cashflow-2026/opening-balance", body);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026/balance-history"] });
       setEditingBalance(null);
       toast({ title: "Opening Balance Saved" });
     },
@@ -527,10 +557,10 @@ export default function CashflowPage() {
   });
 
   const handleBalanceSave = useCallback(
-    (weekStart: string) => {
+    (weekStart: string, computedValue: number) => {
       const val = parseFloat(editingValue);
       if (!Number.isFinite(val)) return;
-      balanceMutation.mutate({ weekStartDate: weekStart, openingBalance: val });
+      balanceMutation.mutate({ weekStartDate: weekStart, openingBalance: val, computedValue });
     },
     [editingValue, balanceMutation]
   );
@@ -846,34 +876,56 @@ export default function CashflowPage() {
                                 </div>
                               </td>
                               <td className="px-4 py-3 text-right font-mono text-[13px] text-blue-600">
-                                {editingBalance === week.weekStart ? (
-                                  <input
-                                    type="number"
-                                    className="w-28 text-right p-1.5 border border-blue-300 rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
-                                    value={editingValue}
-                                    onChange={(e) => setEditingValue(e.target.value)}
-                                    onBlur={() => handleBalanceSave(week.weekStart)}
-                                    onKeyDown={(e) => {
-                                      if (e.key === "Enter") handleBalanceSave(week.weekStart);
-                                      if (e.key === "Escape") setEditingBalance(null);
-                                    }}
-                                    autoFocus
-                                    onClick={(e) => e.stopPropagation()}
-                                    data-testid={`input-opening-balance-${week.weekStart}`}
-                                  />
-                                ) : (
-                                  <span
-                                    className="cursor-pointer hover:underline hover:text-blue-700 decoration-dashed underline-offset-2 transition-colors"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setEditingBalance(week.weekStart);
-                                      setEditingValue(week.openingBalance?.toString() || "0");
-                                    }}
-                                    data-testid={`text-opening-balance-${week.weekStart}`}
-                                  >
-                                    {formatRand(week.openingBalance)}
-                                  </span>
-                                )}
+                                <div className="flex items-center justify-end gap-1.5">
+                                  {editingBalance === week.weekStart ? (
+                                    <input
+                                      type="number"
+                                      className="w-28 text-right p-1.5 border border-blue-300 rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+                                      value={editingValue}
+                                      onChange={(e) => setEditingValue(e.target.value)}
+                                      onBlur={() => handleBalanceSave(week.weekStart, week.computedOpening)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter") handleBalanceSave(week.weekStart, week.computedOpening);
+                                        if (e.key === "Escape") setEditingBalance(null);
+                                      }}
+                                      autoFocus
+                                      onClick={(e) => e.stopPropagation()}
+                                      data-testid={`input-opening-balance-${week.weekStart}`}
+                                    />
+                                  ) : (
+                                    <>
+                                      <span
+                                        className="cursor-pointer hover:underline hover:text-blue-700 decoration-dashed underline-offset-2 transition-colors"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setEditingBalance(week.weekStart);
+                                          setEditingValue(week.openingBalance?.toString() || "0");
+                                        }}
+                                        data-testid={`text-opening-balance-${week.weekStart}`}
+                                      >
+                                        {formatRand(week.openingBalance)}
+                                      </span>
+                                      {week.hasManualOverride && (
+                                        <span
+                                          className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold cursor-pointer ${
+                                            week.balanceDelta >= 0
+                                              ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                                              : "bg-red-50 text-red-700 hover:bg-red-100"
+                                          }`}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setHistoryWeek(week.weekStart);
+                                          }}
+                                          title={`Manual override: ${week.balanceDelta >= 0 ? "+" : ""}${formatRand(week.balanceDelta)} vs computed (${formatRand(week.computedOpening)}). Click for history.`}
+                                          data-testid={`badge-delta-${week.weekStart}`}
+                                        >
+                                          {week.balanceDelta >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                                          {formatRand(Math.abs(week.balanceDelta))}
+                                        </span>
+                                      )}
+                                    </>
+                                  )}
+                                </div>
                               </td>
                               <td
                                 className="px-4 py-3 text-right font-mono text-[13px] text-emerald-600"
@@ -933,6 +985,83 @@ export default function CashflowPage() {
       </div>
 
       <OpexBudgetModal open={opexOpen} onClose={() => setOpexOpen(false)} />
+
+      <Dialog open={!!historyWeek} onOpenChange={(v) => !v && setHistoryWeek(null)}>
+        <DialogContent className="max-w-lg" data-testid="dialog-balance-history">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-semibold">
+              Balance Change History — {historyWeek ? formatWeek(historyWeek) : ""}
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground mt-1">
+              All manual balance overrides for this week, most recent first
+            </DialogDescription>
+          </DialogHeader>
+          {balanceHistory.length === 0 ? (
+            <div className="py-8 text-center text-sm text-muted-foreground">
+              No history yet for this week
+            </div>
+          ) : (
+            <div className="max-h-[400px] overflow-y-auto space-y-2">
+              {balanceHistory.map((entry) => {
+                const delta = entry.delta ? parseFloat(entry.delta) : null;
+                const prev = entry.previousValue ? parseFloat(entry.previousValue) : null;
+                const newVal = parseFloat(entry.newValue);
+                const computed = entry.computedValue ? parseFloat(entry.computedValue) : null;
+                return (
+                  <div
+                    key={entry.id}
+                    className="border border-slate-100 rounded-lg px-4 py-3 bg-slate-50/50"
+                    data-testid={`history-entry-${entry.id}`}
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs text-slate-500">
+                        {(() => {
+                          try {
+                            return format(new Date(entry.changedAt), "dd MMM yyyy HH:mm");
+                          } catch {
+                            return entry.changedAt;
+                          }
+                        })()}
+                      </span>
+                      {entry.changedBy && (
+                        <span className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-medium">
+                          {entry.changedBy}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3 font-mono text-sm">
+                      <span className="text-slate-400">{prev != null ? formatRand(prev) : "—"}</span>
+                      <ArrowRight className="h-3 w-3 text-slate-300 flex-shrink-0" />
+                      <span className="font-semibold text-slate-800">{formatRand(newVal)}</span>
+                      {delta != null && delta !== 0 && (
+                        <span
+                          className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${
+                            delta >= 0
+                              ? "bg-emerald-50 text-emerald-700"
+                              : "bg-red-50 text-red-700"
+                          }`}
+                        >
+                          {delta >= 0 ? "+" : ""}{formatRand(delta)}
+                        </span>
+                      )}
+                    </div>
+                    {computed != null && (
+                      <div className="mt-1 text-[11px] text-slate-400">
+                        Computed: {formatRand(computed)}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setHistoryWeek(null)} data-testid="button-history-close">
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
