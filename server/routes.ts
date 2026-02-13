@@ -1337,6 +1337,42 @@ export async function registerRoutes(
     }
   });
 
+  const docUploadDir = path.join(process.cwd(), 'uploads', 'financial-close');
+  if (!fs.existsSync(docUploadDir)) {
+    fs.mkdirSync(docUploadDir, { recursive: true });
+  }
+  const docUpload = multer({
+    storage: multer.diskStorage({
+      destination: (_req, _file, cb) => cb(null, docUploadDir),
+      filename: (_req, file, cb) => {
+        const ts = Date.now();
+        const sanitized = file.originalname.replace(/[^a-zA-Z0-9_.-]/g, '_');
+        cb(null, `${ts}_${sanitized}`);
+      },
+    }),
+    limits: { fileSize: 20 * 1024 * 1024 },
+  });
+
+  app.post("/api/financial-close/upload", requireAuth, requireAdmin, docUpload.single("file"), (req, res) => {
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+    const fileUrl = `/api/financial-close/files/${req.file.filename}`;
+    res.json({ url: fileUrl, filename: req.file.originalname });
+  });
+
+  app.get("/api/financial-close/files/:filename", requireAuth, (req, res) => {
+    const filename = req.params.filename as string;
+    if (filename.includes('..') || filename.includes('/')) {
+      return res.status(400).json({ error: "Invalid filename" });
+    }
+    const filePath = path.join(docUploadDir, filename);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: "File not found" });
+    }
+    res.sendFile(filePath);
+  });
+
   // Update project editable fields (Cost Proposal Signed, Funding Signed, EPC Contract Signed, Current VO Total, Comments)
   app.post("/api/projects-summary/:projectName/edit", requireAuth, requireAdmin, async (req, res) => {
     try {
