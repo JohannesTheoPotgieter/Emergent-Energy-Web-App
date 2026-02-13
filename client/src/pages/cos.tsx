@@ -52,6 +52,7 @@ interface MonthData {
   ytdVariancePct: number;
   cosProjects: ProjectBreakdown[];
   realisedProjects: ProjectBreakdown[];
+  unrealisedProjects: ProjectBreakdown[];
 }
 
 interface MonthDetailItem {
@@ -109,11 +110,11 @@ const ROW_DEFS: {
   group: "monthly" | "ytd";
   colorCoded?: boolean;
   expandable?: boolean;
-  projectsKey?: "cosProjects" | "realisedProjects";
+  projectsKey?: "cosProjects" | "realisedProjects" | "unrealisedProjects";
 }[] = [
   { key: "totalCOS", label: "COS (Finance)", dataKey: "totalCOS", editable: false, colorClass: "text-foreground font-bold", group: "monthly", expandable: true, projectsKey: "cosProjects" },
   { key: "realisedCOS", label: "Realised COS", dataKey: "realisedCOS", editable: false, colorClass: "text-green-700 font-semibold", group: "monthly", expandable: true, projectsKey: "realisedProjects" },
-  { key: "unrealisedCOS", label: "Unrealised COS", dataKey: "unrealisedCOS", editable: false, colorClass: "text-amber-600 font-semibold", group: "monthly" },
+  { key: "unrealisedCOS", label: "Unrealised COS", dataKey: "unrealisedCOS", editable: false, colorClass: "text-amber-600 font-semibold", group: "monthly", expandable: true, projectsKey: "unrealisedProjects" },
   { key: "budget", label: "Budget", dataKey: "budget", editable: true, colorClass: "text-purple-600", group: "monthly" },
   { key: "variance", label: "Variance", dataKey: "variance", editable: false, colorClass: "", group: "monthly", colorCoded: true },
   { key: "variancePct", label: "Variance %", dataKey: "variancePct", editable: false, colorClass: "", group: "monthly", colorCoded: true },
@@ -125,10 +126,10 @@ const ROW_DEFS: {
   { key: "ytdVariancePct", label: "YTD Variance %", dataKey: "ytdVariancePct", editable: false, colorClass: "", group: "ytd", colorCoded: true },
 ];
 
-function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all" }: { monthKey: string; monthLabel: string; onClose: () => void; defaultFilter?: "all" | "realised" | "unrealised" }) {
+function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all", defaultProject = "all" }: { monthKey: string; monthLabel: string; onClose: () => void; defaultFilter?: "all" | "realised" | "unrealised"; defaultProject?: string }) {
   const [search, setSearch] = useState("");
   const [stateFilter, setStateFilter] = useState<"all" | "realised" | "unrealised">(defaultFilter);
-  const [projectFilter, setProjectFilter] = useState<string>("all");
+  const [projectFilter, setProjectFilter] = useState<string>(defaultProject);
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
   const { data, isLoading } = useQuery<MonthDetail>({
@@ -403,7 +404,7 @@ export default function CosTracker() {
   const [editing, setEditing] = useState<EditingCell | null>(null);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [reconciliationMode, setReconciliationMode] = useState(false);
-  const [drawerMonth, setDrawerMonth] = useState<{ monthKey: string; monthLabel: string; defaultFilter?: "all" | "realised" | "unrealised" } | null>(null);
+  const [drawerMonth, setDrawerMonth] = useState<{ monthKey: string; monthLabel: string; defaultFilter?: "all" | "realised" | "unrealised"; defaultProject?: string } | null>(null);
 
   const { data: months = [], isLoading } = useQuery<MonthData[]>({
     queryKey: ["/api/cos-tracker"],
@@ -426,7 +427,7 @@ export default function CosTracker() {
 
   const projectNamesByRow = useMemo(() => {
     const result: Record<string, string[]> = {};
-    for (const key of ["cosProjects", "realisedProjects"] as const) {
+    for (const key of ["cosProjects", "realisedProjects", "unrealisedProjects"] as const) {
       const names = new Set<string>();
       for (const m of months) {
         for (const p of m[key] || []) {
@@ -780,16 +781,25 @@ export default function CosTracker() {
                             data-testid={`row-detail-${row.key}-${pName}`}
                           >
                             <td className="sticky left-0 z-10 bg-blue-50/30 backdrop-blur-sm pl-11 pr-4 py-1.5 text-xs text-slate-500 truncate max-w-[200px] border-r border-slate-100" title={pName}>
-                              {pName}
+                              <span className="cursor-pointer hover:text-blue-600 hover:underline decoration-dashed underline-offset-2 transition-colors">
+                                {pName}
+                              </span>
                             </td>
                             {months.map((m) => {
                               const projArr = row.projectsKey ? (m as any)[row.projectsKey] as ProjectBreakdown[] : [];
                               const proj = projArr?.find((p: ProjectBreakdown) => p.projectName === pName);
                               const val = proj?.value ?? 0;
+                              const drillFilter = row.key === 'realisedCOS' ? 'realised' as const : row.key === 'unrealisedCOS' ? 'unrealised' as const : 'all' as const;
                               return (
                                 <td
                                   key={m.monthKey}
-                                  className="px-4 py-1.5 text-right font-mono text-xs text-blue-600/70"
+                                  className={`px-4 py-1.5 text-right font-mono text-xs text-blue-600/70 ${val !== 0 ? "cursor-pointer hover:bg-blue-50/80 hover:underline decoration-blue-300 underline-offset-2 transition-colors rounded" : ""}`}
+                                  onClick={val !== 0 ? () => setDrawerMonth({
+                                    monthKey: m.monthKey,
+                                    monthLabel: m.monthLabel,
+                                    defaultFilter: drillFilter,
+                                    defaultProject: pName,
+                                  }) : undefined}
                                   data-testid={`cell-detail-${row.key}-${pName}-${m.monthKey}`}
                                 >
                                   {val !== 0 ? formatRand(val) : ""}
@@ -810,10 +820,11 @@ export default function CosTracker() {
 
       {drawerMonth && (
         <MonthDetailDrawer
-          key={`${drawerMonth.monthKey}-${drawerMonth.defaultFilter}`}
+          key={`${drawerMonth.monthKey}-${drawerMonth.defaultFilter}-${drawerMonth.defaultProject || 'all'}`}
           monthKey={drawerMonth.monthKey}
           monthLabel={drawerMonth.monthLabel}
           defaultFilter={drawerMonth.defaultFilter}
+          defaultProject={drawerMonth.defaultProject}
           onClose={() => setDrawerMonth(null)}
         />
       )}

@@ -1887,6 +1887,16 @@ export async function registerRoutes(
           ytdVariancePct,
           cosProjects: mapToArray(bucket?.projects ?? new Map()),
           realisedProjects: mapToArray(realisedBucket?.projects ?? new Map()),
+          unrealisedProjects: (() => {
+            const cosPs = bucket?.projects ?? new Map<string, number>();
+            const realPs = realisedBucket?.projects ?? new Map<string, number>();
+            const unrealMap = new Map<string, number>();
+            cosPs.forEach((v, k) => {
+              const diff = v - (realPs.get(k) || 0);
+              if (diff !== 0) unrealMap.set(k, diff);
+            });
+            return mapToArray(unrealMap);
+          })(),
         });
       }
 
