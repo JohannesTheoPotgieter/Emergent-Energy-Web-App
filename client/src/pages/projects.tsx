@@ -242,13 +242,20 @@ function FinancialCloseCell({
     try {
       const formData = new FormData();
       formData.append("file", file);
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
       const resp = await fetch("/api/financial-close/upload", {
         method: "POST",
         body: formData,
+        headers,
         credentials: "include",
       });
-      if (!resp.ok) throw new Error("Upload failed");
-      const result = await resp.json();
+      if (!resp.ok) {
+        const errData = await resp.json().catch(() => ({}));
+        throw new Error(errData.message || errData.error || "Upload failed");
+      }
+      const result: { url: string; filename: string } = await resp.json();
       const fileUrl = result.url;
       setLinkVal(fileUrl);
       setUploadedFileName(result.filename);
@@ -258,8 +265,8 @@ function FinancialCloseCell({
       payload[`${fieldPrefix}Link`] = fileUrl;
       payload[`${fieldPrefix}NaReason`] = null;
       mutation.mutate(payload);
-    } catch (err) {
-      console.error("File upload error:", err);
+    } catch (err: any) {
+      console.error("File upload error:", err?.message || err);
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
