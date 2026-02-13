@@ -38,7 +38,9 @@ export default function KeyDatesPanel({ projectName }: KeyDatesPanelProps) {
   const { data: keyDates = [], isLoading } = useQuery<ResolvedKeyDate[]>({
     queryKey: ["key-dates", projectName],
     queryFn: async () => {
-      const res = await fetch(`/api/key-dates/${encodeURIComponent(projectName)}`);
+      const res = await fetch(`/api/key-dates/${encodeURIComponent(projectName)}`, {
+        credentials: 'include',
+      });
       if (!res.ok) return [];
       return res.json();
     },
