@@ -3184,13 +3184,14 @@ export async function registerRoutes(
 
       let costedExpenditure = 0;
       let actualExpenditure = 0;
-      let liveUnpaidExpenditure = 0;
+      let allExpenditure = 0;
       try {
         const expenseRows = await storage.getProgramExpensesByProject(projectName);
         for (const row of expenseRows) {
           if ((row as any).rowType === 'item') {
             costedExpenditure += parseFloat(String((row as any).budgetTotal || 0)) || 0;
             const actualAmt = parseFloat(String((row as any).expenseActualTotal || 0)) || 0;
+            allExpenditure += actualAmt;
             const hasPaid = !!(row as any).expensePaymentDate && /^\d{4}-\d{2}-\d{2}/.test((row as any).expensePaymentDate);
             const hasInvoice = !!((row as any).expenseInvoiceNumber && (row as any).expenseInvoiceNumber.trim());
             const hasPO = !!((row as any).expensePoNumber && (row as any).expensePoNumber.trim());
@@ -3212,7 +3213,7 @@ export async function registerRoutes(
       const actualMargin = actualRevenue > 0 ? actualProfit / actualRevenue : 0;
 
       const liveRevenue = totalContract;
-      const liveExpenditure = actualExpenditure;
+      const liveExpenditure = allExpenditure;
       const liveProfit = liveRevenue - liveExpenditure;
       const liveMargin = liveRevenue > 0 ? liveProfit / liveRevenue : 0;
 
