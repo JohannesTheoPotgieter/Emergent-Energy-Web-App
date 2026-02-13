@@ -15,6 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 
 interface RevenueTrackingTabProps {
   projectName: string;
+  highlightId?: number | null;
 }
 
 interface RevenueOverride {
@@ -79,7 +80,7 @@ interface RevenueTabData {
   };
 }
 
-export function RevenueTrackingTab({ projectName }: RevenueTrackingTabProps) {
+export function RevenueTrackingTab({ projectName, highlightId }: RevenueTrackingTabProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [editingRow, setEditingRow] = useState<number | null>(null);
@@ -92,6 +93,7 @@ export function RevenueTrackingTab({ projectName }: RevenueTrackingTabProps) {
   const [taskSearchTerm, setTaskSearchTerm] = useState("");
   const [dateOverrideRow, setDateOverrideRow] = useState<number | null>(null);
   const [dateOverrideValues, setDateOverrideValues] = useState({ date: "", reason: "" });
+  const [highlightedRowId, setHighlightedRowId] = useState<number | null>(highlightId ?? null);
   const [expandedSections, setExpandedSections] = useState({
     highlevel: true,
     contract: true,
@@ -329,6 +331,19 @@ export function RevenueTrackingTab({ projectName }: RevenueTrackingTabProps) {
   }
 
   const { milestones, summary, highlevel } = data;
+
+  useEffect(() => {
+    if (!highlightId) return;
+    setHighlightedRowId(highlightId);
+    const timer = setTimeout(() => {
+      const el = document.querySelector(`[data-revenue-row-id="${highlightId}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }, 300);
+    const clearTimer = setTimeout(() => setHighlightedRowId(null), 5000);
+    return () => { clearTimeout(timer); clearTimeout(clearTimer); };
+  }, [highlightId]);
 
   const StatusBadge = ({ status, flags }: { status: string; flags: string[] }) => {
     if (status === "inBank") return (
@@ -574,7 +589,8 @@ export function RevenueTrackingTab({ projectName }: RevenueTrackingTabProps) {
                       return (
                         <TableRow
                           key={m.id || m.rowNumber}
-                          className={`${isEditing ? "bg-blue-50/50" : ""} ${m.status === "overdue" ? "bg-red-50/30" : ""}`}
+                          data-revenue-row-id={m.id}
+                          className={`transition-all duration-500 ${highlightedRowId === m.id ? "bg-amber-100 ring-2 ring-amber-400 ring-inset" : isEditing ? "bg-blue-50/50" : m.status === "overdue" ? "bg-red-50/30" : ""}`}
                           data-testid={`row-milestone-${m.rowNumber}`}
                         >
                           <TableCell className="font-mono text-xs">{m.milestoneNo}</TableCell>

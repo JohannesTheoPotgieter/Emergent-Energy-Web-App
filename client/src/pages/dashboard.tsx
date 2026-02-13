@@ -32,6 +32,7 @@ function formatPct(val: number | null): string {
 
 interface HighPriority {
   overdueExpenses: Array<{
+    id: number;
     projectName: string;
     lineItem: string | null;
     invoiceNumber: string | null;
@@ -42,6 +43,7 @@ interface HighPriority {
     hasInvoice?: boolean;
   }>;
   revenueOutstanding: Array<{
+    id: number;
     projectName: string;
     milestoneName: string | null;
     invoiceNumber: string | null;
@@ -676,7 +678,7 @@ export default function Dashboard() {
                 expanded={!!expanded.overdue}
                 onToggle={() => toggle("overdue")}
                 renderItem={(item, i) => (
-                  <Link key={i} href={`/project/${encodeURIComponent(item.projectName)}`}>
+                  <Link key={i} href={`/project/${encodeURIComponent(item.projectName)}?tab=expenditure&highlightId=${item.id}&highlightType=expense`}>
                     <div className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-red-50/60 dark:hover:bg-red-900/10 cursor-pointer group transition-colors" data-testid={`item-overdue-${i}`}>
                       <SeverityBadge severity={item.severity} />
                       <span className="text-sm truncate flex-1 text-gray-700 dark:text-gray-300 group-hover:text-red-700 dark:group-hover:text-red-400 transition-colors font-medium">
@@ -703,7 +705,7 @@ export default function Dashboard() {
                 expanded={!!expanded.revenue}
                 onToggle={() => toggle("revenue")}
                 renderItem={(item, i) => (
-                  <Link key={i} href={`/project/${encodeURIComponent(item.projectName)}`}>
+                  <Link key={i} href={`/project/${encodeURIComponent(item.projectName)}?tab=revenue-tracking&highlightId=${item.id}&highlightType=revenue`}>
                     <div className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-amber-50/60 dark:hover:bg-amber-900/10 cursor-pointer group transition-colors" data-testid={`item-revenue-${i}`}>
                       <SeverityBadge severity={item.severity} />
                       <span className="text-sm truncate flex-1 text-gray-700 dark:text-gray-300 group-hover:text-amber-700 dark:group-hover:text-amber-400 transition-colors font-medium">
