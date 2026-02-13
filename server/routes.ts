@@ -7520,71 +7520,71 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/key-dates/:projectName", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  app.get("/api/key-dates/:projectName", requireAuth, async (req: Request, res: Response) => {
     try {
       const projectName = decodeURIComponent(req.params.projectName);
       const trackerName = projectName.endsWith("_Tracker") ? projectName : projectName + "_Tracker";
 
-      const [mappings, operationalTasks, planTasksDirect, planTasksTracker] = await Promise.all([
-        storage.getKeyDateMappings(projectName),
-        storage.getOperationalTasksByProject(projectName),
+      const [planTasksDirect, planTasksTracker] = await Promise.all([
         storage.getProjectPlansByProject(projectName),
         projectName !== trackerName ? storage.getProjectPlansByProject(trackerName) : Promise.resolve([]),
       ]);
 
       const planTasks = planTasksDirect.length > 0 ? planTasksDirect : planTasksTracker;
-      const baselineTasks = planTasks.map((pt: any) => ({
-        id: -pt.id,
-        taskNumber: pt.taskNo || String(pt.rowNumber || ""),
-        title: pt.highLevelProgramme || `Task ${pt.taskNo || pt.rowNumber}`,
-        startDate: pt.actualStart || null,
-        dueDate: pt.actualEnd || null,
-        actualStartDate: null,
-        actualEndDate: null,
-      }));
-      const tasks: any[] = [...baselineTasks, ...operationalTasks];
 
-      const results = mappings.map(m => {
+      const autoMappings = [
+        { keyDateName: "PD Handover", patterns: ['bd handover', 'project charter handover'], dateField: 'actualEnd' as const, sortOrder: 1 },
+        { keyDateName: "Construction Start", patterns: ['site establishment'], dateField: 'actualStart' as const, sortOrder: 2 },
+        { keyDateName: "Commissioning", patterns: ['commissioning'], dateField: 'actualEnd' as const, sortOrder: 3 },
+        { keyDateName: "Practical Completion", patterns: ['practical completion'], dateField: 'actualEnd' as const, sortOrder: 4 },
+        { keyDateName: "O&M Handover", patterns: ['handover to matriarch'], dateField: 'actualEnd' as const, sortOrder: 5 },
+        { keyDateName: "Client Handover", patterns: ['handover to client'], dateField: 'actualEnd' as const, sortOrder: 6 },
+      ];
+
+      const results = autoMappings.map(mapping => {
         let matchedTask: any = null;
-        if (m.sourceTaskId) {
-          matchedTask = tasks.find((t: any) => t.id === m.sourceTaskId);
-        } else if (m.sourceTaskCode) {
-          matchedTask = tasks.find((t: any) => t.taskNumber === m.sourceTaskCode);
-        } else if (m.sourceTaskNameMatch) {
-          const pattern = m.sourceTaskNameMatch.toLowerCase();
-          matchedTask = tasks.find((t: any) => t.title?.toLowerCase().includes(pattern));
-        }
-
-        let plannedDate: string | null = null;
-        let actualDate: string | null = null;
         let effectiveDate: string | null = null;
 
-        if (matchedTask) {
-          plannedDate = m.dateField === 'startDate' ? matchedTask.startDate : matchedTask.dueDate;
-          actualDate = m.dateField === 'startDate' ? matchedTask.actualStartDate : matchedTask.actualEndDate;
-          if (m.precedenceRule === 'actual_over_planned') {
-            effectiveDate = actualDate || plannedDate;
-          } else {
-            effectiveDate = plannedDate;
+        for (const task of planTasks) {
+          const desc = (task.highLevelProgramme || '').toLowerCase();
+          const matches = mapping.patterns.some(p => desc.includes(p));
+          if (matches) {
+            const dateVal = mapping.dateField === 'actualStart' ? task.actualStart : task.actualEnd;
+            if (dateVal && /^\d{4}-\d{2}-\d{2}/.test(dateVal)) {
+              const dateStr = dateVal.substring(0, 10);
+              if (mapping.dateField === 'actualStart') {
+                if (!effectiveDate || dateStr < effectiveDate) {
+                  effectiveDate = dateStr;
+                  matchedTask = task;
+                }
+              } else {
+                if (!effectiveDate || dateStr > effectiveDate) {
+                  effectiveDate = dateStr;
+                  matchedTask = task;
+                }
+              }
+            }
           }
         }
 
+        const plannedStart = matchedTask?.baselineStart?.substring(0, 10) || null;
+        const plannedEnd = matchedTask?.baselineEnd?.substring(0, 10) || null;
+        const plannedDate = mapping.dateField === 'actualStart' ? plannedStart : plannedEnd;
+
         return {
-          id: m.id,
-          keyDateName: m.keyDateName,
-          sourceTaskId: m.sourceTaskId,
-          sourceTaskCode: m.sourceTaskCode,
-          sourceTaskNameMatch: m.sourceTaskNameMatch,
-          dateField: m.dateField,
-          precedenceRule: m.precedenceRule,
-          sortOrder: m.sortOrder,
+          id: mapping.sortOrder,
+          keyDateName: mapping.keyDateName,
+          sourceTaskNameMatch: mapping.patterns.join(' / '),
+          dateField: mapping.dateField === 'actualStart' ? 'startDate' : 'dueDate',
+          sortOrder: mapping.sortOrder,
           matchedTaskId: matchedTask?.id || null,
-          matchedTaskTitle: matchedTask?.title || null,
-          matchedTaskNumber: matchedTask?.taskNumber || null,
+          matchedTaskTitle: matchedTask?.highLevelProgramme || null,
+          matchedTaskNumber: matchedTask?.taskNo || null,
           plannedDate,
-          actualDate,
+          actualDate: effectiveDate,
           effectiveDate,
           mappingValid: !!matchedTask,
+          source: 'auto',
         };
       });
 
