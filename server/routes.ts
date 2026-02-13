@@ -1345,7 +1345,7 @@ export async function registerRoutes(
 
   // ==================== CASHFLOW 2026 API ====================
 
-  app.get("/api/cashflow-2026", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/cashflow-2026", requireAuth, async (req, res) => {
     try {
       const projectFilter = req.query.project ? String(req.query.project) : null;
 
@@ -1449,7 +1449,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/cashflow-2026/detail", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/cashflow-2026/detail", requireAuth, async (req, res) => {
     try {
       const weekStart = String(req.query.week || "");
       if (!weekStart || !/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) {
@@ -1566,7 +1566,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/cashflow-2026/balance-history", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/cashflow-2026/balance-history", requireAuth, async (req, res) => {
     try {
       const weekStart = req.query.week ? String(req.query.week) : null;
       if (weekStart) {
@@ -1622,7 +1622,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/cashflow-2026/opex-budget", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/cashflow-2026/opex-budget", requireAuth, async (req, res) => {
     try {
       const entries = await storage.getAllOpexBudgetMonthly();
       res.json(entries);
@@ -1771,7 +1771,7 @@ export async function registerRoutes(
 
   // ==================== COS TRACKER API ====================
 
-  app.get("/api/cos-tracker", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/cos-tracker", requireAuth, async (req, res) => {
     try {
       const [allProgramExpenses, manualEntries, rawInflows, allTaskLinks, allOpTasks, allPlans] = await Promise.all([
         storage.getAllProgramExpenses(),
@@ -1932,7 +1932,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/cos-tracker/month-detail", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
     try {
       const { monthKey, project, state: stateFilter } = req.query as { monthKey?: string; project?: string; state?: string };
       if (!monthKey) return res.status(400).json({ error: "monthKey required" });

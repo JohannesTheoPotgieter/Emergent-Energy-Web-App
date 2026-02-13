@@ -116,14 +116,14 @@ const ROW_DEFS: {
   projectsKey?: "cosProjects" | "realisedProjects" | "unrealisedProjects";
 }[] = [
   { key: "totalCOS", label: "COS (Finance)", dataKey: "totalCOS", editable: false, colorClass: "text-foreground font-bold", group: "monthly", expandable: true, projectsKey: "cosProjects" },
-  { key: "realisedCOS", label: "Realised COS", dataKey: "realisedCOS", editable: false, colorClass: "text-green-700 font-semibold", group: "monthly", expandable: true, projectsKey: "realisedProjects" },
-  { key: "unrealisedCOS", label: "Unrealised COS", dataKey: "unrealisedCOS", editable: false, colorClass: "text-amber-600 font-semibold", group: "monthly", expandable: true, projectsKey: "unrealisedProjects" },
+  { key: "realisedCOS", label: "Realised COS", dataKey: "realisedCOS", editable: false, colorClass: "text-slate-900 font-bold", group: "monthly", expandable: true, projectsKey: "realisedProjects" },
+  { key: "unrealisedCOS", label: "Unrealised COS", dataKey: "unrealisedCOS", editable: false, colorClass: "text-red-600 font-semibold", group: "monthly", expandable: true, projectsKey: "unrealisedProjects" },
   { key: "budget", label: "Budget", dataKey: "budget", editable: true, colorClass: "text-purple-600", group: "monthly" },
   { key: "variance", label: "Variance", dataKey: "variance", editable: false, colorClass: "", group: "monthly", colorCoded: true },
   { key: "variancePct", label: "Variance %", dataKey: "variancePct", editable: false, colorClass: "", group: "monthly", colorCoded: true },
   { key: "ytdCOS", label: "YTD COS", dataKey: "ytdCOS", editable: false, colorClass: "text-foreground font-bold", group: "ytd" },
-  { key: "ytdRealised", label: "YTD Realised", dataKey: "ytdRealised", editable: false, colorClass: "text-green-700", group: "ytd" },
-  { key: "ytdUnrealised", label: "YTD Unrealised", dataKey: "ytdUnrealised", editable: false, colorClass: "text-amber-600", group: "ytd" },
+  { key: "ytdRealised", label: "YTD Realised", dataKey: "ytdRealised", editable: false, colorClass: "text-slate-900 font-bold", group: "ytd" },
+  { key: "ytdUnrealised", label: "YTD Unrealised", dataKey: "ytdUnrealised", editable: false, colorClass: "text-red-600", group: "ytd" },
   { key: "ytdBudget", label: "YTD Budget", dataKey: "ytdBudget", editable: false, colorClass: "text-purple-600", group: "ytd" },
   { key: "ytdVariance", label: "YTD Variance", dataKey: "ytdVariance", editable: false, colorClass: "", group: "ytd", colorCoded: true },
   { key: "ytdVariancePct", label: "YTD Variance %", dataKey: "ytdVariancePct", editable: false, colorClass: "", group: "ytd", colorCoded: true },
@@ -172,10 +172,10 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
 
   const stateBadgeColor = (state: string) => {
     switch (state) {
-      case 'Paid': return 'bg-blue-100 text-blue-700 ring-1 ring-blue-200';
-      case 'Invoiced': return 'bg-green-100 text-green-700 ring-1 ring-green-200';
-      case 'Committed': return 'bg-amber-100 text-amber-700 ring-1 ring-amber-200';
-      default: return 'bg-gray-100 text-gray-600 ring-1 ring-gray-200';
+      case 'Paid': return 'bg-slate-200 text-slate-900 ring-1 ring-slate-400 font-bold';
+      case 'Invoiced': return 'bg-slate-100 text-slate-800 ring-1 ring-slate-300';
+      case 'Committed': return 'bg-red-50 text-red-600 ring-1 ring-red-200';
+      default: return 'bg-red-100 text-red-700 ring-1 ring-red-200';
     }
   };
 
@@ -197,25 +197,25 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
 
         <div className="px-6 py-4 border-b bg-gradient-to-b from-slate-50/50 to-transparent">
           <div className="grid grid-cols-3 gap-3">
-            <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-green-50 to-green-100/50 border border-green-200/60 px-4 py-3">
+            <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-slate-50 to-slate-100/50 border border-slate-300/60 px-4 py-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-medium text-green-600 uppercase tracking-wider">Realised</p>
-                  <p className="font-mono font-bold text-green-800 text-lg mt-0.5" data-testid="text-realised-total">{formatRand(data?.realisedTotal ?? 0)}</p>
+                  <p className="text-xs font-medium text-slate-600 uppercase tracking-wider">Realised (Paid)</p>
+                  <p className="font-mono font-black text-slate-900 text-lg mt-0.5" data-testid="text-realised-total">{formatRand(data?.realisedTotal ?? 0)}</p>
                 </div>
-                <Badge variant="secondary" className="bg-green-200/60 text-green-700 text-xs font-semibold">{data?.realisedCount ?? 0}</Badge>
+                <Badge variant="secondary" className="bg-slate-200/60 text-slate-700 text-xs font-semibold">{data?.realisedCount ?? 0}</Badge>
               </div>
-              <div className="absolute -right-3 -bottom-3 w-16 h-16 rounded-full bg-green-200/20" />
+              <div className="absolute -right-3 -bottom-3 w-16 h-16 rounded-full bg-slate-200/20" />
             </div>
-            <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-amber-50 to-amber-100/50 border border-amber-200/60 px-4 py-3">
+            <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-red-50 to-red-100/50 border border-red-200/60 px-4 py-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-medium text-amber-600 uppercase tracking-wider">Unrealised</p>
-                  <p className="font-mono font-bold text-amber-800 text-lg mt-0.5" data-testid="text-unrealised-total">{formatRand(data?.unrealisedTotal ?? 0)}</p>
+                  <p className="text-xs font-medium text-red-600 uppercase tracking-wider">Unrealised (Not Paid)</p>
+                  <p className="font-mono font-bold text-red-700 text-lg mt-0.5" data-testid="text-unrealised-total">{formatRand(data?.unrealisedTotal ?? 0)}</p>
                 </div>
-                <Badge variant="secondary" className="bg-amber-200/60 text-amber-700 text-xs font-semibold">{data?.unrealisedCount ?? 0}</Badge>
+                <Badge variant="secondary" className="bg-red-200/60 text-red-600 text-xs font-semibold">{data?.unrealisedCount ?? 0}</Badge>
               </div>
-              <div className="absolute -right-3 -bottom-3 w-16 h-16 rounded-full bg-amber-200/20" />
+              <div className="absolute -right-3 -bottom-3 w-16 h-16 rounded-full bg-red-200/20" />
             </div>
             <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-slate-50 to-slate-100/50 border border-slate-200/60 px-4 py-3">
               <div className="flex items-center justify-between">
@@ -270,12 +270,12 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
           </span>
           <div className="flex items-center gap-5">
             <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-green-500" />
-              <span className="text-green-700 font-mono text-xs font-medium">{formatRand(filteredRealised)}</span>
+              <span className="w-2 h-2 rounded-full bg-slate-800" />
+              <span className="text-slate-900 font-mono text-xs font-bold">{formatRand(filteredRealised)}</span>
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-amber-500" />
-              <span className="text-amber-700 font-mono text-xs font-medium">{formatRand(filteredUnrealised)}</span>
+              <span className="w-2 h-2 rounded-full bg-red-500" />
+              <span className="text-red-600 font-mono text-xs font-medium">{formatRand(filteredUnrealised)}</span>
             </span>
             <span className="font-mono font-bold text-slate-800">{formatRand(filteredTotal)}</span>
           </div>
@@ -326,16 +326,16 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
                       </td>
                       <td className="px-3 py-2.5 text-center">
                         {item.isRealised ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-700 ring-1 ring-green-200 text-[10px] font-semibold" title={`Realised in ${item.realisedMonth}`}>
-                            {item.realisedMonth || 'Yes'}
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-900 ring-1 ring-slate-300 text-[10px] font-bold" title={`Realised in ${item.realisedMonth}`}>
+                            {item.invoiceNumber ? `INV: ${item.invoiceNumber.substring(0, 12)}` : (item.realisedMonth || 'Yes')}
                           </span>
                         ) : (
-                          <span className="inline-flex px-2 py-0.5 rounded-full bg-amber-100 text-amber-600 ring-1 ring-amber-200 text-[10px] font-semibold">
-                            No
+                          <span className="inline-flex px-2 py-0.5 rounded-full bg-red-50 text-red-600 ring-1 ring-red-200 text-[10px] font-semibold">
+                            Not Paid
                           </span>
                         )}
                       </td>
-                      <td className="px-3 py-2.5 text-right font-mono font-semibold text-slate-800">{formatRand(item.amount)}</td>
+                      <td className={`px-3 py-2.5 text-right font-mono font-semibold ${item.isRealised ? 'text-slate-900' : 'text-red-600'}`}>{formatRand(item.amount)}</td>
                     </tr>
                     {expandedId === item.id && (
                       <tr className="bg-gradient-to-r from-blue-50/40 to-slate-50/40">
@@ -541,8 +541,8 @@ export default function CosTracker() {
 
   const kpiCards = [
     { id: "ytd-total-cos", label: "YTD COS (Finance)", value: formatRand(lastMonth?.ytdCOS ?? 0), icon: DollarSign, iconBg: "bg-slate-100", iconColor: "text-slate-600", valueColor: "text-slate-900", borderColor: "" },
-    { id: "ytd-realised", label: "YTD Realised", value: formatRand(lastMonth?.ytdRealised ?? 0), icon: TrendingDown, iconBg: "bg-green-100", iconColor: "text-green-600", valueColor: "text-green-700", borderColor: "border-green-200" },
-    { id: "ytd-unrealised", label: "YTD Unrealised", value: formatRand(lastMonth?.ytdUnrealised ?? 0), icon: Activity, iconBg: "bg-amber-100", iconColor: "text-amber-600", valueColor: "text-amber-600", borderColor: "border-amber-200" },
+    { id: "ytd-realised", label: "YTD Realised (Paid)", value: formatRand(lastMonth?.ytdRealised ?? 0), icon: TrendingDown, iconBg: "bg-slate-100", iconColor: "text-slate-800", valueColor: "text-slate-900 font-black", borderColor: "border-slate-300" },
+    { id: "ytd-unrealised", label: "YTD Unrealised (Not Paid)", value: formatRand(lastMonth?.ytdUnrealised ?? 0), icon: Activity, iconBg: "bg-red-100", iconColor: "text-red-600", valueColor: "text-red-600", borderColor: "border-red-200" },
     { id: "ytd-budget", label: "YTD Budget", value: formatRand(lastMonth?.ytdBudget ?? 0), icon: Target, iconBg: "bg-purple-100", iconColor: "text-purple-600", valueColor: "text-purple-700", borderColor: "" },
     {
       id: "ytd-variance", label: "YTD Variance", value: formatRand(lastMonth?.ytdVariance ?? 0),
@@ -594,7 +594,7 @@ export default function CosTracker() {
             <div>
               <p className="font-semibold text-amber-900 text-sm">COS Realisation Tracker</p>
               <p className="text-sm text-amber-700/90 mt-0.5 leading-relaxed">
-                COS is "Realised" when the matching expenditure line has an Invoice Number AND the Invoice Raised Date has black font colour. Data sourced from Finance - COS sheets and Expenditure Breakdown.
+                COS is "Realised" when the matching expenditure line has an Invoice Number AND the Invoice Raised Date has <strong className="text-slate-900">black font colour</strong> (paid). <strong className="text-red-600">Red font</strong> = not paid. Data sourced from Finance - COS sheets and Expenditure Breakdown.
               </p>
             </div>
           </CardContent>
@@ -618,13 +618,13 @@ export default function CosTracker() {
                   <p className="text-xs text-slate-500 font-medium">Total COS (Finance)</p>
                   <p className="font-mono font-bold text-lg text-slate-800 mt-0.5">{formatRand(reconciliation.totalCOS)}</p>
                 </div>
-                <div className="bg-white/60 rounded-lg p-3 border border-green-100">
-                  <p className="text-xs text-slate-500 font-medium">Realised</p>
-                  <p className="font-mono font-bold text-lg text-green-700 mt-0.5">{formatRand(reconciliation.totalRealised)}</p>
+                <div className="bg-white/60 rounded-lg p-3 border border-slate-200">
+                  <p className="text-xs text-slate-500 font-medium">Realised (Paid)</p>
+                  <p className="font-mono font-black text-lg text-slate-900 mt-0.5">{formatRand(reconciliation.totalRealised)}</p>
                 </div>
-                <div className="bg-white/60 rounded-lg p-3 border border-amber-100">
-                  <p className="text-xs text-slate-500 font-medium">Unrealised</p>
-                  <p className="font-mono font-bold text-lg text-amber-600 mt-0.5">{formatRand(reconciliation.totalUnrealised)}</p>
+                <div className="bg-white/60 rounded-lg p-3 border border-red-100">
+                  <p className="text-xs text-slate-500 font-medium">Unrealised (Not Paid)</p>
+                  <p className="font-mono font-bold text-lg text-red-600 mt-0.5">{formatRand(reconciliation.totalUnrealised)}</p>
                 </div>
                 <div className="bg-white/60 rounded-lg p-3 border border-purple-100">
                   <p className="text-xs text-slate-500 font-medium">Total Budget</p>
@@ -680,8 +680,8 @@ export default function CosTracker() {
                     contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', fontSize: '12px' }}
                   />
                   <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '12px' }} />
-                  <Bar dataKey="Realised" stackId="cos" fill="#22c55e" radius={[0, 0, 0, 0]} />
-                  <Bar dataKey="Unrealised" stackId="cos" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Realised" stackId="cos" fill="#1e293b" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="Unrealised" stackId="cos" fill="#dc2626" radius={[4, 4, 0, 0]} />
                   <Bar dataKey="Budget" fill="#a855f7" opacity={0.3} radius={[4, 4, 0, 0]} />
                   <Line
                     type="monotone"
