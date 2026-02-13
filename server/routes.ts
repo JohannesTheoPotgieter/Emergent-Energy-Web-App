@@ -1148,6 +1148,100 @@ export async function registerRoutes(
 
   // ==================== PROJECTS SUMMARY API ====================
 
+  // Timezone-safe date string formatting (avoids toISOString UTC shift issues)
+  function formatDateKey(y: number, m: number, d: number): string {
+    return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  }
+
+  // Parse YYYY-MM-DD into { year, month, day } without timezone
+  function parseDateParts(dateStr: string): { year: number; month: number; day: number } {
+    const s = dateStr.substring(0, 10);
+    return { year: parseInt(s.substring(0, 4)), month: parseInt(s.substring(5, 7)), day: parseInt(s.substring(8, 10)) };
+  }
+
+  // South African public holidays (fixed + observed; Easter-based dates computed per year)
+  function getSAPublicHolidays(year: number): Set<string> {
+    const holidays = new Set<string>();
+    const add = (m: number, d: number) => {
+      holidays.add(formatDateKey(year, m, d));
+      const dt = new Date(Date.UTC(year, m - 1, d));
+      if (dt.getUTCDay() === 0) {
+        const next = new Date(dt);
+        next.setUTCDate(next.getUTCDate() + 1);
+        holidays.add(formatDateKey(next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate()));
+      }
+    };
+    add(1, 1);   // New Year's Day
+    add(3, 21);  // Human Rights Day
+    add(4, 27);  // Freedom Day
+    add(5, 1);   // Workers' Day
+    add(6, 16);  // Youth Day
+    add(8, 9);   // National Women's Day
+    add(9, 24);  // Heritage Day
+    add(12, 16); // Day of Reconciliation
+    add(12, 25); // Christmas Day
+    add(12, 26); // Day of Goodwill
+
+    // Easter-based holidays (Good Friday & Family Day) - computed per year
+    const easter = computeEaster(year);
+    const goodFriday = new Date(Date.UTC(easter.year, easter.month - 1, easter.day));
+    goodFriday.setUTCDate(goodFriday.getUTCDate() - 2);
+    holidays.add(formatDateKey(goodFriday.getUTCFullYear(), goodFriday.getUTCMonth() + 1, goodFriday.getUTCDate()));
+    const familyDay = new Date(Date.UTC(easter.year, easter.month - 1, easter.day));
+    familyDay.setUTCDate(familyDay.getUTCDate() + 1);
+    holidays.add(formatDateKey(familyDay.getUTCFullYear(), familyDay.getUTCMonth() + 1, familyDay.getUTCDate()));
+
+    return holidays;
+  }
+
+  function computeEaster(year: number): { year: number; month: number; day: number } {
+    const a = year % 19;
+    const b = Math.floor(year / 100);
+    const c = year % 100;
+    const d = Math.floor(b / 4);
+    const e = b % 4;
+    const f = Math.floor((b + 8) / 25);
+    const g = Math.floor((b - f + 1) / 3);
+    const h = (19 * a + b - d - g + 15) % 30;
+    const i = Math.floor(c / 4);
+    const k = c % 4;
+    const l = (32 + 2 * e + 2 * i - h - k) % 7;
+    const m = Math.floor((a + 11 * h + 22 * l) / 451);
+    const month = Math.floor((h + l - 7 * m + 114) / 31);
+    const day = ((h + l - 7 * m + 114) % 31) + 1;
+    return { year, month, day };
+  }
+
+  const holidayCacheByYear = new Map<number, Set<string>>();
+  function isHoliday(dateStr: string): boolean {
+    const year = parseInt(dateStr.substring(0, 4));
+    if (!holidayCacheByYear.has(year)) {
+      holidayCacheByYear.set(year, getSAPublicHolidays(year));
+    }
+    return holidayCacheByYear.get(year)!.has(dateStr);
+  }
+
+  // Count SA working days between start and end (inclusive of both endpoints, matching Excel NETWORKDAYS)
+  function saWorkingDays(startDateStr: string | null, endDateStr: string | null): number | null {
+    if (!startDateStr || !endDateStr || !/^\d{4}-\d{2}-\d{2}/.test(startDateStr) || !/^\d{4}-\d{2}-\d{2}/.test(endDateStr)) return null;
+    const s = parseDateParts(startDateStr);
+    const e = parseDateParts(endDateStr);
+    const start = new Date(Date.UTC(s.year, s.month - 1, s.day));
+    const end = new Date(Date.UTC(e.year, e.month - 1, e.day));
+    if (end < start) return 0;
+    let count = 0;
+    const cursor = new Date(start);
+    while (cursor <= end) {
+      const dow = cursor.getUTCDay();
+      const ds = formatDateKey(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, cursor.getUTCDate());
+      if (dow !== 0 && dow !== 6 && !isHoliday(ds)) {
+        count++;
+      }
+      cursor.setUTCDate(cursor.getUTCDate() + 1);
+    }
+    return count;
+  }
+
   // Helper: find max ActualEndDate from plan tasks matching a description pattern
   function findMaxEndDate(plans: any[], patterns: string[]): string | null {
     let maxDate: string | null = null;
@@ -1162,7 +1256,21 @@ export async function registerRoutes(
     return maxDate;
   }
 
-  // Helper: compute DAYS diff between two date strings
+  // Helper: find min ActualStart from plan tasks matching a description pattern
+  function findMinStartDate(plans: any[], patterns: string[]): string | null {
+    let minDate: string | null = null;
+    for (const task of plans) {
+      const desc = (task.highLevelProgramme || '').toLowerCase();
+      const matches = patterns.some(p => desc.includes(p.toLowerCase()));
+      if (matches && task.actualStart && /^\d{4}-\d{2}-\d{2}/.test(task.actualStart)) {
+        const dateStr = task.actualStart.substring(0, 10);
+        if (!minDate || dateStr < minDate) minDate = dateStr;
+      }
+    }
+    return minDate;
+  }
+
+  // Helper: compute calendar DAYS diff between two date strings (kept for non-workday uses)
   function daysDiff(a: string | null, b: string | null): number | null {
     if (!a || !b || !/^\d{4}-\d{2}-\d{2}/.test(a) || !/^\d{4}-\d{2}-\d{2}/.test(b)) return null;
     const da = new Date(a.substring(0, 10));
@@ -1222,19 +1330,34 @@ export async function registerRoutes(
         const editable = editableMap.get(projectName);
 
         // Compute milestone dates from plan tasks (Excel spec: max ActualEndDate matching descriptions)
-        const pdHandoverDate = findMaxEndDate(projectPlans, ['bd handover', 'project charter handover']) || info?.pdHandoverDate || null;
-        const constructionStartDate = findMaxEndDate(projectPlans, ['site establishment']) || info?.constructionStartDate || null;
-        const commissioningDate = findMaxEndDate(projectPlans, ['commissioning']) || info?.commissioningDate || null;
-        const omHandoverDate = findMaxEndDate(projectPlans, ['handover to matriarch']) || info?.omHandoverDate || null;
-        const clientHandoverDate = findMaxEndDate(projectPlans, ['handover to client']) || info?.clientHandoverDate || null;
+        const pdFromPlan = findMaxEndDate(projectPlans, ['bd handover', 'project charter handover']);
+        const csFromPlan = findMinStartDate(projectPlans, ['site establishment']);
+        const commFromPlan = findMaxEndDate(projectPlans, ['commissioning']);
+        const omFromPlan = findMaxEndDate(projectPlans, ['handover to matriarch']);
+        const chFromPlan = findMaxEndDate(projectPlans, ['handover to client']);
 
-        // Duration = DAYS(Client Handover, Construction Start)
-        const duration = daysDiff(clientHandoverDate, constructionStartDate);
+        const pdHandoverDate = pdFromPlan || info?.pdHandoverDate || null;
+        const constructionStartDate = csFromPlan || info?.constructionStartDate || null;
+        const commissioningDate = commFromPlan || info?.commissioningDate || null;
+        const omHandoverDate = omFromPlan || info?.omHandoverDate || null;
+        const clientHandoverDate = chFromPlan || info?.clientHandoverDate || null;
 
-        // kW/Week = Size / DAYS(Commissioning, Construction Start) * 7
+        const dateSources = {
+          pd_handover: pdFromPlan ? 'plan' : (info?.pdHandoverDate ? 'info' : 'none'),
+          construction_start: csFromPlan ? 'plan' : (info?.constructionStartDate ? 'info' : 'none'),
+          commissioning: commFromPlan ? 'plan' : (info?.commissioningDate ? 'info' : 'none'),
+          om_handover: omFromPlan ? 'plan' : (info?.omHandoverDate ? 'info' : 'none'),
+          client_handover: chFromPlan ? 'plan' : (info?.clientHandoverDate ? 'info' : 'none'),
+        };
+
+        // Duration = SA working days between Construction Start and Client Handover
+        const duration = saWorkingDays(constructionStartDate, clientHandoverDate);
+
+        // kW/Week = Size / working weeks (SA working days from Construction Start to Commissioning / 5)
         const sizeKwp = info?.sizeKwp ? parseFloat(info.sizeKwp) : null;
-        const commDays = daysDiff(commissioningDate, constructionStartDate);
-        const kwPerWeek = (sizeKwp && commDays && commDays > 0) ? (sizeKwp / commDays) * 7 : null;
+        const commWorkDays = saWorkingDays(constructionStartDate, commissioningDate);
+        const workingWeeks = commWorkDays ? commWorkDays / 5 : null;
+        const kwPerWeek = (sizeKwp && workingWeeks && workingWeeks > 0) ? sizeKwp / workingWeeks : null;
 
         // Actual Revenue = SUM(MilstoneAmount) from ProgramInflows
         let actualRevenue = 0;
@@ -1317,6 +1440,7 @@ export async function registerRoutes(
           commissioning_date: commissioningDate,
           om_handover_date: omHandoverDate,
           client_handover_date: clientHandoverDate,
+          date_sources: dateSources,
           project_pct_complete: projectPctComplete,
           expected_pct_complete: expectedPctComplete,
           delta_vs_expected: deltaVsExpected,
@@ -2252,7 +2376,7 @@ export async function registerRoutes(
         const projectInflows = inflowsByProject.get(projectName) || [];
         const projectExpenses = expensesByProject.get(projectName) || [];
 
-        const constructionStartDate = findMaxEndDate(projectPlans, ['site establishment']) || info?.constructionStartDate || null;
+        const constructionStartDate = findMinStartDate(projectPlans, ['site establishment']) || info?.constructionStartDate || null;
         const commissioningDate = findMaxEndDate(projectPlans, ['commissioning']) || info?.commissioningDate || null;
         const omHandoverDate = findMaxEndDate(projectPlans, ['handover to matriarch']) || info?.omHandoverDate || null;
         const clientHandoverDate = findMaxEndDate(projectPlans, ['handover to client']) || info?.clientHandoverDate || null;
