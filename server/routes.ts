@@ -3412,6 +3412,243 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== EXPENSE TASK LINKS API ====================
+
+  app.get("/api/expense-task-links/:projectName", requireAuth, async (req, res) => {
+    try {
+      const links = await storage.getExpenseTaskLinks(req.params.projectName);
+      res.json(links);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch expense task links" });
+    }
+  });
+
+  app.post("/api/expense-task-links/:projectName", requireAuth, async (req, res) => {
+    try {
+      const { expenseId, taskId } = req.body;
+      if (!expenseId || taskId === undefined) {
+        return res.status(400).json({ error: "expenseId and taskId are required" });
+      }
+      const link = await storage.upsertExpenseTaskLink(req.params.projectName, expenseId, taskId, (req.user as any)?.id);
+      res.json(link);
+    } catch (error) {
+      console.error("Link expense task error:", error);
+      res.status(500).json({ error: "Failed to link task" });
+    }
+  });
+
+  app.delete("/api/expense-task-links/:projectName/:expenseId", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteExpenseTaskLink(req.params.projectName, parseInt(req.params.expenseId));
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to unlink task" });
+    }
+  });
+
+  app.post("/api/expense-task-links/:projectName/:expenseId/date-override", requireAuth, async (req, res) => {
+    try {
+      const { dateOverride, reason } = req.body;
+      await storage.updateExpenseTaskLinkDateOverride(req.params.projectName, parseInt(req.params.expenseId), dateOverride, reason);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to save date override" });
+    }
+  });
+
+  // ==================== MANUAL EXPENSE ROWS API ====================
+
+  app.post("/api/expenses/add-line", requireAuth, async (req, res) => {
+    try {
+      const { projectName, expenseCategory, expenseLineItem, expenseActualTotal, expensePoNumber, expenseInvoiceNumber, expenseInvoicedDate, expensePaymentDate } = req.body;
+      if (!projectName || !expenseCategory) {
+        return res.status(400).json({ error: "projectName and expenseCategory are required" });
+      }
+      const maxRow = await storage.getProgramExpensesByProject(projectName);
+      const maxRowNum = maxRow.reduce((max: number, r: any) => Math.max(max, r.rowNumber || 0), 0);
+      const newExpense = await storage.createManualExpense({
+        projectName,
+        rowNumber: maxRowNum + 1,
+        rowType: 'item',
+        expenseCategory,
+        expenseLineItem: expenseLineItem || null,
+        expenseActualTotal: expenseActualTotal || null,
+        expensePoNumber: expensePoNumber || null,
+        expenseInvoiceNumber: expenseInvoiceNumber || null,
+        expenseInvoicedDate: expenseInvoicedDate || null,
+        expensePaymentDate: expensePaymentDate || null,
+        lineStatus: 'Planned',
+      });
+      res.json(newExpense);
+    } catch (error) {
+      console.error("Add expense line error:", error);
+      res.status(500).json({ error: "Failed to add expense line item" });
+    }
+  });
+
+  app.post("/api/expenses/add-category", requireAuth, async (req, res) => {
+    try {
+      const { projectName, categoryName } = req.body;
+      if (!projectName || !categoryName) {
+        return res.status(400).json({ error: "projectName and categoryName are required" });
+      }
+      const maxRow = await storage.getProgramExpensesByProject(projectName);
+      const maxRowNum = maxRow.reduce((max: number, r: any) => Math.max(max, r.rowNumber || 0), 0);
+      const newCategory = await storage.createManualExpense({
+        projectName,
+        rowNumber: maxRowNum + 1,
+        rowType: 'category',
+        expenseCategory: categoryName,
+        expenseLineItem: categoryName,
+      });
+      res.json(newCategory);
+    } catch (error) {
+      console.error("Add category error:", error);
+      res.status(500).json({ error: "Failed to add category" });
+    }
+  });
+
+  app.post("/api/expenses/insert-task-as-line", requireAuth, async (req, res) => {
+    try {
+      const { projectName, taskId, expenseCategory } = req.body;
+      if (!projectName || !taskId || !expenseCategory) {
+        return res.status(400).json({ error: "projectName, taskId, and expenseCategory are required" });
+      }
+      const [opTasks, planTasks] = await Promise.all([
+        storage.getOperationalTasksByProject(projectName),
+        storage.getProjectPlansByProject(projectName),
+      ]);
+      let taskTitle = '';
+      let taskEndDate: string | null = null;
+      if (taskId > 0) {
+        const opTask = opTasks.find((t: any) => t.id === taskId);
+        if (opTask) { taskTitle = opTask.title || ''; taskEndDate = opTask.dueDate || null; }
+      } else {
+        const planTask = planTasks.find((t: any) => t.id === Math.abs(taskId));
+        if (planTask) { taskTitle = (planTask as any).highLevelProgramme || `Task ${(planTask as any).taskNo || ''}`; taskEndDate = (planTask as any).actualEnd || null; }
+      }
+      const maxRow = await storage.getProgramExpensesByProject(projectName);
+      const maxRowNum = maxRow.reduce((max: number, r: any) => Math.max(max, r.rowNumber || 0), 0);
+      const newExpense = await storage.createManualExpense({
+        projectName,
+        rowNumber: maxRowNum + 1,
+        rowType: 'item',
+        expenseCategory,
+        expenseLineItem: taskTitle,
+        expensePaymentDate: taskEndDate,
+        lineStatus: 'Planned',
+      });
+      await storage.upsertExpenseTaskLink(projectName, newExpense.id, taskId, (req.user as any)?.id);
+      res.json(newExpense);
+    } catch (error) {
+      console.error("Insert task as line error:", error);
+      res.status(500).json({ error: "Failed to insert task as line item" });
+    }
+  });
+
+  // ==================== EXPENDITURE BREAKDOWN COMPOSITE API ====================
+
+  app.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, res) => {
+    try {
+      const projectName = req.params.projectName;
+      const [expenses, taskLinks, opTasks, planTasks] = await Promise.all([
+        storage.getProgramExpensesByProject(projectName),
+        storage.getExpenseTaskLinks(projectName),
+        storage.getOperationalTasksByProject(projectName),
+        storage.getProjectPlansByProject(projectName),
+      ]);
+
+      const linkMap = new Map(taskLinks.map(l => [l.expenseId, l]));
+
+      const enriched = expenses.filter((e: any) => e.rowType === 'item').map((exp: any) => {
+        const link = linkMap.get(exp.id);
+        let linkedTask: any = null;
+        let taskCompleted = false;
+
+        if (link) {
+          if (link.taskId > 0) {
+            const ot = opTasks.find((t: any) => t.id === link.taskId);
+            if (ot) {
+              linkedTask = { id: ot.id, title: ot.title, status: ot.status, dueDate: ot.dueDate, isBaseline: false };
+              taskCompleted = ot.status === 'Complete' || ot.status === 'complete' || ot.status === 'Done';
+            }
+          } else {
+            const pt = planTasks.find((t: any) => t.id === Math.abs(link.taskId));
+            if (pt) {
+              const pctComplete = (pt as any).actualPctComplete != null ? Math.round((pt as any).actualPctComplete * 100) : 0;
+              let taskStatus = "Not Started";
+              if (pctComplete >= 100) { taskStatus = "Done"; taskCompleted = true; }
+              else if (pctComplete > 0) taskStatus = "In Progress";
+              linkedTask = {
+                id: link.taskId,
+                title: (pt as any).highLevelProgramme || `Task ${(pt as any).taskNo || (pt as any).rowNumber}`,
+                status: taskStatus,
+                dueDate: (pt as any).actualEnd || null,
+                isBaseline: true,
+              };
+            }
+          }
+        }
+
+        const hasPO = !!(exp.expensePoNumber && exp.expensePoNumber.trim());
+        const hasInvoice = !!(exp.expenseInvoiceNumber && exp.expenseInvoiceNumber.trim());
+        const hasInvoiceDate = !!(exp.expenseInvoicedDate && /^\d{4}-\d{2}-\d{2}/.test(exp.expenseInvoicedDate));
+        const invoiceDateActual = exp.invoiceDateFontColor !== 'red';
+        const hasPaymentDate = !!(exp.expensePaymentDate && /^\d{4}-\d{2}-\d{2}/.test(exp.expensePaymentDate));
+        const paymentDateActual = exp.paymentDateFontColor !== 'red';
+
+        let cosStatus: string;
+        if (hasInvoice && hasInvoiceDate && invoiceDateActual && hasPaymentDate && paymentDateActual) {
+          cosStatus = 'COS Realised';
+        } else if (hasInvoice && hasInvoiceDate) {
+          cosStatus = 'Not Yet Realised';
+        } else if (hasPO || hasInvoice) {
+          cosStatus = 'Not Yet Realised';
+        } else {
+          cosStatus = 'Planned';
+        }
+
+        let paymentStatus: string;
+        if (hasInvoice && hasPaymentDate && paymentDateActual) {
+          paymentStatus = 'Paid';
+        } else if (hasPaymentDate && !paymentDateActual) {
+          paymentStatus = 'Payment Planned';
+        } else if (hasInvoice && !hasPaymentDate) {
+          paymentStatus = 'Invoiced';
+        } else if (hasPO) {
+          paymentStatus = 'Committed';
+        } else {
+          paymentStatus = 'Planned';
+        }
+
+        const effectivePaymentDate = link?.dateOverride || linkedTask?.dueDate || exp.expensePaymentDate || exp.forecastPaymentDate || null;
+        let plannedMonth: string | null = null;
+        if (effectivePaymentDate && /^\d{4}-\d{2}-\d{2}/.test(effectivePaymentDate)) {
+          const d = new Date(effectivePaymentDate);
+          plannedMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        }
+
+        return {
+          ...exp,
+          linkedTask,
+          cosStatus,
+          paymentStatus,
+          effectivePaymentDate,
+          plannedMonth,
+          hasDateOverride: !!link?.dateOverride,
+          dateOverrideReason: link?.dateOverrideReason || null,
+        };
+      });
+
+      const categories = [...new Set(expenses.filter((e: any) => e.rowType === 'category').map((e: any) => e.expenseCategory).filter(Boolean))];
+
+      res.json({ items: enriched, categories });
+    } catch (error) {
+      console.error("Expenditure breakdown error:", error);
+      res.status(500).json({ error: "Failed to fetch expenditure breakdown" });
+    }
+  });
+
   // Finance Revenue Overrides API
   app.get("/api/finance/revenue/overrides", async (req, res) => {
     try {

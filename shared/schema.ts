@@ -843,3 +843,19 @@ export const milestoneTaskLinks = pgTable("milestone_task_links", {
 export const insertMilestoneTaskLinkSchema = createInsertSchema(milestoneTaskLinks).omit({ id: true, createdAt: true });
 export type InsertMilestoneTaskLink = z.infer<typeof insertMilestoneTaskLinkSchema>;
 export type MilestoneTaskLink = typeof milestoneTaskLinks.$inferSelect;
+
+export const expenseTaskLinks = pgTable("expense_task_links", {
+  id: serial("id").primaryKey(),
+  projectName: text("project_name").notNull(),
+  expenseId: integer("expense_id").notNull(),
+  taskId: integer("task_id").notNull(),
+  dateOverride: text("date_override"),
+  dateOverrideReason: text("date_override_reason"),
+  createdBy: integer("created_by"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertExpenseTaskLinkSchema = createInsertSchema(expenseTaskLinks).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertExpenseTaskLink = z.infer<typeof insertExpenseTaskLinkSchema>;
+export type ExpenseTaskLink = typeof expenseTaskLinks.$inferSelect;

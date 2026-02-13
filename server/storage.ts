@@ -55,6 +55,8 @@ import {
   type WritebackMapping, type InsertWritebackMapping,
   type WritebackAuditLog, type InsertWritebackAuditLog,
   milestoneTaskLinks,
+  expenseTaskLinks,
+  type ExpenseTaskLink, type InsertExpenseTaskLink,
   type MilestoneTaskLink, type InsertMilestoneTaskLink,
 } from "@shared/schema";
 
@@ -228,6 +230,16 @@ export interface IStorage {
   upsertMilestoneTaskLink(projectName: string, milestoneRowNumber: number, taskId: number): Promise<MilestoneTaskLink>;
   deleteMilestoneTaskLink(projectName: string, milestoneRowNumber: number): Promise<void>;
   updateMilestoneDateOverride(projectName: string, milestoneRowNumber: number, dateOverride: string | null, reason: string | null): Promise<void>;
+
+  // Expense Task Links
+  getExpenseTaskLinks(projectName: string): Promise<ExpenseTaskLink[]>;
+  getAllExpenseTaskLinks(): Promise<ExpenseTaskLink[]>;
+  upsertExpenseTaskLink(projectName: string, expenseId: number, taskId: number, createdBy?: number): Promise<ExpenseTaskLink>;
+  deleteExpenseTaskLink(projectName: string, expenseId: number): Promise<void>;
+  updateExpenseTaskLinkDateOverride(projectName: string, expenseId: number, dateOverride: string | null, reason: string | null): Promise<void>;
+
+  // Manual Expense Rows
+  createManualExpense(data: InsertProgramExpense): Promise<ProgramExpense>;
 
   // Home Notes
   getHomeNotes(): Promise<HomeNotes | undefined>;
@@ -1323,6 +1335,44 @@ export class DatabaseStorage implements IStorage {
     await this.dbInstance.update(milestoneTaskLinks)
       .set({ dateOverride, dateOverrideReason: reason })
       .where(and(eq(milestoneTaskLinks.projectName, projectName), eq(milestoneTaskLinks.milestoneRowNumber, milestoneRowNumber)));
+  }
+
+  async getExpenseTaskLinks(projectName: string): Promise<ExpenseTaskLink[]> {
+    return await this.dbInstance.select().from(expenseTaskLinks).where(eq(expenseTaskLinks.projectName, projectName));
+  }
+
+  async getAllExpenseTaskLinks(): Promise<ExpenseTaskLink[]> {
+    return await this.dbInstance.select().from(expenseTaskLinks);
+  }
+
+  async upsertExpenseTaskLink(projectName: string, expenseId: number, taskId: number, createdBy?: number): Promise<ExpenseTaskLink> {
+    const existing = await this.dbInstance.select().from(expenseTaskLinks)
+      .where(and(eq(expenseTaskLinks.projectName, projectName), eq(expenseTaskLinks.expenseId, expenseId)));
+    if (existing.length > 0) {
+      const updated = await this.dbInstance.update(expenseTaskLinks)
+        .set({ taskId, updatedAt: new Date() })
+        .where(and(eq(expenseTaskLinks.projectName, projectName), eq(expenseTaskLinks.expenseId, expenseId)))
+        .returning();
+      return updated[0];
+    }
+    const inserted = await this.dbInstance.insert(expenseTaskLinks).values({ projectName, expenseId, taskId, createdBy }).returning();
+    return inserted[0];
+  }
+
+  async deleteExpenseTaskLink(projectName: string, expenseId: number): Promise<void> {
+    await this.dbInstance.delete(expenseTaskLinks)
+      .where(and(eq(expenseTaskLinks.projectName, projectName), eq(expenseTaskLinks.expenseId, expenseId)));
+  }
+
+  async updateExpenseTaskLinkDateOverride(projectName: string, expenseId: number, dateOverride: string | null, reason: string | null): Promise<void> {
+    await this.dbInstance.update(expenseTaskLinks)
+      .set({ dateOverride, dateOverrideReason: reason, updatedAt: new Date() })
+      .where(and(eq(expenseTaskLinks.projectName, projectName), eq(expenseTaskLinks.expenseId, expenseId)));
+  }
+
+  async createManualExpense(data: InsertProgramExpense): Promise<ProgramExpense> {
+    const inserted = await this.dbInstance.insert(programExpense).values(data).returning();
+    return inserted[0];
   }
 
   // Home Notes

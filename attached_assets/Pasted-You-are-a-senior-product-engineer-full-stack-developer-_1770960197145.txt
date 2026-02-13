@@ -1,0 +1,167 @@
+You are a senior product engineer + full-stack developer. We are upgrading the “Expenditure Breakdown” tab inside the Project Drilldown so that it matches the structure and core financial logic of our Excel sheet “ACTUAL EXPENDITURE BREAKDOWN”.
+
+This module is critical because it drives TWO things:
+1) COS (Cost of Sales) timing and realisation
+2) Cashflow outflows (when we will pay suppliers)
+
+DO NOT assume rules not explicitly described below. If anything is unclear, stop and produce a “Questions / Unknowns” list before building that part.
+
+========================================================
+1) UI STRUCTURE (MATCH EXCEL HEADING + FLOW)
+========================================================
+The Expenditure Breakdown tab must show a category-driven table similar to Excel:
+- Categories (e.g. Panels, Inverters, Mounting Structures, DC Equipment, Monitoring, etc.)
+- Under each category, multiple line items (Product/Service + Description of Work)
+
+Columns we need in the APP table (Excel-like, but simplified):
+- Category (group header)
+- Product/Service (optional if we use Description only)
+- Description of Work (line item name)
+- Actual Total (amount)  [we do NOT need to show Excel’s original rate/unit calc; keep it in backend if needed]
+- PO Number
+- Invoice Number
+- Invoice Raised Date
+- Finance Payment Date  (the planned or actual payment date)
+- Linked Task (from Project Plan tasks)
+- Status (derived, see rules below)
+
+Remove from the app:
+- The “Check” column (we don’t need it in the app UI)
+- Any duplicate “manual captured” payment date fields (we keep only Finance Payment Date)
+
+========================================================
+2) TASK LINKING (CRITICAL)
+========================================================
+We need to link project plan tasks to expenditure line items.
+
+Requirements:
+- Each expenditure line item can be linked to ONE task (MVP).
+- A task can be linked to multiple expenditure line items (allowed).
+- When a linked task is completed, it influences default dates and status logic.
+
+Defaulting rule:
+- Finance Payment Date should default to the END DATE of the linked task (if a task is linked).
+- If no task linked, Finance Payment Date must be manually captured.
+
+We also need a simple “Insert tasks into expenditure breakdown” helper:
+- From the task list, allow adding a task as a new expenditure line item (pre-fills Description of Work = task name and links the task).
+- User then assigns the category and amount and captures PO/Invoice fields.
+
+========================================================
+3) ADD / EDIT LINE ITEMS AND CATEGORIES
+========================================================
+The app must allow:
+- Add new category
+- Add new line item under a category
+For a new line item, user captures:
+- Category
+- Line item description
+- Actual Total amount
+- Link a task (optional but recommended)
+- PO number (optional)
+- Invoice number (optional)
+- Invoice raised date (optional)
+- Finance payment date (defaults to task end date if linked, else manual)
+
+========================================================
+4) FINANCIAL FLOW LOGIC (THIS IS THE HEART)
+========================================================
+We are tracking two parallel concepts:
+A) COS realisation timing (when cost becomes “realised”)
+B) Cashflow outflow timing (when we pay)
+
+We use these fields:
+- Task completion status
+- PO number
+- Invoice number
+- Invoice raised date
+- Finance payment date
+
+IMPORTANT: In Excel, “red date” means planned, “black date” means actual/paid.
+In the APP, do NOT rely only on color. Use an explicit Status + optional color styling.
+
+========================================================
+5) STATUS RULES (EXACTLY AS DESCRIBED)
+========================================================
+
+A) COS / “Realised vs Not Realised”
+1) If task is completed AND PO number exists AND invoice number exists AND invoice raised date exists (and is “black/actual”)
+   => COS Realised
+
+2) If task is completed AND PO number exists AND invoice number exists BUT invoice raised date is “red/planned”
+   => Not yet COS realised (it’s expected, but not realised)
+
+3) If task is completed AND PO number exists BUT invoice number is empty AND invoice raised date is “red/planned”
+   => Not yet COS realised
+   => Invoice raised date is being tracked as a monthly placeholder (we track the exact date inside that month)
+
+B) Cashflow / Payment logic (Finance Payment Date)
+This is the rule for whether the Finance Payment Date represents planned vs already paid:
+1) If Finance Payment Date is “red/planned” AND invoice number exists
+   => Planned payment (not paid yet)
+
+2) If Finance Payment Date is “red/planned” AND invoice number is empty
+   => Planned payment (not paid yet)
+
+3) If invoice number exists AND Finance Payment Date is “black/actual”
+   => Paid already
+
+If any of the “red/black” concept is not stored in the DB today, implement it as:
+- payment_date_type ENUM('planned','actual')
+- invoice_raised_date_type ENUM('planned','actual')
+(or derive “actual” if there is an actual payment event captured elsewhere; if unclear, ask)
+
+========================================================
+6) MONTH BUCKETING (FOR COS + CASHFLOW REPORTING)
+========================================================
+We must be able to bucket these line items by month for:
+- COS forecasting/realisation
+- Cashflow outflow forecasting
+
+Rule you gave:
+- If a line item is linked to a task and invoice raised date is still planned (red), we must at least capture it as expected in the MONTH of the task end date.
+So:
+- If invoice/payment dates are missing or only monthly placeholders, use linked task end date month as the planning month.
+
+Make this explicit in the UI with a field:
+- “Planned Month” (derived)
+and allow override with audit trail.
+
+========================================================
+7) DRILLDOWN + TRACEABILITY (NON-NEGOTIABLE)
+========================================================
+- Every COS and Cashflow number must drill down to these exact line items.
+- Add a drawer that can filter by:
+  - Category
+  - Status (COS realised/not realised, paid/planned)
+  - Invoice number
+  - PO number
+  - Task
+  - Planned month
+
+========================================================
+8) DATA GOVERNANCE
+========================================================
+- Imported baseline lines must be read-only.
+- App-created or app-edited fields must be stored as overrides with user + timestamp + reason.
+- Changes to invoice/payment dates must be auditable.
+
+========================================================
+9) DELIVERABLES + TESTS
+========================================================
+Deliverables:
+- Expenditure Breakdown UI aligned to Excel structure and headings
+- Task linking + “insert task as line item”
+- Add/edit categories and line items
+- Status logic implemented exactly above
+- Month bucketing support for COS + Cashflow
+
+Tests:
+- Unit tests for status logic (COS realised vs not; paid vs planned)
+- Reconciliation tests:
+  - totals by month equal sum of line items in that month
+  - paid totals equal sum of items with invoice number + actual payment date
+
+FIRST STEP BEFORE CODING:
+Audit current data tables to confirm where PO/invoice/payment fields currently live.
+If any field does not exist (invoice_raised_date_type, payment_date_type, task linkage), list it in “Questions/Unknowns” and propose minimal schema changes.
