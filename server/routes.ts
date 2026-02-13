@@ -1434,6 +1434,7 @@ export async function registerRoutes(
         }
 
         return {
+          project_info_id: info?.id || null,
           project_name: projectName,
           size_kwp: sizeKwp,
           pd: info?.pd || null,
@@ -2532,15 +2533,35 @@ export async function registerRoutes(
       completionCompare.sort((a, b) => b.actualPct - a.actualPct);
 
       const portfolioTimeline: Array<{ projectName: string; startDate: string | null; endDate: string | null; phase: string | null }> = [];
-      for (const info of allProjectInfo) {
-        const startDate = info.constructionStartDate || null;
-        if (!startDate) continue;
-        const endDate = info.clientHandoverDate || info.commissioningDate || null;
+      for (const projectName of Array.from(allProjectNames)) {
+        const info = projectInfoMap.get(projectName);
+        const projectPlans = plansByProject.get(projectName) || [];
+        const projectExps = expensesByProject.get(projectName) || [];
+
+        const csFromPlan = findMinStartDate(projectPlans, ['site establishment']);
+        const planMinStart = projectPlans.reduce((min: string | null, p: any) => {
+          const d = p.actualStart?.substring(0, 10);
+          if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d) || d < '1950-01-01') return min;
+          return !min || d < min ? d : min;
+        }, null as string | null);
+        const planMaxEnd = projectPlans.reduce((max: string | null, p: any) => {
+          const d = p.actualEnd?.substring(0, 10);
+          if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d) || d < '1950-01-01') return max;
+          return !max || d > max ? d : max;
+        }, null as string | null);
+
+        const startDate = csFromPlan || info?.constructionStartDate || planMinStart || null;
+        if (!startDate || startDate < '1950-01-01') continue;
+
+        const commFromPlan = findMaxEndDate(projectPlans, ['commissioning']);
+        const chFromPlan = findMaxEndDate(projectPlans, ['handover to client']);
+        const endDate = chFromPlan || info?.clientHandoverDate || commFromPlan || info?.commissioningDate || planMaxEnd || null;
+
         portfolioTimeline.push({
-          projectName: info.projectName,
+          projectName,
           startDate,
-          endDate,
-          phase: info.phase || null,
+          endDate: endDate && endDate >= startDate ? endDate : startDate,
+          phase: info?.phase || null,
         });
       }
       portfolioTimeline.sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''));
@@ -3344,6 +3365,38 @@ export async function registerRoutes(
       res.json(info);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch project info", message: "Failed to fetch project info" });
+    }
+  });
+
+  app.patch("/api/project-info/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid project ID" });
+
+      const editSchema = z.object({
+        projectName: z.string().min(1).optional(),
+        phase: z.string().nullable().optional(),
+        pd: z.string().nullable().optional(),
+        pm: z.string().nullable().optional(),
+        sizeKwp: z.string().nullable().optional(),
+        contractValue: z.string().nullable().optional(),
+        constructionStartDate: z.string().nullable().optional(),
+        commissioningDate: z.string().nullable().optional(),
+        omHandoverDate: z.string().nullable().optional(),
+        clientHandoverDate: z.string().nullable().optional(),
+        pdHandoverDate: z.string().nullable().optional(),
+      });
+
+      const parsed = editSchema.parse(req.body);
+      const updated = await storage.updateProjectInfoById(id, parsed as any);
+      if (!updated) return res.status(404).json({ error: "Project not found" });
+      res.json(updated);
+    } catch (error) {
+      console.error("Project info update error:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: "Validation failed", details: error.errors });
+      }
+      res.status(500).json({ error: "Failed to update project info" });
     }
   });
 
