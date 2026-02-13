@@ -132,14 +132,16 @@ export default function Home() {
         </div>
       </div>
 
-      <div>
-        <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Work in Progress</h2>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {wipLinks.map((link) => (
-            <NavTile key={link.path} link={link} />
-          ))}
+      {isAdmin && (
+        <div>
+          <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Work in Progress</h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {wipLinks.map((link) => (
+              <NavTile key={link.path} link={link} />
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {isAdmin && (
         <div>
