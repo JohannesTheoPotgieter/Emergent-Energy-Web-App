@@ -109,7 +109,7 @@ function KpiDrilldown({
   return (
     <div
       ref={ref}
-      className="absolute z-50 top-full left-1/2 -translate-x-1/2 mt-2 w-80 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200"
+      className="absolute z-50 top-full left-0 sm:left-1/2 sm:-translate-x-1/2 mt-2 w-[calc(100vw-2rem)] sm:w-80 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200"
       data-testid="kpi-drilldown"
     >
       <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 dark:bg-gray-800/50 border-b border-gray-100 dark:border-gray-700">
@@ -233,20 +233,20 @@ function KpiCard({
   return (
     <div className="relative">
       <button
-        className={`w-full text-left rounded-xl border ${c.card} p-5 cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-400`}
+        className={`w-full text-left rounded-xl border ${c.card} p-3 sm:p-5 cursor-pointer hover:shadow-lg active:scale-[0.98] sm:hover:scale-[1.02] transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-400`}
         onClick={() => onToggle(drilldownKey)}
         data-testid={testId}
       >
-        <div className="flex items-start gap-4">
-          <div className={`p-3 rounded-xl ${c.iconBg} shrink-0`}>
-            <Icon className={`w-5 h-5 ${c.icon}`} />
+        <div className="flex items-start gap-3 sm:gap-4">
+          <div className={`p-2 sm:p-3 rounded-xl ${c.iconBg} shrink-0`}>
+            <Icon className={`w-4 h-4 sm:w-5 sm:h-5 ${c.icon}`} />
           </div>
           <div className="min-w-0 flex-1">
-            <p className={`text-2xl font-bold tracking-tight ${c.value}`} data-testid={valueTestId}>
+            <p className={`text-xl sm:text-2xl font-bold tracking-tight ${c.value}`} data-testid={valueTestId}>
               {value}
             </p>
-            <p className={`text-sm font-medium mt-0.5 ${c.label}`}>{label}</p>
-            {sublabel && <p className={`text-[11px] mt-0.5 ${c.sub}`}>{sublabel}</p>}
+            <p className={`text-xs sm:text-sm font-medium mt-0.5 ${c.label}`}>{label}</p>
+            {sublabel && <p className={`text-[10px] sm:text-[11px] mt-0.5 ${c.sub}`}>{sublabel}</p>}
           </div>
         </div>
       </button>
@@ -339,7 +339,7 @@ function SkeletonDashboard() {
         <div className="h-9 w-64 bg-gray-200 dark:bg-gray-800 rounded-lg animate-pulse" />
         <div className="h-4 w-48 bg-gray-100 dark:bg-gray-800/60 rounded animate-pulse" />
       </div>
-      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 sm:gap-4 grid-cols-1 xs:grid-cols-2 lg:grid-cols-4">
         {Array.from({ length: 8 }).map((_, i) => (
           <div key={i} className="h-28 bg-gray-100 dark:bg-gray-800/40 rounded-xl animate-pulse" />
         ))}
@@ -512,7 +512,7 @@ export default function Dashboard() {
     <div className="space-y-8 max-w-[1400px] mx-auto">
       <header className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-50" data-testid="text-page-title">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-50" data-testid="text-page-title">
             Program Dashboard
           </h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
@@ -526,7 +526,7 @@ export default function Dashboard() {
 
       <section aria-label="Milestone KPIs">
         <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-3">Milestones</p>
-        <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 sm:gap-4 grid-cols-1 xs:grid-cols-2 lg:grid-cols-4">
           <KpiCard
             icon={Construction}
             value={kpis?.siteEstablishmentNext10 ?? 0}
@@ -596,7 +596,7 @@ export default function Dashboard() {
 
       <section aria-label="Financial KPIs">
         <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-3">Financial</p>
-        <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 sm:gap-4 grid-cols-1 xs:grid-cols-2 lg:grid-cols-4">
           <KpiCard
             icon={Target}
             value={cosKpis ? `${(cosKpis.ytdRealisedPct * 100).toFixed(1)}%` : "--"}
@@ -785,7 +785,7 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-6 xl:grid-cols-5">
+      <div className="grid gap-4 sm:gap-6 grid-cols-1 xl:grid-cols-5">
         <Card className="xl:col-span-2 shadow-sm" data-testid="card-pm-summary">
           <CardHeader className="pb-2">
             <CardTitle className="text-base font-bold text-gray-900 dark:text-gray-50">PM Summary</CardTitle>
@@ -894,9 +894,9 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={Math.max(200, projectsByPhase.length * 40 + 40)}>
-              <BarChart data={projectsByPhase} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+              <BarChart data={projectsByPhase} layout="vertical" margin={{ top: 5, right: 15, left: 5, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e5e7eb" />
-                <XAxis type="number" allowDecimals={false} tick={{ fontSize: 12 }} />
+                <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
                 <YAxis
                   type="category"
                   dataKey="phase"
@@ -927,14 +927,14 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={Math.max(300, completionChartData.length * 30 + 60)}>
-              <BarChart data={completionChartData} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+              <BarChart data={completionChartData} layout="vertical" margin={{ top: 5, right: 15, left: 5, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e5e7eb" />
                 <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 11 }} tickFormatter={(v) => `${v}%`} />
                 <YAxis
                   type="category"
                   dataKey="name"
-                  width={200}
-                  tick={{ fontSize: 11 }}
+                  width={140}
+                  tick={{ fontSize: 10 }}
                 />
                 <Tooltip
                   contentStyle={{ borderRadius: 8, fontSize: 13 }}
@@ -958,8 +958,8 @@ export default function Dashboard() {
             <CardTitle className="text-base font-bold text-gray-900 dark:text-gray-50">Portfolio Gantt Chart</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
-              <div style={{ minWidth: 900 }}>
+            <div className="overflow-x-auto -mx-3 sm:mx-0 px-3 sm:px-0">
+              <div style={{ minWidth: 700 }}>
                 {(() => {
                   const allDates = portfolioTimeline
                     .flatMap(p => [p.startDate, p.endDate])
@@ -989,7 +989,7 @@ export default function Dashboard() {
 
                   return (
                     <div className="flex flex-col">
-                      <div className="flex mb-1 pl-[220px]">
+                      <div className="flex mb-1 pl-[160px] sm:pl-[220px]">
                         <div className="relative flex-1 h-5">
                           {dateMarkers.map((m, i) => (
                             <span
@@ -1006,7 +1006,7 @@ export default function Dashboard() {
                         {todayPct !== null && (
                           <div
                             className="absolute top-0 bottom-0 border-l-2 border-red-400 border-dashed z-10 pointer-events-none"
-                            style={{ left: `calc(220px + (100% - 220px) * ${todayPct / 100})` }}
+                            style={{ left: `calc(var(--gantt-label-w, 160px) + (100% - var(--gantt-label-w, 160px)) * ${todayPct / 100})` }}
                             title={`Today: ${format(new Date(), "yyyy/MM/dd")}`}
                           >
                             <span className="absolute -top-4 -translate-x-1/2 text-[9px] font-semibold text-red-500">Today</span>
@@ -1022,8 +1022,8 @@ export default function Dashboard() {
                               onClick={() => navigateToProject(row.projectName)}
                               data-testid={`gantt-row-${i}`}
                             >
-                              <div className="w-[220px] shrink-0 pr-2 text-right">
-                                <span className="text-[11px] text-gray-600 dark:text-gray-400 truncate block group-hover:text-blue-600 transition-colors">
+                              <div className="w-[160px] sm:w-[220px] shrink-0 pr-2 text-right">
+                                <span className="text-[10px] sm:text-[11px] text-gray-600 dark:text-gray-400 truncate block group-hover:text-blue-600 transition-colors">
                                   {row.displayName}
                                 </span>
                               </div>

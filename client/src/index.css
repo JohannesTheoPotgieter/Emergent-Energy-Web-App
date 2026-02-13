@@ -160,6 +160,22 @@
   @apply bg-muted-foreground/30 rounded-full hover:bg-muted-foreground/50 transition-colors;
 }
 
+/* Hide scrollbar utility */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Touch-friendly tap targets */
+@media (max-width: 640px) {
+  button, a, [role="button"] {
+    min-height: 36px;
+  }
+}
+
 /* Table styles */
 .data-table-row {
   @apply hover:bg-muted/50 transition-colors;

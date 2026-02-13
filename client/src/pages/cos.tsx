@@ -183,7 +183,7 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
     <div className="fixed inset-0 z-50 flex" data-testid="drawer-month-detail">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={onClose} />
       <div className="ml-auto relative w-full max-w-5xl bg-background shadow-2xl flex flex-col h-full animate-in slide-in-from-right duration-300">
-        <div className="px-6 py-5 border-b bg-gradient-to-r from-slate-50 to-white flex items-center justify-between">
+        <div className="px-3 sm:px-6 py-4 sm:py-5 border-b bg-gradient-to-r from-slate-50 to-white flex items-center justify-between">
           <div>
             <h3 className="font-bold text-xl tracking-tight" data-testid="text-drawer-title">{monthLabel}</h3>
             <p className="text-sm text-muted-foreground mt-0.5">
@@ -195,8 +195,8 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
           </button>
         </div>
 
-        <div className="px-6 py-4 border-b bg-gradient-to-b from-slate-50/50 to-transparent">
-          <div className="grid grid-cols-3 gap-3">
+        <div className="px-3 sm:px-6 py-3 sm:py-4 border-b bg-gradient-to-b from-slate-50/50 to-transparent">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
             <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-slate-50 to-slate-100/50 border border-slate-300/60 px-4 py-3">
               <div className="flex items-center justify-between">
                 <div>
@@ -564,18 +564,18 @@ export default function CosTracker() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50/50">
-      <div className="bg-white border-b border-slate-200/80 px-6 py-6 shadow-sm">
-        <div className="flex items-center justify-between max-w-[1800px] mx-auto">
+      <div className="bg-white border-b border-slate-200/80 px-3 sm:px-6 py-4 sm:py-6 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 max-w-[1800px] mx-auto">
           <div>
-            <h2 className="text-3xl font-heading font-bold tracking-tight text-slate-900" data-testid="text-page-title">
+            <h2 className="text-xl sm:text-3xl font-heading font-bold tracking-tight text-slate-900" data-testid="text-page-title">
               Cost of Sales Tracker FY26
             </h2>
-            <p className="text-slate-500 mt-1.5 text-sm" data-testid="text-page-subtitle">
+            <p className="text-slate-500 mt-1 sm:mt-1.5 text-xs sm:text-sm" data-testid="text-page-subtitle">
               Monthly COS tracking with planned vs budget analysis. Click any month cell to see contributing line items.
             </p>
           </div>
-          <div className="flex items-center gap-3 bg-slate-50 rounded-xl px-4 py-2.5 border border-slate-200/60">
-            <span className="text-sm font-medium text-slate-600">Reconciliation</span>
+          <div className="flex items-center gap-3 bg-slate-50 rounded-xl px-3 sm:px-4 py-2 sm:py-2.5 border border-slate-200/60 self-start sm:self-auto shrink-0">
+            <span className="text-xs sm:text-sm font-medium text-slate-600">Reconciliation</span>
             <Switch
               checked={reconciliationMode}
               onCheckedChange={setReconciliationMode}
@@ -585,7 +585,7 @@ export default function CosTracker() {
         </div>
       </div>
 
-      <div className="max-w-[1800px] mx-auto px-6 py-6 space-y-6">
+      <div className="max-w-[1800px] mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-6">
         <Card className="border-amber-200/80 bg-gradient-to-r from-amber-50 to-amber-50/30 shadow-sm" data-testid="card-wip-banner">
           <CardContent className="p-4 flex items-start gap-3">
             <div className="rounded-xl bg-amber-200/60 p-2.5 mt-0.5 shrink-0">

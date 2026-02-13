@@ -12,6 +12,7 @@ Preferred communication style: Simple, everyday language.
 - **Framework**: React 18 with TypeScript
 - **State Management**: TanStack React Query for server state, React Context for local state
 - **UI**: shadcn/ui (Radix UI-based) and Tailwind CSS v4
+- **Mobile Responsive**: Full mobile-first responsive design with overlay sidebar drawer, responsive grids/padding/typography, horizontal-scroll tables, and touch-friendly tap targets
 - **Data Visualization**: Recharts
 - **Forms**: React Hook Form with Zod validation
 - **Core Features**:
