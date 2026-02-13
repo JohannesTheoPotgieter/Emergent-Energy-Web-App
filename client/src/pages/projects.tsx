@@ -61,6 +61,13 @@ interface ProjectSummary {
   commissioning_date: string | null;
   om_handover_date: string | null;
   client_handover_date: string | null;
+  date_sources: {
+    pd_handover: 'plan' | 'info' | 'none';
+    construction_start: 'plan' | 'info' | 'none';
+    commissioning: 'plan' | 'info' | 'none';
+    om_handover: 'plan' | 'info' | 'none';
+    client_handover: 'plan' | 'info' | 'none';
+  };
   project_pct_complete: number | null;
   expected_pct_complete: number | null;
   delta_vs_expected: number | null;
@@ -732,11 +739,21 @@ export default function ProjectsSummary() {
         </span>
       ),
     },
-    { key: "pd_handover_date", header: "PD Handover", render: (p) => formatDate(p.pd_handover_date) },
-    { key: "construction_start_date", header: "Construction Start", render: (p) => formatDate(p.construction_start_date) },
+    { key: "pd_handover_date", header: "PD Handover", render: (p) => (
+      <span className="flex items-center gap-1" title={p.date_sources?.pd_handover === 'plan' ? 'From project plan' : p.date_sources?.pd_handover === 'info' ? 'From info table' : ''}>
+        {formatDate(p.pd_handover_date)}
+        {p.date_sources?.pd_handover === 'plan' && <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" title="From project plan" />}
+      </span>
+    )},
+    { key: "construction_start_date", header: "Construction Start", render: (p) => (
+      <span className="flex items-center gap-1" title={p.date_sources?.construction_start === 'plan' ? 'From project plan (Site Establishment actual start)' : p.date_sources?.construction_start === 'info' ? 'From info table' : ''}>
+        {formatDate(p.construction_start_date)}
+        {p.date_sources?.construction_start === 'plan' && <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" title="From project plan" />}
+      </span>
+    )},
     {
       key: "duration",
-      header: "Duration (days)",
+      header: "Duration (SA working days)",
       align: "right",
       render: (p) => <span className="font-mono">{p.duration != null ? p.duration : "—"}</span>,
     },
@@ -746,9 +763,24 @@ export default function ProjectsSummary() {
       align: "right",
       render: (p) => <span className="font-mono">{p.kw_per_week != null ? p.kw_per_week.toFixed(1) : "—"}</span>,
     },
-    { key: "commissioning_date", header: "Commissioning", render: (p) => formatDate(p.commissioning_date) },
-    { key: "om_handover_date", header: "O&M Handover", render: (p) => formatDate(p.om_handover_date) },
-    { key: "client_handover_date", header: "Client Handover", render: (p) => formatDate(p.client_handover_date) },
+    { key: "commissioning_date", header: "Commissioning", render: (p) => (
+      <span className="flex items-center gap-1" title={p.date_sources?.commissioning === 'plan' ? 'From project plan' : p.date_sources?.commissioning === 'info' ? 'From info table' : ''}>
+        {formatDate(p.commissioning_date)}
+        {p.date_sources?.commissioning === 'plan' && <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" title="From project plan" />}
+      </span>
+    )},
+    { key: "om_handover_date", header: "O&M Handover", render: (p) => (
+      <span className="flex items-center gap-1" title={p.date_sources?.om_handover === 'plan' ? 'From project plan' : p.date_sources?.om_handover === 'info' ? 'From info table' : ''}>
+        {formatDate(p.om_handover_date)}
+        {p.date_sources?.om_handover === 'plan' && <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" title="From project plan" />}
+      </span>
+    )},
+    { key: "client_handover_date", header: "Client Handover", render: (p) => (
+      <span className="flex items-center gap-1" title={p.date_sources?.client_handover === 'plan' ? 'From project plan' : p.date_sources?.client_handover === 'info' ? 'From info table' : ''}>
+        {formatDate(p.client_handover_date)}
+        {p.date_sources?.client_handover === 'plan' && <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" title="From project plan" />}
+      </span>
+    )},
     {
       key: "project_pct_complete",
       header: "% Complete",
