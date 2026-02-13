@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -27,6 +27,9 @@ import {
   X,
   FileText,
   Shield,
+  Upload,
+  Loader2,
+  Paperclip,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
@@ -215,6 +218,9 @@ function FinancialCloseCell({
   const [linkVal, setLinkVal] = useState(link || "");
   const [reason, setReason] = useState(naReason || "");
   const [saved, setSaved] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const qc = useQueryClient();
 
   const mutation = useMutation({
@@ -228,6 +234,31 @@ function FinancialCloseCell({
       setTimeout(() => setSaved(false), 2000);
     },
   });
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const resp = await fetch("/api/financial-close/upload", {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+      if (!resp.ok) throw new Error("Upload failed");
+      const data = await resp.json();
+      setLinkVal(data.url);
+      setUploadedFileName(data.filename);
+      setMode("link");
+    } catch (err) {
+      console.error("File upload error:", err);
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
 
   const handleSave = () => {
     const payload: Record<string, string | null> = {};
@@ -249,12 +280,16 @@ function FinancialCloseCell({
     setMode((type as FinCloseMode) || null);
     setLinkVal(link || "");
     setReason(naReason || "");
+    setUploadedFileName(null);
     setOpen(true);
   };
 
   const label = fieldPrefix === "costProposal" ? "Cost Proposal" : fieldPrefix === "funding" ? "Funding" : "EPC Contract";
+  const isUploadedFile = linkVal.startsWith("/api/financial-close/files/");
+  const displayFileName = uploadedFileName || (isUploadedFile ? decodeURIComponent(linkVal.split("_").slice(1).join("_").replace(/_/g, " ")) : null);
 
   if (type === "link") {
+    const isFile = link?.startsWith("/api/financial-close/files/");
     return (
       <div className="flex items-center gap-1" data-testid={`fclose-${fieldPrefix}-${projectName}`}>
         <a
@@ -265,8 +300,8 @@ function FinancialCloseCell({
           title={link || ""}
           data-testid={`link-fclose-${fieldPrefix}-${projectName}`}
         >
-          <Link2 className="w-3 h-3 shrink-0" />
-          <span className="truncate">{link ? "SharePoint" : "Linked"}</span>
+          {isFile ? <Paperclip className="w-3 h-3 shrink-0" /> : <Link2 className="w-3 h-3 shrink-0" />}
+          <span className="truncate">{isFile ? "Document" : "SharePoint"}</span>
           <ExternalLink className="w-2.5 h-2.5 shrink-0" />
         </a>
         {isAdmin && (
@@ -346,9 +381,9 @@ function FinancialCloseCell({
                   }`}
                   data-testid="btn-mode-link"
                 >
-                  <Link2 className={`w-6 h-6 ${mode === "link" ? "text-emerald-600" : "text-slate-400"}`} />
-                  <span className={`text-sm font-semibold ${mode === "link" ? "text-emerald-700" : "text-slate-600"}`}>Link File</span>
-                  <span className="text-[10px] text-slate-400">SharePoint path</span>
+                  <Upload className={`w-6 h-6 ${mode === "link" ? "text-emerald-600" : "text-slate-400"}`} />
+                  <span className={`text-sm font-semibold ${mode === "link" ? "text-emerald-700" : "text-slate-600"}`}>Attach File</span>
+                  <span className="text-[10px] text-slate-400">Upload or link</span>
                 </button>
                 <button
                   onClick={() => setMode("na")}
@@ -364,16 +399,59 @@ function FinancialCloseCell({
               </div>
 
               {mode === "link" && (
-                <div className="space-y-2">
-                  <label className="text-xs font-medium text-slate-600">SharePoint Folder / File Path</label>
+                <div className="space-y-3">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    className="hidden"
+                    onChange={handleFileUpload}
+                    accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
+                    data-testid="input-file-upload"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploading}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 border-dashed border-emerald-300 bg-emerald-50/50 hover:bg-emerald-50 hover:border-emerald-400 transition-all text-sm font-medium text-emerald-700 disabled:opacity-50"
+                    data-testid="btn-choose-file"
+                  >
+                    {uploading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Uploading...
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-4 h-4" />
+                        Choose File from Computer
+                      </>
+                    )}
+                  </button>
+
+                  {isUploadedFile && displayFileName && (
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-200">
+                      <Paperclip className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span className="text-sm text-emerald-700 truncate">{displayFileName}</span>
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 ml-auto" />
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                    <div className="flex-1 h-px bg-slate-200" />
+                    <span>OR paste a URL</span>
+                    <div className="flex-1 h-px bg-slate-200" />
+                  </div>
+
                   <Input
                     placeholder="https://company.sharepoint.com/sites/..."
-                    value={linkVal}
-                    onChange={(e) => setLinkVal(e.target.value)}
+                    value={isUploadedFile ? "" : linkVal}
+                    onChange={(e) => {
+                      setLinkVal(e.target.value);
+                      setUploadedFileName(null);
+                    }}
                     className="text-sm"
                     data-testid="input-sharepoint-link"
                   />
-                  <p className="text-[10px] text-slate-400">Paste the full SharePoint URL or folder path where the signed document is stored</p>
                 </div>
               )}
 
