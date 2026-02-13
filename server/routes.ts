@@ -6399,10 +6399,13 @@ export async function registerRoutes(
   app.get("/api/operational-tasks/:projectName", requireAuth, async (req: Request, res: Response) => {
     try {
       const projectName = req.params.projectName;
-      const [operationalTasks, planTasks] = await Promise.all([
+      const trackerName = projectName.endsWith("_Tracker") ? projectName : projectName + "_Tracker";
+      const [operationalTasks, planTasksDirect, planTasksTracker] = await Promise.all([
         storage.getOperationalTasksByProject(projectName),
         storage.getProjectPlansByProject(projectName),
+        projectName !== trackerName ? storage.getProjectPlansByProject(trackerName) : Promise.resolve([]),
       ]);
+      const planTasks = planTasksDirect.length > 0 ? planTasksDirect : planTasksTracker;
 
       const linkedImportedIds = new Set(
         operationalTasks
@@ -6785,7 +6788,79 @@ export async function registerRoutes(
   app.get("/api/planning-tasks/:projectName", requireAuth, async (req: Request, res: Response) => {
     try {
       const projectName = decodeURIComponent(req.params.projectName);
-      const tasks = await storage.getOperationalTasksByProject(projectName);
+      const trackerName = projectName.endsWith("_Tracker") ? projectName : projectName + "_Tracker";
+
+      const [operationalTasks, planTasksDirect, planTasksTracker] = await Promise.all([
+        storage.getOperationalTasksByProject(projectName),
+        storage.getProjectPlansByProject(projectName),
+        projectName !== trackerName ? storage.getProjectPlansByProject(trackerName) : Promise.resolve([]),
+      ]);
+
+      const planTasks = planTasksDirect.length > 0 ? planTasksDirect : planTasksTracker;
+
+      const linkedImportedIds = new Set(
+        operationalTasks
+          .filter((t: any) => t.importedTaskId != null)
+          .map((t: any) => t.importedTaskId)
+      );
+
+      const baselineTasks = planTasks
+        .filter((pt: any) => !linkedImportedIds.has(pt.id))
+        .map((pt: any) => {
+          const pctComplete = pt.actualPctComplete != null ? Math.round(pt.actualPctComplete * 100) : 0;
+          let status = "Not Started";
+          if (pctComplete >= 100) status = "Done";
+          else if (pctComplete > 0) status = "In Progress";
+
+          return {
+            id: -pt.id,
+            projectName: projectName,
+            importedTaskId: pt.id,
+            taskNumber: pt.taskNo || String(pt.rowNumber || ""),
+            parentTaskId: null as number | null,
+            title: pt.highLevelProgramme || `Task ${pt.taskNo || pt.rowNumber}`,
+            description: null,
+            status,
+            priority: "Normal",
+            startDate: pt.actualStart || null,
+            dueDate: pt.actualEnd || null,
+            durationDays: pt.durationDays || null,
+            percentComplete: pctComplete,
+            expectedPercentComplete: pt.expectedPctComplete != null ? Math.round(pt.expectedPctComplete * 100) : null,
+            assignees: null,
+            tags: null,
+            blockerReason: null,
+            plannedHours: null,
+            actualHours: null,
+            actualStartDate: null as string | null,
+            actualEndDate: null as string | null,
+            actualDurationDays: null as number | null,
+            comment: null as string | null,
+            sortOrder: pt.rowNumber || 0,
+            isBaseline: true,
+            createdBy: null,
+            createdAt: pt.createdAt,
+            updatedAt: pt.createdAt,
+          };
+        });
+
+      const allTasks: any[] = [...baselineTasks, ...operationalTasks];
+
+      const taskNumToId = new Map<string, number>();
+      for (const t of allTasks) {
+        if (t.taskNumber) taskNumToId.set(String(t.taskNumber), t.id);
+      }
+      for (const t of allTasks) {
+        if (t.parentTaskId) continue;
+        const num = String(t.taskNumber || "");
+        if (!num || !num.includes(".")) continue;
+        const parts = num.split(".");
+        parts.pop();
+        const parentNum = parts.join(".");
+        const parentId = taskNumToId.get(parentNum);
+        if (parentId !== undefined) t.parentTaskId = parentId;
+      }
+
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const todayMs = today.getTime();
@@ -6793,7 +6868,7 @@ export async function registerRoutes(
       const taskMap = new Map<number, any>();
       const childrenMap = new Map<number, number[]>();
 
-      for (const t of tasks) {
+      for (const t of allTasks) {
         const task: any = { ...t };
         const plannedStart = t.startDate ? new Date(t.startDate) : null;
         const plannedEnd = t.dueDate ? new Date(t.dueDate) : null;
@@ -6820,6 +6895,7 @@ export async function registerRoutes(
       }
 
       const calcExpected = (t: any): number | null => {
+        if (t.expectedPercentComplete != null) return t.expectedPercentComplete;
         const plannedStart = t.startDate ? new Date(t.startDate) : null;
         const plannedEnd = t.dueDate ? new Date(t.dueDate) : null;
         if (!plannedStart || !plannedEnd || isNaN(plannedStart.getTime()) || isNaN(plannedEnd.getTime())) return null;
@@ -6871,10 +6947,18 @@ export async function registerRoutes(
           totalWeight += weight;
         }
 
-        if (minPlannedStart) parent.startDate = minPlannedStart.toISOString().split('T')[0];
-        if (maxPlannedEnd) parent.dueDate = maxPlannedEnd.toISOString().split('T')[0];
-        if (minPlannedStart && maxPlannedEnd) {
-          parent.plannedDurationDays = Math.max(1, Math.round((maxPlannedEnd.getTime() - minPlannedStart.getTime()) / 86400000) + 1);
+        if (!parent.isBaseline || !parent.startDate) {
+          if (minPlannedStart) parent.startDate = minPlannedStart.toISOString().split('T')[0];
+        }
+        if (!parent.isBaseline || !parent.dueDate) {
+          if (maxPlannedEnd) parent.dueDate = maxPlannedEnd.toISOString().split('T')[0];
+        }
+        if (parent.startDate && parent.dueDate) {
+          const ps = new Date(parent.startDate);
+          const pe = new Date(parent.dueDate);
+          if (!isNaN(ps.getTime()) && !isNaN(pe.getTime())) {
+            parent.plannedDurationDays = Math.max(1, Math.round((pe.getTime() - ps.getTime()) / 86400000) + 1);
+          }
         }
         if (minActualStart) parent.actualStartDate = minActualStart.toISOString().split('T')[0];
         if (maxActualEnd) parent.actualEndDate = maxActualEnd.toISOString().split('T')[0];
@@ -6882,16 +6966,18 @@ export async function registerRoutes(
           parent.computedActualDurationDays = Math.max(1, Math.round((maxActualEnd.getTime() - minActualStart.getTime()) / 86400000) + 1);
         }
 
-        parent.percentComplete = totalWeight > 0 ? Math.round(totalWeightedPct / totalWeight) : 0;
+        if (!parent.isBaseline) {
+          parent.percentComplete = totalWeight > 0 ? Math.round(totalWeightedPct / totalWeight) : 0;
+        }
         parent.computedExpectedPct = totalWeight > 0 ? Math.round(totalWeightedExpected / totalWeight) : calcExpected(parent);
         parent.isParent = true;
         parent.childCount = children.length;
       };
 
-      const rootTasks = tasks.filter(t => !t.parentTaskId);
-      for (const root of rootTasks) computeRollups(root.id);
+      const rootIds = allTasks.filter(t => !t.parentTaskId).map(t => t.id);
+      for (const rootId of rootIds) computeRollups(rootId);
 
-      for (const t of taskMap.values()) {
+      for (const [, t] of taskMap) {
         if (!childrenMap.has(t.id)) {
           t.computedExpectedPct = calcExpected(t);
         }
@@ -6966,10 +7052,26 @@ export async function registerRoutes(
   app.get("/api/key-dates/:projectName", requireAuth, async (req: Request, res: Response) => {
     try {
       const projectName = decodeURIComponent(req.params.projectName);
-      const [mappings, tasks] = await Promise.all([
+      const trackerName = projectName.endsWith("_Tracker") ? projectName : projectName + "_Tracker";
+
+      const [mappings, operationalTasks, planTasksDirect, planTasksTracker] = await Promise.all([
         storage.getKeyDateMappings(projectName),
         storage.getOperationalTasksByProject(projectName),
+        storage.getProjectPlansByProject(projectName),
+        projectName !== trackerName ? storage.getProjectPlansByProject(trackerName) : Promise.resolve([]),
       ]);
+
+      const planTasks = planTasksDirect.length > 0 ? planTasksDirect : planTasksTracker;
+      const baselineTasks = planTasks.map((pt: any) => ({
+        id: -pt.id,
+        taskNumber: pt.taskNo || String(pt.rowNumber || ""),
+        title: pt.highLevelProgramme || `Task ${pt.taskNo || pt.rowNumber}`,
+        startDate: pt.actualStart || null,
+        dueDate: pt.actualEnd || null,
+        actualStartDate: null,
+        actualEndDate: null,
+      }));
+      const tasks: any[] = [...baselineTasks, ...operationalTasks];
 
       const results = mappings.map(m => {
         let matchedTask: any = null;
