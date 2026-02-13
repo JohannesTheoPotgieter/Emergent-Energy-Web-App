@@ -107,7 +107,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             {sidebarOpen && <span>Home</span>}
           </Link>
 
-          {navGroups.map((group) => (
+          {navGroups.filter(group => group.heading !== "ADMIN" || user?.role === "admin").map((group) => (
             <div key={group.heading} className="pt-4">
               {sidebarOpen && (
                 <p className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-sidebar-foreground/40">
@@ -137,7 +137,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </Avatar>
             {sidebarOpen && (
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{user?.name}</p>
+                <div className="flex items-center gap-1.5">
+                  <p className="text-sm font-medium truncate">{user?.name}</p>
+                  <span className={cn(
+                    "text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full shrink-0",
+                    user?.role === "admin" 
+                      ? "bg-amber-500/20 text-amber-300" 
+                      : "bg-blue-500/20 text-blue-300"
+                  )}>
+                    {user?.role === "admin" ? "Admin" : "Viewer"}
+                  </span>
+                </div>
                 <p className="text-xs text-sidebar-foreground/50 truncate">{user?.email}</p>
               </div>
             )}

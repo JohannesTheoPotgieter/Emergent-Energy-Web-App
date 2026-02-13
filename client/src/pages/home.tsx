@@ -1,5 +1,6 @@
 import { Link } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
+import { useAuth } from "@/hooks/use-auth";
 import { 
   LayoutDashboard, 
   FileSpreadsheet, 
@@ -114,6 +115,7 @@ function NavTile({ link }: { link: QuickLink }) {
 }
 
 export default function Home() {
+  const { isAdmin } = useAuth();
   return (
     <div className="space-y-8" data-testid="home-page">
       <div>
@@ -139,19 +141,21 @@ export default function Home() {
         </div>
       </div>
 
-      <div>
-        <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Admin</h2>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <NavTile link={{
-            label: "Admin",
-            description: "Upload trackers, manage users, and system settings",
-            icon: Settings,
-            path: "/admin",
-            color: "text-slate-600",
-            bg: "bg-slate-50 dark:bg-slate-950/30 border-slate-200 dark:border-slate-800 hover:border-slate-400",
-          }} />
+      {isAdmin && (
+        <div>
+          <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Admin</h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <NavTile link={{
+              label: "Admin",
+              description: "Upload trackers, manage users, and system settings",
+              icon: Settings,
+              path: "/admin",
+              color: "text-slate-600",
+              bg: "bg-slate-50 dark:bg-slate-950/30 border-slate-200 dark:border-slate-800 hover:border-slate-400",
+            }} />
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

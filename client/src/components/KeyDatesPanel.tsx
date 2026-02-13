@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -59,6 +60,7 @@ const DEFAULT_KEY_DATES = [
 ];
 
 export default function KeyDatesPanel({ projectName }: KeyDatesPanelProps) {
+  const { isAdmin } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
@@ -132,9 +134,11 @@ export default function KeyDatesPanel({ projectName }: KeyDatesPanelProps) {
               </div>
             )}
           </div>
-          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setAddOpen(true)} data-testid="button-add-key-date">
-            <Plus className="h-3.5 w-3.5 mr-1" /> Add Mapping
-          </Button>
+          {isAdmin && (
+            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setAddOpen(true)} data-testid="button-add-key-date">
+              <Plus className="h-3.5 w-3.5 mr-1" /> Add Mapping
+            </Button>
+          )}
         </div>
       </CardHeader>
       <CardContent>
@@ -186,10 +190,12 @@ export default function KeyDatesPanel({ projectName }: KeyDatesPanelProps) {
                   {kd.effectiveDate && (
                     <span className="text-sm font-semibold text-blue-700">{formatDate(kd.effectiveDate)}</span>
                   )}
-                  <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground hover:text-red-600"
-                    onClick={() => deleteMutation.mutate(kd.id)} data-testid={`button-delete-kd-${kd.id}`}>
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
+                  {isAdmin && (
+                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground hover:text-red-600"
+                      onClick={() => deleteMutation.mutate(kd.id)} data-testid={`button-delete-kd-${kd.id}`}>
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
                 </div>
               </div>
             ))}
