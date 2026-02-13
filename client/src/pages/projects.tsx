@@ -36,12 +36,21 @@ import {
   Activity,
   BarChart3,
   Calendar,
+  Pencil,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 
 interface ProjectSummary {
+  project_info_id: number | null;
   project_name: string;
   size_kwp: number | null;
   pd: string | null;
@@ -453,6 +462,181 @@ function FinancialCloseCell({
   );
 }
 
+const PHASE_OPTIONS = [
+  "", "Planning", "Financial Close", "Construction", "QA", "Commissioning",
+  "Handover", "Compliance Handover", "Commercial Close Out", "DLP", "TBC",
+  "Hold", "Refiloe Mohohlo",
+];
+
+function EditProjectInfoModal({
+  project,
+  open,
+  onOpenChange,
+  onSaved,
+}: {
+  project: ProjectSummary;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSaved?: (projectName: string) => void;
+}) {
+  const qc = useQueryClient();
+  const rawName = project.project_name.replace(/_Tracker.*$/i, "");
+
+  const [formData, setFormData] = useState({
+    projectName: rawName,
+    phase: project.phase || "",
+    pd: project.pd || "",
+    pm: project.pm || "",
+    sizeKwp: project.size_kwp != null ? String(project.size_kwp) : "",
+    constructionStartDate: project.construction_start_date || "",
+    commissioningDate: project.commissioning_date || "",
+    omHandoverDate: project.om_handover_date || "",
+    clientHandoverDate: project.client_handover_date || "",
+  });
+
+
+  const mutation = useMutation({
+    mutationFn: async (data: Record<string, unknown>) => {
+      await apiRequest("PATCH", `/api/project-info/${project.project_info_id}`, data);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/projects-summary"] });
+      onOpenChange(false);
+      onSaved?.(project.project_name);
+    },
+  });
+
+  const handleSave = () => {
+    const body: Record<string, unknown> = {
+      projectName: formData.projectName.replace(/ /g, "_") + "_Tracker",
+      phase: formData.phase && formData.phase !== "__blank" ? formData.phase : null,
+      pd: formData.pd || null,
+      pm: formData.pm || null,
+      sizeKwp: formData.sizeKwp ? Number(formData.sizeKwp) : null,
+      constructionStartDate: formData.constructionStartDate || null,
+      commissioningDate: formData.commissioningDate || null,
+      omHandoverDate: formData.omHandoverDate || null,
+      clientHandoverDate: formData.clientHandoverDate || null,
+    };
+    mutation.mutate(body);
+  };
+
+  const updateField = (field: string, value: string) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg" data-testid="dialog-edit-project-info">
+        <DialogHeader>
+          <DialogTitle>Edit Project Info</DialogTitle>
+        </DialogHeader>
+        <div className="grid grid-cols-2 gap-4 py-4">
+          <div className="col-span-2">
+            <Label className="text-xs font-medium text-slate-600 mb-1 block">Project Name</Label>
+            <Input
+              value={formData.projectName.replace(/_/g, " ")}
+              onChange={(e) => updateField("projectName", e.target.value)}
+              data-testid="input-edit-project-name"
+            />
+          </div>
+          <div>
+            <Label className="text-xs font-medium text-slate-600 mb-1 block">Phase</Label>
+            <Select value={formData.phase} onValueChange={(v) => updateField("phase", v)}>
+              <SelectTrigger data-testid="select-edit-phase">
+                <SelectValue placeholder="Select phase" />
+              </SelectTrigger>
+              <SelectContent>
+                {PHASE_OPTIONS.map((p) => (
+                  <SelectItem key={p || "__blank"} value={p || "__blank"}>
+                    {p || "(blank)"}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs font-medium text-slate-600 mb-1 block">Size kWp</Label>
+            <Input
+              type="number"
+              value={formData.sizeKwp}
+              onChange={(e) => updateField("sizeKwp", e.target.value)}
+              data-testid="input-edit-size-kwp"
+            />
+          </div>
+          <div>
+            <Label className="text-xs font-medium text-slate-600 mb-1 block">PD</Label>
+            <Input
+              value={formData.pd}
+              onChange={(e) => updateField("pd", e.target.value)}
+              data-testid="input-edit-pd"
+            />
+          </div>
+          <div>
+            <Label className="text-xs font-medium text-slate-600 mb-1 block">PM</Label>
+            <Input
+              value={formData.pm}
+              onChange={(e) => updateField("pm", e.target.value)}
+              data-testid="input-edit-pm"
+            />
+          </div>
+          <div>
+            <Label className="text-xs font-medium text-slate-600 mb-1 block">Construction Start Date</Label>
+            <Input
+              type="date"
+              value={formData.constructionStartDate}
+              onChange={(e) => updateField("constructionStartDate", e.target.value)}
+              data-testid="input-edit-construction-start"
+            />
+          </div>
+          <div>
+            <Label className="text-xs font-medium text-slate-600 mb-1 block">Commissioning Date</Label>
+            <Input
+              type="date"
+              value={formData.commissioningDate}
+              onChange={(e) => updateField("commissioningDate", e.target.value)}
+              data-testid="input-edit-commissioning"
+            />
+          </div>
+          <div>
+            <Label className="text-xs font-medium text-slate-600 mb-1 block">O&M Handover Date</Label>
+            <Input
+              type="date"
+              value={formData.omHandoverDate}
+              onChange={(e) => updateField("omHandoverDate", e.target.value)}
+              data-testid="input-edit-om-handover"
+            />
+          </div>
+          <div>
+            <Label className="text-xs font-medium text-slate-600 mb-1 block">Client Handover Date</Label>
+            <Input
+              type="date"
+              value={formData.clientHandoverDate}
+              onChange={(e) => updateField("clientHandoverDate", e.target.value)}
+              data-testid="input-edit-client-handover"
+            />
+          </div>
+        </div>
+        <div className="flex items-center justify-end gap-2 pt-2 border-t">
+          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)} data-testid="btn-cancel-edit">
+            Cancel
+          </Button>
+          <Button size="sm" onClick={handleSave} disabled={mutation.isPending} data-testid="btn-save-edit">
+            {mutation.isPending ? (
+              <>
+                <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                Saving…
+              </>
+            ) : (
+              "Save"
+            )}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function ProjectsSummary() {
   const [, setLocation] = useLocation();
   const [searchTerm, setSearchTerm] = useState("");
@@ -461,6 +645,8 @@ export default function ProjectsSummary() {
   const [sortKey, setSortKey] = useState<SortKey>("project_name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const { isAdmin } = useAuth();
+  const [editProject, setEditProject] = useState<ProjectSummary | null>(null);
+  const [writebackPromptProject, setWritebackPromptProject] = useState<string | null>(null);
 
   const { data: projects = [], isLoading } = useQuery<ProjectSummary[]>({
     queryKey: ["/api/projects-summary"],
@@ -599,6 +785,7 @@ export default function ProjectsSummary() {
     { label: "Financial Close", colSpan: 4, color: "bg-emerald-50 text-emerald-700" },
     { label: "Phase & Schedule", colSpan: 8, color: "bg-blue-50 text-blue-700" },
     { label: "Progress", colSpan: 3, color: "bg-violet-50 text-violet-700" },
+    ...(isAdmin ? [{ label: "", colSpan: 1, color: "bg-white" }] : []),
   ];
 
   const columns: {
@@ -792,6 +979,25 @@ export default function ProjectsSummary() {
         );
       },
     },
+    ...(isAdmin
+      ? [
+          {
+            key: "actions",
+            header: "Actions",
+            render: (p: ProjectSummary) => (
+              <button
+                onClick={() => setEditProject(p)}
+                className="p-1 hover:bg-slate-100 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                title={p.project_info_id ? "Edit project info" : "No project info record"}
+                disabled={!p.project_info_id}
+                data-testid={`btn-edit-project-${p.project_name}`}
+              >
+                <Pencil className="w-3.5 h-3.5 text-slate-500" />
+              </button>
+            ),
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -1010,6 +1216,58 @@ export default function ProjectsSummary() {
           </table>
         </div>
       </div>
+
+      {editProject && (
+        <EditProjectInfoModal
+          project={editProject}
+          open={!!editProject}
+          onOpenChange={(open) => { if (!open) setEditProject(null); }}
+          onSaved={(name) => setWritebackPromptProject(name)}
+        />
+      )}
+
+      {writebackPromptProject && (
+        <div className="fixed bottom-4 right-4 z-50 bg-white border border-blue-200 shadow-lg rounded-xl p-4 max-w-sm animate-in slide-in-from-bottom-4" data-testid="writeback-prompt">
+          <div className="flex items-start gap-3">
+            <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
+              <FileText className="w-4 h-4 text-blue-600" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-slate-800">Project info updated</p>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Would you like to configure Excel writeback mappings for these changes?
+              </p>
+              <div className="flex items-center gap-2 mt-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs"
+                  onClick={() => setLocation("/writeback-admin")}
+                  data-testid="btn-goto-writeback"
+                >
+                  <ExternalLink className="w-3 h-3 mr-1" />
+                  Configure Writeback
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 text-xs text-slate-400"
+                  onClick={() => setWritebackPromptProject(null)}
+                  data-testid="btn-dismiss-writeback"
+                >
+                  Dismiss
+                </Button>
+              </div>
+            </div>
+            <button
+              className="text-slate-400 hover:text-slate-600"
+              onClick={() => setWritebackPromptProject(null)}
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

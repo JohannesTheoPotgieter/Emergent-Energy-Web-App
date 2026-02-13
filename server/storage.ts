@@ -119,8 +119,10 @@ export interface IStorage {
 
   // Project Info (new)
   getProjectInfo(projectName: string): Promise<ProjectInfo | undefined>;
+  getProjectInfoById(id: number): Promise<ProjectInfo | undefined>;
   getAllProjectInfo(): Promise<ProjectInfo[]>;
   upsertProjectInfo(info: InsertProjectInfo): Promise<ProjectInfo>;
+  updateProjectInfoById(id: number, fields: Partial<InsertProjectInfo>): Promise<ProjectInfo | undefined>;
   deleteProjectInfo(projectName: string): Promise<void>;
   markProjectsActive(activeNames: string[]): Promise<void>;
   getProjectCounts(): Promise<{ active: number; historical: number; total: number }>;
@@ -578,6 +580,20 @@ export class DatabaseStorage implements IStorage {
   async getProjectInfo(projectName: string): Promise<ProjectInfo | undefined> {
     const [info] = await this.dbInstance.select().from(projectInfo).where(eq(projectInfo.projectName, projectName));
     return info;
+  }
+
+  async getProjectInfoById(id: number): Promise<ProjectInfo | undefined> {
+    const [info] = await this.dbInstance.select().from(projectInfo).where(eq(projectInfo.id, id));
+    return info;
+  }
+
+  async updateProjectInfoById(id: number, fields: Partial<InsertProjectInfo>): Promise<ProjectInfo | undefined> {
+    const [updated] = await this.dbInstance
+      .update(projectInfo)
+      .set({ ...fields, updatedAt: new Date() })
+      .where(eq(projectInfo.id, id))
+      .returning();
+    return updated;
   }
 
   async getAllProjectInfo(): Promise<ProjectInfo[]> {

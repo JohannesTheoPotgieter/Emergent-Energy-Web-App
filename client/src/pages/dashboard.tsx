@@ -353,6 +353,23 @@ function SkeletonDashboard() {
   );
 }
 
+function phaseColor(phase: string | null): string {
+  switch (phase?.toLowerCase()) {
+    case 'construction': return '#4472C4';
+    case 'qa': case 'quality assurance': return '#ED7D31';
+    case 'commissioning': return '#FFC000';
+    case 'handover': return '#70AD47';
+    case 'compliance handover': return '#5B9BD5';
+    case 'commercial close out': return '#A5A5A5';
+    case 'dlp': return '#9B59B6';
+    case 'financial close': return '#2ECC71';
+    case 'planning': return '#1ABC9C';
+    case 'tbc': return '#BDC3C7';
+    case 'hold': return '#E74C3C';
+    default: return '#70AD47';
+  }
+}
+
 function GanttTooltip({ active, payload }: any) {
   if (!active || !payload?.length) return null;
   const d = payload[0]?.payload;
@@ -963,6 +980,13 @@ export default function Dashboard() {
                     });
                   }
 
+                  const todayTime = new Date().getTime();
+                  const todayPct = todayTime >= minTime && todayTime <= maxTime
+                    ? ((todayTime - minTime) / (maxTime - minTime)) * 100
+                    : null;
+
+                  const phases = Array.from(new Set(ganttData.map(r => r.phase).filter(Boolean))) as string[];
+
                   return (
                     <div className="flex flex-col">
                       <div className="flex mb-1 pl-[220px]">
@@ -978,31 +1002,52 @@ export default function Dashboard() {
                           ))}
                         </div>
                       </div>
-                      {ganttData.map((row, i) => {
-                        const leftPct = (row.offset / totalDays) * 100;
-                        const widthPct = Math.max(0.3, (row.duration / totalDays) * 100);
-                        return (
+                      <div className="relative">
+                        {todayPct !== null && (
                           <div
-                            key={i}
-                            className="flex items-center h-7 hover:bg-gray-50 dark:hover:bg-gray-800/30 cursor-pointer transition-colors group"
-                            onClick={() => navigateToProject(row.projectName)}
-                            data-testid={`gantt-row-${i}`}
+                            className="absolute top-0 bottom-0 border-l-2 border-red-400 border-dashed z-10 pointer-events-none"
+                            style={{ left: `calc(220px + (100% - 220px) * ${todayPct / 100})` }}
+                            title={`Today: ${format(new Date(), "yyyy/MM/dd")}`}
                           >
-                            <div className="w-[220px] shrink-0 pr-2 text-right">
-                              <span className="text-[11px] text-gray-600 dark:text-gray-400 truncate block group-hover:text-blue-600 transition-colors">
-                                {row.displayName}
-                              </span>
-                            </div>
-                            <div className="relative flex-1 h-5">
-                              <div
-                                className="absolute top-1 h-3 rounded-sm bg-[#70AD47] group-hover:bg-[#5a9237] transition-colors"
-                                style={{ left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 3 }}
-                                title={`${row.startDate} → ${row.endDate}`}
-                              />
-                            </div>
+                            <span className="absolute -top-4 -translate-x-1/2 text-[9px] font-semibold text-red-500">Today</span>
                           </div>
-                        );
-                      })}
+                        )}
+                        {ganttData.map((row, i) => {
+                          const leftPct = (row.offset / totalDays) * 100;
+                          const widthPct = Math.max(0.3, (row.duration / totalDays) * 100);
+                          return (
+                            <div
+                              key={i}
+                              className="flex items-center h-7 hover:bg-gray-50 dark:hover:bg-gray-800/30 cursor-pointer transition-colors group"
+                              onClick={() => navigateToProject(row.projectName)}
+                              data-testid={`gantt-row-${i}`}
+                            >
+                              <div className="w-[220px] shrink-0 pr-2 text-right">
+                                <span className="text-[11px] text-gray-600 dark:text-gray-400 truncate block group-hover:text-blue-600 transition-colors">
+                                  {row.displayName}
+                                </span>
+                              </div>
+                              <div className="relative flex-1 h-5">
+                                <div
+                                  className="absolute top-1 h-3 rounded-sm transition-colors opacity-90 group-hover:opacity-100"
+                                  style={{ left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 3, backgroundColor: phaseColor(row.phase) }}
+                                  title={`${row.displayName} | ${row.phase || 'Unknown'}\n${row.startDate} → ${row.endDate}`}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {phases.length > 0 && (
+                        <div className="flex flex-wrap gap-3 mt-3 pt-2 border-t border-gray-100 dark:border-gray-800">
+                          {phases.map(p => (
+                            <div key={p} className="flex items-center gap-1.5">
+                              <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: phaseColor(p) }} />
+                              <span className="text-[10px] text-gray-500">{p}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   );
                 })()}
