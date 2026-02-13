@@ -1521,7 +1521,7 @@ export async function registerRoutes(
 
   app.post("/api/cashflow-2026/opening-balance", requireAuth, async (req, res) => {
     try {
-      const { weekStartDate, openingBalance, computedValue } = req.body;
+      const { weekStartDate, openingBalance, computedValue, clearForward } = req.body;
       if (!weekStartDate || openingBalance == null) {
         return res.status(400).json({ error: "weekStartDate and openingBalance required" });
       }
@@ -1544,7 +1544,16 @@ export async function registerRoutes(
       });
 
       const result = await storage.upsertCashflowWeeklyManual(weekStartDate, String(openingBalance));
-      res.json(result);
+
+      let clearedWeeks: string[] = [];
+      if (clearForward) {
+        const nextWeek = new Date(weekStartDate);
+        nextWeek.setUTCDate(nextWeek.getUTCDate() + 7);
+        const nextWeekStr = nextWeek.toISOString().split('T')[0];
+        clearedWeeks = await storage.deleteAllCashflowWeeklyManualAfter(nextWeekStr);
+      }
+
+      res.json({ ...result, clearedWeeks });
     } catch (error) {
       console.error("Opening balance save error:", error);
       res.status(500).json({ error: "Failed to save opening balance", message: "Failed to save opening balance" });
@@ -1584,6 +1593,7 @@ export async function registerRoutes(
           delta: null,
           changedBy: user?.username || null,
         });
+        await storage.deleteCashflowWeeklyManual(weekStartDate);
       }
       res.json({ ok: true });
     } catch (error) {
