@@ -2026,9 +2026,9 @@ export async function registerRoutes(
 
   // ==================== PROGRAM DASHBOARD API ====================
 
-  app.get("/api/program-dashboard", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/program-dashboard", requireAuth, async (req, res) => {
     try {
-      const [allProjectInfo, allExpenses, rawInflows, allPlans, allEditableFields, allTaskLinks, allOpTasks] = await Promise.all([
+      const [allProjectInfo, allExpenses, rawInflows, allPlans, allEditableFields, allTaskLinks, allOpTasks, manualEntries] = await Promise.all([
         storage.getAllProjectInfo(),
         storage.getAllProgramExpenses(),
         storage.getAllProgramInflows(),
@@ -2036,10 +2036,77 @@ export async function registerRoutes(
         storage.getAllProjectEditableFields(),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
+        storage.getTrackerMonthlyManual('COS'),
       ]);
       const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
 
       const today = new Date().toISOString().split("T")[0];
+
+      const staticCosBudget: Record<string, number> = {
+        '2025-09': 8083466.99,
+        '2025-10': 16346971.77,
+        '2025-11': 20803804.86,
+        '2025-12': 12381055.48,
+        '2026-01': 12395435.22,
+        '2026-02': 20724666.08,
+        '2026-03': 30199956.69,
+        '2026-04': 21137178.14,
+        '2026-05': 31405517.81,
+        '2026-06': 41720854.07,
+        '2026-07': 30116780.50,
+        '2026-08': 73983803.91,
+      };
+
+      const manualMap = new Map(manualEntries.map(e => [e.monthKey, e]));
+      const cosRealisedByMonth = new Map<string, number>();
+      const cosTotalByMonth = new Map<string, number>();
+
+      for (const exp of allExpenses) {
+        if (exp.rowType !== 'item') continue;
+        const amount = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
+        if (isNaN(amount) || amount === 0) continue;
+        const invDate = exp.expenseInvoicedDate as string | null;
+        if (!invDate) continue;
+        const dateMatch = invDate.match(/^(\d{4})-(\d{2})/);
+        if (!dateMatch) continue;
+        const monthKey = `${dateMatch[1]}-${dateMatch[2]}`;
+        cosTotalByMonth.set(monthKey, (cosTotalByMonth.get(monthKey) || 0) + amount);
+        const hasInvoice = !!exp.expenseInvoiceNumber;
+        const dateConfirmed = exp.invoiceDateConfirmed === true;
+        if (hasInvoice && dateConfirmed) {
+          cosRealisedByMonth.set(monthKey, (cosRealisedByMonth.get(monthKey) || 0) + amount);
+        }
+      }
+
+      const nowDate = new Date();
+      const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, '0')}`;
+      const cosStartMonth = new Date(Date.UTC(2025, 8, 1));
+
+      let cosYtdRealised = 0;
+      let cosYtdTarget = 0;
+      let cosCurrentMonthRealised = 0;
+      let cosCurrentMonthTarget = 0;
+
+      for (let i = 0; i < 12; i++) {
+        const monthDate = new Date(cosStartMonth);
+        monthDate.setUTCMonth(monthDate.getUTCMonth() + i);
+        const yr = monthDate.getUTCFullYear();
+        const mo = monthDate.getUTCMonth();
+        const mk = `${yr}-${String(mo + 1).padStart(2, '0')}`;
+        if (mk > currentMonthKey) break;
+
+        const realised = cosRealisedByMonth.get(mk) || 0;
+        const manual = manualMap.get(mk);
+        const budget = manual?.budget ? parseFloat(manual.budget) : (staticCosBudget[mk] ?? 0);
+
+        cosYtdRealised += realised;
+        cosYtdTarget += budget;
+
+        if (mk === currentMonthKey) {
+          cosCurrentMonthRealised = realised;
+          cosCurrentMonthTarget = budget;
+        }
+      }
 
       const plansByProject = new Map<string, typeof allPlans>();
       for (const plan of allPlans) {
@@ -2081,7 +2148,7 @@ export async function registerRoutes(
       const omHandoverProjects: Array<{ projectName: string; date: string; pm: string | null }> = [];
       const clientHandoverProjects: Array<{ projectName: string; date: string; pm: string | null }> = [];
       const revenueOutstandingProjects: Array<{ projectName: string; amount: number; milestone: string | null }> = [];
-      const expenseOverdueProjects: Array<{ projectName: string; amount: number; lineItem: string | null }> = [];
+      const expenseOverdueProjects: Array<{ projectName: string; amount: number; lineItem: string | null; hasInvoice: boolean }> = [];
       const inflowProjects: Array<{ projectName: string; amount: number }> = [];
       const outflowProjects: Array<{ projectName: string; amount: number }> = [];
 
@@ -2118,10 +2185,12 @@ export async function registerRoutes(
         let projRevOutstanding = 0;
         for (const inflow of projectInflows) {
           if (inflow.milestoneAmount) {
-            const hasPayment = inflow.paymentReceivedDate && /^\d{4}-\d{2}-\d{2}$/.test(inflow.paymentReceivedDate) && inflow.paymentReceivedDate <= today;
-            const noInvoice = !inflow.milestoneInvoiceNumber || inflow.milestoneInvoiceNumber.trim() === '';
-            if (hasPayment && noInvoice) {
-              const amt = parseFloat(inflow.milestoneAmount);
+            const amt = parseFloat(inflow.milestoneAmount);
+            const hasInvoiceNum = inflow.milestoneInvoiceNumber && inflow.milestoneInvoiceNumber.trim() !== '';
+            const paymentNotReceived = !inflow.paymentReceivedDate || inflow.paymentReceivedDate.trim() === '';
+            const dateToCheck = inflow.effectiveDate || inflow.invoiceRaisedDate;
+            const dateInPast = dateToCheck && /^\d{4}-\d{2}-\d{2}/.test(dateToCheck) && dateToCheck < today;
+            if (hasInvoiceNum && paymentNotReceived && dateInPast && amt > 0) {
               revenueOutstanding += amt;
               projRevOutstanding += amt;
             }
@@ -2146,14 +2215,17 @@ export async function registerRoutes(
         }
 
         let projExpOverdue = 0;
+        let projHasInvoice = false;
         for (const expense of projectExpenses) {
           if (expense.expenseActualTotal) {
+            const amt = parseFloat(expense.expenseActualTotal);
             const hasPastPaymentDate = expense.expensePaymentDate && /^\d{4}-\d{2}-\d{2}$/.test(expense.expensePaymentDate) && expense.expensePaymentDate < today;
-            const noInvoice = !expense.expenseInvoiceNumber || expense.expenseInvoiceNumber.trim() === '';
-            if (hasPastPaymentDate && noInvoice) {
-              const amt = parseFloat(expense.expenseActualTotal);
+            if (hasPastPaymentDate && amt > 0) {
               expenseOverdue += amt;
               projExpOverdue += amt;
+              if (expense.expenseInvoiceNumber && expense.expenseInvoiceNumber.trim() !== '') {
+                projHasInvoice = true;
+              }
             }
           }
           if (isThisWeek(expense.expensePaymentDate) && expense.expenseActualTotal) {
@@ -2161,7 +2233,7 @@ export async function registerRoutes(
           }
         }
         if (projExpOverdue > 0) {
-          expenseOverdueProjects.push({ projectName, amount: projExpOverdue, lineItem: null });
+          expenseOverdueProjects.push({ projectName, amount: projExpOverdue, lineItem: null, hasInvoice: projHasInvoice });
         }
         outflowsThisWeek += projOutflowsWeek;
         if (projOutflowsWeek > 0) {
@@ -2189,6 +2261,51 @@ export async function registerRoutes(
         ...stats,
       }));
 
+      const phaseCountMap = new Map<string, number>();
+      for (const info of allProjectInfo) {
+        const phase = info.phase && info.phase.trim() !== '' ? info.phase : '(blank)';
+        phaseCountMap.set(phase, (phaseCountMap.get(phase) || 0) + 1);
+      }
+      const projectsByPhase = Array.from(phaseCountMap.entries())
+        .map(([phase, count]) => ({ phase, count }))
+        .sort((a, b) => b.count - a.count);
+
+      const constructionQAPhases = new Set<string>();
+      for (const info of allProjectInfo) {
+        if (info.phase) {
+          const lower = info.phase.toLowerCase();
+          if (lower.includes('construction') || lower.includes('qa') || lower.includes('quality')) {
+            constructionQAPhases.add(info.projectName);
+          }
+        }
+      }
+      const hasPhaseData = allProjectInfo.some(i => i.phase && i.phase.trim() !== '');
+
+      const completionCompare: Array<{ projectName: string; actualPct: number; expectedPct: number }> = [];
+      for (const [projectName, plans] of Array.from(plansByProject.entries())) {
+        if (hasPhaseData && !constructionQAPhases.has(projectName)) continue;
+        const withData = plans.filter((p: any) => p.percentComplete != null && p.expectedProgress != null);
+        if (withData.length === 0) continue;
+        const actualPct = withData.reduce((sum: number, p: any) => sum + (parseFloat(p.percentComplete) || 0), 0) / withData.length;
+        const expectedPct = withData.reduce((sum: number, p: any) => sum + (parseFloat(p.expectedProgress) || 0), 0) / withData.length;
+        completionCompare.push({ projectName, actualPct, expectedPct });
+      }
+      completionCompare.sort((a, b) => b.actualPct - a.actualPct);
+
+      const portfolioTimeline: Array<{ projectName: string; startDate: string | null; endDate: string | null; phase: string | null }> = [];
+      for (const info of allProjectInfo) {
+        const startDate = info.constructionStartDate || null;
+        if (!startDate) continue;
+        const endDate = info.clientHandoverDate || info.commissioningDate || null;
+        portfolioTimeline.push({
+          projectName: info.projectName,
+          startDate,
+          endDate,
+          phase: info.phase || null,
+        });
+      }
+      portfolioTimeline.sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''));
+
       res.json({
         kpis: {
           siteEstablishmentNext10,
@@ -2199,6 +2316,14 @@ export async function registerRoutes(
           expenseOverdue,
           inflowsThisWeek,
           outflowsThisWeek,
+        },
+        cosKpis: {
+          currentMonthRealised: cosCurrentMonthRealised,
+          currentMonthTarget: cosCurrentMonthTarget,
+          currentMonthRealisedPct: cosCurrentMonthTarget !== 0 ? cosCurrentMonthRealised / cosCurrentMonthTarget : 0,
+          ytdRealised: cosYtdRealised,
+          ytdTarget: cosYtdTarget,
+          ytdRealisedPct: cosYtdTarget !== 0 ? cosYtdRealised / cosYtdTarget : 0,
         },
         kpiDetails: {
           siteEstablishmentProjects,
@@ -2211,6 +2336,9 @@ export async function registerRoutes(
           outflowProjects: outflowProjects.sort((a, b) => b.amount - a.amount),
         },
         pmTable,
+        projectsByPhase,
+        completionCompare,
+        portfolioTimeline,
       });
     } catch (error) {
       console.error("Program dashboard error:", error);
@@ -2218,7 +2346,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/dashboard/high-priority", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/dashboard/high-priority", requireAuth, async (req, res) => {
     try {
       const [allProjectInfo, allExpenses, rawInflows, allPlans, allTaskLinks, allOpTasks] = await Promise.all([
         storage.getAllProjectInfo(),
@@ -2242,12 +2370,13 @@ export async function registerRoutes(
         amount: number;
         paymentDate: string;
         severity: string;
+        hasInvoice: boolean;
       }> = [];
 
       for (const expense of allExpenses) {
         if (expense.expenseActualTotal && expense.expensePaymentDate) {
           const amt = parseFloat(expense.expenseActualTotal);
-          if (amt > 0 && expense.expensePaymentDate < today && (!expense.expenseInvoiceNumber || expense.expenseInvoiceNumber.trim() === '')) {
+          if (amt > 0 && expense.expensePaymentDate < today) {
             overdueExpenses.push({
               projectName: expense.projectName,
               lineItem: expense.expenseLineItem,
@@ -2256,6 +2385,7 @@ export async function registerRoutes(
               amount: amt,
               paymentDate: expense.expensePaymentDate,
               severity: amt >= 500000 ? "Critical" : amt >= 100000 ? "High" : "Medium",
+              hasInvoice: !!expense.expenseInvoiceNumber && expense.expenseInvoiceNumber.trim() !== '',
             });
           }
         }
@@ -2274,13 +2404,17 @@ export async function registerRoutes(
       for (const inflow of allInflows) {
         if (inflow.milestoneAmount) {
           const amt = parseFloat(inflow.milestoneAmount);
-          if (amt > 0 && !inflow.paymentReceivedDate) {
+          const hasInvoiceNum = inflow.milestoneInvoiceNumber && inflow.milestoneInvoiceNumber.trim() !== '';
+          const paymentNotReceived = !inflow.paymentReceivedDate || inflow.paymentReceivedDate.trim() === '';
+          const dateToCheck = inflow.effectiveDate || inflow.invoiceRaisedDate;
+          const dateInPast = dateToCheck && /^\d{4}-\d{2}-\d{2}/.test(dateToCheck) && dateToCheck < today;
+          if (amt > 0 && hasInvoiceNum && paymentNotReceived && dateInPast) {
             revenueOutstanding.push({
               projectName: inflow.projectName,
               milestoneName: inflow.milestoneName,
               invoiceNumber: inflow.milestoneInvoiceNumber,
               amount: amt,
-              dueDate: inflow.effectiveDate || inflow.invoiceRaisedDate || null,
+              dueDate: dateToCheck || null,
               severity: amt >= 1000000 ? "Critical" : amt >= 250000 ? "High" : "Medium",
             });
           }
