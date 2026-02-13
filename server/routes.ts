@@ -1773,10 +1773,31 @@ export async function registerRoutes(
 
   app.get("/api/cos-tracker", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const [allProgramExpenses, manualEntries] = await Promise.all([
+      const [allProgramExpenses, manualEntries, rawInflows, allTaskLinks, allOpTasks, allPlans] = await Promise.all([
         storage.getAllProgramExpenses(),
         storage.getTrackerMonthlyManual('COS'),
+        storage.getAllProgramInflows(),
+        storage.getAllMilestoneTaskLinks(),
+        storage.getAllOperationalTasks(),
+        storage.getAllProjectPlans(),
       ]);
+      const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
+
+      const revByMonth = new Map<string, number>();
+      for (const inflow of allInflows) {
+        if (!inflow.milestoneAmount) continue;
+        const amt = parseFloat(inflow.milestoneAmount as string);
+        if (isNaN(amt) || amt === 0) continue;
+        const hasInvoice = !!inflow.milestoneInvoiceNumber && inflow.milestoneInvoiceNumber.trim() !== '';
+        const hasPayment = !!inflow.paymentReceivedDate && /^\d{4}-\d{2}-\d{2}/.test(inflow.paymentReceivedDate);
+        if (hasInvoice && hasPayment) {
+          const dateMatch = inflow.paymentReceivedDate!.match(/^(\d{4})-(\d{2})/);
+          if (dateMatch) {
+            const mk = `${dateMatch[1]}-${dateMatch[2]}`;
+            revByMonth.set(mk, (revByMonth.get(mk) || 0) + amt);
+          }
+        }
+      }
 
       const manualMap = new Map(manualEntries.map(e => [e.monthKey, e]));
 
@@ -1835,7 +1856,7 @@ export async function registerRoutes(
       const months: any[] = [];
       const startMonth = new Date(Date.UTC(2025, 8, 1));
 
-      let ytdCOS = 0, ytdBudget = 0, ytdRealised = 0;
+      let ytdCOS = 0, ytdBudget = 0, ytdRealised = 0, ytdRevRealised = 0;
 
       function mapToArray(m: Map<string, number>): { projectName: string; value: number }[] {
         const arr: { projectName: string; value: number }[] = [];
@@ -1863,9 +1884,11 @@ export async function registerRoutes(
         const variance = totalCOS - budget;
         const variancePct = budget !== 0 ? variance / budget : 0;
 
+        const revRealised = revByMonth.get(monthKey) ?? 0;
         ytdCOS += totalCOS;
         ytdRealised += realisedCOS;
         ytdBudget += budget;
+        ytdRevRealised += revRealised;
         const ytdUnrealised = ytdCOS - ytdRealised;
         const ytdVariance = ytdCOS - ytdBudget;
         const ytdVariancePct = ytdBudget !== 0 ? ytdVariance / ytdBudget : 0;
@@ -1879,12 +1902,14 @@ export async function registerRoutes(
           budget,
           variance,
           variancePct,
+          revRealised,
           ytdCOS,
           ytdRealised,
           ytdUnrealised,
           ytdBudget,
           ytdVariance,
           ytdVariancePct,
+          ytdRevRealised,
           cosProjects: mapToArray(bucket?.projects ?? new Map()),
           realisedProjects: mapToArray(realisedBucket?.projects ?? new Map()),
           unrealisedProjects: (() => {
