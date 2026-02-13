@@ -1349,11 +1349,12 @@ export async function registerRoutes(
     try {
       const projectFilter = req.query.project ? String(req.query.project) : null;
 
-      const [allExpenses, rawInflows, manualBalances, opexBudgets, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
+      const [allExpenses, rawInflows, manualBalances, opexBudgets, opexWeeklyOverrides, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
         storage.getAllProgramExpenses(),
         storage.getAllProgramInflows(),
         storage.getAllCashflowWeeklyManual(),
         storage.getAllOpexBudgetMonthly(),
+        storage.getAllOpexWeeklyManual(),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
         storage.getAllProjectPlans(),
@@ -1362,7 +1363,8 @@ export async function registerRoutes(
       const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlanTasks);
 
       const manualMap = new Map(manualBalances.map(m => [m.weekStartDate, parseFloat(m.openingBalance || "0")]));
-      const opexMap = new Map(opexBudgets.map(o => [o.monthKey, parseFloat(o.amount || "0")]));
+      const opexMonthlyMap = new Map(opexBudgets.map(o => [o.monthKey, parseFloat(o.amount || "0")]));
+      const opexWeeklyMap = new Map(opexWeeklyOverrides.map(o => [o.weekStartDate, parseFloat(o.opexAmount || "0")]));
 
       const fyStart = new Date(Date.UTC(2025, 8, 1));
       const fyEnd = new Date(Date.UTC(2026, 7, 31));
@@ -1411,9 +1413,11 @@ export async function registerRoutes(
         const balanceDelta = hasManualOverride ? openingBalance - computedOpening : 0;
 
         const mk = `${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, '0')}`;
-        const monthlyOpex = opexMap.get(mk) || 0;
+        const monthlyOpex = opexMonthlyMap.get(mk) || 0;
         const weeksCount = weeksInMonth.get(mk) || 1;
-        const opexOutflows = monthlyOpex / weeksCount;
+        const computedOpex = monthlyOpex / weeksCount;
+        const hasOpexOverride = opexWeeklyMap.has(weekStart);
+        const opexOutflows = hasOpexOverride ? opexWeeklyMap.get(weekStart)! : computedOpex;
 
         const closingBalance = openingBalance + projectInflowsSum - opexOutflows - projectOutflowsSum;
         const availablePayment = openingBalance + projectInflowsSum;
@@ -1428,6 +1432,8 @@ export async function registerRoutes(
           hasManualOverride,
           balanceDelta,
           opexOutflows,
+          computedOpex,
+          hasOpexOverride,
           closingBalance,
           availablePayment,
         });
@@ -1623,6 +1629,34 @@ export async function registerRoutes(
     } catch (error) {
       console.error("OPEX budget fetch error:", error);
       res.status(500).json({ error: "Failed to fetch OPEX budgets", message: "Failed to fetch OPEX budgets" });
+    }
+  });
+
+  app.post("/api/cashflow-2026/opex-weekly", requireAuth, async (req, res) => {
+    try {
+      const { weekStartDate, opexAmount } = req.body;
+      if (!weekStartDate || opexAmount == null) {
+        return res.status(400).json({ error: "weekStartDate and opexAmount required" });
+      }
+      const result = await storage.upsertOpexWeeklyManual(weekStartDate, String(opexAmount));
+      res.json(result);
+    } catch (error) {
+      console.error("OPEX weekly save error:", error);
+      res.status(500).json({ error: "Failed to save weekly OPEX" });
+    }
+  });
+
+  app.delete("/api/cashflow-2026/opex-weekly", requireAuth, async (req, res) => {
+    try {
+      const { weekStartDate } = req.body;
+      if (!weekStartDate) {
+        return res.status(400).json({ error: "weekStartDate required" });
+      }
+      await storage.deleteOpexWeeklyManual(weekStartDate);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("OPEX weekly delete error:", error);
+      res.status(500).json({ error: "Failed to delete weekly OPEX override" });
     }
   });
 

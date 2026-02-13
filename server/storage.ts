@@ -46,6 +46,8 @@ import {
   type CashflowWeeklyManual, type InsertCashflowWeeklyManual,
   type CashflowBalanceHistory, type InsertCashflowBalanceHistory,
   type OpexBudgetMonthly, type InsertOpexBudgetMonthly,
+  opexWeeklyManual,
+  type OpexWeeklyManual, type InsertOpexWeeklyManual,
   type TrackerMonthlyManual, type InsertTrackerMonthlyManual,
   type OperationalTask, type InsertOperationalTask,
   type TaskComment, type InsertTaskComment,
@@ -268,6 +270,11 @@ export interface IStorage {
   // OPEX Budget Monthly
   getAllOpexBudgetMonthly(): Promise<OpexBudgetMonthly[]>;
   upsertOpexBudgetMonthly(monthKey: string, amount: string): Promise<OpexBudgetMonthly>;
+
+  // OPEX Weekly Manual
+  getAllOpexWeeklyManual(): Promise<OpexWeeklyManual[]>;
+  upsertOpexWeeklyManual(weekStartDate: string, opexAmount: string): Promise<OpexWeeklyManual>;
+  deleteOpexWeeklyManual(weekStartDate: string): Promise<void>;
 
   // Tracker Monthly Manual (REV/COS)
   getTrackerMonthlyManual(trackerType: string): Promise<TrackerMonthlyManual[]>;
@@ -1493,6 +1500,27 @@ export class DatabaseStorage implements IStorage {
     }
     const inserted = await this.dbInstance.insert(opexBudgetMonthly).values({ monthKey, amount }).returning();
     return inserted[0];
+  }
+
+  async getAllOpexWeeklyManual(): Promise<OpexWeeklyManual[]> {
+    return this.dbInstance.select().from(opexWeeklyManual);
+  }
+
+  async upsertOpexWeeklyManual(weekStartDate: string, opexAmount: string): Promise<OpexWeeklyManual> {
+    const existing = await this.dbInstance.select().from(opexWeeklyManual).where(eq(opexWeeklyManual.weekStartDate, weekStartDate));
+    if (existing[0]) {
+      const updated = await this.dbInstance.update(opexWeeklyManual)
+        .set({ opexAmount, updatedAt: new Date() })
+        .where(eq(opexWeeklyManual.id, existing[0].id))
+        .returning();
+      return updated[0];
+    }
+    const inserted = await this.dbInstance.insert(opexWeeklyManual).values({ weekStartDate, opexAmount }).returning();
+    return inserted[0];
+  }
+
+  async deleteOpexWeeklyManual(weekStartDate: string): Promise<void> {
+    await this.dbInstance.delete(opexWeeklyManual).where(eq(opexWeeklyManual.weekStartDate, weekStartDate));
   }
 
   async getTrackerMonthlyManual(trackerType: string): Promise<TrackerMonthlyManual[]> {
