@@ -9,7 +9,7 @@ import {
   workingPlanScenario, workingPlanTaskOverride, projectPlanDependency,
   workingPlanDependencyOverride, scheduleChangeNotice,
   projectRevenueSummary, homeNotes,
-  projectEditableFields, cashflowWeeklyManual, opexBudgetMonthly, trackerMonthlyManual,
+  projectEditableFields, cashflowWeeklyManual, cashflowBalanceHistory, opexBudgetMonthly, trackerMonthlyManual,
   scenarios, dateOverrides,
   operationalTasks, taskComments, taskChecklists, taskChecklistItems, taskAttachments, taskActivityLog, writebackMappings, writebackAuditLog,
   type Scenario, type InsertScenario,
@@ -44,6 +44,7 @@ import {
   type HomeNotes, type InsertHomeNotes,
   type ProjectEditableFields, type InsertProjectEditableFields,
   type CashflowWeeklyManual, type InsertCashflowWeeklyManual,
+  type CashflowBalanceHistory, type InsertCashflowBalanceHistory,
   type OpexBudgetMonthly, type InsertOpexBudgetMonthly,
   type TrackerMonthlyManual, type InsertTrackerMonthlyManual,
   type OperationalTask, type InsertOperationalTask,
@@ -255,6 +256,11 @@ export interface IStorage {
   // Cashflow Weekly Manual (opening balance)
   getAllCashflowWeeklyManual(): Promise<CashflowWeeklyManual[]>;
   upsertCashflowWeeklyManual(weekStartDate: string, openingBalance: string): Promise<CashflowWeeklyManual>;
+
+  // Cashflow Balance History
+  getBalanceHistory(weekStartDate: string): Promise<CashflowBalanceHistory[]>;
+  getAllBalanceHistory(): Promise<CashflowBalanceHistory[]>;
+  addBalanceHistory(entry: InsertCashflowBalanceHistory): Promise<CashflowBalanceHistory>;
 
   // OPEX Budget Monthly
   getAllOpexBudgetMonthly(): Promise<OpexBudgetMonthly[]>;
@@ -1433,6 +1439,22 @@ export class DatabaseStorage implements IStorage {
       return updated[0];
     }
     const inserted = await this.dbInstance.insert(cashflowWeeklyManual).values({ weekStartDate, openingBalance }).returning();
+    return inserted[0];
+  }
+
+  async getBalanceHistory(weekStartDate: string): Promise<CashflowBalanceHistory[]> {
+    return this.dbInstance.select().from(cashflowBalanceHistory)
+      .where(eq(cashflowBalanceHistory.weekStartDate, weekStartDate))
+      .orderBy(desc(cashflowBalanceHistory.changedAt));
+  }
+
+  async getAllBalanceHistory(): Promise<CashflowBalanceHistory[]> {
+    return this.dbInstance.select().from(cashflowBalanceHistory)
+      .orderBy(desc(cashflowBalanceHistory.changedAt));
+  }
+
+  async addBalanceHistory(entry: InsertCashflowBalanceHistory): Promise<CashflowBalanceHistory> {
+    const inserted = await this.dbInstance.insert(cashflowBalanceHistory).values(entry).returning();
     return inserted[0];
   }
 

@@ -573,6 +573,21 @@ export const insertCashflowWeeklyManualSchema = createInsertSchema(cashflowWeekl
 export type InsertCashflowWeeklyManual = z.infer<typeof insertCashflowWeeklyManualSchema>;
 export type CashflowWeeklyManual = typeof cashflowWeeklyManual.$inferSelect;
 
+export const cashflowBalanceHistory = pgTable("cashflow_balance_history", {
+  id: serial("id").primaryKey(),
+  weekStartDate: text("week_start_date").notNull(),
+  previousValue: decimal("previous_value", { precision: 15, scale: 2 }),
+  newValue: decimal("new_value", { precision: 15, scale: 2 }).notNull(),
+  computedValue: decimal("computed_value", { precision: 15, scale: 2 }),
+  delta: decimal("delta", { precision: 15, scale: 2 }),
+  changedAt: timestamp("changed_at").notNull().defaultNow(),
+  changedBy: text("changed_by"),
+});
+
+export const insertCashflowBalanceHistorySchema = createInsertSchema(cashflowBalanceHistory).omit({ id: true, changedAt: true });
+export type InsertCashflowBalanceHistory = z.infer<typeof insertCashflowBalanceHistorySchema>;
+export type CashflowBalanceHistory = typeof cashflowBalanceHistory.$inferSelect;
+
 export const opexBudgetMonthly = pgTable("opex_budget_monthly", {
   id: serial("id").primaryKey(),
   monthKey: text("month_key").notNull().unique(),
