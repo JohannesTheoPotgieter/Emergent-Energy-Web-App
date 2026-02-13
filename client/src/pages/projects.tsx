@@ -248,10 +248,16 @@ function FinancialCloseCell({
         credentials: "include",
       });
       if (!resp.ok) throw new Error("Upload failed");
-      const data = await resp.json();
-      setLinkVal(data.url);
-      setUploadedFileName(data.filename);
+      const result = await resp.json();
+      const fileUrl = result.url;
+      setLinkVal(fileUrl);
+      setUploadedFileName(result.filename);
       setMode("link");
+      const payload: Record<string, string | null> = {};
+      payload[`${fieldPrefix}Type`] = "link";
+      payload[`${fieldPrefix}Link`] = fileUrl;
+      payload[`${fieldPrefix}NaReason`] = null;
+      mutation.mutate(payload);
     } catch (err) {
       console.error("File upload error:", err);
     } finally {
