@@ -63,6 +63,10 @@ import {
   type MilestoneTaskLink, type InsertMilestoneTaskLink,
   keyDateMappings,
   type KeyDateMapping, type InsertKeyDateMapping,
+  mytoolTasks, mytoolTimeblocks, mytoolDailyReviews, mytoolCompanyPriorities, mytoolUserPreferences, mytoolSettings,
+  type MytoolTask, type InsertMytoolTask, type MytoolTimeblock, type InsertMytoolTimeblock,
+  type MytoolDailyReview, type InsertMytoolDailyReview, type MytoolCompanyPriority, type InsertMytoolCompanyPriority,
+  type MytoolUserPreferences, type InsertMytoolUserPreferences,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -342,6 +346,38 @@ export interface IStorage {
 
   // Admin Operations
   clearAllData(): Promise<{ tablesCleared: string[]; filesDeleted: number }>;
+
+  // My Tool - Tasks
+  getMytoolTasks(ownerUserId: number): Promise<MytoolTask[]>;
+  getMytoolTasksByDate(ownerUserId: number, date: string): Promise<MytoolTask[]>;
+  getMytoolTask(id: number): Promise<MytoolTask | undefined>;
+  createMytoolTask(data: InsertMytoolTask): Promise<MytoolTask>;
+  updateMytoolTask(id: number, data: Partial<InsertMytoolTask>): Promise<MytoolTask>;
+  deleteMytoolTask(id: number): Promise<void>;
+
+  // My Tool - Timeblocks
+  getMytoolTimeblocks(ownerUserId: number, date: string): Promise<MytoolTimeblock[]>;
+  createMytoolTimeblock(data: InsertMytoolTimeblock): Promise<MytoolTimeblock>;
+  updateMytoolTimeblock(id: number, data: Partial<InsertMytoolTimeblock>): Promise<MytoolTimeblock>;
+  deleteMytoolTimeblock(id: number): Promise<void>;
+
+  // My Tool - Daily Reviews
+  getMytoolDailyReview(ownerUserId: number, date: string): Promise<MytoolDailyReview | undefined>;
+  upsertMytoolDailyReview(data: InsertMytoolDailyReview): Promise<MytoolDailyReview>;
+
+  // My Tool - Company Priorities
+  getMytoolCompanyPriorities(horizon?: string): Promise<MytoolCompanyPriority[]>;
+  createMytoolCompanyPriority(data: InsertMytoolCompanyPriority): Promise<MytoolCompanyPriority>;
+  updateMytoolCompanyPriority(id: number, data: Partial<InsertMytoolCompanyPriority>): Promise<MytoolCompanyPriority>;
+  deleteMytoolCompanyPriority(id: number): Promise<void>;
+
+  // My Tool - User Preferences
+  getMytoolUserPreferences(ownerUserId: number): Promise<MytoolUserPreferences | undefined>;
+  upsertMytoolUserPreferences(data: InsertMytoolUserPreferences): Promise<MytoolUserPreferences>;
+
+  // My Tool - Settings
+  getMytoolSettings(): Promise<any>;
+  updateMytoolSettings(data: any): Promise<any>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1776,6 +1812,162 @@ export class DatabaseStorage implements IStorage {
 
   async deleteKeyDateMapping(id: number): Promise<void> {
     await this.dbInstance.delete(keyDateMappings).where(eq(keyDateMappings.id, id));
+  }
+
+  // My Tool - Tasks
+  async getMytoolTasks(ownerUserId: number): Promise<MytoolTask[]> {
+    return this.dbInstance.select().from(mytoolTasks)
+      .where(eq(mytoolTasks.ownerUserId, ownerUserId))
+      .orderBy(mytoolTasks.sortOrder);
+  }
+
+  async getMytoolTasksByDate(ownerUserId: number, date: string): Promise<MytoolTask[]> {
+    return this.dbInstance.select().from(mytoolTasks)
+      .where(and(
+        eq(mytoolTasks.ownerUserId, ownerUserId),
+        eq(mytoolTasks.plannedForDate, date),
+        not(inArray(mytoolTasks.status, ['done', 'cancelled']))
+      ))
+      .orderBy(mytoolTasks.sortOrder);
+  }
+
+  async getMytoolTask(id: number): Promise<MytoolTask | undefined> {
+    const [task] = await this.dbInstance.select().from(mytoolTasks).where(eq(mytoolTasks.id, id));
+    return task;
+  }
+
+  async createMytoolTask(data: InsertMytoolTask): Promise<MytoolTask> {
+    const now = new Date();
+    const [created] = await this.dbInstance.insert(mytoolTasks).values({ ...data, createdAt: now, updatedAt: now }).returning();
+    return created;
+  }
+
+  async updateMytoolTask(id: number, data: Partial<InsertMytoolTask>): Promise<MytoolTask> {
+    const updateData: any = { ...data, updatedAt: new Date() };
+    if ((data as any).status === 'done') {
+      updateData.completedAt = new Date();
+    }
+    const [updated] = await this.dbInstance.update(mytoolTasks).set(updateData).where(eq(mytoolTasks.id, id)).returning();
+    return updated;
+  }
+
+  async deleteMytoolTask(id: number): Promise<void> {
+    await this.dbInstance.delete(mytoolTasks).where(eq(mytoolTasks.id, id));
+  }
+
+  // My Tool - Timeblocks
+  async getMytoolTimeblocks(ownerUserId: number, date: string): Promise<MytoolTimeblock[]> {
+    return this.dbInstance.select().from(mytoolTimeblocks)
+      .where(and(
+        eq(mytoolTimeblocks.ownerUserId, ownerUserId),
+        eq(mytoolTimeblocks.date, date)
+      ));
+  }
+
+  async createMytoolTimeblock(data: InsertMytoolTimeblock): Promise<MytoolTimeblock> {
+    const now = new Date();
+    const [created] = await this.dbInstance.insert(mytoolTimeblocks).values({ ...data, createdAt: now, updatedAt: now }).returning();
+    return created;
+  }
+
+  async updateMytoolTimeblock(id: number, data: Partial<InsertMytoolTimeblock>): Promise<MytoolTimeblock> {
+    const [updated] = await this.dbInstance.update(mytoolTimeblocks).set({ ...data, updatedAt: new Date() }).where(eq(mytoolTimeblocks.id, id)).returning();
+    return updated;
+  }
+
+  async deleteMytoolTimeblock(id: number): Promise<void> {
+    await this.dbInstance.delete(mytoolTimeblocks).where(eq(mytoolTimeblocks.id, id));
+  }
+
+  // My Tool - Daily Reviews
+  async getMytoolDailyReview(ownerUserId: number, date: string): Promise<MytoolDailyReview | undefined> {
+    const [review] = await this.dbInstance.select().from(mytoolDailyReviews)
+      .where(and(
+        eq(mytoolDailyReviews.ownerUserId, ownerUserId),
+        eq(mytoolDailyReviews.date, date)
+      ));
+    return review;
+  }
+
+  async upsertMytoolDailyReview(data: InsertMytoolDailyReview): Promise<MytoolDailyReview> {
+    const now = new Date();
+    const existing = await this.getMytoolDailyReview(data.ownerUserId, data.date);
+    if (existing) {
+      const [updated] = await this.dbInstance.update(mytoolDailyReviews)
+        .set({ ...data, updatedAt: now })
+        .where(eq(mytoolDailyReviews.id, existing.id))
+        .returning();
+      return updated;
+    }
+    const [created] = await this.dbInstance.insert(mytoolDailyReviews).values({ ...data, createdAt: now, updatedAt: now }).returning();
+    return created;
+  }
+
+  // My Tool - Company Priorities
+  async getMytoolCompanyPriorities(horizon?: string): Promise<MytoolCompanyPriority[]> {
+    if (horizon) {
+      return this.dbInstance.select().from(mytoolCompanyPriorities)
+        .where(eq(mytoolCompanyPriorities.horizon, horizon as any));
+    }
+    return this.dbInstance.select().from(mytoolCompanyPriorities);
+  }
+
+  async createMytoolCompanyPriority(data: InsertMytoolCompanyPriority): Promise<MytoolCompanyPriority> {
+    const now = new Date();
+    const [created] = await this.dbInstance.insert(mytoolCompanyPriorities).values({ ...data, createdAt: now, updatedAt: now }).returning();
+    return created;
+  }
+
+  async updateMytoolCompanyPriority(id: number, data: Partial<InsertMytoolCompanyPriority>): Promise<MytoolCompanyPriority> {
+    const [updated] = await this.dbInstance.update(mytoolCompanyPriorities).set({ ...data, updatedAt: new Date() }).where(eq(mytoolCompanyPriorities.id, id)).returning();
+    return updated;
+  }
+
+  async deleteMytoolCompanyPriority(id: number): Promise<void> {
+    await this.dbInstance.delete(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, id));
+  }
+
+  // My Tool - User Preferences
+  async getMytoolUserPreferences(ownerUserId: number): Promise<MytoolUserPreferences | undefined> {
+    const [prefs] = await this.dbInstance.select().from(mytoolUserPreferences)
+      .where(eq(mytoolUserPreferences.ownerUserId, ownerUserId));
+    return prefs;
+  }
+
+  async upsertMytoolUserPreferences(data: InsertMytoolUserPreferences): Promise<MytoolUserPreferences> {
+    const now = new Date();
+    const existing = await this.getMytoolUserPreferences(data.ownerUserId);
+    if (existing) {
+      const [updated] = await this.dbInstance.update(mytoolUserPreferences)
+        .set({ ...data, updatedAt: now })
+        .where(eq(mytoolUserPreferences.ownerUserId, data.ownerUserId))
+        .returning();
+      return updated;
+    }
+    const [created] = await this.dbInstance.insert(mytoolUserPreferences).values({ ...data, updatedAt: now }).returning();
+    return created;
+  }
+
+  // My Tool - Settings
+  async getMytoolSettings(): Promise<any> {
+    const [settings] = await this.dbInstance.select().from(mytoolSettings);
+    if (!settings) {
+      return { enabled: true, allowedRoles: 'admin', defaultPriorityHorizon: 'week' };
+    }
+    return settings;
+  }
+
+  async updateMytoolSettings(data: any): Promise<any> {
+    const [existing] = await this.dbInstance.select().from(mytoolSettings);
+    if (existing) {
+      const [updated] = await this.dbInstance.update(mytoolSettings)
+        .set({ ...data, updatedAt: new Date() })
+        .where(eq(mytoolSettings.id, existing.id))
+        .returning();
+      return updated;
+    }
+    const [created] = await this.dbInstance.insert(mytoolSettings).values({ ...data, updatedAt: new Date() }).returning();
+    return created;
   }
 }
 

@@ -7887,6 +7887,203 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== MY TOOL - SETTINGS ====================
+
+  app.get("/api/mytool/settings", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const settings = await storage.getMytoolSettings();
+      res.json(settings);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put("/api/mytool/settings", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const updated = await storage.updateMytoolSettings(req.body);
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ==================== MY TOOL - TASKS ====================
+
+  app.get("/api/mytool/tasks", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const userId = (req.user as any).id;
+      const { date } = req.query;
+      let tasks;
+      if (date && typeof date === 'string') {
+        tasks = await storage.getMytoolTasksByDate(userId, date);
+      } else {
+        tasks = await storage.getMytoolTasks(userId);
+      }
+      res.json(tasks);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/mytool/tasks", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const userId = (req.user as any).id;
+      const task = await storage.createMytoolTask({ ...req.body, ownerUserId: userId });
+      res.json(task);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/mytool/tasks/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const task = await storage.updateMytoolTask(parseInt(req.params.id), req.body);
+      res.json(task);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/mytool/tasks/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      await storage.deleteMytoolTask(parseInt(req.params.id));
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ==================== MY TOOL - TIMEBLOCKS ====================
+
+  app.get("/api/mytool/timeblocks", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const userId = (req.user as any).id;
+      const { date } = req.query;
+      if (!date || typeof date !== 'string') {
+        return res.status(400).json({ error: "date query parameter required" });
+      }
+      const blocks = await storage.getMytoolTimeblocks(userId, date);
+      res.json(blocks);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/mytool/timeblocks", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const userId = (req.user as any).id;
+      const block = await storage.createMytoolTimeblock({ ...req.body, ownerUserId: userId });
+      res.json(block);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/mytool/timeblocks/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const block = await storage.updateMytoolTimeblock(parseInt(req.params.id), req.body);
+      res.json(block);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/mytool/timeblocks/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      await storage.deleteMytoolTimeblock(parseInt(req.params.id));
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ==================== MY TOOL - DAILY REVIEWS ====================
+
+  app.get("/api/mytool/daily-review", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const userId = (req.user as any).id;
+      const { date } = req.query;
+      if (!date || typeof date !== 'string') {
+        return res.status(400).json({ error: "date query parameter required" });
+      }
+      const review = await storage.getMytoolDailyReview(userId, date);
+      res.json(review || null);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put("/api/mytool/daily-review", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const userId = (req.user as any).id;
+      const review = await storage.upsertMytoolDailyReview({ ...req.body, ownerUserId: userId });
+      res.json(review);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ==================== MY TOOL - COMPANY PRIORITIES ====================
+
+  app.get("/api/mytool/company-priorities", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { horizon } = req.query;
+      const priorities = await storage.getMytoolCompanyPriorities(horizon as string | undefined);
+      res.json(priorities);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/mytool/company-priorities", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const priority = await storage.createMytoolCompanyPriority(req.body);
+      res.json(priority);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/mytool/company-priorities/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const priority = await storage.updateMytoolCompanyPriority(parseInt(req.params.id), req.body);
+      res.json(priority);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/mytool/company-priorities/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      await storage.deleteMytoolCompanyPriority(parseInt(req.params.id));
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ==================== MY TOOL - USER PREFERENCES ====================
+
+  app.get("/api/mytool/preferences", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const userId = (req.user as any).id;
+      const prefs = await storage.getMytoolUserPreferences(userId);
+      res.json(prefs || { ownerUserId: userId, defaultView: 'today', workdayStartTime: '08:00', workdayEndTime: '17:00', showCompanyPriorities: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put("/api/mytool/preferences", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const userId = (req.user as any).id;
+      const prefs = await storage.upsertMytoolUserPreferences({ ...req.body, ownerUserId: userId });
+      res.json(prefs);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   return httpServer;
 }
 

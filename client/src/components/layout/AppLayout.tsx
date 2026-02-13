@@ -17,6 +17,7 @@ import {
   Kanban,
   AlertTriangle,
   X,
+  Briefcase,
 } from "lucide-react";
 import { useProgramData } from "@/hooks/use-program-data";
 import { useAuth } from "@/hooks/use-auth";
@@ -50,6 +51,12 @@ const navGroups: NavGroup[] = [
       { label: "Forecast", icon: BarChart3, path: "/cashflow-forecast" },
       { label: "Planning", icon: Kanban, path: "/planning" },
       { label: "Risks & Flags", icon: AlertTriangle, path: "/risks-flags" },
+    ],
+  },
+  {
+    heading: "PERSONAL",
+    items: [
+      { label: "My Tool", icon: Briefcase, path: "/my-tool" },
     ],
   },
   {
@@ -92,7 +99,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const allItems = navGroups.flatMap(g => g.items);
   const currentPageLabel = location === "/" 
     ? "Home" 
-    : allItems.find(i => i.path === location)?.label || "Dashboard";
+    : location.startsWith("/my-tool") 
+      ? "My Tool" 
+      : allItems.find(i => i.path === location)?.label || "Dashboard";
 
   const sidebarShowLabels = mobileOpen || !desktopCollapsed;
 
@@ -125,7 +134,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           {sidebarShowLabels && <span>Home</span>}
         </Link>
 
-        {navGroups.filter(group => (group.heading !== "ADMIN" && group.heading !== "WIP") || user?.role === "admin").map((group) => (
+        {navGroups.filter(group => (group.heading !== "ADMIN" && group.heading !== "WIP" && group.heading !== "PERSONAL") || user?.role === "admin").map((group) => (
           <div key={group.heading} className="pt-4">
             {sidebarShowLabels && (
               <p className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-sidebar-foreground/40">
@@ -133,17 +142,20 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </p>
             )}
             {!sidebarShowLabels && <div className="h-px bg-sidebar-border mx-2 mb-1" />}
-            {group.items.map((item) => (
+            {group.items.map((item) => {
+              const isActive = location === item.path || (item.path === "/my-tool" && location.startsWith("/my-tool"));
+              return (
               <Link key={item.path} href={item.path} className={cn(
                 "flex items-center gap-3 px-3 py-2.5 rounded-md transition-all duration-200 group",
-                location === item.path 
+                isActive 
                   ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium shadow-md" 
                   : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
               )}>
                 <item.icon className={cn("w-5 h-5 shrink-0", item.className)} />
                 {sidebarShowLabels && <span>{item.label}</span>}
               </Link>
-            ))}
+              );
+            })}
           </div>
         ))}
       </nav>
