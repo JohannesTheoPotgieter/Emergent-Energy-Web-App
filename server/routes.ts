@@ -3191,10 +3191,11 @@ export async function registerRoutes(
           if ((row as any).rowType === 'item') {
             costedExpenditure += parseFloat(String((row as any).budgetTotal || 0)) || 0;
             const actualAmt = parseFloat(String((row as any).expenseActualTotal || 0)) || 0;
-            actualExpenditure += actualAmt;
             const hasPaid = !!(row as any).expensePaymentDate && /^\d{4}-\d{2}-\d{2}/.test((row as any).expensePaymentDate);
-            if (!hasPaid && actualAmt > 0) {
-              liveUnpaidExpenditure += actualAmt;
+            const hasInvoice = !!((row as any).expenseInvoiceNumber && (row as any).expenseInvoiceNumber.trim());
+            const hasPO = !!((row as any).expensePoNumber && (row as any).expensePoNumber.trim());
+            if (hasPaid && hasInvoice && hasPO && actualAmt > 0) {
+              actualExpenditure += actualAmt;
             }
           }
         }
