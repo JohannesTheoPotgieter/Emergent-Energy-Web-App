@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from "react";
+import { useAuth } from "@/hooks/use-auth";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import {
@@ -135,6 +136,7 @@ const pctColor = (pct: number) => {
 };
 
 export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewProps) {
+  const { isAdmin } = useAuth();
   const qc = useQueryClient();
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [statusFilter, setStatusFilter] = useState("All");
@@ -315,7 +317,7 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
         );
 
       case "status":
-        return (
+        return isAdmin ? (
           <Select value={task.status} onValueChange={v => handleInlineUpdate(task.id, "status", v)}>
             <SelectTrigger data-testid={`select-status-${task.id}`} className="h-7 border-0 shadow-none p-0.5 w-full focus:ring-0">
               <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium ${statusColors[task.status] || "bg-slate-100 text-slate-600"}`}>
@@ -331,10 +333,15 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
               ))}
             </SelectContent>
           </Select>
+        ) : (
+          <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium ${statusColors[task.status] || "bg-slate-100 text-slate-600"}`}>
+            {statusIcon(task.status)}
+            <span className="truncate">{task.status}</span>
+          </div>
         );
 
       case "priority":
-        return (
+        return isAdmin ? (
           <Select value={task.priority} onValueChange={v => handleInlineUpdate(task.id, "priority", v)}>
             <SelectTrigger data-testid={`select-priority-${task.id}`} className="h-7 border-0 shadow-none p-0.5 w-full focus:ring-0">
               <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-600">
@@ -353,10 +360,15 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
               ))}
             </SelectContent>
           </Select>
+        ) : (
+          <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-600">
+            <span className={`w-2 h-2 rounded-full shrink-0 ${priorityDot[task.priority] || "bg-slate-400"}`} />
+            {task.priority}
+          </div>
         );
 
       case "assignees":
-        return (
+        return isAdmin ? (
           <Input
             data-testid={`input-assignees-${task.id}`}
             className="h-7 text-[11px] border-0 shadow-none bg-transparent text-slate-600 placeholder:text-slate-300"
@@ -364,10 +376,12 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
             placeholder="Unassigned"
             onBlur={e => handleInlineUpdate(task.id, "assignees", e.target.value.split(",").map((s: string) => s.trim()).filter(Boolean))}
           />
+        ) : (
+          <span className="text-[11px] text-slate-600">{task.assignees?.join(", ") || "—"}</span>
         );
 
       case "plannedStart":
-        return task.isBaseline ? (
+        return (task.isBaseline || !isAdmin) ? (
           <span className="text-[11px] text-slate-600 tabular-nums">{formatDateCompact(task.startDate)}</span>
         ) : (
           <Input type="date" data-testid={`input-planned-start-${task.id}`}
@@ -377,7 +391,7 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
         );
 
       case "plannedEnd":
-        return task.isBaseline ? (
+        return (task.isBaseline || !isAdmin) ? (
           <span className="text-[11px] text-slate-600 tabular-nums">{formatDateCompact(task.dueDate)}</span>
         ) : (
           <Input type="date" data-testid={`input-planned-end-${task.id}`}
@@ -394,19 +408,23 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
         );
 
       case "actualStart":
-        return (
+        return isAdmin ? (
           <Input type="date" data-testid={`input-actual-start-${task.id}`}
             className="h-7 text-[11px] border-0 shadow-none bg-transparent w-full tabular-nums"
             defaultValue={formatDateForDisplay(task.actualStartDate)}
             onChange={e => handleInlineUpdate(task.id, "actualStartDate", e.target.value)} />
+        ) : (
+          <span className="text-[11px] text-slate-600 tabular-nums">{formatDateCompact(task.actualStartDate)}</span>
         );
 
       case "actualEnd":
-        return (
+        return isAdmin ? (
           <Input type="date" data-testid={`input-actual-end-${task.id}`}
             className="h-7 text-[11px] border-0 shadow-none bg-transparent w-full tabular-nums"
             defaultValue={formatDateForDisplay(task.actualEndDate)}
             onChange={e => handleInlineUpdate(task.id, "actualEndDate", e.target.value)} />
+        ) : (
+          <span className="text-[11px] text-slate-600 tabular-nums">{formatDateCompact(task.actualEndDate)}</span>
         );
 
       case "actualDuration":
@@ -475,11 +493,13 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
       }
 
       case "comment":
-        return (
+        return isAdmin ? (
           <Input data-testid={`input-comment-${task.id}`}
             className="h-7 text-[11px] border-0 shadow-none bg-transparent text-slate-600 placeholder:text-slate-300"
             defaultValue={task.comment || ""} placeholder="Add note..."
             onBlur={e => handleInlineUpdate(task.id, "comment", e.target.value)} />
+        ) : (
+          <span className="text-[11px] text-slate-600">{task.comment || "—"}</span>
         );
 
       case "source":
@@ -609,8 +629,7 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
         </DropdownMenu>
       </div>
 
-      {/* Bulk Actions */}
-      {selectedIds.size > 0 && (
+      {isAdmin && selectedIds.size > 0 && (
         <div data-testid="bulk-actions-bar" className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-sm">
           <span className="font-semibold text-blue-700">{selectedIds.size} selected</span>
           <div className="flex-1" />
@@ -691,24 +710,25 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
                   );
                 })
               )}
-              {/* Add Row */}
-              <TableRow data-testid="row-add-task" className="bg-slate-25 border-t-2 border-slate-100">
-                <TableCell className="px-2" />
-                <TableCell colSpan={Math.min(activeColumns.length, 3)} className="px-2 py-2">
-                  <div className="flex items-center gap-2">
-                    <Plus className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                    <Input data-testid="input-new-task" className="h-8 text-[12px] flex-1 border-dashed"
-                      placeholder="Add a new task..." value={newTaskTitle}
-                      onChange={e => setNewTaskTitle(e.target.value)}
-                      onKeyDown={e => { if (e.key === "Enter") handleAddTask(); }} />
-                    <Button data-testid="button-add-task" variant="default" size="sm" className="h-8 px-3 text-xs shrink-0"
-                      onClick={handleAddTask} disabled={!newTaskTitle.trim() || createMutation.isPending}>
-                      {createMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Add"}
-                    </Button>
-                  </div>
-                </TableCell>
-                {activeColumns.length > 3 && <TableCell colSpan={activeColumns.length - 3} />}
-              </TableRow>
+              {isAdmin && (
+                <TableRow data-testid="row-add-task" className="bg-slate-25 border-t-2 border-slate-100">
+                  <TableCell className="px-2" />
+                  <TableCell colSpan={Math.min(activeColumns.length, 3)} className="px-2 py-2">
+                    <div className="flex items-center gap-2">
+                      <Plus className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                      <Input data-testid="input-new-task" className="h-8 text-[12px] flex-1 border-dashed"
+                        placeholder="Add a new task..." value={newTaskTitle}
+                        onChange={e => setNewTaskTitle(e.target.value)}
+                        onKeyDown={e => { if (e.key === "Enter") handleAddTask(); }} />
+                      <Button data-testid="button-add-task" variant="default" size="sm" className="h-8 px-3 text-xs shrink-0"
+                        onClick={handleAddTask} disabled={!newTaskTitle.trim() || createMutation.isPending}>
+                        {createMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Add"}
+                      </Button>
+                    </div>
+                  </TableCell>
+                  {activeColumns.length > 3 && <TableCell colSpan={activeColumns.length - 3} />}
+                </TableRow>
+              )}
             </TableBody>
           </Table>
         </div>

@@ -23,6 +23,7 @@ import {
   AlertCircle, CheckCircle, Clock, ArrowLeft,
 } from "lucide-react";
 import { Link } from "wouter";
+import { useAuth } from "@/hooks/use-auth";
 
 interface WritebackMapping {
   id: number;
@@ -210,6 +211,7 @@ function MappingForm({
 }
 
 export default function WritebackAdminPage() {
+  const { isAdmin } = useAuth();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState("mappings");
   const [editingMapping, setEditingMapping] = useState<WritebackMapping | null>(null);
@@ -270,6 +272,20 @@ export default function WritebackAdminPage() {
   });
 
   const uniqueWorkbooks = Array.from(new Set(mappings.map((m) => m.workbookPath)));
+
+  if (!isAdmin) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Card className="max-w-md w-full">
+          <CardContent className="py-12 text-center">
+            <AlertCircle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
+            <h2 className="text-xl font-semibold mb-2">Access Denied</h2>
+            <p className="text-muted-foreground">You do not have admin privileges to access this page.</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background p-6">

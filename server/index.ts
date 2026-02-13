@@ -175,38 +175,46 @@ app.use((req, res, next) => {
   next();
 });
 
-// Seed demo/admin user on startup (idempotent)
-async function seedAdminUser() {
-  try {
-    const adminEmail = process.env.DEMO_ADMIN_EMAIL || "admin@emergent.energy";
-    const adminPassword = process.env.DEMO_ADMIN_PASSWORD || "admin123";
-    
-    const existingAdmin = await storage.getUserByEmail(adminEmail);
-    
-    if (!existingAdmin) {
-      const hashedPassword = await bcrypt.hash(adminPassword, 10);
-      
-      // For SQLite compatibility, manually handle createdAt
-      const userData: any = {
-        email: adminEmail,
-        password: hashedPassword,
-        name: "Admin User",
-        role: "admin",
-      };
-      
-      // Add createdAt manually for SQLite (doesn't support defaultNow())
-      if (dbMode === 'sqlite') {
-        userData.createdAt = new Date();
+// Seed demo users on startup (idempotent)
+async function seedUsers() {
+  const usersToSeed = [
+    {
+      email: process.env.DEMO_ADMIN_EMAIL || "admin@emergent.energy",
+      password: process.env.DEMO_ADMIN_PASSWORD || "admin123",
+      name: "Admin User",
+      role: "admin" as const,
+    },
+    {
+      email: "viewer@emergent.energy",
+      password: "viewer123",
+      name: "Viewer",
+      role: "member" as const,
+    },
+  ];
+
+  for (const u of usersToSeed) {
+    try {
+      const existing = await storage.getUserByEmail(u.email);
+      if (!existing) {
+        const hashedPassword = await bcrypt.hash(u.password, 10);
+        const userData: any = {
+          email: u.email,
+          password: hashedPassword,
+          name: u.name,
+          role: u.role,
+        };
+        if (dbMode === 'sqlite') {
+          userData.createdAt = new Date();
+        }
+        await storage.createUser(userData);
+        log(`✓ ${u.role} user seeded: ${u.email}`);
+      } else {
+        log(`✓ ${u.role} user exists: ${u.email}`);
       }
-      
-      await storage.createUser(userData);
-      log(`✓ Demo admin user seeded: ${adminEmail}`);
-    } else {
-      log(`✓ Demo admin user exists: ${adminEmail}`);
+    } catch (error) {
+      log(`✗ Error seeding ${u.role} user: ` + error);
+      console.error("[SEED ERROR] Full error:", error);
     }
-  } catch (error) {
-    log("✗ Error seeding admin user: " + error);
-    console.error("[SEED ERROR] Full error:", error);
   }
 }
 
@@ -214,7 +222,7 @@ async function seedAdminUser() {
   // Initialize database FIRST before any storage operations
   await initializeDatabase();
   
-  await seedAdminUser();
+  await seedUsers();
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {

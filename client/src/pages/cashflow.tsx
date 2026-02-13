@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, Fragment } from "react";
+import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   LineChart,
@@ -490,6 +491,7 @@ function OpexBudgetModal({ open, onClose }: { open: boolean; onClose: () => void
 }
 
 export default function CashflowPage() {
+  const { isAdmin } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [selectedProject, setSelectedProject] = useState("all");
@@ -703,16 +705,18 @@ export default function CashflowPage() {
                 {showDetail ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                 {showDetail ? "Hide Detail" : "Show Detail"}
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setOpexOpen(true)}
-                className="gap-1.5 rounded-lg border-slate-300 text-slate-600 hover:bg-slate-50"
-                data-testid="button-opex-budget"
-              >
-                <DollarSign className="h-3.5 w-3.5" />
-                OPEX Budget
-              </Button>
+              {isAdmin && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setOpexOpen(true)}
+                  className="gap-1.5 rounded-lg border-slate-300 text-slate-600 hover:bg-slate-50"
+                  data-testid="button-opex-budget"
+                >
+                  <DollarSign className="h-3.5 w-3.5" />
+                  OPEX Budget
+                </Button>
+              )}
             </div>
           </div>
         </div>
@@ -938,7 +942,7 @@ export default function CashflowPage() {
                               </td>
                               <td className="px-4 py-3 text-right font-mono text-[13px] text-blue-600">
                                 <div className="flex items-center justify-end gap-1.5">
-                                  {editingBalance === week.weekStart ? (
+                                  {isAdmin && editingBalance === week.weekStart ? (
                                     <input
                                       type="number"
                                       className="w-28 text-right p-1.5 border border-blue-300 rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
@@ -956,8 +960,9 @@ export default function CashflowPage() {
                                   ) : (
                                     <>
                                       <span
-                                        className="cursor-pointer hover:underline hover:text-blue-700 decoration-dashed underline-offset-2 transition-colors"
+                                        className={isAdmin ? "cursor-pointer hover:underline hover:text-blue-700 decoration-dashed underline-offset-2 transition-colors" : ""}
                                         onClick={(e) => {
+                                          if (!isAdmin) return;
                                           e.stopPropagation();
                                           setEditingBalance(week.weekStart);
                                           setEditingValue(week.openingBalance?.toString() || "0");
@@ -984,17 +989,19 @@ export default function CashflowPage() {
                                             {week.balanceDelta >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
                                             {formatRand(Math.abs(week.balanceDelta))}
                                           </span>
-                                          <button
-                                            className="p-0.5 rounded hover:bg-red-100 text-red-400 hover:text-red-600 transition-colors"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              clearOverrideMutation.mutate(week.weekStart);
-                                            }}
-                                            title="Clear manual override — use cascaded value"
-                                            data-testid={`button-clear-override-${week.weekStart}`}
-                                          >
-                                            <X className="h-3 w-3" />
-                                          </button>
+                                          {isAdmin && (
+                                            <button
+                                              className="p-0.5 rounded hover:bg-red-100 text-red-400 hover:text-red-600 transition-colors"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                clearOverrideMutation.mutate(week.weekStart);
+                                              }}
+                                              title="Clear manual override — use cascaded value"
+                                              data-testid={`button-clear-override-${week.weekStart}`}
+                                            >
+                                              <X className="h-3 w-3" />
+                                            </button>
+                                          )}
                                         </>
                                       )}
                                     </>
@@ -1018,7 +1025,7 @@ export default function CashflowPage() {
                                 data-testid={`text-opex-${week.weekStart}`}
                               >
                                 <div className="flex items-center justify-end gap-1.5">
-                                  {editingOpex === week.weekStart ? (
+                                  {isAdmin && editingOpex === week.weekStart ? (
                                     <input
                                       type="number"
                                       className="w-28 text-right p-1.5 border border-orange-300 rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-400"
@@ -1036,8 +1043,9 @@ export default function CashflowPage() {
                                   ) : (
                                     <>
                                       <span
-                                        className="cursor-pointer hover:underline hover:text-red-700 decoration-dashed underline-offset-2 transition-colors"
+                                        className={isAdmin ? "cursor-pointer hover:underline hover:text-red-700 decoration-dashed underline-offset-2 transition-colors" : ""}
                                         onClick={(e) => {
+                                          if (!isAdmin) return;
                                           e.stopPropagation();
                                           setEditingOpex(week.weekStart);
                                           setEditingOpexValue(week.opexOutflows?.toString() || "0");
@@ -1054,17 +1062,19 @@ export default function CashflowPage() {
                                           >
                                             <ArrowRight className="h-3 w-3" />
                                           </span>
-                                          <button
-                                            className="p-0.5 rounded hover:bg-red-100 text-red-400 hover:text-red-600 transition-colors"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              clearOpexMutation.mutate(week.weekStart);
-                                            }}
-                                            title="Clear OPEX override — use monthly budget split"
-                                            data-testid={`button-clear-opex-${week.weekStart}`}
-                                          >
-                                            <X className="h-3 w-3" />
-                                          </button>
+                                          {isAdmin && (
+                                            <button
+                                              className="p-0.5 rounded hover:bg-red-100 text-red-400 hover:text-red-600 transition-colors"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                clearOpexMutation.mutate(week.weekStart);
+                                              }}
+                                              title="Clear OPEX override — use monthly budget split"
+                                              data-testid={`button-clear-opex-${week.weekStart}`}
+                                            >
+                                              <X className="h-3 w-3" />
+                                            </button>
+                                          )}
                                         </>
                                       )}
                                     </>

@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback, useRef } from "react";
+import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -161,6 +162,7 @@ const getPaymentStatusBadge = (status: string) => {
 };
 
 export function ExpenditureEditableTab({ projectName }: ExpenditureEditableTabProps) {
+  const { isAdmin } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const tableContainerRef = useRef<HTMLDivElement>(null);
@@ -498,7 +500,7 @@ export function ExpenditureEditableTab({ projectName }: ExpenditureEditableTabPr
 
   const EditableCell = ({ rowId, field, value, type = "text", colorClass = "" }: { rowId: number; field: string; value: string | null; type?: string; colorClass?: string }) => {
     const cellKey = `${rowId}-${field}`;
-    const isEditing = editingCell === cellKey;
+    const isEditing = isAdmin && editingCell === cellKey;
     const displayValue = type === "currency" ? formatCurrency(value) : (type === "date" ? formatDate(value) : (value || "-"));
     return isEditing ? (
       <Input
@@ -512,8 +514,8 @@ export function ExpenditureEditableTab({ projectName }: ExpenditureEditableTabPr
       />
     ) : (
       <span
-        onClick={() => setEditingCell(cellKey)}
-        className={`cursor-pointer hover:bg-blue-50 px-1 py-0.5 rounded block text-xs truncate ${colorClass}`}
+        onClick={() => { if (isAdmin) setEditingCell(cellKey); }}
+        className={`${isAdmin ? "cursor-pointer hover:bg-blue-50" : ""} px-1 py-0.5 rounded block text-xs truncate ${colorClass}`}
       >
         {displayValue}
       </span>
@@ -533,10 +535,12 @@ export function ExpenditureEditableTab({ projectName }: ExpenditureEditableTabPr
             {exp.linkedTask.isBaseline ? "Base" : (exp.linkedTask.status === "Done" || exp.linkedTask.status === "Complete" ? "Done" : exp.linkedTask.status === "In Progress" ? "WIP" : "ToDo")}
           </Badge>
           <span className="truncate max-w-[90px] text-xs" title={exp.linkedTask.title}>{exp.linkedTask.title}</span>
-          <Button variant="ghost" size="sm" className="h-4 w-4 p-0 opacity-0 group-hover:opacity-100 shrink-0"
-            onClick={() => unlinkTaskMutation.mutate(exp.id)} title="Unlink task" data-testid={`button-unlink-exp-${exp.id}`}>
-            <Unlink className="h-3 w-3 text-gray-400 hover:text-red-500" />
-          </Button>
+          {isAdmin && (
+            <Button variant="ghost" size="sm" className="h-4 w-4 p-0 opacity-0 group-hover:opacity-100 shrink-0"
+              onClick={() => unlinkTaskMutation.mutate(exp.id)} title="Unlink task" data-testid={`button-unlink-exp-${exp.id}`}>
+              <Unlink className="h-3 w-3 text-gray-400 hover:text-red-500" />
+            </Button>
+          )}
         </div>
       );
     }
@@ -573,6 +577,7 @@ export function ExpenditureEditableTab({ projectName }: ExpenditureEditableTabPr
         </div>
       );
     }
+    if (!isAdmin) return <span className="text-xs text-muted-foreground">-</span>;
     return (
       <Button variant="ghost" size="sm" className="h-5 px-1 text-[10px] text-blue-600 hover:text-blue-700 hover:bg-blue-50 gap-0.5"
         onClick={() => { setLinkingExpenseId(exp.id); setTaskSearchTerm(""); }} data-testid={`button-link-exp-${exp.id}`}>
@@ -731,26 +736,28 @@ export function ExpenditureEditableTab({ projectName }: ExpenditureEditableTabPr
                 </Select>
               </div>
 
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="h-8 text-green-700 border-green-300 hover:bg-green-50" data-testid="button-add-menu">
-                    <Plus className="h-4 w-4 mr-1" /> Add
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuCheckboxItem checked={false} onCheckedChange={() => setAddLineOpen(true)}>
-                    <ListPlus className="h-4 w-4 mr-2" /> Add Line Item
-                  </DropdownMenuCheckboxItem>
-                  <DropdownMenuCheckboxItem checked={false} onCheckedChange={() => setAddCategoryOpen(true)}>
-                    <Plus className="h-4 w-4 mr-2" /> Add Category
-                  </DropdownMenuCheckboxItem>
-                  <DropdownMenuCheckboxItem checked={false} onCheckedChange={() => setInsertTaskOpen(true)}>
-                    <ClipboardList className="h-4 w-4 mr-2" /> Insert Task as Line Item
-                  </DropdownMenuCheckboxItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              {isAdmin && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="h-8 text-green-700 border-green-300 hover:bg-green-50" data-testid="button-add-menu">
+                      <Plus className="h-4 w-4 mr-1" /> Add
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuCheckboxItem checked={false} onCheckedChange={() => setAddLineOpen(true)}>
+                      <ListPlus className="h-4 w-4 mr-2" /> Add Line Item
+                    </DropdownMenuCheckboxItem>
+                    <DropdownMenuCheckboxItem checked={false} onCheckedChange={() => setAddCategoryOpen(true)}>
+                      <Plus className="h-4 w-4 mr-2" /> Add Category
+                    </DropdownMenuCheckboxItem>
+                    <DropdownMenuCheckboxItem checked={false} onCheckedChange={() => setInsertTaskOpen(true)}>
+                      <ClipboardList className="h-4 w-4 mr-2" /> Insert Task as Line Item
+                    </DropdownMenuCheckboxItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
 
-              {hasEdits && (
+              {isAdmin && hasEdits && (
                 <Button onClick={handleSave} disabled={saveMutation.isPending} size="sm" className="h-8" data-testid="button-save-edits">
                   <Save className="h-4 w-4 mr-1" /> {saveMutation.isPending ? "Saving..." : "Save"}
                 </Button>

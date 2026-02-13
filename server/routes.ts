@@ -409,7 +409,7 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
 }
 
 function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated() && req.user?.role === "admin") {
+  if (req.user?.role === "admin") {
     return next();
   }
   res.status(403).json({ error: "admin_required", message: "Admin access required", code: "ADMIN_REQUIRED" });
@@ -975,7 +975,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/home/notes", async (req, res) => {
+  app.post("/api/home/notes", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { preparedBy, highlightsNotes, constructionNotes, financeNotes } = req.body;
       const today = new Date().toISOString().split('T')[0];
@@ -1324,7 +1324,7 @@ export async function registerRoutes(
   });
 
   // Update project editable fields (Cost Proposal Signed, Funding Signed, EPC Contract Signed, Current VO Total, Comments)
-  app.post("/api/projects-summary/:projectName/edit", requireAuth, async (req, res) => {
+  app.post("/api/projects-summary/:projectName/edit", requireAuth, requireAdmin, async (req, res) => {
     try {
       const projectName = decodeURIComponent(req.params.projectName as string);
       const { costProposalSigned, fundingSigned, epcContractSigned, currentVoTotal, comments } = req.body;
@@ -1345,7 +1345,7 @@ export async function registerRoutes(
 
   // ==================== CASHFLOW 2026 API ====================
 
-  app.get("/api/cashflow-2026", requireAuth, async (req, res) => {
+  app.get("/api/cashflow-2026", requireAuth, requireAdmin, async (req, res) => {
     try {
       const projectFilter = req.query.project ? String(req.query.project) : null;
 
@@ -1449,7 +1449,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/cashflow-2026/detail", requireAuth, async (req, res) => {
+  app.get("/api/cashflow-2026/detail", requireAuth, requireAdmin, async (req, res) => {
     try {
       const weekStart = String(req.query.week || "");
       if (!weekStart || !/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) {
@@ -1525,7 +1525,7 @@ export async function registerRoutes(
 
   // ==================== MANUAL INPUT ENDPOINTS ====================
 
-  app.post("/api/cashflow-2026/opening-balance", requireAuth, async (req, res) => {
+  app.post("/api/cashflow-2026/opening-balance", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { weekStartDate, openingBalance, computedValue, clearForward } = req.body;
       if (!weekStartDate || openingBalance == null) {
@@ -1566,7 +1566,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/cashflow-2026/balance-history", requireAuth, async (req, res) => {
+  app.get("/api/cashflow-2026/balance-history", requireAuth, requireAdmin, async (req, res) => {
     try {
       const weekStart = req.query.week ? String(req.query.week) : null;
       if (weekStart) {
@@ -1581,7 +1581,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/cashflow-2026/opening-balance", requireAuth, async (req, res) => {
+  app.delete("/api/cashflow-2026/opening-balance", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { weekStartDate } = req.body;
       if (!weekStartDate) {
@@ -1608,7 +1608,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/cashflow-2026/opex-budget", requireAuth, async (req, res) => {
+  app.post("/api/cashflow-2026/opex-budget", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { monthKey, amount } = req.body;
       if (!monthKey || amount == null) {
@@ -1622,7 +1622,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/cashflow-2026/opex-budget", requireAuth, async (req, res) => {
+  app.get("/api/cashflow-2026/opex-budget", requireAuth, requireAdmin, async (req, res) => {
     try {
       const entries = await storage.getAllOpexBudgetMonthly();
       res.json(entries);
@@ -1632,7 +1632,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/cashflow-2026/opex-weekly", requireAuth, async (req, res) => {
+  app.post("/api/cashflow-2026/opex-weekly", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { weekStartDate, opexAmount } = req.body;
       if (!weekStartDate || opexAmount == null) {
@@ -1646,7 +1646,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/cashflow-2026/opex-weekly", requireAuth, async (req, res) => {
+  app.delete("/api/cashflow-2026/opex-weekly", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { weekStartDate } = req.body;
       if (!weekStartDate) {
@@ -1660,7 +1660,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/tracker-monthly", requireAuth, async (req, res) => {
+  app.post("/api/tracker-monthly", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { trackerType, monthKey, realised, outstanding, budget } = req.body;
       if (!trackerType || !monthKey) {
@@ -1680,7 +1680,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/tracker-monthly/:type", requireAuth, async (req, res) => {
+  app.get("/api/tracker-monthly/:type", requireAuth, requireAdmin, async (req, res) => {
     try {
       const trackerType = (req.params.type as string).toUpperCase();
       if (trackerType !== 'REV' && trackerType !== 'COS') {
@@ -1696,7 +1696,7 @@ export async function registerRoutes(
 
   // ==================== REV TRACKER API ====================
 
-  app.get("/api/rev-tracker", requireAuth, async (req, res) => {
+  app.get("/api/rev-tracker", requireAuth, requireAdmin, async (req, res) => {
     try {
       const [allInflows, manualEntries] = await Promise.all([
         storage.getAllProgramInflows(),
@@ -1771,7 +1771,7 @@ export async function registerRoutes(
 
   // ==================== COS TRACKER API ====================
 
-  app.get("/api/cos-tracker", requireAuth, async (req, res) => {
+  app.get("/api/cos-tracker", requireAuth, requireAdmin, async (req, res) => {
     try {
       const [allProgramExpenses, manualEntries] = await Promise.all([
         storage.getAllProgramExpenses(),
@@ -1907,7 +1907,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
+  app.get("/api/cos-tracker/month-detail", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { monthKey, project, state: stateFilter } = req.query as { monthKey?: string; project?: string; state?: string };
       if (!monthKey) return res.status(400).json({ error: "monthKey required" });
@@ -2026,7 +2026,7 @@ export async function registerRoutes(
 
   // ==================== PROGRAM DASHBOARD API ====================
 
-  app.get("/api/program-dashboard", requireAuth, async (req, res) => {
+  app.get("/api/program-dashboard", requireAuth, requireAdmin, async (req, res) => {
     try {
       const [allProjectInfo, allExpenses, rawInflows, allPlans, allEditableFields, allTaskLinks, allOpTasks] = await Promise.all([
         storage.getAllProjectInfo(),
@@ -2218,7 +2218,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/dashboard/high-priority", requireAuth, async (req, res) => {
+  app.get("/api/dashboard/high-priority", requireAuth, requireAdmin, async (req, res) => {
     try {
       const [allProjectInfo, allExpenses, rawInflows, allPlans, allTaskLinks, allOpTasks] = await Promise.all([
         storage.getAllProjectInfo(),
@@ -2479,7 +2479,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/budgets", async (req, res) => {
+  app.post("/api/budgets", requireAuth, requireAdmin, async (req, res) => {
     try {
       const parsed = insertBudgetSchema.parse(req.body);
       const budget = await storage.createBudget(parsed);
@@ -2492,7 +2492,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/budgets/:id", async (req, res) => {
+  app.delete("/api/budgets/:id", requireAuth, requireAdmin, async (req, res) => {
     try {
       const id = parseInt(String(req.params.id));
       const deleted = await storage.deleteBudget(id);
@@ -2515,7 +2515,7 @@ export async function registerRoutes(
     { name: 'trackers', maxCount: 20 }
   ]);
 
-  app.post("/api/upload", multiUpload, async (req, res) => {
+  app.post("/api/upload", requireAuth, requireAdmin, multiUpload, async (req, res) => {
     try {
       // Normalize files from multiple possible field names
       const filesObj = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
@@ -2727,7 +2727,7 @@ export async function registerRoutes(
 
   // ==================== REPROCESS ALL UPLOADS ====================
 
-  app.post("/api/reprocess-all", async (req, res) => {
+  app.post("/api/reprocess-all", requireAuth, requireAdmin, async (req, res) => {
     try {
       // Get all uploads with file paths
       const uploads = await storage.getAllUploads();
@@ -3056,7 +3056,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/cashflow/planning-overrides", async (req, res) => {
+  app.post("/api/cashflow/planning-overrides", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { overrides } = req.body;
       
@@ -3089,7 +3089,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/cashflow/planning-overrides/:projectName", async (req, res) => {
+  app.delete("/api/cashflow/planning-overrides/:projectName", requireAuth, requireAdmin, async (req, res) => {
     try {
       const projectName = req.params.projectName;
       if (!projectName || typeof projectName !== 'string') {
@@ -3116,7 +3116,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/project-plan/overrides", async (req, res) => {
+  app.post("/api/project-plan/overrides", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { overrides } = req.body;
       if (!Array.isArray(overrides)) {
@@ -3131,7 +3131,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/project-plan/overrides/:projectName", async (req, res) => {
+  app.delete("/api/project-plan/overrides/:projectName", requireAuth, requireAdmin, async (req, res) => {
     try {
       const projectName = req.params.projectName;
       if (!projectName || typeof projectName !== 'string') {
@@ -3158,7 +3158,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/revenue-tracking/overrides", async (req, res) => {
+  app.post("/api/revenue-tracking/overrides", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { overrides } = req.body;
       if (!Array.isArray(overrides)) {
@@ -3173,7 +3173,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/revenue-tracking/overrides/:projectName", async (req, res) => {
+  app.delete("/api/revenue-tracking/overrides/:projectName", requireAuth, requireAdmin, async (req, res) => {
     try {
       const projectName = req.params.projectName;
       if (!projectName || typeof projectName !== 'string') {
@@ -3379,7 +3379,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/revenue-tab/:projectName/costed", requireAuth, async (req, res) => {
+  app.post("/api/revenue-tab/:projectName/costed", requireAuth, requireAdmin, async (req, res) => {
     try {
       const projectName = req.params.projectName;
       const { revenue, expenditure } = req.body;
@@ -3403,7 +3403,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/revenue-tab/:projectName/task-alerts", requireAuth, async (req, res) => {
+  app.get("/api/revenue-tab/:projectName/task-alerts", requireAuth, requireAdmin, async (req, res) => {
     try {
       const projectName = req.params.projectName;
       const [tasks, inflows, taskLinks] = await Promise.all([
@@ -3440,7 +3440,7 @@ export async function registerRoutes(
   });
 
   // Milestone Task Link API
-  app.post("/api/revenue-tab/:projectName/link-task", requireAuth, async (req, res) => {
+  app.post("/api/revenue-tab/:projectName/link-task", requireAuth, requireAdmin, async (req, res) => {
     try {
       const projectName = req.params.projectName;
       const { milestoneRowNumber, taskId } = req.body;
@@ -3455,7 +3455,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/revenue-tab/:projectName/date-override", requireAuth, async (req, res) => {
+  app.post("/api/revenue-tab/:projectName/date-override", requireAuth, requireAdmin, async (req, res) => {
     try {
       const projectName = req.params.projectName;
       const { milestoneRowNumber, dateOverride, reason } = req.body;
@@ -3479,7 +3479,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/revenue-tab/:projectName/link-task/:milestoneRowNumber", requireAuth, async (req, res) => {
+  app.delete("/api/revenue-tab/:projectName/link-task/:milestoneRowNumber", requireAuth, requireAdmin, async (req, res) => {
     try {
       const projectName = req.params.projectName;
       const milestoneRowNumber = parseInt(req.params.milestoneRowNumber);
@@ -3505,7 +3505,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/expenditure/overrides", async (req, res) => {
+  app.post("/api/expenditure/overrides", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { overrides } = req.body;
       if (!Array.isArray(overrides)) {
@@ -3520,7 +3520,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/expenditure/overrides/:projectName", async (req, res) => {
+  app.delete("/api/expenditure/overrides/:projectName", requireAuth, requireAdmin, async (req, res) => {
     try {
       const projectName = req.params.projectName;
       if (!projectName || typeof projectName !== 'string') {
@@ -3535,7 +3535,7 @@ export async function registerRoutes(
 
   // ==================== EXPENSE TASK LINKS API ====================
 
-  app.get("/api/expense-task-links/:projectName", requireAuth, async (req, res) => {
+  app.get("/api/expense-task-links/:projectName", requireAuth, requireAdmin, async (req, res) => {
     try {
       const links = await storage.getExpenseTaskLinks(req.params.projectName);
       res.json(links);
@@ -3544,7 +3544,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/expense-task-links/:projectName", requireAuth, async (req, res) => {
+  app.post("/api/expense-task-links/:projectName", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { expenseId, taskId } = req.body;
       if (!expenseId || taskId === undefined) {
@@ -3558,7 +3558,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/expense-task-links/:projectName/:expenseId", requireAuth, async (req, res) => {
+  app.delete("/api/expense-task-links/:projectName/:expenseId", requireAuth, requireAdmin, async (req, res) => {
     try {
       await storage.deleteExpenseTaskLink(req.params.projectName, parseInt(req.params.expenseId));
       res.json({ success: true });
@@ -3567,7 +3567,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/expense-task-links/:projectName/:expenseId/date-override", requireAuth, async (req, res) => {
+  app.post("/api/expense-task-links/:projectName/:expenseId/date-override", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { dateOverride, reason } = req.body;
       await storage.updateExpenseTaskLinkDateOverride(req.params.projectName, parseInt(req.params.expenseId), dateOverride, reason);
@@ -3579,7 +3579,7 @@ export async function registerRoutes(
 
   // ==================== MANUAL EXPENSE ROWS API ====================
 
-  app.post("/api/expenses/add-line", requireAuth, async (req, res) => {
+  app.post("/api/expenses/add-line", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { projectName, expenseCategory, expenseLineItem, expenseActualTotal, expensePoNumber, expenseInvoiceNumber, expenseInvoicedDate, expensePaymentDate } = req.body;
       if (!projectName || !expenseCategory) {
@@ -3607,7 +3607,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/expenses/add-category", requireAuth, async (req, res) => {
+  app.post("/api/expenses/add-category", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { projectName, categoryName } = req.body;
       if (!projectName || !categoryName) {
@@ -3629,7 +3629,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/expenses/insert-task-as-line", requireAuth, async (req, res) => {
+  app.post("/api/expenses/insert-task-as-line", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { projectName, taskId, expenseCategory } = req.body;
       if (!projectName || !taskId || !expenseCategory) {
@@ -3669,7 +3669,7 @@ export async function registerRoutes(
 
   // ==================== EXPENDITURE BREAKDOWN COMPOSITE API ====================
 
-  app.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, res) => {
+  app.get("/api/expenditure-breakdown/:projectName", requireAuth, requireAdmin, async (req, res) => {
     try {
       const projectName = req.params.projectName;
       const [expenses, taskLinks, opTasks, planTasks] = await Promise.all([
@@ -3784,7 +3784,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/finance/revenue/overrides", async (req, res) => {
+  app.post("/api/finance/revenue/overrides", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { overrides } = req.body;
       if (!Array.isArray(overrides)) {
@@ -3799,7 +3799,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/finance/revenue/overrides/:projectName", async (req, res) => {
+  app.delete("/api/finance/revenue/overrides/:projectName", requireAuth, requireAdmin, async (req, res) => {
     try {
       const projectName = req.params.projectName;
       if (!projectName || typeof projectName !== 'string') {
@@ -3826,7 +3826,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/finance/cos/overrides", async (req, res) => {
+  app.post("/api/finance/cos/overrides", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { overrides } = req.body;
       if (!Array.isArray(overrides)) {
@@ -3841,7 +3841,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/finance/cos/overrides/:projectName", async (req, res) => {
+  app.delete("/api/finance/cos/overrides/:projectName", requireAuth, requireAdmin, async (req, res) => {
     try {
       const projectName = req.params.projectName;
       if (!projectName || typeof projectName !== 'string') {
@@ -3916,7 +3916,7 @@ export async function registerRoutes(
 
   // ==================== REFRESH ROUTE ====================
 
-  app.post("/api/refresh", async (req, res) => {
+  app.post("/api/refresh", requireAuth, requireAdmin, async (req, res) => {
     try {
       const refreshLog = await storage.createRefreshLog({
         triggeredBy: req.user?.id || null,
@@ -3938,7 +3938,7 @@ export async function registerRoutes(
   });
 
   // Admin data refresh - re-process all stored tracker files
-  app.post("/api/admin/refresh-data", async (req, res) => {
+  app.post("/api/admin/refresh-data", requireAuth, requireAdmin, async (req, res) => {
     const useSSE = req.headers.accept === 'text/event-stream';
     const startTime = Date.now();
 
@@ -4116,7 +4116,7 @@ export async function registerRoutes(
   });
 
   // Clear all data
-  app.post("/api/admin/clear-all-data", async (req, res) => {
+  app.post("/api/admin/clear-all-data", requireAuth, requireAdmin, async (req, res) => {
     const startTime = Date.now();
     
     try {
@@ -4173,7 +4173,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/admin/folder-config", async (req, res) => {
+  app.post("/api/admin/folder-config", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { folderPath } = req.body;
       if (!folderPath) {
@@ -4203,7 +4203,7 @@ export async function registerRoutes(
   });
 
   // Scan folder and process all Excel files
-  app.post("/api/admin/scan-folder", async (req, res) => {
+  app.post("/api/admin/scan-folder", requireAuth, requireAdmin, async (req, res) => {
     const startTime = Date.now();
     
     try {
@@ -4368,7 +4368,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/admin/mark-active", async (req, res) => {
+  app.post("/api/admin/mark-active", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { projectNames } = req.body;
       if (!Array.isArray(projectNames)) {
@@ -4841,7 +4841,7 @@ export async function registerRoutes(
   });
 
   // Reset working plan to baseline
-  app.post("/api/projects/:projectName/working-plan/reset", async (req, res) => {
+  app.post("/api/projects/:projectName/working-plan/reset", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { projectName } = req.params;
       const decodedName = decodeURIComponent(projectName);
@@ -4859,7 +4859,7 @@ export async function registerRoutes(
   });
 
   // Update a task in working plan
-  app.patch("/api/working-plan/tasks/:taskId", async (req, res) => {
+  app.patch("/api/working-plan/tasks/:taskId", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { taskId } = req.params;
       const { projectName, startDate, endDate, name, taskNo, comment } = req.body;
@@ -4907,7 +4907,7 @@ export async function registerRoutes(
   });
 
   // Create new task in working plan
-  app.post("/api/working-plan/tasks", async (req, res) => {
+  app.post("/api/working-plan/tasks", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { projectName, startDate, endDate, name, taskNo } = req.body;
 
@@ -4940,7 +4940,7 @@ export async function registerRoutes(
   });
 
   // Delete task from working plan (soft delete)
-  app.delete("/api/working-plan/tasks/:taskId", async (req, res) => {
+  app.delete("/api/working-plan/tasks/:taskId", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { taskId } = req.params;
       const { projectName, isNewTask } = req.body;
@@ -4985,7 +4985,7 @@ export async function registerRoutes(
   });
 
   // Create dependency
-  app.post("/api/projects/:projectName/dependencies", async (req, res) => {
+  app.post("/api/projects/:projectName/dependencies", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { projectName } = req.params;
       const decodedName = decodeURIComponent(projectName);
@@ -5063,7 +5063,7 @@ export async function registerRoutes(
   });
 
   // Delete dependency
-  app.delete("/api/dependencies/:depId", async (req, res) => {
+  app.delete("/api/dependencies/:depId", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { depId } = req.params;
       await storage.deleteDependency(parseInt(depId));
@@ -5088,7 +5088,7 @@ export async function registerRoutes(
   });
 
   // Create schedule change notice
-  app.post("/api/projects/:projectName/change-notices", async (req, res) => {
+  app.post("/api/projects/:projectName/change-notices", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { projectName } = req.params;
       const decodedName = decodeURIComponent(projectName);
@@ -5119,7 +5119,7 @@ export async function registerRoutes(
   });
 
   // Update schedule change notice (mark as notified/documented)
-  app.patch("/api/change-notices/:noticeId", async (req, res) => {
+  app.patch("/api/change-notices/:noticeId", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { noticeId } = req.params;
       const { clientNotified, documentationUpdated, userNote } = req.body;
@@ -5180,7 +5180,7 @@ export async function registerRoutes(
   // COS CONTROL TOWER APIs
   // =========================================================================
 
-  app.get("/api/cos-control/summary", requireAuth, async (req, res) => {
+  app.get("/api/cos-control/summary", requireAuth, requireAdmin, async (req, res) => {
     try {
       const expenses = await db.select().from(programExpense);
       const lines = expenses
@@ -5214,7 +5214,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/cos-control/by-project", requireAuth, async (req, res) => {
+  app.get("/api/cos-control/by-project", requireAuth, requireAdmin, async (req, res) => {
     try {
 
       const expenses = await db.select().from(programExpense);
@@ -5249,7 +5249,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/cos-control/lines", requireAuth, async (req, res) => {
+  app.get("/api/cos-control/lines", requireAuth, requireAdmin, async (req, res) => {
     try {
 
       const { project, state, supplier, search } = req.query;
@@ -5300,7 +5300,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/cos-control/invoices", requireAuth, async (req, res) => {
+  app.get("/api/cos-control/invoices", requireAuth, requireAdmin, async (req, res) => {
     try {
 
       const expenses = await db.select().from(programExpense);
@@ -5339,7 +5339,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/cos-control/pos", requireAuth, async (req, res) => {
+  app.get("/api/cos-control/pos", requireAuth, requireAdmin, async (req, res) => {
     try {
       const expenses = await db.select().from(programExpense);
       const poMap = new Map<string, any>();
@@ -5381,7 +5381,7 @@ export async function registerRoutes(
   // CASHFLOW FORECAST APIs
   // =========================================================================
 
-  app.get("/api/cashflow-forecast/weekly", requireAuth, async (req, res) => {
+  app.get("/api/cashflow-forecast/weekly", requireAuth, requireAdmin, async (req, res) => {
     try {
 
       const weeks = parseInt(String(req.query.weeks || '52'));
@@ -5448,7 +5448,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/cashflow-forecast/week-detail", requireAuth, async (req, res) => {
+  app.get("/api/cashflow-forecast/week-detail", requireAuth, requireAdmin, async (req, res) => {
     try {
 
       const weekStart = String(req.query.weekStart);
@@ -5524,7 +5524,7 @@ export async function registerRoutes(
   // DATA QUALITY APIs
   // =========================================================================
 
-  app.get("/api/data-quality/scan", requireAuth, async (req, res) => {
+  app.get("/api/data-quality/scan", requireAuth, requireAdmin, async (req, res) => {
     try {
 
       const expenses = await db.select().from(programExpense);
@@ -5582,7 +5582,7 @@ export async function registerRoutes(
   // BACKFILL TRIGGER
   // =========================================================================
 
-  app.post("/api/admin/backfill", requireAuth, async (req, res) => {
+  app.post("/api/admin/backfill", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { runBackfill } = await import("./lib/backfill");
       await runBackfill();
@@ -5593,7 +5593,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/admin/backfill-invoice-confirmed", requireAuth, async (req, res) => {
+  app.post("/api/admin/backfill-invoice-confirmed", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { backfillInvoiceDateConfirmed } = await import("./backfillInvoiceConfirmed");
       const result = await backfillInvoiceDateConfirmed();
@@ -5609,7 +5609,7 @@ export async function registerRoutes(
   // PLANNING BOARD APIs
   // =========================================================================
 
-  app.get("/api/planning-board/pm-capacity", requireAuth, async (req, res) => {
+  app.get("/api/planning-board/pm-capacity", requireAuth, requireAdmin, async (req, res) => {
     try {
       const projects = await db.select().from(projectInfo);
 
@@ -5664,7 +5664,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/planning-board/projects", requireAuth, async (req, res) => {
+  app.get("/api/planning-board/projects", requireAuth, requireAdmin, async (req, res) => {
     try {
       const projects = await db.select().from(projectInfo);
       const expenses = await db.select().from(programExpense);
@@ -5716,7 +5716,7 @@ export async function registerRoutes(
 
   // ============ SCENARIO ENGINE API ============
 
-  app.get("/api/scenarios", requireAuth, async (req, res) => {
+  app.get("/api/scenarios", requireAuth, requireAdmin, async (req, res) => {
     try {
       const all = await storage.getAllScenarios();
       res.json({ scenarios: all });
@@ -5725,7 +5725,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/scenarios", requireAuth, async (req, res) => {
+  app.post("/api/scenarios", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { name, description } = req.body;
       if (!name) return res.status(400).json({ error: "Name is required" });
@@ -5737,7 +5737,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/scenarios/:id/duplicate", requireAuth, async (req, res) => {
+  app.post("/api/scenarios/:id/duplicate", requireAuth, requireAdmin, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const { name } = req.body;
@@ -5749,7 +5749,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/scenarios/:id", requireAuth, async (req, res) => {
+  app.delete("/api/scenarios/:id", requireAuth, requireAdmin, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       await storage.deleteScenario(id);
@@ -5759,7 +5759,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/scenarios/:id/reset", requireAuth, async (req, res) => {
+  app.post("/api/scenarios/:id/reset", requireAuth, requireAdmin, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       await storage.clearDateOverrides(id);
@@ -5769,7 +5769,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/scenarios/:id/overrides", requireAuth, async (req, res) => {
+  app.get("/api/scenarios/:id/overrides", requireAuth, requireAdmin, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const overrides = await storage.getDateOverridesByScenario(id);
@@ -5779,7 +5779,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/scenarios/:id/overrides", requireAuth, async (req, res) => {
+  app.post("/api/scenarios/:id/overrides", requireAuth, requireAdmin, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const { entityType, entityId, fieldName, originalDate, overrideDate, reason } = req.body;
@@ -5796,7 +5796,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/overrides/:id", requireAuth, async (req, res) => {
+  app.delete("/api/overrides/:id", requireAuth, requireAdmin, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       await storage.deleteDateOverride(id);
@@ -5808,7 +5808,7 @@ export async function registerRoutes(
 
   // ============ SCENARIO-AWARE COS CONTROL API ============
 
-  app.get("/api/cos-control/scenario-monthly", requireAuth, async (req, res) => {
+  app.get("/api/cos-control/scenario-monthly", requireAuth, requireAdmin, async (req, res) => {
     try {
       const scenarioId = req.query.scenarioId ? parseInt(req.query.scenarioId as string) : null;
       const allExpenses = await db.select().from(programExpense);
@@ -5876,7 +5876,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/cos-control/scenario-invoices", requireAuth, async (req, res) => {
+  app.get("/api/cos-control/scenario-invoices", requireAuth, requireAdmin, async (req, res) => {
     try {
       const scenarioId = req.query.scenarioId ? parseInt(req.query.scenarioId as string) : null;
       const search = (req.query.search as string || '').toLowerCase();
@@ -5969,7 +5969,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/cos-control/scenario-lines", requireAuth, async (req, res) => {
+  app.get("/api/cos-control/scenario-lines", requireAuth, requireAdmin, async (req, res) => {
     try {
       const scenarioId = req.query.scenarioId ? parseInt(req.query.scenarioId as string) : null;
       const search = (req.query.search as string || '').toLowerCase();
@@ -6048,7 +6048,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/cos-control/scenario-impact", requireAuth, async (req, res) => {
+  app.get("/api/cos-control/scenario-impact", requireAuth, requireAdmin, async (req, res) => {
     try {
       const scenarioId = req.query.scenarioId ? parseInt(req.query.scenarioId as string) : null;
       if (!scenarioId) return res.json({ shifts: [], cashflowDelta: [] });
@@ -6090,7 +6090,7 @@ export async function registerRoutes(
 
   // ============ SCENARIO-AWARE CASHFLOW FORECAST API ============
 
-  app.get("/api/cashflow-forecast/scenario-weekly", requireAuth, async (req, res) => {
+  app.get("/api/cashflow-forecast/scenario-weekly", requireAuth, requireAdmin, async (req, res) => {
     try {
       const scenarioId = req.query.scenarioId ? parseInt(req.query.scenarioId as string) : null;
       const projectFilter = req.query.project as string || '';
@@ -6201,7 +6201,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/cashflow-forecast/scenario-week-detail", requireAuth, async (req, res) => {
+  app.get("/api/cashflow-forecast/scenario-week-detail", requireAuth, requireAdmin, async (req, res) => {
     try {
       const scenarioId = req.query.scenarioId ? parseInt(req.query.scenarioId as string) : null;
       const weekStart = req.query.weekStart as string;
@@ -6321,7 +6321,7 @@ export async function registerRoutes(
 
   // ============ SCENARIO-AWARE PLANNING API ============
 
-  app.get("/api/planning-board/scenario-projects", requireAuth, async (req, res) => {
+  app.get("/api/planning-board/scenario-projects", requireAuth, requireAdmin, async (req, res) => {
     try {
       const scenarioId = req.query.scenarioId ? parseInt(req.query.scenarioId as string) : null;
       const projects = await db.select().from(projectInfo);
@@ -6363,7 +6363,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/planning-board/scenario-capacity", requireAuth, async (req, res) => {
+  app.get("/api/planning-board/scenario-capacity", requireAuth, requireAdmin, async (req, res) => {
     try {
       const scenarioId = req.query.scenarioId ? parseInt(req.query.scenarioId as string) : null;
       const resourceType = (req.query.resourceType as string) || 'PM';
@@ -6448,7 +6448,7 @@ export async function registerRoutes(
 
   // ==================== OPERATIONAL TASKS ====================
 
-  app.get("/api/operational-tasks/task/:id", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/operational-tasks/task/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
 
@@ -6517,7 +6517,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/operational-tasks/:projectName", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/operational-tasks/:projectName", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const projectName = req.params.projectName;
       const trackerName = projectName.endsWith("_Tracker") ? projectName : projectName + "_Tracker";
@@ -6578,7 +6578,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/operational-tasks", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/operational-tasks", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const task = await storage.createOperationalTask(req.body);
       await storage.createTaskActivityLog({
@@ -6595,7 +6595,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/operational-tasks/:id", requireAuth, async (req: Request, res: Response) => {
+  app.patch("/api/operational-tasks/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
       const updates = req.body;
@@ -6683,7 +6683,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/operational-tasks/:id", requireAuth, async (req: Request, res: Response) => {
+  app.delete("/api/operational-tasks/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
       const task = await storage.getOperationalTask(id);
@@ -6704,7 +6704,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/operational-tasks/bulk-update", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/operational-tasks/bulk-update", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const { taskIds, updates } = req.body as { taskIds: number[]; updates: Record<string, any> };
       const results = [];
@@ -6777,7 +6777,7 @@ export async function registerRoutes(
 
   // ==================== TASK COMMENTS ====================
 
-  app.get("/api/task-comments/:taskId", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/task-comments/:taskId", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const comments = await storage.getTaskComments(parseInt(req.params.taskId));
       res.json(comments);
@@ -6786,7 +6786,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/task-comments", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/task-comments", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const comment = await storage.createTaskComment(req.body);
       res.json(comment);
@@ -6795,7 +6795,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/task-comments/:id", requireAuth, async (req: Request, res: Response) => {
+  app.delete("/api/task-comments/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       await storage.deleteTaskComment(parseInt(req.params.id));
       res.json({ success: true });
@@ -6806,7 +6806,7 @@ export async function registerRoutes(
 
   // ==================== TASK CHECKLISTS ====================
 
-  app.get("/api/task-checklists/:taskId", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/task-checklists/:taskId", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const checklists = await storage.getTaskChecklists(parseInt(req.params.taskId));
       const checklistsWithItems = await Promise.all(checklists.map(async cl => ({
@@ -6819,7 +6819,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/task-checklists", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/task-checklists", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const checklist = await storage.createTaskChecklist(req.body);
       res.json(checklist);
@@ -6828,7 +6828,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/task-checklists/:id", requireAuth, async (req: Request, res: Response) => {
+  app.delete("/api/task-checklists/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       await storage.deleteTaskChecklist(parseInt(req.params.id));
       res.json({ success: true });
@@ -6837,7 +6837,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/task-checklist-items", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/task-checklist-items", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const item = await storage.createChecklistItem(req.body);
       res.json(item);
@@ -6846,7 +6846,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/task-checklist-items/:id", requireAuth, async (req: Request, res: Response) => {
+  app.patch("/api/task-checklist-items/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const updated = await storage.updateChecklistItem(parseInt(req.params.id), req.body);
       res.json(updated);
@@ -6855,7 +6855,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/task-checklist-items/:id", requireAuth, async (req: Request, res: Response) => {
+  app.delete("/api/task-checklist-items/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       await storage.deleteChecklistItem(parseInt(req.params.id));
       res.json({ success: true });
@@ -6866,7 +6866,7 @@ export async function registerRoutes(
 
   // ==================== TASK ATTACHMENTS ====================
 
-  app.get("/api/task-attachments/:taskId", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/task-attachments/:taskId", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const attachments = await storage.getTaskAttachments(parseInt(req.params.taskId));
       res.json(attachments);
@@ -6875,7 +6875,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/task-attachments", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/task-attachments", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const attachment = await storage.createTaskAttachment(req.body);
       res.json(attachment);
@@ -6884,7 +6884,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/task-attachments/:id", requireAuth, async (req: Request, res: Response) => {
+  app.delete("/api/task-attachments/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       await storage.deleteTaskAttachment(parseInt(req.params.id));
       res.json({ success: true });
@@ -6895,7 +6895,7 @@ export async function registerRoutes(
 
   // ==================== TASK ACTIVITY LOG ====================
 
-  app.get("/api/task-activity/:taskId", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/task-activity/:taskId", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const activity = await storage.getTaskActivityLog(parseInt(req.params.taskId));
       res.json(activity);
@@ -6906,7 +6906,7 @@ export async function registerRoutes(
 
   // ==================== ENRICHED PLANNING TASKS (with rollups + expected %) ====================
 
-  app.get("/api/planning-tasks/:projectName", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/planning-tasks/:projectName", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const projectName = decodeURIComponent(req.params.projectName);
       const trackerName = projectName.endsWith("_Tracker") ? projectName : projectName + "_Tracker";
@@ -7134,7 +7134,7 @@ export async function registerRoutes(
 
   // ==================== KEY DATE MAPPINGS ====================
 
-  app.get("/api/key-date-mappings/:projectName", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/key-date-mappings/:projectName", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const mappings = await storage.getKeyDateMappings(decodeURIComponent(req.params.projectName));
       res.json(mappings);
@@ -7143,7 +7143,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/key-date-mappings", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/key-date-mappings", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const mapping = await storage.createKeyDateMapping({ ...req.body, createdBy: (req.user as any)?.id });
       res.json(mapping);
@@ -7152,7 +7152,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/key-date-mappings/:id", requireAuth, async (req: Request, res: Response) => {
+  app.patch("/api/key-date-mappings/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const updated = await storage.updateKeyDateMapping(parseInt(req.params.id), req.body);
       res.json(updated);
@@ -7161,7 +7161,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/key-date-mappings/:id", requireAuth, async (req: Request, res: Response) => {
+  app.delete("/api/key-date-mappings/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       await storage.deleteKeyDateMapping(parseInt(req.params.id));
       res.json({ success: true });
@@ -7170,7 +7170,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/key-dates/:projectName", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/key-dates/:projectName", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const projectName = decodeURIComponent(req.params.projectName);
       const trackerName = projectName.endsWith("_Tracker") ? projectName : projectName + "_Tracker";
@@ -7246,7 +7246,7 @@ export async function registerRoutes(
 
   // ==================== WRITEBACK MAPPINGS ====================
 
-  app.get("/api/writeback-mappings", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/writeback-mappings", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const mappings = await storage.getAllWritebackMappings();
       res.json(mappings);
@@ -7255,7 +7255,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/writeback-mappings", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/writeback-mappings", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const mapping = await storage.createWritebackMapping(req.body);
       res.json(mapping);
@@ -7264,7 +7264,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/writeback-mappings/:id", requireAuth, async (req: Request, res: Response) => {
+  app.patch("/api/writeback-mappings/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const updated = await storage.updateWritebackMapping(parseInt(req.params.id), req.body);
       res.json(updated);
@@ -7273,7 +7273,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/writeback-mappings/:id", requireAuth, async (req: Request, res: Response) => {
+  app.delete("/api/writeback-mappings/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       await storage.deleteWritebackMapping(parseInt(req.params.id));
       res.json({ success: true });
@@ -7284,7 +7284,7 @@ export async function registerRoutes(
 
   // ==================== WRITEBACK AUDIT LOG ====================
 
-  app.get("/api/writeback-audit", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/writeback-audit", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const mappingId = req.query.mappingId ? parseInt(req.query.mappingId as string) : undefined;
       const logs = await storage.getWritebackAuditLogs(mappingId);
@@ -7305,7 +7305,7 @@ export async function registerRoutes(
     return { safe: true, resolved };
   }
 
-  app.get("/api/writeback/workbook-sheets", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/writeback/workbook-sheets", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const { path: wbPath } = req.query;
       if (!wbPath) return res.status(400).json({ error: "path query param required" });
@@ -7326,7 +7326,7 @@ export async function registerRoutes(
     return { project: projects, expense: expenses, inflow: inflows, plan: [] };
   }
 
-  app.post("/api/writeback/preview", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/writeback/preview", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const { workbookPath, mappingIds } = req.body;
       if (!workbookPath) return res.status(400).json({ error: "workbookPath required" });
@@ -7349,7 +7349,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/writeback/execute", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/writeback/execute", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const { workbookPath, mappingIds, outputPath } = req.body;
       if (!workbookPath) return res.status(400).json({ error: "workbookPath required" });
@@ -7427,7 +7427,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/writeback/rollback/:auditId", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/writeback/rollback/:auditId", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const auditId = parseInt(req.params.auditId);
       const logs = await storage.getWritebackAuditLogs();

@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,6 +14,7 @@ interface RevenueTrackingEditableTabProps {
 }
 
 export function RevenueTrackingEditableTab({ projectName }: RevenueTrackingEditableTabProps) {
+  const { isAdmin } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [edits, setEdits] = useState<Map<number, any>>(new Map());
@@ -145,26 +147,28 @@ export function RevenueTrackingEditableTab({ projectName }: RevenueTrackingEdita
               Revenue entries from Revenue Tracking sheet • Click cells to edit
             </CardDescription>
           </div>
-          <div className="flex gap-2">
-            <Button
-              onClick={handleSave}
-              disabled={!hasEdits || saveMutation.isPending}
-              variant="default"
-              size="sm"
-            >
-              <Save className="h-4 w-4 mr-2" />
-              {saveMutation.isPending ? "Saving..." : "Save Changes"}
-            </Button>
-            <Button
-              onClick={handleReset}
-              disabled={resetMutation.isPending}
-              variant="outline"
-              size="sm"
-            >
-              <RotateCcw className="h-4 w-4 mr-2" />
-              Reset to Tracker
-            </Button>
-          </div>
+          {isAdmin && (
+            <div className="flex gap-2">
+              <Button
+                onClick={handleSave}
+                disabled={!hasEdits || saveMutation.isPending}
+                variant="default"
+                size="sm"
+              >
+                <Save className="h-4 w-4 mr-2" />
+                {saveMutation.isPending ? "Saving..." : "Save Changes"}
+              </Button>
+              <Button
+                onClick={handleReset}
+                disabled={resetMutation.isPending}
+                variant="outline"
+                size="sm"
+              >
+                <RotateCcw className="h-4 w-4 mr-2" />
+                Reset to Tracker
+              </Button>
+            </div>
+          )}
         </div>
       </CardHeader>
       <CardContent>
@@ -200,7 +204,7 @@ export function RevenueTrackingEditableTab({ projectName }: RevenueTrackingEdita
                         if (field === "amount") {
                           return (
                             <TableCell key={field} className="text-right">
-                              {isEditing ? (
+                              {isAdmin && isEditing ? (
                                 <Input
                                   type="number"
                                   value={value || 0}
@@ -214,8 +218,8 @@ export function RevenueTrackingEditableTab({ projectName }: RevenueTrackingEdita
                                 />
                               ) : (
                                 <span
-                                  onClick={() => setEditingCell(cellKey)}
-                                  className="cursor-pointer hover:bg-muted/50 px-2 py-1 rounded font-mono"
+                                  onClick={() => { if (isAdmin) setEditingCell(cellKey); }}
+                                  className={`${isAdmin ? "cursor-pointer hover:bg-muted/50" : ""} px-2 py-1 rounded font-mono`}
                                 >
                                   R{Number(value || 0).toLocaleString()}
                                 </span>
@@ -226,7 +230,7 @@ export function RevenueTrackingEditableTab({ projectName }: RevenueTrackingEdita
 
                         return (
                           <TableCell key={field} className={field === "category" ? "font-medium" : "text-muted-foreground"}>
-                            {isEditing ? (
+                            {isAdmin && isEditing ? (
                               <Input
                                 type="text"
                                 value={value || ""}
@@ -240,8 +244,8 @@ export function RevenueTrackingEditableTab({ projectName }: RevenueTrackingEdita
                               />
                             ) : (
                               <span
-                                onClick={() => setEditingCell(cellKey)}
-                                className="cursor-pointer hover:bg-muted/50 px-2 py-1 rounded block"
+                                onClick={() => { if (isAdmin) setEditingCell(cellKey); }}
+                                className={`${isAdmin ? "cursor-pointer hover:bg-muted/50" : ""} px-2 py-1 rounded block`}
                               >
                                 {value || "-"}
                               </span>

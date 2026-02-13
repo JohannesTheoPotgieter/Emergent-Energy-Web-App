@@ -61,7 +61,7 @@ interface SmokeTestResult {
 }
 
 export default function AdminPage() {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -81,6 +81,20 @@ export default function AdminPage() {
   const [clearLoading, setClearLoading] = useState(false);
   const [clearResult, setClearResult] = useState<{ success: boolean; message: string } | null>(null);
   const [clearError, setClearError] = useState<string | null>(null);
+
+  if (!isAdmin) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Card className="max-w-md w-full">
+          <CardContent className="py-12 text-center">
+            <AlertTriangle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
+            <h2 className="text-xl font-semibold mb-2">Access Denied</h2>
+            <p className="text-muted-foreground">You do not have admin privileges to access this page.</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   const loadFolderConfig = async () => {
     setFolderLoading(true);

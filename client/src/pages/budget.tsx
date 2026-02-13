@@ -2,6 +2,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useProgramData } from "@/hooks/use-program-data";
+import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -31,6 +32,7 @@ const formSchema = z.object({
 });
 
 export default function BudgetPage() {
+  const { isAdmin } = useAuth();
   const { data, addBudgetEntry } = useProgramData();
   
   const projects = data?.projects || [];
@@ -59,6 +61,24 @@ export default function BudgetPage() {
       category: "COS",
       amount: 0
     });
+  }
+
+  if (!isAdmin) {
+    return (
+      <div className="max-w-2xl mx-auto space-y-6">
+        <div className="flex flex-col gap-2">
+          <h2 className="text-3xl font-heading font-bold text-foreground">Manual Budget Entry</h2>
+          <p className="text-muted-foreground">
+            Admin-only interface for adjusting monthly budget forecasts.
+          </p>
+        </div>
+        <Card>
+          <CardContent className="py-12 text-center">
+            <p className="text-muted-foreground">You do not have admin privileges to access this page.</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   return (
