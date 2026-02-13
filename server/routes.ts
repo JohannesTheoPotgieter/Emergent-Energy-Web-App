@@ -3210,8 +3210,9 @@ export async function registerRoutes(
       const actualProfit = actualRevenue - actualExpenditure;
       const actualMargin = actualRevenue > 0 ? actualProfit / actualRevenue : 0;
 
-      const liveRevenue = milestones.filter((m: any) => m.status !== 'inBank').reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
-      const liveProfit = liveRevenue - liveUnpaidExpenditure;
+      const liveRevenue = totalContract;
+      const liveExpenditure = actualExpenditure;
+      const liveProfit = liveRevenue - liveExpenditure;
       const liveMargin = liveRevenue > 0 ? liveProfit / liveRevenue : 0;
 
       res.json({
@@ -3235,7 +3236,7 @@ export async function registerRoutes(
           },
           planned: {
             revenue: liveRevenue,
-            expenditure: liveUnpaidExpenditure,
+            expenditure: liveExpenditure,
             profit: liveProfit,
             margin: liveMargin,
           },
