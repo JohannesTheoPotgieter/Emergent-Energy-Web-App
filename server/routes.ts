@@ -2616,7 +2616,8 @@ export async function registerRoutes(
       for (const expense of allExpenses) {
         if (expense.expenseActualTotal && expense.expensePaymentDate) {
           const amt = parseFloat(expense.expenseActualTotal);
-          if (amt > 0 && expense.expensePaymentDate < today) {
+          const state = expense.computedState || '';
+          if (amt > 0 && expense.expensePaymentDate < today && state !== 'Paid') {
             overdueExpenses.push({
               id: expense.id,
               projectName: expense.projectName,
