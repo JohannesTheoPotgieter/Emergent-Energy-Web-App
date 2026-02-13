@@ -7,10 +7,14 @@ import { Button } from "@/components/ui/button";
 import {
   Construction, Zap, Wrench, UserCheck, DollarSign, AlertCircle,
   TrendingDown, TrendingUp, ArrowRight, AlertTriangle, Clock,
-  ChevronDown, ChevronRight, X, Loader2,
+  ChevronDown, ChevronRight, X, Loader2, Target, BarChart3,
 } from "lucide-react";
 import { useLocation, Link } from "wouter";
 import { format } from "date-fns";
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  ResponsiveContainer, Cell,
+} from "recharts";
 
 function formatRand(val: number | null | undefined): string {
   if (val === null || val === undefined || !Number.isFinite(val)) return "—";
@@ -35,6 +39,7 @@ interface HighPriority {
     amount: number;
     paymentDate: string;
     severity: string;
+    hasInvoice?: boolean;
   }>;
   revenueOutstanding: Array<{
     projectName: string;
@@ -346,6 +351,20 @@ function SkeletonDashboard() {
   );
 }
 
+function GanttTooltip({ active, payload }: any) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0]?.payload;
+  if (!d) return null;
+  return (
+    <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg px-3 py-2 text-xs">
+      <p className="font-semibold text-gray-800 dark:text-gray-200 mb-1">{d.displayName}</p>
+      <p className="text-gray-500">Start: {d.startDate || "—"}</p>
+      <p className="text-gray-500">End: {d.endDate || "—"}</p>
+      {d.phase && <p className="text-gray-500">Phase: {d.phase}</p>}
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const [, setLocation] = useLocation();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -362,6 +381,14 @@ export default function Dashboard() {
       inflowsThisWeek: number;
       outflowsThisWeek: number;
     };
+    cosKpis: {
+      currentMonthRealised: number;
+      currentMonthTarget: number;
+      currentMonthRealisedPct: number;
+      ytdRealised: number;
+      ytdTarget: number;
+      ytdRealisedPct: number;
+    };
     kpiDetails: {
       siteEstablishmentProjects: Array<{ projectName: string; date: string; pm: string | null }>;
       commissioningProjects: Array<{ projectName: string; date: string; pm: string | null }>;
@@ -373,6 +400,9 @@ export default function Dashboard() {
       outflowProjects: Array<{ projectName: string; amount: number }>;
     };
     pmTable: Array<{ pm: string; activeProjects: number; commissioningThisMonth: number; clientHandoverThisMonth: number }>;
+    projectsByPhase: Array<{ phase: string; count: number }>;
+    completionCompare: Array<{ projectName: string; actualPct: number; expectedPct: number }>;
+    portfolioTimeline: Array<{ projectName: string; startDate: string | null; endDate: string | null; phase: string | null }>;
   }>({
     queryKey: ["/api/program-dashboard"],
   });
@@ -387,8 +417,12 @@ export default function Dashboard() {
   });
 
   const kpis = dashboardData?.kpis;
+  const cosKpis = dashboardData?.cosKpis;
   const kpiDetails = dashboardData?.kpiDetails;
   const pmTable = dashboardData?.pmTable || [];
+  const projectsByPhase = dashboardData?.projectsByPhase || [];
+  const completionCompare = dashboardData?.completionCompare || [];
+  const portfolioTimeline = dashboardData?.portfolioTimeline || [];
 
   const top10Projects = useMemo(() => {
     if (!projectsSummary.length) return [];
@@ -407,6 +441,38 @@ export default function Dashboard() {
       { activeProjects: 0, commissioningThisMonth: 0, clientHandoverThisMonth: 0 }
     );
   }, [pmTable]);
+
+  const ganttData = useMemo(() => {
+    if (!portfolioTimeline.length) return [];
+    const allDates = portfolioTimeline
+      .flatMap(p => [p.startDate, p.endDate])
+      .filter(Boolean)
+      .map(d => new Date(d!).getTime());
+    if (!allDates.length) return [];
+    const minTime = Math.min(...allDates);
+    return portfolioTimeline.map(p => {
+      const start = p.startDate ? new Date(p.startDate).getTime() : null;
+      const end = p.endDate ? new Date(p.endDate).getTime() : null;
+      return {
+        displayName: (p.projectName || "").replace(/_Tracker$/i, "").replace(/_/g, " "),
+        projectName: p.projectName,
+        phase: p.phase,
+        startDate: p.startDate,
+        endDate: p.endDate,
+        offset: start ? (start - minTime) / (1000 * 60 * 60 * 24) : 0,
+        duration: start && end ? Math.max(1, (end - start) / (1000 * 60 * 60 * 24)) : 1,
+      };
+    });
+  }, [portfolioTimeline]);
+
+  const completionChartData = useMemo(() => {
+    return completionCompare.map(p => ({
+      name: (p.projectName || "").replace(/_Tracker$/i, "").replace(/_/g, " "),
+      projectName: p.projectName,
+      actual: Math.round(p.actualPct),
+      expected: Math.round(p.expectedPct),
+    }));
+  }, [completionCompare]);
 
   const toggle = (key: string) => setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
 
@@ -513,9 +579,40 @@ export default function Dashboard() {
         <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-3">Financial</p>
         <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
           <KpiCard
+            icon={Target}
+            value={cosKpis ? `${(cosKpis.ytdRealisedPct * 100).toFixed(1)}%` : "--"}
+            label="COS Realised vs YTD Target"
+            sublabel={cosKpis ? `${formatRand(cosKpis.ytdRealised)} / ${formatRand(cosKpis.ytdTarget)}` : undefined}
+            color="green"
+            drilldownKey="cosYtd"
+            drilldownType="info"
+            activeDrilldown={activeDrilldown}
+            onToggle={toggleDrilldown}
+            onClose={() => setActiveDrilldown(null)}
+            onNavigate={navigateToProject}
+            testId="card-cos-ytd"
+            valueTestId="value-cos-ytd"
+          />
+          <KpiCard
+            icon={BarChart3}
+            value={cosKpis ? `${(cosKpis.currentMonthRealisedPct * 100).toFixed(1)}%` : "--"}
+            label="COS Realised vs Month Target"
+            sublabel={cosKpis ? `${formatRand(cosKpis.currentMonthRealised)} / ${formatRand(cosKpis.currentMonthTarget)}` : undefined}
+            color="blue"
+            drilldownKey="cosMonth"
+            drilldownType="info"
+            activeDrilldown={activeDrilldown}
+            onToggle={toggleDrilldown}
+            onClose={() => setActiveDrilldown(null)}
+            onNavigate={navigateToProject}
+            testId="card-cos-month"
+            valueTestId="value-cos-month"
+          />
+          <KpiCard
             icon={DollarSign}
             value={formatRand(kpis?.revenueOutstanding ?? 0)}
             label="Revenue Outstanding"
+            sublabel="Invoiced, unpaid & overdue"
             color="amber"
             drilldownKey="revOutstanding"
             drilldownItems={kpiDetails?.revenueOutstandingProjects}
@@ -532,6 +629,7 @@ export default function Dashboard() {
             icon={AlertCircle}
             value={formatRand(kpis?.expenseOverdue ?? 0)}
             label="Expenses Overdue"
+            sublabel="Payment date in the past"
             color="red"
             drilldownKey="expOverdue"
             drilldownItems={kpiDetails?.expenseOverdueProjects}
@@ -543,38 +641,6 @@ export default function Dashboard() {
             onNavigate={navigateToProject}
             testId="card-expenses-overdue"
             valueTestId="value-expenses-overdue"
-          />
-          <KpiCard
-            icon={TrendingUp}
-            value={formatRand(kpis?.inflowsThisWeek ?? 0)}
-            label="Inflows This Week"
-            color="green"
-            drilldownKey="inflows"
-            drilldownItems={kpiDetails?.inflowProjects}
-            drilldownType="inflows"
-            isFinancial
-            activeDrilldown={activeDrilldown}
-            onToggle={toggleDrilldown}
-            onClose={() => setActiveDrilldown(null)}
-            onNavigate={navigateToProject}
-            testId="card-inflows-this-week"
-            valueTestId="value-inflows-this-week"
-          />
-          <KpiCard
-            icon={TrendingDown}
-            value={formatRand(kpis?.outflowsThisWeek ?? 0)}
-            label="Outflows This Week"
-            color="red"
-            drilldownKey="outflows"
-            drilldownItems={kpiDetails?.outflowProjects}
-            drilldownType="outflows"
-            isFinancial
-            activeDrilldown={activeDrilldown}
-            onToggle={toggleDrilldown}
-            onClose={() => setActiveDrilldown(null)}
-            onNavigate={navigateToProject}
-            testId="card-outflows-this-week"
-            valueTestId="value-outflows-this-week"
           />
         </div>
       </section>
@@ -616,6 +682,11 @@ export default function Dashboard() {
                       <span className="text-sm truncate flex-1 text-gray-700 dark:text-gray-300 group-hover:text-red-700 dark:group-hover:text-red-400 transition-colors font-medium">
                         {item.projectName.replace("_Tracker", "")}
                       </span>
+                      {item.hasInvoice !== undefined && (
+                        <Badge variant={item.hasInvoice ? "default" : "destructive"} className="text-[9px] px-1 py-0">
+                          {item.hasInvoice ? "INV" : "No INV"}
+                        </Badge>
+                      )}
                       <span className="text-sm font-mono font-semibold text-red-600 whitespace-nowrap">{formatRand(item.amount)}</span>
                       <span className="text-[11px] text-gray-400 whitespace-nowrap">{item.paymentDate}</span>
                     </div>
@@ -639,8 +710,8 @@ export default function Dashboard() {
                         {item.projectName.replace("_Tracker", "")}
                       </span>
                       <span className="text-sm font-mono font-semibold text-amber-600 whitespace-nowrap">{formatRand(item.amount)}</span>
-                      {item.milestoneName && (
-                        <span className="text-[11px] text-gray-400 truncate max-w-[100px]">{item.milestoneName}</span>
+                      {item.invoiceNumber && (
+                        <span className="text-[11px] text-gray-400 truncate max-w-[80px]">{item.invoiceNumber}</span>
                       )}
                     </div>
                   </Link>
@@ -796,6 +867,148 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {projectsByPhase.length > 0 && (
+        <Card className="shadow-sm" data-testid="card-projects-by-phase">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base font-bold text-gray-900 dark:text-gray-50">Count of Projects by Phase</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={Math.max(200, projectsByPhase.length * 40 + 40)}>
+              <BarChart data={projectsByPhase} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e5e7eb" />
+                <XAxis type="number" allowDecimals={false} tick={{ fontSize: 12 }} />
+                <YAxis
+                  type="category"
+                  dataKey="phase"
+                  width={160}
+                  tick={{ fontSize: 12 }}
+                />
+                <Tooltip
+                  contentStyle={{ borderRadius: 8, fontSize: 13 }}
+                  formatter={(value: number) => [value, "Projects"]}
+                />
+                <Bar dataKey="count" radius={[0, 4, 4, 0]} maxBarSize={28}>
+                  {projectsByPhase.map((_entry, index) => (
+                    <Cell key={index} fill="#4472C4" />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
+
+      {completionChartData.length > 0 && (
+        <Card className="shadow-sm" data-testid="card-completion-compare">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base font-bold text-gray-900 dark:text-gray-50">
+              Construction & QA — Actual vs Forecasted Completion
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={Math.max(300, completionChartData.length * 30 + 60)}>
+              <BarChart data={completionChartData} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e5e7eb" />
+                <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 11 }} tickFormatter={(v) => `${v}%`} />
+                <YAxis
+                  type="category"
+                  dataKey="name"
+                  width={200}
+                  tick={{ fontSize: 11 }}
+                />
+                <Tooltip
+                  contentStyle={{ borderRadius: 8, fontSize: 13 }}
+                  formatter={(value: number, name: string) => [`${value}%`, name === "actual" ? "Project % Complete" : "Expected % Completed"]}
+                />
+                <Legend
+                  formatter={(value) => value === "actual" ? "Project % Complete" : "Expected % Completed"}
+                  wrapperStyle={{ fontSize: 12 }}
+                />
+                <Bar dataKey="actual" fill="#70AD47" radius={[0, 4, 4, 0]} maxBarSize={14} />
+                <Bar dataKey="expected" fill="#4472C4" radius={[0, 4, 4, 0]} maxBarSize={14} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
+
+      {ganttData.length > 0 && (
+        <Card className="shadow-sm" data-testid="card-portfolio-gantt">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base font-bold text-gray-900 dark:text-gray-50">Portfolio Gantt Chart</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <div style={{ minWidth: 900 }}>
+                {(() => {
+                  const allDates = portfolioTimeline
+                    .flatMap(p => [p.startDate, p.endDate])
+                    .filter(Boolean)
+                    .map(d => new Date(d!).getTime());
+                  if (!allDates.length) return null;
+                  const minTime = Math.min(...allDates);
+                  const maxTime = Math.max(...allDates);
+                  const totalDays = Math.max(1, (maxTime - minTime) / (1000 * 60 * 60 * 24));
+
+                  const dateMarkers: { label: string; pct: number }[] = [];
+                  const markerInterval = Math.ceil(totalDays / 10);
+                  for (let d = 0; d <= totalDays; d += markerInterval) {
+                    const t = new Date(minTime + d * 86400000);
+                    dateMarkers.push({
+                      label: format(t, "yyyy/MM/dd"),
+                      pct: (d / totalDays) * 100,
+                    });
+                  }
+
+                  return (
+                    <div className="flex flex-col">
+                      <div className="flex mb-1 pl-[220px]">
+                        <div className="relative flex-1 h-5">
+                          {dateMarkers.map((m, i) => (
+                            <span
+                              key={i}
+                              className="absolute text-[10px] text-gray-400 whitespace-nowrap"
+                              style={{ left: `${m.pct}%`, transform: "translateX(-50%)" }}
+                            >
+                              {m.label}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      {ganttData.map((row, i) => {
+                        const leftPct = (row.offset / totalDays) * 100;
+                        const widthPct = Math.max(0.3, (row.duration / totalDays) * 100);
+                        return (
+                          <div
+                            key={i}
+                            className="flex items-center h-7 hover:bg-gray-50 dark:hover:bg-gray-800/30 cursor-pointer transition-colors group"
+                            onClick={() => navigateToProject(row.projectName)}
+                            data-testid={`gantt-row-${i}`}
+                          >
+                            <div className="w-[220px] shrink-0 pr-2 text-right">
+                              <span className="text-[11px] text-gray-600 dark:text-gray-400 truncate block group-hover:text-blue-600 transition-colors">
+                                {row.displayName}
+                              </span>
+                            </div>
+                            <div className="relative flex-1 h-5">
+                              <div
+                                className="absolute top-1 h-3 rounded-sm bg-[#70AD47] group-hover:bg-[#5a9237] transition-colors"
+                                style={{ left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 3 }}
+                                title={`${row.startDate} → ${row.endDate}`}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
