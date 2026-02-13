@@ -710,14 +710,14 @@ export default function CashflowPage() {
                 testId="kpi-total-outflows"
               />
               <KpiCard
-                title="Current Balance"
+                title="Current Week Opening Balance"
                 value={formatRand(kpis.currentBalance)}
                 icon={<DollarSign className="h-5 w-5" />}
                 color={kpis.currentBalance >= 0 ? "blue" : "red"}
                 testId="kpi-current-balance"
               />
               <KpiCard
-                title="Net Position"
+                title="Forecasted End of Financial Year Position"
                 value={formatRand(kpis.netPosition)}
                 icon={
                   kpis.netPosition >= 0 ? (
