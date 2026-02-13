@@ -1,21 +1,24 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getQueryFn } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { 
-  Construction, Zap, Wrench, UserCheck, DollarSign, AlertCircle, 
+import {
+  Construction, Zap, Wrench, UserCheck, DollarSign, AlertCircle,
   TrendingDown, TrendingUp, ArrowRight, AlertTriangle, Clock,
-  ChevronDown, ChevronRight, X,
+  ChevronDown, ChevronRight, X, Loader2,
 } from "lucide-react";
 import { useLocation, Link } from "wouter";
 import { format } from "date-fns";
 
-function formatRand(val: number): string {
-  if (val >= 1_000_000) return `R ${(val / 1_000_000).toFixed(2)}M`;
-  if (val >= 1_000) return `R ${(val / 1_000).toFixed(1)}K`;
-  return `R ${Math.round(val)}`;
+function formatRand(val: number | null | undefined): string {
+  if (val === null || val === undefined || !Number.isFinite(val)) return "—";
+  const abs = Math.abs(val);
+  const sign = val < 0 ? "-" : "";
+  if (abs >= 1_000_000) return `${sign}R ${(abs / 1_000_000).toFixed(2)}M`;
+  if (abs >= 1_000) return `${sign}R ${(abs / 1_000).toFixed(1)}K`;
+  return `${sign}R ${Math.round(abs)}`;
 }
 
 function formatPct(val: number | null): string {
@@ -58,126 +61,286 @@ interface HighPriority {
   }>;
 }
 
-const severityColors: Record<string, string> = {
-  Critical: "bg-red-100 text-red-800 border-red-200",
-  High: "bg-amber-100 text-amber-800 border-amber-200",
-  Medium: "bg-blue-100 text-blue-800 border-blue-200",
+const severityConfig: Record<string, { bg: string; text: string; border: string }> = {
+  Critical: { bg: "bg-red-50", text: "text-red-700", border: "border-red-200" },
+  High: { bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-200" },
+  Medium: { bg: "bg-sky-50", text: "text-sky-700", border: "border-sky-200" },
 };
 
 function SeverityBadge({ severity }: { severity: string }) {
+  const cfg = severityConfig[severity] || severityConfig.Medium;
   return (
-    <Badge className={`${severityColors[severity] || severityColors.Medium} text-[10px] font-semibold`} variant="outline">
+    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${cfg.bg} ${cfg.text} ${cfg.border} border`}>
       {severity}
-    </Badge>
+    </span>
   );
 }
 
-function PrioritySection({ 
-  title, 
-  icon: Icon, 
-  iconColor,
+function KpiDrilldown({
   items,
-  viewAllPath,
+  type,
+  onClose,
+  onNavigate,
+}: {
+  items: any[];
+  type: string;
+  onClose: () => void;
+  onNavigate: (projectName: string) => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [onClose]);
+
+  const isFinancial = type === "revenue" || type === "expense" || type === "inflows" || type === "outflows";
+
+  return (
+    <div
+      ref={ref}
+      className="absolute z-50 top-full left-1/2 -translate-x-1/2 mt-2 w-80 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200"
+      data-testid="kpi-drilldown"
+    >
+      <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 dark:bg-gray-800/50 border-b border-gray-100 dark:border-gray-700">
+        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+          {items.length} project{items.length !== 1 ? "s" : ""}
+        </span>
+        <button
+          onClick={onClose}
+          className="p-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+          data-testid="drilldown-close"
+        >
+          <X className="h-3.5 w-3.5 text-gray-400" />
+        </button>
+      </div>
+      {items.length === 0 ? (
+        <div className="px-4 py-6 text-center text-sm text-gray-400">No projects</div>
+      ) : (
+        <div className="max-h-60 overflow-y-auto divide-y divide-gray-50 dark:divide-gray-800">
+          {items.map((item: any, i: number) => (
+            <button
+              key={i}
+              className="w-full text-left flex items-center justify-between gap-3 px-4 py-2.5 hover:bg-blue-50/50 dark:hover:bg-blue-900/20 transition-colors group"
+              onClick={() => onNavigate(item.projectName)}
+              data-testid={`drilldown-item-${i}`}
+            >
+              <span className="truncate text-sm font-medium text-gray-700 dark:text-gray-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                {(item.projectName || "").replace("_Tracker", "")}
+              </span>
+              {isFinancial ? (
+                <span className="text-xs font-mono font-semibold text-gray-500 whitespace-nowrap">{formatRand(item.amount ?? 0)}</span>
+              ) : (
+                <span className="text-xs text-gray-400 whitespace-nowrap">{item.date || item.pm || "—"}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function KpiCard({
+  icon: Icon,
+  value,
+  label,
+  sublabel,
+  color,
+  drilldownKey,
+  drilldownItems,
+  drilldownType,
+  isFinancial,
+  activeDrilldown,
+  onToggle,
+  onClose,
+  onNavigate,
+  testId,
+  valueTestId,
+}: {
+  icon: any;
+  value: string | number;
+  label: string;
+  sublabel?: string;
+  color: string;
+  drilldownKey: string;
+  drilldownItems?: any[];
+  drilldownType: string;
+  isFinancial?: boolean;
+  activeDrilldown: string | null;
+  onToggle: (key: string) => void;
+  onClose: () => void;
+  onNavigate: (name: string) => void;
+  testId: string;
+  valueTestId: string;
+}) {
+  const colorMap: Record<string, { card: string; icon: string; iconBg: string; value: string; label: string; sub: string }> = {
+    amber: {
+      card: "border-amber-200/60 bg-gradient-to-br from-amber-50 to-orange-50/30 dark:from-amber-950/30 dark:to-orange-950/20 dark:border-amber-800/40",
+      icon: "text-amber-600 dark:text-amber-400",
+      iconBg: "bg-amber-100/80 dark:bg-amber-900/50",
+      value: "text-amber-900 dark:text-amber-200",
+      label: "text-amber-700 dark:text-amber-400",
+      sub: "text-amber-500 dark:text-amber-500",
+    },
+    blue: {
+      card: "border-blue-200/60 bg-gradient-to-br from-blue-50 to-indigo-50/30 dark:from-blue-950/30 dark:to-indigo-950/20 dark:border-blue-800/40",
+      icon: "text-blue-600 dark:text-blue-400",
+      iconBg: "bg-blue-100/80 dark:bg-blue-900/50",
+      value: "text-blue-900 dark:text-blue-200",
+      label: "text-blue-700 dark:text-blue-400",
+      sub: "text-blue-500 dark:text-blue-500",
+    },
+    green: {
+      card: "border-emerald-200/60 bg-gradient-to-br from-emerald-50 to-green-50/30 dark:from-emerald-950/30 dark:to-green-950/20 dark:border-emerald-800/40",
+      icon: "text-emerald-600 dark:text-emerald-400",
+      iconBg: "bg-emerald-100/80 dark:bg-emerald-900/50",
+      value: "text-emerald-900 dark:text-emerald-200",
+      label: "text-emerald-700 dark:text-emerald-400",
+      sub: "text-emerald-500 dark:text-emerald-500",
+    },
+    purple: {
+      card: "border-violet-200/60 bg-gradient-to-br from-violet-50 to-purple-50/30 dark:from-violet-950/30 dark:to-purple-950/20 dark:border-violet-800/40",
+      icon: "text-violet-600 dark:text-violet-400",
+      iconBg: "bg-violet-100/80 dark:bg-violet-900/50",
+      value: "text-violet-900 dark:text-violet-200",
+      label: "text-violet-700 dark:text-violet-400",
+      sub: "text-violet-500 dark:text-violet-500",
+    },
+    red: {
+      card: "border-red-200/60 bg-gradient-to-br from-red-50 to-rose-50/30 dark:from-red-950/30 dark:to-rose-950/20 dark:border-red-800/40",
+      icon: "text-red-600 dark:text-red-400",
+      iconBg: "bg-red-100/80 dark:bg-red-900/50",
+      value: "text-red-900 dark:text-red-200",
+      label: "text-red-700 dark:text-red-400",
+      sub: "text-red-500 dark:text-red-500",
+    },
+  };
+
+  const c = colorMap[color] || colorMap.blue;
+  const isOpen = activeDrilldown === drilldownKey;
+
+  return (
+    <div className="relative">
+      <button
+        className={`w-full text-left rounded-xl border ${c.card} p-5 cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-400`}
+        onClick={() => onToggle(drilldownKey)}
+        data-testid={testId}
+      >
+        <div className="flex items-start gap-4">
+          <div className={`p-3 rounded-xl ${c.iconBg} shrink-0`}>
+            <Icon className={`w-5 h-5 ${c.icon}`} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className={`text-2xl font-bold tracking-tight ${c.value}`} data-testid={valueTestId}>
+              {value}
+            </p>
+            <p className={`text-sm font-medium mt-0.5 ${c.label}`}>{label}</p>
+            {sublabel && <p className={`text-[11px] mt-0.5 ${c.sub}`}>{sublabel}</p>}
+          </div>
+        </div>
+      </button>
+      {isOpen && drilldownItems && (
+        <KpiDrilldown items={drilldownItems} type={drilldownType} onClose={onClose} onNavigate={onNavigate} />
+      )}
+    </div>
+  );
+}
+
+function PrioritySection({
+  title,
+  icon: Icon,
+  iconColor,
+  accentBorder,
+  items,
   renderItem,
   expanded,
   onToggle,
-}: { 
+}: {
   title: string;
   icon: any;
   iconColor: string;
+  accentBorder: string;
   items: any[];
-  viewAllPath: string;
   renderItem: (item: any, i: number) => React.ReactNode;
   expanded: boolean;
   onToggle: () => void;
 }) {
   const displayItems = expanded ? items : items.slice(0, 5);
+  const testSlug = title.toLowerCase().replace(/\s+/g, "-");
 
   return (
-    <div className="space-y-2">
+    <div className={`rounded-lg border-l-4 ${accentBorder} bg-white dark:bg-gray-900/50 overflow-hidden`}>
       <button
-        className="flex items-center gap-2 w-full text-left group"
+        className="flex items-center gap-3 w-full text-left px-4 py-3 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors"
         onClick={onToggle}
-        data-testid={`toggle-${title.toLowerCase().replace(/\s+/g, '-')}`}
+        data-testid={`toggle-${testSlug}`}
       >
-        <Icon className={`h-4 w-4 ${iconColor}`} />
-        <span className="font-semibold text-sm flex-1">{title}</span>
-        <Badge variant="secondary" className="text-xs">{items.length}</Badge>
-        {items.length > 5 && (
-          expanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />
+        <div className={`p-1.5 rounded-lg ${iconColor.replace("text-", "bg-").replace("600", "100")} dark:bg-opacity-20`}>
+          <Icon className={`h-4 w-4 ${iconColor}`} />
+        </div>
+        <span className="font-semibold text-sm text-gray-800 dark:text-gray-200 flex-1">{title}</span>
+        <Badge className="rounded-full px-2.5 py-0.5 text-xs font-bold bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300 border-0">
+          {items.length}
+        </Badge>
+        {items.length > 0 && (
+          expanded
+            ? <ChevronDown className="h-4 w-4 text-gray-400 transition-transform" />
+            : <ChevronRight className="h-4 w-4 text-gray-400 transition-transform" />
         )}
       </button>
       {items.length === 0 ? (
-        <p className="text-sm text-muted-foreground pl-6">No items</p>
+        <p className="text-sm text-gray-400 px-4 pb-3">All clear — no items</p>
       ) : (
-        <div className="space-y-1">
-          {displayItems.map((item, i) => renderItem(item, i))}
+        <div className="px-2 pb-2">
+          <div className="space-y-0.5">
+            {displayItems.map((item, i) => renderItem(item, i))}
+          </div>
           {items.length > 5 && !expanded && (
-            <div className="pl-6">
-              <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={onToggle}>
-                +{items.length - 5} more
+            <div className="px-2 pt-1">
+              <Button variant="ghost" size="sm" className="h-7 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50/50 px-2" onClick={onToggle}>
+                Show {items.length - 5} more…
               </Button>
             </div>
           )}
         </div>
       )}
-      <div className="pl-6">
-        <Link href={viewAllPath}>
-          <Button variant="link" size="sm" className="h-auto p-0 text-xs" data-testid={`link-viewall-${title.toLowerCase().replace(/\s+/g, '-')}`}>
-            View all <ArrowRight className="h-3 w-3 ml-1" />
-          </Button>
-        </Link>
-      </div>
     </div>
   );
 }
 
-function KpiDrilldown({ 
-  items, 
-  type, 
-  onClose,
-  onNavigate 
-}: { 
-  items: any[]; 
-  type: string;
-  onClose: () => void;
-  onNavigate: (projectName: string) => void;
-}) {
-  if (!items || items.length === 0) {
-    return (
-      <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white dark:bg-gray-900 border rounded-lg shadow-lg p-3">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-semibold text-muted-foreground">No projects</span>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-3 w-3" /></button>
-        </div>
-      </div>
-    );
-  }
-
-  const isFinancial = type === 'revenue' || type === 'expense' || type === 'inflows' || type === 'outflows';
-
+function ProgressBar({ value, className = "" }: { value: number; className?: string }) {
+  const pct = Math.max(0, Math.min(100, (value ?? 0) * 100));
+  const barColor = pct >= 80 ? "bg-emerald-500" : pct >= 50 ? "bg-blue-500" : pct >= 25 ? "bg-amber-500" : "bg-red-500";
   return (
-    <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white dark:bg-gray-900 border rounded-lg shadow-lg p-3 max-h-64 overflow-y-auto min-w-[280px]">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-xs font-semibold text-muted-foreground">{items.length} project{items.length !== 1 ? 's' : ''}</span>
-        <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-3 w-3" /></button>
+    <div className={`flex items-center gap-2 ${className}`}>
+      <div className="flex-1 h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+        <div className={`h-full rounded-full ${barColor} transition-all duration-500`} style={{ width: `${pct}%` }} />
       </div>
-      <div className="space-y-1">
-        {items.map((item: any, i: number) => (
-          <button
-            key={i}
-            className="w-full text-left flex items-center justify-between gap-2 py-1.5 px-2 rounded hover:bg-muted/50 text-sm transition-colors"
-            onClick={() => onNavigate(item.projectName)}
-            data-testid={`drilldown-item-${i}`}
-          >
-            <span className="truncate font-medium text-primary">{(item.projectName || '').replace('_Tracker', '')}</span>
-            {isFinancial ? (
-              <span className="text-xs font-mono text-muted-foreground whitespace-nowrap">{formatRand(item.amount)}</span>
-            ) : (
-              <span className="text-xs text-muted-foreground whitespace-nowrap">{item.date}</span>
-            )}
-          </button>
+      <span className="text-xs font-mono font-medium text-gray-600 dark:text-gray-400 w-12 text-right">{pct.toFixed(1)}%</span>
+    </div>
+  );
+}
+
+function SkeletonDashboard() {
+  return (
+    <div className="space-y-8 max-w-[1400px] mx-auto">
+      <div className="space-y-2">
+        <div className="h-9 w-64 bg-gray-200 dark:bg-gray-800 rounded-lg animate-pulse" />
+        <div className="h-4 w-48 bg-gray-100 dark:bg-gray-800/60 rounded animate-pulse" />
+      </div>
+      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <div key={i} className="h-28 bg-gray-100 dark:bg-gray-800/40 rounded-xl animate-pulse" />
         ))}
+      </div>
+      <div className="h-64 bg-gray-100 dark:bg-gray-800/40 rounded-xl animate-pulse" />
+      <div className="grid gap-6 lg:grid-cols-2">
+        <div className="h-48 bg-gray-100 dark:bg-gray-800/40 rounded-xl animate-pulse" />
+        <div className="h-48 bg-gray-100 dark:bg-gray-800/40 rounded-xl animate-pulse" />
       </div>
     </div>
   );
@@ -245,10 +408,10 @@ export default function Dashboard() {
     );
   }, [pmTable]);
 
-  const toggle = (key: string) => setExpanded(prev => ({ ...prev, [key]: !prev[key] }));
+  const toggle = (key: string) => setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
 
   const toggleDrilldown = (key: string) => {
-    setActiveDrilldown(prev => prev === key ? null : key);
+    setActiveDrilldown((prev) => (prev === key ? null : key));
   };
 
   const navigateToProject = (projectName: string) => {
@@ -257,58 +420,204 @@ export default function Dashboard() {
   };
 
   if (dashLoading && !dashboardData) {
-    return (
-      <div className="space-y-6">
-        <h2 className="text-3xl font-heading font-bold text-foreground" data-testid="text-page-title">Program Dashboard</h2>
-        <p className="text-sm text-muted-foreground">FY26: 1 Sep 2025 - 31 Aug 2026</p>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-            <div key={i} className="h-32 bg-muted/20 animate-pulse rounded-lg" />
-          ))}
-        </div>
-      </div>
-    );
+    return <SkeletonDashboard />;
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-8 max-w-[1400px] mx-auto">
+      <header className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
         <div>
-          <h2 className="text-3xl font-heading font-bold text-foreground" data-testid="text-page-title">Program Dashboard</h2>
-          <p className="text-sm text-muted-foreground mt-1">FY26: 1 Sep 2025 - 31 Aug 2026</p>
-        </div>
-      </div>
-
-      <Card className="border-red-200 dark:border-red-800 bg-red-50/30 dark:bg-red-950/10" data-testid="card-high-priority">
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <AlertTriangle className="h-5 w-5 text-red-600" />
-            High Priority Actions
-          </CardTitle>
-          <p className="text-xs text-muted-foreground mt-1">
-            Rules: overdue expenses (unpaid past date), revenue outstanding (no payment received), projects behind plan (delta &lt; -5%), milestones in next 7 days
+          <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-50" data-testid="text-page-title">
+            Program Dashboard
+          </h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            FY26: 1 Sep 2025 – 31 Aug 2026
           </p>
+        </div>
+        <time className="text-sm font-medium text-gray-400 dark:text-gray-500 tabular-nums" data-testid="text-today-date">
+          {format(new Date(), "EEEE, d MMMM yyyy")}
+        </time>
+      </header>
+
+      <section aria-label="Milestone KPIs">
+        <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-3">Milestones</p>
+        <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+          <KpiCard
+            icon={Construction}
+            value={kpis?.siteEstablishmentNext10 ?? 0}
+            label="Site Establishment"
+            sublabel="Next 7 Days"
+            color="amber"
+            drilldownKey="site"
+            drilldownItems={kpiDetails?.siteEstablishmentProjects}
+            drilldownType="milestone"
+            activeDrilldown={activeDrilldown}
+            onToggle={toggleDrilldown}
+            onClose={() => setActiveDrilldown(null)}
+            onNavigate={navigateToProject}
+            testId="card-site-establishment"
+            valueTestId="value-site-establishment"
+          />
+          <KpiCard
+            icon={Zap}
+            value={kpis?.commissioningNext10 ?? 0}
+            label="Commissioning"
+            sublabel="Next 7 Days"
+            color="blue"
+            drilldownKey="commissioning"
+            drilldownItems={kpiDetails?.commissioningProjects}
+            drilldownType="milestone"
+            activeDrilldown={activeDrilldown}
+            onToggle={toggleDrilldown}
+            onClose={() => setActiveDrilldown(null)}
+            onNavigate={navigateToProject}
+            testId="card-commissioning"
+            valueTestId="value-commissioning"
+          />
+          <KpiCard
+            icon={Wrench}
+            value={kpis?.omHandoverNext10 ?? 0}
+            label="O&M Handover"
+            sublabel="Next 7 Days"
+            color="green"
+            drilldownKey="om"
+            drilldownItems={kpiDetails?.omHandoverProjects}
+            drilldownType="milestone"
+            activeDrilldown={activeDrilldown}
+            onToggle={toggleDrilldown}
+            onClose={() => setActiveDrilldown(null)}
+            onNavigate={navigateToProject}
+            testId="card-om-handover"
+            valueTestId="value-om-handover"
+          />
+          <KpiCard
+            icon={UserCheck}
+            value={kpis?.clientHandoverNext10 ?? 0}
+            label="Client Handover"
+            sublabel="Next 7 Days"
+            color="purple"
+            drilldownKey="client"
+            drilldownItems={kpiDetails?.clientHandoverProjects}
+            drilldownType="milestone"
+            activeDrilldown={activeDrilldown}
+            onToggle={toggleDrilldown}
+            onClose={() => setActiveDrilldown(null)}
+            onNavigate={navigateToProject}
+            testId="card-client-handover"
+            valueTestId="value-client-handover"
+          />
+        </div>
+      </section>
+
+      <section aria-label="Financial KPIs">
+        <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-3">Financial</p>
+        <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+          <KpiCard
+            icon={DollarSign}
+            value={formatRand(kpis?.revenueOutstanding ?? 0)}
+            label="Revenue Outstanding"
+            color="amber"
+            drilldownKey="revOutstanding"
+            drilldownItems={kpiDetails?.revenueOutstandingProjects}
+            drilldownType="revenue"
+            isFinancial
+            activeDrilldown={activeDrilldown}
+            onToggle={toggleDrilldown}
+            onClose={() => setActiveDrilldown(null)}
+            onNavigate={navigateToProject}
+            testId="card-revenue-outstanding"
+            valueTestId="value-revenue-outstanding"
+          />
+          <KpiCard
+            icon={AlertCircle}
+            value={formatRand(kpis?.expenseOverdue ?? 0)}
+            label="Expenses Overdue"
+            color="red"
+            drilldownKey="expOverdue"
+            drilldownItems={kpiDetails?.expenseOverdueProjects}
+            drilldownType="expense"
+            isFinancial
+            activeDrilldown={activeDrilldown}
+            onToggle={toggleDrilldown}
+            onClose={() => setActiveDrilldown(null)}
+            onNavigate={navigateToProject}
+            testId="card-expenses-overdue"
+            valueTestId="value-expenses-overdue"
+          />
+          <KpiCard
+            icon={TrendingUp}
+            value={formatRand(kpis?.inflowsThisWeek ?? 0)}
+            label="Inflows This Week"
+            color="green"
+            drilldownKey="inflows"
+            drilldownItems={kpiDetails?.inflowProjects}
+            drilldownType="inflows"
+            isFinancial
+            activeDrilldown={activeDrilldown}
+            onToggle={toggleDrilldown}
+            onClose={() => setActiveDrilldown(null)}
+            onNavigate={navigateToProject}
+            testId="card-inflows-this-week"
+            valueTestId="value-inflows-this-week"
+          />
+          <KpiCard
+            icon={TrendingDown}
+            value={formatRand(kpis?.outflowsThisWeek ?? 0)}
+            label="Outflows This Week"
+            color="red"
+            drilldownKey="outflows"
+            drilldownItems={kpiDetails?.outflowProjects}
+            drilldownType="outflows"
+            isFinancial
+            activeDrilldown={activeDrilldown}
+            onToggle={toggleDrilldown}
+            onClose={() => setActiveDrilldown(null)}
+            onNavigate={navigateToProject}
+            testId="card-outflows-this-week"
+            valueTestId="value-outflows-this-week"
+          />
+        </div>
+      </section>
+
+      <Card className="border-l-4 border-l-red-500 shadow-sm" data-testid="card-high-priority">
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-red-100 dark:bg-red-900/30">
+              <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-400" />
+            </div>
+            <div>
+              <CardTitle className="text-lg font-bold text-gray-900 dark:text-gray-50">High Priority Actions</CardTitle>
+              <p className="text-xs text-gray-400 mt-0.5">
+                Overdue expenses · Revenue outstanding · Projects behind plan · Upcoming milestones
+              </p>
+            </div>
+          </div>
         </CardHeader>
-        <CardContent className="space-y-6">
+        <CardContent>
           {hpLoading ? (
-            <div className="text-sm text-muted-foreground">Loading priority items...</div>
+            <div className="flex items-center gap-2 py-6 justify-center text-gray-400">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span className="text-sm">Loading priority items…</span>
+            </div>
           ) : highPriority ? (
-            <div className="grid gap-6 lg:grid-cols-2">
+            <div className="grid gap-4 lg:grid-cols-2">
               <PrioritySection
                 title="Overdue Expenses"
                 icon={AlertCircle}
                 iconColor="text-red-600"
+                accentBorder="border-l-red-400"
                 items={highPriority.overdueExpenses}
-                viewAllPath="/projects"
                 expanded={!!expanded.overdue}
                 onToggle={() => toggle("overdue")}
                 renderItem={(item, i) => (
                   <Link key={i} href={`/project/${encodeURIComponent(item.projectName)}`}>
-                    <div className="flex items-center gap-2 pl-6 py-1.5 rounded hover:bg-white/50 cursor-pointer group" data-testid={`item-overdue-${i}`}>
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-red-50/60 dark:hover:bg-red-900/10 cursor-pointer group transition-colors" data-testid={`item-overdue-${i}`}>
                       <SeverityBadge severity={item.severity} />
-                      <span className="text-sm truncate flex-1 group-hover:text-blue-600">{item.projectName.replace('_Tracker', '')}</span>
-                      <span className="text-sm font-mono font-medium text-red-700">{formatRand(item.amount)}</span>
-                      <span className="text-xs text-muted-foreground">{item.paymentDate}</span>
+                      <span className="text-sm truncate flex-1 text-gray-700 dark:text-gray-300 group-hover:text-red-700 dark:group-hover:text-red-400 transition-colors font-medium">
+                        {item.projectName.replace("_Tracker", "")}
+                      </span>
+                      <span className="text-sm font-mono font-semibold text-red-600 whitespace-nowrap">{formatRand(item.amount)}</span>
+                      <span className="text-[11px] text-gray-400 whitespace-nowrap">{item.paymentDate}</span>
                     </div>
                   </Link>
                 )}
@@ -318,17 +627,21 @@ export default function Dashboard() {
                 title="Revenue Outstanding"
                 icon={DollarSign}
                 iconColor="text-amber-600"
+                accentBorder="border-l-amber-400"
                 items={highPriority.revenueOutstanding}
-                viewAllPath="/projects"
                 expanded={!!expanded.revenue}
                 onToggle={() => toggle("revenue")}
                 renderItem={(item, i) => (
                   <Link key={i} href={`/project/${encodeURIComponent(item.projectName)}`}>
-                    <div className="flex items-center gap-2 pl-6 py-1.5 rounded hover:bg-white/50 cursor-pointer group" data-testid={`item-revenue-${i}`}>
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-amber-50/60 dark:hover:bg-amber-900/10 cursor-pointer group transition-colors" data-testid={`item-revenue-${i}`}>
                       <SeverityBadge severity={item.severity} />
-                      <span className="text-sm truncate flex-1 group-hover:text-blue-600">{item.projectName.replace('_Tracker', '')}</span>
-                      <span className="text-sm font-mono font-medium text-amber-700">{formatRand(item.amount)}</span>
-                      {item.milestoneName && <span className="text-xs text-muted-foreground truncate max-w-[120px]">{item.milestoneName}</span>}
+                      <span className="text-sm truncate flex-1 text-gray-700 dark:text-gray-300 group-hover:text-amber-700 dark:group-hover:text-amber-400 transition-colors font-medium">
+                        {item.projectName.replace("_Tracker", "")}
+                      </span>
+                      <span className="text-sm font-mono font-semibold text-amber-600 whitespace-nowrap">{formatRand(item.amount)}</span>
+                      {item.milestoneName && (
+                        <span className="text-[11px] text-gray-400 truncate max-w-[100px]">{item.milestoneName}</span>
+                      )}
                     </div>
                   </Link>
                 )}
@@ -338,37 +651,41 @@ export default function Dashboard() {
                 title="Projects Behind Plan"
                 icon={TrendingDown}
                 iconColor="text-orange-600"
+                accentBorder="border-l-orange-400"
                 items={highPriority.projectsBehindPlan}
-                viewAllPath="/projects"
                 expanded={!!expanded.behind}
                 onToggle={() => toggle("behind")}
                 renderItem={(item, i) => (
                   <Link key={i} href={`/project/${encodeURIComponent(item.projectName)}`}>
-                    <div className="flex items-center gap-2 pl-6 py-1.5 rounded hover:bg-white/50 cursor-pointer group" data-testid={`item-behind-${i}`}>
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-orange-50/60 dark:hover:bg-orange-900/10 cursor-pointer group transition-colors" data-testid={`item-behind-${i}`}>
                       <SeverityBadge severity={item.severity} />
-                      <span className="text-sm truncate flex-1 group-hover:text-blue-600">{item.projectName.replace('_Tracker', '')}</span>
-                      <Badge variant="destructive" className="text-xs">{formatPct(item.delta)}</Badge>
-                      {item.pm && <span className="text-xs text-muted-foreground">{item.pm}</span>}
+                      <span className="text-sm truncate flex-1 text-gray-700 dark:text-gray-300 group-hover:text-orange-700 dark:group-hover:text-orange-400 transition-colors font-medium">
+                        {item.projectName.replace("_Tracker", "")}
+                      </span>
+                      <Badge variant="destructive" className="text-[10px] px-1.5 py-0 font-mono font-bold">{formatPct(item.delta)}</Badge>
+                      {item.pm && <span className="text-[11px] text-gray-400 whitespace-nowrap">{item.pm}</span>}
                     </div>
                   </Link>
                 )}
               />
 
               <PrioritySection
-                title="Upcoming Milestones (10 days)"
+                title="Upcoming Milestones"
                 icon={Clock}
                 iconColor="text-blue-600"
+                accentBorder="border-l-blue-400"
                 items={highPriority.upcomingMilestones}
-                viewAllPath="/projects"
                 expanded={!!expanded.milestones}
                 onToggle={() => toggle("milestones")}
                 renderItem={(item, i) => (
                   <Link key={i} href={`/project/${encodeURIComponent(item.projectName)}`}>
-                    <div className="flex items-center gap-2 pl-6 py-1.5 rounded hover:bg-white/50 cursor-pointer group" data-testid={`item-milestone-${i}`}>
-                      <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-[10px]" variant="outline">{item.milestoneType}</Badge>
-                      <span className="text-sm truncate flex-1 group-hover:text-blue-600">{item.projectName.replace('_Tracker', '')}</span>
-                      <span className="text-xs text-muted-foreground font-mono">{item.date}</span>
-                      {item.pm && <span className="text-xs text-muted-foreground">{item.pm}</span>}
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-blue-50/60 dark:hover:bg-blue-900/10 cursor-pointer group transition-colors" data-testid={`item-milestone-${i}`}>
+                      <Badge className="bg-blue-50 text-blue-700 border-blue-200 text-[10px] font-bold px-1.5" variant="outline">{item.milestoneType}</Badge>
+                      <span className="text-sm truncate flex-1 text-gray-700 dark:text-gray-300 group-hover:text-blue-700 dark:group-hover:text-blue-400 transition-colors font-medium">
+                        {item.projectName.replace("_Tracker", "")}
+                      </span>
+                      <span className="text-[11px] font-mono text-gray-400 whitespace-nowrap">{item.date}</span>
+                      {item.pm && <span className="text-[11px] text-gray-400 whitespace-nowrap">{item.pm}</span>}
                     </div>
                   </Link>
                 )}
@@ -378,337 +695,107 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <div className="relative">
-          <Card 
-            className="bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 cursor-pointer hover:shadow-md transition-shadow" 
-            data-testid="card-site-establishment"
-            onClick={() => toggleDrilldown('site')}
-          >
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="p-3 rounded-lg bg-amber-100 dark:bg-amber-900/40">
-                  <Construction className="w-6 h-6 text-amber-700 dark:text-amber-400" />
-                </div>
-                <div>
-                  <p className="text-3xl font-bold text-amber-800 dark:text-amber-300" data-testid="value-site-establishment">
-                    {kpis?.siteEstablishmentNext10 ?? 0}
-                  </p>
-                  <p className="text-sm font-medium text-amber-700 dark:text-amber-400">Site Establishment</p>
-                  <p className="text-xs text-amber-600 dark:text-amber-500">Next 7 Days</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          {activeDrilldown === 'site' && kpiDetails && (
-            <KpiDrilldown
-              items={kpiDetails.siteEstablishmentProjects}
-              type="milestone"
-              onClose={() => setActiveDrilldown(null)}
-              onNavigate={navigateToProject}
-            />
-          )}
-        </div>
-
-        <div className="relative">
-          <Card 
-            className="bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 cursor-pointer hover:shadow-md transition-shadow" 
-            data-testid="card-commissioning"
-            onClick={() => toggleDrilldown('commissioning')}
-          >
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="p-3 rounded-lg bg-blue-100 dark:bg-blue-900/40">
-                  <Zap className="w-6 h-6 text-blue-700 dark:text-blue-400" />
-                </div>
-                <div>
-                  <p className="text-3xl font-bold text-blue-800 dark:text-blue-300" data-testid="value-commissioning">
-                    {kpis?.commissioningNext10 ?? 0}
-                  </p>
-                  <p className="text-sm font-medium text-blue-700 dark:text-blue-400">Commissioning</p>
-                  <p className="text-xs text-blue-600 dark:text-blue-500">Next 7 Days</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          {activeDrilldown === 'commissioning' && kpiDetails && (
-            <KpiDrilldown
-              items={kpiDetails.commissioningProjects}
-              type="milestone"
-              onClose={() => setActiveDrilldown(null)}
-              onNavigate={navigateToProject}
-            />
-          )}
-        </div>
-
-        <div className="relative">
-          <Card 
-            className="bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 cursor-pointer hover:shadow-md transition-shadow" 
-            data-testid="card-om-handover"
-            onClick={() => toggleDrilldown('om')}
-          >
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="p-3 rounded-lg bg-green-100 dark:bg-green-900/40">
-                  <Wrench className="w-6 h-6 text-green-700 dark:text-green-400" />
-                </div>
-                <div>
-                  <p className="text-3xl font-bold text-green-800 dark:text-green-300" data-testid="value-om-handover">
-                    {kpis?.omHandoverNext10 ?? 0}
-                  </p>
-                  <p className="text-sm font-medium text-green-700 dark:text-green-400">O&M Handover</p>
-                  <p className="text-xs text-green-600 dark:text-green-500">Next 7 Days</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          {activeDrilldown === 'om' && kpiDetails && (
-            <KpiDrilldown
-              items={kpiDetails.omHandoverProjects}
-              type="milestone"
-              onClose={() => setActiveDrilldown(null)}
-              onNavigate={navigateToProject}
-            />
-          )}
-        </div>
-
-        <div className="relative">
-          <Card 
-            className="bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-800 cursor-pointer hover:shadow-md transition-shadow" 
-            data-testid="card-client-handover"
-            onClick={() => toggleDrilldown('client')}
-          >
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="p-3 rounded-lg bg-purple-100 dark:bg-purple-900/40">
-                  <UserCheck className="w-6 h-6 text-purple-700 dark:text-purple-400" />
-                </div>
-                <div>
-                  <p className="text-3xl font-bold text-purple-800 dark:text-purple-300" data-testid="value-client-handover">
-                    {kpis?.clientHandoverNext10 ?? 0}
-                  </p>
-                  <p className="text-sm font-medium text-purple-700 dark:text-purple-400">Client Handover</p>
-                  <p className="text-xs text-purple-600 dark:text-purple-500">Next 7 Days</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          {activeDrilldown === 'client' && kpiDetails && (
-            <KpiDrilldown
-              items={kpiDetails.clientHandoverProjects}
-              type="milestone"
-              onClose={() => setActiveDrilldown(null)}
-              onNavigate={navigateToProject}
-            />
-          )}
-        </div>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <div className="relative">
-          <Card 
-            className="bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 cursor-pointer hover:shadow-md transition-shadow" 
-            data-testid="card-revenue-outstanding"
-            onClick={() => toggleDrilldown('revOutstanding')}
-          >
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="p-3 rounded-lg bg-amber-100 dark:bg-amber-900/40">
-                  <DollarSign className="w-6 h-6 text-amber-700 dark:text-amber-400" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-amber-800 dark:text-amber-300" data-testid="value-revenue-outstanding">
-                    {formatRand(kpis?.revenueOutstanding ?? 0)}
-                  </p>
-                  <p className="text-sm font-medium text-amber-700 dark:text-amber-400">Revenue Outstanding</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          {activeDrilldown === 'revOutstanding' && kpiDetails && (
-            <KpiDrilldown
-              items={kpiDetails.revenueOutstandingProjects}
-              type="revenue"
-              onClose={() => setActiveDrilldown(null)}
-              onNavigate={navigateToProject}
-            />
-          )}
-        </div>
-
-        <div className="relative">
-          <Card 
-            className="bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 cursor-pointer hover:shadow-md transition-shadow" 
-            data-testid="card-expenses-overdue"
-            onClick={() => toggleDrilldown('expOverdue')}
-          >
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="p-3 rounded-lg bg-red-100 dark:bg-red-900/40">
-                  <AlertCircle className="w-6 h-6 text-red-700 dark:text-red-400" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-red-800 dark:text-red-300" data-testid="value-expenses-overdue">
-                    {formatRand(kpis?.expenseOverdue ?? 0)}
-                  </p>
-                  <p className="text-sm font-medium text-red-700 dark:text-red-400">Expenses Overdue</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          {activeDrilldown === 'expOverdue' && kpiDetails && (
-            <KpiDrilldown
-              items={kpiDetails.expenseOverdueProjects}
-              type="expense"
-              onClose={() => setActiveDrilldown(null)}
-              onNavigate={navigateToProject}
-            />
-          )}
-        </div>
-
-        <div className="relative">
-          <Card 
-            className="bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 cursor-pointer hover:shadow-md transition-shadow" 
-            data-testid="card-inflows-this-week"
-            onClick={() => toggleDrilldown('inflows')}
-          >
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="p-3 rounded-lg bg-green-100 dark:bg-green-900/40">
-                  <TrendingUp className="w-6 h-6 text-green-700 dark:text-green-400" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-green-800 dark:text-green-300" data-testid="value-inflows-this-week">
-                    {formatRand(kpis?.inflowsThisWeek ?? 0)}
-                  </p>
-                  <p className="text-sm font-medium text-green-700 dark:text-green-400">Inflows This Week</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          {activeDrilldown === 'inflows' && kpiDetails && (
-            <KpiDrilldown
-              items={kpiDetails.inflowProjects}
-              type="inflows"
-              onClose={() => setActiveDrilldown(null)}
-              onNavigate={navigateToProject}
-            />
-          )}
-        </div>
-
-        <div className="relative">
-          <Card 
-            className="bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 cursor-pointer hover:shadow-md transition-shadow" 
-            data-testid="card-outflows-this-week"
-            onClick={() => toggleDrilldown('outflows')}
-          >
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="p-3 rounded-lg bg-red-100 dark:bg-red-900/40">
-                  <TrendingDown className="w-6 h-6 text-red-700 dark:text-red-400" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-red-800 dark:text-red-300" data-testid="value-outflows-this-week">
-                    {formatRand(kpis?.outflowsThisWeek ?? 0)}
-                  </p>
-                  <p className="text-sm font-medium text-red-700 dark:text-red-400">Outflows This Week</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          {activeDrilldown === 'outflows' && kpiDetails && (
-            <KpiDrilldown
-              items={kpiDetails.outflowProjects}
-              type="outflows"
-              onClose={() => setActiveDrilldown(null)}
-              onNavigate={navigateToProject}
-            />
-          )}
-        </div>
-      </div>
-
-      <Card data-testid="card-pm-summary">
-        <CardHeader>
-          <CardTitle>Project Manager Summary</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b">
-                  <th className="text-left py-2 px-3 font-medium">PM Name</th>
-                  <th className="text-right py-2 px-3 font-medium">Active Projects</th>
-                  <th className="text-right py-2 px-3 font-medium">Commissioning (This Month)</th>
-                  <th className="text-right py-2 px-3 font-medium">Client Handover (This Month)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pmTable.map((row, i) => (
-                  <tr key={i} className="border-b last:border-0 hover:bg-muted/30" data-testid={`row-pm-${i}`}>
-                    <td className="py-2 px-3">{row.pm}</td>
-                    <td className="py-2 px-3 text-right font-mono">{row.activeProjects}</td>
-                    <td className="py-2 px-3 text-right font-mono">{row.commissioningThisMonth}</td>
-                    <td className="py-2 px-3 text-right font-mono">{row.clientHandoverThisMonth}</td>
+      <div className="grid gap-6 xl:grid-cols-5">
+        <Card className="xl:col-span-2 shadow-sm" data-testid="card-pm-summary">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base font-bold text-gray-900 dark:text-gray-50">PM Summary</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100 dark:border-gray-800">
+                    <th className="text-left py-2.5 px-3 text-xs font-semibold uppercase tracking-wider text-gray-400">PM Name</th>
+                    <th className="text-right py-2.5 px-3 text-xs font-semibold uppercase tracking-wider text-gray-400">Active</th>
+                    <th className="text-right py-2.5 px-3 text-xs font-semibold uppercase tracking-wider text-gray-400">Comm.</th>
+                    <th className="text-right py-2.5 px-3 text-xs font-semibold uppercase tracking-wider text-gray-400">Handover</th>
                   </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="border-t-2 font-bold">
-                  <td className="py-2 px-3">Total</td>
-                  <td className="py-2 px-3 text-right font-mono">{pmTotals.activeProjects}</td>
-                  <td className="py-2 px-3 text-right font-mono">{pmTotals.commissioningThisMonth}</td>
-                  <td className="py-2 px-3 text-right font-mono">{pmTotals.clientHandoverThisMonth}</td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card data-testid="card-projects-overview">
-        <CardHeader>
-          <CardTitle>Active Projects Overview</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b">
-                  <th className="text-left py-2 px-3 font-medium">Project</th>
-                  <th className="text-left py-2 px-3 font-medium">Phase</th>
-                  <th className="text-right py-2 px-3 font-medium">% Complete</th>
-                  <th className="text-right py-2 px-3 font-medium">Delta</th>
-                  <th className="text-right py-2 px-3 font-medium">Revenue</th>
-                  <th className="text-right py-2 px-3 font-medium">Expenses</th>
-                </tr>
-              </thead>
-              <tbody>
-                {top10Projects.map((p: any, i: number) => (
-                  <tr
-                    key={p.project_name || i}
-                    className="border-b last:border-0 hover:bg-muted/30 cursor-pointer"
-                    onClick={() => setLocation(`/project/${encodeURIComponent(p.project_name)}`)}
-                    data-testid={`row-project-${i}`}
-                  >
-                    <td className="py-2 px-3 font-medium">{(p.project_name || "").replace("_Tracker", "")}</td>
-                    <td className="py-2 px-3">{p.phase || "--"}</td>
-                    <td className="py-2 px-3 text-right font-mono">{formatPct(p.project_pct_complete)}</td>
-                    <td className={`py-2 px-3 text-right font-mono ${(p.delta_vs_expected ?? 0) < 0 ? "text-red-600" : "text-green-600"}`}>
-                      {formatPct(p.delta_vs_expected)}
-                    </td>
-                    <td className="py-2 px-3 text-right font-mono">{formatRand(p.actual_revenue ?? 0)}</td>
-                    <td className="py-2 px-3 text-right font-mono">{formatRand(p.actual_expenses ?? 0)}</td>
+                </thead>
+                <tbody>
+                  {pmTable.map((row, i) => (
+                    <tr key={i} className="border-b border-gray-50 dark:border-gray-800/50 last:border-0 hover:bg-gray-50/50 dark:hover:bg-gray-800/20 transition-colors" data-testid={`row-pm-${i}`}>
+                      <td className="py-2.5 px-3 font-medium text-gray-700 dark:text-gray-300">{row.pm}</td>
+                      <td className="py-2.5 px-3 text-right font-mono text-gray-600 dark:text-gray-400">{row.activeProjects}</td>
+                      <td className="py-2.5 px-3 text-right font-mono text-gray-600 dark:text-gray-400">{row.commissioningThisMonth}</td>
+                      <td className="py-2.5 px-3 text-right font-mono text-gray-600 dark:text-gray-400">{row.clientHandoverThisMonth}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-gray-200 dark:border-gray-700">
+                    <td className="py-2.5 px-3 font-bold text-gray-900 dark:text-gray-100">Total</td>
+                    <td className="py-2.5 px-3 text-right font-mono font-bold text-gray-900 dark:text-gray-100">{pmTotals.activeProjects}</td>
+                    <td className="py-2.5 px-3 text-right font-mono font-bold text-gray-900 dark:text-gray-100">{pmTotals.commissioningThisMonth}</td>
+                    <td className="py-2.5 px-3 text-right font-mono font-bold text-gray-900 dark:text-gray-100">{pmTotals.clientHandoverThisMonth}</td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="mt-4 text-center">
-            <Button variant="link" onClick={() => setLocation("/projects")} data-testid="link-view-all-projects">
-              View All <ArrowRight className="w-4 h-4 ml-1" />
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+                </tfoot>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="xl:col-span-3 shadow-sm" data-testid="card-projects-overview">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base font-bold text-gray-900 dark:text-gray-50">Active Projects — Top 10</CardTitle>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50/50 gap-1"
+                onClick={() => setLocation("/projects")}
+                data-testid="link-view-all-projects"
+              >
+                View All <ArrowRight className="w-3.5 h-3.5" />
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100 dark:border-gray-800">
+                    <th className="text-left py-2.5 px-3 text-xs font-semibold uppercase tracking-wider text-gray-400">Project</th>
+                    <th className="text-left py-2.5 px-3 text-xs font-semibold uppercase tracking-wider text-gray-400">Phase</th>
+                    <th className="text-left py-2.5 px-3 text-xs font-semibold uppercase tracking-wider text-gray-400 min-w-[140px]">% Complete</th>
+                    <th className="text-right py-2.5 px-3 text-xs font-semibold uppercase tracking-wider text-gray-400">Delta</th>
+                    <th className="text-right py-2.5 px-3 text-xs font-semibold uppercase tracking-wider text-gray-400">Revenue</th>
+                    <th className="text-right py-2.5 px-3 text-xs font-semibold uppercase tracking-wider text-gray-400">Expenses</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {top10Projects.map((p: any, i: number) => {
+                    const delta = p.delta_vs_expected ?? 0;
+                    const deltaColor = delta < -0.05 ? "text-red-600 bg-red-50" : delta < 0 ? "text-amber-600 bg-amber-50" : "text-emerald-600 bg-emerald-50";
+                    return (
+                      <tr
+                        key={p.project_name || i}
+                        className="border-b border-gray-50 dark:border-gray-800/50 last:border-0 hover:bg-blue-50/30 dark:hover:bg-blue-900/10 cursor-pointer transition-colors"
+                        onClick={() => setLocation(`/project/${encodeURIComponent(p.project_name)}`)}
+                        data-testid={`row-project-${i}`}
+                      >
+                        <td className="py-2.5 px-3 font-medium text-gray-800 dark:text-gray-200 max-w-[180px] truncate">
+                          {(p.project_name || "").replace("_Tracker", "")}
+                        </td>
+                        <td className="py-2.5 px-3 text-gray-500 dark:text-gray-400">{p.phase || "--"}</td>
+                        <td className="py-2.5 px-3">
+                          <ProgressBar value={p.project_pct_complete ?? 0} />
+                        </td>
+                        <td className="py-2.5 px-3 text-right">
+                          <span className={`inline-block px-2 py-0.5 rounded-md text-xs font-mono font-bold ${deltaColor}`}>
+                            {formatPct(p.delta_vs_expected)}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono text-gray-600 dark:text-gray-400">{formatRand(p.actual_revenue ?? 0)}</td>
+                        <td className="py-2.5 px-3 text-right font-mono text-gray-600 dark:text-gray-400">{formatRand(p.actual_expenses ?? 0)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

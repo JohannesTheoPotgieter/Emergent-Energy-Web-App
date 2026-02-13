@@ -27,6 +27,7 @@ import {
   X,
   Search,
   Info,
+  Loader2,
 } from "lucide-react";
 
 interface ProjectBreakdown {
@@ -167,71 +168,79 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
 
   const stateBadgeColor = (state: string) => {
     switch (state) {
-      case 'Paid': return 'bg-blue-100 text-blue-800';
-      case 'Invoiced': return 'bg-green-100 text-green-800';
-      case 'Committed': return 'bg-amber-100 text-amber-800';
-      default: return 'bg-gray-100 text-gray-700';
+      case 'Paid': return 'bg-blue-100 text-blue-700 ring-1 ring-blue-200';
+      case 'Invoiced': return 'bg-green-100 text-green-700 ring-1 ring-green-200';
+      case 'Committed': return 'bg-amber-100 text-amber-700 ring-1 ring-amber-200';
+      default: return 'bg-gray-100 text-gray-600 ring-1 ring-gray-200';
     }
   };
 
   return (
     <div className="fixed inset-0 z-50 flex" data-testid="drawer-month-detail">
-      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
-      <div className="ml-auto relative w-full max-w-5xl bg-background border-l shadow-2xl flex flex-col h-full">
-        <div className="p-4 border-b flex items-center justify-between bg-muted/50">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={onClose} />
+      <div className="ml-auto relative w-full max-w-5xl bg-background shadow-2xl flex flex-col h-full animate-in slide-in-from-right duration-300">
+        <div className="px-6 py-5 border-b bg-gradient-to-r from-slate-50 to-white flex items-center justify-between">
           <div>
-            <h3 className="font-bold text-lg" data-testid="text-drawer-title">{monthLabel} - COS Line Item Detail</h3>
-            <p className="text-sm text-muted-foreground">
-              {data?.lineCount ?? 0} line items totalling {formatRand(data?.totalAmount ?? 0)}
+            <h3 className="font-bold text-xl tracking-tight" data-testid="text-drawer-title">{monthLabel}</h3>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              COS Line Item Detail · {data?.lineCount ?? 0} items · {formatRand(data?.totalAmount ?? 0)}
             </p>
           </div>
-          <button onClick={onClose} className="p-1 hover:bg-muted rounded" data-testid="button-close-drawer">
-            <X className="h-5 w-5" />
+          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors" data-testid="button-close-drawer">
+            <X className="h-5 w-5 text-muted-foreground" />
           </button>
         </div>
 
-        <div className="p-3 border-b grid grid-cols-1 md:grid-cols-3 gap-3 bg-muted/20">
-          <div className="flex items-center gap-2 rounded-lg bg-green-50 border border-green-200 px-3 py-2">
-            <div className="w-2 h-2 rounded-full bg-green-500" />
-            <div>
-              <p className="text-xs text-green-700">Realised</p>
-              <p className="font-mono font-bold text-green-800 text-sm" data-testid="text-realised-total">{formatRand(data?.realisedTotal ?? 0)}</p>
+        <div className="px-6 py-4 border-b bg-gradient-to-b from-slate-50/50 to-transparent">
+          <div className="grid grid-cols-3 gap-3">
+            <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-green-50 to-green-100/50 border border-green-200/60 px-4 py-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-medium text-green-600 uppercase tracking-wider">Realised</p>
+                  <p className="font-mono font-bold text-green-800 text-lg mt-0.5" data-testid="text-realised-total">{formatRand(data?.realisedTotal ?? 0)}</p>
+                </div>
+                <Badge variant="secondary" className="bg-green-200/60 text-green-700 text-xs font-semibold">{data?.realisedCount ?? 0}</Badge>
+              </div>
+              <div className="absolute -right-3 -bottom-3 w-16 h-16 rounded-full bg-green-200/20" />
             </div>
-            <Badge variant="secondary" className="ml-auto text-xs">{data?.realisedCount ?? 0}</Badge>
-          </div>
-          <div className="flex items-center gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
-            <div className="w-2 h-2 rounded-full bg-amber-500" />
-            <div>
-              <p className="text-xs text-amber-700">Unrealised</p>
-              <p className="font-mono font-bold text-amber-800 text-sm" data-testid="text-unrealised-total">{formatRand(data?.unrealisedTotal ?? 0)}</p>
+            <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-amber-50 to-amber-100/50 border border-amber-200/60 px-4 py-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-medium text-amber-600 uppercase tracking-wider">Unrealised</p>
+                  <p className="font-mono font-bold text-amber-800 text-lg mt-0.5" data-testid="text-unrealised-total">{formatRand(data?.unrealisedTotal ?? 0)}</p>
+                </div>
+                <Badge variant="secondary" className="bg-amber-200/60 text-amber-700 text-xs font-semibold">{data?.unrealisedCount ?? 0}</Badge>
+              </div>
+              <div className="absolute -right-3 -bottom-3 w-16 h-16 rounded-full bg-amber-200/20" />
             </div>
-            <Badge variant="secondary" className="ml-auto text-xs">{data?.unrealisedCount ?? 0}</Badge>
-          </div>
-          <div className="flex items-center gap-2 rounded-lg bg-slate-50 border border-slate-200 px-3 py-2">
-            <div className="w-2 h-2 rounded-full bg-slate-500" />
-            <div>
-              <p className="text-xs text-slate-600">Total</p>
-              <p className="font-mono font-bold text-slate-800 text-sm">{formatRand(data?.totalAmount ?? 0)}</p>
+            <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-slate-50 to-slate-100/50 border border-slate-200/60 px-4 py-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total</p>
+                  <p className="font-mono font-bold text-slate-800 text-lg mt-0.5">{formatRand(data?.totalAmount ?? 0)}</p>
+                </div>
+                <Badge variant="secondary" className="bg-slate-200/60 text-slate-600 text-xs font-semibold">{data?.lineCount ?? 0}</Badge>
+              </div>
+              <div className="absolute -right-3 -bottom-3 w-16 h-16 rounded-full bg-slate-200/20" />
             </div>
-            <Badge variant="secondary" className="ml-auto text-xs">{data?.lineCount ?? 0}</Badge>
           </div>
         </div>
 
-        <div className="p-3 border-b flex flex-wrap items-center gap-2">
-          <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+        <div className="px-6 py-3 border-b flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 min-w-[220px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search project, category, invoice #, PO #..."
+              placeholder="Search project, category, invoice, PO, supplier…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 h-9"
+              className="pl-9 h-9 bg-slate-50/50 border-slate-200 focus:bg-white transition-colors"
               data-testid="input-search-detail"
             />
           </div>
           <select
             value={stateFilter}
             onChange={(e) => setStateFilter(e.target.value as any)}
-            className="h-9 px-3 text-sm border rounded-md bg-background"
+            className="h-9 px-3 text-sm border border-slate-200 rounded-lg bg-slate-50/50 hover:bg-white transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-slate-300"
             data-testid="select-state-filter"
           >
             <option value="all">All States</option>
@@ -241,7 +250,7 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
           <select
             value={projectFilter}
             onChange={(e) => setProjectFilter(e.target.value)}
-            className="h-9 px-3 text-sm border rounded-md bg-background max-w-[200px]"
+            className="h-9 px-3 text-sm border border-slate-200 rounded-lg bg-slate-50/50 hover:bg-white transition-colors cursor-pointer max-w-[220px] focus:outline-none focus:ring-2 focus:ring-slate-300"
             data-testid="select-project-filter"
           >
             <option value="all">All Projects</option>
@@ -251,116 +260,128 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
           </select>
         </div>
 
-        <div className="px-3 py-2 border-b bg-muted/30 flex items-center justify-between text-sm">
-          <span className="font-medium">Showing {filtered.length} items</span>
-          <div className="flex items-center gap-4">
-            <span className="text-green-700 font-mono text-xs">Realised: {formatRand(filteredRealised)}</span>
-            <span className="text-amber-700 font-mono text-xs">Unrealised: {formatRand(filteredUnrealised)}</span>
-            <span className="font-mono font-bold">{formatRand(filteredTotal)}</span>
+        <div className="px-6 py-2.5 border-b bg-slate-50/80 flex items-center justify-between text-sm">
+          <span className="font-medium text-slate-600">
+            <span className="text-slate-900 font-semibold">{filtered.length}</span> items
+          </span>
+          <div className="flex items-center gap-5">
+            <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-green-500" />
+              <span className="text-green-700 font-mono text-xs font-medium">{formatRand(filteredRealised)}</span>
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-amber-500" />
+              <span className="text-amber-700 font-mono text-xs font-medium">{formatRand(filteredUnrealised)}</span>
+            </span>
+            <span className="font-mono font-bold text-slate-800">{formatRand(filteredTotal)}</span>
           </div>
         </div>
 
         <div className="flex-1 overflow-y-auto">
           {isLoading ? (
-            <div className="p-8 text-center text-muted-foreground">Loading line items...</div>
+            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
+              <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+              <span className="text-sm">Loading line items…</span>
+            </div>
           ) : filtered.length === 0 ? (
-            <div className="p-8 text-center text-muted-foreground">No line items found for this month.</div>
+            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-2">
+              <Search className="h-8 w-8 text-slate-300" />
+              <span className="text-sm">No line items found</span>
+            </div>
           ) : (
             <table className="w-full text-xs">
-              <thead className="sticky top-0 bg-muted/90 backdrop-blur z-10">
-                <tr className="border-b">
-                  <th className="text-left p-2 font-semibold w-8"></th>
-                  <th className="text-left p-2 font-semibold">Project</th>
-                  <th className="text-left p-2 font-semibold">Category</th>
-                  <th className="text-left p-2 font-semibold">Line Item</th>
-                  <th className="text-center p-2 font-semibold">Status</th>
-                  <th className="text-center p-2 font-semibold">Realised</th>
-                  <th className="text-right p-2 font-semibold">Amount</th>
+              <thead className="sticky top-0 bg-white/95 backdrop-blur-md z-10 border-b">
+                <tr>
+                  <th className="text-left px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px] w-8"></th>
+                  <th className="text-left px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">Project</th>
+                  <th className="text-left px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">Category</th>
+                  <th className="text-left px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">Line Item</th>
+                  <th className="text-center px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">Status</th>
+                  <th className="text-center px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">Realised</th>
+                  <th className="text-right px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">Amount</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-slate-100">
                 {filtered.slice(0, 500).map((item, i) => (
                   <React.Fragment key={item.id}>
                     <tr
-                      className={`border-b hover:bg-muted/30 cursor-pointer ${expandedId === item.id ? 'bg-blue-50/50' : ''}`}
+                      className={`group cursor-pointer transition-colors ${expandedId === item.id ? 'bg-blue-50/60' : 'hover:bg-slate-50/80'}`}
                       onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}
                       data-testid={`row-detail-${i}`}
                     >
-                      <td className="p-2 text-muted-foreground">
-                        {expandedId === item.id ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                      <td className="px-3 py-2.5 text-slate-400 group-hover:text-slate-600 transition-colors">
+                        {expandedId === item.id ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                       </td>
-                      <td className="p-2 max-w-[140px] truncate" title={item.projectName}>{item.projectName}</td>
-                      <td className="p-2 text-muted-foreground max-w-[100px] truncate" title={item.category || ""}>{item.category || "--"}</td>
-                      <td className="p-2 max-w-[200px] truncate" title={item.lineItem || ""}>{item.lineItem || "--"}</td>
-                      <td className="p-2 text-center">
-                        <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium ${stateBadgeColor(item.cosState)}`}>
+                      <td className="px-3 py-2.5 max-w-[150px] truncate font-medium text-slate-800" title={item.projectName}>{item.projectName}</td>
+                      <td className="px-3 py-2.5 text-slate-500 max-w-[110px] truncate" title={item.category || ""}>{item.category || "—"}</td>
+                      <td className="px-3 py-2.5 max-w-[200px] truncate text-slate-700" title={item.lineItem || ""}>{item.lineItem || "—"}</td>
+                      <td className="px-3 py-2.5 text-center">
+                        <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold ${stateBadgeColor(item.cosState)}`}>
                           {item.cosState}
                         </span>
                       </td>
-                      <td className="p-2 text-center">
+                      <td className="px-3 py-2.5 text-center">
                         {item.isRealised ? (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-green-100 text-green-800 text-[10px] font-medium" title={`Realised in ${item.realisedMonth}`}>
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-700 ring-1 ring-green-200 text-[10px] font-semibold" title={`Realised in ${item.realisedMonth}`}>
                             {item.realisedMonth || 'Yes'}
                           </span>
                         ) : (
-                          <span className="inline-flex px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 text-[10px] font-medium">
+                          <span className="inline-flex px-2 py-0.5 rounded-full bg-amber-100 text-amber-600 ring-1 ring-amber-200 text-[10px] font-semibold">
                             No
                           </span>
                         )}
                       </td>
-                      <td className="p-2 text-right font-mono font-medium">{formatRand(item.amount)}</td>
+                      <td className="px-3 py-2.5 text-right font-mono font-semibold text-slate-800">{formatRand(item.amount)}</td>
                     </tr>
                     {expandedId === item.id && (
-                      <tr className="border-b bg-blue-50/30">
-                        <td colSpan={7} className="p-3">
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                      <tr className="bg-gradient-to-r from-blue-50/40 to-slate-50/40">
+                        <td colSpan={7} className="px-6 py-4">
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-3 text-xs">
                             <div>
-                              <p className="text-muted-foreground mb-0.5">Invoice #</p>
-                              <p className="font-medium">{item.invoiceNumber || "--"}</p>
+                              <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider mb-0.5">Invoice #</p>
+                              <p className="font-medium text-slate-700">{item.invoiceNumber || "—"}</p>
                             </div>
                             <div>
-                              <p className="text-muted-foreground mb-0.5">PO #</p>
-                              <p className="font-medium">{item.poNumber || "--"}</p>
+                              <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider mb-0.5">PO #</p>
+                              <p className="font-medium text-slate-700">{item.poNumber || "—"}</p>
                             </div>
                             <div>
-                              <p className="text-muted-foreground mb-0.5">Invoice Date</p>
-                              <p className="font-medium flex items-center gap-1">
-                                {item.invoiceDate || "--"}
+                              <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider mb-0.5">Invoice Date</p>
+                              <p className="font-medium text-slate-700 flex items-center gap-1.5">
+                                {item.invoiceDate || "—"}
                                 {item.invoiceDate && (
-                                  <span className={`inline-block w-2 h-2 rounded-full ${item.invoiceDateConfirmed ? 'bg-green-500' : 'bg-red-400'}`}
+                                  <span className={`inline-block w-2 h-2 rounded-full ${item.invoiceDateConfirmed ? 'bg-green-500 ring-2 ring-green-200' : 'bg-red-400 ring-2 ring-red-200'}`}
                                     title={item.invoiceDateConfirmed ? 'Confirmed' : 'Forecast'} />
                                 )}
                               </p>
                             </div>
                             <div>
-                              <p className="text-muted-foreground mb-0.5">Payment Date</p>
-                              <p className="font-medium flex items-center gap-1">
-                                {item.paymentDate || "--"}
+                              <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider mb-0.5">Payment Date</p>
+                              <p className="font-medium text-slate-700 flex items-center gap-1.5">
+                                {item.paymentDate || "—"}
                                 {item.paymentDate && (
-                                  <span className={`inline-block w-2 h-2 rounded-full ${item.paymentDateConfirmed ? 'bg-green-500' : 'bg-red-400'}`}
+                                  <span className={`inline-block w-2 h-2 rounded-full ${item.paymentDateConfirmed ? 'bg-green-500 ring-2 ring-green-200' : 'bg-red-400 ring-2 ring-red-200'}`}
                                     title={item.paymentDateConfirmed ? 'Confirmed' : 'Forecast'} />
                                 )}
                               </p>
                             </div>
                             <div>
-                              <p className="text-muted-foreground mb-0.5">Supplier</p>
-                              <p className="font-medium">{item.supplier || "--"}</p>
+                              <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider mb-0.5">Supplier</p>
+                              <p className="font-medium text-slate-700">{item.supplier || "—"}</p>
                             </div>
                             <div>
-                              <p className="text-muted-foreground mb-0.5">Realised Month</p>
-                              <p className="font-medium">{item.realisedMonth || "Not realised"}</p>
+                              <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider mb-0.5">Realised Month</p>
+                              <p className="font-medium text-slate-700">{item.realisedMonth || "Not realised"}</p>
                             </div>
                             <div>
-                              <p className="text-muted-foreground mb-0.5">COS State</p>
-                              <p className="font-medium">
-                                <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium ${stateBadgeColor(item.cosState)}`}>
-                                  {item.cosState}
-                                </span>
-                              </p>
+                              <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider mb-0.5">COS State</p>
+                              <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold ${stateBadgeColor(item.cosState)}`}>
+                                {item.cosState}
+                              </span>
                             </div>
                             <div>
-                              <p className="text-muted-foreground mb-0.5">Amount</p>
-                              <p className="font-mono font-bold">{formatRand(item.amount)}</p>
+                              <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider mb-0.5">Amount</p>
+                              <p className="font-mono font-bold text-slate-900">{formatRand(item.amount)}</p>
                             </div>
                           </div>
                         </td>
@@ -484,26 +505,50 @@ export default function CosTracker() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-64 text-muted-foreground" data-testid="loading-indicator">
-        Loading COS data...
+      <div className="flex flex-col items-center justify-center h-64 text-muted-foreground gap-3" data-testid="loading-indicator">
+        <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
+        <span className="text-sm font-medium">Loading COS data…</span>
       </div>
     );
   }
 
+  const kpiCards = [
+    { id: "ytd-total-cos", label: "YTD COS (Finance)", value: formatRand(lastMonth?.ytdCOS ?? 0), icon: DollarSign, iconBg: "bg-slate-100", iconColor: "text-slate-600", valueColor: "text-slate-900", borderColor: "" },
+    { id: "ytd-realised", label: "YTD Realised", value: formatRand(lastMonth?.ytdRealised ?? 0), icon: TrendingDown, iconBg: "bg-green-100", iconColor: "text-green-600", valueColor: "text-green-700", borderColor: "border-green-200" },
+    { id: "ytd-unrealised", label: "YTD Unrealised", value: formatRand(lastMonth?.ytdUnrealised ?? 0), icon: Activity, iconBg: "bg-amber-100", iconColor: "text-amber-600", valueColor: "text-amber-600", borderColor: "border-amber-200" },
+    { id: "ytd-budget", label: "YTD Budget", value: formatRand(lastMonth?.ytdBudget ?? 0), icon: Target, iconBg: "bg-purple-100", iconColor: "text-purple-600", valueColor: "text-purple-700", borderColor: "" },
+    {
+      id: "ytd-variance", label: "YTD Variance", value: formatRand(lastMonth?.ytdVariance ?? 0),
+      icon: TrendingDown,
+      iconBg: (lastMonth?.ytdVariance ?? 0) <= 0 ? "bg-green-100" : "bg-red-100",
+      iconColor: (lastMonth?.ytdVariance ?? 0) <= 0 ? "text-green-600" : "text-red-600",
+      valueColor: (lastMonth?.ytdVariance ?? 0) <= 0 ? "text-green-600" : "text-red-600",
+      borderColor: (lastMonth?.ytdVariance ?? 0) <= 0 ? "border-green-200" : "border-red-200",
+    },
+    {
+      id: "ytd-variance-pct", label: "YTD Variance %", value: `${((lastMonth?.ytdVariancePct ?? 0) * 100).toFixed(1)}%`,
+      icon: Activity,
+      iconBg: (lastMonth?.ytdVariancePct ?? 0) <= 0 ? "bg-green-100" : "bg-red-100",
+      iconColor: (lastMonth?.ytdVariancePct ?? 0) <= 0 ? "text-green-600" : "text-red-600",
+      valueColor: (lastMonth?.ytdVariancePct ?? 0) <= 0 ? "text-green-600" : "text-red-600",
+      borderColor: (lastMonth?.ytdVariancePct ?? 0) <= 0 ? "border-green-200" : "border-red-200",
+    },
+  ];
+
   return (
-    <div className="space-y-0">
-      <div className="bg-white border-b border-gray-200 px-6 py-6">
-        <div className="flex items-center justify-between">
+    <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50/50">
+      <div className="bg-white border-b border-slate-200/80 px-6 py-6 shadow-sm">
+        <div className="flex items-center justify-between max-w-[1800px] mx-auto">
           <div>
-            <h2 className="text-3xl font-heading font-bold text-foreground" data-testid="text-page-title">
+            <h2 className="text-3xl font-heading font-bold tracking-tight text-slate-900" data-testid="text-page-title">
               Cost of Sales Tracker FY26
             </h2>
-            <p className="text-muted-foreground mt-1" data-testid="text-page-subtitle">
+            <p className="text-slate-500 mt-1.5 text-sm" data-testid="text-page-subtitle">
               Monthly COS tracking with planned vs budget analysis. Click any month cell to see contributing line items.
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-muted-foreground">Reconciliation</span>
+          <div className="flex items-center gap-3 bg-slate-50 rounded-xl px-4 py-2.5 border border-slate-200/60">
+            <span className="text-sm font-medium text-slate-600">Reconciliation</span>
             <Switch
               checked={reconciliationMode}
               onCheckedChange={setReconciliationMode}
@@ -513,232 +558,184 @@ export default function CosTracker() {
         </div>
       </div>
 
-      <div className="p-6 space-y-6">
-        <Card className="border-amber-300 bg-amber-50" data-testid="card-wip-banner">
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="rounded-lg bg-amber-200 p-2">
+      <div className="max-w-[1800px] mx-auto px-6 py-6 space-y-6">
+        <Card className="border-amber-200/80 bg-gradient-to-r from-amber-50 to-amber-50/30 shadow-sm" data-testid="card-wip-banner">
+          <CardContent className="p-4 flex items-start gap-3">
+            <div className="rounded-xl bg-amber-200/60 p-2.5 mt-0.5 shrink-0">
               <Activity className="h-5 w-5 text-amber-700" />
             </div>
             <div>
-              <p className="font-semibold text-amber-800">COS Realisation Tracker</p>
-              <p className="text-sm text-amber-700">COS is "Realised" when the matching expenditure line has an Invoice Number AND the Invoice Raised Date has black font colour. Data sourced from Finance - COS sheets and Expenditure Breakdown.</p>
+              <p className="font-semibold text-amber-900 text-sm">COS Realisation Tracker</p>
+              <p className="text-sm text-amber-700/90 mt-0.5 leading-relaxed">
+                COS is "Realised" when the matching expenditure line has an Invoice Number AND the Invoice Raised Date has black font colour. Data sourced from Finance - COS sheets and Expenditure Breakdown.
+              </p>
             </div>
           </CardContent>
         </Card>
 
         {reconciliationMode && reconciliation && (
-          <Card className="border-blue-200 bg-blue-50/50" data-testid="card-reconciliation">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <Info className="h-4 w-4 text-blue-600" />
-                <span className="font-semibold text-sm text-blue-800">Reconciliation Mode</span>
+          <Card className="border-blue-200/80 bg-gradient-to-r from-blue-50 to-blue-50/30 shadow-sm" data-testid="card-reconciliation">
+            <CardContent className="p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <div className="rounded-lg bg-blue-200/60 p-1.5">
+                  <Info className="h-4 w-4 text-blue-700" />
+                </div>
+                <span className="font-semibold text-sm text-blue-900">Reconciliation Mode</span>
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 text-sm">
-                <div>
-                  <p className="text-muted-foreground">Months</p>
-                  <p className="font-mono font-bold">{reconciliation.monthCount}</p>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                <div className="bg-white/60 rounded-lg p-3 border border-blue-100">
+                  <p className="text-xs text-slate-500 font-medium">Months</p>
+                  <p className="font-mono font-bold text-lg text-slate-800 mt-0.5">{reconciliation.monthCount}</p>
                 </div>
-                <div>
-                  <p className="text-muted-foreground">Total COS (Finance)</p>
-                  <p className="font-mono font-bold">{formatRand(reconciliation.totalCOS)}</p>
+                <div className="bg-white/60 rounded-lg p-3 border border-blue-100">
+                  <p className="text-xs text-slate-500 font-medium">Total COS (Finance)</p>
+                  <p className="font-mono font-bold text-lg text-slate-800 mt-0.5">{formatRand(reconciliation.totalCOS)}</p>
                 </div>
-                <div>
-                  <p className="text-muted-foreground">Realised</p>
-                  <p className="font-mono font-bold text-green-700">{formatRand(reconciliation.totalRealised)}</p>
+                <div className="bg-white/60 rounded-lg p-3 border border-green-100">
+                  <p className="text-xs text-slate-500 font-medium">Realised</p>
+                  <p className="font-mono font-bold text-lg text-green-700 mt-0.5">{formatRand(reconciliation.totalRealised)}</p>
                 </div>
-                <div>
-                  <p className="text-muted-foreground">Unrealised</p>
-                  <p className="font-mono font-bold text-amber-600">{formatRand(reconciliation.totalUnrealised)}</p>
+                <div className="bg-white/60 rounded-lg p-3 border border-amber-100">
+                  <p className="text-xs text-slate-500 font-medium">Unrealised</p>
+                  <p className="font-mono font-bold text-lg text-amber-600 mt-0.5">{formatRand(reconciliation.totalUnrealised)}</p>
                 </div>
-                <div>
-                  <p className="text-muted-foreground">Total Budget</p>
-                  <p className="font-mono font-bold text-purple-700">{formatRand(reconciliation.totalBudget)}</p>
+                <div className="bg-white/60 rounded-lg p-3 border border-purple-100">
+                  <p className="text-xs text-slate-500 font-medium">Total Budget</p>
+                  <p className="font-mono font-bold text-lg text-purple-700 mt-0.5">{formatRand(reconciliation.totalBudget)}</p>
                 </div>
-                <div>
-                  <p className="text-muted-foreground">Total Variance</p>
-                  <p className={`font-mono font-bold ${reconciliation.variance > 0 ? "text-red-700" : "text-green-700"}`}>
+                <div className="bg-white/60 rounded-lg p-3 border border-blue-100">
+                  <p className="text-xs text-slate-500 font-medium">Total Variance</p>
+                  <p className={`font-mono font-bold text-lg mt-0.5 ${reconciliation.variance > 0 ? "text-red-600" : "text-green-600"}`}>
                     {formatRand(reconciliation.variance)}
                   </p>
                 </div>
               </div>
-              <p className="text-xs text-muted-foreground mt-3">
-                Realised = Invoice Number captured + Invoice Raised Date confirmed (black font).
-                Unrealised = Finance COS minus Realised COS.
-                Click any month value to drill down.
+              <p className="text-xs text-blue-600/80 mt-4 leading-relaxed">
+                Realised = Invoice Number captured + Invoice Raised Date confirmed (black font). Unrealised = Finance COS minus Realised COS. Click any month value to drill down.
               </p>
             </CardContent>
           </Card>
         )}
 
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-          <Card data-testid="card-ytd-total-cos">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="rounded-lg bg-slate-100 p-2">
-                  <DollarSign className="h-5 w-5 text-slate-700" />
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
+          {kpiCards.map((kpi) => (
+            <Card key={kpi.id} className={`shadow-sm hover:shadow-md transition-shadow ${kpi.borderColor}`} data-testid={`card-${kpi.id}`}>
+              <CardContent className="pt-5 pb-4 px-4">
+                <div className="flex items-start gap-3">
+                  <div className={`rounded-xl ${kpi.iconBg} p-2.5 shrink-0`}>
+                    <kpi.icon className={`h-5 w-5 ${kpi.iconColor}`} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-slate-500 truncate">{kpi.label}</p>
+                    <p className={`text-xl font-bold font-mono mt-0.5 ${kpi.valueColor}`} data-testid={`text-${kpi.id}-value`}>
+                      {kpi.value}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">YTD COS (Finance)</p>
-                  <p className="text-2xl font-bold font-mono" data-testid="text-ytd-total-cos-value">
-                    {formatRand(lastMonth?.ytdCOS ?? 0)}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card data-testid="card-ytd-realised" className="border-green-200">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="rounded-lg bg-green-100 p-2">
-                  <TrendingDown className="h-5 w-5 text-green-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">YTD Realised</p>
-                  <p className="text-2xl font-bold font-mono text-green-700" data-testid="text-ytd-realised-value">
-                    {formatRand(lastMonth?.ytdRealised ?? 0)}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card data-testid="card-ytd-unrealised" className="border-amber-200">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="rounded-lg bg-amber-100 p-2">
-                  <Activity className="h-5 w-5 text-amber-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">YTD Unrealised</p>
-                  <p className="text-2xl font-bold font-mono text-amber-600" data-testid="text-ytd-unrealised-value">
-                    {formatRand(lastMonth?.ytdUnrealised ?? 0)}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card data-testid="card-ytd-budget">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="rounded-lg bg-purple-100 p-2">
-                  <Target className="h-5 w-5 text-purple-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">YTD Budget</p>
-                  <p className="text-2xl font-bold font-mono" data-testid="text-ytd-budget-value">
-                    {formatRand(lastMonth?.ytdBudget ?? 0)}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card data-testid="card-ytd-variance">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className={`rounded-lg p-2 ${(lastMonth?.ytdVariance ?? 0) <= 0 ? "bg-green-100" : "bg-red-100"}`}>
-                  <TrendingDown className={`h-5 w-5 ${(lastMonth?.ytdVariance ?? 0) <= 0 ? "text-green-600" : "text-red-600"}`} />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">YTD Variance</p>
-                  <p
-                    className={`text-2xl font-bold font-mono ${(lastMonth?.ytdVariance ?? 0) <= 0 ? "text-green-600" : "text-red-600"}`}
-                    data-testid="text-ytd-variance-value"
-                  >
-                    {formatRand(lastMonth?.ytdVariance ?? 0)}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card data-testid="card-ytd-variance-pct">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className={`rounded-lg p-2 ${(lastMonth?.ytdVariancePct ?? 0) <= 0 ? "bg-green-100" : "bg-red-100"}`}>
-                  <Activity className={`h-5 w-5 ${(lastMonth?.ytdVariancePct ?? 0) <= 0 ? "text-green-600" : "text-red-600"}`} />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">YTD Variance %</p>
-                  <p
-                    className={`text-2xl font-bold font-mono ${(lastMonth?.ytdVariancePct ?? 0) <= 0 ? "text-green-600" : "text-red-600"}`}
-                    data-testid="text-ytd-variance-pct-value"
-                  >
-                    {((lastMonth?.ytdVariancePct ?? 0) * 100).toFixed(1)}%
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          ))}
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Monthly COS Grid</CardTitle>
+        <Card className="shadow-sm overflow-hidden">
+          <CardHeader className="bg-gradient-to-r from-slate-50 to-white border-b px-6 py-4">
+            <CardTitle className="text-lg font-semibold tracking-tight">COS Overview</CardTitle>
+          </CardHeader>
+          <CardContent className="p-6">
+            <div className="h-[420px]" data-testid="chart-cos">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={chartData} margin={{ top: 8, right: 16, left: 8, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} />
+                  <YAxis tickFormatter={(v: number) => formatRand(v)} tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                  <Tooltip
+                    formatter={(value: number) => formatRand(value)}
+                    contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', fontSize: '12px' }}
+                  />
+                  <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '12px' }} />
+                  <Bar dataKey="Realised" stackId="cos" fill="#22c55e" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="Unrealised" stackId="cos" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Budget" fill="#a855f7" opacity={0.3} radius={[4, 4, 0, 0]} />
+                  <Line
+                    type="monotone"
+                    dataKey="YTD Variance"
+                    stroke="#ef4444"
+                    strokeWidth={2}
+                    strokeDasharray="5 5"
+                    dot={false}
+                  />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-sm overflow-hidden">
+          <CardHeader className="bg-gradient-to-r from-slate-50 to-white border-b px-6 py-4">
+            <CardTitle className="text-lg font-semibold tracking-tight">Monthly COS Grid</CardTitle>
           </CardHeader>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
               <table className="w-full text-sm" data-testid="table-cos-grid">
                 <thead>
-                  <tr className="border-b bg-muted/50">
-                    <th className="sticky left-0 z-10 bg-muted/50 px-4 py-3 text-left font-semibold min-w-[200px]">
+                  <tr className="border-b bg-slate-50/80">
+                    <th className="sticky left-0 z-10 bg-slate-50/95 backdrop-blur-sm px-5 py-3 text-left font-semibold text-slate-500 uppercase tracking-wider text-[11px] min-w-[200px] border-r border-slate-100">
                       Metric
                     </th>
                     {months.map((m) => (
-                      <th key={m.monthKey} className="px-4 py-3 text-right font-semibold whitespace-nowrap min-w-[110px]">
+                      <th key={m.monthKey} className="px-4 py-3 text-right font-semibold text-slate-500 uppercase tracking-wider text-[11px] whitespace-nowrap min-w-[110px]">
                         {m.monthLabel}
                       </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {ROW_DEFS.map((row) => {
+                  {ROW_DEFS.map((row, rowIdx) => {
                     const isYtd = row.group === "ytd";
                     const isExpanded = expandedRows.has(row.key);
                     const isClickable = ["totalCOS", "realisedCOS", "unrealisedCOS"].includes(row.key);
+                    const isFirstYtd = isYtd && rowIdx > 0 && ROW_DEFS[rowIdx - 1].group !== "ytd";
                     return (
                       <React.Fragment key={row.key}>
+                        {isFirstYtd && (
+                          <tr>
+                            <td colSpan={months.length + 1} className="bg-slate-100/60 h-px" />
+                          </tr>
+                        )}
                         <tr
-                          className={`border-b ${isYtd ? "bg-slate-50" : "bg-white"} hover:bg-muted/30`}
+                          className={`border-b border-slate-100 transition-colors ${isYtd ? "bg-slate-50/40" : "bg-white"} hover:bg-slate-100/40`}
                           data-testid={`row-${row.key}`}
                         >
-                          <td className={`sticky left-0 z-10 px-4 py-2 font-medium ${isYtd ? "bg-slate-50" : "bg-white"}`}>
+                          <td className={`sticky left-0 z-10 px-5 py-2.5 font-medium text-sm border-r border-slate-100 ${isYtd ? "bg-slate-50/95" : "bg-white/95"} backdrop-blur-sm`}>
                             {row.expandable ? (
                               <button
                                 type="button"
-                                className="flex items-center gap-1 hover:text-blue-600 transition-colors"
+                                className="flex items-center gap-1.5 hover:text-blue-600 transition-colors group"
                                 onClick={() => toggleRow(row.key)}
                                 data-testid={`toggle-${row.key}`}
                               >
-                                {isExpanded ? (
-                                  <ChevronDown className="h-4 w-4" />
-                                ) : (
-                                  <ChevronRight className="h-4 w-4" />
-                                )}
-                                {row.label}
+                                <span className="text-slate-400 group-hover:text-blue-500 transition-colors">
+                                  {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                                </span>
+                                <span>{row.label}</span>
                               </button>
                             ) : (
-                              row.label
+                              <span className={isYtd ? "pl-5.5 text-slate-600" : ""}>{row.label}</span>
                             )}
                           </td>
                           {months.map((m) => {
                             const val = m[row.dataKey] as number;
-                            const isEditingCell =
-                              editing?.field === row.key && editing?.monthKey === m.monthKey;
+                            const isEditingCell = editing?.field === row.key && editing?.monthKey === m.monthKey;
 
                             if (row.editable) {
                               return (
-                                <td key={m.monthKey} className="px-2 py-1 text-right">
+                                <td key={m.monthKey} className="px-2 py-1.5 text-right">
                                   {isEditingCell ? (
                                     <Input
                                       type="number"
-                                      className="h-8 w-full text-right font-mono text-sm"
+                                      className="h-8 w-full text-right font-mono text-sm border-purple-300 focus:ring-purple-400"
                                       value={editing.value}
-                                      onChange={(e) =>
-                                        setEditing({ ...editing, value: e.target.value })
-                                      }
+                                      onChange={(e) => setEditing({ ...editing, value: e.target.value })}
                                       onBlur={commitEdit}
                                       onKeyDown={handleKeyDown}
                                       autoFocus
@@ -747,10 +744,8 @@ export default function CosTracker() {
                                   ) : (
                                     <button
                                       type="button"
-                                      className={`w-full text-right font-mono cursor-pointer hover:bg-muted rounded px-2 py-1 ${row.colorClass}`}
-                                      onClick={() =>
-                                        startEdit(row.key as EditableField, m.monthKey, val)
-                                      }
+                                      className={`w-full text-right font-mono cursor-pointer hover:bg-purple-50 rounded-lg px-3 py-1.5 transition-colors ${row.colorClass}`}
+                                      onClick={() => startEdit(row.key as EditableField, m.monthKey, val)}
                                       data-testid={`cell-${row.key}-${m.monthKey}`}
                                     >
                                       {formatRand(val)}
@@ -760,14 +755,12 @@ export default function CosTracker() {
                               );
                             }
 
-                            const colorClass = row.colorCoded
-                              ? getCellColor(val)
-                              : row.colorClass;
+                            const colorClass = row.colorCoded ? getCellColor(val) : row.colorClass;
 
                             return (
                               <td
                                 key={m.monthKey}
-                                className={`px-4 py-2 text-right font-mono ${colorClass} ${isClickable ? "cursor-pointer hover:bg-blue-50 hover:underline" : ""}`}
+                                className={`px-4 py-2.5 text-right font-mono text-sm ${colorClass} ${isClickable ? "cursor-pointer hover:bg-blue-50/80 hover:underline decoration-blue-300 underline-offset-2 transition-colors rounded" : ""}`}
                                 onClick={isClickable ? () => setDrawerMonth({
                                   monthKey: m.monthKey,
                                   monthLabel: m.monthLabel,
@@ -783,10 +776,10 @@ export default function CosTracker() {
                         {row.expandable && isExpanded && row.projectsKey && (projectNamesByRow[row.projectsKey] || []).map((pName) => (
                           <tr
                             key={`${row.key}-${pName}`}
-                            className="border-b bg-blue-50/30 hover:bg-blue-50/60"
+                            className="border-b border-slate-50 bg-blue-50/20 hover:bg-blue-50/50 transition-colors"
                             data-testid={`row-detail-${row.key}-${pName}`}
                           >
-                            <td className="sticky left-0 z-10 bg-blue-50/30 pl-10 pr-4 py-1.5 text-xs text-muted-foreground truncate max-w-[200px]" title={pName}>
+                            <td className="sticky left-0 z-10 bg-blue-50/30 backdrop-blur-sm pl-11 pr-4 py-1.5 text-xs text-slate-500 truncate max-w-[200px] border-r border-slate-100" title={pName}>
                               {pName}
                             </td>
                             {months.map((m) => {
@@ -796,7 +789,7 @@ export default function CosTracker() {
                               return (
                                 <td
                                   key={m.monthKey}
-                                  className="px-4 py-1.5 text-right font-mono text-xs text-blue-600/80"
+                                  className="px-4 py-1.5 text-right font-mono text-xs text-blue-600/70"
                                   data-testid={`cell-detail-${row.key}-${pName}-${m.monthKey}`}
                                 >
                                   {val !== 0 ? formatRand(val) : ""}
@@ -810,41 +803,6 @@ export default function CosTracker() {
                   })}
                 </tbody>
               </table>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>COS Overview Chart</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[400px]" data-testid="chart-cos">
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="month" tick={{ fontSize: 12 }} />
-                  <YAxis
-                    tickFormatter={(v: number) => formatRand(v)}
-                    tick={{ fontSize: 12 }}
-                  />
-                  <Tooltip
-                    formatter={(value: number) => formatRand(value)}
-                  />
-                  <Legend />
-                  <Bar dataKey="Realised" stackId="cos" fill="#22c55e" />
-                  <Bar dataKey="Unrealised" stackId="cos" fill="#f59e0b" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="Budget" fill="#a855f7" opacity={0.3} radius={[4, 4, 0, 0]} />
-                  <Line
-                    type="monotone"
-                    dataKey="YTD Variance"
-                    stroke="#ef4444"
-                    strokeWidth={2}
-                    strokeDasharray="5 5"
-                    dot={false}
-                  />
-                </ComposedChart>
-              </ResponsiveContainer>
             </div>
           </CardContent>
         </Card>
