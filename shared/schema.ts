@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, decimal, timestamp, pgEnum, serial, real, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, decimal, timestamp, pgEnum, serial, real, boolean, date, time, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -917,3 +917,102 @@ export const keyDateMappings = pgTable("key_date_mappings", {
 export const insertKeyDateMappingSchema = createInsertSchema(keyDateMappings).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertKeyDateMapping = z.infer<typeof insertKeyDateMappingSchema>;
 export type KeyDateMapping = typeof keyDateMappings.$inferSelect;
+
+export const mytoolTaskStatusEnum = pgEnum('mytool_task_status', ['inbox', 'planned', 'in_progress', 'blocked', 'waiting', 'done', 'cancelled']);
+export const mytoolTaskPriorityEnum = pgEnum('mytool_task_priority', ['low', 'normal', 'high', 'critical']);
+export const mytoolPriorityHorizonEnum = pgEnum('mytool_priority_horizon', ['today', 'week', 'month', 'quarter']);
+export const mytoolPrioritySeverityEnum = pgEnum('mytool_priority_severity', ['normal', 'important', 'critical']);
+export const mytoolPriorityStatusEnum = pgEnum('mytool_priority_status', ['active', 'monitoring', 'closed']);
+
+export const mytoolTasks = pgTable("mytool_tasks", {
+  id: serial("id").primaryKey(),
+  ownerUserId: integer("owner_user_id").notNull().references(() => users.id),
+  title: text("title").notNull(),
+  status: mytoolTaskStatusEnum("status").notNull().default('inbox'),
+  priority: mytoolTaskPriorityEnum("priority").notNull().default('normal'),
+  plannedForDate: text("planned_for_date"),
+  dueAt: timestamp("due_at"),
+  notes: text("notes"),
+  projectName: text("project_name"),
+  tag: text("tag"),
+  blockedReason: text("blocked_reason"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  completedAt: timestamp("completed_at"),
+});
+
+export const insertMytoolTaskSchema = createInsertSchema(mytoolTasks).omit({ id: true, createdAt: true, updatedAt: true, completedAt: true });
+export type InsertMytoolTask = z.infer<typeof insertMytoolTaskSchema>;
+export type MytoolTask = typeof mytoolTasks.$inferSelect;
+
+export const mytoolTimeblocks = pgTable("mytool_timeblocks", {
+  id: serial("id").primaryKey(),
+  ownerUserId: integer("owner_user_id").notNull().references(() => users.id),
+  date: text("date").notNull(),
+  startTime: text("start_time").notNull(),
+  endTime: text("end_time").notNull(),
+  label: text("label").notNull(),
+  linkedTaskId: integer("linked_task_id").references(() => mytoolTasks.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertMytoolTimeblockSchema = createInsertSchema(mytoolTimeblocks).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertMytoolTimeblock = z.infer<typeof insertMytoolTimeblockSchema>;
+export type MytoolTimeblock = typeof mytoolTimeblocks.$inferSelect;
+
+export const mytoolDailyReviews = pgTable("mytool_daily_reviews", {
+  id: serial("id").primaryKey(),
+  ownerUserId: integer("owner_user_id").notNull().references(() => users.id),
+  date: text("date").notNull(),
+  topOutcomes: text("top_outcomes"),
+  whatMoved: text("what_moved"),
+  blocked: text("blocked"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertMytoolDailyReviewSchema = createInsertSchema(mytoolDailyReviews).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertMytoolDailyReview = z.infer<typeof insertMytoolDailyReviewSchema>;
+export type MytoolDailyReview = typeof mytoolDailyReviews.$inferSelect;
+
+export const mytoolCompanyPriorities = pgTable("mytool_company_priorities", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  description: text("description"),
+  horizon: mytoolPriorityHorizonEnum("horizon").notNull().default('week'),
+  ownerRole: text("owner_role"),
+  linkedProjectName: text("linked_project_name"),
+  severity: mytoolPrioritySeverityEnum("severity").notNull().default('normal'),
+  status: mytoolPriorityStatusEnum("status").notNull().default('active'),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertMytoolCompanyPrioritySchema = createInsertSchema(mytoolCompanyPriorities).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertMytoolCompanyPriority = z.infer<typeof insertMytoolCompanyPrioritySchema>;
+export type MytoolCompanyPriority = typeof mytoolCompanyPriorities.$inferSelect;
+
+export const mytoolUserPreferences = pgTable("mytool_user_preferences", {
+  ownerUserId: integer("owner_user_id").primaryKey().references(() => users.id),
+  todayLayout: text("today_layout"),
+  defaultView: text("default_view").notNull().default('today'),
+  workdayStartTime: text("workday_start_time").notNull().default('08:00'),
+  workdayEndTime: text("workday_end_time").notNull().default('17:00'),
+  showCompanyPriorities: boolean("show_company_priorities").notNull().default(true),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertMytoolUserPreferencesSchema = createInsertSchema(mytoolUserPreferences).omit({ updatedAt: true });
+export type InsertMytoolUserPreferences = z.infer<typeof insertMytoolUserPreferencesSchema>;
+export type MytoolUserPreferences = typeof mytoolUserPreferences.$inferSelect;
+
+export const mytoolSettings = pgTable("mytool_settings", {
+  id: serial("id").primaryKey(),
+  enabled: boolean("enabled").notNull().default(true),
+  allowedRoles: text("allowed_roles").notNull().default('admin'),
+  defaultPriorityHorizon: text("default_priority_horizon").notNull().default('week'),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});

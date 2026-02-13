@@ -1,0 +1,255 @@
+You are a senior product engineer working inside an existing Emergent Energy COO web app.
+
+MISSION
+Integrate “My Tool” (execution + tracking) into the existing Admin login + RBAC system, without breaking or changing anything already implemented. Only add new capability. This tool must make daily planning easy, user friendly, flexible, and show company priorities clearly.
+
+CORE PRODUCT MENTALITY (NON-NEGOTIABLE)
+If the user can SEE an error/problem on the UI but cannot FIX it via the UI (or is not clearly guided to fix it), then the UI is wrong.
+- Every surfaced issue must have a clear “next action” (fix it, link to where to fix it, or explain why it can’t be fixed and who must fix it).
+- No dead-end warnings.
+- No “red text” without a button/action path.
+
+HARD RULES
+1) Do NOT remove, refactor, or change existing features, pages, routes, tables, or logic unless strictly required to integrate My Tool.
+2) Do NOT change existing behaviour. Only extend.
+3) My Tool must use the current auth/session/admin-permission patterns.
+4) If any assumption below is wrong, STOP and output “Assumptions not met” + the minimum questions needed.
+
+========================================================
+A) ASSUMPTIONS (VERIFY IN CODEBASE FIRST)
+========================================================
+Assume:
+A1) Authentication exists and we can reliably access currentUser.
+A2) Authorization exists with an Admin role (or equivalent).
+A3) Postgres DB and migrations exist.
+A4) Shared layout shell exists (left nav + top bar).
+A5) Existing modules remain as-is (Dashboard, Projects, Cashflow, COS, Forecast, Planning, Risks & Flags, Admin).
+
+Confirm these by inspection first. If missing, propose minimal additions only.
+
+========================================================
+B) PURPOSE (WHAT THIS TOOL MUST DO)
+========================================================
+“My Tool” is a COO execution cockpit:
+- capture tasks fast (inbox)
+- plan today in minutes (Top priorities + time blocks)
+- track execution (done / moved / blocked / waiting)
+- show company priorities clearly (what matters most)
+- keep flexibility: configurable views, fields, and what appears on Today
+- optionally link tasks to existing projects (click through to project)
+
+This is NOT replacing ClickUp tasks inside projects. It’s personal execution + company priority visibility.
+
+========================================================
+C) PERMISSIONS / VISIBILITY (ADMIN-INTEGRATED)
+========================================================
+MVP:
+- Visible only to Admin users.
+- Hide nav item for non-admins.
+- Block direct URL access via API/route guards (403).
+
+In Admin settings, keep it flexible:
+- global enable/disable (feature flag)
+- allowed roles (default: admin only)
+- optional allowed user list (if RBAC supports it)
+
+========================================================
+D) NAV + ROUTES (ADD ONLY)
+========================================================
+Add a nav group “PERSONAL” (or place under WIP if required by current nav structure):
+- My Tool
+
+Routes:
+- /my-tool          (Today)
+- /my-tool/week     (Week planner)
+- /my-tool/backlog  (All tasks)
+- /my-tool/settings (User settings)
+Admin-only:
+- /admin/my-tool-settings (global settings)
+
+Do not rearrange existing nav items.
+
+========================================================
+E) DATA MODEL (NEW TABLES ONLY)
+========================================================
+Create tables:
+
+mytool_tasks
+- id (uuid)
+- owner_user_id (fk users)
+- title (text)
+- status (enum: inbox, planned, in_progress, blocked, waiting, done, cancelled)
+- priority (enum: low, normal, high, critical)
+- planned_for_date (date nullable)
+- due_at (timestamp nullable)
+- notes (text nullable)
+- project_id (nullable fk projects)
+- tag (text nullable)
+- sort_order (int)
+- created_at, updated_at, completed_at
+
+mytool_timeblocks
+- id
+- owner_user_id
+- date
+- start_time
+- end_time
+- label
+- linked_task_id (nullable)
+- created_at, updated_at
+
+mytool_daily_reviews
+- id
+- owner_user_id
+- date (unique per user)
+- top_outcomes (text)
+- what_moved (text)
+- blocked (text)
+- notes (text)
+- created_at, updated_at
+
+mytool_company_priorities  (ADMIN-MANAGED)
+- id
+- title (text)
+- description (text nullable)
+- horizon (enum: today, week, month, quarter)
+- owner_role (text nullable)
+- linked_project_id (nullable)
+- severity (enum: normal, important, critical)
+- status (enum: active, monitoring, closed)
+- created_at, updated_at
+
+mytool_user_preferences
+- owner_user_id (pk/fk users)
+- today_layout (json)
+- default_view (enum: today/week/backlog)
+- workday_start_time
+- workday_end_time
+- show_company_priorities (boolean)
+
+Rules:
+- All personal data is per-user via owner_user_id.
+- Company priorities are global but can be filtered by role/project.
+
+========================================================
+F) UX REQUIREMENTS (EASY, USER FRIENDLY, FIXABLE)
+========================================================
+TODAY PAGE (/my-tool) must be “zero friction” and never trap the user.
+
+Layout:
+1) Company Priorities (collapsible)
+   - show top 3–5 active priorities for selected horizon (default: week)
+   - each item has: severity, linked project, and TWO actions:
+     a) “Open” (go to linked project / relevant page)
+     b) “Convert to task” (creates a linked personal task)
+
+2) Today Plan
+   - Top 5 outcomes (drag reorder)
+   - Quick Add (enter adds)
+
+3) Time Blocks (day timeline)
+   - drag tasks into blocks
+   - blocks editable (start/end/label)
+
+4) Task Lanes
+   - Inbox / Planned / In Progress / Blocked+Waiting / Done (collapsed)
+
+5) End-of-day Wrap (optional)
+   - tiny form to save a daily review
+
+NO DEAD-ENDS RULE (apply everywhere):
+If the UI shows a problem, it must show a fix path:
+- Missing required data => show a “Fix” button that opens the edit modal / links to correct screen.
+- Blocked tasks => require a reason + show “Unblock” action.
+- Permission issues => show “Ask Admin” message + link to Admin settings page for admins.
+- Validation errors => inline, human-readable, and must point to the exact field.
+
+========================================================
+G) COMPANY PRIORITIES (ADMIN-CONTROLLED, USER ACTIONABLE)
+========================================================
+Admin screen (/admin/my-tool-settings or /admin/company-priorities):
+- create/edit/close priorities
+- assign horizon + severity
+- optional link to project
+- optional owner role
+
+On Today page:
+- show priorities clearly
+- always provide at least one action (open / convert / mark monitoring)
+
+========================================================
+H) WORKFLOWS (TASK STATE MACHINE)
+========================================================
+- Quick Add => inbox, planned_for_date=today default
+- Plan => planned + ordered
+- Start => in_progress
+- Block => blocked (requires reason)
+- Waiting => waiting
+- Done => done + completed_at
+- Reschedule => drag in week view
+
+========================================================
+I) ADMIN INTEGRATION (NO BREAKING CHANGES)
+========================================================
+In /admin add “My Tool Settings”:
+- enabled flag
+- allowed roles (default admin)
+- optional allow-list users
+- default company priority horizon shown on Today
+
+Store settings in existing settings system, or add minimal settings table.
+Enforce in UI + API guards.
+
+========================================================
+J) “ERRORS MUST BE FIXABLE” IMPLEMENTATION REQUIREMENTS
+========================================================
+1) Every warning/flag displayed must map to one of:
+   - “Fix now” (inline edit modal)
+   - “Go to source” (deep link)
+   - “Cannot fix here” with:
+       - explanation
+       - who owns it
+       - link to where it can be fixed (admin/settings/project/etc.)
+
+2) Add a reusable UI component: IssueCard / FixItRow
+- Shows: issue type, why it matters, severity, and the correct action button.
+
+3) Add a small “Data health / Issues” panel on Today:
+- Only show issues the user can actually act on.
+- Each issue must have an action path as above.
+
+========================================================
+K) TESTS / ACCEPTANCE
+========================================================
+Acceptance criteria:
+1) Existing app behaviour unchanged.
+2) Non-admin cannot see or access My Tool routes/APIs.
+3) Admin can:
+   - see company priorities
+   - convert priority to task
+   - quick-add tasks
+   - plan Top 5
+   - create/edit time blocks
+   - mark done/blocked/reschedule
+4) User preferences persist (layout/workday/visibility).
+5) Every issue shown has a fix path (no dead-end warnings).
+
+Tests:
+- permission tests (403)
+- CRUD tests for tasks/timeblocks/reviews/priorities
+- preference persistence tests
+- feature flag tests
+- UI test: issues displayed always have an action button or deep link
+
+========================================================
+L) FIRST STEP REQUIRED
+========================================================
+Inspect codebase and report:
+- how currentUser is obtained
+- how admin authorization is enforced
+- migration/ORM pattern
+- nav structure
+
+Then implement My Tool using existing patterns, adding only what is necessary.
+
+If assumptions fail, stop and list minimal missing pieces + minimal fix.

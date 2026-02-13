@@ -31,6 +31,7 @@ Preferred communication style: Simple, everyday language.
     -   **Operational Task Management**: ClickUp-style task system with four views per project: Tasks (spreadsheet grid with inline editing, filtering, sorting, grouping, bulk actions), Board (Kanban drag-drop), Calendar (monthly grid), and detail drawer with comments, checklists, attachments, and activity log. Source badges distinguish BASELINE (imported) vs OPERATIONAL (app-created) tasks.
     -   **Excel Writeback Manager**: Admin UI for configuring cell mappings, previewing changes, executing writebacks to Excel files, and rolling back individual changes via audit log.
     -   **SafeMoney Utilities**: Frontend utilities for NaN-safe currency handling and formatting.
+    -   **My Tool (COO Execution Cockpit)**: Admin-only personal execution tool with Today page (company priorities, quick-add tasks, top 5 outcomes, time blocks, task lanes by status, end-of-day wrap), Week planner (7-day view with per-day tasks/blocks), Backlog (filterable/sortable all-tasks view with bulk actions), and Settings (user preferences + admin feature settings + company priorities CRUD). Task state machine: inbox → planned → in_progress → blocked → waiting → done → cancelled. No dead-ends rule: every warning has an action path.
 
 ### Backend
 - **Framework**: Express.js with TypeScript
@@ -68,6 +69,12 @@ Auto-runs on server startup to populate computed columns (hash, state, forecast 
 -   `taskActivityLog`: Automatic activity logging for all task changes.
 -   `writebackMappings`: Cell mapping configurations for Excel writeback (workbook path, sheet, cell, source field, transforms, validation).
 -   `writebackAuditLog`: Audit trail for writeback operations with rollback support.
+-   `mytool_tasks`: Personal COO task tracking with state machine (inbox/planned/in_progress/blocked/waiting/done/cancelled), priority, planned date, project links, blocked reasons.
+-   `mytool_timeblocks`: Daily time blocks with start/end times, labels, and optional linked tasks.
+-   `mytool_daily_reviews`: End-of-day reflections (what went well, moved forward, blocked, notes) per user per date.
+-   `mytool_company_priorities`: Admin-managed company priorities with severity, horizon, linked projects, and status.
+-   `mytool_user_preferences`: Per-user My Tool preferences (default view, workday times, company priorities visibility).
+-   `mytool_settings`: Global My Tool feature settings (enabled flag, allowed roles, default priority horizon).
 -   `uploadMetadata`, `refreshLogs`: Audit trails for data ingestion.
 
 ### New API Endpoints
@@ -103,6 +110,15 @@ Auto-runs on server startup to populate computed columns (hash, state, forecast 
 -   `/api/writeback/preview`: POST preview changes before executing writeback.
 -   `/api/writeback/execute`: POST execute writeback to Excel file.
 -   `/api/writeback/rollback/:auditId`: POST rollback individual writeback change.
+-   `/api/mytool/settings`: GET/PUT global My Tool settings (admin-only).
+-   `/api/mytool/tasks`: GET all tasks or by date, POST create task (admin-only).
+-   `/api/mytool/tasks/:id`: PATCH update, DELETE task (admin-only).
+-   `/api/mytool/timeblocks`: GET by date, POST create (admin-only).
+-   `/api/mytool/timeblocks/:id`: PATCH update, DELETE (admin-only).
+-   `/api/mytool/daily-review`: GET/PUT daily review by date (admin-only).
+-   `/api/mytool/company-priorities`: GET/POST company priorities (admin-only).
+-   `/api/mytool/company-priorities/:id`: PATCH/DELETE (admin-only).
+-   `/api/mytool/preferences`: GET/PUT user preferences (admin-only).
 
 ## External Dependencies
 

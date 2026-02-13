@@ -23,6 +23,11 @@ import CashflowForecastPage from "@/pages/cashflow-forecast";
 import PlanningBoardPage from "@/pages/planning-board";
 import RisksFlagsPage from "@/pages/risks-flags";
 import WritebackAdminPage from "@/pages/writeback-admin";
+import MyToolTodayPage from "@/pages/my-tool-today";
+import MyToolWeekPage from "@/pages/my-tool-week";
+import MyToolBacklogPage from "@/pages/my-tool-backlog";
+import MyToolSettingsPage from "@/pages/my-tool-settings";
+import MyToolAdminSettingsPage from "@/pages/my-tool-admin-settings";
 import { useProgramData } from "@/hooks/use-program-data";
 import { TrackerTable } from "@/components/dashboard/TrackerTable";
 import { format } from "date-fns";
@@ -153,8 +158,13 @@ function ProtectedPages() {
         <Route path="/planning" component={PlanningBoardPage} />
         <Route path="/risks-flags" component={RisksFlagsPage} />
         <Route path="/writeback-admin" component={WritebackAdminPage} />
+        <Route path="/my-tool" component={MyToolTodayPage} />
+        <Route path="/my-tool/week" component={MyToolWeekPage} />
+        <Route path="/my-tool/backlog" component={MyToolBacklogPage} />
+        <Route path="/my-tool/settings" component={MyToolSettingsPage} />
         <Route path="/upload">{() => <Redirect to="/admin" />}</Route>
         <Route path="/admin" component={AdminPage} />
+        <Route path="/admin/my-tool-settings" component={MyToolAdminSettingsPage} />
         <Route component={NotFound} />
       </Switch>
     </AppLayout>
