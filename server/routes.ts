@@ -2602,6 +2602,7 @@ export async function registerRoutes(
       const projectInfoMap = new Map(allProjectInfo.map(info => [info.projectName, info]));
 
       const overdueExpenses: Array<{
+        id: number;
         projectName: string;
         lineItem: string | null;
         invoiceNumber: string | null;
@@ -2617,6 +2618,7 @@ export async function registerRoutes(
           const amt = parseFloat(expense.expenseActualTotal);
           if (amt > 0 && expense.expensePaymentDate < today) {
             overdueExpenses.push({
+              id: expense.id,
               projectName: expense.projectName,
               lineItem: expense.expenseLineItem,
               invoiceNumber: expense.expenseInvoiceNumber,
@@ -2632,6 +2634,7 @@ export async function registerRoutes(
       overdueExpenses.sort((a, b) => b.amount - a.amount);
 
       const revenueOutstanding: Array<{
+        id: number;
         projectName: string;
         milestoneName: string | null;
         invoiceNumber: string | null;
@@ -2649,6 +2652,7 @@ export async function registerRoutes(
           const dateInPast = dateToCheck && /^\d{4}-\d{2}-\d{2}/.test(dateToCheck) && dateToCheck < today;
           if (amt > 0 && hasInvoiceNum && paymentNotReceived && dateInPast) {
             revenueOutstanding.push({
+              id: inflow.id,
               projectName: inflow.projectName,
               milestoneName: inflow.milestoneName,
               invoiceNumber: inflow.milestoneInvoiceNumber,

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useRef } from "react";
+import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -76,6 +76,7 @@ interface CategoryGroup {
 
 interface ExpenditureEditableTabProps {
   projectName: string;
+  highlightId?: number | null;
 }
 
 type ColumnKey =
@@ -161,7 +162,7 @@ const getPaymentStatusBadge = (status: string) => {
   );
 };
 
-export function ExpenditureEditableTab({ projectName }: ExpenditureEditableTabProps) {
+export function ExpenditureEditableTab({ projectName, highlightId }: ExpenditureEditableTabProps) {
   const { isAdmin } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -185,6 +186,7 @@ export function ExpenditureEditableTab({ projectName }: ExpenditureEditableTabPr
   const [newCategoryName, setNewCategoryName] = useState("");
   const [insertTaskCategory, setInsertTaskCategory] = useState("");
   const [insertTaskSearch, setInsertTaskSearch] = useState("");
+  const [highlightedRowId, setHighlightedRowId] = useState<number | null>(highlightId ?? null);
 
   const breakdownKey = ["expenditure-breakdown", projectName];
 
@@ -409,6 +411,29 @@ export function ExpenditureEditableTab({ projectName }: ExpenditureEditableTabPr
     });
     return groups;
   }, [filteredItems]);
+
+  useEffect(() => {
+    if (!highlightId || !categoryGroups.length) return;
+    setHighlightedRowId(highlightId);
+    for (const group of categoryGroups) {
+      if (group.items.some(item => item.id === highlightId)) {
+        setCollapsedCategories(prev => {
+          const next = new Set(prev);
+          next.delete(group.category);
+          return next;
+        });
+        break;
+      }
+    }
+    const timer = setTimeout(() => {
+      const el = document.querySelector(`[data-row-id="${highlightId}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }, 300);
+    const clearTimer = setTimeout(() => setHighlightedRowId(null), 5000);
+    return () => { clearTimeout(timer); clearTimeout(clearTimer); };
+  }, [highlightId, categoryGroups]);
 
   const drawerItems = useMemo(() => {
     let data = [...items];
@@ -828,7 +853,8 @@ export function ExpenditureEditableTab({ projectName }: ExpenditureEditableTabPr
                         </tr>
                         {!isCollapsed && group.items.map((exp, rowIdx) => (
                           <tr key={exp.id}
-                            className={`border-b border-slate-100 hover:bg-blue-50/50 transition-colors ${rowIdx % 2 === 0 ? "bg-white" : "bg-slate-50/30"}`}>
+                            data-row-id={exp.id}
+                            className={`border-b border-slate-100 hover:bg-blue-50/50 transition-all duration-500 ${highlightedRowId === exp.id ? "bg-amber-100 ring-2 ring-amber-400 ring-inset" : rowIdx % 2 === 0 ? "bg-white" : "bg-slate-50/30"}`}>
                             {activeColumns.map((col, colIdx) => (
                               <td key={col.key}
                                 className={`px-3 py-1.5

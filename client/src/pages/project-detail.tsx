@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useRoute, useLocation } from "wouter";
+import { useState, useEffect, useMemo } from "react";
+import { useRoute, useLocation, useSearch } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,10 +22,22 @@ import { useProgramData } from "@/hooks/use-program-data";
 export default function ProjectDetailPage() {
   const [, params] = useRoute("/project/:projectName");
   const [, setLocation] = useLocation();
+  const searchString = useSearch();
   const projectName = params?.projectName ? decodeURIComponent(params.projectName) : "";
   const { projectsSummary } = useProgramData();
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  const searchParams = useMemo(() => new URLSearchParams(searchString), [searchString]);
+  const urlTab = searchParams.get("tab");
+  const highlightId = searchParams.get("highlightId") ? Number(searchParams.get("highlightId")) : null;
+  const highlightType = searchParams.get("highlightType");
+
+  const [activeTab, setActiveTab] = useState(urlTab || "task-grid");
+
+  useEffect(() => {
+    if (urlTab) setActiveTab(urlTab);
+  }, [urlTab]);
 
   const projectInfo = projectsSummary?.find(p => p.project_name === projectName);
 
@@ -177,7 +189,7 @@ export default function ProjectDetailPage() {
         </Card>
       </div>
 
-      <Tabs defaultValue="task-grid" className="w-full">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="flex flex-wrap gap-1 h-auto p-1">
           <TabsTrigger value="task-grid" className="flex items-center gap-1.5 text-xs" data-testid="tab-task-grid">
             <ListTodo className="h-3.5 w-3.5" />
@@ -238,11 +250,11 @@ export default function ProjectDetailPage() {
         </TabsContent>
 
         <TabsContent value="revenue-tracking" className="space-y-4">
-          <RevenueTrackingTab projectName={projectName} />
+          <RevenueTrackingTab projectName={projectName} highlightId={highlightType === 'revenue' ? highlightId : null} />
         </TabsContent>
 
         <TabsContent value="expenditure" className="space-y-4">
-          <ExpenditureEditableTab projectName={projectName} />
+          <ExpenditureEditableTab projectName={projectName} highlightId={highlightType === 'expense' ? highlightId : null} />
         </TabsContent>
 
         <TabsContent value="finance-revenue" className="space-y-4">
