@@ -16,6 +16,7 @@ import TaskDetailDrawer from "@/components/TaskDetailDrawer";
 import BoardView from "@/components/BoardView";
 import CalendarView from "@/components/CalendarView";
 import TaskGridView from "@/components/TaskGridView";
+import KeyDatesPanel from "@/components/KeyDatesPanel";
 import { useProgramData } from "@/hooks/use-program-data";
 
 export default function ProjectDetailPage() {
@@ -218,6 +219,7 @@ export default function ProjectDetailPage() {
 
         <TabsContent value="task-grid" className="space-y-4">
           <TaskGridView projectName={projectName} onTaskClick={handleTaskClick} />
+          <KeyDatesPanel projectName={projectName} />
         </TabsContent>
 
         <TabsContent value="board" className="space-y-4">

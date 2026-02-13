@@ -704,8 +704,12 @@ export const operationalTasks = pgTable("operational_tasks", {
   startDate: text("start_date"),
   dueDate: text("due_date"),
   durationDays: integer("duration_days"),
+  actualStartDate: text("actual_start_date"),
+  actualEndDate: text("actual_end_date"),
+  actualDurationDays: integer("actual_duration_days"),
   percentComplete: integer("percent_complete").notNull().default(0),
   expectedPercentComplete: integer("expected_percent_complete"),
+  comment: text("comment"),
   assignees: text("assignees").array(),
   tags: text("tags").array(),
   blockerReason: text("blocker_reason"),
@@ -859,3 +863,22 @@ export const expenseTaskLinks = pgTable("expense_task_links", {
 export const insertExpenseTaskLinkSchema = createInsertSchema(expenseTaskLinks).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertExpenseTaskLink = z.infer<typeof insertExpenseTaskLinkSchema>;
 export type ExpenseTaskLink = typeof expenseTaskLinks.$inferSelect;
+
+export const keyDateMappings = pgTable("key_date_mappings", {
+  id: serial("id").primaryKey(),
+  projectName: text("project_name").notNull(),
+  keyDateName: text("key_date_name").notNull(),
+  sourceTaskId: integer("source_task_id"),
+  sourceTaskCode: text("source_task_code"),
+  sourceTaskNameMatch: text("source_task_name_match"),
+  dateField: text("date_field").notNull().default("dueDate"),
+  precedenceRule: text("precedence_rule").notNull().default("actual_over_planned"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertKeyDateMappingSchema = createInsertSchema(keyDateMappings).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertKeyDateMapping = z.infer<typeof insertKeyDateMappingSchema>;
+export type KeyDateMapping = typeof keyDateMappings.$inferSelect;
