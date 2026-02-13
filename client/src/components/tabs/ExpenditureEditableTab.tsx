@@ -386,7 +386,14 @@ export function ExpenditureEditableTab({ projectName }: ExpenditureEditableTabPr
       group.actualTotal += actual;
       group.variance += budget - actual;
     }
-    return groupOrder.map(name => groupMap.get(name)!).filter(g => g.items.length > 0);
+    const groups = groupOrder.map(name => groupMap.get(name)!).filter(g => g.items.length > 0);
+    groups.sort((a, b) => {
+      const numA = parseFloat(a.category) || Infinity;
+      const numB = parseFloat(b.category) || Infinity;
+      if (numA !== numB) return numA - numB;
+      return a.category.localeCompare(b.category);
+    });
+    return groups;
   }, [filteredItems]);
 
   const drawerItems = useMemo(() => {
