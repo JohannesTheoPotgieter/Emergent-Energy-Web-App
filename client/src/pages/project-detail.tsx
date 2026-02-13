@@ -224,14 +224,17 @@ export default function ProjectDetailPage() {
 
         <TabsContent value="board" className="space-y-4">
           <BoardView projectName={projectName} onTaskClick={handleTaskClick} />
+          <KeyDatesPanel projectName={projectName} />
         </TabsContent>
 
         <TabsContent value="calendar" className="space-y-4">
           <CalendarView projectName={projectName} onTaskClick={handleTaskClick} />
+          <KeyDatesPanel projectName={projectName} />
         </TabsContent>
 
         <TabsContent value="project-plan" className="space-y-4">
           <ProjectPlanTab projectName={projectName} />
+          <KeyDatesPanel projectName={projectName} />
         </TabsContent>
 
         <TabsContent value="revenue-tracking" className="space-y-4">
