@@ -209,7 +209,12 @@ export function RevenueTrackingTab({ projectName }: RevenueTrackingTabProps) {
   const filteredTasks = useMemo(() => {
     if (!taskSearchTerm.trim()) return projectTasks;
     const term = taskSearchTerm.toLowerCase();
-    return projectTasks.filter((t: any) => t.title?.toLowerCase().includes(term));
+    return projectTasks.filter((t: any) =>
+      t.title?.toLowerCase().includes(term) ||
+      t.taskNumber?.toLowerCase().includes(term) ||
+      t.description?.toLowerCase().includes(term) ||
+      t.status?.toLowerCase().includes(term)
+    );
   }, [projectTasks, taskSearchTerm]);
 
   const saveCostedMutation = useMutation({
@@ -674,7 +679,7 @@ export function RevenueTrackingTab({ projectName }: RevenueTrackingTabProps) {
                                     placeholder="Search tasks..."
                                     value={taskSearchTerm}
                                     onChange={(e) => setTaskSearchTerm(e.target.value)}
-                                    className="h-6 text-[11px] w-[130px]"
+                                    className="h-6 text-[11px] w-[180px]"
                                     autoFocus
                                     data-testid={`input-task-search-${m.rowNumber}`}
                                   />
@@ -683,11 +688,14 @@ export function RevenueTrackingTab({ projectName }: RevenueTrackingTabProps) {
                                     <X className="h-3 w-3" />
                                   </Button>
                                 </div>
-                                <div className="max-h-[120px] overflow-y-auto border rounded-md bg-white shadow-sm">
+                                <div className="text-[9px] text-muted-foreground px-1">
+                                  {filteredTasks.length} task{filteredTasks.length !== 1 ? 's' : ''} found
+                                </div>
+                                <div className="max-h-[240px] overflow-y-auto border rounded-md bg-white shadow-sm">
                                   {filteredTasks.length === 0 ? (
                                     <p className="text-[10px] text-muted-foreground p-2">No tasks found</p>
                                   ) : (
-                                    filteredTasks.slice(0, 10).map((t: any) => (
+                                    filteredTasks.map((t: any) => (
                                       <button
                                         key={t.id}
                                         className="w-full text-left px-2 py-1.5 text-[11px] hover:bg-blue-50 border-b last:border-b-0 flex items-center gap-1.5"
@@ -695,13 +703,24 @@ export function RevenueTrackingTab({ projectName }: RevenueTrackingTabProps) {
                                         data-testid={`option-task-${t.id}`}
                                       >
                                         <Badge variant="outline" className={`text-[8px] px-1 py-0 shrink-0 ${
-                                          t.status === "Complete" || t.status === "complete" ? "bg-green-50 text-green-700 border-green-300" :
+                                          t.isBaseline ? "bg-purple-50 text-purple-700 border-purple-300" :
+                                          t.status === "Complete" || t.status === "complete" || t.status === "Done" ? "bg-green-50 text-green-700 border-green-300" :
                                           t.status === "In Progress" || t.status === "in_progress" ? "bg-blue-50 text-blue-700 border-blue-300" :
                                           "bg-gray-50 text-gray-600 border-gray-300"
                                         }`}>
-                                          {t.status === "Complete" || t.status === "complete" ? "Done" : t.status === "In Progress" || t.status === "in_progress" ? "WIP" : "ToDo"}
+                                          {t.isBaseline ? "Baseline" : (t.status === "Complete" || t.status === "complete" || t.status === "Done" ? "Done" : t.status === "In Progress" || t.status === "in_progress" ? "WIP" : "ToDo")}
                                         </Badge>
+                                        {!t.isBaseline && (
+                                          <Badge variant="outline" className={`text-[8px] px-1 py-0 shrink-0 ${
+                                            t.status === "Complete" || t.status === "complete" || t.status === "Done" ? "bg-green-50 text-green-700 border-green-300" :
+                                            t.status === "In Progress" || t.status === "in_progress" ? "bg-blue-50 text-blue-700 border-blue-300" :
+                                            "bg-gray-50 text-gray-600 border-gray-300"
+                                          }`}>
+                                            {t.status === "Complete" || t.status === "complete" || t.status === "Done" ? "Done" : t.status === "In Progress" || t.status === "in_progress" ? "WIP" : "ToDo"}
+                                          </Badge>
+                                        )}
                                         <span className="truncate">{t.title}</span>
+                                        {t.dueDate && <span className="text-[8px] text-muted-foreground shrink-0 ml-auto">{t.dueDate}</span>}
                                       </button>
                                     ))
                                   )}
