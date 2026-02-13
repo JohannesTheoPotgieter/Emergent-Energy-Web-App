@@ -48,6 +48,8 @@ interface CashflowWeek {
   balanceDelta: number;
   projectInflows: number;
   opexOutflows: number;
+  computedOpex: number;
+  hasOpexOverride: boolean;
   projectOutflows: number;
   closingBalance: number;
   availablePayment: number;
@@ -496,6 +498,8 @@ export default function CashflowPage() {
   const [opexOpen, setOpexOpen] = useState(false);
   const [editingBalance, setEditingBalance] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState("");
+  const [editingOpex, setEditingOpex] = useState<string | null>(null);
+  const [editingOpexValue, setEditingOpexValue] = useState("");
   const [historyWeek, setHistoryWeek] = useState<string | null>(null);
 
   const projectParam = selectedProject !== "all" ? selectedProject : undefined;
@@ -571,6 +575,42 @@ export default function CashflowPage() {
     },
   });
 
+  const opexMutation = useMutation({
+    mutationFn: async (body: { weekStartDate: string; opexAmount: number }) => {
+      await apiRequest("POST", "/api/cashflow-2026/opex-weekly", body);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026"] });
+      setEditingOpex(null);
+      toast({ title: "OPEX Saved", description: "Weekly OPEX updated and values recalculated" });
+    },
+    onError: () => {
+      toast({ title: "Save Failed", variant: "destructive" });
+    },
+  });
+
+  const clearOpexMutation = useMutation({
+    mutationFn: async (weekStartDate: string) => {
+      await apiRequest("DELETE", "/api/cashflow-2026/opex-weekly", { weekStartDate });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026"] });
+      toast({ title: "OPEX Override Cleared", description: "Using monthly budget split value" });
+    },
+    onError: () => {
+      toast({ title: "Clear Failed", variant: "destructive" });
+    },
+  });
+
+  const handleOpexSave = useCallback(
+    (weekStart: string) => {
+      const val = parseFloat(editingOpexValue);
+      if (!Number.isFinite(val)) return;
+      opexMutation.mutate({ weekStartDate: weekStart, opexAmount: val });
+    },
+    [editingOpexValue, opexMutation]
+  );
+
   const handleBalanceSave = useCallback(
     (weekStart: string, computedValue: number) => {
       const val = parseFloat(editingValue);
@@ -604,10 +644,16 @@ export default function CashflowPage() {
       (s, w) => s + (w.opexOutflows || 0) + (w.projectOutflows || 0),
       0
     );
+    const now = new Date();
+    const currentWeek = cashflowData.find(w => {
+      const start = parseISO(w.weekStart);
+      const end = parseISO(w.weekEnd);
+      return now >= start && now < end;
+    });
+    const currentWeekOpeningBalance = currentWeek?.openingBalance ?? (cashflowData.length > 0 ? cashflowData[0].openingBalance : 0);
     const lastWeek = cashflowData.length > 0 ? cashflowData[cashflowData.length - 1] : null;
-    const currentBalance = lastWeek?.closingBalance ?? 0;
-    const netPosition = totalInflows - totalOutflows;
-    return { totalInflows, totalOutflows, currentBalance, netPosition };
+    const forecastedEndOfFYPosition = lastWeek?.closingBalance ?? 0;
+    return { totalInflows, totalOutflows, currentWeekOpeningBalance, forecastedEndOfFYPosition };
   }, [cashflowData]);
 
   return (
@@ -711,22 +757,22 @@ export default function CashflowPage() {
               />
               <KpiCard
                 title="Current Week Opening Balance"
-                value={formatRand(kpis.currentBalance)}
+                value={formatRand(kpis.currentWeekOpeningBalance)}
                 icon={<DollarSign className="h-5 w-5" />}
-                color={kpis.currentBalance >= 0 ? "blue" : "red"}
+                color={kpis.currentWeekOpeningBalance >= 0 ? "blue" : "red"}
                 testId="kpi-current-balance"
               />
               <KpiCard
                 title="Forecasted End of Financial Year Position"
-                value={formatRand(kpis.netPosition)}
+                value={formatRand(kpis.forecastedEndOfFYPosition)}
                 icon={
-                  kpis.netPosition >= 0 ? (
+                  kpis.forecastedEndOfFYPosition >= 0 ? (
                     <ArrowUpRight className="h-5 w-5" />
                   ) : (
                     <ArrowDownRight className="h-5 w-5" />
                   )
                 }
-                color={kpis.netPosition >= 0 ? "green" : "red"}
+                color={kpis.forecastedEndOfFYPosition >= 0 ? "green" : "red"}
                 testId="kpi-net-position"
               />
             </div>
@@ -971,7 +1017,59 @@ export default function CashflowPage() {
                                 className="px-4 py-3 text-right font-mono text-[13px] text-red-500"
                                 data-testid={`text-opex-${week.weekStart}`}
                               >
-                                {formatRand(week.opexOutflows)}
+                                <div className="flex items-center justify-end gap-1.5">
+                                  {editingOpex === week.weekStart ? (
+                                    <input
+                                      type="number"
+                                      className="w-28 text-right p-1.5 border border-orange-300 rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-400"
+                                      value={editingOpexValue}
+                                      onChange={(e) => setEditingOpexValue(e.target.value)}
+                                      onBlur={() => handleOpexSave(week.weekStart)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter") handleOpexSave(week.weekStart);
+                                        if (e.key === "Escape") setEditingOpex(null);
+                                      }}
+                                      autoFocus
+                                      onClick={(e) => e.stopPropagation()}
+                                      data-testid={`input-opex-weekly-${week.weekStart}`}
+                                    />
+                                  ) : (
+                                    <>
+                                      <span
+                                        className="cursor-pointer hover:underline hover:text-red-700 decoration-dashed underline-offset-2 transition-colors"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setEditingOpex(week.weekStart);
+                                          setEditingOpexValue(week.opexOutflows?.toString() || "0");
+                                        }}
+                                        data-testid={`text-opex-value-${week.weekStart}`}
+                                      >
+                                        {formatRand(week.opexOutflows)}
+                                      </span>
+                                      {week.hasOpexOverride && (
+                                        <>
+                                          <span
+                                            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-50 text-orange-700"
+                                            title={`Manual override. Budget split: ${formatRand(week.computedOpex)}`}
+                                          >
+                                            <ArrowRight className="h-3 w-3" />
+                                          </span>
+                                          <button
+                                            className="p-0.5 rounded hover:bg-red-100 text-red-400 hover:text-red-600 transition-colors"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              clearOpexMutation.mutate(week.weekStart);
+                                            }}
+                                            title="Clear OPEX override — use monthly budget split"
+                                            data-testid={`button-clear-opex-${week.weekStart}`}
+                                          >
+                                            <X className="h-3 w-3" />
+                                          </button>
+                                        </>
+                                      )}
+                                    </>
+                                  )}
+                                </div>
                               </td>
                               <td
                                 className="px-4 py-3 text-right font-mono text-[13px] text-red-500"

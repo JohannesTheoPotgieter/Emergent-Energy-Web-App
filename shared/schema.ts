@@ -599,6 +599,17 @@ export const insertOpexBudgetMonthlySchema = createInsertSchema(opexBudgetMonthl
 export type InsertOpexBudgetMonthly = z.infer<typeof insertOpexBudgetMonthlySchema>;
 export type OpexBudgetMonthly = typeof opexBudgetMonthly.$inferSelect;
 
+export const opexWeeklyManual = pgTable("opex_weekly_manual", {
+  id: serial("id").primaryKey(),
+  weekStartDate: text("week_start_date").notNull().unique(),
+  opexAmount: decimal("opex_amount", { precision: 15, scale: 2 }).notNull(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertOpexWeeklyManualSchema = createInsertSchema(opexWeeklyManual).omit({ id: true, updatedAt: true });
+export type InsertOpexWeeklyManual = z.infer<typeof insertOpexWeeklyManualSchema>;
+export type OpexWeeklyManual = typeof opexWeeklyManual.$inferSelect;
+
 export const trackerMonthlyManual = pgTable("tracker_monthly_manual", {
   id: serial("id").primaryKey(),
   trackerType: text("tracker_type").notNull(),
