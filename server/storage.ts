@@ -58,6 +58,8 @@ import {
   expenseTaskLinks,
   type ExpenseTaskLink, type InsertExpenseTaskLink,
   type MilestoneTaskLink, type InsertMilestoneTaskLink,
+  keyDateMappings,
+  type KeyDateMapping, type InsertKeyDateMapping,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -1665,6 +1667,29 @@ export class DatabaseStorage implements IStorage {
   async updateWritebackAuditLog(id: number, data: Partial<InsertWritebackAuditLog>): Promise<WritebackAuditLog> {
     const [updated] = await this.dbInstance.update(writebackAuditLog).set(data).where(eq(writebackAuditLog.id, id)).returning();
     return updated;
+  }
+
+  async getKeyDateMappings(projectName: string): Promise<KeyDateMapping[]> {
+    return await this.dbInstance.select().from(keyDateMappings)
+      .where(eq(keyDateMappings.projectName, projectName))
+      .orderBy(keyDateMappings.sortOrder);
+  }
+
+  async createKeyDateMapping(data: InsertKeyDateMapping): Promise<KeyDateMapping> {
+    const [created] = await this.dbInstance.insert(keyDateMappings).values(data).returning();
+    return created;
+  }
+
+  async updateKeyDateMapping(id: number, data: Partial<InsertKeyDateMapping>): Promise<KeyDateMapping> {
+    const [updated] = await this.dbInstance.update(keyDateMappings)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(keyDateMappings.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteKeyDateMapping(id: number): Promise<void> {
+    await this.dbInstance.delete(keyDateMappings).where(eq(keyDateMappings.id, id));
   }
 }
 

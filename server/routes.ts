@@ -6780,6 +6780,247 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== ENRICHED PLANNING TASKS (with rollups + expected %) ====================
+
+  app.get("/api/planning-tasks/:projectName", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const projectName = decodeURIComponent(req.params.projectName);
+      const tasks = await storage.getOperationalTasksByProject(projectName);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayMs = today.getTime();
+
+      const taskMap = new Map<number, any>();
+      const childrenMap = new Map<number, number[]>();
+
+      for (const t of tasks) {
+        const task: any = { ...t };
+        const plannedStart = t.startDate ? new Date(t.startDate) : null;
+        const plannedEnd = t.dueDate ? new Date(t.dueDate) : null;
+
+        if (plannedStart && plannedEnd && !isNaN(plannedStart.getTime()) && !isNaN(plannedEnd.getTime())) {
+          task.plannedDurationDays = Math.max(1, Math.round((plannedEnd.getTime() - plannedStart.getTime()) / 86400000) + 1);
+        } else {
+          task.plannedDurationDays = t.durationDays || null;
+        }
+
+        const actStart = t.actualStartDate ? new Date(t.actualStartDate) : null;
+        const actEnd = t.actualEndDate ? new Date(t.actualEndDate) : null;
+        if (actStart && actEnd && !isNaN(actStart.getTime()) && !isNaN(actEnd.getTime())) {
+          task.computedActualDurationDays = Math.max(1, Math.round((actEnd.getTime() - actStart.getTime()) / 86400000) + 1);
+        } else {
+          task.computedActualDurationDays = t.actualDurationDays || null;
+        }
+
+        taskMap.set(t.id, task);
+        if (t.parentTaskId) {
+          if (!childrenMap.has(t.parentTaskId)) childrenMap.set(t.parentTaskId, []);
+          childrenMap.get(t.parentTaskId)!.push(t.id);
+        }
+      }
+
+      const calcExpected = (t: any): number | null => {
+        const plannedStart = t.startDate ? new Date(t.startDate) : null;
+        const plannedEnd = t.dueDate ? new Date(t.dueDate) : null;
+        if (!plannedStart || !plannedEnd || isNaN(plannedStart.getTime()) || isNaN(plannedEnd.getTime())) return null;
+        const startMs = plannedStart.getTime();
+        const endMs = plannedEnd.getTime();
+        if (todayMs < startMs) return 0;
+        if (todayMs >= endMs) return 100;
+        const totalDays = Math.max(1, (endMs - startMs) / 86400000);
+        const elapsed = (todayMs - startMs) / 86400000;
+        return Math.round((elapsed / totalDays) * 100);
+      };
+
+      const computeRollups = (taskId: number): void => {
+        const children = childrenMap.get(taskId);
+        if (!children || children.length === 0) {
+          const t = taskMap.get(taskId);
+          if (t) t.computedExpectedPct = calcExpected(t);
+          return;
+        }
+        for (const childId of children) computeRollups(childId);
+
+        const parent = taskMap.get(taskId);
+        if (!parent) return;
+
+        let minPlannedStart: Date | null = null;
+        let maxPlannedEnd: Date | null = null;
+        let minActualStart: Date | null = null;
+        let maxActualEnd: Date | null = null;
+        let totalWeightedPct = 0;
+        let totalWeightedExpected = 0;
+        let totalWeight = 0;
+
+        for (const childId of children) {
+          const child = taskMap.get(childId);
+          if (!child) continue;
+          const ps = child.startDate ? new Date(child.startDate) : null;
+          const pe = child.dueDate ? new Date(child.dueDate) : null;
+          const as2 = child.actualStartDate ? new Date(child.actualStartDate) : null;
+          const ae = child.actualEndDate ? new Date(child.actualEndDate) : null;
+
+          if (ps && !isNaN(ps.getTime()) && (!minPlannedStart || ps < minPlannedStart)) minPlannedStart = ps;
+          if (pe && !isNaN(pe.getTime()) && (!maxPlannedEnd || pe > maxPlannedEnd)) maxPlannedEnd = pe;
+          if (as2 && !isNaN(as2.getTime()) && (!minActualStart || as2 < minActualStart)) minActualStart = as2;
+          if (ae && !isNaN(ae.getTime()) && (!maxActualEnd || ae > maxActualEnd)) maxActualEnd = ae;
+
+          const weight = child.plannedDurationDays || 1;
+          totalWeightedPct += (child.percentComplete || 0) * weight;
+          totalWeightedExpected += (child.computedExpectedPct ?? 0) * weight;
+          totalWeight += weight;
+        }
+
+        if (minPlannedStart) parent.startDate = minPlannedStart.toISOString().split('T')[0];
+        if (maxPlannedEnd) parent.dueDate = maxPlannedEnd.toISOString().split('T')[0];
+        if (minPlannedStart && maxPlannedEnd) {
+          parent.plannedDurationDays = Math.max(1, Math.round((maxPlannedEnd.getTime() - minPlannedStart.getTime()) / 86400000) + 1);
+        }
+        if (minActualStart) parent.actualStartDate = minActualStart.toISOString().split('T')[0];
+        if (maxActualEnd) parent.actualEndDate = maxActualEnd.toISOString().split('T')[0];
+        if (minActualStart && maxActualEnd) {
+          parent.computedActualDurationDays = Math.max(1, Math.round((maxActualEnd.getTime() - minActualStart.getTime()) / 86400000) + 1);
+        }
+
+        parent.percentComplete = totalWeight > 0 ? Math.round(totalWeightedPct / totalWeight) : 0;
+        parent.computedExpectedPct = totalWeight > 0 ? Math.round(totalWeightedExpected / totalWeight) : calcExpected(parent);
+        parent.isParent = true;
+        parent.childCount = children.length;
+      };
+
+      const rootTasks = tasks.filter(t => !t.parentTaskId);
+      for (const root of rootTasks) computeRollups(root.id);
+
+      for (const t of taskMap.values()) {
+        if (!childrenMap.has(t.id)) {
+          t.computedExpectedPct = calcExpected(t);
+        }
+        const pct = t.percentComplete || 0;
+        const exp = t.computedExpectedPct ?? 0;
+        const delta = pct - exp;
+        t.delta = delta;
+        if (delta < -5) t.planStatus = 'behind';
+        else if (delta > 5) t.planStatus = 'ahead';
+        else t.planStatus = 'on_track';
+      }
+
+      const sortByTaskCode = (a: any, b: any): number => {
+        const aCode = a.taskNumber || '';
+        const bCode = b.taskNumber || '';
+        const aParts = aCode.split('.').map((p: string) => parseInt(p) || 0);
+        const bParts = bCode.split('.').map((p: string) => parseInt(p) || 0);
+        for (let i = 0; i < Math.max(aParts.length, bParts.length); i++) {
+          const av = aParts[i] || 0;
+          const bv = bParts[i] || 0;
+          if (av !== bv) return av - bv;
+        }
+        return (a.sortOrder || 0) - (b.sortOrder || 0);
+      };
+
+      const result = Array.from(taskMap.values()).sort(sortByTaskCode);
+      res.json(result);
+    } catch (err: any) {
+      console.error("Planning tasks error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ==================== KEY DATE MAPPINGS ====================
+
+  app.get("/api/key-date-mappings/:projectName", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const mappings = await storage.getKeyDateMappings(decodeURIComponent(req.params.projectName));
+      res.json(mappings);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/key-date-mappings", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const mapping = await storage.createKeyDateMapping({ ...req.body, createdBy: (req.user as any)?.id });
+      res.json(mapping);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/key-date-mappings/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const updated = await storage.updateKeyDateMapping(parseInt(req.params.id), req.body);
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/key-date-mappings/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      await storage.deleteKeyDateMapping(parseInt(req.params.id));
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/key-dates/:projectName", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const projectName = decodeURIComponent(req.params.projectName);
+      const [mappings, tasks] = await Promise.all([
+        storage.getKeyDateMappings(projectName),
+        storage.getOperationalTasksByProject(projectName),
+      ]);
+
+      const results = mappings.map(m => {
+        let matchedTask: any = null;
+        if (m.sourceTaskId) {
+          matchedTask = tasks.find((t: any) => t.id === m.sourceTaskId);
+        } else if (m.sourceTaskCode) {
+          matchedTask = tasks.find((t: any) => t.taskNumber === m.sourceTaskCode);
+        } else if (m.sourceTaskNameMatch) {
+          const pattern = m.sourceTaskNameMatch.toLowerCase();
+          matchedTask = tasks.find((t: any) => t.title?.toLowerCase().includes(pattern));
+        }
+
+        let plannedDate: string | null = null;
+        let actualDate: string | null = null;
+        let effectiveDate: string | null = null;
+
+        if (matchedTask) {
+          plannedDate = m.dateField === 'startDate' ? matchedTask.startDate : matchedTask.dueDate;
+          actualDate = m.dateField === 'startDate' ? matchedTask.actualStartDate : matchedTask.actualEndDate;
+          if (m.precedenceRule === 'actual_over_planned') {
+            effectiveDate = actualDate || plannedDate;
+          } else {
+            effectiveDate = plannedDate;
+          }
+        }
+
+        return {
+          id: m.id,
+          keyDateName: m.keyDateName,
+          sourceTaskId: m.sourceTaskId,
+          sourceTaskCode: m.sourceTaskCode,
+          sourceTaskNameMatch: m.sourceTaskNameMatch,
+          dateField: m.dateField,
+          precedenceRule: m.precedenceRule,
+          sortOrder: m.sortOrder,
+          matchedTaskId: matchedTask?.id || null,
+          matchedTaskTitle: matchedTask?.title || null,
+          matchedTaskNumber: matchedTask?.taskNumber || null,
+          plannedDate,
+          actualDate,
+          effectiveDate,
+          mappingValid: !!matchedTask,
+        };
+      });
+
+      res.json(results);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // ==================== WRITEBACK MAPPINGS ====================
 
   app.get("/api/writeback-mappings", requireAuth, async (req: Request, res: Response) => {

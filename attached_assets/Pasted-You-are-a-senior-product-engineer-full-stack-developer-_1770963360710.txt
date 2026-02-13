@@ -1,0 +1,193 @@
+You are a senior product engineer + full-stack developer. We are upgrading the “Project Plan” (Tasks) tab inside the Project Drilldown (Steelpark example) so it aligns with our Excel “Project Plan” sheet structure and fields.
+
+CRITICAL: Do NOT remove or break the existing ClickUp-like functionality (Tasks list, board, calendar, gantt, subtasks, comments, assignees, statuses, dependencies, etc.). The app task system and the imported Excel plan must speak to each other.
+
+Goal:
+- Keep ClickUp core.
+- Add/adjust the task fields so the planning table matches the Excel planning needs.
+- Make the UI more professional and clean.
+- Ensure task hierarchy rolls up correctly (1, 1.1, 1.2 …).
+- This task plan is the source used to populate key project dates (commissioning, module installation, inspections, etc.) into the imported dataset / forecast modules.
+
+Do NOT assume any business rules not stated. If any mapping is unclear (e.g., which task drives “commissioning date”), stop and produce “Questions / Unknowns” before implementing that mapping.
+
+========================================================
+1) KEEP EXISTING CLICKUP FUNCTIONALITY
+========================================================
+Must remain functional:
+- Task list/grid view with inline edits
+- Subtasks and parent tasks
+- Board (kanban), calendar, gantt views
+- Status, priority, assignees, dependencies, comments, attachments, activity log
+- Filtering, sorting, grouping
+- Baseline vs operational tracking (if already present)
+
+We are ADDING planning fields and rollup logic. Not replacing the system.
+
+========================================================
+2) ADD REQUIRED PLANNING FIELDS (EXCEL-ALIGNED)
+========================================================
+Update the task model to include (or derive) these fields:
+
+Imported/Baseline planning fields:
+- planned_start_date
+- planned_end_date
+- planned_duration_days (derived: planned_end - planned_start + 1 OR stored if provided)
+
+Actual execution fields:
+- actual_start_date
+- actual_end_date
+- actual_duration_days (derived from actual dates)
+
+Progress fields:
+- percent_complete (actual % done)
+- expected_percent_complete (auto-calculated based on time elapsed vs planned dates)
+- status (existing)
+- comment (task-level notes, optional)
+
+Project-level fields visible in header (pulled from project):
+- phase (e.g., Planning)
+- net_work_days (if exists)
+- total_weeks (derived)
+- kW/week installation rate (if exists)
+
+Hierarchy fields:
+- task_code (string like “1”, “1.1”, “1.2”)
+- parent_task_id
+- sort_order
+
+========================================================
+3) EXPECTED % COMPLETE LOGIC (AUTO-CALCULATED)
+========================================================
+Expected % is time-based and must track days.
+
+Rule (time-based):
+- If today < planned_start_date => expected = 0%
+- If today > planned_end_date => expected = 100%
+- Else expected = (days elapsed from planned_start to today) / (total planned duration days) * 100
+- Round rules: display to whole number % (or 1 decimal if desired)
+
+Important:
+- Expected % should NOT be manually editable.
+- Expected % must be calculated per task using planned dates.
+- Parent tasks show rollup expected % based on children (see rollups below).
+
+========================================================
+4) ROLLUPS (PARENT ↔ SUBTASKS)
+========================================================
+We must support:
+- High-level tasks (e.g., “1 Project Initiation”)
+- Subtasks (1.1, 1.2, etc.) nested under parent
+- Rollups must work reliably.
+
+Rollup rules:
+A) Parent planned_start_date = MIN(child planned_start_date)
+B) Parent planned_end_date = MAX(child planned_end_date)
+C) Parent planned_duration_days derived from parent planned dates
+
+D) Parent actual_start_date = MIN(child actual_start_date where exists)
+E) Parent actual_end_date = MAX(child actual_end_date where exists)
+F) Parent actual_duration_days derived
+
+G) Parent percent_complete rollup:
+- Default: weighted by child planned_duration_days (or equally weighted if duration missing)
+- percent_complete_parent = SUM(child % * weight) / SUM(weights)
+
+H) Parent expected_percent_complete rollup:
+- same rollup method as percent_complete (duration-weighted)
+
+If some tasks have no children, they behave as normal leaf tasks.
+
+========================================================
+5) UI REQUIREMENTS (LOOK + USABILITY)
+========================================================
+Keep the current grid but make it “planning-grade” and closer to Excel, without becoming ugly.
+
+Add a “Planning columns” preset:
+- Task Code
+- Task Name
+- Planned Start | Planned End | Planned Duration
+- Actual Start | Actual End | Actual Duration
+- % Complete | Expected %
+- Delta (optional): %complete - expected%
+- Status
+- Comment
+
+Color/flagging:
+- Show “behind plan” when %complete < expected% by a threshold (e.g., >5% behind) with a clear badge (not only color).
+- Show “ahead” when %complete > expected%.
+- Keep it simple and readable.
+
+Keep hierarchy display:
+- Parent rows bold and collapsible
+- Subtasks indented
+- Task code visible and sortable
+
+========================================================
+6) BASELINE VS OPERATIONAL (DON’T BREAK IMPORTS)
+========================================================
+We have imported planning data (baseline) and operational edits.
+
+Rules:
+- Baseline imported planned dates are read-only unless user explicitly creates an override scenario (if your scenario/override system exists).
+- Operational fields (actual dates, % complete, status) are editable and stored in app DB.
+- If planned dates are changed in app, they must be stored as overrides with audit log + reason (no silent overwrites).
+
+========================================================
+7) KEY DATE OUTPUTS (THIS PLAN FEEDS PROJECT DATES)
+========================================================
+This tasks plan is used to populate key project dates used elsewhere (cashflow, COS, dashboard).
+
+Implement a “Project Key Dates” extractor mapping:
+- Certain milestone tasks drive project-level dates such as:
+  - Commissioning date
+  - Module installation start/end
+  - QA inspection dates / red team / snag completion
+  - Practical completion
+  - Handover documentation / client handover / Matriarch handover
+
+IMPORTANT:
+- DO NOT guess which tasks map to which key dates.
+- Create a configurable mapping table (Admin):
+  - key_date_name (e.g., “Commissioning”)
+  - source_task_code OR source_task_tag OR source_task_name_match
+  - which date field to use (planned_end, actual_end, etc.)
+  - precedence rule (actual overrides planned if exists)
+
+Then:
+- Show “Key Dates” panel in the project plan screen:
+  - lists each key date and the source task that drives it
+  - shows planned vs actual
+  - shows whether mapping is valid (found task) or missing
+
+These key dates must be written back into the project record used by the program dashboard modules (via DB update), with audit trail.
+
+========================================================
+8) TESTS (MANDATORY)
+========================================================
+Add unit tests for:
+- expected_percent_complete calculation edge cases
+- rollups (parent date min/max, percent rollups)
+- hierarchy sorting and task_code parsing (“1.10” must sort after “1.9”)
+- key date extractor mapping (when mapping exists, when missing)
+
+Add an integration test:
+- update a child task planned_end_date override -> parent planned_end updates -> key date changes -> reflected in project summary.
+
+========================================================
+9) FIRST STEP BEFORE CODING
+========================================================
+Audit current schema and confirm:
+- Where planned dates come from (import table)
+- Where actual dates live
+- Whether task_code exists or must be created
+- How tasks are currently linked to a project
+- Whether “phase” is stored on project and how it’s displayed
+
+If any of these are unclear, output a “Questions / Unknowns” list and propose the minimal safe change set.
+Then implement.
+
+Deliverables:
+- Updated task grid with planning columns + hierarchy rollups + expected %.
+- Key dates panel + mapping system.
+- No regressions to existing ClickUp functionality.
