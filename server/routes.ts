@@ -4042,7 +4042,7 @@ export async function registerRoutes(
 
   // ==================== EXPENDITURE BREAKDOWN COMPOSITE API ====================
 
-  app.get("/api/expenditure-breakdown/:projectName", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, res) => {
     try {
       const projectName = req.params.projectName;
       const [expenses, taskLinks, opTasks, planTasks] = await Promise.all([
@@ -6193,10 +6193,7 @@ export async function registerRoutes(
         expenseCategory: e.expenseCategory,
         expenseLineItem: e.expenseLineItem,
         amount: Math.abs(parseFloat(e.expenseActualTotal || e.budgetTotal || '0')),
-        state: e.computedState || classifyExpenseState({
-          poNumber: e.expensePoNumber, invoiceNumber: e.expenseInvoiceNumber,
-          invoicedDate: e.expenseInvoicedDate, paymentDate: e.expensePaymentDate,
-        }),
+        state: e.computedState || classifyExpenseState(e),
         invoiceNumber: e.expenseInvoiceNumber,
         poNumber: e.expensePoNumber,
         invoicedDate: e.expenseInvoicedDate,
@@ -6271,10 +6268,7 @@ export async function registerRoutes(
         const amount = Math.abs(parseFloat(e.expenseActualTotal || e.budgetTotal || '0'));
         if (amount === 0) continue;
 
-        const lineState = e.computedState || classifyExpenseState({
-          poNumber: e.expensePoNumber, invoiceNumber: e.expenseInvoiceNumber,
-          invoicedDate: e.expenseInvoicedDate, paymentDate: e.expensePaymentDate,
-        });
+        const lineState = e.computedState || classifyExpenseState(e);
 
         const entityKey = `expense_line::${e.id}`;
         const effectiveInvoiceDate = overrideMap[entityKey]?.['invoice_date'] || e.expenseInvoicedDate;
@@ -6360,10 +6354,7 @@ export async function registerRoutes(
 
       let lines = items.map((e: any) => {
         const amount = Math.abs(parseFloat(e.expenseActualTotal || e.budgetTotal || '0'));
-        const lineState = e.computedState || classifyExpenseState({
-          poNumber: e.expensePoNumber, invoiceNumber: e.expenseInvoiceNumber,
-          invoicedDate: e.expenseInvoicedDate, paymentDate: e.expensePaymentDate,
-        });
+        const lineState = e.computedState || classifyExpenseState(e);
 
         const entityKey = `expense_line::${e.id}`;
         const effectiveInvoiceDate = overrideMap[entityKey]?.['invoice_date'] || e.expenseInvoicedDate;

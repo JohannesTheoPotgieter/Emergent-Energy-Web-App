@@ -12,7 +12,9 @@ async function getProjectMap(): Promise<Map<string, ProjectInfo>> {
 }
 
 export async function backfillExpenseComputedFields(): Promise<{ updated: number }> {
-  const expenses = await db.select().from(programExpense).where(isNull(programExpense.expenseLineHash));
+  const expenses = await db.select().from(programExpense).where(
+    sql`${programExpense.expenseLineHash} IS NULL OR ${programExpense.computedState} IS NULL`
+  );
   const projectMap = await getProjectMap();
 
   let updated = 0;
@@ -27,6 +29,9 @@ export async function backfillExpenseComputedFields(): Promise<{ updated: number
         expenseInvoiceNumber: exp.expenseInvoiceNumber,
         expenseInvoicedDate: exp.expenseInvoicedDate,
         expensePoNumber: exp.expensePoNumber,
+        invoiceDateFontColor: (exp as any).invoiceDateFontColor,
+        paymentDateFontColor: (exp as any).paymentDateFontColor,
+        invoiceDateConfirmed: (exp as any).invoiceDateConfirmed,
       });
 
       const hash = computeExpenseLineHash({

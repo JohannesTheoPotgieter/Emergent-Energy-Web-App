@@ -188,10 +188,22 @@ export function ExpenditureEditableTab({ projectName }: ExpenditureEditableTabPr
 
   const breakdownKey = ["expenditure-breakdown", projectName];
 
+  const authHeaders = useCallback((): Record<string, string> => {
+    const token = localStorage.getItem("auth_token");
+    const h: Record<string, string> = {};
+    if (token) h["Authorization"] = `Bearer ${token}`;
+    return h;
+  }, []);
+
+  const authFetch = useCallback(async (url: string, opts: RequestInit = {}): Promise<Response> => {
+    const headers = { ...authHeaders(), ...(opts.headers as Record<string, string> || {}) };
+    return fetch(url, { ...opts, headers, credentials: "include" });
+  }, [authHeaders]);
+
   const { data: breakdownData, isLoading, error } = useQuery<{ items: EnrichedExpense[]; categories: string[] }>({
     queryKey: breakdownKey,
     queryFn: async () => {
-      const res = await fetch(`/api/expenditure-breakdown/${encodeURIComponent(projectName)}`);
+      const res = await authFetch(`/api/expenditure-breakdown/${encodeURIComponent(projectName)}`);
       if (!res.ok) throw new Error("Failed to fetch");
       return res.json();
     },
@@ -202,8 +214,8 @@ export function ExpenditureEditableTab({ projectName }: ExpenditureEditableTabPr
     queryKey: ["all-tasks-for-linking", projectName],
     queryFn: async () => {
       const [opRes, planRes] = await Promise.all([
-        fetch(`/api/operational-tasks/${encodeURIComponent(projectName)}`),
-        fetch(`/api/project-plan/${encodeURIComponent(projectName)}`),
+        authFetch(`/api/operational-tasks/${encodeURIComponent(projectName)}`),
+        authFetch(`/api/project-plan/${encodeURIComponent(projectName)}`),
       ]);
       const opTasks = opRes.ok ? await opRes.json() : [];
       const planTasks = planRes.ok ? await planRes.json() : [];
@@ -234,7 +246,7 @@ export function ExpenditureEditableTab({ projectName }: ExpenditureEditableTabPr
 
   const saveMutation = useMutation({
     mutationFn: async (overrides: { projectName: string; rowNumber: number; fieldName: string; overrideValue: string }[]) => {
-      const response = await fetch("/api/expenditure/overrides", {
+      const response = await authFetch("/api/expenditure/overrides", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ overrides }),
@@ -254,7 +266,7 @@ export function ExpenditureEditableTab({ projectName }: ExpenditureEditableTabPr
 
   const linkTaskMutation = useMutation({
     mutationFn: async ({ expenseId, taskId }: { expenseId: number; taskId: number }) => {
-      const res = await fetch(`/api/expense-task-links/${encodeURIComponent(projectName)}`, {
+      const res = await authFetch(`/api/expense-task-links/${encodeURIComponent(projectName)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ expenseId, taskId }),
@@ -272,7 +284,7 @@ export function ExpenditureEditableTab({ projectName }: ExpenditureEditableTabPr
 
   const unlinkTaskMutation = useMutation({
     mutationFn: async (expenseId: number) => {
-      const res = await fetch(`/api/expense-task-links/${encodeURIComponent(projectName)}/${expenseId}`, { method: "DELETE" });
+      const res = await authFetch(`/api/expense-task-links/${encodeURIComponent(projectName)}/${expenseId}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Failed to unlink task");
     },
     onSuccess: () => {
@@ -283,7 +295,7 @@ export function ExpenditureEditableTab({ projectName }: ExpenditureEditableTabPr
 
   const addLineMutation = useMutation({
     mutationFn: async (data: any) => {
-      const res = await fetch("/api/expenses/add-line", {
+      const res = await authFetch("/api/expenses/add-line", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectName, ...data }),
@@ -301,7 +313,7 @@ export function ExpenditureEditableTab({ projectName }: ExpenditureEditableTabPr
 
   const addCategoryMutation = useMutation({
     mutationFn: async (categoryName: string) => {
-      const res = await fetch("/api/expenses/add-category", {
+      const res = await authFetch("/api/expenses/add-category", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectName, categoryName }),
@@ -319,7 +331,7 @@ export function ExpenditureEditableTab({ projectName }: ExpenditureEditableTabPr
 
   const insertTaskMutation = useMutation({
     mutationFn: async ({ taskId, expenseCategory }: { taskId: number; expenseCategory: string }) => {
-      const res = await fetch("/api/expenses/insert-task-as-line", {
+      const res = await authFetch("/api/expenses/insert-task-as-line", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectName, taskId, expenseCategory }),
