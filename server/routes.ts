@@ -2301,17 +2301,28 @@ export async function registerRoutes(
       const cosRealisedByMonth = new Map<string, number>();
       const cosTotalByMonth = new Map<string, number>();
 
+      let cosYtdTarget = 0;
+
       for (const exp of allExpenses) {
         if (exp.rowType !== 'item') continue;
         const amount = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
         if (isNaN(amount) || amount === 0) continue;
+
+        const hasInvoice = !!(exp.expenseInvoiceNumber && (exp.expenseInvoiceNumber as string).trim() !== '');
+
+        if (hasInvoice) {
+          const budgetAmt = exp.budgetTotal ? parseFloat(exp.budgetTotal as string) : 0;
+          if (!isNaN(budgetAmt) && budgetAmt > 0) {
+            cosYtdTarget += budgetAmt;
+          }
+        }
+
         const invDate = exp.expenseInvoicedDate as string | null;
         if (!invDate) continue;
         const dateMatch = invDate.match(/^(\d{4})-(\d{2})/);
         if (!dateMatch) continue;
         const monthKey = `${dateMatch[1]}-${dateMatch[2]}`;
         cosTotalByMonth.set(monthKey, (cosTotalByMonth.get(monthKey) || 0) + amount);
-        const hasInvoice = !!exp.expenseInvoiceNumber;
         const dateConfirmed = exp.invoiceDateConfirmed === true;
         if (hasInvoice && dateConfirmed) {
           cosRealisedByMonth.set(monthKey, (cosRealisedByMonth.get(monthKey) || 0) + amount);
@@ -2323,7 +2334,6 @@ export async function registerRoutes(
       const cosStartMonth = new Date(Date.UTC(2025, 8, 1));
 
       let cosYtdRealised = 0;
-      let cosYtdTarget = 0;
       let cosCurrentMonthRealised = 0;
       let cosCurrentMonthTarget = 0;
 
@@ -2335,15 +2345,13 @@ export async function registerRoutes(
         const mk = `${yr}-${String(mo + 1).padStart(2, '0')}`;
         if (mk > currentMonthKey) break;
 
-        const realised = cosRealisedByMonth.get(mk) || 0;
+        cosYtdRealised += cosRealisedByMonth.get(mk) || 0;
+
         const manual = manualMap.get(mk);
         const budget = manual?.budget ? parseFloat(manual.budget) : (staticCosBudget[mk] ?? 0);
 
-        cosYtdRealised += realised;
-        cosYtdTarget += budget;
-
         if (mk === currentMonthKey) {
-          cosCurrentMonthRealised = realised;
+          cosCurrentMonthRealised = cosRealisedByMonth.get(mk) || 0;
           cosCurrentMonthTarget = budget;
         }
       }
@@ -2460,7 +2468,8 @@ export async function registerRoutes(
           if (expense.expenseActualTotal) {
             const amt = parseFloat(expense.expenseActualTotal);
             const hasPastPaymentDate = expense.expensePaymentDate && /^\d{4}-\d{2}-\d{2}$/.test(expense.expensePaymentDate) && expense.expensePaymentDate < today;
-            if (hasPastPaymentDate && amt > 0) {
+            const isPaid = expense.computedState === 'Paid';
+            if (hasPastPaymentDate && amt > 0 && !isPaid) {
               expenseOverdue += amt;
               projExpOverdue += amt;
               if (expense.expenseInvoiceNumber && expense.expenseInvoiceNumber.trim() !== '') {
