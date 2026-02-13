@@ -596,11 +596,6 @@ export default function ProjectsSummary() {
 
   const totals = useMemo(() => ({
     size_kwp: sorted.reduce((s, p) => s + safeNum(p.size_kwp), 0),
-    actual_revenue: sorted.reduce((s, p) => s + safeNum(p.actual_revenue), 0),
-    actual_expenses: sorted.reduce((s, p) => s + safeNum(p.actual_expenses), 0),
-    revenue_outstanding: sorted.reduce((s, p) => s + safeNum(p.revenue_outstanding), 0),
-    expenses_due: sorted.reduce((s, p) => s + safeNum(p.expenses_due), 0),
-    current_vo_total: sorted.reduce((s, p) => s + safeNum(p.current_vo_total), 0),
   }), [sorted]);
 
   const handleExport = () => {
@@ -816,73 +811,6 @@ export default function ProjectsSummary() {
         const sign = val >= 0 ? "+" : "";
         return <span className={`font-mono ${color}`}>{sign}{val.toFixed(1)}%</span>;
       },
-    },
-    {
-      key: "actual_revenue",
-      header: "Actual Revenue",
-      align: "right",
-      render: (p) => <span className="font-mono">{formatRand(p.actual_revenue)}</span>,
-      summaryValue: <span className="font-mono font-bold">{formatRand(totals.actual_revenue)}</span>,
-    },
-    {
-      key: "actual_expenses",
-      header: "Actual Expenses",
-      align: "right",
-      render: (p) => <span className="font-mono">{formatRand(p.actual_expenses)}</span>,
-      summaryValue: <span className="font-mono font-bold">{formatRand(totals.actual_expenses)}</span>,
-    },
-    {
-      key: "gp_percent",
-      header: "GP %",
-      align: "right",
-      render: (p) => {
-        if (p.gp_percent == null) return "—";
-        const val = p.gp_percent * 100;
-        const color = val >= 20 ? "text-emerald-600" : val >= 10 ? "text-amber-600" : "text-rose-600";
-        return <span className={`font-mono ${color}`}>{val.toFixed(1)}%</span>;
-      },
-    },
-    {
-      key: "revenue_outstanding",
-      header: "Rev Outstanding",
-      align: "right",
-      render: (p) => <span className="font-mono text-amber-600">{formatRand(p.revenue_outstanding)}</span>,
-      summaryValue: <span className="font-mono font-bold text-amber-600">{formatRand(totals.revenue_outstanding)}</span>,
-    },
-    {
-      key: "expenses_due",
-      header: "Expenses Due",
-      align: "right",
-      render: (p) => <span className="font-mono text-amber-600">{formatRand(p.expenses_due)}</span>,
-      summaryValue: <span className="font-mono font-bold text-amber-600">{formatRand(totals.expenses_due)}</span>,
-    },
-    {
-      key: "current_vo_total",
-      header: "Current VO Total",
-      align: "right",
-      render: (p) => (
-        <EditableCell
-          value={p.current_vo_total}
-          type="number"
-          projectName={p.project_name}
-          field="current_vo_total"
-          displayValue={formatRand(p.current_vo_total)}
-        />
-      ),
-      summaryValue: <span className="font-mono font-bold">{formatRand(totals.current_vo_total)}</span>,
-    },
-    {
-      key: "comments",
-      header: "Comments",
-      render: (p) => (
-        <EditableCell
-          value={p.comments}
-          type="text"
-          projectName={p.project_name}
-          field="comments"
-          displayValue={p.comments || "—"}
-        />
-      ),
     },
   ];
 

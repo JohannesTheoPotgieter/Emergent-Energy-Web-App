@@ -1376,12 +1376,35 @@ export async function registerRoutes(
 
         // Project % Complete = avg(actual_pct_complete) across plan tasks
         const validActualPcts = projectPlans.filter(p => p.actualPctComplete !== null);
-        const validExpectedPcts = projectPlans.filter(p => p.expectedPctComplete !== null);
         const projectPctComplete = validActualPcts.length > 0
           ? validActualPcts.reduce((sum, p) => sum + (p.actualPctComplete || 0), 0) / validActualPcts.length
           : null;
-        const expectedPctComplete = validExpectedPcts.length > 0
-          ? validExpectedPcts.reduce((sum, p) => sum + (p.expectedPctComplete || 0), 0) / validExpectedPcts.length
+
+        // Expected % Complete = calculated per task using SA working days relative to today
+        // For each task with valid start/end dates:
+        //   if today >= actualEnd → 1.0
+        //   if today <= actualStart → 0.0
+        //   else → saWorkingDays(actualStart, today) / saWorkingDays(actualStart, actualEnd)
+        const todayDate = today; // YYYY-MM-DD string
+        const tasksWithExpected: number[] = [];
+        for (const task of projectPlans) {
+          const tStart = task.actualStart?.substring(0, 10);
+          const tEnd = task.actualEnd?.substring(0, 10);
+          if (!tStart || !tEnd || !/^\d{4}-\d{2}-\d{2}/.test(tStart) || !/^\d{4}-\d{2}-\d{2}/.test(tEnd)) continue;
+          if (todayDate >= tEnd) {
+            tasksWithExpected.push(1.0);
+          } else if (todayDate <= tStart) {
+            tasksWithExpected.push(0.0);
+          } else {
+            const totalWd = saWorkingDays(tStart, tEnd);
+            const elapsedWd = saWorkingDays(tStart, todayDate);
+            if (totalWd && totalWd > 0 && elapsedWd !== null) {
+              tasksWithExpected.push(Math.min(elapsedWd / totalWd, 1.0));
+            }
+          }
+        }
+        const expectedPctComplete = tasksWithExpected.length > 0
+          ? tasksWithExpected.reduce((a, b) => a + b, 0) / tasksWithExpected.length
           : null;
         const deltaVsExpected = (projectPctComplete !== null && expectedPctComplete !== null)
           ? projectPctComplete - expectedPctComplete : null;
