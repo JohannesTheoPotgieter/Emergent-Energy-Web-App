@@ -32,6 +32,9 @@ import {
   Filter,
   X,
   Flag,
+  Mail,
+  Trash2,
+  Paperclip,
 } from "lucide-react";
 
 type Priority = "critical" | "important" | "normal" | "low";
@@ -584,61 +587,66 @@ export default function MyToolTodayPage() {
                     {activePriorities.map((p) => (
                       <div
                         key={p.id}
-                        className="flex items-center gap-3 p-3 rounded-lg border border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+                        className="p-3 rounded-lg border border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
                         data-testid={`priority-item-${p.id}`}
                       >
-                        <SeverityBadge severity={p.severity} />
-                        <span className="flex-1 text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
-                          {p.title}
-                        </span>
-                        {p.department && (
-                          <Badge variant="outline" className="text-[10px] shrink-0 border-indigo-200 text-indigo-700 bg-indigo-50 dark:bg-indigo-950 dark:text-indigo-300 dark:border-indigo-800" data-testid={`badge-department-${p.id}`}>
-                            {p.department}
-                          </Badge>
-                        )}
-                        {p.linkedProjectName && (
-                          <Link
-                            href={`/project/${encodeURIComponent(p.linkedProjectName)}`}
-                            className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1 shrink-0"
-                            data-testid={`link-priority-project-${p.id}`}
-                          >
-                            <ExternalLink className="h-3 w-3" />
-                            {p.linkedProjectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
-                          </Link>
-                        )}
-                        <div className="flex gap-1 shrink-0">
+                        <div className="flex items-center gap-3">
+                          <SeverityBadge severity={p.severity} />
+                          <span className="flex-1 text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
+                            {p.title}
+                          </span>
+                          {p.department && (
+                            <Badge variant="outline" className="text-[10px] shrink-0 border-indigo-200 text-indigo-700 bg-indigo-50 dark:bg-indigo-950 dark:text-indigo-300 dark:border-indigo-800" data-testid={`badge-department-${p.id}`}>
+                              {p.department}
+                            </Badge>
+                          )}
                           {p.linkedProjectName && (
+                            <Link
+                              href={`/project/${encodeURIComponent(p.linkedProjectName)}`}
+                              className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1 shrink-0"
+                              data-testid={`link-priority-project-${p.id}`}
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                              {p.linkedProjectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
+                            </Link>
+                          )}
+                          <div className="flex gap-1 shrink-0">
+                            {p.linkedProjectName && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 text-xs px-2"
+                                onClick={() => setLocation(`/project/${encodeURIComponent(p.linkedProjectName!)}`)}
+                                data-testid={`button-open-project-${p.id}`}
+                              >
+                                Open
+                              </Button>
+                            )}
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 text-xs px-2"
+                              onClick={() => handleConvertToTask(p)}
+                              disabled={createTaskMutation.isPending}
+                              data-testid={`button-convert-task-${p.id}`}
+                            >
+                              <Plus className="h-3 w-3 mr-1" />
+                              Task
+                            </Button>
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-7 text-xs px-2"
-                              onClick={() => setLocation(`/project/${encodeURIComponent(p.linkedProjectName!)}`)}
-                              data-testid={`button-open-project-${p.id}`}
+                              className="h-7 text-xs px-1.5 text-gray-400 hover:text-red-500"
+                              onClick={() => deletePriorityMutation.mutate(p.id)}
+                              disabled={deletePriorityMutation.isPending}
+                              data-testid={`button-delete-priority-${p.id}`}
                             >
-                              Open
+                              <X className="h-3 w-3" />
                             </Button>
-                          )}
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-7 text-xs px-2"
-                            onClick={() => handleConvertToTask(p)}
-                            disabled={createTaskMutation.isPending}
-                            data-testid={`button-convert-task-${p.id}`}
-                          >
-                            <Plus className="h-3 w-3 mr-1" />
-                            Task
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 text-xs px-1.5 text-gray-400 hover:text-red-500"
-                            onClick={() => deletePriorityMutation.mutate(p.id)}
-                            disabled={deletePriorityMutation.isPending}
-                            data-testid={`button-delete-priority-${p.id}`}
-                          >
-                            <X className="h-3 w-3" />
-                          </Button>
+                          </div>
+                        </div>
+                        <div className="mt-1.5 ml-6">
+                          <EmailLinksWidget priorityId={p.id} />
                         </div>
                       </div>
                     ))}
@@ -1172,6 +1180,9 @@ function TaskCard({
               {task.blockedReason}
             </p>
           )}
+          <div className="mt-1">
+            <EmailLinksWidget taskId={task.id} />
+          </div>
         </div>
       </div>
       <div className="flex items-center gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
@@ -1246,6 +1257,144 @@ function TaskCard({
           </Button>
         )}
       </div>
+    </div>
+  );
+}
+
+function EmailLinksWidget({ taskId, priorityId }: { taskId?: number; priorityId?: number }) {
+  const [open, setOpen] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState({ subject: "", sender: "", emailDate: "", snippet: "" });
+
+  const qKey = taskId
+    ? ["/api/mytool/email-links", { taskId }]
+    : ["/api/mytool/email-links", { priorityId }];
+
+  const param = taskId ? `taskId=${taskId}` : `priorityId=${priorityId}`;
+
+  const { data: links = [] } = useQuery<any[]>({
+    queryKey: qKey,
+    queryFn: () => fetch(`/api/mytool/email-links?${param}`, { credentials: "include" }).then(r => r.ok ? r.json() : []),
+    enabled: open,
+  });
+
+  const createMut = useMutation({
+    mutationFn: (body: any) => apiRequest("POST", "/api/mytool/email-links", body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: qKey });
+      setForm({ subject: "", sender: "", emailDate: "", snippet: "" });
+      setAdding(false);
+    },
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (id: number) => apiRequest("DELETE", `/api/mytool/email-links/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: qKey }),
+  });
+
+  const handleSave = () => {
+    if (!form.subject.trim()) return;
+    createMut.mutate({
+      subject: form.subject.trim(),
+      sender: form.sender.trim() || null,
+      emailDate: form.emailDate.trim() || null,
+      snippet: form.snippet.trim() || null,
+      linkedTaskId: taskId || null,
+      linkedPriorityId: priorityId || null,
+    });
+  };
+
+  return (
+    <div className="w-full" onClick={(e) => e.stopPropagation()}>
+      <button
+        className="flex items-center gap-1 text-[10px] text-gray-400 hover:text-blue-600 transition-colors"
+        onClick={() => setOpen(!open)}
+        data-testid={`toggle-emails-${taskId || priorityId}`}
+      >
+        <Paperclip className="h-3 w-3" />
+        <span>Emails</span>
+        {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+      </button>
+      {open && (
+        <div className="mt-1.5 space-y-1.5">
+          {links.map((link: any) => (
+            <div
+              key={link.id}
+              className="flex items-start gap-2 p-1.5 rounded bg-blue-50/50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900 text-[11px]"
+              data-testid={`email-link-${link.id}`}
+            >
+              <Mail className="h-3 w-3 text-blue-500 mt-0.5 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-gray-800 dark:text-gray-200 truncate">{link.subject}</p>
+                {link.sender && <p className="text-gray-500 truncate">From: {link.sender}</p>}
+                {link.emailDate && <p className="text-gray-400">{link.emailDate}</p>}
+                {link.snippet && <p className="text-gray-500 mt-0.5 line-clamp-2">{link.snippet}</p>}
+              </div>
+              <button
+                className="text-gray-300 hover:text-red-500 shrink-0"
+                onClick={() => deleteMut.mutate(link.id)}
+                data-testid={`delete-email-${link.id}`}
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
+          {!adding ? (
+            <button
+              className="flex items-center gap-1 text-[10px] text-blue-600 hover:text-blue-700"
+              onClick={() => setAdding(true)}
+              data-testid={`add-email-${taskId || priorityId}`}
+            >
+              <Plus className="h-3 w-3" />
+              Attach email reference
+            </button>
+          ) : (
+            <div className="p-2 rounded border border-blue-200 dark:border-blue-800 bg-blue-50/30 dark:bg-blue-950/20 space-y-1.5">
+              <Input
+                placeholder="Email subject *"
+                value={form.subject}
+                onChange={(e) => setForm(f => ({ ...f, subject: e.target.value }))}
+                className="h-7 text-xs"
+                data-testid={`input-email-subject-${taskId || priorityId}`}
+                onKeyDown={(e) => { if (e.key === "Enter") handleSave(); }}
+              />
+              <div className="grid grid-cols-2 gap-1.5">
+                <Input
+                  placeholder="Sender (optional)"
+                  value={form.sender}
+                  onChange={(e) => setForm(f => ({ ...f, sender: e.target.value }))}
+                  className="h-7 text-xs"
+                  data-testid={`input-email-sender-${taskId || priorityId}`}
+                />
+                <Input
+                  placeholder="Date (optional)"
+                  value={form.emailDate}
+                  onChange={(e) => setForm(f => ({ ...f, emailDate: e.target.value }))}
+                  className="h-7 text-xs"
+                  data-testid={`input-email-date-${taskId || priorityId}`}
+                />
+              </div>
+              <Textarea
+                placeholder="Snippet / notes (optional)"
+                value={form.snippet}
+                onChange={(e) => setForm(f => ({ ...f, snippet: e.target.value }))}
+                className="text-xs min-h-[40px]"
+                rows={2}
+                data-testid={`input-email-snippet-${taskId || priorityId}`}
+              />
+              <div className="flex justify-end gap-1">
+                <Button variant="ghost" size="sm" className="h-6 text-[10px]" onClick={() => { setAdding(false); setForm({ subject: "", sender: "", emailDate: "", snippet: "" }); }}>
+                  Cancel
+                </Button>
+                <Button size="sm" className="h-6 text-[10px]" onClick={handleSave} disabled={!form.subject.trim() || createMut.isPending}>
+                  <Paperclip className="h-3 w-3 mr-0.5" />
+                  Attach
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
