@@ -37,6 +37,8 @@ import {
   BarChart3,
   Calendar,
   Pencil,
+  Flag,
+  ChevronDown,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
@@ -93,6 +95,7 @@ interface ProjectSummary {
   expenses_due: number | null;
   current_vo_total: number | null;
   comments: string | null;
+  escalation_level: string | null;
 }
 
 type SortDir = "asc" | "desc";
@@ -647,6 +650,17 @@ export default function ProjectsSummary() {
   const { isAdmin } = useAuth();
   const [editProject, setEditProject] = useState<ProjectSummary | null>(null);
   const [writebackPromptProject, setWritebackPromptProject] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+
+  const escalationMutation = useMutation({
+    mutationFn: async ({ projectInfoId, escalationLevel }: { projectInfoId: number; escalationLevel: string | null }) => {
+      const res = await apiRequest("PATCH", `/api/projects-summary/${projectInfoId}/escalation`, { escalationLevel });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects-summary"] });
+    },
+  });
 
   const { data: projects = [], isLoading } = useQuery<ProjectSummary[]>({
     queryKey: ["/api/projects-summary"],
@@ -891,6 +905,48 @@ export default function ProjectsSummary() {
             <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
             {p.phase || "—"}
           </span>
+        );
+      },
+    },
+    {
+      key: "escalation_level",
+      header: "Escalation",
+      render: (p) => {
+        const level = p.escalation_level || "None";
+        const cfg: Record<string, { bg: string; text: string; border: string; dot: string }> = {
+          None: { bg: "bg-slate-50", text: "text-slate-400", border: "border-slate-200", dot: "bg-slate-300" },
+          Low: { bg: "bg-blue-50", text: "text-blue-600", border: "border-blue-200", dot: "bg-blue-400" },
+          Medium: { bg: "bg-amber-50", text: "text-amber-600", border: "border-amber-200", dot: "bg-amber-400" },
+          High: { bg: "bg-orange-50", text: "text-orange-600", border: "border-orange-200", dot: "bg-orange-500" },
+          Highest: { bg: "bg-red-50", text: "text-red-700", border: "border-red-300", dot: "bg-red-500" },
+        };
+        const style = cfg[level] || cfg.None;
+        if (!isAdmin) {
+          return (
+            <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${style.bg} ${style.text} ${style.border}`}>
+              {level === "Highest" && <Flag className="w-3 h-3" />}
+              {level}
+            </span>
+          );
+        }
+        return (
+          <select
+            data-testid={`select-escalation-${p.project_name}`}
+            className={`text-[10px] font-semibold rounded-md border px-1 py-0.5 cursor-pointer outline-none ${style.bg} ${style.text} ${style.border}`}
+            value={level}
+            onChange={(e) => {
+              if (!p.project_info_id) return;
+              const val = e.target.value === "None" ? null : e.target.value;
+              escalationMutation.mutate({ projectInfoId: p.project_info_id, escalationLevel: val });
+            }}
+            disabled={!p.project_info_id}
+          >
+            <option value="None">None</option>
+            <option value="Low">Low</option>
+            <option value="Medium">Medium</option>
+            <option value="High">High</option>
+            <option value="Highest">Highest</option>
+          </select>
         );
       },
     },
