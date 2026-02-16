@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Link, useLocation } from "wouter";
 import { format } from "date-fns";
+import MyToolNav from "@/components/my-tool-nav";
 import {
   ChevronDown,
   ChevronRight,
@@ -21,9 +22,6 @@ import {
   Target,
   Inbox,
   Loader2,
-  CalendarDays,
-  Settings,
-  ListTodo,
   ArrowRight,
   ExternalLink,
   Unlock,
@@ -35,6 +33,8 @@ import {
   Mail,
   Trash2,
   Paperclip,
+  Zap,
+  Moon,
 } from "lucide-react";
 
 type Priority = "critical" | "important" | "normal" | "low";
@@ -95,7 +95,6 @@ interface DailyReview {
 }
 
 const today = format(new Date(), "yyyy-MM-dd");
-const todayDisplay = format(new Date(), "EEEE, d MMMM yyyy");
 
 const severityColors: Record<string, { bg: string; text: string; border: string }> = {
   critical: { bg: "bg-red-50", text: "text-red-700", border: "border-red-200" },
@@ -104,14 +103,14 @@ const severityColors: Record<string, { bg: string; text: string; border: string 
   low: { bg: "bg-gray-50", text: "text-gray-600", border: "border-gray-200" },
 };
 
-const statusColors: Record<string, string> = {
-  inbox: "bg-gray-100 text-gray-700",
-  planned: "bg-blue-100 text-blue-700",
-  in_progress: "bg-amber-100 text-amber-700",
-  blocked: "bg-red-100 text-red-700",
-  waiting: "bg-orange-100 text-orange-700",
-  done: "bg-emerald-100 text-emerald-700",
-  cancelled: "bg-gray-200 text-gray-500",
+const statusConfig: Record<string, { color: string; icon: typeof Play }> = {
+  inbox: { color: "bg-gray-100 text-gray-700", icon: Inbox },
+  planned: { color: "bg-blue-100 text-blue-700", icon: Target },
+  in_progress: { color: "bg-amber-100 text-amber-700", icon: Play },
+  blocked: { color: "bg-red-100 text-red-700", icon: Ban },
+  waiting: { color: "bg-orange-100 text-orange-700", icon: Clock },
+  done: { color: "bg-emerald-100 text-emerald-700", icon: CheckCircle2 },
+  cancelled: { color: "bg-gray-200 text-gray-500", icon: X },
 };
 
 function SeverityBadge({ severity }: { severity: string }) {
@@ -127,9 +126,10 @@ function SeverityBadge({ severity }: { severity: string }) {
 }
 
 function StatusBadge({ status }: { status: string }) {
+  const cfg = statusConfig[status] || statusConfig.inbox;
   return (
     <span
-      className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider ${statusColors[status] || statusColors.inbox}`}
+      className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider ${cfg.color}`}
       data-testid={`badge-status-${status}`}
     >
       {status.replace("_", " ")}
@@ -147,16 +147,8 @@ function PriorityDot({ priority }: { priority: Priority }) {
   return <div className={`w-2 h-2 rounded-full ${colors[priority] || colors.normal} shrink-0`} />;
 }
 
-const navTabs = [
-  { label: "Today", path: "/my-tool", icon: Target },
-  { label: "Week", path: "/my-tool/week", icon: CalendarDays },
-  { label: "Backlog", path: "/my-tool/backlog", icon: ListTodo },
-  { label: "Settings", path: "/my-tool/settings", icon: Settings },
-];
-
 export default function MyToolTodayPage() {
   const { user } = useAuth();
-  const [location] = useLocation();
   const [, setLocation] = useLocation();
 
   const [prioritiesOpen, setPrioritiesOpen] = useState(true);
@@ -377,266 +369,576 @@ export default function MyToolTodayPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-[1400px] mx-auto" data-testid="mytool-today-page">
-      {/* 1. Header */}
-      <header className="space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-50" data-testid="text-page-title">
-              My Tool
-            </h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1" data-testid="text-today-date">
-              {todayDisplay}
-            </p>
-          </div>
-          {user && (
-            <p className="text-sm text-gray-400" data-testid="text-user-greeting">
-              Hey, {user.name}
-            </p>
-          )}
-        </div>
-        <nav className="flex gap-1 border-b border-gray-200 dark:border-gray-700" data-testid="nav-tabs">
-          {navTabs.map((tab) => {
-            const isActive = location === tab.path || (tab.path === "/my-tool" && location === "/my-tool");
-            return (
-              <Link
-                key={tab.path}
-                href={tab.path}
-                data-testid={`nav-tab-${tab.label.toLowerCase()}`}
-                className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-                  isActive
-                    ? "border-blue-600 text-blue-600"
-                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                }`}
-              >
-                <tab.icon className="h-4 w-4" />
-                {tab.label}
-              </Link>
-            );
-          })}
-        </nav>
-      </header>
+    <div className="max-w-[1400px] mx-auto space-y-5" data-testid="mytool-today-page">
+      <MyToolNav />
 
-      {/* 2. Company Priorities */}
-      <Card data-testid="card-company-priorities">
-        <CardHeader className="pb-2">
-          <div className="flex items-center justify-between">
-            <button
-              className="flex items-center gap-2 text-left"
-              onClick={() => setPrioritiesOpen(!prioritiesOpen)}
-              data-testid="toggle-company-priorities"
+      {/* Quick stats strip */}
+      <div className="flex flex-wrap items-center gap-3" data-testid="stats-strip">
+        <div className="flex items-center gap-1.5 text-sm">
+          <div className="w-2 h-2 rounded-full bg-blue-500" />
+          <span className="text-gray-600 dark:text-gray-400">Planned</span>
+          <span className="font-semibold text-gray-900 dark:text-gray-100">{plannedTasks.length}</span>
+        </div>
+        <div className="w-px h-4 bg-gray-200 dark:bg-gray-700" />
+        <div className="flex items-center gap-1.5 text-sm">
+          <div className="w-2 h-2 rounded-full bg-amber-500" />
+          <span className="text-gray-600 dark:text-gray-400">In Progress</span>
+          <span className="font-semibold text-gray-900 dark:text-gray-100">{inProgressTasks.length}</span>
+        </div>
+        <div className="w-px h-4 bg-gray-200 dark:bg-gray-700" />
+        <div className="flex items-center gap-1.5 text-sm">
+          <div className="w-2 h-2 rounded-full bg-red-500" />
+          <span className="text-gray-600 dark:text-gray-400">Blocked</span>
+          <span className="font-semibold text-gray-900 dark:text-gray-100">{blockedWaitingTasks.length}</span>
+        </div>
+        <div className="w-px h-4 bg-gray-200 dark:bg-gray-700" />
+        <div className="flex items-center gap-1.5 text-sm">
+          <div className="w-2 h-2 rounded-full bg-emerald-500" />
+          <span className="text-gray-600 dark:text-gray-400">Done</span>
+          <span className="font-semibold text-gray-900 dark:text-gray-100">{doneTasks.length}</span>
+        </div>
+      </div>
+
+      {/* Two-column layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        {/* LEFT COLUMN - Main workflow (2/3 width) */}
+        <div className="lg:col-span-2 space-y-5">
+          {/* Quick Add */}
+          <div className="flex gap-2" data-testid="quick-add-section">
+            <Input
+              placeholder="Quick add a task for today... (press Enter)"
+              value={quickAddText}
+              onChange={(e) => setQuickAddText(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleQuickAdd()}
+              className="text-sm h-10"
+              data-testid="input-quick-add"
+            />
+            <Button
+              onClick={handleQuickAdd}
+              disabled={!quickAddText.trim() || createTaskMutation.isPending}
+              className="h-10 px-4"
+              data-testid="button-quick-add"
             >
-              {prioritiesOpen ? <ChevronDown className="h-4 w-4 text-gray-400" /> : <ChevronRight className="h-4 w-4 text-gray-400" />}
-              <CardTitle className="text-base">Company Priorities</CardTitle>
-              <Badge variant="secondary" className="text-xs" data-testid="badge-priorities-count">
-                {totalPriorityCount}
-              </Badge>
-            </button>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs px-2"
-                onClick={() => setAddPriorityOpen(!addPriorityOpen)}
-                data-testid="button-add-priority"
-              >
-                <Plus className="h-3 w-3 mr-1" />
-                Add Priority
-              </Button>
-              <Filter className="h-3.5 w-3.5 text-gray-400" />
-              <select
-                value={horizon}
-                onChange={(e) => setHorizon(e.target.value as Horizon)}
-                className="text-xs border border-gray-200 rounded-md px-2 py-1 bg-white dark:bg-gray-900 dark:border-gray-700"
-                data-testid="select-horizon"
-              >
-                <option value="today">Today</option>
-                <option value="week">This Week</option>
-                <option value="month">This Month</option>
-                <option value="quarter">This Quarter</option>
-              </select>
-            </div>
+              <Plus className="h-4 w-4 mr-1" />
+              Add
+            </Button>
           </div>
-        </CardHeader>
-        {prioritiesOpen && (
-          <CardContent className="pt-0">
-            {addPriorityOpen && (
-              <div className="mb-4 p-3 rounded-lg border border-blue-200 bg-blue-50/30 dark:border-blue-900 dark:bg-blue-950/20 space-y-3" data-testid="add-priority-form">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <Input
-                    placeholder="Priority title..."
-                    value={newPriority.title}
-                    onChange={(e) => setNewPriority(p => ({ ...p, title: e.target.value }))}
-                    className="h-8 text-sm"
-                    data-testid="input-priority-title"
-                    onKeyDown={(e) => { if (e.key === "Enter") handleAddPriority(); }}
+
+          {/* In Progress - most important, top of flow */}
+          {inProgressTasks.length > 0 && (
+            <section data-testid="section-in-progress">
+              <div className="flex items-center gap-2 mb-2">
+                <Zap className="h-4 w-4 text-amber-500" />
+                <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">In Progress</h3>
+                <Badge variant="secondary" className="text-xs">{inProgressTasks.length}</Badge>
+              </div>
+              <div className="space-y-1.5">
+                {inProgressTasks.map((task) => (
+                  <TaskRow
+                    key={task.id}
+                    task={task}
+                    onStatusChange={handleStatusChange}
+                    onUnblock={handleUnblock}
+                    onEdit={(t) => { setEditingTaskId(t.id); setEditingTitle(t.title); }}
+                    editingTaskId={editingTaskId}
+                    editingTitle={editingTitle}
+                    setEditingTitle={setEditingTitle}
+                    onInlineEdit={handleInlineEdit}
+                    setEditingTaskId={setEditingTaskId}
+                    highlight="amber"
                   />
-                  <select
-                    value={newPriority.department}
-                    onChange={(e) => setNewPriority(p => ({ ...p, department: e.target.value }))}
-                    className="h-8 text-xs border border-gray-200 rounded-md px-2 bg-white dark:bg-gray-900 dark:border-gray-700"
-                    data-testid="select-priority-department"
-                  >
-                    <option value="">Select Department...</option>
-                    {DEPARTMENTS.map(d => (
-                      <option key={d} value={d}>{d}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <select
-                    value={newPriority.severity}
-                    onChange={(e) => setNewPriority(p => ({ ...p, severity: e.target.value as any }))}
-                    className="h-8 text-xs border border-gray-200 rounded-md px-2 bg-white dark:bg-gray-900 dark:border-gray-700"
-                    data-testid="select-priority-severity"
-                  >
-                    <option value="normal">Normal</option>
-                    <option value="important">Important</option>
-                    <option value="critical">Critical</option>
-                  </select>
-                  <select
-                    value={newPriority.linkedProjectName}
-                    onChange={(e) => setNewPriority(p => ({ ...p, linkedProjectName: e.target.value }))}
-                    className="h-8 text-xs border border-gray-200 rounded-md px-2 bg-white dark:bg-gray-900 dark:border-gray-700 max-w-[200px]"
-                    data-testid="select-priority-project"
-                  >
-                    <option value="">Link to project (optional)</option>
-                    {allProjects.map(p => (
-                      <option key={p.project_name} value={p.project_name}>
-                        {p.project_name.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
-                      </option>
-                    ))}
-                  </select>
-                  <div className="flex gap-1 ml-auto">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 text-xs"
-                      onClick={() => { setAddPriorityOpen(false); setNewPriority({ title: "", department: "", severity: "normal", linkedProjectName: "" }); }}
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      size="sm"
-                      className="h-7 text-xs"
-                      onClick={handleAddPriority}
-                      disabled={!newPriority.title.trim() || createPriorityMutation.isPending}
-                      data-testid="button-save-priority"
-                    >
-                      <Plus className="h-3 w-3 mr-1" />
-                      Add
-                    </Button>
-                  </div>
-                </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Blocked / Waiting */}
+          {blockedWaitingTasks.length > 0 && (
+            <section data-testid="section-blocked">
+              <div className="flex items-center gap-2 mb-2">
+                <AlertCircle className="h-4 w-4 text-red-500" />
+                <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">Blocked / Waiting</h3>
+                <Badge variant="secondary" className="text-xs">{blockedWaitingTasks.length}</Badge>
+              </div>
+              <div className="space-y-1.5">
+                {blockedWaitingTasks.map((task) => (
+                  <TaskRow
+                    key={task.id}
+                    task={task}
+                    onStatusChange={handleStatusChange}
+                    onUnblock={handleUnblock}
+                    onEdit={(t) => { setEditingTaskId(t.id); setEditingTitle(t.title); }}
+                    editingTaskId={editingTaskId}
+                    editingTitle={editingTitle}
+                    setEditingTitle={setEditingTitle}
+                    onInlineEdit={handleInlineEdit}
+                    setEditingTaskId={setEditingTaskId}
+                    highlight="red"
+                  />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Today's Plan */}
+          <section data-testid="card-todays-plan">
+            <div className="flex items-center gap-2 mb-2">
+              <Target className="h-4 w-4 text-blue-600" />
+              <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">Today's Plan</h3>
+              <Badge variant="secondary" className="text-xs" data-testid="badge-planned-count">
+                {plannedTasks.length}
+              </Badge>
+            </div>
+
+            {plannedTasks.length === 0 ? (
+              <Card className="border-dashed" data-testid="empty-planned">
+                <CardContent className="py-8 text-center">
+                  <Target className="h-8 w-8 text-gray-300 mx-auto mb-2" />
+                  <p className="text-sm text-gray-400">No tasks planned for today.</p>
+                  <p className="text-xs text-gray-400 mt-1">Type in the box above to add your first task.</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-1.5">
+                {plannedTasks.map((task, i) => (
+                  <TaskRow
+                    key={task.id}
+                    task={task}
+                    index={i + 1}
+                    onStatusChange={handleStatusChange}
+                    onUnblock={handleUnblock}
+                    onEdit={(t) => { setEditingTaskId(t.id); setEditingTitle(t.title); }}
+                    editingTaskId={editingTaskId}
+                    editingTitle={editingTitle}
+                    setEditingTitle={setEditingTitle}
+                    onInlineEdit={handleInlineEdit}
+                    setEditingTaskId={setEditingTaskId}
+                  />
+                ))}
               </div>
             )}
-            {totalPriorityCount === 0 && !addPriorityOpen ? (
-              <p className="text-sm text-gray-400 py-4 text-center" data-testid="empty-priorities">
-                No priorities for this horizon. Click "Add Priority" to create one, or escalate projects/tasks to "Highest".
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {escalatedItems.length > 0 && (
+          </section>
+
+          {/* Inbox */}
+          {inboxTasks.length > 0 && (
+            <section data-testid="section-inbox">
+              <div className="flex items-center gap-2 mb-2">
+                <Inbox className="h-4 w-4 text-gray-500" />
+                <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">Inbox</h3>
+                <Badge variant="secondary" className="text-xs">{inboxTasks.length}</Badge>
+              </div>
+              <div className="space-y-1.5">
+                {inboxTasks.map((task) => (
+                  <TaskRow
+                    key={task.id}
+                    task={task}
+                    onStatusChange={handleStatusChange}
+                    onUnblock={handleUnblock}
+                    onEdit={(t) => { setEditingTaskId(t.id); setEditingTitle(t.title); }}
+                    editingTaskId={editingTaskId}
+                    editingTitle={editingTitle}
+                    setEditingTitle={setEditingTitle}
+                    onInlineEdit={handleInlineEdit}
+                    setEditingTaskId={setEditingTaskId}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Done (collapsed) */}
+          {doneTasks.length > 0 && (
+            <section data-testid="section-done">
+              <button
+                className="flex items-center gap-2 mb-2"
+                onClick={() => setDoneCollapsed(!doneCollapsed)}
+                data-testid="toggle-done-lane"
+              >
+                {doneCollapsed ? <ChevronRight className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
+                <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-400">Done</h3>
+                <Badge variant="secondary" className="text-xs" data-testid="badge-done-count">{doneTasks.length}</Badge>
+              </button>
+              {!doneCollapsed && (
+                <div className="space-y-1.5">
+                  {doneTasks.map((task) => (
+                    <TaskRow
+                      key={task.id}
+                      task={task}
+                      onStatusChange={handleStatusChange}
+                      onEdit={(t) => { setEditingTaskId(t.id); setEditingTitle(t.title); }}
+                      editingTaskId={editingTaskId}
+                      editingTitle={editingTitle}
+                      setEditingTitle={setEditingTitle}
+                      onInlineEdit={handleInlineEdit}
+                      setEditingTaskId={setEditingTaskId}
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* End-of-Day Wrap */}
+          <Card data-testid="card-daily-wrap">
+            <CardHeader className="pb-2">
+              <button
+                className="flex items-center gap-2 text-left w-full"
+                onClick={() => {
+                  setWrapOpen(!wrapOpen);
+                  if (!wrapOpen && dailyReview) {
+                    setReviewForm({
+                      wentWell: dailyReview.wentWell || "",
+                      movedForward: dailyReview.movedForward || "",
+                      blocked: dailyReview.blocked || "",
+                      notes: dailyReview.notes || "",
+                    });
+                  }
+                }}
+                data-testid="toggle-daily-wrap"
+              >
+                {wrapOpen ? <ChevronDown className="h-4 w-4 text-gray-400" /> : <ChevronRight className="h-4 w-4 text-gray-400" />}
+                <Moon className="h-4 w-4 text-indigo-500" />
+                <CardTitle className="text-sm font-semibold">End-of-Day Wrap</CardTitle>
+                {dailyReview && (
+                  <Badge variant="outline" className="text-xs text-emerald-600 border-emerald-300 ml-2">
+                    Saved
+                  </Badge>
+                )}
+              </button>
+            </CardHeader>
+            {wrapOpen && (
+              <CardContent className="space-y-3 pt-0">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-medium text-gray-500 mb-1 block">What went well?</label>
+                    <Textarea
+                      value={reviewForm.wentWell}
+                      onChange={(e) => setReviewForm((p) => ({ ...p, wentWell: e.target.value }))}
+                      placeholder="Wins, progress..."
+                      className="text-sm min-h-[60px]"
+                      data-testid="textarea-went-well"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-500 mb-1 block">What moved forward?</label>
+                    <Textarea
+                      value={reviewForm.movedForward}
+                      onChange={(e) => setReviewForm((p) => ({ ...p, movedForward: e.target.value }))}
+                      placeholder="Projects advanced..."
+                      className="text-sm min-h-[60px]"
+                      data-testid="textarea-moved-forward"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-500 mb-1 block">What's blocked?</label>
+                    <Textarea
+                      value={reviewForm.blocked}
+                      onChange={(e) => setReviewForm((p) => ({ ...p, blocked: e.target.value }))}
+                      placeholder="Blockers, waiting on..."
+                      className="text-sm min-h-[60px]"
+                      data-testid="textarea-blocked"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-500 mb-1 block">Notes</label>
+                    <Textarea
+                      value={reviewForm.notes}
+                      onChange={(e) => setReviewForm((p) => ({ ...p, notes: e.target.value }))}
+                      placeholder="Anything else..."
+                      className="text-sm min-h-[60px]"
+                      data-testid="textarea-notes"
+                    />
+                  </div>
+                </div>
+                <Button
+                  onClick={handleSaveReview}
+                  disabled={saveReviewMutation.isPending}
+                  size="sm"
+                  data-testid="button-save-review"
+                >
+                  {saveReviewMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
+                  Save Review
+                </Button>
+              </CardContent>
+            )}
+          </Card>
+        </div>
+
+        {/* RIGHT COLUMN - Context sidebar (1/3 width) */}
+        <div className="space-y-5">
+          {/* Time Blocks */}
+          <Card data-testid="card-time-blocks">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-violet-600" />
+                  Time Blocks
+                </CardTitle>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0"
+                  onClick={() => setAddBlockOpen(!addBlockOpen)}
+                  data-testid="button-add-block"
+                >
+                  {addBlockOpen ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-2 pt-0">
+              {addBlockOpen && (
+                <div className="space-y-2 p-2.5 bg-violet-50/50 dark:bg-violet-950/20 rounded-lg border border-violet-100 dark:border-violet-900" data-testid="form-add-block">
+                  <div className="flex gap-2">
+                    <Input
+                      type="time"
+                      value={blockStart}
+                      onChange={(e) => setBlockStart(e.target.value)}
+                      className="text-xs h-8"
+                      data-testid="input-block-start"
+                    />
+                    <Input
+                      type="time"
+                      value={blockEnd}
+                      onChange={(e) => setBlockEnd(e.target.value)}
+                      className="text-xs h-8"
+                      data-testid="input-block-end"
+                    />
+                  </div>
+                  <Input
+                    value={blockLabel}
+                    onChange={(e) => setBlockLabel(e.target.value)}
+                    className="text-xs h-8"
+                    placeholder="What are you working on?"
+                    onKeyDown={(e) => e.key === "Enter" && handleAddBlock()}
+                    data-testid="input-block-label"
+                  />
+                  <Button
+                    size="sm"
+                    className="w-full h-7 text-xs"
+                    onClick={handleAddBlock}
+                    disabled={!blockStart || !blockEnd || !blockLabel.trim() || createBlockMutation.isPending}
+                    data-testid="button-save-block"
+                  >
+                    Add Block
+                  </Button>
+                </div>
+              )}
+
+              {timeblocks.length === 0 && !addBlockOpen ? (
+                <div className="text-center py-4" data-testid="empty-timeblocks">
+                  <Clock className="h-6 w-6 text-gray-300 mx-auto mb-1.5" />
+                  <p className="text-xs text-gray-400">No time blocks yet.</p>
+                  <button
+                    onClick={() => setAddBlockOpen(true)}
+                    className="text-xs text-blue-600 hover:underline mt-1"
+                    data-testid="link-add-first-block"
+                  >
+                    Add your first block
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  {timeblocks
+                    .sort((a, b) => a.startTime.localeCompare(b.startTime))
+                    .map((block) => (
+                      <div
+                        key={block.id}
+                        className="flex items-center gap-2 px-2.5 py-2 rounded-md bg-violet-50/50 dark:bg-violet-950/20 border border-violet-100/50 dark:border-violet-900/50"
+                        data-testid={`timeblock-${block.id}`}
+                      >
+                        <span className="text-[11px] font-mono text-violet-600 dark:text-violet-400 shrink-0">
+                          {block.startTime}–{block.endTime}
+                        </span>
+                        <span className="flex-1 text-xs text-gray-700 dark:text-gray-300 truncate">{block.label}</span>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Company Priorities */}
+          <Card data-testid="card-company-priorities">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <button
+                  className="flex items-center gap-2 text-left"
+                  onClick={() => setPrioritiesOpen(!prioritiesOpen)}
+                  data-testid="toggle-company-priorities"
+                >
+                  {prioritiesOpen ? <ChevronDown className="h-3.5 w-3.5 text-gray-400" /> : <ChevronRight className="h-3.5 w-3.5 text-gray-400" />}
+                  <CardTitle className="text-sm font-semibold">Priorities</CardTitle>
+                  <Badge variant="secondary" className="text-xs" data-testid="badge-priorities-count">
+                    {totalPriorityCount}
+                  </Badge>
+                </button>
+                <div className="flex items-center gap-1.5">
+                  <select
+                    value={horizon}
+                    onChange={(e) => setHorizon(e.target.value as Horizon)}
+                    className="text-[11px] border border-gray-200 rounded px-1.5 py-0.5 bg-white dark:bg-gray-900 dark:border-gray-700"
+                    data-testid="select-horizon"
+                  >
+                    <option value="today">Today</option>
+                    <option value="week">Week</option>
+                    <option value="month">Month</option>
+                    <option value="quarter">Quarter</option>
+                  </select>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-7 p-0"
+                    onClick={() => setAddPriorityOpen(!addPriorityOpen)}
+                    data-testid="button-add-priority"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            {prioritiesOpen && (
+              <CardContent className="pt-0 space-y-2">
+                {addPriorityOpen && (
+                  <div className="p-2.5 rounded-lg border border-blue-200 bg-blue-50/30 dark:border-blue-900 dark:bg-blue-950/20 space-y-2" data-testid="add-priority-form">
+                    <Input
+                      placeholder="Priority title..."
+                      value={newPriority.title}
+                      onChange={(e) => setNewPriority(p => ({ ...p, title: e.target.value }))}
+                      className="h-8 text-xs"
+                      data-testid="input-priority-title"
+                      onKeyDown={(e) => { if (e.key === "Enter") handleAddPriority(); }}
+                    />
+                    <div className="flex gap-2">
+                      <select
+                        value={newPriority.severity}
+                        onChange={(e) => setNewPriority(p => ({ ...p, severity: e.target.value as any }))}
+                        className="h-7 text-[11px] border border-gray-200 rounded px-1.5 bg-white dark:bg-gray-900 dark:border-gray-700 flex-1"
+                        data-testid="select-priority-severity"
+                      >
+                        <option value="normal">Normal</option>
+                        <option value="important">Important</option>
+                        <option value="critical">Critical</option>
+                      </select>
+                      <select
+                        value={newPriority.department}
+                        onChange={(e) => setNewPriority(p => ({ ...p, department: e.target.value }))}
+                        className="h-7 text-[11px] border border-gray-200 rounded px-1.5 bg-white dark:bg-gray-900 dark:border-gray-700 flex-1"
+                        data-testid="select-priority-department"
+                      >
+                        <option value="">Dept...</option>
+                        {DEPARTMENTS.map(d => (
+                          <option key={d} value={d}>{d}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <select
+                      value={newPriority.linkedProjectName}
+                      onChange={(e) => setNewPriority(p => ({ ...p, linkedProjectName: e.target.value }))}
+                      className="h-7 text-[11px] border border-gray-200 rounded px-1.5 bg-white dark:bg-gray-900 dark:border-gray-700 w-full"
+                      data-testid="select-priority-project"
+                    >
+                      <option value="">Link to project (optional)</option>
+                      {allProjects.map(p => (
+                        <option key={p.project_name} value={p.project_name}>
+                          {p.project_name.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="flex gap-1 justify-end">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => { setAddPriorityOpen(false); setNewPriority({ title: "", department: "", severity: "normal", linkedProjectName: "" }); }}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={handleAddPriority}
+                        disabled={!newPriority.title.trim() || createPriorityMutation.isPending}
+                        data-testid="button-save-priority"
+                      >
+                        Add
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {totalPriorityCount === 0 && !addPriorityOpen ? (
+                  <p className="text-xs text-gray-400 py-3 text-center" data-testid="empty-priorities">
+                    No priorities set.
+                  </p>
+                ) : (
                   <>
-                    <p className="text-[10px] uppercase tracking-wider font-semibold text-red-500 mt-1 mb-1 flex items-center gap-1">
-                      <Flag className="h-3 w-3" /> Escalated to Company Level
-                    </p>
                     {escalatedItems.map((item) => (
                       <div
                         key={item.id}
-                        className="flex items-center gap-3 p-3 rounded-lg border border-red-100 bg-red-50/30 dark:border-red-900 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
+                        className="flex items-start gap-2 p-2 rounded-md border border-red-100 bg-red-50/30 dark:border-red-900 dark:bg-red-950/20"
                         data-testid={`escalated-item-${item.id}`}
                       >
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-red-100 text-red-700 border border-red-200">
-                          {item.type === 'project' ? 'Project' : 'Task'}
-                        </span>
-                        <span className="flex-1 text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
-                          {item.title}
-                        </span>
-                        {item.status && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-medium">
-                            {item.status}
-                          </span>
-                        )}
-                        <Link
-                          href={`/project/${encodeURIComponent(item.projectName)}`}
-                          className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1 shrink-0"
-                        >
-                          <ExternalLink className="h-3 w-3" />
-                          {item.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
-                        </Link>
+                        <Flag className="h-3 w-3 text-red-500 mt-0.5 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium text-gray-800 dark:text-gray-200 truncate">{item.title}</p>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className="text-[10px] text-red-600 font-medium uppercase">{item.type}</span>
+                            {item.status && <span className="text-[10px] text-gray-500">{item.status}</span>}
+                          </div>
+                        </div>
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-7 text-xs px-2 shrink-0"
+                          className="h-6 text-[10px] px-1.5 shrink-0"
                           onClick={() => setLocation(`/project/${encodeURIComponent(item.projectName)}`)}
                         >
-                          Open
+                          <ExternalLink className="h-3 w-3" />
                         </Button>
                       </div>
                     ))}
-                  </>
-                )}
-                {activePriorities.length > 0 && (
-                  <>
-                    {escalatedItems.length > 0 && (
-                      <p className="text-[10px] uppercase tracking-wider font-semibold text-gray-400 mt-3 mb-1">
-                        Manual Priorities
-                      </p>
-                    )}
                     {activePriorities.map((p) => (
                       <div
                         key={p.id}
-                        className="p-3 rounded-lg border border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+                        className="p-2 rounded-md border border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
                         data-testid={`priority-item-${p.id}`}
                       >
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-start gap-2">
                           <SeverityBadge severity={p.severity} />
-                          <span className="flex-1 text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
-                            {p.title}
-                          </span>
-                          {p.department && (
-                            <Badge variant="outline" className="text-[10px] shrink-0 border-indigo-200 text-indigo-700 bg-indigo-50 dark:bg-indigo-950 dark:text-indigo-300 dark:border-indigo-800" data-testid={`badge-department-${p.id}`}>
-                              {p.department}
-                            </Badge>
-                          )}
-                          {p.linkedProjectName && (
-                            <Link
-                              href={`/project/${encodeURIComponent(p.linkedProjectName)}`}
-                              className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1 shrink-0"
-                              data-testid={`link-priority-project-${p.id}`}
-                            >
-                              <ExternalLink className="h-3 w-3" />
-                              {p.linkedProjectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
-                            </Link>
-                          )}
-                          <div className="flex gap-1 shrink-0">
-                            {p.linkedProjectName && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 text-xs px-2"
-                                onClick={() => setLocation(`/project/${encodeURIComponent(p.linkedProjectName!)}`)}
-                                data-testid={`button-open-project-${p.id}`}
-                              >
-                                Open
-                              </Button>
-                            )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium text-gray-800 dark:text-gray-200 truncate">{p.title}</p>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              {p.department && (
+                                <span className="text-[10px] text-indigo-600">{p.department}</span>
+                              )}
+                              {p.linkedProjectName && (
+                                <Link
+                                  href={`/project/${encodeURIComponent(p.linkedProjectName)}`}
+                                  className="text-[10px] text-blue-600 hover:underline truncate"
+                                  data-testid={`link-priority-project-${p.id}`}
+                                >
+                                  {p.linkedProjectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
+                                </Link>
+                              )}
+                            </div>
+                            <EmailLinksWidget priorityId={p.id} />
+                          </div>
+                          <div className="flex gap-0.5 shrink-0">
                             <Button
-                              variant="outline"
+                              variant="ghost"
                               size="sm"
-                              className="h-7 text-xs px-2"
+                              className="h-6 w-6 p-0 text-blue-600"
                               onClick={() => handleConvertToTask(p)}
                               disabled={createTaskMutation.isPending}
+                              title="Create task from priority"
                               data-testid={`button-convert-task-${p.id}`}
                             >
-                              <Plus className="h-3 w-3 mr-1" />
-                              Task
+                              <Plus className="h-3 w-3" />
                             </Button>
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-7 text-xs px-1.5 text-gray-400 hover:text-red-500"
+                              className="h-6 w-6 p-0 text-gray-400 hover:text-red-500"
                               onClick={() => deletePriorityMutation.mutate(p.id)}
                               disabled={deletePriorityMutation.isPending}
                               data-testid={`button-delete-priority-${p.id}`}
@@ -645,615 +947,144 @@ export default function MyToolTodayPage() {
                             </Button>
                           </div>
                         </div>
-                        <div className="mt-1.5 ml-6">
-                          <EmailLinksWidget priorityId={p.id} />
-                        </div>
                       </div>
                     ))}
                   </>
                 )}
-              </div>
+              </CardContent>
             )}
-          </CardContent>
-        )}
-      </Card>
-
-      {/* 3. Today's Plan */}
-      <Card data-testid="card-todays-plan">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Target className="h-4 w-4 text-blue-600" />
-            Today's Plan
-            <Badge variant="secondary" className="text-xs" data-testid="badge-planned-count">
-              {plannedTasks.length}
-            </Badge>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex gap-2">
-            <Input
-              placeholder="Quick add a task for today… (press Enter)"
-              value={quickAddText}
-              onChange={(e) => setQuickAddText(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleQuickAdd()}
-              className="text-sm"
-              data-testid="input-quick-add"
-            />
-            <Button
-              variant="default"
-              size="sm"
-              onClick={handleQuickAdd}
-              disabled={!quickAddText.trim() || createTaskMutation.isPending}
-              data-testid="button-quick-add"
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
-          </div>
-
-          {plannedTasks.length === 0 ? (
-            <div className="text-center py-6" data-testid="empty-planned">
-              <ListTodo className="h-8 w-8 text-gray-300 mx-auto mb-2" />
-              <p className="text-sm text-gray-400">No tasks planned for today.</p>
-              <p className="text-xs text-gray-400 mt-1">Add your first task above to get started.</p>
-            </div>
-          ) : (
-            <div className="space-y-1">
-              {plannedTasks.map((task, i) => (
-                <div
-                  key={task.id}
-                  className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/50 group transition-colors"
-                  data-testid={`planned-task-${task.id}`}
-                >
-                  <GripVertical className="h-4 w-4 text-gray-300 cursor-grab shrink-0" data-testid={`drag-handle-${task.id}`} />
-                  <span className="text-xs text-gray-400 font-mono w-5 shrink-0">{i + 1}</span>
-                  <PriorityDot priority={task.priority} />
-                  {editingTaskId === task.id ? (
-                    <Input
-                      value={editingTitle}
-                      onChange={(e) => setEditingTitle(e.target.value)}
-                      onBlur={() => handleInlineEdit(task.id)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") handleInlineEdit(task.id);
-                        if (e.key === "Escape") setEditingTaskId(null);
-                      }}
-                      className="h-7 text-sm flex-1"
-                      autoFocus
-                      data-testid={`input-edit-task-${task.id}`}
-                    />
-                  ) : (
-                    <span
-                      className={`flex-1 text-sm cursor-pointer ${task.status === "done" ? "line-through text-gray-400" : "text-gray-800 dark:text-gray-200"}`}
-                      onClick={() => {
-                        setEditingTaskId(task.id);
-                        setEditingTitle(task.title);
-                      }}
-                      data-testid={`text-task-title-${task.id}`}
-                    >
-                      {task.title}
-                    </span>
-                  )}
-                  <StatusBadge status={task.status} />
-                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 w-6 p-0 text-amber-600 hover:text-amber-700 hover:bg-amber-50"
-                      onClick={() => handleStatusChange(task.id, "in_progress")}
-                      title="Start"
-                      data-testid={`button-start-${task.id}`}
-                    >
-                      <Play className="h-3 w-3" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 w-6 p-0 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
-                      onClick={() => handleStatusChange(task.id, "done")}
-                      title="Done"
-                      data-testid={`button-done-${task.id}`}
-                    >
-                      <CheckCircle2 className="h-3 w-3" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 w-6 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
-                      onClick={() => handleStatusChange(task.id, "blocked")}
-                      title="Block"
-                      data-testid={`button-block-${task.id}`}
-                    >
-                      <Ban className="h-3 w-3" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* 4. Time Blocks */}
-      <Card data-testid="card-time-blocks">
-        <CardHeader className="pb-2">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Clock className="h-4 w-4 text-violet-600" />
-              Time Blocks
-            </CardTitle>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 text-xs"
-              onClick={() => setAddBlockOpen(!addBlockOpen)}
-              data-testid="button-add-block"
-            >
-              {addBlockOpen ? <X className="h-3 w-3 mr-1" /> : <Plus className="h-3 w-3 mr-1" />}
-              {addBlockOpen ? "Cancel" : "Add Block"}
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {addBlockOpen && (
-            <div className="flex flex-col sm:flex-row gap-2 p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg" data-testid="form-add-block">
-              <Input
-                type="time"
-                value={blockStart}
-                onChange={(e) => setBlockStart(e.target.value)}
-                className="text-sm w-full sm:w-28"
-                placeholder="Start"
-                data-testid="input-block-start"
-              />
-              <Input
-                type="time"
-                value={blockEnd}
-                onChange={(e) => setBlockEnd(e.target.value)}
-                className="text-sm w-full sm:w-28"
-                placeholder="End"
-                data-testid="input-block-end"
-              />
-              <Input
-                value={blockLabel}
-                onChange={(e) => setBlockLabel(e.target.value)}
-                className="text-sm flex-1"
-                placeholder="What are you working on?"
-                onKeyDown={(e) => e.key === "Enter" && handleAddBlock()}
-                data-testid="input-block-label"
-              />
-              <Button
-                size="sm"
-                onClick={handleAddBlock}
-                disabled={!blockStart || !blockEnd || !blockLabel.trim() || createBlockMutation.isPending}
-                data-testid="button-save-block"
-              >
-                Add
-              </Button>
-            </div>
-          )}
-
-          {timeblocks.length === 0 ? (
-            <div className="text-center py-6" data-testid="empty-timeblocks">
-              <Clock className="h-8 w-8 text-gray-300 mx-auto mb-2" />
-              <p className="text-sm text-gray-400">No time blocks scheduled.</p>
-              <p className="text-xs text-gray-400 mt-1">
-                <button
-                  onClick={() => setAddBlockOpen(true)}
-                  className="text-blue-600 hover:underline"
-                  data-testid="link-add-first-block"
-                >
-                  Add your first time block
-                </button>{" "}
-                to plan your day.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-1">
-              {timeblocks
-                .sort((a, b) => a.startTime.localeCompare(b.startTime))
-                .map((block) => {
-                  const linkedTask = block.taskId ? tasks.find((t) => t.id === block.taskId) : null;
-                  return (
-                    <div
-                      key={block.id}
-                      className="flex items-center gap-3 p-2.5 rounded-lg border border-gray-100 dark:border-gray-800 hover:bg-violet-50/50 dark:hover:bg-violet-900/10 transition-colors"
-                      data-testid={`timeblock-${block.id}`}
-                    >
-                      <div className="flex items-center gap-1 text-xs font-mono text-violet-600 dark:text-violet-400 shrink-0 w-24">
-                        <Clock className="h-3 w-3" />
-                        {block.startTime} – {block.endTime}
-                      </div>
-                      <span className="flex-1 text-sm text-gray-800 dark:text-gray-200">{block.label}</span>
-                      {linkedTask && (
-                        <Badge variant="outline" className="text-xs shrink-0">
-                          {linkedTask.title}
-                        </Badge>
-                      )}
-                    </div>
-                  );
-                })}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* 5. Task Lanes */}
-      <section data-testid="section-task-lanes">
-        <h2 className="text-base font-semibold text-gray-800 dark:text-gray-200 mb-3 flex items-center gap-2">
-          <Inbox className="h-4 w-4" />
-          Task Lanes
-        </h2>
-        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-          {/* Inbox */}
-          <TaskLaneCard
-            title="Inbox"
-            icon={<Inbox className="h-4 w-4 text-gray-500" />}
-            tasks={inboxTasks}
-            emptyMessage="Inbox zero — nicely done!"
-            emptyCta="Capture something"
-            onEmptyCta={() => {
-              setQuickAddText("");
-              document.querySelector<HTMLInputElement>('[data-testid="input-quick-add"]')?.focus();
-            }}
-            onStatusChange={handleStatusChange}
-            onEdit={(task) => {
-              setEditingTaskId(task.id);
-              setEditingTitle(task.title);
-            }}
-            testPrefix="inbox"
-          />
-
-          {/* In Progress */}
-          <TaskLaneCard
-            title="In Progress"
-            icon={<Play className="h-4 w-4 text-amber-500" />}
-            tasks={inProgressTasks}
-            emptyMessage="Nothing in progress."
-            emptyCta="Start a task"
-            onStatusChange={handleStatusChange}
-            onEdit={(task) => {
-              setEditingTaskId(task.id);
-              setEditingTitle(task.title);
-            }}
-            testPrefix="in-progress"
-          />
-
-          {/* Blocked + Waiting */}
-          <TaskLaneCard
-            title="Blocked / Waiting"
-            icon={<AlertCircle className="h-4 w-4 text-red-500" />}
-            tasks={blockedWaitingTasks}
-            emptyMessage="Nothing blocked. Smooth sailing!"
-            onStatusChange={handleStatusChange}
-            onUnblock={handleUnblock}
-            onEdit={(task) => {
-              setEditingTaskId(task.id);
-              setEditingTitle(task.title);
-            }}
-            testPrefix="blocked"
-          />
-
-          {/* Done */}
-          <div>
-            <button
-              className="flex items-center gap-2 w-full text-left mb-2"
-              onClick={() => setDoneCollapsed(!doneCollapsed)}
-              data-testid="toggle-done-lane"
-            >
-              {doneCollapsed ? <ChevronRight className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
-              <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-              <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Done</span>
-              <Badge variant="secondary" className="text-xs ml-auto" data-testid="badge-done-count">
-                {doneTasks.length}
-              </Badge>
-            </button>
-            {!doneCollapsed && (
-              <div className="space-y-1">
-                {doneTasks.length === 0 ? (
-                  <p className="text-xs text-gray-400 text-center py-4" data-testid="empty-done">
-                    Complete a task to see it here.
-                  </p>
-                ) : (
-                  doneTasks.map((task) => (
-                    <TaskCard
-                      key={task.id}
-                      task={task}
-                      onStatusChange={handleStatusChange}
-                      onEdit={() => {
-                        setEditingTaskId(task.id);
-                        setEditingTitle(task.title);
-                      }}
-                      testPrefix="done"
-                    />
-                  ))
-                )}
-              </div>
-            )}
-          </div>
-
-          {cancelledTasks.length > 0 && (
-            <div className="bg-gray-50 dark:bg-gray-900/30 rounded-lg p-3">
-              <button
-                className="flex items-center gap-2 w-full text-left mb-2"
-                onClick={() => setDoneCollapsed(!doneCollapsed)}
-                data-testid="toggle-cancelled-lane"
-              >
-                <ChevronRight className="h-4 w-4 text-gray-400" />
-                <X className="h-4 w-4 text-gray-400" />
-                <span className="text-sm font-semibold text-gray-500">Cancelled</span>
-                <Badge variant="secondary" className="text-xs ml-auto" data-testid="badge-cancelled-count">
-                  {cancelledTasks.length}
-                </Badge>
-              </button>
-            </div>
-          )}
+          </Card>
         </div>
-      </section>
-
-      {/* 6. End-of-Day Wrap */}
-      <Card data-testid="card-daily-wrap">
-        <CardHeader className="pb-2">
-          <button
-            className="flex items-center gap-2 text-left w-full"
-            onClick={() => {
-              setWrapOpen(!wrapOpen);
-              if (!wrapOpen && dailyReview) {
-                setReviewForm({
-                  wentWell: dailyReview.wentWell || "",
-                  movedForward: dailyReview.movedForward || "",
-                  blocked: dailyReview.blocked || "",
-                  notes: dailyReview.notes || "",
-                });
-              }
-            }}
-            data-testid="toggle-daily-wrap"
-          >
-            {wrapOpen ? <ChevronDown className="h-4 w-4 text-gray-400" /> : <ChevronRight className="h-4 w-4 text-gray-400" />}
-            <CardTitle className="text-base">End-of-Day Wrap</CardTitle>
-            {dailyReview && (
-              <Badge variant="outline" className="text-xs text-emerald-600 border-emerald-300 ml-2">
-                Saved
-              </Badge>
-            )}
-          </button>
-        </CardHeader>
-        {wrapOpen && (
-          <CardContent className="space-y-4">
-            <div>
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 block">What went well?</label>
-              <Textarea
-                value={reviewForm.wentWell}
-                onChange={(e) => setReviewForm((p) => ({ ...p, wentWell: e.target.value }))}
-                placeholder="Wins, progress, things that clicked…"
-                className="text-sm min-h-[60px]"
-                data-testid="textarea-went-well"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 block">What moved forward?</label>
-              <Textarea
-                value={reviewForm.movedForward}
-                onChange={(e) => setReviewForm((p) => ({ ...p, movedForward: e.target.value }))}
-                placeholder="Projects advanced, decisions made…"
-                className="text-sm min-h-[60px]"
-                data-testid="textarea-moved-forward"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 block">What's blocked?</label>
-              <Textarea
-                value={reviewForm.blocked}
-                onChange={(e) => setReviewForm((p) => ({ ...p, blocked: e.target.value }))}
-                placeholder="Blockers, waiting on, stuck on…"
-                className="text-sm min-h-[60px]"
-                data-testid="textarea-blocked"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 block">Notes</label>
-              <Textarea
-                value={reviewForm.notes}
-                onChange={(e) => setReviewForm((p) => ({ ...p, notes: e.target.value }))}
-                placeholder="Anything else on your mind…"
-                className="text-sm min-h-[60px]"
-                data-testid="textarea-notes"
-              />
-            </div>
-            <Button
-              onClick={handleSaveReview}
-              disabled={saveReviewMutation.isPending}
-              className="w-full sm:w-auto"
-              data-testid="button-save-review"
-            >
-              {saveReviewMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-              Save Daily Review
-            </Button>
-          </CardContent>
-        )}
-      </Card>
+      </div>
     </div>
   );
 }
 
-function TaskLaneCard({
-  title,
-  icon,
-  tasks,
-  emptyMessage,
-  emptyCta,
-  onEmptyCta,
+function TaskRow({
+  task,
+  index,
   onStatusChange,
   onUnblock,
   onEdit,
-  testPrefix,
+  editingTaskId,
+  editingTitle,
+  setEditingTitle,
+  onInlineEdit,
+  setEditingTaskId,
+  highlight,
 }: {
-  title: string;
-  icon: React.ReactNode;
-  tasks: MyToolTask[];
-  emptyMessage: string;
-  emptyCta?: string;
-  onEmptyCta?: () => void;
+  task: MyToolTask;
+  index?: number;
   onStatusChange: (id: number, status: TaskStatus) => void;
   onUnblock?: (id: number) => void;
   onEdit: (task: MyToolTask) => void;
-  testPrefix: string;
+  editingTaskId: number | null;
+  editingTitle: string;
+  setEditingTitle: (s: string) => void;
+  onInlineEdit: (id: number) => void;
+  setEditingTaskId: (id: number | null) => void;
+  highlight?: "amber" | "red";
 }) {
-  return (
-    <div data-testid={`lane-${testPrefix}`}>
-      <div className="flex items-center gap-2 mb-2">
-        {icon}
-        <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">{title}</span>
-        <Badge variant="secondary" className="text-xs ml-auto" data-testid={`badge-${testPrefix}-count`}>
-          {tasks.length}
-        </Badge>
-      </div>
-      <div className="space-y-1 min-h-[60px]">
-        {tasks.length === 0 ? (
-          <div className="text-center py-4" data-testid={`empty-${testPrefix}`}>
-            <p className="text-xs text-gray-400">{emptyMessage}</p>
-            {emptyCta && onEmptyCta && (
-              <button onClick={onEmptyCta} className="text-xs text-blue-600 hover:underline mt-1" data-testid={`cta-${testPrefix}`}>
-                {emptyCta}
-              </button>
-            )}
-          </div>
-        ) : (
-          tasks.map((task) => (
-            <TaskCard
-              key={task.id}
-              task={task}
-              onStatusChange={onStatusChange}
-              onUnblock={onUnblock}
-              onEdit={() => onEdit(task)}
-              testPrefix={testPrefix}
-            />
-          ))
-        )}
-      </div>
-    </div>
-  );
-}
+  const borderClass = highlight === "amber"
+    ? "border-l-amber-400 border-l-[3px]"
+    : highlight === "red"
+    ? "border-l-red-400 border-l-[3px]"
+    : "";
 
-function TaskCard({
-  task,
-  onStatusChange,
-  onUnblock,
-  onEdit,
-  testPrefix,
-}: {
-  task: MyToolTask;
-  onStatusChange: (id: number, status: TaskStatus) => void;
-  onUnblock?: (id: number) => void;
-  onEdit: () => void;
-  testPrefix: string;
-}) {
   return (
     <div
-      className="p-2.5 rounded-lg border border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors cursor-pointer group"
-      onClick={onEdit}
-      data-testid={`task-card-${testPrefix}-${task.id}`}
+      className={`flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 group transition-colors ${borderClass}`}
+      data-testid={`task-row-${task.id}`}
     >
-      <div className="flex items-start gap-2">
-        <PriorityDot priority={task.priority} />
-        <div className="flex-1 min-w-0">
-          <p className={`text-sm font-medium truncate ${task.status === "done" ? "line-through text-gray-400" : "text-gray-800 dark:text-gray-200"}`}>
-            {task.title}
-          </p>
-          <div className="flex items-center gap-2 mt-1 flex-wrap">
-            {task.projectName && (
-              <Link
-                href={`/project/${encodeURIComponent(task.projectName)}`}
-                className="text-[10px] text-blue-600 hover:underline"
-                onClick={(e) => e.stopPropagation()}
-                data-testid={`link-task-project-${task.id}`}
-              >
-                {task.projectName.replace(/_/g, " ")}
-              </Link>
-            )}
-            {task.tag && (
-              <span className="text-[10px] bg-gray-100 dark:bg-gray-800 text-gray-500 px-1.5 py-0.5 rounded">
-                {task.tag}
-              </span>
-            )}
-          </div>
-          {(task.status === "blocked" || task.status === "waiting") && task.blockedReason && (
-            <p className="text-[10px] text-red-500 mt-1 flex items-center gap-1">
-              <AlertCircle className="h-3 w-3" />
-              {task.blockedReason}
-            </p>
-          )}
-          <div className="mt-1">
-            <EmailLinksWidget taskId={task.id} />
-          </div>
-        </div>
-      </div>
-      <div className="flex items-center gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
-        {task.status !== "in_progress" && task.status !== "done" && (
+      {index !== undefined && (
+        <span className="text-[11px] text-gray-400 font-mono w-4 shrink-0 text-right">{index}</span>
+      )}
+      <PriorityDot priority={task.priority} />
+      {editingTaskId === task.id ? (
+        <Input
+          value={editingTitle}
+          onChange={(e) => setEditingTitle(e.target.value)}
+          onBlur={() => onInlineEdit(task.id)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") onInlineEdit(task.id);
+            if (e.key === "Escape") setEditingTaskId(null);
+          }}
+          className="h-7 text-sm flex-1"
+          autoFocus
+          data-testid={`input-edit-task-${task.id}`}
+        />
+      ) : (
+        <span
+          className={`flex-1 text-sm cursor-pointer truncate ${task.status === "done" ? "line-through text-gray-400" : "text-gray-800 dark:text-gray-200"}`}
+          onClick={() => onEdit(task)}
+          data-testid={`text-task-title-${task.id}`}
+        >
+          {task.title}
+        </span>
+      )}
+      {task.projectName && (
+        <Link
+          href={`/project/${encodeURIComponent(task.projectName)}`}
+          className="text-[10px] text-blue-600 hover:underline shrink-0 max-w-[80px] truncate hidden sm:inline"
+          onClick={(e) => e.stopPropagation()}
+          data-testid={`link-task-project-${task.id}`}
+        >
+          {task.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
+        </Link>
+      )}
+      {(task.status === "blocked" || task.status === "waiting") && task.blockedReason && (
+        <span className="text-[10px] text-red-500 truncate max-w-[100px] hidden sm:inline" title={task.blockedReason}>
+          {task.blockedReason}
+        </span>
+      )}
+      <StatusBadge status={task.status} />
+      <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+        {task.status !== "in_progress" && task.status !== "done" && task.status !== "cancelled" && (
           <Button
             variant="ghost"
             size="sm"
-            className="h-6 text-[10px] px-1.5 text-amber-600"
+            className="h-6 w-6 p-0 text-amber-600 hover:text-amber-700 hover:bg-amber-50"
             onClick={() => onStatusChange(task.id, "in_progress")}
-            data-testid={`button-lane-start-${task.id}`}
+            title="Start"
+            data-testid={`button-start-${task.id}`}
           >
-            <Play className="h-3 w-3 mr-0.5" />
-            Start
+            <Play className="h-3 w-3" />
           </Button>
         )}
         {task.status !== "done" && (
           <Button
             variant="ghost"
             size="sm"
-            className="h-6 text-[10px] px-1.5 text-emerald-600"
+            className="h-6 w-6 p-0 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
             onClick={() => onStatusChange(task.id, "done")}
-            data-testid={`button-lane-done-${task.id}`}
+            title="Done"
+            data-testid={`button-done-${task.id}`}
           >
-            <CheckCircle2 className="h-3 w-3 mr-0.5" />
-            Done
+            <CheckCircle2 className="h-3 w-3" />
           </Button>
         )}
         {(task.status === "blocked" || task.status === "waiting") && onUnblock && (
           <Button
             variant="ghost"
             size="sm"
-            className="h-6 text-[10px] px-1.5 text-blue-600"
+            className="h-6 w-6 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
             onClick={() => onUnblock(task.id)}
+            title="Unblock"
             data-testid={`button-unblock-${task.id}`}
           >
-            <Unlock className="h-3 w-3 mr-0.5" />
-            Unblock
+            <Unlock className="h-3 w-3" />
           </Button>
         )}
         {task.status === "done" && (
           <Button
             variant="ghost"
             size="sm"
-            className="h-6 text-[10px] px-1.5 text-gray-500"
+            className="h-6 w-6 p-0 text-gray-500"
             onClick={() => onStatusChange(task.id, "inbox")}
+            title="Reopen"
             data-testid={`button-reopen-${task.id}`}
           >
-            Reopen
-          </Button>
-        )}
-        {task.status !== "done" && task.status !== "cancelled" && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 text-[10px] px-1.5 text-gray-400"
-            onClick={() => onStatusChange(task.id, "cancelled")}
-            data-testid={`button-cancel-${task.id}`}
-          >
-            <X className="h-3 w-3 mr-0.5" />
-            Cancel
-          </Button>
-        )}
-        {task.status === "cancelled" && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 text-[10px] px-1.5 text-blue-500"
-            onClick={() => onStatusChange(task.id, "inbox")}
-            data-testid={`button-restore-${task.id}`}
-          >
-            Restore
+            <ArrowRight className="h-3 w-3" />
           </Button>
         )}
       </div>
@@ -1305,30 +1136,28 @@ function EmailLinksWidget({ taskId, priorityId }: { taskId?: number; priorityId?
   };
 
   return (
-    <div className="w-full" onClick={(e) => e.stopPropagation()}>
+    <div className="mt-1" onClick={(e) => e.stopPropagation()}>
       <button
         className="flex items-center gap-1 text-[10px] text-gray-400 hover:text-blue-600 transition-colors"
         onClick={() => setOpen(!open)}
         data-testid={`toggle-emails-${taskId || priorityId}`}
       >
-        <Paperclip className="h-3 w-3" />
+        <Paperclip className="h-2.5 w-2.5" />
         <span>Emails</span>
-        {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+        {open ? <ChevronDown className="h-2.5 w-2.5" /> : <ChevronRight className="h-2.5 w-2.5" />}
       </button>
       {open && (
-        <div className="mt-1.5 space-y-1.5">
+        <div className="mt-1 space-y-1">
           {links.map((link: any) => (
             <div
               key={link.id}
-              className="flex items-start gap-2 p-1.5 rounded bg-blue-50/50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900 text-[11px]"
+              className="flex items-start gap-1.5 p-1.5 rounded bg-blue-50/50 dark:bg-blue-950/20 border border-blue-100/50 dark:border-blue-900/50 text-[11px]"
               data-testid={`email-link-${link.id}`}
             >
               <Mail className="h-3 w-3 text-blue-500 mt-0.5 shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-gray-800 dark:text-gray-200 truncate">{link.subject}</p>
                 {link.sender && <p className="text-gray-500 truncate">From: {link.sender}</p>}
-                {link.emailDate && <p className="text-gray-400">{link.emailDate}</p>}
-                {link.snippet && <p className="text-gray-500 mt-0.5 line-clamp-2">{link.snippet}</p>}
               </div>
               <button
                 className="text-gray-300 hover:text-red-500 shrink-0"
@@ -1346,7 +1175,7 @@ function EmailLinksWidget({ taskId, priorityId }: { taskId?: number; priorityId?
               data-testid={`add-email-${taskId || priorityId}`}
             >
               <Plus className="h-3 w-3" />
-              Attach email reference
+              Attach email
             </button>
           ) : (
             <div className="p-2 rounded border border-blue-200 dark:border-blue-800 bg-blue-50/30 dark:bg-blue-950/20 space-y-1.5">
@@ -1358,36 +1187,18 @@ function EmailLinksWidget({ taskId, priorityId }: { taskId?: number; priorityId?
                 data-testid={`input-email-subject-${taskId || priorityId}`}
                 onKeyDown={(e) => { if (e.key === "Enter") handleSave(); }}
               />
-              <div className="grid grid-cols-2 gap-1.5">
-                <Input
-                  placeholder="Sender (optional)"
-                  value={form.sender}
-                  onChange={(e) => setForm(f => ({ ...f, sender: e.target.value }))}
-                  className="h-7 text-xs"
-                  data-testid={`input-email-sender-${taskId || priorityId}`}
-                />
-                <Input
-                  placeholder="Date (optional)"
-                  value={form.emailDate}
-                  onChange={(e) => setForm(f => ({ ...f, emailDate: e.target.value }))}
-                  className="h-7 text-xs"
-                  data-testid={`input-email-date-${taskId || priorityId}`}
-                />
-              </div>
-              <Textarea
-                placeholder="Snippet / notes (optional)"
-                value={form.snippet}
-                onChange={(e) => setForm(f => ({ ...f, snippet: e.target.value }))}
-                className="text-xs min-h-[40px]"
-                rows={2}
-                data-testid={`input-email-snippet-${taskId || priorityId}`}
+              <Input
+                placeholder="Sender (optional)"
+                value={form.sender}
+                onChange={(e) => setForm(f => ({ ...f, sender: e.target.value }))}
+                className="h-7 text-xs"
+                data-testid={`input-email-sender-${taskId || priorityId}`}
               />
               <div className="flex justify-end gap-1">
                 <Button variant="ghost" size="sm" className="h-6 text-[10px]" onClick={() => { setAdding(false); setForm({ subject: "", sender: "", emailDate: "", snippet: "" }); }}>
                   Cancel
                 </Button>
                 <Button size="sm" className="h-6 text-[10px]" onClick={handleSave} disabled={!form.subject.trim() || createMut.isPending}>
-                  <Paperclip className="h-3 w-3 mr-0.5" />
                   Attach
                 </Button>
               </div>
