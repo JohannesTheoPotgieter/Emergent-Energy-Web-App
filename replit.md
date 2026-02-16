@@ -18,7 +18,7 @@ Preferred communication style: Simple, everyday language.
     -   **Financial Tracking**: Expenditure Breakdown (parsing budget/costed vs. actual/finance from Excel), Cashflow Planning (editable grid with real-time updates), COS Tracker Page (monthly matrix with KPIs), COS Control Tower (scenario-aware what-if shifting tool), Cashflow Page (chart-first layout, weekly timeline, OPEX budget modal), and Cashflow Forecast (scenario-aware weekly forecast with baseline vs scenario balance overlay).
     -   **Project Management**: Planning Board (scenario-aware Gantt-lite timeline, key dates, resource capacity heatmap), Project Plan View (CPM scheduling with Gantt visualization, critical path calculation), and Operational Task Management (ClickUp-style task system with multiple views and detail drawers).
     -   **Data Quality & Scenarios**: Risks & Flags (severity-ranked data quality issues), Scenario System (reusable component for creating/managing scenarios across financial and planning modules).
-    -   **Utilities & Admin**: SafeMoney Utilities (NaN-safe currency handling), My Tool (COO Execution Cockpit for personal task management and planning with Outlook integration), and Excel Writeback Manager (admin UI for configuring and executing Excel writebacks).
+    -   **Utilities & Admin**: SafeMoney Utilities (NaN-safe currency handling), My Tool (COO Execution Cockpit — Linear/Notion/Sunsama-style premium minimal interface with shared components: MyToolLayout, TaskCard, TaskDetailDrawer; DoD enforcement; natural language quick add; keyboard shortcuts ⌘K/⌘⏎; drag-drop email-to-task; time blocks; daily wrap), and Excel Writeback Manager (admin UI for configuring and executing Excel writebacks).
 
 ### Backend
 - **Framework**: Express.js with TypeScript
@@ -39,6 +39,7 @@ Preferred communication style: Simple, everyday language.
 -   `operationalTasks`, `taskComments`, `taskChecklists`, `taskAttachments`, `taskActivityLog`: Operational task management entities.
 -   `writebackMappings`, `writebackAuditLog`: Excel writeback configuration and audit trail.
 -   `mytool_tasks`, `mytool_timeblocks`, `mytool_daily_reviews`, `mytool_company_priorities`, `mytool_user_preferences`: My Tool entities.
+-   `mytool_dod_templates`: Definition of Done reusable templates.
 -   `uploadMetadata`, `refreshLogs`: Audit trails for data ingestion.
 
 ### New API Endpoints (Examples)
