@@ -258,9 +258,12 @@ function FinancialCloseCell({
   const isUploadedFile = linkVal.startsWith("/api/financial-close/files/");
   const displayFileName = uploadedFileName || (isUploadedFile ? decodeURIComponent(linkVal.split("_").slice(1).join("_").replace(/_/g, " ")) : null);
 
+  const isFile = link?.startsWith("/api/financial-close/files/");
+
+  let badge: React.ReactNode;
+
   if (type === "link") {
-    const isFile = link?.startsWith("/api/financial-close/files/");
-    return (
+    badge = (
       <div className="flex items-center gap-1" data-testid={`fclose-${fieldPrefix}-${projectName}`}>
         <a
           href={link || "#"}
@@ -274,17 +277,15 @@ function FinancialCloseCell({
           <span className="truncate">{isFile ? "File" : "Link"}</span>
         </a>
         {isAdmin && (
-          <button onClick={openDialog} className="p-0.5 hover:bg-slate-100 rounded transition-colors" data-testid={`btn-edit-${fieldPrefix}-${projectName}`}>
-            <FileText className="w-3 h-3 text-slate-400" />
+          <button onClick={openDialog} className="p-0.5 hover:bg-slate-100 rounded transition-colors" title="Replace or edit document" data-testid={`btn-edit-${fieldPrefix}-${projectName}`}>
+            <Pencil className="w-3 h-3 text-slate-400" />
           </button>
         )}
         {saved && <Check className="w-3 h-3 text-green-500" />}
       </div>
     );
-  }
-
-  if (type === "na") {
-    return (
+  } else if (type === "na") {
+    badge = (
       <div className="flex items-center gap-1" data-testid={`fclose-${fieldPrefix}-${projectName}`}>
         <span
           className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-500 border border-slate-200 text-[10px] font-medium cursor-help"
@@ -294,17 +295,15 @@ function FinancialCloseCell({
           N/A
         </span>
         {isAdmin && (
-          <button onClick={openDialog} className="p-0.5 hover:bg-slate-100 rounded transition-colors" data-testid={`btn-edit-${fieldPrefix}-${projectName}`}>
-            <FileText className="w-3 h-3 text-slate-400" />
+          <button onClick={openDialog} className="p-0.5 hover:bg-slate-100 rounded transition-colors" title="Change document status" data-testid={`btn-edit-${fieldPrefix}-${projectName}`}>
+            <Pencil className="w-3 h-3 text-slate-400" />
           </button>
         )}
         {saved && <Check className="w-3 h-3 text-green-500" />}
       </div>
     );
-  }
-
-  return (
-    <>
+  } else {
+    badge = (
       <div className="flex items-center gap-1" data-testid={`fclose-${fieldPrefix}-${projectName}`}>
         {isAdmin ? (
           <button
@@ -323,6 +322,12 @@ function FinancialCloseCell({
         )}
         {saved && <Check className="w-3 h-3 text-green-500" />}
       </div>
+    );
+  }
+
+  return (
+    <>
+      {badge}
 
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center" data-testid={`dialog-fclose-${fieldPrefix}`}>
@@ -342,6 +347,13 @@ function FinancialCloseCell({
                 Project: <strong>{cleanName(projectName)}</strong>
               </p>
 
+              {type === "link" && isFile && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-50 border border-blue-200 text-sm text-blue-700">
+                  <Paperclip className="w-4 h-4 shrink-0" />
+                  <span className="truncate">Current: {decodeURIComponent((link || "").split("_").slice(1).join("_").replace(/_/g, " "))}</span>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
                 <button
                   onClick={() => setMode("link")}
@@ -351,7 +363,7 @@ function FinancialCloseCell({
                   data-testid="btn-mode-link"
                 >
                   <Upload className={`w-6 h-6 ${mode === "link" ? "text-emerald-600" : "text-slate-400"}`} />
-                  <span className={`text-sm font-semibold ${mode === "link" ? "text-emerald-700" : "text-slate-600"}`}>Attach File</span>
+                  <span className={`text-sm font-semibold ${mode === "link" ? "text-emerald-700" : "text-slate-600"}`}>{type === "link" ? "Replace File" : "Attach File"}</span>
                   <span className="text-[10px] text-slate-400">Upload or link</span>
                 </button>
                 <button
@@ -392,7 +404,7 @@ function FinancialCloseCell({
                     ) : (
                       <>
                         <Upload className="w-4 h-4" />
-                        Choose File from Computer
+                        {type === "link" ? "Choose Replacement File" : "Choose File from Computer"}
                       </>
                     )}
                   </button>
