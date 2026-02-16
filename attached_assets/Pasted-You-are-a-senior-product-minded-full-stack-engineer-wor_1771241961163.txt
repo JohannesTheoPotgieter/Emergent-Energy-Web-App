@@ -1,0 +1,226 @@
+You are a senior product-minded full-stack engineer working inside an EXISTING Replit codebase called “Workflow Program”. There is a module called “My Tool” with tabs: Today / Week / Backlog / Settings. The current look/feel is hard to use: task creation is clunky, navigation is unclear, priorities are not obvious, and it’s not clear what “next step” or “definition of done” looks like to close a task 100%. The UI also feels dated and visually heavy.
+
+Your job: redesign and rebuild the My Tool UX so it is fast, modern, minimal, and stylish — WITHOUT breaking existing functionality. Do not add placeholders. Anything visible must work end-to-end.
+
+NON-NEGOTIABLES
+- Do NOT remove, rename, or break existing routes, models, or behaviours. Extend only.
+- Do NOT add placeholder UI, placeholder buttons, placeholder text, or stub flows. If it’s on screen, it works.
+- If users can’t fix something from the UI, the UI is wrong. Improve UX + error handling.
+- One source of truth:
+  - Company task system already in the codebase stays the source of truth for company tasks.
+  - My Tool is the execution cockpit (planning + next actions + DoD tracking + time blocks + wrap).
+- Store timestamps in UTC; display Africa/Johannesburg unless user prefs exist.
+- No silent failures: every error = user message + server log with correlationId + DB error log row.
+
+PRIMARY OUTCOME
+Make My Tool “world-class easy”:
+- Creating a task takes < 10 seconds with keyboard only.
+- Seeing priorities + next actions is instant (no hunting).
+- Every task has a clear “Next Step” and a clear “Definition of Done” before it can be closed.
+- Closing a task feels like “we are done done” — not “maybe”.
+- The UI looks modern: minimalist, spacious, consistent, and stylish. It should feel like Linear / Notion / Sunsama vibes (clean, calm, premium).
+
+SCOPE A — FULL UX / UI REFRESH (MODERN, MINIMAL, STYLISH)
+Redesign the full My Tool UI while preserving its underlying functionality.
+
+Design principles:
+- Minimal visual noise. Reduce borders and heavy boxes.
+- Strong typography hierarchy (clear headings, subtle metadata).
+- Lots of whitespace and consistent spacing.
+- Consistent iconography and component styles.
+- Subtle shadows, soft rounded corners, simple badges.
+- Calm, modern palette that fits Emergent Energy branding (use existing brand tokens if present; do not invent random colours if a theme system exists).
+- Components should be consistent across Today/Week/Backlog/Settings.
+- Motion/animation must be subtle (fast transitions, no gimmicks).
+- Dark mode only if already supported; do not add dark mode unless the app already has theming infrastructure.
+
+Required UI upgrades:
+- Create a single shared “My Tool Layout” component:
+  - Top bar: title + global quick add + global search + user actions
+  - Tabs: Today / Week / Backlog / Settings (clear active state)
+  - Main content area
+  - Right sidebar (collapsible) for Priorities / Next Actions / Blocked
+- Use a “Task Details Drawer” (right-side slide-over) instead of opening new pages or messy inline forms.
+- Replace clunky forms with clean input components:
+  - Title input with inline parsing
+  - Pills/badges for Project/Department/Priority
+  - Date picker that doesn’t fight the user
+- Introduce consistent empty states that teach (short, direct, no fluff).
+- Add skeleton loaders for lists and week grid.
+
+Do not add buttons/menus that do nothing. Remove any dead UI if it exists.
+
+SCOPE B — INFORMATION ARCHITECTURE (MAKE NAVIGATION OBVIOUS)
+Rework My Tool so the user always knows:
+1) what matters (priorities),
+2) what to do next (next actions),
+3) what “done” means (DoD),
+4) what is blocked.
+
+Implement these UX rules:
+- Persistent top header for My Tool with:
+  - Global Quick Add (always available)
+  - Global Search (tasks + priorities)
+- Persistent right sidebar (collapsible) with:
+  - Company Priorities (Top 3–7)
+  - My Priorities (Top 3–5)
+  - “Next Actions” list (generated from tasks with Next Step filled)
+  - “Blocked” list (tasks marked blocked)
+- Each view (Today/Week/Backlog) uses the same task card layout and editing rules.
+
+SCOPE C — TASK CREATION + EDITING (REMOVE FRICTION)
+Task creation must be painless and consistent across Today/Week/Backlog:
+- Quick Add supports natural input:
+  - “Call Dan tomorrow 10:00”
+  - “Review Mondi SLD #engineering @Gerhard due Fri p1”
+- After quick add, open the Task Details Drawer for fast editing.
+- Minimum required fields at creation:
+  - Title (required)
+  - Link to Project/Department if your DB supports it (required when available; otherwise add minimal support)
+
+Task Details Drawer must include:
+- Status: Planned / In Progress / Blocked / Done
+- Priority: P1 / P2 / P3
+- Owner (default current user)
+- Project (link to project/task system record if available)
+- Department (optional)
+- Due date + optional start date
+- “Next Step” (single sentence; required before moving to In Progress)
+- “Definition of Done” (DoD; required before marking Done)
+- Checklist (optional)
+- Notes (optional)
+- Links/attachments (if supported)
+
+Keyboard requirements:
+- Enter = create task
+- Cmd/Ctrl+K = global quick add
+- Cmd/Ctrl+Enter = save in drawer
+- 1/2/3 keys set priority (on focused task)
+- D toggles Done ONLY if DoD complete; otherwise prompt to add DoD.
+
+Bulk actions:
+- Multi-select tasks and change status/priority/owner/due date.
+
+Zero-duplication requirement:
+- Creating/editing must be idempotent. Retries must not create duplicates.
+
+SCOPE D — PRIORITIES + “NEXT ACTIONS” (MAKE IT IMPOSSIBLE TO IGNORE)
+Priorities must be visible and actionable:
+- Company Priorities section:
+  - Show top priorities (pulled from existing system or stored in My Tool if already implemented).
+  - Each priority shows: Title, linked project, health (On Track / At Risk / Off Track), and the “Next Action” required this week.
+- My Priorities section:
+  - User can pin tasks as “This Week” and “Today”.
+  - Limit Today priorities to max 3 (soft warning if more).
+- Next Actions list:
+  - Auto-generated list of tasks where:
+    - status != Done
+    - Next Step is filled
+    - sorted by: priority, due date, blocked last
+  - Each item shows: Next Step, owner, due, project, and a “Start” action that sets status In Progress and time-stamps it.
+
+SCOPE E — DEFINITION OF DONE (CLOSE 100% OR DON’T CLOSE)
+Rules:
+- A task cannot move to Done unless:
+  1) DoD exists (at least 1 sentence), AND
+  2) required checklist items are complete (if checklist exists), AND
+  3) any required approvals are complete (if approvals exist in this codebase).
+- When user tries to mark Done without DoD:
+  - Show short modal: “Can’t close yet. Add DoD to close 100%.”
+  - Provide inline DoD input right there.
+- When a task is marked Done:
+  - Capture completion timestamp and optional completion note.
+
+DoD templates (must work end-to-end):
+- Allow saving reusable DoD templates per Department/Task type.
+- Apply template in one click inside Task Details Drawer.
+
+SCOPE F — VIEW-SPECIFIC BEHAVIOUR (TODAY / WEEK / BACKLOG)
+Today view (execution):
+- Shows:
+  - Top 3 Today (pinned)
+  - Planned (scheduled today)
+  - In Progress
+  - Blocked
+  - Done
+- Add “Plan my day” flow:
+  - Select backlog tasks → schedule to today
+  - Suggest time blocks based on workday start/end if time blocks exist
+
+Week view (scheduling):
+- Weekly grid with:
+  - counts + top tasks per day
+  - add task inline
+- Drag tasks between days (must persist reliably).
+- If Outlook integration exists in the codebase, include toggle to show meetings (read-only).
+
+Backlog view (triage):
+- Default sorting: P1 first, then due date, then recently updated.
+- Fast filters:
+  - Status, Priority, Project, Owner, Department, Due range
+- “Groom” mode:
+  - Highlight tasks missing Next Step or DoD; quick-fix them.
+
+Settings:
+- Workday start/end
+- Default view
+- Toggle company priorities
+- Any existing integrations settings (do not remove)
+
+SCOPE G — DATA MODEL EXTENSIONS (ONLY IF NEEDED)
+Do not redesign the DB. Extend minimal.
+If these do not exist, add them or map to equivalents:
+- tasks:
+  - next_step (text)
+  - definition_of_done (text)
+  - completion_note (text, nullable)
+  - completed_at_utc (datetime, nullable)
+  - priority (enum P1/P2/P3)
+  - blocked_reason (text, nullable)
+  - project_id (nullable)
+  - department (nullable)
+- dod_templates:
+  - id, name, department (nullable), content, created_by, created_at
+- pinned_items:
+  - user_id, task_id/priority_id, scope (today/week), sort_order
+
+SCOPE H — QUALITY + TESTS (MEASURABLE)
+Add tests (or minimal integration tests) for:
+- Create task (quick add) no duplicates
+- Edit Next Step + DoD
+- Prevent Done without DoD
+- Pin/unpin priorities
+- Drag task between days persists
+- Filters/search correctness
+
+Acceptance criteria:
+- New user can add + prioritise + set next step + set DoD + close a task in under 60 seconds.
+- UI is consistent across views and feels “premium minimal”.
+- No placeholders exist in UI.
+- No regressions in existing workflow task linking.
+
+DELIVERY ORDER (DO THIS IN ORDER)
+1) Inspect current codebase and list existing models/endpoints and the UI component structure you will reuse.
+2) Fix current core pain: task creation reliability, duplicates, date drift, counts.
+3) Build the shared My Tool Layout + modern styling system using existing theme tokens (or create a minimal tokens file if none exists).
+4) Implement Task Details Drawer + Next Step + DoD enforcement.
+5) Implement Priorities sidebar + Next Actions list.
+6) Update each view (Today/Week/Backlog/Settings) to the new consistent UI.
+7) Add DoD templates.
+8) Add tests + polish (skeleton loaders, empty states, error handling).
+
+OUTPUT REQUIRED
+When finished, provide:
+- What you changed (by view + shared components + styling approach)
+- DB migrations applied
+- New endpoints added (if any)
+- A short “how to test” checklist
+- Rollback plan
+
+FIRST RESPONSE REQUIREMENT
+Before coding, respond with:
+- The detected tech stack (frontend, backend, DB, auth)
+- The specific files/components you will modify
+- The styling approach you will use (existing theme system vs minimal tokens)
+- Risks you see (timezone, drag/drop persistence, idempotency)
+Then proceed to implement without asking me follow-up questions.
