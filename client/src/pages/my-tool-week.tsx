@@ -5,7 +5,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import MyToolNav from "@/components/my-tool-nav";
+import { useToast } from "@/hooks/use-toast";
 import {
   format,
   startOfWeek,
@@ -37,6 +39,7 @@ interface MyToolTask {
   status: TaskStatus;
   priority: Priority;
   plannedForDate: string | null;
+  dueAt: string | null;
   sortOrder: number;
   projectName: string | null;
   tag: string | null;
@@ -73,10 +76,47 @@ function PriorityDot({ priority }: { priority: Priority }) {
   return <div className={`w-1.5 h-1.5 rounded-full ${priorityColors[priority] || priorityColors.normal} shrink-0`} />;
 }
 
+function WeekSkeleton() {
+  return (
+    <div className="max-w-[1400px] mx-auto space-y-5" data-testid="mytool-week-skeleton">
+      <MyToolNav subtitle="" />
+
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          <Skeleton className="h-8 w-8 rounded" />
+          <Skeleton className="h-8 w-20 rounded" />
+          <Skeleton className="h-8 w-8 rounded" />
+        </div>
+        <Skeleton className="h-5 w-28 rounded" />
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2">
+        {Array.from({ length: 7 }).map((_, i) => (
+          <div key={i} className="rounded-lg border border-gray-200 dark:border-gray-800 flex flex-col">
+            <div className="px-2.5 py-2 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
+              <Skeleton className="h-3 w-6" />
+              <Skeleton className="h-4 w-4" />
+            </div>
+            <div className="p-2 flex-1 space-y-1.5 min-h-[100px]">
+              <Skeleton className="h-8 w-full rounded-md" />
+              <Skeleton className="h-8 w-full rounded-md" />
+              <Skeleton className="h-6 w-3/4 rounded-md" />
+            </div>
+            <div className="px-2 pb-2">
+              <Skeleton className="h-6 w-full rounded" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function MyToolWeekPage() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [quickAddTexts, setQuickAddTexts] = useState<Record<string, string>>({});
   const [movingTaskId, setMovingTaskId] = useState<number | null>(null);
+  const { toast } = useToast();
 
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
   const weekEnd = endOfWeek(currentDate, { weekStartsOn: 1 });
@@ -119,6 +159,12 @@ export default function MyToolWeekPage() {
       await apiRequest("POST", "/api/mytool/tasks", body);
     },
     onSuccess: () => invalidateWeek(),
+    onError: () => {
+      toast({
+        title: "Couldn't save. Please try again.",
+        variant: "destructive",
+      });
+    },
   });
 
   const updateTaskMutation = useMutation({
@@ -126,9 +172,16 @@ export default function MyToolWeekPage() {
       await apiRequest("PATCH", `/api/mytool/tasks/${id}`, body);
     },
     onSuccess: () => invalidateWeek(),
+    onError: () => {
+      toast({
+        title: "Couldn't save. Please try again.",
+        variant: "destructive",
+      });
+    },
   });
 
   const handleQuickAdd = (dateStr: string) => {
+    if (createTaskMutation.isPending) return;
     const title = (quickAddTexts[dateStr] || "").trim();
     if (!title) return;
     createTaskMutation.mutate({
@@ -167,11 +220,7 @@ export default function MyToolWeekPage() {
   const isLoading = tasksLoading || blocksLoading;
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-20" data-testid="loading-spinner">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
-      </div>
-    );
+    return <WeekSkeleton />;
   }
 
   return (
@@ -321,7 +370,7 @@ export default function MyToolWeekPage() {
                 ))}
 
                 {dayTasks.length === 0 && dayBlocks.length === 0 && (
-                  <p className="text-[10px] text-gray-300 text-center py-3">-</p>
+                  <p className="text-[10px] text-gray-300 text-center py-3" data-testid={`empty-day-${dateStr}`}>No tasks</p>
                 )}
               </div>
 
@@ -335,13 +384,19 @@ export default function MyToolWeekPage() {
                     onChange={(e) =>
                       setQuickAddTexts((prev) => ({ ...prev, [dateStr]: e.target.value }))
                     }
-                    onKeyDown={(e) => e.key === "Enter" && handleQuickAdd(dateStr)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !createTaskMutation.isPending) {
+                        handleQuickAdd(dateStr);
+                      }
+                    }}
+                    disabled={createTaskMutation.isPending}
                     className="h-6 text-[11px] px-1.5 border-gray-100"
                     data-testid={`input-quick-add-${dateStr}`}
                   />
                   <button
-                    className="h-6 w-6 shrink-0 rounded flex items-center justify-center text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                    className="h-6 w-6 shrink-0 rounded flex items-center justify-center text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:pointer-events-none"
                     onClick={() => handleQuickAdd(dateStr)}
+                    disabled={createTaskMutation.isPending}
                     data-testid={`button-quick-add-${dateStr}`}
                   >
                     <Plus className="h-3 w-3" />

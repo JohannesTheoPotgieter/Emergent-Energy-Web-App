@@ -65,10 +65,12 @@ import {
   type KeyDateMapping, type InsertKeyDateMapping,
   mytoolTasks, mytoolTimeblocks, mytoolDailyReviews, mytoolCompanyPriorities, mytoolUserPreferences, mytoolSettings,
   mytoolEmailLinks,
+  errorLogs, supportTickets,
   type MytoolTask, type InsertMytoolTask, type MytoolTimeblock, type InsertMytoolTimeblock,
   type MytoolDailyReview, type InsertMytoolDailyReview, type MytoolCompanyPriority, type InsertMytoolCompanyPriority,
   type MytoolUserPreferences, type InsertMytoolUserPreferences,
   type MytoolEmailLink, type InsertMytoolEmailLink,
+  type ErrorLog, type InsertErrorLog, type SupportTicket, type InsertSupportTicket,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -387,6 +389,13 @@ export interface IStorage {
   // My Tool - Settings
   getMytoolSettings(): Promise<any>;
   updateMytoolSettings(data: any): Promise<any>;
+
+  // Error Logs
+  createErrorLog(log: InsertErrorLog): Promise<ErrorLog>;
+
+  // Support Tickets
+  createSupportTicket(ticket: InsertSupportTicket): Promise<SupportTicket>;
+  getSupportTickets(): Promise<SupportTicket[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2004,6 +2013,21 @@ export class DatabaseStorage implements IStorage {
     }
     const [created] = await this.dbInstance.insert(mytoolSettings).values({ ...data, updatedAt: new Date() }).returning();
     return created;
+  }
+  // Error Logs
+  async createErrorLog(log: InsertErrorLog): Promise<ErrorLog> {
+    const [result] = await this.dbInstance.insert(errorLogs).values(log).returning();
+    return result;
+  }
+
+  // Support Tickets
+  async createSupportTicket(ticket: InsertSupportTicket): Promise<SupportTicket> {
+    const [result] = await this.dbInstance.insert(supportTickets).values(ticket).returning();
+    return result;
+  }
+
+  async getSupportTickets(): Promise<SupportTicket[]> {
+    return this.dbInstance.select().from(supportTickets).orderBy(desc(supportTickets.createdAt));
   }
 }
 

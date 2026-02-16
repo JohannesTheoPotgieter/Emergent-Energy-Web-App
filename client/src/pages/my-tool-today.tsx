@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -52,6 +53,7 @@ interface MyToolTask {
   tag: string | null;
   blockedReason: string | null;
   companyPriorityId: number | null;
+  dueAt: string | null;
 }
 
 interface TimeBlock {
@@ -151,6 +153,7 @@ function PriorityDot({ priority }: { priority: Priority }) {
 
 export default function MyToolTodayPage() {
   const { user } = useAuth();
+  const { toast } = useToast();
   const [, setLocation] = useLocation();
 
   const [prioritiesOpen, setPrioritiesOpen] = useState(true);
@@ -215,11 +218,22 @@ export default function MyToolTodayPage() {
     queryClient.invalidateQueries({ queryKey: [`/api/mytool/daily-review?date=${today}`] });
   }, [horizon]);
 
+  const mutationErrorHandler = {
+    onError: (error: Error) => {
+      toast({
+        title: "Couldn't save",
+        description: "Please try again. If the problem persists, report it from the Help page.",
+        variant: "destructive",
+      });
+    },
+  };
+
   const createTaskMutation = useMutation({
     mutationFn: async (body: Record<string, unknown>) => {
       await apiRequest("POST", "/api/mytool/tasks", body);
     },
     onSuccess: () => invalidateAll(),
+    ...mutationErrorHandler,
   });
 
   const updateTaskMutation = useMutation({
@@ -227,6 +241,7 @@ export default function MyToolTodayPage() {
       await apiRequest("PATCH", `/api/mytool/tasks/${id}`, body);
     },
     onSuccess: () => invalidateAll(),
+    ...mutationErrorHandler,
   });
 
   const deleteTaskMutation = useMutation({
@@ -234,6 +249,7 @@ export default function MyToolTodayPage() {
       await apiRequest("DELETE", `/api/mytool/tasks/${id}`);
     },
     onSuccess: () => invalidateAll(),
+    ...mutationErrorHandler,
   });
 
   const createBlockMutation = useMutation({
@@ -247,6 +263,7 @@ export default function MyToolTodayPage() {
       setBlockEnd("");
       setBlockLabel("");
     },
+    ...mutationErrorHandler,
   });
 
   const createPriorityMutation = useMutation({
@@ -258,6 +275,7 @@ export default function MyToolTodayPage() {
       setAddPriorityOpen(false);
       setNewPriority({ title: "", department: "", severity: "normal", linkedProjectName: "" });
     },
+    ...mutationErrorHandler,
   });
 
   const updatePriorityMutation = useMutation({
@@ -265,6 +283,7 @@ export default function MyToolTodayPage() {
       await apiRequest("PATCH", `/api/mytool/company-priorities/${id}`, body);
     },
     onSuccess: () => invalidateAll(),
+    ...mutationErrorHandler,
   });
 
   const deletePriorityMutation = useMutation({
@@ -272,6 +291,7 @@ export default function MyToolTodayPage() {
       await apiRequest("DELETE", `/api/mytool/company-priorities/${id}`);
     },
     onSuccess: () => invalidateAll(),
+    ...mutationErrorHandler,
   });
 
   const { data: allProjects = [] } = useQuery<Array<{ project_name: string }>>({
@@ -284,6 +304,7 @@ export default function MyToolTodayPage() {
       await apiRequest("POST", "/api/mytool/daily-review", body);
     },
     onSuccess: () => invalidateAll(),
+    ...mutationErrorHandler,
   });
 
   const handleQuickAdd = () => {
@@ -372,8 +393,25 @@ export default function MyToolTodayPage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-20" data-testid="loading-spinner">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+      <div className="max-w-[1400px] mx-auto space-y-5" data-testid="mytool-today-skeleton">
+        <MyToolNav />
+        <div className="flex flex-wrap items-center gap-3">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="animate-pulse bg-gray-200 dark:bg-gray-700 rounded h-5 w-24" />
+          ))}
+        </div>
+        <div className="animate-pulse bg-gray-200 dark:bg-gray-700 rounded h-10 w-full" />
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+          <div className="lg:col-span-2 space-y-3">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="animate-pulse bg-gray-200 dark:bg-gray-700 rounded h-12 w-full" />
+            ))}
+          </div>
+          <div className="space-y-4">
+            <div className="animate-pulse bg-gray-200 dark:bg-gray-700 rounded h-32 w-full" />
+            <div className="animate-pulse bg-gray-200 dark:bg-gray-700 rounded h-48 w-full" />
+          </div>
+        </div>
       </div>
     );
   }
@@ -419,7 +457,7 @@ export default function MyToolTodayPage() {
               placeholder="Quick add a task for today... (press Enter)"
               value={quickAddText}
               onChange={(e) => setQuickAddText(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleQuickAdd()}
+              onKeyDown={(e) => e.key === "Enter" && !createTaskMutation.isPending && handleQuickAdd()}
               className="text-sm h-10"
               data-testid="input-quick-add"
             />

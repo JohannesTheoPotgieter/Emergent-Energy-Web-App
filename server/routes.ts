@@ -8287,6 +8287,190 @@ export async function registerRoutes(
     }
   });
 
+  // Support Tickets
+  app.post("/api/mytool/support-ticket", requireAuth, async (req, res) => {
+    try {
+      const { summary, stepsToReproduce, currentRoute, userAgent } = req.body;
+      if (!summary || !stepsToReproduce) {
+        return res.status(400).json({ error: "Summary and steps to reproduce are required" });
+      }
+      const correlationId = `ST-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const ticket = await storage.createSupportTicket({
+        userId: (req.user as any).id,
+        summary,
+        stepsToReproduce,
+        currentRoute: currentRoute || null,
+        userAgent: userAgent || null,
+        correlationId,
+        status: "open",
+      });
+      res.json(ticket);
+    } catch (error: any) {
+      console.error("Error creating support ticket:", error);
+      res.status(500).json({ error: "Failed to create support ticket" });
+    }
+  });
+
+  app.get("/api/mytool/support-tickets", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const tickets = await storage.getSupportTickets();
+      res.json(tickets);
+    } catch (error: any) {
+      console.error("Error fetching support tickets:", error);
+      res.status(500).json({ error: "Failed to fetch support tickets" });
+    }
+  });
+
+  app.post("/api/error-log", requireAuth, async (req, res) => {
+    try {
+      const { route, action, errorMessage, errorStack, payloadShape } = req.body;
+      const correlationId = `ERR-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      await storage.createErrorLog({
+        userId: (req.user as any).id,
+        route: route || null,
+        action: action || null,
+        correlationId,
+        errorMessage: errorMessage || "Unknown error",
+        errorStack: errorStack || null,
+        payloadShape: payloadShape || null,
+      });
+      res.json({ correlationId });
+    } catch (error: any) {
+      console.error("Error logging error:", error);
+      res.status(500).json({ error: "Failed to log error" });
+    }
+  });
+
+  // ─── Outlook Integration ───
+  const outlook = await import("./outlook");
+
+  app.get("/api/outlook/status", requireAuth, async (req, res) => {
+    try {
+      const status = await outlook.getConnectionStatus((req.user as any).id);
+      res.json(status);
+    } catch (err: any) {
+      res.json({ connected: false });
+    }
+  });
+
+  app.get("/api/outlook/connect", requireAuth, async (req, res) => {
+    try {
+      if (!outlook.isOutlookConfigured()) {
+        return res.status(400).json({ error: "Outlook integration not configured. Contact your administrator." });
+      }
+      const url = await outlook.getAuthUrl((req.user as any).id);
+      res.redirect(url);
+    } catch (err: any) {
+      console.error("[Outlook] Connect error:", err);
+      res.redirect("/my-tool/settings?outlook_error=connect_failed");
+    }
+  });
+
+  app.get("/api/outlook/callback", requireAuth, async (req, res) => {
+    try {
+      const { code, state, error } = req.query;
+      if (error || !code || !state) {
+        return res.redirect("/my-tool/settings?outlook_error=auth_denied");
+      }
+      const result = await outlook.handleCallback(code as string, state as string);
+      if (result.userId !== (req.user as any).id) {
+        console.error("[Outlook] State userId mismatch: expected", (req.user as any).id, "got", result.userId);
+        return res.redirect("/my-tool/settings?outlook_error=callback_failed");
+      }
+      res.redirect(`/my-tool/settings?outlook_connected=true&email=${encodeURIComponent(result.email)}`);
+    } catch (err: any) {
+      console.error("[Outlook] Callback error:", err);
+      res.redirect("/my-tool/settings?outlook_error=callback_failed");
+    }
+  });
+
+  app.get("/api/outlook/disconnect", requireAuth, async (req, res) => {
+    try {
+      await outlook.disconnect((req.user as any).id);
+      res.redirect("/my-tool/settings?outlook_disconnected=true");
+    } catch (err: any) {
+      console.error("[Outlook] Disconnect error:", err);
+      res.redirect("/my-tool/settings?outlook_error=disconnect_failed");
+    }
+  });
+
+  app.get("/api/outlook/events", requireAuth, async (req, res) => {
+    try {
+      const { start, end } = req.query;
+      if (!start || !end) {
+        return res.status(400).json({ error: "start and end query params required (YYYY-MM-DD)" });
+      }
+      const events = await outlook.getCalendarEvents((req.user as any).id, start as string, end as string);
+      res.json(events);
+    } catch (err: any) {
+      if (err.message?.includes("Not connected")) {
+        return res.json([]);
+      }
+      console.error("[Outlook] Events error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/outlook/events", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { date, startTime, endTime, label, idempotencyKey } = req.body;
+      if (!date || !startTime || !endTime || !label) {
+        return res.status(400).json({ error: "date, startTime, endTime, label are required" });
+      }
+      const eventId = await outlook.createOutlookEvent((req.user as any).id, {
+        date, startTime, endTime, label,
+        idempotencyKey: idempotencyKey || `tb-${Date.now()}`,
+      });
+      res.json({ eventId });
+    } catch (err: any) {
+      console.error("[Outlook] Create event error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/outlook/events/:eventId", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { calendarId, date, startTime, endTime, label } = req.body;
+      await outlook.updateOutlookEvent((req.user as any).id, req.params.eventId, calendarId || null, {
+        date, startTime, endTime, label,
+      });
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("[Outlook] Update event error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/outlook/events/:eventId", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { calendarId } = req.query;
+      await outlook.deleteOutlookEvent((req.user as any).id, req.params.eventId, (calendarId as string) || null);
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("[Outlook] Delete event error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/outlook/send-approval", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { to, subject, approvalTitle, approvalDescription, approveUrl, rejectUrl } = req.body;
+      if (!to || !subject || !approvalTitle) {
+        return res.status(400).json({ error: "to, subject, and approvalTitle are required" });
+      }
+      await outlook.sendApprovalEmail((req.user as any).id, {
+        to, subject, approvalTitle,
+        approvalDescription: approvalDescription || "",
+        approveUrl: approveUrl || "#",
+        rejectUrl: rejectUrl || "#",
+      });
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("[Outlook] Send approval error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   return httpServer;
 }
 

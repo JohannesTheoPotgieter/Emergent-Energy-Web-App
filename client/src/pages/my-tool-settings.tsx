@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
   SelectContent,
@@ -15,12 +17,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import MyToolNav from "@/components/my-tool-nav";
 import {
   Settings,
   Loader2,
   Save,
+  Mail,
+  Link2,
+  Unlink,
+  AlertCircle,
+  CheckCircle2,
 } from "lucide-react";
 
 interface UserPreferences {
@@ -30,10 +37,29 @@ interface UserPreferences {
   showCompanyPriorities: boolean;
 }
 
+interface OutlookConnection {
+  configured: boolean;
+  connected: boolean;
+  email?: string;
+  connectedAt?: string;
+  lastSyncAt?: string;
+}
+
+function parseTime(t: string): number | null {
+  const m = t.match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  if (h < 0 || h > 23 || min < 0 || min > 59) return null;
+  return h * 60 + min;
+}
+
 export default function MyToolSettingsPage() {
   const { user } = useAuth();
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
+  const searchString = useSearch();
   const { toast } = useToast();
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   const [form, setForm] = useState<UserPreferences>({
     defaultView: "today",
@@ -46,11 +72,53 @@ export default function MyToolSettingsPage() {
     queryKey: ["/api/mytool/preferences"],
   });
 
+  const { data: outlookStatus, refetch: refetchOutlook } = useQuery<OutlookConnection>({
+    queryKey: ["/api/outlook/status"],
+    retry: false,
+  });
+
+  useEffect(() => {
+    const params = new URLSearchParams(searchString);
+    if (params.get("outlook_connected") === "true") {
+      toast({ title: "Outlook connected", description: `Linked to ${params.get("email") || "your account"}.` });
+      refetchOutlook();
+      setLocation("/my-tool/settings", { replace: true });
+    } else if (params.get("outlook_disconnected") === "true") {
+      toast({ title: "Outlook disconnected", description: "Your Outlook account has been unlinked." });
+      refetchOutlook();
+      setLocation("/my-tool/settings", { replace: true });
+    } else if (params.get("outlook_error")) {
+      const err = params.get("outlook_error");
+      const messages: Record<string, string> = {
+        connect_failed: "Could not connect to Outlook. Please try again.",
+        auth_denied: "Outlook authorisation was cancelled or denied.",
+        callback_failed: "Something went wrong during Outlook sign-in.",
+        disconnect_failed: "Could not disconnect Outlook. Please try again.",
+      };
+      toast({ title: "Outlook error", description: messages[err!] || "An error occurred.", variant: "destructive" });
+      setLocation("/my-tool/settings", { replace: true });
+    }
+  }, [searchString]);
+
   useEffect(() => {
     if (preferences) {
       setForm(preferences);
     }
   }, [preferences]);
+
+  useEffect(() => {
+    const start = parseTime(form.workdayStartTime);
+    const end = parseTime(form.workdayEndTime);
+    if (start !== null && end !== null && end <= start) {
+      setValidationError("End time must be later than start time.");
+    } else if (form.workdayStartTime && parseTime(form.workdayStartTime) === null) {
+      setValidationError("Start time must be in HH:MM format (e.g. 08:00).");
+    } else if (form.workdayEndTime && parseTime(form.workdayEndTime) === null) {
+      setValidationError("End time must be in HH:MM format (e.g. 17:00).");
+    } else {
+      setValidationError(null);
+    }
+  }, [form.workdayStartTime, form.workdayEndTime]);
 
   const saveMutation = useMutation({
     mutationFn: async (body: UserPreferences) => {
@@ -73,13 +141,31 @@ export default function MyToolSettingsPage() {
   });
 
   const handleSave = () => {
+    if (validationError) {
+      toast({ title: "Validation error", description: validationError, variant: "destructive" });
+      return;
+    }
     saveMutation.mutate(form);
   };
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-20" data-testid="loading-spinner">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+      <div className="max-w-[1400px] mx-auto space-y-5" data-testid="mytool-settings-skeleton">
+        <MyToolNav subtitle="Settings &amp; Preferences" />
+        <Card>
+          <CardHeader>
+            <Skeleton className="h-5 w-32" />
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <Skeleton className="h-10 w-64" />
+            <div className="grid grid-cols-2 gap-4 max-w-md">
+              <Skeleton className="h-10 w-32" />
+              <Skeleton className="h-10 w-32" />
+            </div>
+            <Skeleton className="h-6 w-48" />
+            <Skeleton className="h-10 w-40" />
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -118,8 +204,7 @@ export default function MyToolSettingsPage() {
               <Label htmlFor="workday-start" data-testid="label-workday-start">Workday Start Time</Label>
               <Input
                 id="workday-start"
-                type="text"
-                placeholder="HH:MM"
+                type="time"
                 value={form.workdayStartTime}
                 onChange={(e) => setForm({ ...form, workdayStartTime: e.target.value })}
                 data-testid="input-workday-start"
@@ -130,8 +215,7 @@ export default function MyToolSettingsPage() {
               <Label htmlFor="workday-end" data-testid="label-workday-end">Workday End Time</Label>
               <Input
                 id="workday-end"
-                type="text"
-                placeholder="HH:MM"
+                type="time"
                 value={form.workdayEndTime}
                 onChange={(e) => setForm({ ...form, workdayEndTime: e.target.value })}
                 data-testid="input-workday-end"
@@ -139,6 +223,13 @@ export default function MyToolSettingsPage() {
               />
             </div>
           </div>
+
+          {validationError && (
+            <div className="flex items-center gap-2 text-sm text-red-600" data-testid="text-validation-error">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              {validationError}
+            </div>
+          )}
 
           <div className="flex items-center gap-3">
             <Switch
@@ -155,7 +246,7 @@ export default function MyToolSettingsPage() {
           <div className="pt-2">
             <Button
               onClick={handleSave}
-              disabled={saveMutation.isPending}
+              disabled={saveMutation.isPending || !!validationError}
               data-testid="button-save-preferences"
             >
               {saveMutation.isPending ? (
@@ -166,6 +257,76 @@ export default function MyToolSettingsPage() {
               Save Preferences
             </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card data-testid="card-outlook">
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Mail className="h-4 w-4 text-blue-600" />
+            Outlook Integration
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Connect your Microsoft Outlook account to see your meetings in Today and Week views, 
+            sync time blocks to your Outlook calendar, and send approval emails.
+          </p>
+
+          {outlookStatus?.connected ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                <span className="text-sm font-medium text-emerald-700 dark:text-emerald-400">Connected</span>
+                {outlookStatus.email && (
+                  <Badge variant="secondary" className="text-xs">{outlookStatus.email}</Badge>
+                )}
+              </div>
+              {outlookStatus.lastSyncAt && (
+                <p className="text-xs text-gray-500">
+                  Last synced: {new Date(outlookStatus.lastSyncAt).toLocaleString("en-ZA", { timeZone: "Africa/Johannesburg" })}
+                </p>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => window.location.href = "/api/outlook/disconnect"}
+                data-testid="button-disconnect-outlook"
+              >
+                <Unlink className="h-4 w-4 mr-2" />
+                Disconnect
+              </Button>
+            </div>
+          ) : outlookStatus?.configured === false ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 text-amber-500" />
+                <span className="text-sm text-amber-600 dark:text-amber-400">Not configured</span>
+              </div>
+              <p className="text-xs text-gray-500">
+                Your administrator needs to configure the Microsoft Azure application credentials (OUTLOOK_CLIENT_ID, OUTLOOK_CLIENT_SECRET) before Outlook can be connected.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-gray-400" />
+                <span className="text-sm text-gray-500">Not connected</span>
+              </div>
+              <p className="text-xs text-gray-500">
+                Click the button below to sign in with your Microsoft account and connect Outlook.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => window.location.href = "/api/outlook/connect"}
+                data-testid="button-connect-outlook"
+              >
+                <Link2 className="h-4 w-4 mr-2" />
+                Connect Outlook
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
