@@ -2370,6 +2370,7 @@ export async function registerRoutes(
 
       let cosYtdTarget = 0;
       let cosYtdRealised = 0;
+      let cosYtdBudget = 0;
       let cosCurrentMonthRealised = 0;
       let cosCurrentMonthTarget = 0;
 
@@ -2379,17 +2380,19 @@ export async function registerRoutes(
         const yr = monthDate.getUTCFullYear();
         const mo = monthDate.getUTCMonth();
         const mk = `${yr}-${String(mo + 1).padStart(2, '0')}`;
-        if (mk > currentMonthKey) break;
 
-        cosYtdRealised += cosRealisedByMonth.get(mk) || 0;
+        const monthTotal = cosTotalByMonth.get(mk) || 0;
+        const monthRealised = cosRealisedByMonth.get(mk) || 0;
+        cosYtdTarget += monthTotal;
+        cosYtdRealised += monthRealised;
 
         const manual = manualMap.get(mk);
         const budget = manual?.budget ? parseFloat(manual.budget) : (staticCosBudget[mk] ?? 0);
-        cosYtdTarget += budget;
+        cosYtdBudget += budget;
 
         if (mk === currentMonthKey) {
-          cosCurrentMonthRealised = cosRealisedByMonth.get(mk) || 0;
-          cosCurrentMonthTarget = budget;
+          cosCurrentMonthRealised = monthRealised;
+          cosCurrentMonthTarget = monthTotal;
         }
       }
 
@@ -2631,6 +2634,7 @@ export async function registerRoutes(
           ytdRealised: cosYtdRealised,
           ytdTarget: cosYtdTarget,
           ytdRealisedPct: cosYtdTarget !== 0 ? cosYtdRealised / cosYtdTarget : 0,
+          ytdBudget: cosYtdBudget,
         },
         kpiDetails: {
           siteEstablishmentProjects,
