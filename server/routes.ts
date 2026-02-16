@@ -1474,7 +1474,8 @@ export async function registerRoutes(
           revenue_outstanding: revenueOutstanding,
           expenses_due: expensesDue,
           current_vo_total: editable?.currentVoTotal ? parseFloat(editable.currentVoTotal) : 0,
-          comments: editable?.comments || null
+          comments: editable?.comments || null,
+          escalation_level: info?.escalationLevel || null,
         };
       });
 
@@ -1555,6 +1556,21 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Project edit error:", error);
       res.status(500).json({ error: "Failed to save project fields", message: "Failed to save project fields" });
+    }
+  });
+
+  app.patch("/api/projects-summary/:projectInfoId/escalation", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.projectInfoId as string);
+      const schema = z.object({
+        escalationLevel: z.enum(["None", "Low", "Medium", "High", "Highest"]).nullable(),
+      });
+      const { escalationLevel } = schema.parse(req.body);
+      const result = await storage.updateProjectInfoById(id, { escalationLevel });
+      res.json(result);
+    } catch (error) {
+      console.error("Escalation update error:", error);
+      res.status(500).json({ error: "Failed to update escalation level" });
     }
   });
 
@@ -8057,6 +8073,63 @@ export async function registerRoutes(
     try {
       await storage.deleteMytoolCompanyPriority(parseInt(req.params.id));
       res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/mytool/escalated-priorities", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const [allProjectInfo, allOpTasks] = await Promise.all([
+        storage.getAllProjectInfo(),
+        storage.getAllOperationalTasks(),
+      ]);
+
+      const escalated: Array<{
+        id: string;
+        type: 'project' | 'task';
+        title: string;
+        projectName: string;
+        escalationLevel: string;
+        status: string | null;
+        priority: string | null;
+        dueDate: string | null;
+        assignees: string[] | null;
+      }> = [];
+
+      for (const proj of allProjectInfo) {
+        if (proj.escalationLevel === 'Highest') {
+          escalated.push({
+            id: `project-${proj.id}`,
+            type: 'project',
+            title: proj.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " "),
+            projectName: proj.projectName,
+            escalationLevel: proj.escalationLevel,
+            status: proj.phase || null,
+            priority: null,
+            dueDate: null,
+            assignees: proj.pm ? [proj.pm] : null,
+          });
+        }
+      }
+
+      for (const task of allOpTasks) {
+        if (task.escalationLevel === 'Highest') {
+          escalated.push({
+            id: `task-${task.id}`,
+            type: 'task',
+            title: task.title,
+            projectName: task.projectName,
+            escalationLevel: task.escalationLevel,
+            status: task.status,
+            priority: task.priority,
+            dueDate: task.dueDate,
+            assignees: task.assignees,
+          });
+        }
+      }
+
+      res.json(escalated);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

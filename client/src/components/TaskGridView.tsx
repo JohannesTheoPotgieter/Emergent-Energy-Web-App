@@ -35,7 +35,7 @@ const STATUSES = ["Not Started", "In Progress", "Blocked", "Done"] as const;
 const PRIORITIES = ["Urgent", "High", "Normal", "Low"] as const;
 
 type ColumnKey =
-  | "taskNumber" | "title" | "status" | "priority" | "assignees"
+  | "taskNumber" | "title" | "status" | "priority" | "escalation" | "assignees"
   | "plannedStart" | "plannedEnd" | "plannedDuration"
   | "actualStart" | "actualEnd" | "actualDuration"
   | "percentComplete" | "expectedPct" | "delta"
@@ -56,6 +56,7 @@ const ALL_COLUMNS: ColumnDef[] = [
   { key: "title", label: "Task Name", shortLabel: "Task", defaultVisible: true, planningPreset: true, width: "minmax(220px, 1fr)", align: "left" },
   { key: "status", label: "Status", shortLabel: "Status", defaultVisible: true, planningPreset: true, width: "110px", align: "center" },
   { key: "priority", label: "Priority", shortLabel: "Pri", defaultVisible: true, planningPreset: false, width: "90px", align: "center" },
+  { key: "escalation", label: "Escalation", shortLabel: "Esc", defaultVisible: true, planningPreset: false, width: "100px", align: "center" },
   { key: "assignees", label: "Assignees", shortLabel: "Assign", defaultVisible: true, planningPreset: false, width: "120px", align: "left" },
   { key: "plannedStart", label: "Planned Start", shortLabel: "P.Start", defaultVisible: false, planningPreset: true, width: "100px", align: "center" },
   { key: "plannedEnd", label: "Planned End", shortLabel: "P.End", defaultVisible: false, planningPreset: true, width: "100px", align: "center" },
@@ -366,6 +367,39 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
             {task.priority}
           </div>
         );
+
+      case "escalation": {
+        const escLevel = task.escalationLevel || "None";
+        const escStyles: Record<string, string> = {
+          None: "bg-slate-50 text-slate-400 border-slate-200",
+          Low: "bg-blue-50 text-blue-600 border-blue-200",
+          Medium: "bg-amber-50 text-amber-600 border-amber-200",
+          High: "bg-orange-50 text-orange-600 border-orange-200",
+          Highest: "bg-red-50 text-red-700 border-red-300",
+        };
+        const escStyle = escStyles[escLevel] || escStyles.None;
+        return isAdmin ? (
+          <select
+            data-testid={`select-escalation-${task.id}`}
+            className={`text-[10px] font-semibold rounded-md border px-1 py-0.5 cursor-pointer outline-none w-full ${escStyle}`}
+            value={escLevel}
+            onChange={(e) => {
+              const val = e.target.value === "None" ? null : e.target.value;
+              handleInlineUpdate(task.id, "escalationLevel", val);
+            }}
+          >
+            <option value="None">None</option>
+            <option value="Low">Low</option>
+            <option value="Medium">Medium</option>
+            <option value="High">High</option>
+            <option value="Highest">Highest</option>
+          </select>
+        ) : (
+          <span className={`inline-flex items-center px-1.5 py-0.5 rounded-md border text-[10px] font-semibold ${escStyle}`}>
+            {escLevel}
+          </span>
+        );
+      }
 
       case "assignees":
         return isAdmin ? (

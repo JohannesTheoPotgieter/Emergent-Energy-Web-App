@@ -31,6 +31,7 @@ import {
   AlertCircle,
   Filter,
   X,
+  Flag,
 } from "lucide-react";
 
 type Priority = "critical" | "important" | "normal" | "low";
@@ -171,6 +172,20 @@ export default function MyToolTodayPage() {
     queryKey: [`/api/mytool/company-priorities?horizon=${horizon}`],
   });
 
+  const { data: escalatedItems = [] } = useQuery<Array<{
+    id: string;
+    type: 'project' | 'task';
+    title: string;
+    projectName: string;
+    escalationLevel: string;
+    status: string | null;
+    priority: string | null;
+    dueDate: string | null;
+    assignees: string[] | null;
+  }>>({
+    queryKey: ["/api/mytool/escalated-priorities"],
+  });
+
   const { data: dailyReview } = useQuery<DailyReview | null>({
     queryKey: [`/api/mytool/daily-review?date=${today}`],
   });
@@ -289,6 +304,7 @@ export default function MyToolTodayPage() {
   const cancelledTasks = tasks.filter((t) => t.status === "cancelled");
 
   const activePriorities = priorities.filter((p) => p.isActive);
+  const totalPriorityCount = activePriorities.length + escalatedItems.length;
 
   const isLoading = tasksLoading || blocksLoading || prioritiesLoading;
 
@@ -353,7 +369,7 @@ export default function MyToolTodayPage() {
               {prioritiesOpen ? <ChevronDown className="h-4 w-4 text-gray-400" /> : <ChevronRight className="h-4 w-4 text-gray-400" />}
               <CardTitle className="text-base">Company Priorities</CardTitle>
               <Badge variant="secondary" className="text-xs" data-testid="badge-priorities-count">
-                {activePriorities.length}
+                {totalPriorityCount}
               </Badge>
             </button>
             <div className="flex items-center gap-2">
@@ -374,58 +390,108 @@ export default function MyToolTodayPage() {
         </CardHeader>
         {prioritiesOpen && (
           <CardContent className="pt-0">
-            {activePriorities.length === 0 ? (
+            {totalPriorityCount === 0 ? (
               <p className="text-sm text-gray-400 py-4 text-center" data-testid="empty-priorities">
-                No priorities for this horizon. Adjust the filter or add priorities in Settings.
+                No priorities for this horizon. Adjust the filter, escalate projects/tasks to "Highest", or add priorities in Settings.
               </p>
             ) : (
               <div className="space-y-2">
-                {activePriorities.map((p) => (
-                  <div
-                    key={p.id}
-                    className="flex items-center gap-3 p-3 rounded-lg border border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
-                    data-testid={`priority-item-${p.id}`}
-                  >
-                    <SeverityBadge severity={p.severity} />
-                    <span className="flex-1 text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
-                      {p.title}
-                    </span>
-                    {p.linkedProjectName && (
-                      <Link
-                        href={`/project/${encodeURIComponent(p.linkedProjectName)}`}
-                        className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1 shrink-0"
-                        data-testid={`link-priority-project-${p.id}`}
+                {escalatedItems.length > 0 && (
+                  <>
+                    <p className="text-[10px] uppercase tracking-wider font-semibold text-red-500 mt-1 mb-1 flex items-center gap-1">
+                      <Flag className="h-3 w-3" /> Escalated to Company Level
+                    </p>
+                    {escalatedItems.map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-center gap-3 p-3 rounded-lg border border-red-100 bg-red-50/30 dark:border-red-900 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
+                        data-testid={`escalated-item-${item.id}`}
                       >
-                        <ExternalLink className="h-3 w-3" />
-                        {p.linkedProjectName.replace(/_/g, " ")}
-                      </Link>
-                    )}
-                    <div className="flex gap-1 shrink-0">
-                      {p.linkedProjectName && (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-red-100 text-red-700 border border-red-200">
+                          {item.type === 'project' ? 'Project' : 'Task'}
+                        </span>
+                        <span className="flex-1 text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
+                          {item.title}
+                        </span>
+                        {item.status && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-medium">
+                            {item.status}
+                          </span>
+                        )}
+                        <Link
+                          href={`/project/${encodeURIComponent(item.projectName)}`}
+                          className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1 shrink-0"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                          {item.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
+                        </Link>
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-7 text-xs px-2"
-                          onClick={() => setLocation(`/project/${encodeURIComponent(p.linkedProjectName!)}`)}
-                          data-testid={`button-open-project-${p.id}`}
+                          className="h-7 text-xs px-2 shrink-0"
+                          onClick={() => setLocation(`/project/${encodeURIComponent(item.projectName)}`)}
                         >
                           Open
                         </Button>
-                      )}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs px-2"
-                        onClick={() => handleConvertToTask(p)}
-                        disabled={createTaskMutation.isPending}
-                        data-testid={`button-convert-task-${p.id}`}
+                      </div>
+                    ))}
+                  </>
+                )}
+                {activePriorities.length > 0 && (
+                  <>
+                    {escalatedItems.length > 0 && (
+                      <p className="text-[10px] uppercase tracking-wider font-semibold text-gray-400 mt-3 mb-1">
+                        Manual Priorities
+                      </p>
+                    )}
+                    {activePriorities.map((p) => (
+                      <div
+                        key={p.id}
+                        className="flex items-center gap-3 p-3 rounded-lg border border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+                        data-testid={`priority-item-${p.id}`}
                       >
-                        <Plus className="h-3 w-3 mr-1" />
-                        Task
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+                        <SeverityBadge severity={p.severity} />
+                        <span className="flex-1 text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
+                          {p.title}
+                        </span>
+                        {p.linkedProjectName && (
+                          <Link
+                            href={`/project/${encodeURIComponent(p.linkedProjectName)}`}
+                            className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1 shrink-0"
+                            data-testid={`link-priority-project-${p.id}`}
+                          >
+                            <ExternalLink className="h-3 w-3" />
+                            {p.linkedProjectName.replace(/_/g, " ")}
+                          </Link>
+                        )}
+                        <div className="flex gap-1 shrink-0">
+                          {p.linkedProjectName && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 text-xs px-2"
+                              onClick={() => setLocation(`/project/${encodeURIComponent(p.linkedProjectName!)}`)}
+                              data-testid={`button-open-project-${p.id}`}
+                            >
+                              Open
+                            </Button>
+                          )}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs px-2"
+                            onClick={() => handleConvertToTask(p)}
+                            disabled={createTaskMutation.isPending}
+                            data-testid={`button-convert-task-${p.id}`}
+                          >
+                            <Plus className="h-3 w-3 mr-1" />
+                            Task
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                )}
               </div>
             )}
           </CardContent>
