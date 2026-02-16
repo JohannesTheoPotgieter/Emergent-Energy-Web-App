@@ -7504,18 +7504,29 @@ export async function registerRoutes(
       const allTasks: any[] = [...baselineTasks, ...operationalTasks];
 
       const taskNumToId = new Map<string, number>();
+      let summaryTaskId: number | null = null;
       for (const t of allTasks) {
-        if (t.taskNumber) taskNumToId.set(String(t.taskNumber), t.id);
+        if (t.taskNumber) {
+          taskNumToId.set(String(t.taskNumber), t.id);
+          const num = String(t.taskNumber).toLowerCase();
+          if (num === "no." || num === "no" || num === "#") {
+            summaryTaskId = t.id;
+          }
+        }
       }
       for (const t of allTasks) {
         if (t.parentTaskId) continue;
         const num = String(t.taskNumber || "");
-        if (!num || !num.includes(".")) continue;
-        const parts = num.split(".");
-        parts.pop();
-        const parentNum = parts.join(".");
-        const parentId = taskNumToId.get(parentNum);
-        if (parentId !== undefined) t.parentTaskId = parentId;
+        if (!num) continue;
+        if (num.includes(".")) {
+          const parts = num.split(".");
+          parts.pop();
+          const parentNum = parts.join(".");
+          const parentId = taskNumToId.get(parentNum);
+          if (parentId !== undefined) t.parentTaskId = parentId;
+        } else if (/^\d+$/.test(num) && summaryTaskId !== null && t.id !== summaryTaskId) {
+          t.parentTaskId = summaryTaskId;
+        }
       }
 
       const today = new Date();
@@ -7563,6 +7574,11 @@ export async function registerRoutes(
         const totalDays = Math.max(1, (endMs - startMs) / 86400000);
         const elapsed = (todayMs - startMs) / 86400000;
         return Math.round((elapsed / totalDays) * 100);
+      };
+
+      const getStoredExpected = (t: any): number | null => {
+        if (t.expectedPercentComplete != null) return t.expectedPercentComplete;
+        return null;
       };
 
       const computeRollups = (taskId: number): void => {
@@ -7623,10 +7639,13 @@ export async function registerRoutes(
           parent.computedActualDurationDays = Math.max(1, Math.round((maxActualEnd.getTime() - minActualStart.getTime()) / 86400000) + 1);
         }
 
-        if (!parent.isBaseline) {
-          parent.percentComplete = totalWeight > 0 ? Math.round(totalWeightedPct / totalWeight) : 0;
+        parent.percentComplete = totalWeight > 0 ? Math.round(totalWeightedPct / totalWeight) : (parent.percentComplete || 0);
+        const storedExpected = getStoredExpected(parent);
+        if (parent.isBaseline && storedExpected != null) {
+          parent.computedExpectedPct = storedExpected;
+        } else {
+          parent.computedExpectedPct = totalWeight > 0 ? Math.round(totalWeightedExpected / totalWeight) : calcExpected(parent);
         }
-        parent.computedExpectedPct = totalWeight > 0 ? Math.round(totalWeightedExpected / totalWeight) : calcExpected(parent);
         parent.isParent = true;
         parent.childCount = children.length;
       };
