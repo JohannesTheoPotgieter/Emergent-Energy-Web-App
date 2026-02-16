@@ -64,9 +64,11 @@ import {
   keyDateMappings,
   type KeyDateMapping, type InsertKeyDateMapping,
   mytoolTasks, mytoolTimeblocks, mytoolDailyReviews, mytoolCompanyPriorities, mytoolUserPreferences, mytoolSettings,
+  mytoolEmailLinks,
   type MytoolTask, type InsertMytoolTask, type MytoolTimeblock, type InsertMytoolTimeblock,
   type MytoolDailyReview, type InsertMytoolDailyReview, type MytoolCompanyPriority, type InsertMytoolCompanyPriority,
   type MytoolUserPreferences, type InsertMytoolUserPreferences,
+  type MytoolEmailLink, type InsertMytoolEmailLink,
 } from "@shared/schema";
 
 export interface IStorage {
