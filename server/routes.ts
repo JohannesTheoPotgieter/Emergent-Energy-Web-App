@@ -3480,34 +3480,132 @@ export async function registerRoutes(
 
   app.get("/api/cashflow", async (req, res) => {
     try {
-      // Support both 'project' and 'projectName' params for consistency
       const projectParam = req.query.project || req.query.projectName;
       const { startDate, endDate } = req.query;
       const projectName = (projectParam && typeof projectParam === 'string') ? projectParam : null;
-      
-      let points;
+
+      let points: any[];
       if (projectName) {
         points = await storage.getCashflowPointsByProject(projectName);
       } else {
         points = await storage.getAllCashflowPoints();
       }
 
-      // Apply planning overrides to baseline data
       const overrides = await storage.getAllPlanningOverrides();
       points = applyPlanningOverrides(points, overrides);
 
-      // Calculate Revenue Recognition from expenses (COS invoicing milestones)
-      const expenses = projectName 
+      const expenses = projectName
         ? await storage.getProgramExpensesByProject(projectName)
         : await storage.getAllProgramExpenses();
-      
+
+      const [rawInflows, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
+        projectName ? storage.getProgramInflowsByProject(projectName) : storage.getAllProgramInflows(),
+        storage.getAllMilestoneTaskLinks(),
+        storage.getAllOperationalTasks(),
+        storage.getAllProjectPlans(),
+      ]);
+
+      const resolvedInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlanTasks);
+
+      const baselineDates = new Set<string>();
+      points.forEach(p => baselineDates.add(p.pointDate));
+      const weekDates = Array.from(baselineDates).sort();
+
+      if (weekDates.length > 0) {
+        const projectNames = projectName ? [projectName] : [...new Set(points.map(p => p.projectName))];
+
+        const dynamicPoints: any[] = [];
+
+        for (const pn of projectNames) {
+          const projExpenses = expenses.filter((e: any) => e.projectName === pn && e.rowType === 'item');
+          const projInflows = resolvedInflows.filter((i: any) => i.projectName === pn);
+
+          const weeklyRevenue = new Map<string, number>();
+          const weeklyExpenditure = new Map<string, number>();
+
+          for (const inf of projInflows) {
+            const d = inf.effectiveDate;
+            if (!d || !/^\d{4}-\d{2}-\d{2}/.test(d)) continue;
+            const amt = parseFloat(inf.milestoneAmount || '0');
+            if (amt === 0) continue;
+            let matchWeek: string | null = null;
+            for (let i = 0; i < weekDates.length; i++) {
+              const wk = weekDates[i];
+              const nextWk = weekDates[i + 1] || '9999-12-31';
+              if (d >= wk && d < nextWk) { matchWeek = wk; break; }
+            }
+            if (!matchWeek && d < weekDates[0]) matchWeek = weekDates[0];
+            if (!matchWeek && d >= weekDates[weekDates.length - 1]) matchWeek = weekDates[weekDates.length - 1];
+            if (matchWeek) {
+              weeklyRevenue.set(matchWeek, (weeklyRevenue.get(matchWeek) || 0) + amt);
+            }
+          }
+
+          for (const exp of projExpenses) {
+            const d = exp.expensePaymentDate || exp.computedForecastPaymentDate || exp.forecastPaymentDate;
+            if (!d || !/^\d{4}-\d{2}-\d{2}/.test(d)) continue;
+            const amt = parseFloat(exp.expenseActualTotal || exp.budgetTotal || '0');
+            if (amt === 0) continue;
+            let matchWeek: string | null = null;
+            for (let i = 0; i < weekDates.length; i++) {
+              const wk = weekDates[i];
+              const nextWk = weekDates[i + 1] || '9999-12-31';
+              if (d >= wk && d < nextWk) { matchWeek = wk; break; }
+            }
+            if (!matchWeek && d < weekDates[0]) matchWeek = weekDates[0];
+            if (!matchWeek && d >= weekDates[weekDates.length - 1]) matchWeek = weekDates[weekDates.length - 1];
+            if (matchWeek) {
+              weeklyExpenditure.set(matchWeek, (weeklyExpenditure.get(matchWeek) || 0) + amt);
+            }
+          }
+
+          let cumRevenue = 0;
+          let cumExpenditure = 0;
+          for (const wk of weekDates) {
+            cumRevenue += weeklyRevenue.get(wk) || 0;
+            cumExpenditure += weeklyExpenditure.get(wk) || 0;
+
+            dynamicPoints.push({
+              id: null,
+              projectName: pn,
+              seriesName: "Actual + Planned Revenue",
+              pointDate: wk,
+              value: cumRevenue.toFixed(2),
+              createdAt: null,
+            });
+            dynamicPoints.push({
+              id: null,
+              projectName: pn,
+              seriesName: "Actual + Planned Expenditure",
+              pointDate: wk,
+              value: cumExpenditure.toFixed(2),
+              createdAt: null,
+            });
+            dynamicPoints.push({
+              id: null,
+              projectName: pn,
+              seriesName: "ACTUAL CashFlow",
+              pointDate: wk,
+              value: (cumRevenue - cumExpenditure).toFixed(2),
+              createdAt: null,
+            });
+          }
+        }
+
+        points = points.filter(p =>
+          p.seriesName !== "Actual + Planned Revenue" &&
+          p.seriesName !== "Actual + Planned Expenditure" &&
+          p.seriesName !== "ACTUAL CashFlow"
+        );
+        points.push(...dynamicPoints);
+      }
+
       const { weekly, cumulative } = calculateRevenueRecognition(expenses, projectName);
-      
-      // Add Revenue Recognition points to the cashflow data
+
       Array.from(weekly.entries()).forEach(([pName, weeklyData]) => {
         Array.from(weeklyData.entries()).forEach(([weekStart, amount]) => {
           points.push({
-            id: null, // Virtual point
+            id: null,
             projectName: pName,
             seriesName: "Revenue Recognition",
             pointDate: weekStart,
@@ -3516,12 +3614,11 @@ export async function registerRoutes(
           });
         });
       });
-      
-      // Add Revenue Recognition Cumulative points
+
       Array.from(cumulative.entries()).forEach(([pName, cumulativeData]) => {
         Array.from(cumulativeData.entries()).forEach(([weekStart, amount]) => {
           points.push({
-            id: null, // Virtual point
+            id: null,
             projectName: pName,
             seriesName: "Revenue Recognition Cumulative",
             pointDate: weekStart,
