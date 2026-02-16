@@ -8158,6 +8158,44 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== MY TOOL - EMAIL LINKS ====================
+
+  app.get("/api/mytool/email-links", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { taskId, priorityId } = req.query;
+      if (taskId) {
+        const links = await storage.getEmailLinksByTask(parseInt(taskId as string));
+        return res.json(links);
+      }
+      if (priorityId) {
+        const links = await storage.getEmailLinksByPriority(parseInt(priorityId as string));
+        return res.json(links);
+      }
+      res.json([]);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/mytool/email-links", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const userId = (req.user as any)?.id || null;
+      const link = await storage.createEmailLink({ ...req.body, createdBy: userId });
+      res.json(link);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/mytool/email-links/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      await storage.deleteEmailLink(parseInt(req.params.id));
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   return httpServer;
 }
 

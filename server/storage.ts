@@ -373,6 +373,12 @@ export interface IStorage {
   updateMytoolCompanyPriority(id: number, data: Partial<InsertMytoolCompanyPriority>): Promise<MytoolCompanyPriority>;
   deleteMytoolCompanyPriority(id: number): Promise<void>;
 
+  // My Tool - Email Links
+  getEmailLinksByTask(taskId: number): Promise<MytoolEmailLink[]>;
+  getEmailLinksByPriority(priorityId: number): Promise<MytoolEmailLink[]>;
+  createEmailLink(data: InsertMytoolEmailLink): Promise<MytoolEmailLink>;
+  deleteEmailLink(id: number): Promise<void>;
+
   // My Tool - User Preferences
   getMytoolUserPreferences(ownerUserId: number): Promise<MytoolUserPreferences | undefined>;
   upsertMytoolUserPreferences(data: InsertMytoolUserPreferences): Promise<MytoolUserPreferences>;
@@ -1927,6 +1933,24 @@ export class DatabaseStorage implements IStorage {
 
   async deleteMytoolCompanyPriority(id: number): Promise<void> {
     await this.dbInstance.delete(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, id));
+  }
+
+  // My Tool - Email Links
+  async getEmailLinksByTask(taskId: number): Promise<MytoolEmailLink[]> {
+    return this.dbInstance.select().from(mytoolEmailLinks).where(eq(mytoolEmailLinks.linkedTaskId, taskId)).orderBy(desc(mytoolEmailLinks.createdAt));
+  }
+
+  async getEmailLinksByPriority(priorityId: number): Promise<MytoolEmailLink[]> {
+    return this.dbInstance.select().from(mytoolEmailLinks).where(eq(mytoolEmailLinks.linkedPriorityId, priorityId)).orderBy(desc(mytoolEmailLinks.createdAt));
+  }
+
+  async createEmailLink(data: InsertMytoolEmailLink): Promise<MytoolEmailLink> {
+    const [created] = await this.dbInstance.insert(mytoolEmailLinks).values(data).returning();
+    return created;
+  }
+
+  async deleteEmailLink(id: number): Promise<void> {
+    await this.dbInstance.delete(mytoolEmailLinks).where(eq(mytoolEmailLinks.id, id));
   }
 
   // My Tool - User Preferences
