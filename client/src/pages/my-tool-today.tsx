@@ -197,6 +197,11 @@ export default function MyToolTodayPage() {
   const [editingTitle, setEditingTitle] = useState("");
   const [emailPickerTaskId, setEmailPickerTaskId] = useState<number | null>(null);
   const [emailPickerTaskTitle, setEmailPickerTaskTitle] = useState("");
+  const [emailInboxOpen, setEmailInboxOpen] = useState(true);
+  const [emailInboxSearch, setEmailInboxSearch] = useState("");
+  const [debouncedInboxSearch, setDebouncedInboxSearch] = useState("");
+  const [planDropOver, setPlanDropOver] = useState(false);
+  const [blockDropOver, setBlockDropOver] = useState(false);
   const [addPriorityOpen, setAddPriorityOpen] = useState(false);
   const [newPriority, setNewPriority] = useState({
     title: "",
@@ -239,6 +244,23 @@ export default function MyToolTodayPage() {
 
   const { data: dailyReview } = useQuery<DailyReview | null>({
     queryKey: [`/api/mytool/daily-review?date=${today}`],
+  });
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedInboxSearch(emailInboxSearch), 400);
+    return () => clearTimeout(timer);
+  }, [emailInboxSearch]);
+
+  const { data: inboxEmails = [], isLoading: inboxEmailsLoading } = useQuery<OutlookEmail[]>({
+    queryKey: ["/api/outlook/messages", "inbox-panel", debouncedInboxSearch],
+    queryFn: async () => {
+      const params = new URLSearchParams({ top: "15" });
+      if (debouncedInboxSearch.trim()) params.set("search", debouncedInboxSearch.trim());
+      const res = await fetch(`/api/outlook/messages?${params.toString()}`, { credentials: "include" });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data) ? data : data.value || [];
+    },
   });
 
   const invalidateAll = useCallback(() => {
@@ -405,6 +427,37 @@ export default function MyToolTodayPage() {
     });
   };
 
+  const handleDropEmail = async (email: OutlookEmail) => {
+    try {
+      await apiRequest("POST", "/api/mytool/tasks", {
+        title: email.subject || "(No subject)",
+        status: "planned",
+        plannedForDate: today,
+        priority: "normal",
+        notes: `Email from: ${email.sender || email.senderEmail || "unknown"}\n\n${email.snippet || ""}`,
+      });
+      await apiRequest("POST", "/api/outlook/email-to-task", {
+        outlookMessageId: email.id,
+        subject: email.subject,
+        sender: email.sender || email.senderEmail || "",
+        receivedAt: email.receivedAt,
+        snippet: email.snippet?.slice(0, 200) || "",
+        webLink: email.webLink || "",
+        targetType: "new",
+      });
+      invalidateAll();
+      toast({ title: "Task created from email" });
+    } catch {
+      toast({ title: "Failed to create task from email", variant: "destructive" });
+    }
+  };
+
+  const handleDropEmailToBlock = async (email: OutlookEmail) => {
+    await handleDropEmail(email);
+    setAddBlockOpen(true);
+    setBlockLabel(email.subject || "(No subject)");
+  };
+
   const plannedTasks = tasks
     .filter((t) => t.status === "planned" && t.plannedForDate === today)
     .sort((a, b) => a.sortOrder - b.sortOrder);
@@ -561,13 +614,27 @@ export default function MyToolTodayPage() {
           )}
 
           {/* Today's Plan */}
-          <section data-testid="card-todays-plan">
+          <section
+            data-testid="card-todays-plan"
+            onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setPlanDropOver(true); }}
+            onDragLeave={() => setPlanDropOver(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setPlanDropOver(false);
+              try {
+                const emailData = JSON.parse(e.dataTransfer.getData("application/json"));
+                if (emailData?.id && emailData?.subject !== undefined) handleDropEmail(emailData);
+              } catch {}
+            }}
+            className={planDropOver ? "ring-2 ring-blue-400 bg-blue-50/50 rounded-lg p-2 transition-all" : "transition-all"}
+          >
             <div className="flex items-center gap-2 mb-2">
               <Target className="h-4 w-4 text-blue-600" />
               <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">Today's Plan</h3>
               <Badge variant="secondary" className="text-xs" data-testid="badge-planned-count">
                 {plannedTasks.length}
               </Badge>
+              {planDropOver && <span className="text-[10px] text-blue-500 ml-auto">Drop email to create task</span>}
             </div>
 
             {plannedTasks.length === 0 ? (
@@ -751,12 +818,26 @@ export default function MyToolTodayPage() {
         {/* RIGHT COLUMN - Context sidebar (1/3 width) */}
         <div className="space-y-5">
           {/* Time Blocks */}
-          <Card data-testid="card-time-blocks">
+          <Card
+            data-testid="card-time-blocks"
+            onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setBlockDropOver(true); }}
+            onDragLeave={() => setBlockDropOver(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setBlockDropOver(false);
+              try {
+                const emailData = JSON.parse(e.dataTransfer.getData("application/json"));
+                if (emailData?.id && emailData?.subject !== undefined) handleDropEmailToBlock(emailData);
+              } catch {}
+            }}
+            className={blockDropOver ? "ring-2 ring-blue-400 bg-blue-50/50 transition-all" : "transition-all"}
+          >
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-semibold flex items-center gap-2">
                   <Clock className="h-4 w-4 text-violet-600" />
                   Time Blocks
+                  {blockDropOver && <span className="text-[10px] text-blue-500 font-normal">Drop to create task + block</span>}
                 </CardTitle>
                 <Button
                   variant="ghost"
@@ -839,6 +920,98 @@ export default function MyToolTodayPage() {
                 </div>
               )}
             </CardContent>
+          </Card>
+
+          {/* Email Inbox */}
+          <Card data-testid="card-email-inbox">
+            <CardHeader className="pb-2">
+              <button
+                className="flex items-center gap-2 text-left w-full"
+                onClick={() => setEmailInboxOpen(!emailInboxOpen)}
+                data-testid="toggle-email-inbox"
+              >
+                {emailInboxOpen ? <ChevronDown className="h-3.5 w-3.5 text-gray-400" /> : <ChevronRight className="h-3.5 w-3.5 text-gray-400" />}
+                <Mail className="h-4 w-4 text-blue-600" />
+                <CardTitle className="text-sm font-semibold">Email Inbox</CardTitle>
+              </button>
+            </CardHeader>
+            {emailInboxOpen && (
+              <CardContent className="pt-0 space-y-2">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+                  <Input
+                    placeholder="Search emails..."
+                    value={emailInboxSearch}
+                    onChange={(e) => setEmailInboxSearch(e.target.value)}
+                    className="pl-8 text-xs h-8"
+                    data-testid="input-inbox-search"
+                  />
+                </div>
+
+                {inboxEmailsLoading ? (
+                  <div className="flex items-center justify-center py-6" data-testid="inbox-loading">
+                    <Loader2 className="h-5 w-5 animate-spin text-gray-400" />
+                  </div>
+                ) : inboxEmails.length === 0 ? (
+                  <div className="text-center py-4" data-testid="inbox-empty">
+                    <Mail className="h-6 w-6 text-gray-300 mx-auto mb-1.5" />
+                    <p className="text-xs text-gray-400">
+                      {emailInboxSearch ? "No emails found" : "No emails available."}
+                    </p>
+                    <p className="text-[10px] text-gray-400 mt-1">
+                      Connect Outlook in <Link href="/my-tool/settings" className="text-blue-600 hover:underline" data-testid="link-connect-outlook">Settings</Link>
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-1.5 max-h-[400px] overflow-y-auto" data-testid="inbox-email-list">
+                    {inboxEmails.map((email) => (
+                      <div
+                        key={email.id}
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData("application/json", JSON.stringify(email));
+                          e.dataTransfer.effectAllowed = "copy";
+                        }}
+                        className="px-2.5 py-2 rounded-md border border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-grab active:cursor-grabbing transition-colors group/email"
+                        data-testid={`inbox-email-${email.id}`}
+                      >
+                        <div className="flex items-start gap-2">
+                          <Mail className="h-3.5 w-3.5 text-blue-500 mt-0.5 shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium text-gray-800 dark:text-gray-200 truncate">{email.subject || "(No subject)"}</p>
+                            <div className="flex items-center gap-1.5 text-[10px] text-gray-500">
+                              <span className="truncate">{email.sender || email.senderEmail || "Unknown"}</span>
+                              <span>·</span>
+                              <span className="shrink-0">{email.receivedAt ? format(new Date(email.receivedAt), "d MMM") : ""}</span>
+                            </div>
+                            {email.snippet && (
+                              <p className="text-[10px] text-gray-400 truncate mt-0.5">{email.snippet.slice(0, 80)}</p>
+                            )}
+                          </div>
+                          {email.webLink && (
+                            <a href={email.webLink} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700 shrink-0 opacity-0 group-hover/email:opacity-100 transition-opacity" data-testid={`link-inbox-email-${email.id}`}>
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                          )}
+                        </div>
+                        <p className="text-[9px] text-blue-500 mt-1 select-none">↕ Drag to plan</p>
+                      </div>
+                    ))}
+                    {inboxEmails.length >= 15 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="w-full h-7 text-xs text-gray-500"
+                        onClick={() => setEmailInboxSearch(emailInboxSearch || " ")}
+                        data-testid="button-load-more-emails"
+                      >
+                        Load More
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            )}
           </Card>
 
           {/* Company Priorities */}

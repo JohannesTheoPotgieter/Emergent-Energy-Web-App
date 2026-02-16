@@ -351,6 +351,11 @@ export default function MyToolBacklogPage() {
   const [emailPickerTaskId, setEmailPickerTaskId] = useState<number | null>(null);
   const [emailPickerTaskTitle, setEmailPickerTaskTitle] = useState("");
 
+  const [emailInboxOpen, setEmailInboxOpen] = useState(false);
+  const [emailInboxSearch, setEmailInboxSearch] = useState("");
+  const [debouncedInboxSearch, setDebouncedInboxSearch] = useState("");
+  const [taskListDropOver, setTaskListDropOver] = useState(false);
+
   const [editingField, setEditingField] = useState<{ taskId: number; field: string } | null>(null);
   const [editingValue, setEditingValue] = useState("");
 
@@ -369,6 +374,11 @@ export default function MyToolBacklogPage() {
     return () => clearTimeout(timer);
   }, [searchText]);
 
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedInboxSearch(emailInboxSearch), 400);
+    return () => clearTimeout(timer);
+  }, [emailInboxSearch]);
+
   const { data: tasks = [], isLoading } = useQuery<MyToolTask[]>({
     queryKey: ["/api/mytool/tasks"],
   });
@@ -380,6 +390,19 @@ export default function MyToolBacklogPage() {
   const { data: allProjects = [] } = useQuery<Array<{ project_name: string }>>({
     queryKey: ["/api/projects-summary"],
     select: (data: any[]) => data.map((p: any) => ({ project_name: p.project_name })),
+  });
+
+  const { data: inboxEmails = [], isLoading: inboxEmailsLoading } = useQuery<OutlookEmail[]>({
+    queryKey: ["/api/outlook/messages", "backlog-inbox", debouncedInboxSearch],
+    queryFn: async () => {
+      const params = new URLSearchParams({ top: "15" });
+      if (debouncedInboxSearch.trim()) params.set("search", debouncedInboxSearch.trim());
+      const res = await fetch(`/api/outlook/messages?${params.toString()}`, { credentials: "include" });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data) ? data : data.value || [];
+    },
+    enabled: emailInboxOpen,
   });
 
   const invalidateAll = useCallback(() => {
@@ -584,6 +607,31 @@ export default function MyToolBacklogPage() {
       horizon: "week",
       status: "active",
     });
+  };
+
+  const handleDropEmail = async (emailData: OutlookEmail) => {
+    try {
+      await apiRequest("POST", "/api/mytool/tasks", {
+        title: emailData.subject || "(No subject)",
+        status: "inbox",
+        priority: "normal",
+        notes: `Email from: ${emailData.sender || emailData.senderEmail || "unknown"}\n\n${emailData.snippet || ""}`,
+        sortOrder: 0,
+      });
+      await apiRequest("POST", "/api/outlook/email-to-task", {
+        outlookMessageId: emailData.id,
+        subject: emailData.subject,
+        sender: emailData.sender || emailData.senderEmail || "",
+        receivedAt: emailData.receivedAt,
+        snippet: emailData.snippet?.slice(0, 200) || "",
+        webLink: emailData.webLink || "",
+        targetType: "new",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/mytool/tasks"] });
+      toast({ title: "Task created from email" });
+    } catch {
+      toast({ title: "Failed to create task from email", variant: "destructive" });
+    }
   };
 
   const projects = useMemo(() => {
@@ -899,6 +947,80 @@ export default function MyToolBacklogPage() {
         )}
       </Card>
 
+      {/* Email Inbox */}
+      <Card data-testid="card-email-inbox">
+        <CardHeader className="pb-2">
+          <button
+            className="flex items-center gap-2 text-left w-full"
+            onClick={() => setEmailInboxOpen(!emailInboxOpen)}
+            data-testid="toggle-email-inbox"
+          >
+            {emailInboxOpen ? <ChevronDown className="h-4 w-4 text-gray-400" /> : <ChevronRight className="h-4 w-4 text-gray-400" />}
+            <Mail className="h-4 w-4 text-blue-600" />
+            <CardTitle className="text-sm font-semibold">Email Inbox</CardTitle>
+          </button>
+        </CardHeader>
+        {emailInboxOpen && (
+          <CardContent className="pt-0 space-y-2">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                placeholder="Search emails..."
+                value={emailInboxSearch}
+                onChange={(e) => setEmailInboxSearch(e.target.value)}
+                className="pl-9 text-sm h-8"
+                data-testid="input-inbox-email-search"
+              />
+            </div>
+            <div className="max-h-[300px] overflow-y-auto space-y-1">
+              {inboxEmailsLoading && (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+                </div>
+              )}
+              {!inboxEmailsLoading && inboxEmails.length === 0 && (
+                <p className="text-xs text-gray-400 text-center py-3">
+                  {emailInboxSearch ? "No emails found" : "No emails. Connect Outlook in Settings."}
+                </p>
+              )}
+              {inboxEmails.map((email) => (
+                <div
+                  key={email.id}
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData("application/json", JSON.stringify(email));
+                    e.dataTransfer.effectAllowed = "copy";
+                  }}
+                  className="px-2.5 py-2 rounded-md border border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-grab active:cursor-grabbing transition-colors group/email"
+                  data-testid={`backlog-inbox-email-${email.id}`}
+                >
+                  <div className="flex items-start gap-2">
+                    <Mail className="h-3.5 w-3.5 text-blue-500 mt-0.5 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-gray-800 dark:text-gray-200 truncate">{email.subject || "(No subject)"}</p>
+                      <div className="flex items-center gap-1.5 text-[10px] text-gray-500">
+                        <span className="truncate">{email.sender || email.senderEmail || "Unknown"}</span>
+                        <span>·</span>
+                        <span className="shrink-0">{email.receivedAt ? format(new Date(email.receivedAt), "d MMM") : ""}</span>
+                      </div>
+                      {email.snippet && (
+                        <p className="text-[10px] text-gray-400 truncate mt-0.5">{email.snippet.slice(0, 80)}</p>
+                      )}
+                    </div>
+                    {email.webLink && (
+                      <a href={email.webLink} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700 shrink-0 opacity-0 group-hover/email:opacity-100" data-testid={`link-backlog-inbox-email-${email.id}`}>
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    )}
+                  </div>
+                  <p className="text-[9px] text-blue-500 mt-1 select-none">↕ Drag to task list</p>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        )}
+      </Card>
+
       {/* Search & Filters */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
         <div className="relative flex-1">
@@ -1164,6 +1286,28 @@ export default function MyToolBacklogPage() {
           </CardContent>
         </Card>
       )}
+
+      <div
+        onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setTaskListDropOver(true); }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node)) setTaskListDropOver(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          setTaskListDropOver(false);
+          try {
+            const emailData = JSON.parse(e.dataTransfer.getData("application/json"));
+            if (emailData.id && emailData.subject !== undefined) handleDropEmail(emailData);
+          } catch {}
+        }}
+        className={`transition-all ${taskListDropOver ? "ring-2 ring-blue-400 ring-offset-2 rounded-lg bg-blue-50/30 dark:bg-blue-900/10" : ""}`}
+        data-testid="task-list-drop-zone"
+      >
+        {taskListDropOver && (
+          <div className="text-center py-2 text-xs text-blue-600 font-medium bg-blue-50 dark:bg-blue-900/20 rounded-t-lg border-b border-blue-200">
+            Drop email here to create a task
+          </div>
+        )}
 
       {selectedIds.size > 0 && (
         <Card className="bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800" data-testid="card-bulk-actions">
@@ -1701,6 +1845,7 @@ export default function MyToolBacklogPage() {
           </div>
         </>
       )}
+      </div>
 
       <div className="flex items-center justify-between text-xs text-gray-400 pb-4">
         <span data-testid="text-task-count">
