@@ -64,12 +64,13 @@ import {
   keyDateMappings,
   type KeyDateMapping, type InsertKeyDateMapping,
   mytoolTasks, mytoolTimeblocks, mytoolDailyReviews, mytoolCompanyPriorities, mytoolUserPreferences, mytoolSettings,
-  mytoolEmailLinks,
+  mytoolEmailLinks, mytoolDodTemplates,
   errorLogs, supportTickets,
   type MytoolTask, type InsertMytoolTask, type MytoolTimeblock, type InsertMytoolTimeblock,
   type MytoolDailyReview, type InsertMytoolDailyReview, type MytoolCompanyPriority, type InsertMytoolCompanyPriority,
   type MytoolUserPreferences, type InsertMytoolUserPreferences,
   type MytoolEmailLink, type InsertMytoolEmailLink,
+  type MytoolDodTemplate, type InsertMytoolDodTemplate,
   type ErrorLog, type InsertErrorLog, type SupportTicket, type InsertSupportTicket,
 } from "@shared/schema";
 
@@ -382,6 +383,11 @@ export interface IStorage {
   getEmailLinksByPriority(priorityId: number): Promise<MytoolEmailLink[]>;
   createEmailLink(data: InsertMytoolEmailLink): Promise<MytoolEmailLink>;
   deleteEmailLink(id: number): Promise<void>;
+
+  // My Tool - DoD Templates
+  getMytoolDodTemplates(): Promise<MytoolDodTemplate[]>;
+  createMytoolDodTemplate(data: InsertMytoolDodTemplate): Promise<MytoolDodTemplate>;
+  deleteMytoolDodTemplate(id: number): Promise<void>;
 
   // My Tool - User Preferences
   getMytoolUserPreferences(ownerUserId: number): Promise<MytoolUserPreferences | undefined>;
@@ -1975,6 +1981,18 @@ export class DatabaseStorage implements IStorage {
 
   async deleteEmailLink(id: number): Promise<void> {
     await this.dbInstance.delete(mytoolEmailLinks).where(eq(mytoolEmailLinks.id, id));
+  }
+
+  // My Tool - DoD Templates
+  async getMytoolDodTemplates(): Promise<MytoolDodTemplate[]> {
+    return this.dbInstance.select().from(mytoolDodTemplates).orderBy(mytoolDodTemplates.name);
+  }
+  async createMytoolDodTemplate(data: InsertMytoolDodTemplate): Promise<MytoolDodTemplate> {
+    const [created] = await this.dbInstance.insert(mytoolDodTemplates).values({ ...data, createdAt: new Date() }).returning();
+    return created;
+  }
+  async deleteMytoolDodTemplate(id: number): Promise<void> {
+    await this.dbInstance.delete(mytoolDodTemplates).where(eq(mytoolDodTemplates.id, id));
   }
 
   // My Tool - User Preferences

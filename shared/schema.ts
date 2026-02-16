@@ -936,10 +936,17 @@ export const mytoolTasks = pgTable("mytool_tasks", {
   priority: mytoolTaskPriorityEnum("priority").notNull().default('normal'),
   plannedForDate: text("planned_for_date"),
   dueAt: timestamp("due_at"),
+  startDate: text("start_date"),
   notes: text("notes"),
   projectName: text("project_name"),
+  department: text("department"),
   tag: text("tag"),
   blockedReason: text("blocked_reason"),
+  nextStep: text("next_step"),
+  definitionOfDone: text("definition_of_done"),
+  completionNote: text("completion_note"),
+  pinnedToday: boolean("pinned_today").notNull().default(false),
+  pinnedWeek: boolean("pinned_week").notNull().default(false),
   sortOrder: integer("sort_order").notNull().default(0),
   isRecurring: boolean("is_recurring").notNull().default(false),
   recurrenceFrequency: mytoolRecurrenceFrequencyEnum("recurrence_frequency"),
@@ -1041,6 +1048,19 @@ export const mytoolEmailLinks = pgTable("mytool_email_links", {
 export const insertMytoolEmailLinkSchema = createInsertSchema(mytoolEmailLinks).omit({ id: true, createdAt: true });
 export type InsertMytoolEmailLink = z.infer<typeof insertMytoolEmailLinkSchema>;
 export type MytoolEmailLink = typeof mytoolEmailLinks.$inferSelect;
+
+export const mytoolDodTemplates = pgTable("mytool_dod_templates", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  department: text("department"),
+  content: text("content").notNull(),
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertMytoolDodTemplateSchema = createInsertSchema(mytoolDodTemplates).omit({ id: true, createdAt: true });
+export type InsertMytoolDodTemplate = z.infer<typeof insertMytoolDodTemplateSchema>;
+export type MytoolDodTemplate = typeof mytoolDodTemplates.$inferSelect;
 
 export const mytoolSettings = pgTable("mytool_settings", {
   id: serial("id").primaryKey(),

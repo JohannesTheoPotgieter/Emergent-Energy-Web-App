@@ -8048,6 +8048,14 @@ export async function registerRoutes(
       const taskId = parseInt(req.params.id);
       const userId = (req.user as any).id;
       const existingTask = await storage.getMytoolTask(taskId);
+
+      if (req.body.status === 'done' && existingTask) {
+        const dod = req.body.definitionOfDone || existingTask.definitionOfDone;
+        if (!dod || !dod.trim()) {
+          return res.status(422).json({ error: "Cannot mark task as done without a Definition of Done." });
+        }
+      }
+
       const task = await storage.updateMytoolTask(taskId, req.body);
 
       if (
@@ -8324,6 +8332,35 @@ export async function registerRoutes(
   app.delete("/api/mytool/email-links/:id", requireAuth, requireAdmin, async (req, res) => {
     try {
       await storage.deleteEmailLink(parseInt(req.params.id));
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // My Tool - DoD Templates
+  app.get("/api/mytool/dod-templates", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const templates = await storage.getMytoolDodTemplates();
+      res.json(templates);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/mytool/dod-templates", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const userId = (req.user as any).id;
+      const template = await storage.createMytoolDodTemplate({ ...req.body, createdBy: userId });
+      res.json(template);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/mytool/dod-templates/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      await storage.deleteMytoolDodTemplate(parseInt(req.params.id));
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
