@@ -3969,10 +3969,70 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Overrides must be an array", message: "Overrides must be an array" });
       }
       const userId = req.user?.id;
-      const overridesWithUser = overrides.map(o => ({ ...o, createdBy: userId }));
+      const overridesWithUser = overrides.map((o: any) => ({ ...o, createdBy: userId }));
       const saved = await storage.upsertManyExpenditureOverrides(overridesWithUser);
-      res.json({ message: "Expenditure overrides saved", count: saved.length, overrides: saved });
+
+      const fieldToColumnMap: Record<string, string> = {
+        expenseInvoicedDate: "expenseInvoicedDate",
+        expensePaymentDate: "expensePaymentDate",
+        expensePoNumber: "expensePoNumber",
+        expenseInvoiceNumber: "expenseInvoiceNumber",
+        expenseLineItem: "expenseLineItem",
+        expenseActualTotal: "expenseActualTotal",
+        budgetTotal: "budgetTotal",
+        forecastPaymentDate: "forecastPaymentDate",
+        expenseQty: "expenseQty",
+        expenseRateUnit: "expenseRateUnit",
+        budgetQty: "budgetQty",
+        budgetRateUnit: "budgetRateUnit",
+      };
+
+      const projectNames = [...new Set(overrides.map((o: any) => o.projectName))];
+      for (const pn of projectNames) {
+        const projectOverrides = overrides.filter((o: any) => o.projectName === pn);
+        const expenses = await storage.getProgramExpensesByProject(pn as string);
+        const rowMap = new Map(expenses.map((e: any) => [e.rowNumber, e]));
+
+        const rowGroups = new Map<number, Record<string, any>>();
+        for (const ov of projectOverrides) {
+          const colName = fieldToColumnMap[ov.fieldName];
+          if (!colName) continue;
+          const expense = rowMap.get(ov.rowNumber);
+          if (!expense) continue;
+          if (!rowGroups.has(expense.id)) rowGroups.set(expense.id, {});
+          const fields = rowGroups.get(expense.id)!;
+          fields[colName] = ov.overrideValue;
+          if (ov.fieldName === 'expenseInvoicedDate' && ov.overrideValue) {
+            fields.invoiceDateConfirmed = true;
+            fields.invoiceDateFontColor = null;
+          }
+          if (ov.fieldName === 'expensePaymentDate' && ov.overrideValue) {
+            fields.paymentDateConfirmed = true;
+            fields.paymentDateFontColor = null;
+          }
+        }
+
+        for (const [expenseId, fields] of rowGroups.entries()) {
+          await storage.updateProgramExpenseFields(expenseId, fields);
+        }
+
+        const { classifyExpenseState } = await import("./lib/calculations/stateClassifier");
+        const { forecastExpensePaymentDate } = await import("./lib/calculations/forecaster");
+        const updatedExpenses = await storage.getProgramExpensesByProject(pn as string);
+        for (const exp of updatedExpenses) {
+          if (!rowGroups.has(exp.id)) continue;
+          const newState = classifyExpenseState(exp as any);
+          const newForecast = forecastExpensePaymentDate(exp as any);
+          await storage.updateProgramExpenseFields(exp.id, {
+            computedState: newState,
+            computedForecastPaymentDate: newForecast ?? null,
+          });
+        }
+      }
+
+      res.json({ message: "Expenditure overrides saved and applied", count: saved.length, overrides: saved });
     } catch (error) {
+      console.error("Failed to save expenditure overrides:", error);
       res.status(500).json({ error: "Failed to save expenditure overrides", message: error instanceof Error ? error.message : "Failed to save expenditure overrides" });
     }
   });
