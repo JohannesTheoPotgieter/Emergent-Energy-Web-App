@@ -1012,6 +1012,22 @@ export const insertMytoolUserPreferencesSchema = createInsertSchema(mytoolUserPr
 export type InsertMytoolUserPreferences = z.infer<typeof insertMytoolUserPreferencesSchema>;
 export type MytoolUserPreferences = typeof mytoolUserPreferences.$inferSelect;
 
+export const mytoolEmailLinks = pgTable("mytool_email_links", {
+  id: serial("id").primaryKey(),
+  subject: text("subject").notNull(),
+  sender: text("sender"),
+  emailDate: text("email_date"),
+  snippet: text("snippet"),
+  linkedTaskId: integer("linked_task_id").references(() => mytoolTasks.id, { onDelete: "cascade" }),
+  linkedPriorityId: integer("linked_priority_id").references(() => mytoolCompanyPriorities.id, { onDelete: "cascade" }),
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertMytoolEmailLinkSchema = createInsertSchema(mytoolEmailLinks).omit({ id: true, createdAt: true });
+export type InsertMytoolEmailLink = z.infer<typeof insertMytoolEmailLinkSchema>;
+export type MytoolEmailLink = typeof mytoolEmailLinks.$inferSelect;
+
 export const mytoolSettings = pgTable("mytool_settings", {
   id: serial("id").primaryKey(),
   enabled: boolean("enabled").notNull().default(true),
