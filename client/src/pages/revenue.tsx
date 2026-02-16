@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, invalidateDashboardQueries } from "@/lib/queryClient";
 import {
   BarChart,
   Bar,
@@ -95,6 +95,7 @@ export default function RevenueTracker() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/rev-tracker"] });
+      invalidateDashboardQueries(qc);
     },
   });
 

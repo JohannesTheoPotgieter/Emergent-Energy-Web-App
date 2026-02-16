@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { invalidateDashboardQueries } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -325,6 +326,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: breakdownKey });
+      invalidateDashboardQueries(queryClient);
       setAddLineOpen(false);
       setNewLineData({ category: "", description: "", amount: "", poNumber: "", invoiceNo: "", invoiceDate: "", paymentDate: "" });
       toast({ title: "Line item added" });
@@ -361,6 +363,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: breakdownKey });
+      invalidateDashboardQueries(queryClient);
       setInsertTaskOpen(false);
       setInsertTaskSearch("");
       setInsertTaskCategory("");

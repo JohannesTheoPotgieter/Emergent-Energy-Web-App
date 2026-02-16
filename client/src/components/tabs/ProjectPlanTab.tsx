@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { invalidateDashboardQueries } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -170,6 +171,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["working-plan", projectName] });
+      invalidateDashboardQueries(queryClient);
       setEditingTaskId(null);
       setEditValues({});
     },
@@ -185,6 +187,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["working-plan", projectName] });
+      invalidateDashboardQueries(queryClient);
     },
   });
 
@@ -200,6 +203,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["working-plan", projectName] });
+      invalidateDashboardQueries(queryClient);
       setShowAddDependency(false);
       setNewDep({ predecessorId: "", successorId: "", type: "FS", lag: 0 });
     },
@@ -213,6 +217,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["working-plan", projectName] });
+      invalidateDashboardQueries(queryClient);
     },
   });
 
@@ -228,6 +233,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["change-notices", projectName] });
+      invalidateDashboardQueries(queryClient);
     },
   });
 

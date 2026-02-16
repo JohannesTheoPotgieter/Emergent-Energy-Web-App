@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import { apiRequest, getQueryFn } from "@/lib/queryClient";
+import { apiRequest, getQueryFn, invalidateDashboardQueries } from "@/lib/queryClient";
 import {
   Bar,
   XAxis,
@@ -148,6 +148,7 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/cos-tracker/month-detail?monthKey=${monthKey}`] });
       queryClient.invalidateQueries({ queryKey: ["/api/cos-tracker"] });
+      invalidateDashboardQueries(queryClient);
     },
   });
 
@@ -437,6 +438,7 @@ export default function CosTracker() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/cos-tracker"] });
+      invalidateDashboardQueries(qc);
     },
   });
 

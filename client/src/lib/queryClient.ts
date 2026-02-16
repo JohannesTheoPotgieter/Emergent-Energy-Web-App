@@ -57,6 +57,15 @@ export const getQueryFn: <T>(options: {
     return await res.json();
   };
 
+export function invalidateDashboardQueries(qc: QueryClient) {
+  qc.invalidateQueries({ queryKey: ["/api/program-dashboard"] });
+  qc.invalidateQueries({ queryKey: ["/api/dashboard/high-priority"] });
+  qc.invalidateQueries({ queryKey: ["/api/projects-summary"] });
+  qc.invalidateQueries({ queryKey: ["dashboard"] });
+  qc.invalidateQueries({ queryKey: ["overview"] });
+  qc.invalidateQueries({ queryKey: ["projects-summary"] });
+}
+
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
