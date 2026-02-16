@@ -2484,8 +2484,9 @@ export async function registerRoutes(
           if (expense.expenseActualTotal) {
             const amt = parseFloat(expense.expenseActualTotal);
             const hasPastPaymentDate = expense.expensePaymentDate && /^\d{4}-\d{2}-\d{2}$/.test(expense.expensePaymentDate) && expense.expensePaymentDate < today;
-            const isPaid = expense.computedState === 'Paid';
-            if (hasPastPaymentDate && amt > 0 && !isPaid) {
+            const state = expense.computedState || '';
+            const isOverdueState = state === 'Invoiced' || state === 'Committed';
+            if (hasPastPaymentDate && amt > 0 && isOverdueState) {
               expenseOverdue += amt;
               projExpOverdue += amt;
               if (expense.expenseInvoiceNumber && expense.expenseInvoiceNumber.trim() !== '') {
