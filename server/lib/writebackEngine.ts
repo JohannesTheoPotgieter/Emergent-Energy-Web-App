@@ -1,4 +1,4 @@
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import * as fs from "fs";
 import * as path from "path";
 import type { WritebackMapping, WritebackAuditLog } from "@shared/schema";
@@ -74,6 +74,18 @@ function validateValue(value: string, rule: string | null): { valid: boolean; er
   } catch {
     return { valid: false, error: `Validation failed: ${rule}` };
   }
+}
+
+function parseCellAddress(addr: string): { col: number; row: number } | null {
+  const match = addr.match(/^([A-Z]+)(\d+)$/i);
+  if (!match) return null;
+  const letters = match[1].toUpperCase();
+  const row = parseInt(match[2], 10);
+  let col = 0;
+  for (let i = 0; i < letters.length; i++) {
+    col = col * 26 + (letters.charCodeAt(i) - 64);
+  }
+  return { col, row };
 }
 
 export function executeWriteback(
@@ -160,11 +172,11 @@ export function executeWriteback(
   return Array.from(resultsByWorkbook.values());
 }
 
-export function writeToWorkbook(
+export async function writeToWorkbook(
   workbookPath: string,
   writes: Array<{ sheetName: string; cellAddress: string; value: string }>,
   outputPath?: string
-): { success: boolean; previousValues: Map<string, string | null>; error?: string } {
+): Promise<{ success: boolean; previousValues: Map<string, string | null>; error?: string }> {
   const previousValues = new Map<string, string | null>();
 
   try {
@@ -173,25 +185,34 @@ export function writeToWorkbook(
       return { success: false, previousValues, error: `Workbook not found: ${fullPath}` };
     }
 
-    const workbook = XLSX.readFile(fullPath, { type: "file" });
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(fullPath);
 
     for (const write of writes) {
-      const sheet = workbook.Sheets[write.sheetName];
+      const sheet = workbook.getWorksheet(write.sheetName);
       if (!sheet) {
         previousValues.set(`${write.sheetName}!${write.cellAddress}`, null);
         continue;
       }
 
-      const existingCell = sheet[write.cellAddress];
-      const previousValue = existingCell ? String(existingCell.v ?? "") : null;
+      const parsed = parseCellAddress(write.cellAddress);
+      if (!parsed) {
+        previousValues.set(`${write.sheetName}!${write.cellAddress}`, null);
+        continue;
+      }
+
+      const row = sheet.getRow(parsed.row);
+      const cell = row.getCell(parsed.col);
+      const previousValue = cell.value !== null && cell.value !== undefined ? String(cell.value) : null;
       previousValues.set(`${write.sheetName}!${write.cellAddress}`, previousValue);
 
       const numericValue = Number(write.value);
       if (!isNaN(numericValue) && write.value.trim() !== "") {
-        sheet[write.cellAddress] = { t: "n", v: numericValue };
+        cell.value = numericValue;
       } else {
-        sheet[write.cellAddress] = { t: "s", v: write.value };
+        cell.value = write.value;
       }
+      row.commit();
     }
 
     const outPath = outputPath || fullPath;
@@ -199,7 +220,7 @@ export function writeToWorkbook(
     if (!fs.existsSync(outDir)) {
       fs.mkdirSync(outDir, { recursive: true });
     }
-    XLSX.writeFile(workbook, outPath);
+    await workbook.xlsx.writeFile(outPath);
 
     return { success: true, previousValues };
   } catch (err: any) {
@@ -207,41 +228,45 @@ export function writeToWorkbook(
   }
 }
 
-export function readCellValue(
+export async function readCellValue(
   workbookPath: string,
   sheetName: string,
   cellAddress: string
-): string | null {
+): Promise<string | null> {
   try {
     const fullPath = path.resolve(workbookPath);
     if (!fs.existsSync(fullPath)) return null;
-    const workbook = XLSX.readFile(fullPath, { type: "file" });
-    const sheet = workbook.Sheets[sheetName];
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(fullPath);
+    const sheet = workbook.getWorksheet(sheetName);
     if (!sheet) return null;
-    const cell = sheet[cellAddress];
-    if (!cell) return null;
-    return String(cell.v ?? "");
+    const parsed = parseCellAddress(cellAddress);
+    if (!parsed) return null;
+    const cell = sheet.getRow(parsed.row).getCell(parsed.col);
+    if (cell.value === null || cell.value === undefined) return null;
+    return String(cell.value);
   } catch {
     return null;
   }
 }
 
-export function getWorkbookSheets(workbookPath: string): string[] {
+export async function getWorkbookSheets(workbookPath: string): Promise<string[]> {
   try {
     const fullPath = path.resolve(workbookPath);
     if (!fs.existsSync(fullPath)) return [];
-    const workbook = XLSX.readFile(fullPath, { type: "file" });
-    return workbook.SheetNames;
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(fullPath);
+    return workbook.worksheets.map(ws => ws.name);
   } catch {
     return [];
   }
 }
 
-export function previewWriteback(
+export async function previewWriteback(
   workbookPath: string,
   mappings: WritebackMapping[],
   dataByEntity: Record<string, Record<string, any>[]>
-): Array<{
+): Promise<Array<{
   mappingId: number;
   mappingName: string;
   sheetName: string;
@@ -250,7 +275,7 @@ export function previewWriteback(
   newValue: string | null;
   willChange: boolean;
   error?: string;
-}> {
+}>> {
   const previews: Array<{
     mappingId: number;
     mappingName: string;
@@ -263,7 +288,7 @@ export function previewWriteback(
   }> = [];
 
   for (const mapping of mappings) {
-    const currentValue = readCellValue(workbookPath, mapping.sheetName, mapping.cellAddress);
+    const currentValue = await readCellValue(workbookPath, mapping.sheetName, mapping.cellAddress);
 
     const entities = dataByEntity[mapping.entityType] || [];
     let entity: Record<string, any> | undefined;

@@ -1,4 +1,4 @@
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import * as fs from "fs";
 import * as path from "path";
 import pg from "pg";
@@ -10,18 +10,42 @@ function getColumnIndex(colMap: Record<string, number>, names: string[]): number
   return -1;
 }
 
-function detectFontColor(sheet: any, rowIdx: number, col: number): { confirmed: boolean; color: string | null } {
-  const cellAddr = XLSX.utils.encode_cell({ r: rowIdx, c: col });
-  const cell = sheet[cellAddr];
-  if (cell && cell.s && cell.s.font && cell.s.font.color) {
-    const fontColor = cell.s.font.color.rgb || cell.s.font.color.argb || "";
-    const isRed = fontColor.toLowerCase().includes("ff0000") || 
-                 fontColor.toLowerCase().endsWith("ff0000");
+function detectFontColor(row: ExcelJS.Row, col: number): { confirmed: boolean; color: string | null } {
+  const cell = row.getCell(col);
+  if (cell && cell.value) {
+    const font = cell.font;
+    const argb = font?.color?.argb || "";
+    const isRed = argb.toUpperCase().includes("FF0000") || argb.toUpperCase().endsWith("FF0000");
     return { confirmed: !isRed, color: isRed ? "red" : "black" };
-  } else if (cell && cell.v) {
-    return { confirmed: true, color: "black" };
   }
   return { confirmed: false, color: null };
+}
+
+function getCellVal(cell: ExcelJS.Cell | undefined): any {
+  if (!cell) return null;
+  const v = cell.value;
+  if (v === null || v === undefined) return null;
+  if (typeof v === "object") {
+    if ("result" in v) return (v as any).result;
+    if ("richText" in v) return (v as any).richText?.map((r: any) => r.text).join("") || null;
+    if (v instanceof Date) return v;
+  }
+  return v;
+}
+
+function worksheetToArray(ws: ExcelJS.Worksheet): any[][] {
+  const data: any[][] = [];
+  const rowCount = ws.rowCount;
+  const colCount = ws.columnCount;
+  for (let r = 1; r <= rowCount; r++) {
+    const row = ws.getRow(r);
+    const rowData: any[] = [];
+    for (let c = 1; c <= colCount; c++) {
+      rowData.push(getCellVal(row.getCell(c)));
+    }
+    data.push(rowData);
+  }
+  return data;
 }
 
 export async function backfillInvoiceDateConfirmed(): Promise<{ updated: number; skipped: number; errors: string[] }> {
@@ -65,21 +89,17 @@ export async function backfillInvoiceDateConfirmed(): Promise<{ updated: number;
 
     try {
       const buffer = fs.readFileSync(filePath);
-      const workbook = XLSX.read(buffer, {
-        type: "buffer",
-        cellDates: true,
-        cellNF: true,
-        cellStyles: true,
-        cellFormula: false,
-      });
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(buffer);
 
-      if (!workbook.SheetNames.includes("Expenditure Breakdown")) {
+      const sheetNames = workbook.worksheets.map(ws => ws.name);
+      if (!sheetNames.includes("Expenditure Breakdown")) {
         totalSkipped++;
         continue;
       }
 
-      const sheet = workbook.Sheets["Expenditure Breakdown"];
-      const data: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: null });
+      const sheet = workbook.getWorksheet("Expenditure Breakdown")!;
+      const data = worksheetToArray(sheet);
 
       let headerRowIdx = -1;
       for (let i = 0; i < Math.min(data.length, 20); i++) {
@@ -131,8 +151,10 @@ export async function backfillInvoiceDateConfirmed(): Promise<{ updated: number;
         const params: any[] = [projectName, rowNum];
         let paramIdx = 3;
 
+        const excelRow = sheet.getRow(rowIdx + 1);
+
         if (invoiceDateCol >= 0 && row[invoiceDateCol] != null && String(row[invoiceDateCol]).trim() !== "") {
-          const { confirmed, color } = detectFontColor(sheet, rowIdx, invoiceDateCol);
+          const { confirmed, color } = detectFontColor(excelRow, invoiceDateCol + 1);
           updates.push(`invoice_date_confirmed = $${paramIdx}`);
           params.push(confirmed);
           paramIdx++;
@@ -142,7 +164,7 @@ export async function backfillInvoiceDateConfirmed(): Promise<{ updated: number;
         }
 
         if (paymentDateCol >= 0 && row[paymentDateCol] != null && String(row[paymentDateCol]).trim() !== "") {
-          const { confirmed, color } = detectFontColor(sheet, rowIdx, paymentDateCol);
+          const { confirmed, color } = detectFontColor(excelRow, paymentDateCol + 1);
           updates.push(`payment_date_confirmed = $${paramIdx}`);
           params.push(confirmed);
           paramIdx++;
