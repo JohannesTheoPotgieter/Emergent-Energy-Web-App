@@ -42,6 +42,7 @@ export const projectInfo = pgTable("project_info", {
   commissioningDate: text("commissioning_date"),
   omHandoverDate: text("om_handover_date"),
   clientHandoverDate: text("client_handover_date"),
+  escalationLevel: text("escalation_level"),
   isActive: boolean("is_active").notNull().default(true),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -750,6 +751,7 @@ export const operationalTasks = pgTable("operational_tasks", {
   blockerReason: text("blocker_reason"),
   plannedHours: real("planned_hours"),
   actualHours: real("actual_hours"),
+  escalationLevel: text("escalation_level"),
   sortOrder: integer("sort_order").notNull().default(0),
   isBaseline: boolean("is_baseline").notNull().default(false),
   createdBy: integer("created_by").references(() => users.id),
