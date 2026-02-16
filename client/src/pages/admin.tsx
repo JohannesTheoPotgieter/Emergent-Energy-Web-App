@@ -82,19 +82,7 @@ export default function AdminPage() {
   const [clearResult, setClearResult] = useState<{ success: boolean; message: string } | null>(null);
   const [clearError, setClearError] = useState<string | null>(null);
 
-  if (!isAdmin) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Card className="max-w-md w-full">
-          <CardContent className="py-12 text-center">
-            <AlertTriangle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
-            <h2 className="text-xl font-semibold mb-2">Access Denied</h2>
-            <p className="text-muted-foreground">You do not have admin privileges to access this page.</p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  const viewerOnly = !isAdmin;
 
   const loadFolderConfig = async () => {
     setFolderLoading(true);
@@ -272,32 +260,36 @@ export default function AdminPage() {
     <div className="container mx-auto p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold" data-testid="text-admin-title">Admin Dashboard</h1>
-          <p className="text-muted-foreground">Data import, system health, and diagnostics</p>
+          <h1 className="text-2xl font-bold" data-testid="text-admin-title">{viewerOnly ? "Data Import" : "Admin Dashboard"}</h1>
+          <p className="text-muted-foreground">{viewerOnly ? "Upload tracker files to import project data" : "Data import, system health, and diagnostics"}</p>
         </div>
-        <a href="/writeback-admin">
-          <Button variant="outline" data-testid="button-writeback-admin">
-            <FileSpreadsheet className="h-4 w-4 mr-2" />
-            Excel Writeback
-          </Button>
-        </a>
+        {!viewerOnly && (
+          <a href="/writeback-admin">
+            <Button variant="outline" data-testid="button-writeback-admin">
+              <FileSpreadsheet className="h-4 w-4 mr-2" />
+              Excel Writeback
+            </Button>
+          </a>
+        )}
       </div>
 
       <Tabs defaultValue="import" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="import" data-testid="tab-data-import">
-            <FolderOpen className="h-4 w-4 mr-2" />
-            Data Import
-          </TabsTrigger>
-          <TabsTrigger value="maintenance" data-testid="tab-maintenance">
-            <Database className="h-4 w-4 mr-2" />
-            Maintenance
-          </TabsTrigger>
-          <TabsTrigger value="smoke" data-testid="tab-smoke-test">
-            <Play className="h-4 w-4 mr-2" />
-            Smoke Test
-          </TabsTrigger>
-        </TabsList>
+        {!viewerOnly && (
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="import" data-testid="tab-data-import">
+              <FolderOpen className="h-4 w-4 mr-2" />
+              Data Import
+            </TabsTrigger>
+            <TabsTrigger value="maintenance" data-testid="tab-maintenance">
+              <Database className="h-4 w-4 mr-2" />
+              Maintenance
+            </TabsTrigger>
+            <TabsTrigger value="smoke" data-testid="tab-smoke-test">
+              <Play className="h-4 w-4 mr-2" />
+              Smoke Test
+            </TabsTrigger>
+          </TabsList>
+        )}
 
         {/* DATA IMPORT TAB */}
         <TabsContent value="import" className="space-y-4 mt-4">
