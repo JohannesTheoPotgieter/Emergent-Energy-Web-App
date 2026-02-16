@@ -397,14 +397,6 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
     }
   }
   
-  // Log diagnostic info for debugging
-  const hasCookie = !!req.headers.cookie;
-  const hasSession = !!req.session;
-  const hasUser = !!req.user;
-  const hasAuthHeader = !!authHeader;
-  
-  console.log(`[AUTH FAIL] hasCookie:${hasCookie}, hasSession:${hasSession}, hasUser:${hasUser}, hasAuthHeader:${hasAuthHeader}`);
-  
   res.status(401).json({ error: "auth_required", message: "Authentication required", code: "AUTH_REQUIRED" });
 }
 
