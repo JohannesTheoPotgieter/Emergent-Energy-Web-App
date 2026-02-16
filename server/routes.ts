@@ -755,9 +755,22 @@ export async function registerRoutes(
       }
 
       // Calculate delta (actual% - expected%) per project from projectPlan
+      // Use summary row (No. or #) for each project to match Excel's formula results
       const projectDeltas = new Map<string, { actual: number; expected: number; count: number }>();
       for (const plan of allPlans) {
-        if (plan.actualPctComplete !== null && plan.expectedPctComplete !== null) {
+        const taskNo = (plan.taskNo || '').toString().toLowerCase().trim();
+        const isSummary = taskNo === 'no.' || taskNo === 'no' || taskNo === '#';
+        if (isSummary && plan.actualPctComplete !== null && plan.expectedPctComplete !== null) {
+          projectDeltas.set(plan.projectName, { 
+            actual: plan.actualPctComplete, 
+            expected: plan.expectedPctComplete, 
+            count: 1 
+          });
+        }
+      }
+      // Fallback for projects without summary rows — use average of all tasks
+      for (const plan of allPlans) {
+        if (!projectDeltas.has(plan.projectName) && plan.actualPctComplete !== null && plan.expectedPctComplete !== null) {
           if (!projectDeltas.has(plan.projectName)) {
             projectDeltas.set(plan.projectName, { actual: 0, expected: 0, count: 0 });
           }
@@ -1366,38 +1379,50 @@ export async function registerRoutes(
         // GP % = 1 - (ActualExpenses / ActualRevenue); if revenue = 0 then null
         const gpPercent = actualRevenue > 0 ? 1 - (actualExpenses / actualRevenue) : null;
 
-        // Project % Complete = avg(actual_pct_complete) across plan tasks
-        const validActualPcts = projectPlans.filter(p => p.actualPctComplete !== null);
-        const projectPctComplete = validActualPcts.length > 0
-          ? validActualPcts.reduce((sum, p) => sum + (p.actualPctComplete || 0), 0) / validActualPcts.length
-          : null;
-
-        // Expected % Complete = calculated per task using SA working days relative to today
-        // For each task with valid start/end dates:
-        //   if today >= actualEnd → 1.0
-        //   if today <= actualStart → 0.0
-        //   else → saWorkingDays(actualStart, today) / saWorkingDays(actualStart, actualEnd)
-        const todayDate = today; // YYYY-MM-DD string
-        const tasksWithExpected: number[] = [];
-        for (const task of projectPlans) {
-          const tStart = task.actualStart?.substring(0, 10);
-          const tEnd = task.actualEnd?.substring(0, 10);
-          if (!tStart || !tEnd || !/^\d{4}-\d{2}-\d{2}/.test(tStart) || !/^\d{4}-\d{2}-\d{2}/.test(tEnd)) continue;
-          if (todayDate >= tEnd) {
-            tasksWithExpected.push(1.0);
-          } else if (todayDate <= tStart) {
-            tasksWithExpected.push(0.0);
-          } else {
-            const totalWd = saWorkingDays(tStart, tEnd);
-            const elapsedWd = saWorkingDays(tStart, todayDate);
-            if (totalWd && totalWd > 0 && elapsedWd !== null) {
-              tasksWithExpected.push(Math.min(elapsedWd / totalWd, 1.0));
+        // Project % Complete and Expected % — prefer summary row (No./#) from Excel
+        const summaryRow = projectPlans.find(p => {
+          const tn = (p.taskNo || '').toString().toLowerCase().trim();
+          return tn === 'no.' || tn === 'no' || tn === '#';
+        });
+        let projectPctComplete: number | null = null;
+        let expectedPctComplete: number | null = null;
+        if (summaryRow) {
+          projectPctComplete = summaryRow.actualPctComplete ?? null;
+          expectedPctComplete = summaryRow.expectedPctComplete ?? null;
+        }
+        if (projectPctComplete === null) {
+          const validActualPcts = projectPlans.filter(p => p.actualPctComplete !== null);
+          projectPctComplete = validActualPcts.length > 0
+            ? validActualPcts.reduce((sum, p) => sum + (p.actualPctComplete || 0), 0) / validActualPcts.length
+            : null;
+        }
+        if (expectedPctComplete === null) {
+          const todayDate = today;
+          const tasksWithExpected: number[] = [];
+          for (const task of projectPlans) {
+            if (task.expectedPctComplete !== null && task.expectedPctComplete !== undefined) {
+              tasksWithExpected.push(task.expectedPctComplete);
+              continue;
+            }
+            const tStart = task.actualStart?.substring(0, 10);
+            const tEnd = task.actualEnd?.substring(0, 10);
+            if (!tStart || !tEnd || !/^\d{4}-\d{2}-\d{2}/.test(tStart) || !/^\d{4}-\d{2}-\d{2}/.test(tEnd)) continue;
+            if (todayDate >= tEnd) {
+              tasksWithExpected.push(1.0);
+            } else if (todayDate <= tStart) {
+              tasksWithExpected.push(0.0);
+            } else {
+              const totalWd = saWorkingDays(tStart, tEnd);
+              const elapsedWd = saWorkingDays(tStart, todayDate);
+              if (totalWd && totalWd > 0 && elapsedWd !== null) {
+                tasksWithExpected.push(Math.min(elapsedWd / totalWd, 1.0));
+              }
             }
           }
+          expectedPctComplete = tasksWithExpected.length > 0
+            ? tasksWithExpected.reduce((a, b) => a + b, 0) / tasksWithExpected.length
+            : null;
         }
-        const expectedPctComplete = tasksWithExpected.length > 0
-          ? tasksWithExpected.reduce((a, b) => a + b, 0) / tasksWithExpected.length
-          : null;
         const deltaVsExpected = (projectPctComplete !== null && expectedPctComplete !== null)
           ? projectPctComplete - expectedPctComplete : null;
 
