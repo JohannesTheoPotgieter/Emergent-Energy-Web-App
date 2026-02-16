@@ -7484,6 +7484,7 @@ export async function registerRoutes(
             durationDays: pt.durationDays || null,
             percentComplete: pctComplete,
             expectedPercentComplete: pt.expectedPctComplete != null ? Math.round(pt.expectedPctComplete * 100) : null,
+            storedActualPct: pt.actualPctComplete != null ? Math.round(pt.actualPctComplete * 100) : null,
             assignees: null,
             tags: null,
             blockerReason: null,
@@ -7639,7 +7640,12 @@ export async function registerRoutes(
           parent.computedActualDurationDays = Math.max(1, Math.round((maxActualEnd.getTime() - minActualStart.getTime()) / 86400000) + 1);
         }
 
-        parent.percentComplete = totalWeight > 0 ? Math.round(totalWeightedPct / totalWeight) : (parent.percentComplete || 0);
+        const computedActual = totalWeight > 0 ? Math.round(totalWeightedPct / totalWeight) : (parent.percentComplete || 0);
+        if (parent.isBaseline && parent.storedActualPct != null) {
+          parent.percentComplete = parent.storedActualPct;
+        } else {
+          parent.percentComplete = computedActual;
+        }
         const storedExpected = getStoredExpected(parent);
         if (parent.isBaseline && storedExpected != null) {
           parent.computedExpectedPct = storedExpected;
