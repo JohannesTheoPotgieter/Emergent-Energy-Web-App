@@ -24,8 +24,6 @@ import {
   Loader2,
   Save,
   Mail,
-  Link2,
-  Unlink,
   AlertCircle,
   CheckCircle2,
 } from "lucide-react";
@@ -79,21 +77,12 @@ export default function MyToolSettingsPage() {
 
   useEffect(() => {
     const params = new URLSearchParams(searchString);
-    if (params.get("outlook_connected") === "true") {
-      toast({ title: "Outlook connected", description: `Linked to ${params.get("email") || "your account"}.` });
-      refetchOutlook();
-      setLocation("/my-tool/settings", { replace: true });
-    } else if (params.get("outlook_disconnected") === "true") {
-      toast({ title: "Outlook disconnected", description: "Your Outlook account has been unlinked." });
-      refetchOutlook();
-      setLocation("/my-tool/settings", { replace: true });
-    } else if (params.get("outlook_error")) {
+    if (params.get("outlook_error")) {
       const err = params.get("outlook_error");
       const messages: Record<string, string> = {
         connect_failed: "Could not connect to Outlook. Please try again.",
         auth_denied: "Outlook authorisation was cancelled or denied.",
         callback_failed: "Something went wrong during Outlook sign-in.",
-        disconnect_failed: "Could not disconnect Outlook. Please try again.",
       };
       toast({ title: "Outlook error", description: messages[err!] || "An error occurred.", variant: "destructive" });
       setLocation("/my-tool/settings", { replace: true });
@@ -269,8 +258,8 @@ export default function MyToolSettingsPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-gray-600 dark:text-gray-400">
-            Connect your Microsoft Outlook account to see your meetings in Today and Week views, 
-            sync time blocks to your Outlook calendar, and send approval emails.
+            Your Microsoft Outlook account is managed through the platform connection.
+            Calendar events, time block sync, and approval emails use this connection.
           </p>
 
           {outlookStatus?.connected ? (
@@ -282,20 +271,9 @@ export default function MyToolSettingsPage() {
                   <Badge variant="secondary" className="text-xs">{outlookStatus.email}</Badge>
                 )}
               </div>
-              {outlookStatus.lastSyncAt && (
-                <p className="text-xs text-gray-500">
-                  Last synced: {new Date(outlookStatus.lastSyncAt).toLocaleString("en-ZA", { timeZone: "Africa/Johannesburg" })}
-                </p>
-              )}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => window.location.href = "/api/outlook/disconnect"}
-                data-testid="button-disconnect-outlook"
-              >
-                <Unlink className="h-4 w-4 mr-2" />
-                Disconnect
-              </Button>
+              <p className="text-xs text-gray-500">
+                Your Outlook account is connected and ready. Calendar events will appear in Today and Week views.
+              </p>
             </div>
           ) : outlookStatus?.configured === false ? (
             <div className="space-y-3">
@@ -304,27 +282,18 @@ export default function MyToolSettingsPage() {
                 <span className="text-sm text-amber-600 dark:text-amber-400">Not configured</span>
               </div>
               <p className="text-xs text-gray-500">
-                Your administrator needs to configure the Microsoft Azure application credentials (OUTLOOK_CLIENT_ID, OUTLOOK_CLIENT_SECRET) before Outlook can be connected.
+                The Outlook connector has not been set up yet. Please ask your administrator to configure the Outlook connection in the platform settings.
               </p>
             </div>
           ) : (
             <div className="space-y-3">
               <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-gray-400" />
-                <span className="text-sm text-gray-500">Not connected</span>
+                <AlertCircle className="h-4 w-4 text-amber-500" />
+                <span className="text-sm text-amber-600 dark:text-amber-400">Connection issue</span>
               </div>
               <p className="text-xs text-gray-500">
-                Click the button below to sign in with your Microsoft account and connect Outlook.
+                The Outlook connector is configured but the connection may need to be refreshed. Please ask your administrator to check the Outlook connection in platform settings.
               </p>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => window.location.href = "/api/outlook/connect"}
-                data-testid="button-connect-outlook"
-              >
-                <Link2 className="h-4 w-4 mr-2" />
-                Connect Outlook
-              </Button>
             </div>
           )}
         </CardContent>

@@ -8341,56 +8341,15 @@ export async function registerRoutes(
     }
   });
 
-  // ─── Outlook Integration ───
+  // ─── Outlook Integration (Replit Connector) ───
   const outlook = await import("./outlook");
 
   app.get("/api/outlook/status", requireAuth, async (req, res) => {
     try {
-      const status = await outlook.getConnectionStatus((req.user as any).id);
+      const status = await outlook.getConnectionStatus();
       res.json(status);
     } catch (err: any) {
-      res.json({ connected: false });
-    }
-  });
-
-  app.get("/api/outlook/connect", requireAuth, async (req, res) => {
-    try {
-      if (!outlook.isOutlookConfigured()) {
-        return res.status(400).json({ error: "Outlook integration not configured. Contact your administrator." });
-      }
-      const url = await outlook.getAuthUrl((req.user as any).id);
-      res.redirect(url);
-    } catch (err: any) {
-      console.error("[Outlook] Connect error:", err);
-      res.redirect("/my-tool/settings?outlook_error=connect_failed");
-    }
-  });
-
-  app.get("/api/outlook/callback", requireAuth, async (req, res) => {
-    try {
-      const { code, state, error } = req.query;
-      if (error || !code || !state) {
-        return res.redirect("/my-tool/settings?outlook_error=auth_denied");
-      }
-      const result = await outlook.handleCallback(code as string, state as string);
-      if (result.userId !== (req.user as any).id) {
-        console.error("[Outlook] State userId mismatch: expected", (req.user as any).id, "got", result.userId);
-        return res.redirect("/my-tool/settings?outlook_error=callback_failed");
-      }
-      res.redirect(`/my-tool/settings?outlook_connected=true&email=${encodeURIComponent(result.email)}`);
-    } catch (err: any) {
-      console.error("[Outlook] Callback error:", err);
-      res.redirect("/my-tool/settings?outlook_error=callback_failed");
-    }
-  });
-
-  app.get("/api/outlook/disconnect", requireAuth, async (req, res) => {
-    try {
-      await outlook.disconnect((req.user as any).id);
-      res.redirect("/my-tool/settings?outlook_disconnected=true");
-    } catch (err: any) {
-      console.error("[Outlook] Disconnect error:", err);
-      res.redirect("/my-tool/settings?outlook_error=disconnect_failed");
+      res.json({ configured: false, connected: false });
     }
   });
 
@@ -8400,10 +8359,10 @@ export async function registerRoutes(
       if (!start || !end) {
         return res.status(400).json({ error: "start and end query params required (YYYY-MM-DD)" });
       }
-      const events = await outlook.getCalendarEvents((req.user as any).id, start as string, end as string);
+      const events = await outlook.getCalendarEvents(start as string, end as string);
       res.json(events);
     } catch (err: any) {
-      if (err.message?.includes("Not connected")) {
+      if (err.message?.includes("not connected") || err.message?.includes("not available")) {
         return res.json([]);
       }
       console.error("[Outlook] Events error:", err);
@@ -8417,7 +8376,7 @@ export async function registerRoutes(
       if (!date || !startTime || !endTime || !label) {
         return res.status(400).json({ error: "date, startTime, endTime, label are required" });
       }
-      const eventId = await outlook.createOutlookEvent((req.user as any).id, {
+      const eventId = await outlook.createOutlookEvent({
         date, startTime, endTime, label,
         idempotencyKey: idempotencyKey || `tb-${Date.now()}`,
       });
@@ -8431,7 +8390,7 @@ export async function registerRoutes(
   app.patch("/api/outlook/events/:eventId", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { calendarId, date, startTime, endTime, label } = req.body;
-      await outlook.updateOutlookEvent((req.user as any).id, req.params.eventId, calendarId || null, {
+      await outlook.updateOutlookEvent(req.params.eventId, calendarId || null, {
         date, startTime, endTime, label,
       });
       res.json({ success: true });
@@ -8444,7 +8403,7 @@ export async function registerRoutes(
   app.delete("/api/outlook/events/:eventId", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { calendarId } = req.query;
-      await outlook.deleteOutlookEvent((req.user as any).id, req.params.eventId, (calendarId as string) || null);
+      await outlook.deleteOutlookEvent(req.params.eventId, (calendarId as string) || null);
       res.json({ success: true });
     } catch (err: any) {
       console.error("[Outlook] Delete event error:", err);
@@ -8458,7 +8417,7 @@ export async function registerRoutes(
       if (!to || !subject || !approvalTitle) {
         return res.status(400).json({ error: "to, subject, and approvalTitle are required" });
       }
-      await outlook.sendApprovalEmail((req.user as any).id, {
+      await outlook.sendApprovalEmail({
         to, subject, approvalTitle,
         approvalDescription: approvalDescription || "",
         approveUrl: approveUrl || "#",

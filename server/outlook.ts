@@ -7,6 +7,10 @@ import { Client } from "@microsoft/microsoft-graph-client";
 let connectionSettings: any;
 
 async function getAccessToken(): Promise<string> {
+  if (!isOutlookConfigured()) {
+    throw new Error("Outlook not available - connector not configured.");
+  }
+
   if (
     connectionSettings &&
     connectionSettings.settings?.expires_at &&
@@ -23,7 +27,7 @@ async function getAccessToken(): Promise<string> {
       : null;
 
   if (!xReplitToken) {
-    throw new Error("Replit connector token not available.");
+    throw new Error("Outlook not available - connector token not found.");
   }
 
   const res = await fetch(
@@ -44,7 +48,7 @@ async function getAccessToken(): Promise<string> {
     connectionSettings?.settings?.oauth?.credentials?.access_token;
 
   if (!connectionSettings || !accessToken) {
-    throw new Error("Outlook not connected via Replit connector.");
+    throw new Error("Outlook not connected - please set up the Outlook connector.");
   }
 
   return accessToken;
