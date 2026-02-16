@@ -77,4 +77,4 @@ Preferred communication style: Simple, everyday language.
 -   **tailwindcss**: Utility-first CSS framework.
 
 ### Third-Party Integrations
--   **Microsoft Graph API**: For Outlook calendar integration in My Tool.
+-   **Microsoft Graph API**: For Outlook calendar integration in My Tool, using Replit Connector for OAuth/token management (no custom MSAL or encrypted token storage).
