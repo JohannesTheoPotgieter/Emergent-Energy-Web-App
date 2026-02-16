@@ -378,6 +378,7 @@ export interface IStorage {
 
   // My Tool - Email Links
   getEmailLinksByTask(taskId: number): Promise<MytoolEmailLink[]>;
+  getEmailLinksByOperationalTask(taskId: number): Promise<MytoolEmailLink[]>;
   getEmailLinksByPriority(priorityId: number): Promise<MytoolEmailLink[]>;
   createEmailLink(data: InsertMytoolEmailLink): Promise<MytoolEmailLink>;
   deleteEmailLink(id: number): Promise<void>;
@@ -1957,6 +1958,10 @@ export class DatabaseStorage implements IStorage {
   // My Tool - Email Links
   async getEmailLinksByTask(taskId: number): Promise<MytoolEmailLink[]> {
     return this.dbInstance.select().from(mytoolEmailLinks).where(eq(mytoolEmailLinks.linkedTaskId, taskId)).orderBy(desc(mytoolEmailLinks.createdAt));
+  }
+
+  async getEmailLinksByOperationalTask(taskId: number): Promise<MytoolEmailLink[]> {
+    return this.dbInstance.select().from(mytoolEmailLinks).where(eq(mytoolEmailLinks.linkedOperationalTaskId, taskId)).orderBy(desc(mytoolEmailLinks.createdAt));
   }
 
   async getEmailLinksByPriority(priorityId: number): Promise<MytoolEmailLink[]> {

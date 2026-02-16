@@ -926,6 +926,8 @@ export const mytoolPriorityHorizonEnum = pgEnum('mytool_priority_horizon', ['tod
 export const mytoolPrioritySeverityEnum = pgEnum('mytool_priority_severity', ['normal', 'important', 'critical']);
 export const mytoolPriorityStatusEnum = pgEnum('mytool_priority_status', ['active', 'monitoring', 'closed']);
 
+export const mytoolRecurrenceFrequencyEnum = pgEnum('mytool_recurrence_frequency', ['daily', 'weekly', 'monthly']);
+
 export const mytoolTasks = pgTable("mytool_tasks", {
   id: serial("id").primaryKey(),
   ownerUserId: integer("owner_user_id").notNull().references(() => users.id),
@@ -939,6 +941,12 @@ export const mytoolTasks = pgTable("mytool_tasks", {
   tag: text("tag"),
   blockedReason: text("blocked_reason"),
   sortOrder: integer("sort_order").notNull().default(0),
+  isRecurring: boolean("is_recurring").notNull().default(false),
+  recurrenceFrequency: mytoolRecurrenceFrequencyEnum("recurrence_frequency"),
+  recurrenceInterval: integer("recurrence_interval").default(1),
+  recurrenceDaysOfWeek: text("recurrence_days_of_week"),
+  recurrenceEndDate: text("recurrence_end_date"),
+  recurrenceParentId: integer("recurrence_parent_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   completedAt: timestamp("completed_at"),
@@ -1021,7 +1029,10 @@ export const mytoolEmailLinks = pgTable("mytool_email_links", {
   sender: text("sender"),
   emailDate: text("email_date"),
   snippet: text("snippet"),
+  outlookMessageId: text("outlook_message_id"),
+  webLink: text("web_link"),
   linkedTaskId: integer("linked_task_id").references(() => mytoolTasks.id, { onDelete: "cascade" }),
+  linkedOperationalTaskId: integer("linked_operational_task_id").references(() => operationalTasks.id, { onDelete: "cascade" }),
   linkedPriorityId: integer("linked_priority_id").references(() => mytoolCompanyPriorities.id, { onDelete: "cascade" }),
   createdBy: integer("created_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
