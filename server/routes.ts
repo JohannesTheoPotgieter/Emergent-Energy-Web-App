@@ -4170,30 +4170,33 @@ export async function registerRoutes(
 
         const hasPO = !!(exp.expensePoNumber && exp.expensePoNumber.trim());
         const hasInvoice = !!(exp.expenseInvoiceNumber && exp.expenseInvoiceNumber.trim());
-        const hasInvoiceDate = !!(exp.expenseInvoicedDate && /^\d{4}-\d{2}-\d{2}/.test(exp.expenseInvoicedDate));
-        const invoiceDateActual = exp.invoiceDateFontColor !== 'red';
-        const hasPaymentDate = !!(exp.expensePaymentDate && /^\d{4}-\d{2}-\d{2}/.test(exp.expensePaymentDate));
-        const paymentDateActual = exp.paymentDateFontColor !== 'red';
+        const hasInvoiceDate = !!(exp.expenseInvoicedDate && exp.expenseInvoicedDate.trim());
+        const invoiceDateActual = hasInvoiceDate && (
+          exp.invoiceDateConfirmed === true ||
+          (exp.invoiceDateConfirmed == null && exp.invoiceDateFontColor !== 'red')
+        );
+        const hasPaymentDate = !!(exp.expensePaymentDate && exp.expensePaymentDate.trim());
+        const paymentDateActual = hasPaymentDate && exp.paymentDateFontColor !== 'red';
 
+        // COS Recognition: requires BOTH Invoice Number AND actual Invoice Raised Date
         let cosStatus: string;
-        if (hasInvoice && hasInvoiceDate && invoiceDateActual && hasPaymentDate && paymentDateActual) {
+        if (hasInvoice && invoiceDateActual) {
           cosStatus = 'COS Realised';
-        } else if (hasInvoice && hasInvoiceDate) {
-          cosStatus = 'Not Yet Realised';
         } else if (hasPO || hasInvoice) {
           cosStatus = 'Not Yet Realised';
         } else {
           cosStatus = 'Planned';
         }
 
+        // Payment Status: uses full state classifier logic
         let paymentStatus: string;
-        if (hasInvoice && hasPaymentDate && paymentDateActual) {
+        if (hasInvoice && paymentDateActual) {
           paymentStatus = 'Paid';
+        } else if (hasInvoice && invoiceDateActual) {
+          paymentStatus = 'Invoiced';
         } else if (hasPaymentDate && !paymentDateActual) {
           paymentStatus = 'Payment Planned';
-        } else if (hasInvoice && !hasPaymentDate) {
-          paymentStatus = 'Invoiced';
-        } else if (hasPO) {
+        } else if (hasPO || hasInvoice) {
           paymentStatus = 'Committed';
         } else {
           paymentStatus = 'Planned';
