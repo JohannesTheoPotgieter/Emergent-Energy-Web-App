@@ -127,6 +127,8 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
   const [warningNote, setWarningNote] = useState("");
   const [showAddDependency, setShowAddDependency] = useState(false);
   const [newDep, setNewDep] = useState({ predecessorId: "", successorId: "", type: "FS", lag: 0 });
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [taskToDelete, setTaskToDelete] = useState<CPMTask | null>(null);
   
   const [searchQuery, setSearchQuery] = useState("");
   const [filter, setFilter] = useState<FilterType>("all");
@@ -218,6 +220,25 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["working-plan", projectName] });
       invalidateDashboardQueries(queryClient);
+    },
+  });
+
+  const deleteTaskMutation = useMutation({
+    mutationFn: async ({ taskId, isNewTask }: { taskId: number; isNewTask: boolean }) => {
+      const res = await fetch(`/api/working-plan/tasks/${taskId}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectName, isNewTask }),
+      });
+      if (!res.ok) throw new Error("Failed to delete task");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["working-plan", projectName] });
+      invalidateDashboardQueries(queryClient);
+      setShowDeleteConfirm(false);
+      setTaskToDelete(null);
+      setShowTaskDetail(false);
     },
   });
 
@@ -683,23 +704,38 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
                           </Button>
                         </div>
                       ) : (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-6 px-2 text-xs"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEditingTaskId(task.id);
-                            setEditValues({
-                              name: task.name,
-                              startDate: task.startDate,
-                              endDate: task.endDate,
-                            });
-                          }}
-                          data-testid={`button-edit-${task.id}`}
-                        >
-                          Edit
-                        </Button>
+                        <div className="flex gap-1">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 px-2 text-xs"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingTaskId(task.id);
+                              setEditValues({
+                                name: task.name,
+                                startDate: task.startDate,
+                                endDate: task.endDate,
+                              });
+                            }}
+                            data-testid={`button-edit-${task.id}`}
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 w-6 p-0"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setTaskToDelete(task);
+                              setShowDeleteConfirm(true);
+                            }}
+                            data-testid={`button-delete-${task.id}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                          </Button>
+                        </div>
                       )}
                     </TableCell>
                   </TableRow>
@@ -1216,7 +1252,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
                 </div>
               )}
 
-              <div className="pt-4 border-t">
+              <div className="pt-4 border-t flex items-center justify-between">
                 <Button
                   variant="outline"
                   size="sm"
@@ -1233,6 +1269,18 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
                   data-testid="button-edit-from-detail"
                 >
                   Edit Task
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => {
+                    setTaskToDelete(selectedTask);
+                    setShowDeleteConfirm(true);
+                  }}
+                  data-testid="button-delete-from-detail"
+                >
+                  <Trash2 className="h-3.5 w-3.5 mr-1" />
+                  Delete
                 </Button>
               </div>
             </div>
@@ -1280,6 +1328,45 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
             </Button>
             <Button variant="destructive" onClick={confirmWarningChange} data-testid="button-warning-confirm">
               Confirm Change
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Trash2 className="h-5 w-5 text-destructive" />
+              Delete Task
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this task? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          {taskToDelete && (
+            <div className="py-2">
+              <p className="text-sm font-medium">{taskToDelete.taskNo} — {taskToDelete.name}</p>
+              {taskToDelete.isCritical && (
+                <Badge variant="destructive" className="mt-2 text-xs">This task is on the critical path</Badge>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowDeleteConfirm(false); setTaskToDelete(null); }} data-testid="button-delete-cancel">
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (taskToDelete) {
+                  deleteTaskMutation.mutate({ taskId: taskToDelete.id, isNewTask: taskToDelete.id < 0 });
+                }
+              }}
+              disabled={deleteTaskMutation.isPending}
+              data-testid="button-delete-confirm"
+            >
+              {deleteTaskMutation.isPending ? "Deleting..." : "Delete Task"}
             </Button>
           </DialogFooter>
         </DialogContent>
