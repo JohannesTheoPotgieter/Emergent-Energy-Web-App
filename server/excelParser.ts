@@ -1,4 +1,3 @@
-import * as XLSX from "xlsx";
 import ExcelJS from "exceljs";
 import type { 
   InsertProjectInfo, 
@@ -29,6 +28,14 @@ export interface ParseResult {
   financeCosParsed: number;
 }
 
+function excelSerialToDate(serial: number): { y: number; m: number; d: number } | null {
+  if (serial < 1) return null;
+  if (serial > 59) serial -= 1;
+  const epoch = new Date(1899, 11, 31);
+  const date = new Date(epoch.getTime() + serial * 86400000);
+  return { y: date.getFullYear(), m: date.getMonth() + 1, d: date.getDate() };
+}
+
 function parseDate(value: any): string | null {
   if (!value) return null;
   
@@ -38,7 +45,7 @@ function parseDate(value: any): string | null {
   
   if (typeof value === "number") {
     try {
-      const date = XLSX.SSF.parse_date_code(value);
+      const date = excelSerialToDate(value);
       if (date) {
         return `${date.y}-${String(date.m).padStart(2, "0")}-${String(date.d).padStart(2, "0")}`;
       }
@@ -48,7 +55,6 @@ function parseDate(value: any): string | null {
   }
   
   if (typeof value === "string") {
-    // Try parsing with JavaScript Date (handles many formats including "7-Jul-25", "Jul 7, 2025", etc.)
     const parsed = new Date(value);
     if (!isNaN(parsed.getTime())) {
       const year = parsed.getFullYear();
@@ -57,7 +63,6 @@ function parseDate(value: any): string | null {
       return `${year}-${month}-${day}`;
     }
     
-    // Legacy patterns for explicit formats
     const ddmmyyyy = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
     if (ddmmyyyy) {
       const [, day, month, year] = ddmmyyyy;
@@ -104,41 +109,68 @@ function parseStatus(value: any): number | null {
   return null;
 }
 
-function getCellValue(sheet: XLSX.WorkSheet, col: string, row: number): any {
-  const cellRef = `${col}${row}`;
-  const cell = sheet[cellRef];
-  return cell ? cell.v : null;
+function getCellRawValue(cell: ExcelJS.Cell): any {
+  if (!cell || !cell.value) return null;
+  const v = cell.value;
+  if (typeof v === "object" && v !== null) {
+    if ("result" in v) return (v as any).result;
+    if ("error" in v) return null;
+    if (v instanceof Date) return v;
+    if ("richText" in v) {
+      return (v as any).richText.map((rt: any) => rt.text).join("");
+    }
+    if ("text" in v) return (v as any).text;
+  }
+  return v;
 }
 
-// Search sheet for a label and return the date value from adjacent cells
-// Expanded search area to cover more tracker variants
-function findLabeledDateValue(sheet: XLSX.WorkSheet, labels: string[]): string | null {
-  const range = XLSX.utils.decode_range(sheet["!ref"] || "A1:Z50");
-  const maxRow = Math.min(range.e.r, 50); // Search first 50 rows
-  const maxCol = Math.min(range.e.c, 10); // Search columns A-K for labels
+function worksheetToArray(ws: ExcelJS.Worksheet, opts?: { raw?: boolean }): any[][] {
+  const data: any[][] = [];
+  const rowCount = ws.rowCount;
+  const colCount = ws.columnCount;
+  for (let r = 1; r <= rowCount; r++) {
+    const row = ws.getRow(r);
+    const rowData: any[] = [];
+    for (let c = 1; c <= colCount; c++) {
+      const cell = row.getCell(c);
+      rowData.push(getCellRawValue(cell));
+    }
+    data.push(rowData);
+  }
+  return data;
+}
+
+function getCellValue(ws: ExcelJS.Worksheet, col: string, row: number): any {
+  const cell = ws.getCell(`${col}${row}`);
+  return getCellRawValue(cell);
+}
+
+function findLabeledDateValue(ws: ExcelJS.Worksheet, labels: string[]): string | null {
+  const maxRow = Math.min(ws.rowCount, 50);
+  const maxCol = Math.min(ws.columnCount, 11);
   
-  for (let r = 0; r <= maxRow; r++) {
-    for (let c = 0; c <= maxCol; c++) {
-      const cell = sheet[XLSX.utils.encode_cell({ r, c })];
-      if (cell && cell.v) {
-        const cellText = String(cell.v).toLowerCase().trim();
+  for (let r = 1; r <= maxRow; r++) {
+    const wsRow = ws.getRow(r);
+    for (let c = 1; c <= maxCol; c++) {
+      const cellVal = getCellRawValue(wsRow.getCell(c));
+      if (cellVal) {
+        const cellText = String(cellVal).toLowerCase().trim();
         for (const label of labels) {
           if (cellText.includes(label.toLowerCase())) {
-            // Found a match, look for date in adjacent columns (right side)
             for (let dc = 1; dc <= 4; dc++) {
-              if (c + dc <= range.e.c) {
-                const valueCell = sheet[XLSX.utils.encode_cell({ r, c: c + dc })];
-                if (valueCell && valueCell.v) {
-                  const dateVal = parseDate(valueCell.v);
+              if (c + dc <= ws.columnCount) {
+                const valueCell = getCellRawValue(wsRow.getCell(c + dc));
+                if (valueCell) {
+                  const dateVal = parseDate(valueCell);
                   if (dateVal) return dateVal;
                 }
               }
             }
-            // Also check row below same column (some trackers stack label/value)
             if (r + 1 <= maxRow) {
-              const belowCell = sheet[XLSX.utils.encode_cell({ r: r + 1, c })];
-              if (belowCell && belowCell.v) {
-                const dateVal = parseDate(belowCell.v);
+              const belowRow = ws.getRow(r + 1);
+              const belowVal = getCellRawValue(belowRow.getCell(c));
+              if (belowVal) {
+                const dateVal = parseDate(belowVal);
                 if (dateVal) return dateVal;
               }
             }
@@ -159,7 +191,6 @@ function findHeaderRow(data: any[][], requiredTokens: string[], startRow = 0, ma
     const row = data[rowIdx];
     if (!row) continue;
     
-    // Build column map for this row
     const colMap = new Map<string, number>();
     for (let colIdx = 0; colIdx < row.length; colIdx++) {
       const header = normalizeHeader(row[colIdx]);
@@ -168,7 +199,6 @@ function findHeaderRow(data: any[][], requiredTokens: string[], startRow = 0, ma
       }
     }
     
-    // Check if all required tokens are present
     const allTokensFound = requiredTokens.every(token => {
       const normalizedToken = token.toLowerCase().trim();
       const headers = Array.from(colMap.keys());
@@ -201,36 +231,29 @@ function getColumnIndex(colMap: Map<string, number>, searchTerms: string[]): num
   return -1;
 }
 
-export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult {
+export async function parseTrackerFile(buffer: Buffer, fileName: string): Promise<ParseResult> {
   const projectName = fileName.replace(/\.(xlsx|xlsm|xls)$/i, "");
   const warnings: string[] = [];
   
-  const workbook = XLSX.read(buffer, { 
-    type: "buffer",
-    cellDates: true,
-    cellNF: true,
-    cellStyles: true,
-    cellFormula: false  // Read formula results, not formulas
-  });
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
   
   let projectInfo: InsertProjectInfo | null = null;
   const expenses: InsertProgramExpense[] = [];
   const inflows: InsertProgramInflows[] = [];
   const planItems: InsertProjectPlan[] = [];
 
-  // Parse Project Plan sheet for project info and tasks
-  if (workbook.SheetNames.includes("Project Plan")) {
-    const sheet = workbook.Sheets["Project Plan"];
+  const sheetNames = workbook.worksheets.map(ws => ws.name);
+
+  if (sheetNames.includes("Project Plan")) {
+    const sheet = workbook.getWorksheet("Project Plan")!;
     
-    // Extract project info from fixed cells
     const sizeKwp = parseNumber(getCellValue(sheet, "E", 3));
     const pd = getCellValue(sheet, "E", 4);
     const pm = getCellValue(sheet, "E", 5);
     const contractValue = parseNumber(getCellValue(sheet, "E", 6));
     const phase = getCellValue(sheet, "E", 7);
     
-    // Extract date fields - look in multiple locations
-    // Try column E rows 8-12 first, then search for labeled cells
     const pdHandoverDate = parseDate(getCellValue(sheet, "E", 8)) || findLabeledDateValue(sheet, ["pd handover", "handover date"]);
     const constructionStartDate = parseDate(getCellValue(sheet, "E", 9)) || findLabeledDateValue(sheet, ["construction start", "start date"]);
     const commissioningDate = parseDate(getCellValue(sheet, "E", 10)) || findLabeledDateValue(sheet, ["commissioning"]);
@@ -251,35 +274,29 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
       clientHandoverDate,
     };
     
-    // Parse task table with robust header detection
-    const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null }) as any[][];
+    const data = worksheetToArray(sheet);
     
-    // Look for task table header
     const taskHeaderTokens = ["no.", "high level programme", "actual start", "actual end"];
     const taskHeader = findHeaderRow(data, taskHeaderTokens);
     
     if (taskHeader) {
       const { rowIdx: headerRowIdx, colMap } = taskHeader;
       
-      // Find column indices
       const noCol = getColumnIndex(colMap, ["no.", "no"]);
       const programmeCol = getColumnIndex(colMap, ["high level programme", "programme"]);
       const actualStartCol = getColumnIndex(colMap, ["actual start"]);
       const durationCol = getColumnIndex(colMap, ["duration", "days"]);
       const actualEndCol = getColumnIndex(colMap, ["actual end"]);
       
-      // Find status columns - prioritize "status" headers over generic "%" headers
       const statusCols: number[] = [];
       const entries = Array.from(colMap.entries());
       
-      // First pass: look for explicit "status" headers
       for (const [header, colIdx] of entries) {
         if (header.includes("status")) {
           statusCols.push(colIdx);
         }
       }
       
-      // If we don't have 2 status columns, look for "%" headers as fallback
       if (statusCols.length < 2) {
         for (const [header, colIdx] of entries) {
           if (header.includes("%") && !header.includes("status") && !statusCols.includes(colIdx)) {
@@ -289,7 +306,6 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
         }
       }
       
-      // Parse data rows (start from next row after header)
       for (let rowIdx = headerRowIdx + 1; rowIdx < data.length; rowIdx++) {
         const row = data[rowIdx];
         if (!row) continue;
@@ -325,12 +341,10 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
     warnings.push("Missing 'Project Plan' sheet");
   }
 
-  // Parse Expenditure Breakdown sheet - handles dual-table structure (Budget/Costed + Actual/Finance)
-  if (workbook.SheetNames.includes("Expenditure Breakdown")) {
-    const sheet = workbook.Sheets["Expenditure Breakdown"];
-    const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null }) as any[][];
+  if (sheetNames.includes("Expenditure Breakdown")) {
+    const sheet = workbook.getWorksheet("Expenditure Breakdown")!;
+    const data = worksheetToArray(sheet);
     
-    // Core header tokens to find the main expenditure table (more flexible - doesn't require all columns)
     const expenseHeaderTokens = [
       "product/ service",
       "description of work",
@@ -346,7 +360,6 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
     if (expenseHeader) {
       const { rowIdx: headerRowIdx, colMap } = expenseHeader;
       
-      // Budget/Costed side columns
       const categoryCol = getColumnIndex(colMap, ["product/ service", "product", "category"]);
       const descCol = getColumnIndex(colMap, ["description of work", "description"]);
       const budgetQtyCol = getColumnIndex(colMap, ["qty", "quantity"]);
@@ -354,7 +367,6 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
       const budgetTotalCol = getColumnIndex(colMap, ["budget total"]);
       const forecastPayDateCol = getColumnIndex(colMap, ["forecasted payment date", "forecast payment date", "forecast pay date"]);
       
-      // Find Budget Total COS column (first "Total COS")
       let budgetCosCol = -1;
       let actualCosCol = -1;
       const cosMatches: number[] = [];
@@ -370,14 +382,12 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
         actualCosCol = cosMatches[0];
       }
       
-      // Actual/Finance side columns
       const actualTotalCol = getColumnIndex(colMap, ["actual total"]);
       const poCol = getColumnIndex(colMap, ["po number"]);
       const invoiceCol = getColumnIndex(colMap, ["invoice number"]);
       const invoiceDateCol = getColumnIndex(colMap, ["invoice raised date"]);
       const paymentDateCol = getColumnIndex(colMap, ["finance payment date", "payment date"]);
       
-      // Parse data rows
       let dataStartRow = headerRowIdx + 1;
       if (data[headerRowIdx + 1]) {
         const firstRowStr = String(data[headerRowIdx + 1].join(" ")).toLowerCase();
@@ -431,15 +441,12 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
           }
         }
         
-        // Subtotal detection
         if (rawDesc && String(rawDesc).toLowerCase().includes("sub total")) {
           rowType = "subtotal";
         }
         
-        // Skip completely blank rows
         if (!rawCategory && !rawDesc && !rawBudgetTotal && !rawActualTotal) continue;
         
-        // Determine line status
         const poNumber = poCol >= 0 && row[poCol] ? String(row[poCol]) : null;
         const invoiceNumber = invoiceCol >= 0 && row[invoiceCol] ? String(row[invoiceCol]) : null;
         const invoiceDate = invoiceDateCol >= 0 ? parseDate(row[invoiceDateCol]) : null;
@@ -492,12 +499,10 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
     warnings.push("Missing 'Expenditure Breakdown' sheet");
   }
 
-  // Parse Revenue Tracking sheet (FIRST table only)
-  if (workbook.SheetNames.includes("Revenue Tracking")) {
-    const sheet = workbook.Sheets["Revenue Tracking"];
-    const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null }) as any[][];
+  if (sheetNames.includes("Revenue Tracking")) {
+    const sheet = workbook.getWorksheet("Revenue Tracking")!;
+    const data = worksheetToArray(sheet);
     
-    // Look for first CONTRACT milestone table
     const revenueHeaderTokens = [
       "payment milestone",
       "%",
@@ -516,7 +521,6 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
         firstTableFound = true;
         const { rowIdx: headerRowIdx, colMap } = revenueHeader;
         
-        // Find column indices
         const milestoneNoCol = getColumnIndex(colMap, ["no.", "no", "milestone no"]);
         const milestoneCol = getColumnIndex(colMap, ["payment milestone", "milestone"]);
         const percentCol = getColumnIndex(colMap, ["%", "percent"]);
@@ -528,40 +532,37 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
         const requirementsCol = getColumnIndex(colMap, ["requirement", "notes"]);
         const docsCol = getColumnIndex(colMap, ["milestone documents received", "documents"]);
         
-        // Parse data rows (start from next row after header)
         for (let rowIdx = headerRowIdx + 1; rowIdx < data.length; rowIdx++) {
           const row = data[rowIdx];
           if (!row) continue;
           
           const milestoneDesc = milestoneCol >= 0 ? row[milestoneCol] : null;
           
-          // Stop conditions: KEY section, second header, or "end of sheet"
           if (milestoneDesc && String(milestoneDesc).toUpperCase().startsWith("KEY")) break;
           if (milestoneDesc && String(milestoneDesc).toLowerCase().includes("end of sheet")) break;
           
-          // Check for second header (another table) - stop parsing
           const checkSecondHeader = milestoneDesc && 
             (String(milestoneDesc).includes("PAYMENT MILESTONE") || 
              String(milestoneDesc).includes("No."));
           if (checkSecondHeader && rowIdx > headerRowIdx + 1) break;
           
-          // Skip empty rows
           if (!milestoneDesc) continue;
           
-          // Try to detect inBank status from cell font color (red = not in bank, black = in bank)
           let inBankValue = 0;
           if (paymentDateCol >= 0) {
-            const cellAddr = XLSX.utils.encode_cell({ r: rowIdx, c: paymentDateCol });
-            const cell = sheet[cellAddr];
-            if (cell && cell.s && cell.s.font && cell.s.font.color) {
-              // Red color typically has RGB like "FF0000" or argb "FFFF0000"
-              const fontColor = cell.s.font.color.rgb || cell.s.font.color.argb || "";
-              const isRed = fontColor.toLowerCase().includes("ff0000") || 
-                           fontColor.toLowerCase().endsWith("ff0000");
-              inBankValue = isRed ? 0 : (cell.v ? 1 : 0); // If has value and not red, assume in bank
-            } else if (cell && cell.v) {
-              // If payment received date exists but no color info, default to in bank
-              inBankValue = 1;
+            const excelRow = rowIdx + 1;
+            const excelCol = paymentDateCol + 1;
+            const cell = sheet.getRow(excelRow).getCell(excelCol);
+            if (cell && cell.value) {
+              const font = cell.font;
+              if (font && font.color && font.color.argb) {
+                const fontColor = font.color.argb;
+                const isRed = fontColor.toLowerCase().includes("ff0000") || 
+                             fontColor.toLowerCase().endsWith("ff0000");
+                inBankValue = isRed ? 0 : 1;
+              } else {
+                inBankValue = 1;
+              }
             }
           }
           
@@ -581,7 +582,7 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
             inBank: inBankValue,
           });
         }
-        break; // Stop after parsing first table
+        break;
       }
     }
     
@@ -596,14 +597,12 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
   const financeRevenueMonthly: InsertFinanceRevenueMonthly[] = [];
   const financeCosMonthly: InsertFinanceCosMonthly[] = [];
 
-  // Parse Cashflow sheet (weekly time-series with robust header detection)
-  if (workbook.SheetNames.includes("Cashflow")) {
+  if (sheetNames.includes("Cashflow")) {
     try {
-      const sheet = workbook.Sheets["Cashflow"];
-      const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: false }) as any[][];
+      const sheet = workbook.getWorksheet("Cashflow")!;
+      const data = worksheetToArray(sheet);
       
       if (data.length > 0) {
-        // Find header row with dates (usually row 1, column F onwards)
         let dateHeaderRow = -1;
         let dateStartCol = -1;
         for (let rowIdx = 0; rowIdx < Math.min(5, data.length); rowIdx++) {
@@ -619,14 +618,13 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
         }
         
         if (dateHeaderRow >= 0 && dateStartCol >= 0) {
-          // Extract all date headers
           const dateHeaders: string[] = [];
           for (let colIdx = dateStartCol; colIdx < data[dateHeaderRow].length; colIdx++) {
             const dateVal = parseDate(data[dateHeaderRow][colIdx]);
             if (dateVal) {
               dateHeaders.push(dateVal);
             } else {
-              break; // Stop at first non-date
+              break;
             }
           }
           
@@ -634,7 +632,6 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
             warnings.push("Cashflow sheet: found potential header row but no date columns");
           }
           
-          // Find series rows by searching column B (index 1) - map to canonical names
           const seriesToFind: { pattern: string; canonical: string; forHorizon: boolean }[] = [
             { pattern: "planned revenue", canonical: "Planned Revenue", forHorizon: true },
             { pattern: "planned expenditure", canonical: "Planned Expenditure", forHorizon: true },
@@ -646,7 +643,7 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
           
           const seriesRows: { row: number; name: string; forHorizon: boolean }[] = [];
           for (let rowIdx = dateHeaderRow + 1; rowIdx < Math.min(dateHeaderRow + 20, data.length); rowIdx++) {
-            const cellB = data[rowIdx][1]; // Column B
+            const cellB = data[rowIdx][1];
             if (cellB) {
               const normalized = normalizeHeader(cellB);
               for (const series of seriesToFind) {
@@ -662,10 +659,9 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
             }
           }
           
-          // Calculate date horizon limit: lastNonZeroDate among revenue/expenditure series + 52 weeks
           let maxSignificantDate: Date | null = null;
           for (const { row, forHorizon } of seriesRows) {
-            if (!forHorizon) continue; // Only use revenue/expenditure series for horizon
+            if (!forHorizon) continue;
             
             if (data[row]) {
               for (let dateIdx = 0; dateIdx < dateHeaders.length; dateIdx++) {
@@ -681,27 +677,23 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
             }
           }
           
-          // Add 52 weeks (364 days) buffer
           let horizonLimit: Date | null = null;
           if (maxSignificantDate) {
             horizonLimit = new Date(maxSignificantDate);
             horizonLimit.setDate(horizonLimit.getDate() + 364);
           }
           
-          // Parse values for each series
           for (const { row, name } of seriesRows) {
             if (data[row]) {
               for (let dateIdx = 0; dateIdx < dateHeaders.length; dateIdx++) {
                 const pointDate = dateHeaders[dateIdx];
                 const pointDateObj = new Date(pointDate);
                 
-                // Skip dates beyond horizon limit
                 if (horizonLimit && pointDateObj > horizonLimit) continue;
                 
                 const valueColIdx = dateStartCol + dateIdx;
                 const value = parseNumber(data[row][valueColIdx]);
                 
-                // Store all points including zeros within horizon
                 cashflowPoints.push({
                   projectName,
                   seriesName: name,
@@ -726,15 +718,12 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
     warnings.push("Missing 'Cashflow' sheet");
   }
 
-  // Parse Finance - Revenue sheet (monthly pivot with robust header detection)
-  if (workbook.SheetNames.includes("Finance - Revenue")) {
+  if (sheetNames.includes("Finance - Revenue")) {
     try {
-      const sheet = workbook.Sheets["Finance - Revenue"];
-      // Use raw: true to get actual numeric values instead of formatted strings
-      const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: true }) as any[][];
+      const sheet = workbook.getWorksheet("Finance - Revenue")!;
+      const data = worksheetToArray(sheet, { raw: true });
       
       if (data.length > 0) {
-        // Find header row containing "Row Labels" in column A
         let headerRowIdx = -1;
         for (let rowIdx = 0; rowIdx < Math.min(10, data.length); rowIdx++) {
           const cellA = data[rowIdx][0];
@@ -745,7 +734,6 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
         }
         
         if (headerRowIdx >= 0) {
-          // Extract month headers from header row (Excel date columns only)
           const monthHeaders: string[] = [];
           const monthColIndices: number[] = [];
           for (let colIdx = 1; colIdx < data[headerRowIdx].length; colIdx++) {
@@ -763,13 +751,10 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
             warnings.push("Finance - Revenue: found Row Labels header but no date columns");
           }
           
-          // Parse category rows starting after header row
           for (let rowIdx = headerRowIdx + 1; rowIdx < data.length; rowIdx++) {
             const category = data[rowIdx][0];
             
-            // Stop conditions
             if (!category) {
-              // Check for multiple consecutive blank rows
               let consecutiveBlanks = 0;
               for (let checkIdx = rowIdx; checkIdx < Math.min(rowIdx + 3, data.length); checkIdx++) {
                 if (!data[checkIdx][0]) consecutiveBlanks++;
@@ -780,9 +765,8 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
             
             const normalizedCategory = normalizeHeader(category);
             if (normalizedCategory === "grand total") break;
-            if (normalizedCategory === "(blank)") continue; // Skip, don't break
+            if (normalizedCategory === "(blank)") continue;
             
-            // Parse values for each month column
             for (let monthIdx = 0; monthIdx < monthHeaders.length; monthIdx++) {
               const valueColIdx = monthColIndices[monthIdx];
               const value = parseNumber(data[rowIdx][valueColIdx]);
@@ -804,15 +788,12 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
     }
   }
 
-  // Parse Finance - COS sheet (monthly pivot with robust header detection)
-  if (workbook.SheetNames.includes("Finance - COS")) {
+  if (sheetNames.includes("Finance - COS")) {
     try {
-      const sheet = workbook.Sheets["Finance - COS"];
-      // Use raw: true to get actual numeric values instead of formatted strings
-      const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: true }) as any[][];
+      const sheet = workbook.getWorksheet("Finance - COS")!;
+      const data = worksheetToArray(sheet, { raw: true });
       
       if (data.length > 0) {
-        // Find header row containing "Row Labels" in column A
         let headerRowIdx = -1;
         for (let rowIdx = 0; rowIdx < Math.min(15, data.length); rowIdx++) {
           const cellA = data[rowIdx][0];
@@ -823,7 +804,6 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
         }
         
         if (headerRowIdx >= 0) {
-          // Extract month headers from header row (Excel date columns only)
           const monthHeaders: string[] = [];
           const monthColIndices: number[] = [];
           for (let colIdx = 1; colIdx < data[headerRowIdx].length; colIdx++) {
@@ -842,13 +822,10 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
             warnings.push("Finance - COS: found Row Labels header but no date columns");
           }
           
-          // Parse category rows starting after header row
           for (let rowIdx = headerRowIdx + 1; rowIdx < data.length; rowIdx++) {
             const category = data[rowIdx][0];
             
-            // Stop conditions
             if (!category) {
-              // Check for multiple consecutive blank rows
               let consecutiveBlanks = 0;
               for (let checkIdx = rowIdx; checkIdx < Math.min(rowIdx + 3, data.length); checkIdx++) {
                 if (!data[checkIdx][0]) consecutiveBlanks++;
@@ -859,9 +836,8 @@ export function parseTrackerFile(buffer: Buffer, fileName: string): ParseResult 
             
             const normalizedCategory = normalizeHeader(category);
             if (normalizedCategory === "grand total") break;
-            if (normalizedCategory === "(blank)") continue; // Skip, don't break
+            if (normalizedCategory === "(blank)") continue;
             
-            // Parse values for each month column
             for (let monthIdx = 0; monthIdx < monthHeaders.length; monthIdx++) {
               const valueColIdx = monthColIndices[monthIdx];
               const rawValue = data[rowIdx][valueColIdx];
