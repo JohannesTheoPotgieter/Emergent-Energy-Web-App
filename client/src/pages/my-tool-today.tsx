@@ -64,9 +64,23 @@ interface CompanyPriority {
   title: string;
   severity: "critical" | "important" | "normal";
   horizon: Horizon;
+  department: string | null;
   linkedProjectName: string | null;
   isActive: boolean;
 }
+
+const DEPARTMENTS = [
+  "Engineering",
+  "Finance",
+  "Operations",
+  "Sales",
+  "Procurement",
+  "Legal",
+  "HR",
+  "Executive",
+  "Project Delivery",
+  "O&M",
+] as const;
 
 interface DailyReview {
   id: number;
@@ -153,6 +167,13 @@ export default function MyToolTodayPage() {
   const [wrapOpen, setWrapOpen] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState<number | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
+  const [addPriorityOpen, setAddPriorityOpen] = useState(false);
+  const [newPriority, setNewPriority] = useState({
+    title: "",
+    department: "",
+    severity: "normal" as "critical" | "important" | "normal",
+    linkedProjectName: "",
+  });
   const [reviewForm, setReviewForm] = useState({
     wentWell: "",
     movedForward: "",
@@ -231,6 +252,29 @@ export default function MyToolTodayPage() {
     },
   });
 
+  const createPriorityMutation = useMutation({
+    mutationFn: async (body: Record<string, unknown>) => {
+      await apiRequest("POST", "/api/mytool/company-priorities", body);
+    },
+    onSuccess: () => {
+      invalidateAll();
+      setAddPriorityOpen(false);
+      setNewPriority({ title: "", department: "", severity: "normal", linkedProjectName: "" });
+    },
+  });
+
+  const deletePriorityMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("DELETE", `/api/mytool/company-priorities/${id}`);
+    },
+    onSuccess: () => invalidateAll(),
+  });
+
+  const { data: allProjects = [] } = useQuery<Array<{ project_name: string }>>({
+    queryKey: ["/api/projects-summary"],
+    select: (data: any[]) => data.map((p: any) => ({ project_name: p.project_name })),
+  });
+
   const saveReviewMutation = useMutation({
     mutationFn: async (body: Record<string, unknown>) => {
       await apiRequest("POST", "/api/mytool/daily-review", body);
@@ -263,6 +307,19 @@ export default function MyToolTodayPage() {
       updateTaskMutation.mutate({ id: taskId, title: editingTitle.trim() });
     }
     setEditingTaskId(null);
+  };
+
+  const handleAddPriority = () => {
+    const title = newPriority.title.trim();
+    if (!title) return;
+    createPriorityMutation.mutate({
+      title,
+      department: newPriority.department || null,
+      severity: newPriority.severity,
+      horizon,
+      linkedProjectName: newPriority.linkedProjectName || null,
+      status: "active",
+    });
   };
 
   const handleConvertToTask = (priority: CompanyPriority) => {
@@ -373,6 +430,16 @@ export default function MyToolTodayPage() {
               </Badge>
             </button>
             <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs px-2"
+                onClick={() => setAddPriorityOpen(!addPriorityOpen)}
+                data-testid="button-add-priority"
+              >
+                <Plus className="h-3 w-3 mr-1" />
+                Add Priority
+              </Button>
               <Filter className="h-3.5 w-3.5 text-gray-400" />
               <select
                 value={horizon}
@@ -390,9 +457,79 @@ export default function MyToolTodayPage() {
         </CardHeader>
         {prioritiesOpen && (
           <CardContent className="pt-0">
-            {totalPriorityCount === 0 ? (
+            {addPriorityOpen && (
+              <div className="mb-4 p-3 rounded-lg border border-blue-200 bg-blue-50/30 dark:border-blue-900 dark:bg-blue-950/20 space-y-3" data-testid="add-priority-form">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <Input
+                    placeholder="Priority title..."
+                    value={newPriority.title}
+                    onChange={(e) => setNewPriority(p => ({ ...p, title: e.target.value }))}
+                    className="h-8 text-sm"
+                    data-testid="input-priority-title"
+                    onKeyDown={(e) => { if (e.key === "Enter") handleAddPriority(); }}
+                  />
+                  <select
+                    value={newPriority.department}
+                    onChange={(e) => setNewPriority(p => ({ ...p, department: e.target.value }))}
+                    className="h-8 text-xs border border-gray-200 rounded-md px-2 bg-white dark:bg-gray-900 dark:border-gray-700"
+                    data-testid="select-priority-department"
+                  >
+                    <option value="">Select Department...</option>
+                    {DEPARTMENTS.map(d => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    value={newPriority.severity}
+                    onChange={(e) => setNewPriority(p => ({ ...p, severity: e.target.value as any }))}
+                    className="h-8 text-xs border border-gray-200 rounded-md px-2 bg-white dark:bg-gray-900 dark:border-gray-700"
+                    data-testid="select-priority-severity"
+                  >
+                    <option value="normal">Normal</option>
+                    <option value="important">Important</option>
+                    <option value="critical">Critical</option>
+                  </select>
+                  <select
+                    value={newPriority.linkedProjectName}
+                    onChange={(e) => setNewPriority(p => ({ ...p, linkedProjectName: e.target.value }))}
+                    className="h-8 text-xs border border-gray-200 rounded-md px-2 bg-white dark:bg-gray-900 dark:border-gray-700 max-w-[200px]"
+                    data-testid="select-priority-project"
+                  >
+                    <option value="">Link to project (optional)</option>
+                    {allProjects.map(p => (
+                      <option key={p.project_name} value={p.project_name}>
+                        {p.project_name.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="flex gap-1 ml-auto">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => { setAddPriorityOpen(false); setNewPriority({ title: "", department: "", severity: "normal", linkedProjectName: "" }); }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={handleAddPriority}
+                      disabled={!newPriority.title.trim() || createPriorityMutation.isPending}
+                      data-testid="button-save-priority"
+                    >
+                      <Plus className="h-3 w-3 mr-1" />
+                      Add
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+            {totalPriorityCount === 0 && !addPriorityOpen ? (
               <p className="text-sm text-gray-400 py-4 text-center" data-testid="empty-priorities">
-                No priorities for this horizon. Adjust the filter, escalate projects/tasks to "Highest", or add priorities in Settings.
+                No priorities for this horizon. Click "Add Priority" to create one, or escalate projects/tasks to "Highest".
               </p>
             ) : (
               <div className="space-y-2">
@@ -454,6 +591,11 @@ export default function MyToolTodayPage() {
                         <span className="flex-1 text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
                           {p.title}
                         </span>
+                        {p.department && (
+                          <Badge variant="outline" className="text-[10px] shrink-0 border-indigo-200 text-indigo-700 bg-indigo-50 dark:bg-indigo-950 dark:text-indigo-300 dark:border-indigo-800" data-testid={`badge-department-${p.id}`}>
+                            {p.department}
+                          </Badge>
+                        )}
                         {p.linkedProjectName && (
                           <Link
                             href={`/project/${encodeURIComponent(p.linkedProjectName)}`}
@@ -461,7 +603,7 @@ export default function MyToolTodayPage() {
                             data-testid={`link-priority-project-${p.id}`}
                           >
                             <ExternalLink className="h-3 w-3" />
-                            {p.linkedProjectName.replace(/_/g, " ")}
+                            {p.linkedProjectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
                           </Link>
                         )}
                         <div className="flex gap-1 shrink-0">
@@ -486,6 +628,16 @@ export default function MyToolTodayPage() {
                           >
                             <Plus className="h-3 w-3 mr-1" />
                             Task
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-xs px-1.5 text-gray-400 hover:text-red-500"
+                            onClick={() => deletePriorityMutation.mutate(p.id)}
+                            disabled={deletePriorityMutation.isPending}
+                            data-testid={`button-delete-priority-${p.id}`}
+                          >
+                            <X className="h-3 w-3" />
                           </Button>
                         </div>
                       </div>
