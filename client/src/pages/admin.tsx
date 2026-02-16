@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Progress } from "@/components/ui/progress";
-import { CheckCircle, XCircle, Loader2, Play, RefreshCw, FileSpreadsheet, Clock, Database, Trash2, FolderOpen, AlertTriangle } from "lucide-react";
+import { CheckCircle, XCircle, Loader2, Play, RefreshCw, FileSpreadsheet, Clock, Database, Trash2, FolderOpen, AlertTriangle, Upload } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 
@@ -81,6 +81,10 @@ export default function AdminPage() {
   const [clearLoading, setClearLoading] = useState(false);
   const [clearResult, setClearResult] = useState<{ success: boolean; message: string } | null>(null);
   const [clearError, setClearError] = useState<string | null>(null);
+
+  const singleFileRef = useRef<HTMLInputElement>(null);
+  const [singleUploadLoading, setSingleUploadLoading] = useState(false);
+  const [singleUploadResult, setSingleUploadResult] = useState<{ status: string; projectName: string; message: string; records?: number } | null>(null);
 
   const viewerOnly = !isAdmin;
 
@@ -211,6 +215,56 @@ export default function AdminPage() {
       variant: wasCancelled ? "destructive" : "default",
     });
     if (folderInputRef.current) folderInputRef.current.value = "";
+  };
+
+  const handleSingleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const file = e.target.files[0];
+    if (!/\.(xlsx|xlsm|xls)$/i.test(file.name)) {
+      toast({ title: "Invalid File", description: "Please select an Excel file (.xlsx, .xlsm, .xls)", variant: "destructive" });
+      return;
+    }
+    setSingleUploadLoading(true);
+    setSingleUploadResult(null);
+    try {
+      const formData = new FormData();
+      formData.append("trackers", file);
+      formData.append("mode", "refresh");
+      const res = await fetch("/api/upload", { method: "POST", body: formData, credentials: "include" });
+      const data = await res.json();
+      if (res.ok && data.results && data.results.length > 0) {
+        const r = data.results[0];
+        const recCount = (r.expensesParsed || 0) + (r.inflowsParsed || 0) + (r.planParsed || 0) + (r.cashflowParsed || 0) + (r.financeRevenueParsed || 0) + (r.financeCosParsed || 0);
+        setSingleUploadResult({
+          status: r.status,
+          projectName: r.project_name || r.projectName || file.name.replace(/\.(xlsx|xlsm|xls)$/i, ''),
+          message: r.status === "success" ? `Updated successfully — ${recCount} records processed` : (r.message || "Upload failed"),
+          records: recCount,
+        });
+        if (r.status === "success") {
+          toast({ title: "Project Updated", description: `${r.project_name || file.name} updated successfully` });
+          queryClient.invalidateQueries();
+          loadFolderConfig();
+        }
+      } else {
+        setSingleUploadResult({
+          status: "failed",
+          projectName: file.name,
+          message: data.message || "Upload failed",
+        });
+        toast({ title: "Upload Failed", description: data.message || "Failed to process file", variant: "destructive" });
+      }
+    } catch (err: any) {
+      setSingleUploadResult({
+        status: "failed",
+        projectName: file.name,
+        message: err.message || "Upload failed",
+      });
+      toast({ title: "Upload Error", description: err.message, variant: "destructive" });
+    } finally {
+      setSingleUploadLoading(false);
+      if (singleFileRef.current) singleFileRef.current.value = "";
+    }
   };
 
   const runSmokeTest = async () => {
@@ -399,6 +453,74 @@ export default function AdminPage() {
                       </p>
                     </div>
                   </div>
+                </div>
+              </CardContent>
+            )}
+          </Card>
+
+          {/* Single Project Update */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Upload className="h-5 w-5" />
+                    Update Single Project
+                  </CardTitle>
+                  <CardDescription>
+                    Upload an individual tracker file to update a single project's data. The file will be matched to the project automatically.
+                  </CardDescription>
+                </div>
+                <div>
+                  <input
+                    ref={singleFileRef}
+                    type="file"
+                    className="hidden"
+                    accept=".xlsx,.xlsm,.xls"
+                    onChange={handleSingleFileUpload}
+                    data-testid="input-single-file"
+                  />
+                  <Button
+                    onClick={() => singleFileRef.current?.click()}
+                    disabled={singleUploadLoading || uploadLoading}
+                    variant="outline"
+                    size="lg"
+                    data-testid="button-upload-single"
+                  >
+                    {singleUploadLoading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Updating...
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="mr-2 h-4 w-4" />
+                        Choose File
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            {singleUploadResult && (
+              <CardContent>
+                <div className={`flex items-center gap-3 p-3 rounded-lg border ${
+                  singleUploadResult.status === "success"
+                    ? "border-green-200 bg-green-50 dark:bg-green-950/20"
+                    : "border-red-200 bg-red-50 dark:bg-red-950/20"
+                }`}>
+                  {singleUploadResult.status === "success" ? (
+                    <CheckCircle className="h-5 w-5 text-green-500 flex-shrink-0" />
+                  ) : (
+                    <XCircle className="h-5 w-5 text-red-500 flex-shrink-0" />
+                  )}
+                  <div className="flex-1">
+                    <p className="font-medium text-sm" data-testid="text-single-project-name">{singleUploadResult.projectName}</p>
+                    <p className="text-xs text-muted-foreground">{singleUploadResult.message}</p>
+                  </div>
+                  {singleUploadResult.records !== undefined && singleUploadResult.status === "success" && (
+                    <Badge variant="outline">{singleUploadResult.records} records</Badge>
+                  )}
                 </div>
               </CardContent>
             )}
