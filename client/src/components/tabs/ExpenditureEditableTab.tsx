@@ -631,7 +631,9 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
-                <span className="truncate block max-w-[200px] text-xs">{exp.expenseLineItem || "-"}</span>
+                <div className="max-w-[200px]">
+                  <EditableCell rowId={exp.id} field="expenseLineItem" value={exp.expenseLineItem} />
+                </div>
               </TooltipTrigger>
               {exp.expenseLineItem && exp.expenseLineItem.length > 30 && (
                 <TooltipContent side="right" className="max-w-[300px]"><p className="text-xs">{exp.expenseLineItem}</p></TooltipContent>
@@ -679,207 +681,194 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
 
   const allMonths = [...new Set(items.map(i => i.plannedMonth).filter(Boolean))].sort() as string[];
 
+  const pctUsed = kpis.totalBudget > 0 ? Math.round((kpis.totalActual / kpis.totalBudget) * 100) : 0;
+
   return (
-    <div className="space-y-4">
-      {/* KPI Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-        <Card className="shadow-sm">
-          <CardContent className="p-3">
-            <div className="text-xs text-muted-foreground">Budget Total</div>
-            <div className="text-lg font-bold text-blue-600" data-testid="text-kpi-budget">{formatCurrency(kpis.totalBudget)}</div>
-          </CardContent>
-        </Card>
-        <Card className="shadow-sm">
-          <CardContent className="p-3">
-            <div className="text-xs text-muted-foreground">Actual Total</div>
-            <div className="text-lg font-bold" data-testid="text-kpi-actual">{formatCurrency(kpis.totalActual)}</div>
-          </CardContent>
-        </Card>
-        <Card className="shadow-sm">
-          <CardContent className="p-3">
-            <div className="text-xs text-muted-foreground">Variance</div>
-            <div className={`text-lg font-bold ${kpis.variance >= 0 ? "text-emerald-600" : "text-red-600"}`} data-testid="text-kpi-variance">
+    <div className="space-y-3">
+      {/* KPI Summary Strip */}
+      <div className="rounded-lg border bg-white dark:bg-gray-950 shadow-sm overflow-hidden">
+        <div className="grid grid-cols-3 sm:grid-cols-6 divide-x divide-gray-100 dark:divide-gray-800">
+          <div className="p-3 sm:p-4">
+            <div className="text-[10px] uppercase tracking-wider font-medium text-gray-400">Budget</div>
+            <div className="text-base sm:text-lg font-bold text-blue-600 font-mono" data-testid="text-kpi-budget">{formatCurrency(kpis.totalBudget)}</div>
+          </div>
+          <div className="p-3 sm:p-4">
+            <div className="text-[10px] uppercase tracking-wider font-medium text-gray-400">Actual</div>
+            <div className="text-base sm:text-lg font-bold font-mono" data-testid="text-kpi-actual">{formatCurrency(kpis.totalActual)}</div>
+            <div className="text-[10px] text-gray-400 mt-0.5">{pctUsed}% of budget</div>
+          </div>
+          <div className="p-3 sm:p-4">
+            <div className="text-[10px] uppercase tracking-wider font-medium text-gray-400">Variance</div>
+            <div className={`text-base sm:text-lg font-bold font-mono ${kpis.variance >= 0 ? "text-emerald-600" : "text-red-600"}`} data-testid="text-kpi-variance">
               {formatCurrency(kpis.variance)}
             </div>
-          </CardContent>
-        </Card>
-        <Card className="shadow-sm">
-          <CardContent className="p-3">
-            <div className="text-xs text-muted-foreground">COS Realised</div>
-            <div className="text-lg font-bold text-emerald-600" data-testid="text-kpi-cos">{formatCurrency(kpis.cosRealised)}</div>
-          </CardContent>
-        </Card>
-        <Card className="shadow-sm">
-          <CardContent className="p-3">
-            <div className="text-xs text-muted-foreground">Paid</div>
-            <div className="text-lg font-bold text-emerald-600" data-testid="text-kpi-paid">{formatCurrency(kpis.totalPaid)}</div>
-          </CardContent>
-        </Card>
-        <Card className="shadow-sm cursor-pointer hover:ring-1 ring-blue-200" onClick={() => setDrawerOpen(true)}>
-          <CardContent className="p-3">
-            <div className="text-xs text-muted-foreground">Line Items</div>
-            <div className="text-lg font-bold" data-testid="text-kpi-items">{kpis.totalItems}</div>
-            <div className="text-[9px] text-blue-600 mt-0.5">Click to drilldown</div>
-          </CardContent>
-        </Card>
+          </div>
+          <div className="p-3 sm:p-4">
+            <div className="text-[10px] uppercase tracking-wider font-medium text-gray-400">COS Realised</div>
+            <div className="text-base sm:text-lg font-bold text-emerald-600 font-mono" data-testid="text-kpi-cos">{formatCurrency(kpis.cosRealised)}</div>
+            <div className="text-[10px] text-gray-400 mt-0.5">{kpis.countByCos["COS Realised"]} lines</div>
+          </div>
+          <div className="p-3 sm:p-4">
+            <div className="text-[10px] uppercase tracking-wider font-medium text-gray-400">Paid</div>
+            <div className="text-base sm:text-lg font-bold text-emerald-600 font-mono" data-testid="text-kpi-paid">{formatCurrency(kpis.totalPaid)}</div>
+            <div className="text-[10px] text-gray-400 mt-0.5">{kpis.countByPayment.Paid} lines</div>
+          </div>
+          <div className="p-3 sm:p-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors" onClick={() => setDrawerOpen(true)}>
+            <div className="text-[10px] uppercase tracking-wider font-medium text-gray-400">Lines</div>
+            <div className="text-base sm:text-lg font-bold" data-testid="text-kpi-items">{kpis.totalItems}</div>
+            <div className="text-[10px] text-blue-600 mt-0.5">Drilldown</div>
+          </div>
+        </div>
       </div>
 
-      {/* Main Table Card */}
-      <Card className="shadow-sm">
-        <CardHeader className="pb-2">
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <div>
-              <CardTitle className="text-lg">Expenditure Breakdown</CardTitle>
-              <CardDescription className="text-xs">Category-grouped view with task linking, COS & payment status</CardDescription>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <div className="flex gap-1">
-                <Button variant="ghost" size="sm" onClick={expandAll} className="h-8 px-2" title="Expand All">
-                  <ChevronsDownUp className="h-4 w-4" />
-                </Button>
-                <Button variant="ghost" size="sm" onClick={collapseAll} className="h-8 px-2" title="Collapse All">
-                  <ChevronsUpDown className="h-4 w-4" />
-                </Button>
-              </div>
+      {/* Toolbar */}
+      <div className="flex flex-wrap items-center gap-2 px-1">
+        <div className="flex items-center gap-1 border rounded-md p-0.5 bg-white dark:bg-gray-950">
+          <Button variant="ghost" size="sm" onClick={expandAll} className="h-7 px-1.5" title="Expand All">
+            <ChevronsDownUp className="h-3.5 w-3.5" />
+          </Button>
+          <Button variant="ghost" size="sm" onClick={collapseAll} className="h-7 px-1.5" title="Collapse All">
+            <ChevronsUpDown className="h-3.5 w-3.5" />
+          </Button>
+        </div>
 
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="h-8">
-                    <Columns className="h-4 w-4 mr-1" /> Columns
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48">
-                  {COLUMNS.map((col) => (
-                    <DropdownMenuCheckboxItem key={col.key} checked={visibleColumns.has(col.key)} onCheckedChange={() => toggleColumn(col.key)}>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="h-7 text-xs">
+              <Columns className="h-3.5 w-3.5 mr-1" /> Columns
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-48">
+            {COLUMNS.map((col) => (
+              <DropdownMenuCheckboxItem key={col.key} checked={visibleColumns.has(col.key)} onCheckedChange={() => toggleColumn(col.key)}>
+                {col.label}
+              </DropdownMenuCheckboxItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-[160px] h-7 text-xs"><SelectValue placeholder="Filter by status" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All ({kpis.totalItems})</SelectItem>
+            <SelectItem value="COS Realised">COS Realised ({kpis.countByCos["COS Realised"]})</SelectItem>
+            <SelectItem value="Not Yet Realised">Not Yet Realised ({kpis.countByCos["Not Yet Realised"]})</SelectItem>
+            <SelectItem value="Paid">Paid ({kpis.countByPayment.Paid})</SelectItem>
+            <SelectItem value="Payment Planned">Payment Planned ({kpis.countByPayment["Payment Planned"]})</SelectItem>
+            <SelectItem value="Committed">Committed ({kpis.countByPayment.Committed})</SelectItem>
+            <SelectItem value="Planned">Planned ({kpis.countByCos.Planned})</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <div className="ml-auto flex items-center gap-2">
+          {isAdmin && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-7 text-xs text-green-700 border-green-300 hover:bg-green-50" data-testid="button-add-menu">
+                  <Plus className="h-3.5 w-3.5 mr-1" /> Add
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuCheckboxItem checked={false} onCheckedChange={() => setAddLineOpen(true)}>
+                  <ListPlus className="h-4 w-4 mr-2" /> Add Line Item
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuCheckboxItem checked={false} onCheckedChange={() => setAddCategoryOpen(true)}>
+                  <Plus className="h-4 w-4 mr-2" /> Add Category
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuCheckboxItem checked={false} onCheckedChange={() => setInsertTaskOpen(true)}>
+                  <ClipboardList className="h-4 w-4 mr-2" /> Insert Task as Line Item
+                </DropdownMenuCheckboxItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+
+          {isAdmin && hasEdits && (
+            <Button onClick={handleSave} disabled={saveMutation.isPending} size="sm" className="h-7 text-xs" data-testid="button-save-edits">
+              <Save className="h-3.5 w-3.5 mr-1" /> {saveMutation.isPending ? "Saving..." : `Save (${edits.size})`}
+            </Button>
+          )}
+
+          <Button onClick={() => setDrawerOpen(true)} variant="outline" size="sm" className="h-7 text-xs" data-testid="button-drilldown">
+            <Search className="h-3.5 w-3.5 mr-1" /> Drilldown
+          </Button>
+        </div>
+      </div>
+
+      {/* Main Table */}
+      <div className="rounded-lg border bg-white dark:bg-gray-950 shadow-sm overflow-hidden">
+        {categoryGroups.length === 0 ? (
+          <p className="text-center text-muted-foreground py-12">No expenditure data available for this project</p>
+        ) : (
+          <div ref={tableContainerRef} className="relative overflow-auto" style={{ maxHeight: "calc(100vh - 340px)", minHeight: "400px" }}>
+            <table className="w-full border-collapse text-sm">
+              <thead className="sticky top-0 z-20">
+                <tr className="bg-gray-50 dark:bg-gray-900 border-b-2 border-gray-200 dark:border-gray-700">
+                  {activeColumns.map((col, idx) => (
+                    <th key={col.key}
+                      className={`px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 whitespace-nowrap
+                        ${col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left"}
+                        ${idx === 0 ? "sticky left-0 z-30 bg-gray-50 dark:bg-gray-900" : ""}`}
+                      style={{ minWidth: col.minWidth }}>
                       {col.label}
-                    </DropdownMenuCheckboxItem>
+                    </th>
                   ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-
-              <div className="flex items-center gap-1">
-                <Filter className="h-4 w-4 text-muted-foreground" />
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="w-[150px] h-8 text-xs"><SelectValue placeholder="Filter" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All ({kpis.totalItems})</SelectItem>
-                    <SelectItem value="COS Realised">COS Realised ({kpis.countByCos["COS Realised"]})</SelectItem>
-                    <SelectItem value="Not Yet Realised">Not Yet Realised ({kpis.countByCos["Not Yet Realised"]})</SelectItem>
-                    <SelectItem value="Paid">Paid ({kpis.countByPayment.Paid})</SelectItem>
-                    <SelectItem value="Payment Planned">Payment Planned ({kpis.countByPayment["Payment Planned"]})</SelectItem>
-                    <SelectItem value="Committed">Committed ({kpis.countByPayment.Committed})</SelectItem>
-                    <SelectItem value="Planned">Planned ({kpis.countByCos.Planned})</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {isAdmin && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm" className="h-8 text-green-700 border-green-300 hover:bg-green-50" data-testid="button-add-menu">
-                      <Plus className="h-4 w-4 mr-1" /> Add
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuCheckboxItem checked={false} onCheckedChange={() => setAddLineOpen(true)}>
-                      <ListPlus className="h-4 w-4 mr-2" /> Add Line Item
-                    </DropdownMenuCheckboxItem>
-                    <DropdownMenuCheckboxItem checked={false} onCheckedChange={() => setAddCategoryOpen(true)}>
-                      <Plus className="h-4 w-4 mr-2" /> Add Category
-                    </DropdownMenuCheckboxItem>
-                    <DropdownMenuCheckboxItem checked={false} onCheckedChange={() => setInsertTaskOpen(true)}>
-                      <ClipboardList className="h-4 w-4 mr-2" /> Insert Task as Line Item
-                    </DropdownMenuCheckboxItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
-
-              {isAdmin && hasEdits && (
-                <Button onClick={handleSave} disabled={saveMutation.isPending} size="sm" className="h-8" data-testid="button-save-edits">
-                  <Save className="h-4 w-4 mr-1" /> {saveMutation.isPending ? "Saving..." : "Save"}
-                </Button>
-              )}
-
-              <Button onClick={() => setDrawerOpen(true)} variant="outline" size="sm" className="h-8" data-testid="button-drilldown">
-                <Search className="h-4 w-4 mr-1" /> Drilldown
-              </Button>
-            </div>
-          </div>
-        </CardHeader>
-
-        <CardContent className="p-0">
-          {categoryGroups.length === 0 ? (
-            <p className="text-center text-muted-foreground py-8">No expenditure data available</p>
-          ) : (
-            <div ref={tableContainerRef} className="relative overflow-auto border-t" style={{ maxHeight: "calc(100vh - 380px)", minHeight: "400px" }}>
-              <table className="w-full border-collapse text-sm">
-                <thead className="sticky top-0 z-20 bg-slate-50 border-b shadow-sm">
-                  <tr>
-                    {activeColumns.map((col, idx) => (
-                      <th key={col.key}
-                        className={`px-3 py-2 text-xs font-semibold text-slate-600 whitespace-nowrap border-b
-                          ${col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left"}
-                          ${idx === 0 ? "sticky left-0 z-30 bg-slate-50" : ""}`}
-                        style={{ minWidth: col.minWidth }}>
-                        {col.label}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {categoryGroups.map((group) => {
-                    const isCollapsed = collapsedCategories.has(group.category);
-                    return (
-                      <React.Fragment key={group.category}>
-                        <tr className="bg-emerald-50 hover:bg-emerald-100 cursor-pointer border-b border-emerald-100"
-                          onClick={() => toggleCategory(group.category)}>
-                          <td className="sticky left-0 z-10 bg-emerald-50 px-3 py-2" colSpan={1}>
-                            <div className="flex items-center gap-2">
-                              {isCollapsed ? <ChevronRight className="h-4 w-4 text-emerald-600" /> : <ChevronDown className="h-4 w-4 text-emerald-600" />}
-                              <span className="font-semibold text-emerald-800 text-sm">{group.category}</span>
-                              <Badge variant="outline" className="text-[10px] ml-2 bg-white">{group.items.length} items</Badge>
-                            </div>
+                </tr>
+              </thead>
+              <tbody>
+                {categoryGroups.map((group) => {
+                  const isCollapsed = collapsedCategories.has(group.category);
+                  return (
+                    <React.Fragment key={group.category}>
+                      <tr className="bg-slate-100/80 dark:bg-slate-800/50 hover:bg-slate-200/60 dark:hover:bg-slate-700/50 cursor-pointer border-b border-slate-200 dark:border-slate-700"
+                        onClick={() => toggleCategory(group.category)}>
+                        <td className="sticky left-0 z-10 bg-slate-100/80 dark:bg-slate-800/50 px-3 py-2.5" colSpan={1}>
+                          <div className="flex items-center gap-2">
+                            {isCollapsed ? <ChevronRight className="h-4 w-4 text-slate-500" /> : <ChevronDown className="h-4 w-4 text-slate-500" />}
+                            <span className="font-semibold text-slate-700 dark:text-slate-200 text-sm">{group.category}</span>
+                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 font-normal">{group.items.length}</Badge>
+                          </div>
+                        </td>
+                        {activeColumns.slice(1).map((col) => (
+                          <td key={col.key} className={`px-3 py-2.5 text-xs font-semibold text-slate-600 dark:text-slate-300
+                            ${col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : ""}`}>
+                            {col.key === "budgetTotal" && <span className="font-mono">{formatCurrency(group.budgetTotal)}</span>}
+                            {col.key === "actualTotal" && <span className="font-mono">{formatCurrency(group.actualTotal)}</span>}
+                            {col.key === "variance" && (
+                              <span className={`font-mono ${group.variance >= 0 ? "text-emerald-600" : "text-red-600"}`}>{formatCurrency(group.variance)}</span>
+                            )}
                           </td>
-                          {activeColumns.slice(1).map((col) => (
-                            <td key={col.key} className={`px-3 py-2 text-xs font-medium text-emerald-700 
-                              ${col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : ""}`}>
-                              {col.key === "budgetTotal" && formatCurrency(group.budgetTotal)}
-                              {col.key === "actualTotal" && formatCurrency(group.actualTotal)}
-                              {col.key === "variance" && (
-                                <span className={group.variance >= 0 ? "text-emerald-600" : "text-red-600"}>{formatCurrency(group.variance)}</span>
-                              )}
+                        ))}
+                      </tr>
+                      {!isCollapsed && group.items.map((exp, rowIdx) => (
+                        <tr key={exp.id}
+                          data-row-id={exp.id}
+                          className={`border-b border-gray-100 dark:border-gray-800 hover:bg-blue-50/40 dark:hover:bg-blue-950/20 transition-colors
+                            ${highlightedRowId === exp.id ? "bg-amber-50 ring-2 ring-amber-400 ring-inset" : rowIdx % 2 === 0 ? "bg-white dark:bg-gray-950" : "bg-gray-50/50 dark:bg-gray-900/30"}`}>
+                          {activeColumns.map((col, colIdx) => (
+                            <td key={col.key}
+                              className={`px-3 py-1.5
+                                ${col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left"}
+                                ${colIdx === 0 ? "sticky left-0 z-10 bg-inherit" : ""}`}
+                              style={{ minWidth: col.minWidth }}>
+                              {renderCellValue(exp, col)}
                             </td>
                           ))}
                         </tr>
-                        {!isCollapsed && group.items.map((exp, rowIdx) => (
-                          <tr key={exp.id}
-                            data-row-id={exp.id}
-                            className={`border-b border-slate-100 hover:bg-blue-50/50 transition-all duration-500 ${highlightedRowId === exp.id ? "bg-amber-100 ring-2 ring-amber-400 ring-inset" : rowIdx % 2 === 0 ? "bg-white" : "bg-slate-50/30"}`}>
-                            {activeColumns.map((col, colIdx) => (
-                              <td key={col.key}
-                                className={`px-3 py-1.5
-                                  ${col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left"}
-                                  ${colIdx === 0 ? "sticky left-0 z-10 bg-inherit" : ""}`}
-                                style={{ minWidth: col.minWidth }}>
-                                {renderCellValue(exp, col)}
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
-                      </React.Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-          {hasEdits && (
-            <div className="px-4 py-2 text-xs text-muted-foreground border-t bg-amber-50">
-              {edits.size} {edits.size === 1 ? "row" : "rows"} modified. Click "Save" to persist edits.
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                      ))}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {hasEdits && (
+          <div className="px-4 py-2 text-xs text-amber-700 border-t bg-amber-50 dark:bg-amber-950/30 dark:text-amber-300 flex items-center gap-2">
+            <Save className="h-3.5 w-3.5" />
+            {edits.size} {edits.size === 1 ? "row" : "rows"} modified — click Save to persist changes
+          </div>
+        )}
+      </div>
 
       {/* Drilldown Drawer */}
       <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
