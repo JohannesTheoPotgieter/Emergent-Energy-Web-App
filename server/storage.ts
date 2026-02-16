@@ -138,6 +138,7 @@ export interface IStorage {
   getProgramExpensesByProject(projectName: string): Promise<ProgramExpense[]>;
   createManyProgramExpenses(expenses: InsertProgramExpense[]): Promise<ProgramExpense[]>;
   deleteProgramExpensesByProject(projectName: string): Promise<void>;
+  updateProgramExpenseFields(id: number, fields: Record<string, any>): Promise<ProgramExpense | undefined>;
 
   // Program Inflows (new)
   getAllProgramInflows(): Promise<ProgramInflows[]>;
@@ -710,6 +711,15 @@ export class DatabaseStorage implements IStorage {
 
   async deleteProgramExpensesByProject(projectName: string): Promise<void> {
     await this.dbInstance.delete(programExpense).where(eq(programExpense.projectName, projectName));
+  }
+
+  async updateProgramExpenseFields(id: number, fields: Record<string, any>): Promise<ProgramExpense | undefined> {
+    const result = await this.dbInstance
+      .update(programExpense)
+      .set(fields)
+      .where(eq(programExpense.id, id))
+      .returning();
+    return result[0];
   }
 
   // Program Inflows (new)

@@ -258,8 +258,26 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: breakdownKey });
+      queryClient.invalidateQueries({ predicate: (query) => {
+        const key = query.queryKey[0];
+        if (typeof key === 'string') {
+          return key.startsWith('/api/cos-tracker') ||
+                 key.startsWith('/api/cos-control') ||
+                 key.startsWith('/api/cashflow-forecast') ||
+                 key.startsWith('/api/cashflow-2026') ||
+                 key.startsWith('/api/cashflow') ||
+                 key.startsWith('/api/dashboard') ||
+                 key.startsWith('/api/data-quality') ||
+                 key.startsWith('/api/program-dashboard') ||
+                 key === 'dashboard' ||
+                 key === 'cashflow';
+        }
+        return false;
+      }});
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["cashflow"] });
       setEdits(new Map());
-      toast({ title: "Changes Saved", description: "Expenditure edits have been saved successfully." });
+      toast({ title: "Changes Saved", description: "Expenditure edits saved and applied to all calculations." });
     },
     onError: (error) => {
       toast({ title: "Save Failed", description: getErrorMessage(error, "Failed to save edits"), variant: "destructive" });
