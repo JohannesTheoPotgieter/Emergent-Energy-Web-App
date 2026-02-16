@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Link, useLocation } from "wouter";
 import { format } from "date-fns";
 import MyToolNav from "@/components/my-tool-nav";
@@ -19,18 +20,21 @@ import {
   Search,
   Trash2,
   ChevronDown,
+  ChevronRight,
   ArrowUpDown,
   X,
   CheckCircle2,
   ExternalLink,
   Calendar,
   Inbox,
+  Flag,
 } from "lucide-react";
 
 type Priority = "critical" | "important" | "normal" | "low";
 type TaskStatus = "inbox" | "planned" | "in_progress" | "blocked" | "waiting" | "done" | "cancelled";
 type SortField = "createdAt" | "dueDate" | "priority" | "status";
 type SortDirection = "asc" | "desc";
+type PriorityStatus = "active" | "monitoring" | "closed";
 
 interface MyToolTask {
   id: number;
@@ -38,13 +42,24 @@ interface MyToolTask {
   status: TaskStatus;
   priority: Priority;
   plannedForDate: string | null;
-  dueDate: string | null;
+  dueAt: string | null;
   sortOrder: number;
   projectName: string | null;
   tag: string | null;
   blockedReason: string | null;
   companyPriorityId: number | null;
   createdAt: string | null;
+  notes: string | null;
+}
+
+interface CompanyPriority {
+  id: number;
+  title: string;
+  severity: "critical" | "important" | "normal";
+  horizon: string;
+  department: string | null;
+  linkedProjectName: string | null;
+  status: PriorityStatus;
 }
 
 const priorityOrder: Record<string, number> = { critical: 0, important: 1, normal: 2, low: 3 };
@@ -110,15 +125,36 @@ export default function MyToolBacklogPage() {
   const [newStatus, setNewStatus] = useState<TaskStatus>("inbox");
   const [showStatusFilter, setShowStatusFilter] = useState(false);
   const [showPriorityFilter, setShowPriorityFilter] = useState(false);
-  const [editingDateTaskId, setEditingDateTaskId] = useState<number | null>(null);
-  const [editingDateValue, setEditingDateValue] = useState("");
+
+  const [editingField, setEditingField] = useState<{ taskId: number; field: string } | null>(null);
+  const [editingValue, setEditingValue] = useState("");
+
+  const [prioritiesOpen, setPrioritiesOpen] = useState(true);
+  const [closedPrioritiesOpen, setClosedPrioritiesOpen] = useState(false);
+  const [addPriorityOpen, setAddPriorityOpen] = useState(false);
+  const [newPriorityForm, setNewPriorityForm] = useState({
+    title: "",
+    severity: "normal" as "critical" | "important" | "normal",
+    department: "",
+    linkedProjectName: "",
+  });
 
   const { data: tasks = [], isLoading } = useQuery<MyToolTask[]>({
     queryKey: ["/api/mytool/tasks"],
   });
 
+  const { data: priorities = [] } = useQuery<CompanyPriority[]>({
+    queryKey: ["/api/mytool/company-priorities"],
+  });
+
+  const { data: allProjects = [] } = useQuery<Array<{ project_name: string }>>({
+    queryKey: ["/api/projects-summary"],
+    select: (data: any[]) => data.map((p: any) => ({ project_name: p.project_name })),
+  });
+
   const invalidateAll = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["/api/mytool/tasks"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
   }, []);
 
   const createTaskMutation = useMutation({
@@ -170,19 +206,37 @@ export default function MyToolBacklogPage() {
     },
   });
 
+  const createPriorityMutation = useMutation({
+    mutationFn: async (body: Record<string, unknown>) => {
+      await apiRequest("POST", "/api/mytool/company-priorities", body);
+    },
+    onSuccess: () => {
+      invalidateAll();
+      setAddPriorityOpen(false);
+      setNewPriorityForm({ title: "", severity: "normal", department: "", linkedProjectName: "" });
+    },
+  });
+
+  const updatePriorityMutation = useMutation({
+    mutationFn: async ({ id, ...body }: { id: number } & Record<string, unknown>) => {
+      await apiRequest("PATCH", `/api/mytool/company-priorities/${id}`, body);
+    },
+    onSuccess: () => invalidateAll(),
+  });
+
+  const deletePriorityMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("DELETE", `/api/mytool/company-priorities/${id}`);
+    },
+    onSuccess: () => invalidateAll(),
+  });
+
   const handleCreateTask = () => {
     const title = newTitle.trim();
     if (!title) return;
     createTaskMutation.mutate({ title, status: newStatus, priority: newPriority });
   };
 
-  const handleSetPlannedDate = (taskId: number) => {
-    if (editingDateValue) {
-      updateTaskMutation.mutate({ id: taskId, plannedForDate: editingDateValue });
-    }
-    setEditingDateTaskId(null);
-    setEditingDateValue("");
-  };
 
   const toggleStatus = (s: TaskStatus) => {
     setStatusFilter((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]));
@@ -216,6 +270,48 @@ export default function MyToolBacklogPage() {
       setSortField(field);
       setSortDirection("asc");
     }
+  };
+
+  const startEditing = (taskId: number, field: string, currentValue: string) => {
+    setEditingField({ taskId, field });
+    setEditingValue(currentValue);
+  };
+
+  const saveEditing = () => {
+    if (!editingField) return;
+    const { taskId, field } = editingField;
+    const value = editingValue.trim();
+    if (field === "title" && !value) {
+      setEditingField(null);
+      return;
+    }
+    const update: Record<string, unknown> = { id: taskId };
+    if (field === "title") update.title = value;
+    else if (field === "tag") update.tag = value || null;
+    else if (field === "notes") update.notes = value || null;
+    else if (field === "dueDate") update.dueAt = value ? new Date(value + "T00:00:00").toISOString() : null;
+    else if (field === "plannedForDate") update.plannedForDate = value || null;
+    else if (field === "projectName") update.projectName = value || null;
+    updateTaskMutation.mutate(update as any);
+    setEditingField(null);
+  };
+
+  const cancelEditing = () => {
+    setEditingField(null);
+    setEditingValue("");
+  };
+
+  const handleAddPriority = () => {
+    const title = newPriorityForm.title.trim();
+    if (!title) return;
+    createPriorityMutation.mutate({
+      title,
+      severity: newPriorityForm.severity,
+      department: newPriorityForm.department || null,
+      linkedProjectName: newPriorityForm.linkedProjectName || null,
+      horizon: "week",
+      status: "active",
+    });
   };
 
   const projects = useMemo(() => {
@@ -260,7 +356,7 @@ export default function MyToolBacklogPage() {
           cmp = (statusOrder[a.status] ?? 2) - (statusOrder[b.status] ?? 2);
           break;
         case "dueDate":
-          cmp = (a.dueDate || "9999").localeCompare(b.dueDate || "9999");
+          cmp = (a.dueAt || "9999").localeCompare(b.dueAt || "9999");
           break;
         case "createdAt":
           cmp = (a.createdAt || "").localeCompare(b.createdAt || "");
@@ -274,6 +370,9 @@ export default function MyToolBacklogPage() {
 
   const selectedArray = Array.from(selectedIds);
 
+  const activePriorities = priorities.filter((p) => p.status !== "closed");
+  const closedPriorities = priorities.filter((p) => p.status === "closed");
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20" data-testid="loading-spinner">
@@ -286,6 +385,201 @@ export default function MyToolBacklogPage() {
     <div className="max-w-[1400px] mx-auto space-y-5" data-testid="mytool-backlog-page">
       <MyToolNav subtitle="All Tasks" />
 
+      {/* Company Priorities Section */}
+      <Card data-testid="card-company-priorities">
+        <CardHeader className="pb-2">
+          <button
+            className="flex items-center gap-2 text-left w-full"
+            onClick={() => setPrioritiesOpen(!prioritiesOpen)}
+            data-testid="toggle-priorities"
+          >
+            {prioritiesOpen ? <ChevronDown className="h-4 w-4 text-gray-400" /> : <ChevronRight className="h-4 w-4 text-gray-400" />}
+            <Flag className="h-4 w-4 text-blue-600" />
+            <CardTitle className="text-sm font-semibold">Company Priorities</CardTitle>
+            <Badge variant="secondary" className="text-xs ml-1" data-testid="badge-priorities-count">
+              {activePriorities.length}
+            </Badge>
+          </button>
+        </CardHeader>
+        {prioritiesOpen && (
+          <CardContent className="pt-0 space-y-3">
+            {activePriorities.length === 0 && !addPriorityOpen && (
+              <p className="text-xs text-gray-400 text-center py-2" data-testid="text-no-priorities">No active priorities</p>
+            )}
+            {activePriorities.map((p) => (
+              <div key={p.id} className="flex items-center gap-2 text-sm border-b border-gray-100 dark:border-gray-800 pb-2" data-testid={`priority-row-${p.id}`}>
+                <select
+                  value={p.status}
+                  onChange={(e) => updatePriorityMutation.mutate({ id: p.id, status: e.target.value })}
+                  className="text-[10px] border rounded px-1 py-0.5 bg-white dark:bg-gray-900"
+                  data-testid={`select-priority-status-${p.id}`}
+                >
+                  <option value="active">active</option>
+                  <option value="monitoring">monitoring</option>
+                  <option value="closed">closed</option>
+                </select>
+                <SeverityBadge severity={p.severity} />
+                <span className="flex-1 text-sm text-gray-800 dark:text-gray-200 truncate" data-testid={`text-priority-title-${p.id}`}>
+                  {p.title}
+                </span>
+                {p.department && (
+                  <span className="text-[10px] text-gray-500 bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded" data-testid={`text-priority-dept-${p.id}`}>
+                    {p.department}
+                  </span>
+                )}
+                {p.linkedProjectName && (
+                  <Link
+                    href={`/project/${encodeURIComponent(p.linkedProjectName)}`}
+                    className="text-[10px] text-blue-600 hover:text-blue-700 flex items-center gap-0.5"
+                    data-testid={`link-priority-project-${p.id}`}
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                    {p.linkedProjectName.replace(/_/g, " ")}
+                  </Link>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 w-6 p-0 text-emerald-600 hover:text-emerald-700"
+                  onClick={() => updatePriorityMutation.mutate({ id: p.id, status: "closed" })}
+                  title="Close"
+                  data-testid={`button-close-priority-${p.id}`}
+                >
+                  <CheckCircle2 className="h-3 w-3" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                  onClick={() => deletePriorityMutation.mutate(p.id)}
+                  title="Delete"
+                  data-testid={`button-delete-priority-${p.id}`}
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              </div>
+            ))}
+
+            {closedPriorities.length > 0 && (
+              <div>
+                <button
+                  className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600"
+                  onClick={() => setClosedPrioritiesOpen(!closedPrioritiesOpen)}
+                  data-testid="toggle-closed-priorities"
+                >
+                  {closedPrioritiesOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                  Closed ({closedPriorities.length})
+                </button>
+                {closedPrioritiesOpen && (
+                  <div className="mt-2 space-y-2">
+                    {closedPriorities.map((p) => (
+                      <div key={p.id} className="flex items-center gap-2 text-sm opacity-60" data-testid={`priority-closed-row-${p.id}`}>
+                        <select
+                          value={p.status}
+                          onChange={(e) => updatePriorityMutation.mutate({ id: p.id, status: e.target.value })}
+                          className="text-[10px] border rounded px-1 py-0.5 bg-white dark:bg-gray-900"
+                          data-testid={`select-priority-status-closed-${p.id}`}
+                        >
+                          <option value="active">active</option>
+                          <option value="monitoring">monitoring</option>
+                          <option value="closed">closed</option>
+                        </select>
+                        <SeverityBadge severity={p.severity} />
+                        <span className="flex-1 text-sm text-gray-400 line-through truncate">{p.title}</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                          onClick={() => deletePriorityMutation.mutate(p.id)}
+                          title="Delete"
+                          data-testid={`button-delete-closed-priority-${p.id}`}
+                        >
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {addPriorityOpen ? (
+              <div className="flex flex-col sm:flex-row gap-2 pt-2 border-t border-gray-100 dark:border-gray-800" data-testid="form-add-priority">
+                <Input
+                  placeholder="Priority title..."
+                  value={newPriorityForm.title}
+                  onChange={(e) => setNewPriorityForm({ ...newPriorityForm, title: e.target.value })}
+                  onKeyDown={(e) => e.key === "Enter" && handleAddPriority()}
+                  className="flex-1 text-sm h-8"
+                  autoFocus
+                  data-testid="input-new-priority-title"
+                />
+                <select
+                  value={newPriorityForm.severity}
+                  onChange={(e) => setNewPriorityForm({ ...newPriorityForm, severity: e.target.value as any })}
+                  className="text-xs border border-gray-200 dark:border-gray-700 rounded-md px-2 py-1 bg-white dark:bg-gray-900 h-8"
+                  data-testid="select-new-priority-severity"
+                >
+                  <option value="critical">critical</option>
+                  <option value="important">important</option>
+                  <option value="normal">normal</option>
+                </select>
+                <Input
+                  placeholder="Department"
+                  value={newPriorityForm.department}
+                  onChange={(e) => setNewPriorityForm({ ...newPriorityForm, department: e.target.value })}
+                  className="text-sm h-8 w-32"
+                  data-testid="input-new-priority-department"
+                />
+                <select
+                  value={newPriorityForm.linkedProjectName}
+                  onChange={(e) => setNewPriorityForm({ ...newPriorityForm, linkedProjectName: e.target.value })}
+                  className="text-xs border border-gray-200 dark:border-gray-700 rounded-md px-2 py-1 bg-white dark:bg-gray-900 h-8"
+                  data-testid="select-new-priority-project"
+                >
+                  <option value="">No Project</option>
+                  {allProjects.map((p) => (
+                    <option key={p.project_name} value={p.project_name}>{p.project_name.replace(/_/g, " ")}</option>
+                  ))}
+                </select>
+                <div className="flex gap-1">
+                  <Button
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={handleAddPriority}
+                    disabled={!newPriorityForm.title.trim() || createPriorityMutation.isPending}
+                    data-testid="button-submit-new-priority"
+                  >
+                    Add
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={() => setAddPriorityOpen(false)}
+                    data-testid="button-cancel-new-priority"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs text-gray-500"
+                onClick={() => setAddPriorityOpen(true)}
+                data-testid="button-add-priority"
+              >
+                <Plus className="h-3 w-3 mr-1" />
+                Add Priority
+              </Button>
+            )}
+          </CardContent>
+        )}
+      </Card>
+
+      {/* Search & Filters */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -605,6 +899,7 @@ export default function MyToolBacklogPage() {
                             Due <ArrowUpDown className="h-3 w-3" />
                           </button>
                         </th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase">Notes</th>
                         <th className="px-3 py-2 text-left">
                           <button onClick={() => handleSort("createdAt")} className="flex items-center gap-1 text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase" data-testid="sort-created">
                             Created <ArrowUpDown className="h-3 w-3" />
@@ -642,10 +937,30 @@ export default function MyToolBacklogPage() {
                             </select>
                             <SeverityBadge severity={task.priority} />
                           </td>
+                          {/* Title - inline editable */}
                           <td className="px-3 py-2">
-                            <span className={`text-sm ${task.status === "done" ? "line-through text-gray-400" : "text-gray-800 dark:text-gray-200"}`} data-testid={`text-task-title-${task.id}`}>
-                              {task.title}
-                            </span>
+                            {editingField?.taskId === task.id && editingField.field === "title" ? (
+                              <Input
+                                value={editingValue}
+                                onChange={(e) => setEditingValue(e.target.value)}
+                                onBlur={saveEditing}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") saveEditing();
+                                  if (e.key === "Escape") cancelEditing();
+                                }}
+                                className="h-7 text-sm"
+                                autoFocus
+                                data-testid={`input-edit-title-${task.id}`}
+                              />
+                            ) : (
+                              <button
+                                onClick={() => startEditing(task.id, "title", task.title)}
+                                className={`text-sm text-left w-full hover:bg-gray-100 dark:hover:bg-gray-800 px-1 py-0.5 rounded ${task.status === "done" ? "line-through text-gray-400" : "text-gray-800 dark:text-gray-200"}`}
+                                data-testid={`text-task-title-${task.id}`}
+                              >
+                                {task.title}
+                              </button>
+                            )}
                           </td>
                           <td className="px-3 py-2">
                             <select
@@ -659,44 +974,87 @@ export default function MyToolBacklogPage() {
                               ))}
                             </select>
                           </td>
+                          {/* Project - inline editable */}
                           <td className="px-3 py-2">
-                            {task.projectName ? (
-                              <Link
-                                href={`/project/${encodeURIComponent(task.projectName)}`}
-                                className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1"
-                                data-testid={`link-project-${task.id}`}
+                            {editingField?.taskId === task.id && editingField.field === "projectName" ? (
+                              <select
+                                value={editingValue}
+                                onChange={(e) => {
+                                  setEditingValue(e.target.value);
+                                  updateTaskMutation.mutate({ id: task.id, projectName: e.target.value || null });
+                                  setEditingField(null);
+                                }}
+                                onBlur={() => setEditingField(null)}
+                                className="text-xs border rounded px-1 py-0.5 bg-white dark:bg-gray-900 w-full"
+                                autoFocus
+                                data-testid={`select-edit-project-${task.id}`}
                               >
-                                <ExternalLink className="h-3 w-3" />
-                                {task.projectName.replace(/_/g, " ")}
-                              </Link>
-                            ) : (
-                              <span className="text-xs text-gray-400">—</span>
-                            )}
-                          </td>
-                          <td className="px-3 py-2">
-                            {task.tag ? (
-                              <Badge variant="outline" className="text-[10px]" data-testid={`badge-tag-${task.id}`}>{task.tag}</Badge>
-                            ) : (
-                              <span className="text-xs text-gray-400">—</span>
-                            )}
-                          </td>
-                          <td className="px-3 py-2">
-                            {editingDateTaskId === task.id ? (
-                              <div className="flex gap-1">
-                                <Input
-                                  type="date"
-                                  value={editingDateValue}
-                                  onChange={(e) => setEditingDateValue(e.target.value)}
-                                  className="h-6 text-xs w-32"
-                                  autoFocus
-                                  onBlur={() => handleSetPlannedDate(task.id)}
-                                  onKeyDown={(e) => { if (e.key === "Enter") handleSetPlannedDate(task.id); if (e.key === "Escape") { setEditingDateTaskId(null); setEditingDateValue(""); } }}
-                                  data-testid={`input-planned-date-${task.id}`}
-                                />
-                              </div>
+                                <option value="">None</option>
+                                {allProjects.map((p) => (
+                                  <option key={p.project_name} value={p.project_name}>{p.project_name.replace(/_/g, " ")}</option>
+                                ))}
+                              </select>
                             ) : (
                               <button
-                                onClick={() => { setEditingDateTaskId(task.id); setEditingDateValue(task.plannedForDate || ""); }}
+                                onClick={() => startEditing(task.id, "projectName", task.projectName || "")}
+                                className="text-xs text-left w-full hover:bg-gray-100 dark:hover:bg-gray-800 px-1 py-0.5 rounded"
+                                data-testid={`button-edit-project-${task.id}`}
+                              >
+                                {task.projectName ? (
+                                  <span className="text-blue-600 flex items-center gap-1">
+                                    <ExternalLink className="h-3 w-3" />
+                                    {task.projectName.replace(/_/g, " ")}
+                                  </span>
+                                ) : (
+                                  <span className="text-gray-400">—</span>
+                                )}
+                              </button>
+                            )}
+                          </td>
+                          {/* Tag - inline editable */}
+                          <td className="px-3 py-2">
+                            {editingField?.taskId === task.id && editingField.field === "tag" ? (
+                              <Input
+                                value={editingValue}
+                                onChange={(e) => setEditingValue(e.target.value)}
+                                onBlur={saveEditing}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") saveEditing();
+                                  if (e.key === "Escape") cancelEditing();
+                                }}
+                                className="h-6 text-xs w-24"
+                                autoFocus
+                                data-testid={`input-edit-tag-${task.id}`}
+                              />
+                            ) : (
+                              <button
+                                onClick={() => startEditing(task.id, "tag", task.tag || "")}
+                                className="text-left w-full hover:bg-gray-100 dark:hover:bg-gray-800 px-1 py-0.5 rounded"
+                                data-testid={`button-edit-tag-${task.id}`}
+                              >
+                                {task.tag ? (
+                                  <Badge variant="outline" className="text-[10px]" data-testid={`badge-tag-${task.id}`}>{task.tag}</Badge>
+                                ) : (
+                                  <span className="text-xs text-gray-400">—</span>
+                                )}
+                              </button>
+                            )}
+                          </td>
+                          <td className="px-3 py-2">
+                            {editingField?.taskId === task.id && editingField.field === "plannedForDate" ? (
+                              <Input
+                                type="date"
+                                value={editingValue}
+                                onChange={(e) => setEditingValue(e.target.value)}
+                                className="h-6 text-xs w-32"
+                                autoFocus
+                                onBlur={saveEditing}
+                                onKeyDown={(e) => { if (e.key === "Enter") saveEditing(); if (e.key === "Escape") cancelEditing(); }}
+                                data-testid={`input-planned-date-${task.id}`}
+                              />
+                            ) : (
+                              <button
+                                onClick={() => startEditing(task.id, "plannedForDate", task.plannedForDate || "")}
                                 className="text-xs text-gray-600 dark:text-gray-400 hover:text-blue-600 flex items-center gap-1"
                                 data-testid={`button-set-planned-${task.id}`}
                               >
@@ -705,8 +1063,62 @@ export default function MyToolBacklogPage() {
                               </button>
                             )}
                           </td>
-                          <td className="px-3 py-2 text-xs text-gray-500">
-                            {task.dueDate ? format(new Date(task.dueDate + "T00:00:00"), "d MMM") : "—"}
+                          {/* Due Date - inline editable */}
+                          <td className="px-3 py-2">
+                            {editingField?.taskId === task.id && editingField.field === "dueDate" ? (
+                              <Input
+                                type="date"
+                                value={editingValue}
+                                onChange={(e) => {
+                                  setEditingValue(e.target.value);
+                                }}
+                                onBlur={saveEditing}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") saveEditing();
+                                  if (e.key === "Escape") cancelEditing();
+                                }}
+                                className="h-6 text-xs w-32"
+                                autoFocus
+                                data-testid={`input-edit-duedate-${task.id}`}
+                              />
+                            ) : (
+                              <button
+                                onClick={() => startEditing(task.id, "dueDate", task.dueAt ? format(new Date(task.dueAt), "yyyy-MM-dd") : "")}
+                                className="text-xs text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 px-1 py-0.5 rounded"
+                                data-testid={`button-edit-duedate-${task.id}`}
+                              >
+                                {task.dueAt ? format(new Date(task.dueAt), "d MMM") : "—"}
+                              </button>
+                            )}
+                          </td>
+                          {/* Notes - inline editable */}
+                          <td className="px-3 py-2">
+                            {editingField?.taskId === task.id && editingField.field === "notes" ? (
+                              <Textarea
+                                value={editingValue}
+                                onChange={(e) => setEditingValue(e.target.value)}
+                                onBlur={saveEditing}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Escape") cancelEditing();
+                                }}
+                                className="text-xs min-h-[60px] w-40"
+                                autoFocus
+                                data-testid={`textarea-edit-notes-${task.id}`}
+                              />
+                            ) : (
+                              <button
+                                onClick={() => startEditing(task.id, "notes", task.notes || "")}
+                                className="text-xs text-left w-full max-w-[120px] hover:bg-gray-100 dark:hover:bg-gray-800 px-1 py-0.5 rounded truncate block"
+                                title={task.notes || "Add notes"}
+                                data-testid={`button-edit-notes-${task.id}`}
+                              >
+                                {task.notes ? (
+                                  <span className="text-gray-600 dark:text-gray-400">{task.notes}</span>
+                                ) : (
+                                  <span className="text-gray-400">—</span>
+                                )}
+                              </button>
+                            )}
                           </td>
                           <td className="px-3 py-2 text-xs text-gray-500">
                             {task.createdAt ? format(new Date(task.createdAt), "d MMM") : "—"}
@@ -768,9 +1180,28 @@ export default function MyToolBacklogPage() {
                         <SeverityBadge severity={task.priority} />
                         <StatusBadge status={task.status} />
                       </div>
-                      <p className={`text-sm font-medium ${task.status === "done" ? "line-through text-gray-400" : "text-gray-800 dark:text-gray-200"}`} data-testid={`text-task-title-mobile-${task.id}`}>
-                        {task.title}
-                      </p>
+                      {editingField?.taskId === task.id && editingField.field === "title" ? (
+                        <Input
+                          value={editingValue}
+                          onChange={(e) => setEditingValue(e.target.value)}
+                          onBlur={saveEditing}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") saveEditing();
+                            if (e.key === "Escape") cancelEditing();
+                          }}
+                          className="h-7 text-sm"
+                          autoFocus
+                          data-testid={`input-edit-title-mobile-${task.id}`}
+                        />
+                      ) : (
+                        <button
+                          onClick={() => startEditing(task.id, "title", task.title)}
+                          className={`text-sm font-medium text-left w-full ${task.status === "done" ? "line-through text-gray-400" : "text-gray-800 dark:text-gray-200"}`}
+                          data-testid={`text-task-title-mobile-${task.id}`}
+                        >
+                          {task.title}
+                        </button>
+                      )}
                       <div className="flex flex-wrap gap-2 mt-1.5 text-xs text-gray-500">
                         {task.projectName && (
                           <Link
@@ -789,7 +1220,15 @@ export default function MyToolBacklogPage() {
                             {format(new Date(task.plannedForDate + "T00:00:00"), "d MMM")}
                           </span>
                         )}
+                        {task.dueAt && (
+                          <span className="flex items-center gap-1 text-orange-600">
+                            Due: {format(new Date(task.dueAt), "d MMM")}
+                          </span>
+                        )}
                       </div>
+                      {task.notes && (
+                        <p className="text-xs text-gray-400 mt-1 truncate" data-testid={`text-notes-mobile-${task.id}`}>{task.notes}</p>
+                      )}
                     </div>
                   </div>
                   <div className="flex gap-1 justify-end border-t pt-2">
