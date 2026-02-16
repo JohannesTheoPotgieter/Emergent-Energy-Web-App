@@ -2272,6 +2272,42 @@ export async function registerRoutes(
     }
   });
 
+  app.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid expense id" });
+
+      const { realised } = req.body as { realised: boolean };
+      if (typeof realised !== 'boolean') return res.status(400).json({ error: "realised (boolean) required" });
+
+      const allExpenses = await storage.getAllProgramExpenses();
+      const expense = allExpenses.find(e => e.id === id);
+      if (!expense) return res.status(404).json({ error: "Expense not found" });
+
+      if (realised && !expense.expenseInvoiceNumber) {
+        return res.status(400).json({ error: "Cannot mark as realised without an invoice number" });
+      }
+
+      await storage.updateProgramExpenseFields(id, {
+        invoiceDateConfirmed: realised,
+      });
+
+      const updatedExpenses = await storage.getAllProgramExpenses();
+      const updatedExpense = updatedExpenses.find(e => e.id === id);
+      if (updatedExpense) {
+        const newState = classifyExpenseState(updatedExpense as any);
+        await storage.updateProgramExpenseFields(id, {
+          computedState: newState,
+        });
+      }
+
+      res.json({ success: true, id, realised });
+    } catch (error) {
+      console.error("Toggle realised error:", error);
+      res.status(500).json({ error: "Failed to toggle realised status" });
+    }
+  });
+
   // ==================== PROGRAM DASHBOARD API ====================
 
   app.get("/api/program-dashboard", requireAuth, async (req, res) => {
