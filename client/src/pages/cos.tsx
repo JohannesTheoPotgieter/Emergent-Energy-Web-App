@@ -134,10 +134,21 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
   const [stateFilter, setStateFilter] = useState<"all" | "realised" | "unrealised">(defaultFilter);
   const [projectFilter, setProjectFilter] = useState<string>(defaultProject);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery<MonthDetail>({
     queryKey: [`/api/cos-tracker/month-detail?monthKey=${monthKey}`],
     queryFn: getQueryFn({ on401: "throw" }),
+  });
+
+  const toggleRealisedMutation = useMutation({
+    mutationFn: async ({ id, realised }: { id: number; realised: boolean }) => {
+      await apiRequest("PATCH", `/api/cos-tracker/toggle-realised/${id}`, { realised });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/cos-tracker/month-detail?monthKey=${monthKey}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/cos-tracker"] });
+    },
   });
 
   const allProjects = useMemo(() => {
@@ -324,16 +335,22 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
                           {item.cosState}
                         </span>
                       </td>
-                      <td className="px-3 py-2.5 text-center">
-                        {item.isRealised ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-900 ring-1 ring-slate-300 text-[10px] font-bold" title={`Realised in ${item.realisedMonth}`}>
-                            {item.invoiceNumber ? `INV: ${item.invoiceNumber.substring(0, 12)}` : (item.realisedMonth || 'Yes')}
-                          </span>
-                        ) : (
-                          <span className="inline-flex px-2 py-0.5 rounded-full bg-red-50 text-red-600 ring-1 ring-red-200 text-[10px] font-semibold">
-                            Not Paid
-                          </span>
-                        )}
+                      <td className="px-3 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold cursor-pointer transition-colors ${
+                            item.isRealised
+                              ? 'bg-slate-100 text-slate-900 ring-1 ring-slate-300 font-bold hover:bg-red-50 hover:text-red-600 hover:ring-red-200'
+                              : 'bg-red-50 text-red-600 ring-1 ring-red-200 hover:bg-slate-100 hover:text-slate-900 hover:ring-slate-300'
+                          }`}
+                          title={item.isRealised ? 'Click to mark as Not Realised' : 'Click to mark as Realised'}
+                          disabled={toggleRealisedMutation.isPending}
+                          onClick={() => toggleRealisedMutation.mutate({ id: item.id, realised: !item.isRealised })}
+                          data-testid={`button-toggle-realised-${item.id}`}
+                        >
+                          {item.isRealised
+                            ? (item.invoiceNumber ? `INV: ${item.invoiceNumber.substring(0, 12)}` : (item.realisedMonth || 'Realised'))
+                            : 'Not Realised'}
+                        </button>
                       </td>
                       <td className={`px-3 py-2.5 text-right font-mono font-semibold ${item.isRealised ? 'text-slate-900' : 'text-red-600'}`}>{formatRand(item.amount)}</td>
                     </tr>
@@ -351,7 +368,7 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
                             </div>
                             <div>
                               <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider mb-0.5">Invoice Date</p>
-                              <p className="font-medium text-slate-700 flex items-center gap-1.5">
+                              <p className="font-medium text-red-600 flex items-center gap-1.5">
                                 {item.invoiceDate || "—"}
                                 {item.invoiceDate && (
                                   <span className={`inline-block w-2 h-2 rounded-full ${item.invoiceDateConfirmed ? 'bg-green-500 ring-2 ring-green-200' : 'bg-red-400 ring-2 ring-red-200'}`}
