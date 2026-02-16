@@ -984,6 +984,7 @@ export const mytoolCompanyPriorities = pgTable("mytool_company_priorities", {
   id: serial("id").primaryKey(),
   title: text("title").notNull(),
   description: text("description"),
+  department: text("department"),
   horizon: mytoolPriorityHorizonEnum("horizon").notNull().default('week'),
   ownerRole: text("owner_role"),
   linkedProjectName: text("linked_project_name"),
