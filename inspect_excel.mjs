@@ -1,30 +1,43 @@
-import XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 
 const filePath = process.argv[2];
-const workbook = XLSX.readFile(filePath);
-console.log('\n=== SHEET NAMES ===');
-console.log(workbook.SheetNames.join('\n'));
+const workbook = new ExcelJS.Workbook();
+await workbook.xlsx.readFile(filePath);
 
-const cashflowSheet = workbook.SheetNames.find(name => 
-  name.toLowerCase().includes('cashflow') || name.toLowerCase().includes('cash flow')
+console.log('\n=== SHEET NAMES ===');
+console.log(workbook.worksheets.map(ws => ws.name).join('\n'));
+
+const cashflowSheet = workbook.worksheets.find(ws => 
+  ws.name.toLowerCase().includes('cashflow') || ws.name.toLowerCase().includes('cash flow')
 );
-const revenueSheet = workbook.SheetNames.find(name =>
-  name.toLowerCase().includes('revenue') && name.toLowerCase().includes('finance')
+const revenueSheet = workbook.worksheets.find(ws =>
+  ws.name.toLowerCase().includes('revenue') && ws.name.toLowerCase().includes('finance')
 );
-const cosSheet = workbook.SheetNames.find(name =>
-  name.toLowerCase().includes('cos') && name.toLowerCase().includes('finance')
+const cosSheet = workbook.worksheets.find(ws =>
+  ws.name.toLowerCase().includes('cos') && ws.name.toLowerCase().includes('finance')
 );
 
 console.log('\n=== MATCHING SHEETS ===');
-console.log('Cashflow:', cashflowSheet || 'NOT FOUND');
-console.log('Revenue:', revenueSheet || 'NOT FOUND');
-console.log('COS:', cosSheet || 'NOT FOUND');
+console.log('Cashflow:', cashflowSheet?.name || 'NOT FOUND');
+console.log('Revenue:', revenueSheet?.name || 'NOT FOUND');
+console.log('COS:', cosSheet?.name || 'NOT FOUND');
+
+function sheetToRows(ws, maxRows, maxCols) {
+  const rows = [];
+  ws.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+    if (rows.length >= maxRows) return;
+    const vals = [];
+    for (let c = 1; c <= maxCols; c++) {
+      const cell = row.getCell(c);
+      vals.push(cell.value);
+    }
+    rows.push({ rowNumber, vals });
+  });
+  return rows;
+}
 
 if (cashflowSheet) {
-  console.log(`\n=== ${cashflowSheet} SHEET (First 10 rows, cols 0-8) ===`);
-  const sheet = workbook.Sheets[cashflowSheet];
-  const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: false });
-  data.slice(0, 10).forEach((row, i) => {
-    console.log(`Row ${i}:`, row.slice(0, 8));
-  });
+  console.log(`\n=== ${cashflowSheet.name} SHEET (First 10 rows, cols 0-8) ===`);
+  const rows = sheetToRows(cashflowSheet, 10, 8);
+  rows.forEach(r => console.log(`Row ${r.rowNumber}:`, r.vals));
 }

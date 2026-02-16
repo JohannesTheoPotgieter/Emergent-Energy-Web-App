@@ -37,7 +37,7 @@ Preferred communication style: Simple, everyday language.
 - **Framework**: Express.js with TypeScript
 - **Authentication**: Passport.js with local strategy and PostgreSQL-backed sessions
 - **File Upload**: Multer for handling Excel files
-- **Excel Parsing**: `xlsx` library with custom parsing logic to ingest project, expense, revenue, plan, and cashflow data from defined Excel sheet structures.
+- **Excel Parsing**: `exceljs` library with custom parsing logic to ingest project, expense, revenue, plan, and cashflow data from defined Excel sheet structures.
 - **Data Storage**: PostgreSQL as primary, with resilient fallback to SQLite (`./data/app.sqlite`) if PostgreSQL is unavailable. Drizzle ORM is used for database interactions.
 - **Transactional Safety**: All file uploads and data modifications are wrapped in database transactions to ensure data integrity.
 - **Reprocessing**: Supports re-parsing previously uploaded Excel files without re-uploading.
@@ -132,7 +132,7 @@ Auto-runs on server startup to populate computed columns (hash, state, forecast 
 -   **bcryptjs**: Password hashing.
 
 ### File Processing
--   **xlsx**: Excel file parsing library.
+-   **exceljs**: Excel file parsing and writing library.
 -   **multer**: Middleware for handling `multipart/form-data`.
 
 ### Frontend Libraries
