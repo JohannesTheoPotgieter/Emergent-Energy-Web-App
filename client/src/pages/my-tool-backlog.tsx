@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Link, useLocation } from "wouter";
 import { format } from "date-fns";
 import MyToolNav from "@/components/my-tool-nav";
@@ -30,6 +31,8 @@ import {
   Calendar,
   Inbox,
   Flag,
+  Repeat,
+  Mail,
 } from "lucide-react";
 
 type Priority = "critical" | "important" | "normal" | "low";
@@ -52,6 +55,34 @@ interface MyToolTask {
   companyPriorityId: number | null;
   createdAt: string | null;
   notes: string | null;
+  isRecurring?: boolean;
+  recurrenceFrequency?: string | null;
+  recurrenceInterval?: number | null;
+  recurrenceDaysOfWeek?: string | null;
+  recurrenceEndDate?: string | null;
+  recurrenceParentId?: number | null;
+}
+
+interface OutlookEmail {
+  id: string;
+  subject: string;
+  sender: string | null;
+  senderEmail: string | null;
+  receivedAt: string;
+  snippet: string | null;
+  webLink: string | null;
+  isRead: boolean;
+  hasAttachments: boolean;
+}
+
+interface EmailLink {
+  id: number;
+  outlookMessageId: string;
+  subject: string;
+  sender: string;
+  receivedAt: string;
+  snippet: string;
+  webLink: string;
 }
 
 interface CompanyPriority {
@@ -109,6 +140,187 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 
+function EmailPickerDialog({
+  open,
+  onOpenChange,
+  taskId,
+  taskTitle,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  taskId: number;
+  taskTitle: string;
+}) {
+  const { toast } = useToast();
+  const [emailSearch, setEmailSearch] = useState("");
+  const [debouncedEmailSearch, setDebouncedEmailSearch] = useState("");
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedEmailSearch(emailSearch), 400);
+    return () => clearTimeout(timer);
+  }, [emailSearch]);
+
+  const { data: emails = [], isLoading: emailsLoading } = useQuery<OutlookEmail[]>({
+    queryKey: ["/api/outlook/messages", debouncedEmailSearch],
+    queryFn: async () => {
+      const params = new URLSearchParams({ top: "20" });
+      if (debouncedEmailSearch.trim()) params.set("search", debouncedEmailSearch.trim());
+      const res = await fetch(`/api/outlook/messages?${params.toString()}`, { credentials: "include" });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data.value || data || [];
+    },
+    enabled: open,
+  });
+
+  const { data: linkedEmails = [], isLoading: linkedLoading } = useQuery<EmailLink[]>({
+    queryKey: ["/api/mytool/email-links", taskId],
+    queryFn: async () => {
+      const res = await fetch(`/api/mytool/email-links?taskId=${taskId}`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: open,
+  });
+
+  const linkEmailMutation = useMutation({
+    mutationFn: async (email: OutlookEmail) => {
+      await apiRequest("POST", "/api/outlook/email-to-task", {
+        outlookMessageId: email.id,
+        subject: email.subject,
+        sender: email.sender || email.senderEmail || "",
+        receivedAt: email.receivedAt,
+        snippet: email.snippet?.slice(0, 200) || "",
+        webLink: email.webLink || "",
+        targetType: "mytool",
+        targetId: taskId,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/mytool/email-links", taskId] });
+      toast({ title: "Email linked to task" });
+    },
+    onError: () => {
+      toast({ title: "Failed to link email", variant: "destructive" });
+    },
+  });
+
+  const createTaskFromEmailMutation = useMutation({
+    mutationFn: async (email: OutlookEmail) => {
+      await apiRequest("POST", "/api/outlook/email-to-task", {
+        outlookMessageId: email.id,
+        subject: email.subject,
+        sender: email.sender || email.senderEmail || "",
+        receivedAt: email.receivedAt,
+        snippet: email.snippet?.slice(0, 200) || "",
+        webLink: email.webLink || "",
+        targetType: "new",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/mytool/tasks"] });
+      toast({ title: "New task created from email" });
+    },
+    onError: () => {
+      toast({ title: "Failed to create task from email", variant: "destructive" });
+    },
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col" data-testid="dialog-email-picker">
+        <DialogHeader>
+          <DialogTitle className="text-sm font-semibold">Link Email to: {taskTitle}</DialogTitle>
+          <DialogDescription className="text-xs text-gray-500">Search and link Outlook emails to this task</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 flex-1 overflow-hidden flex flex-col">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Input
+              placeholder="Search emails..."
+              value={emailSearch}
+              onChange={(e) => setEmailSearch(e.target.value)}
+              className="pl-9 text-sm"
+              data-testid="input-email-search"
+            />
+          </div>
+
+          {linkedEmails.length > 0 && (
+            <div className="space-y-1" data-testid="linked-emails-section">
+              <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Linked Emails</p>
+              <div className="space-y-1 max-h-[120px] overflow-y-auto">
+                {linkedEmails.map((le) => (
+                  <div key={le.id} className="flex items-center gap-2 text-xs bg-blue-50 dark:bg-blue-900/20 rounded px-2 py-1.5" data-testid={`linked-email-${le.id}`}>
+                    <Mail className="h-3 w-3 text-blue-600 shrink-0" />
+                    <span className="flex-1 truncate text-gray-700 dark:text-gray-300">{le.subject}</span>
+                    <span className="text-gray-400 shrink-0">{le.sender}</span>
+                    {le.webLink && (
+                      <a href={le.webLink} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-700 shrink-0" data-testid={`link-open-email-${le.id}`}>
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="flex-1 overflow-y-auto space-y-1" data-testid="email-results-section">
+            <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+              {emailsLoading ? "Loading..." : `Search Results (${emails.length})`}
+            </p>
+            {!emailsLoading && emails.length === 0 && (
+              <p className="text-xs text-gray-400 text-center py-4" data-testid="text-no-emails">
+                {emailSearch ? "No emails found" : "No emails available. Outlook may not be connected."}
+              </p>
+            )}
+            {emails.map((email) => (
+              <div key={email.id} className="border border-gray-200 dark:border-gray-700 rounded-lg p-2 space-y-1" data-testid={`email-result-${email.id}`}>
+                <div className="flex items-start gap-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{email.subject || "(No subject)"}</p>
+                    <div className="flex items-center gap-2 text-xs text-gray-500">
+                      <span>{email.sender || email.senderEmail || "Unknown"}</span>
+                      <span>·</span>
+                      <span>{email.receivedAt ? format(new Date(email.receivedAt), "d MMM yyyy") : ""}</span>
+                    </div>
+                    {email.snippet && (
+                      <p className="text-xs text-gray-400 truncate mt-0.5">{email.snippet.slice(0, 120)}</p>
+                    )}
+                  </div>
+                  <div className="flex gap-1 shrink-0">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => linkEmailMutation.mutate(email)}
+                      disabled={linkEmailMutation.isPending}
+                      data-testid={`button-link-email-${email.id}`}
+                    >
+                      Link
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => createTaskFromEmailMutation.mutate(email)}
+                      disabled={createTaskFromEmailMutation.isPending}
+                      data-testid={`button-create-task-email-${email.id}`}
+                    >
+                      <Plus className="h-3 w-3 mr-1" />
+                      New Task
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function MyToolBacklogPage() {
   const { user } = useAuth();
   const [location] = useLocation();
@@ -129,6 +341,15 @@ export default function MyToolBacklogPage() {
   const [newStatus, setNewStatus] = useState<TaskStatus>("inbox");
   const [showStatusFilter, setShowStatusFilter] = useState(false);
   const [showPriorityFilter, setShowPriorityFilter] = useState(false);
+
+  const [newIsRecurring, setNewIsRecurring] = useState(false);
+  const [newRecurrenceFrequency, setNewRecurrenceFrequency] = useState("daily");
+  const [newRecurrenceInterval, setNewRecurrenceInterval] = useState(1);
+  const [newRecurrenceDaysOfWeek, setNewRecurrenceDaysOfWeek] = useState<number[]>([]);
+  const [newRecurrenceEndDate, setNewRecurrenceEndDate] = useState("");
+
+  const [emailPickerTaskId, setEmailPickerTaskId] = useState<number | null>(null);
+  const [emailPickerTaskTitle, setEmailPickerTaskTitle] = useState("");
 
   const [editingField, setEditingField] = useState<{ taskId: number; field: string } | null>(null);
   const [editingValue, setEditingValue] = useState("");
@@ -176,6 +397,11 @@ export default function MyToolBacklogPage() {
       setNewTitle("");
       setNewPriority("normal");
       setNewStatus("inbox");
+      setNewIsRecurring(false);
+      setNewRecurrenceFrequency("daily");
+      setNewRecurrenceInterval(1);
+      setNewRecurrenceDaysOfWeek([]);
+      setNewRecurrenceEndDate("");
     },
     onError: () => {
       toast({ title: "Failed to create task", variant: "destructive" });
@@ -268,7 +494,19 @@ export default function MyToolBacklogPage() {
     if (createTaskMutation.isPending) return;
     const title = newTitle.trim();
     if (!title) return;
-    createTaskMutation.mutate({ title, status: newStatus, priority: newPriority });
+    const payload: Record<string, unknown> = { title, status: newStatus, priority: newPriority };
+    if (newIsRecurring) {
+      payload.isRecurring = true;
+      payload.recurrenceFrequency = newRecurrenceFrequency;
+      payload.recurrenceInterval = newRecurrenceInterval;
+      if (newRecurrenceFrequency === "weekly" && newRecurrenceDaysOfWeek.length > 0) {
+        payload.recurrenceDaysOfWeek = newRecurrenceDaysOfWeek.join(",");
+      }
+      if (newRecurrenceEndDate) {
+        payload.recurrenceEndDate = newRecurrenceEndDate;
+      }
+    }
+    createTaskMutation.mutate(payload);
   };
 
 
@@ -854,6 +1092,75 @@ export default function MyToolBacklogPage() {
                 </Button>
               </div>
             </div>
+            <div className="mt-3 border-t border-gray-100 dark:border-gray-800 pt-3">
+              <label className="flex items-center gap-2 text-sm cursor-pointer" data-testid="toggle-recurring">
+                <input
+                  type="checkbox"
+                  checked={newIsRecurring}
+                  onChange={(e) => setNewIsRecurring(e.target.checked)}
+                  className="rounded"
+                  data-testid="checkbox-recurring"
+                />
+                <Repeat className="h-3.5 w-3.5 text-gray-500" />
+                <span className="text-gray-600 dark:text-gray-400">Make recurring</span>
+              </label>
+              {newIsRecurring && (
+                <div className="mt-2 flex flex-col sm:flex-row flex-wrap gap-3 pl-6" data-testid="recurring-fields">
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-gray-500">Every</label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={365}
+                      value={newRecurrenceInterval}
+                      onChange={(e) => setNewRecurrenceInterval(Math.max(1, parseInt(e.target.value) || 1))}
+                      className="h-8 w-16 text-sm"
+                      data-testid="input-recurrence-interval"
+                    />
+                    <select
+                      value={newRecurrenceFrequency}
+                      onChange={(e) => setNewRecurrenceFrequency(e.target.value)}
+                      className="text-xs border border-gray-200 dark:border-gray-700 rounded-md px-2 py-1.5 bg-white dark:bg-gray-900 h-8"
+                      data-testid="select-recurrence-frequency"
+                    >
+                      <option value="daily">day(s)</option>
+                      <option value="weekly">week(s)</option>
+                      <option value="monthly">month(s)</option>
+                    </select>
+                  </div>
+                  {newRecurrenceFrequency === "weekly" && (
+                    <div className="flex items-center gap-1" data-testid="recurrence-days-of-week">
+                      {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day, idx) => (
+                        <label key={day} className="flex flex-col items-center gap-0.5 cursor-pointer">
+                          <span className="text-[10px] text-gray-500">{day}</span>
+                          <input
+                            type="checkbox"
+                            checked={newRecurrenceDaysOfWeek.includes(idx)}
+                            onChange={() => {
+                              setNewRecurrenceDaysOfWeek((prev) =>
+                                prev.includes(idx) ? prev.filter((d) => d !== idx) : [...prev, idx]
+                              );
+                            }}
+                            className="rounded"
+                            data-testid={`checkbox-day-${idx}`}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-gray-500">End date</label>
+                    <Input
+                      type="date"
+                      value={newRecurrenceEndDate}
+                      onChange={(e) => setNewRecurrenceEndDate(e.target.value)}
+                      className="h-8 text-sm w-36"
+                      data-testid="input-recurrence-end-date"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
       )}
@@ -1035,13 +1342,20 @@ export default function MyToolBacklogPage() {
                                 data-testid={`input-edit-title-${task.id}`}
                               />
                             ) : (
-                              <button
-                                onClick={() => startEditing(task.id, "title", task.title)}
-                                className={`text-sm text-left w-full hover:bg-gray-100 dark:hover:bg-gray-800 px-1 py-0.5 rounded ${task.status === "done" ? "line-through text-gray-400" : "text-gray-800 dark:text-gray-200"}`}
-                                data-testid={`text-task-title-${task.id}`}
-                              >
-                                {task.title}
-                              </button>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={() => startEditing(task.id, "title", task.title)}
+                                  className={`text-sm text-left flex-1 hover:bg-gray-100 dark:hover:bg-gray-800 px-1 py-0.5 rounded ${task.status === "done" ? "line-through text-gray-400" : "text-gray-800 dark:text-gray-200"}`}
+                                  data-testid={`text-task-title-${task.id}`}
+                                >
+                                  {task.title}
+                                </button>
+                                {task.isRecurring && (
+                                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-100 text-purple-700 border border-purple-200 shrink-0" data-testid={`badge-recurring-${task.id}`}>
+                                    <Repeat className="h-2.5 w-2.5" />
+                                  </span>
+                                )}
+                              </div>
                             )}
                           </td>
                           <td className="px-3 py-2">
@@ -1207,6 +1521,16 @@ export default function MyToolBacklogPage() {
                           </td>
                           <td className="px-3 py-2">
                             <div className="flex gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0 text-blue-500 hover:text-blue-700"
+                                onClick={() => { setEmailPickerTaskId(task.id); setEmailPickerTaskTitle(task.title); }}
+                                title="Link email"
+                                data-testid={`button-email-${task.id}`}
+                              >
+                                <Mail className="h-3 w-3" />
+                              </Button>
                               {task.status !== "done" && (
                                 <Button
                                   variant="ghost"
@@ -1276,13 +1600,20 @@ export default function MyToolBacklogPage() {
                           data-testid={`input-edit-title-mobile-${task.id}`}
                         />
                       ) : (
-                        <button
-                          onClick={() => startEditing(task.id, "title", task.title)}
-                          className={`text-sm font-medium text-left w-full ${task.status === "done" ? "line-through text-gray-400" : "text-gray-800 dark:text-gray-200"}`}
-                          data-testid={`text-task-title-mobile-${task.id}`}
-                        >
-                          {task.title}
-                        </button>
+                        <div className="flex items-center gap-1 w-full">
+                          <button
+                            onClick={() => startEditing(task.id, "title", task.title)}
+                            className={`text-sm font-medium text-left flex-1 ${task.status === "done" ? "line-through text-gray-400" : "text-gray-800 dark:text-gray-200"}`}
+                            data-testid={`text-task-title-mobile-${task.id}`}
+                          >
+                            {task.title}
+                          </button>
+                          {task.isRecurring && (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-100 text-purple-700 border border-purple-200 shrink-0" data-testid={`badge-recurring-mobile-${task.id}`}>
+                              <Repeat className="h-2.5 w-2.5" />
+                            </span>
+                          )}
+                        </div>
                       )}
                       <div className="flex flex-wrap gap-2 mt-1.5 text-xs text-gray-500">
                         {task.projectName && (
@@ -1334,6 +1665,15 @@ export default function MyToolBacklogPage() {
                         <option key={p} value={p}>{p}</option>
                       ))}
                     </select>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0 text-blue-500"
+                      onClick={() => { setEmailPickerTaskId(task.id); setEmailPickerTaskTitle(task.title); }}
+                      data-testid={`button-email-mobile-${task.id}`}
+                    >
+                      <Mail className="h-3.5 w-3.5" />
+                    </Button>
                     {task.status !== "done" && (
                       <Button
                         variant="ghost"
@@ -1381,6 +1721,15 @@ export default function MyToolBacklogPage() {
           </button>
         </div>
       </div>
+
+      {emailPickerTaskId !== null && (
+        <EmailPickerDialog
+          open={true}
+          onOpenChange={(open) => { if (!open) { setEmailPickerTaskId(null); setEmailPickerTaskTitle(""); } }}
+          taskId={emailPickerTaskId}
+          taskTitle={emailPickerTaskTitle}
+        />
+      )}
     </div>
   );
 }

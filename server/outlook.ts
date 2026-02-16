@@ -269,6 +269,51 @@ export async function deleteOutlookEvent(eventId: string, calendarId: string | n
   await graphDelete(url);
 }
 
+export async function listMessages(options: {
+  search?: string;
+  top?: number;
+  skip?: number;
+  folder?: string;
+}): Promise<any[]> {
+  const top = options.top || 20;
+  const skip = options.skip || 0;
+  const folder = options.folder || "inbox";
+
+  let url = `/me/mailFolders/${folder}/messages?$top=${top}&$skip=${skip}&$select=id,subject,from,receivedDateTime,bodyPreview,webLink,isRead,hasAttachments&$orderby=receivedDateTime desc`;
+
+  if (options.search) {
+    url = `/me/messages?$top=${top}&$skip=${skip}&$search="${encodeURIComponent(options.search)}"&$select=id,subject,from,receivedDateTime,bodyPreview,webLink,isRead,hasAttachments`;
+  }
+
+  const data = await graphGet(url);
+  return (data.value || []).map((msg: any) => ({
+    id: msg.id,
+    subject: msg.subject || "(No Subject)",
+    sender: msg.from?.emailAddress?.name || msg.from?.emailAddress?.address || null,
+    senderEmail: msg.from?.emailAddress?.address || null,
+    receivedAt: msg.receivedDateTime,
+    snippet: msg.bodyPreview || null,
+    webLink: msg.webLink || null,
+    isRead: msg.isRead,
+    hasAttachments: msg.hasAttachments,
+  }));
+}
+
+export async function getMessageDetail(messageId: string): Promise<any> {
+  const msg = await graphGet(`/me/messages/${messageId}?$select=id,subject,from,receivedDateTime,bodyPreview,webLink,body,isRead,hasAttachments`);
+  return {
+    id: msg.id,
+    subject: msg.subject || "(No Subject)",
+    sender: msg.from?.emailAddress?.name || msg.from?.emailAddress?.address || null,
+    senderEmail: msg.from?.emailAddress?.address || null,
+    receivedAt: msg.receivedDateTime,
+    snippet: msg.bodyPreview || null,
+    webLink: msg.webLink || null,
+    isRead: msg.isRead,
+    hasAttachments: msg.hasAttachments,
+  };
+}
+
 export async function sendApprovalEmail(options: {
   to: string;
   subject: string;

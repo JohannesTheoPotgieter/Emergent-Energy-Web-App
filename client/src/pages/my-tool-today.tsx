@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Link, useLocation } from "wouter";
 import { format } from "date-fns";
 import MyToolNav from "@/components/my-tool-nav";
@@ -36,6 +37,8 @@ import {
   Paperclip,
   Zap,
   Moon,
+  Repeat,
+  Search,
 } from "lucide-react";
 
 type Priority = "critical" | "important" | "normal" | "low";
@@ -54,6 +57,31 @@ interface MyToolTask {
   blockedReason: string | null;
   companyPriorityId: number | null;
   dueAt: string | null;
+  isRecurring?: boolean;
+  recurrenceFrequency?: string | null;
+  notes?: string | null;
+}
+
+interface OutlookEmail {
+  id: string;
+  subject: string;
+  sender: string | null;
+  senderEmail: string | null;
+  receivedAt: string;
+  snippet: string | null;
+  webLink: string | null;
+  isRead: boolean;
+  hasAttachments: boolean;
+}
+
+interface EmailLink {
+  id: number;
+  outlookMessageId: string;
+  subject: string;
+  sender: string;
+  receivedAt: string;
+  snippet: string;
+  webLink: string;
 }
 
 interface TimeBlock {
@@ -167,6 +195,8 @@ export default function MyToolTodayPage() {
   const [wrapOpen, setWrapOpen] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState<number | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
+  const [emailPickerTaskId, setEmailPickerTaskId] = useState<number | null>(null);
+  const [emailPickerTaskTitle, setEmailPickerTaskTitle] = useState("");
   const [addPriorityOpen, setAddPriorityOpen] = useState(false);
   const [newPriority, setNewPriority] = useState({
     title: "",
@@ -494,6 +524,7 @@ export default function MyToolTodayPage() {
                     onInlineEdit={handleInlineEdit}
                     setEditingTaskId={setEditingTaskId}
                     highlight="amber"
+                    onOpenEmailPicker={(id, title) => { setEmailPickerTaskId(id); setEmailPickerTaskTitle(title); }}
                   />
                 ))}
               </div>
@@ -522,6 +553,7 @@ export default function MyToolTodayPage() {
                     onInlineEdit={handleInlineEdit}
                     setEditingTaskId={setEditingTaskId}
                     highlight="red"
+                    onOpenEmailPicker={(id, title) => { setEmailPickerTaskId(id); setEmailPickerTaskTitle(title); }}
                   />
                 ))}
               </div>
@@ -561,6 +593,7 @@ export default function MyToolTodayPage() {
                     setEditingTitle={setEditingTitle}
                     onInlineEdit={handleInlineEdit}
                     setEditingTaskId={setEditingTaskId}
+                    onOpenEmailPicker={(id, title) => { setEmailPickerTaskId(id); setEmailPickerTaskTitle(title); }}
                   />
                 ))}
               </div>
@@ -588,6 +621,7 @@ export default function MyToolTodayPage() {
                     setEditingTitle={setEditingTitle}
                     onInlineEdit={handleInlineEdit}
                     setEditingTaskId={setEditingTaskId}
+                    onOpenEmailPicker={(id, title) => { setEmailPickerTaskId(id); setEmailPickerTaskTitle(title); }}
                   />
                 ))}
               </div>
@@ -620,6 +654,7 @@ export default function MyToolTodayPage() {
                       setEditingTitle={setEditingTitle}
                       onInlineEdit={handleInlineEdit}
                       setEditingTaskId={setEditingTaskId}
+                      onOpenEmailPicker={(id, title) => { setEmailPickerTaskId(id); setEmailPickerTaskTitle(title); }}
                     />
                   ))}
                 </div>
@@ -984,7 +1019,163 @@ export default function MyToolTodayPage() {
           </Card>
         </div>
       </div>
+
+      {emailPickerTaskId !== null && (
+        <TodayEmailPickerDialog
+          open={true}
+          onOpenChange={(open) => { if (!open) { setEmailPickerTaskId(null); setEmailPickerTaskTitle(""); } }}
+          taskId={emailPickerTaskId}
+          taskTitle={emailPickerTaskTitle}
+        />
+      )}
     </div>
+  );
+}
+
+function TodayEmailPickerDialog({
+  open,
+  onOpenChange,
+  taskId,
+  taskTitle,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  taskId: number;
+  taskTitle: string;
+}) {
+  const { toast } = useToast();
+  const [emailSearch, setEmailSearch] = useState("");
+  const [debouncedEmailSearch, setDebouncedEmailSearch] = useState("");
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedEmailSearch(emailSearch), 400);
+    return () => clearTimeout(timer);
+  }, [emailSearch]);
+
+  const { data: emails = [], isLoading: emailsLoading } = useQuery<OutlookEmail[]>({
+    queryKey: ["/api/outlook/messages", debouncedEmailSearch],
+    queryFn: async () => {
+      const params = new URLSearchParams({ top: "20" });
+      if (debouncedEmailSearch.trim()) params.set("search", debouncedEmailSearch.trim());
+      const res = await fetch(`/api/outlook/messages?${params.toString()}`, { credentials: "include" });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data.value || data || [];
+    },
+    enabled: open,
+  });
+
+  const { data: linkedEmails = [], isLoading: linkedLoading } = useQuery<EmailLink[]>({
+    queryKey: ["/api/mytool/email-links", taskId],
+    queryFn: async () => {
+      const res = await fetch(`/api/mytool/email-links?taskId=${taskId}`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: open,
+  });
+
+  const linkEmailMutation = useMutation({
+    mutationFn: async (email: OutlookEmail) => {
+      await apiRequest("POST", "/api/outlook/email-to-task", {
+        outlookMessageId: email.id,
+        subject: email.subject,
+        sender: email.sender || email.senderEmail || "",
+        receivedAt: email.receivedAt,
+        snippet: email.snippet?.slice(0, 200) || "",
+        webLink: email.webLink || "",
+        targetType: "mytool",
+        targetId: taskId,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/mytool/email-links", taskId] });
+      toast({ title: "Email linked to task" });
+    },
+    onError: () => {
+      toast({ title: "Failed to link email", variant: "destructive" });
+    },
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col" data-testid="dialog-email-picker">
+        <DialogHeader>
+          <DialogTitle className="text-sm font-semibold">Link Email to: {taskTitle}</DialogTitle>
+          <DialogDescription className="text-xs text-gray-500">Search and link Outlook emails to this task</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 flex-1 overflow-hidden flex flex-col">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Input
+              placeholder="Search emails..."
+              value={emailSearch}
+              onChange={(e) => setEmailSearch(e.target.value)}
+              className="pl-9 text-sm"
+              data-testid="input-email-search"
+            />
+          </div>
+
+          {linkedEmails.length > 0 && (
+            <div className="space-y-1" data-testid="linked-emails-section">
+              <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Linked Emails</p>
+              <div className="space-y-1 max-h-[120px] overflow-y-auto">
+                {linkedEmails.map((le) => (
+                  <div key={le.id} className="flex items-center gap-2 text-xs bg-blue-50 dark:bg-blue-900/20 rounded px-2 py-1.5" data-testid={`linked-email-${le.id}`}>
+                    <Mail className="h-3 w-3 text-blue-600 shrink-0" />
+                    <span className="flex-1 truncate text-gray-700 dark:text-gray-300">{le.subject}</span>
+                    <span className="text-gray-400 shrink-0">{le.sender}</span>
+                    {le.webLink && (
+                      <a href={le.webLink} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-700 shrink-0" data-testid={`link-open-email-${le.id}`}>
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="flex-1 overflow-y-auto space-y-1" data-testid="email-results-section">
+            <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+              {emailsLoading ? "Loading..." : `Search Results (${emails.length})`}
+            </p>
+            {!emailsLoading && emails.length === 0 && (
+              <p className="text-xs text-gray-400 text-center py-4" data-testid="text-no-emails">
+                {emailSearch ? "No emails found" : "No emails available. Outlook may not be connected."}
+              </p>
+            )}
+            {emails.map((email) => (
+              <div key={email.id} className="border border-gray-200 dark:border-gray-700 rounded-lg p-2 space-y-1" data-testid={`email-result-${email.id}`}>
+                <div className="flex items-start gap-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{email.subject || "(No subject)"}</p>
+                    <div className="flex items-center gap-2 text-xs text-gray-500">
+                      <span>{email.sender || email.senderEmail || "Unknown"}</span>
+                      <span>·</span>
+                      <span>{email.receivedAt ? format(new Date(email.receivedAt), "d MMM yyyy") : ""}</span>
+                    </div>
+                    {email.snippet && (
+                      <p className="text-xs text-gray-400 truncate mt-0.5">{email.snippet.slice(0, 120)}</p>
+                    )}
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs shrink-0"
+                    onClick={() => linkEmailMutation.mutate(email)}
+                    disabled={linkEmailMutation.isPending}
+                    data-testid={`button-link-email-${email.id}`}
+                  >
+                    Link
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1000,6 +1191,7 @@ function TaskRow({
   onInlineEdit,
   setEditingTaskId,
   highlight,
+  onOpenEmailPicker,
 }: {
   task: MyToolTask;
   index?: number;
@@ -1012,6 +1204,7 @@ function TaskRow({
   onInlineEdit: (id: number) => void;
   setEditingTaskId: (id: number | null) => void;
   highlight?: "amber" | "red";
+  onOpenEmailPicker?: (taskId: number, taskTitle: string) => void;
 }) {
   const borderClass = highlight === "amber"
     ? "border-l-amber-400 border-l-[3px]"
@@ -1049,6 +1242,23 @@ function TaskRow({
         >
           {task.title}
         </span>
+      )}
+      {task.isRecurring && (
+        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-100 text-purple-700 border border-purple-200 shrink-0" data-testid={`badge-recurring-${task.id}`}>
+          <Repeat className="h-2.5 w-2.5" />
+        </span>
+      )}
+      {onOpenEmailPicker && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 w-6 p-0 text-gray-400 hover:text-blue-600 shrink-0"
+          onClick={(e) => { e.stopPropagation(); onOpenEmailPicker(task.id, task.title); }}
+          title="Link emails"
+          data-testid={`button-email-picker-${task.id}`}
+        >
+          <Mail className="h-3 w-3" />
+        </Button>
       )}
       {task.projectName && (
         <Link

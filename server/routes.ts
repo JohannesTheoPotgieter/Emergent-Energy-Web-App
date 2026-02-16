@@ -8045,7 +8045,46 @@ export async function registerRoutes(
 
   app.patch("/api/mytool/tasks/:id", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const task = await storage.updateMytoolTask(parseInt(req.params.id), req.body);
+      const taskId = parseInt(req.params.id);
+      const userId = (req.user as any).id;
+      const existingTask = await storage.getMytoolTask(taskId);
+      const task = await storage.updateMytoolTask(taskId, req.body);
+
+      if (
+        req.body.status === "done" &&
+        existingTask &&
+        existingTask.isRecurring &&
+        existingTask.recurrenceFrequency
+      ) {
+        const nextDate = computeNextRecurrenceDate(
+          existingTask.plannedForDate || new Date().toISOString().slice(0, 10),
+          existingTask.recurrenceFrequency,
+          existingTask.recurrenceInterval || 1,
+          existingTask.recurrenceDaysOfWeek
+        );
+
+        if (!existingTask.recurrenceEndDate || nextDate <= existingTask.recurrenceEndDate) {
+          await storage.createMytoolTask({
+            ownerUserId: userId,
+            title: existingTask.title,
+            status: "planned",
+            priority: existingTask.priority,
+            plannedForDate: nextDate,
+            dueAt: existingTask.dueAt ? computeNextDueDate(existingTask.dueAt, existingTask.recurrenceFrequency, existingTask.recurrenceInterval || 1) : null,
+            notes: existingTask.notes,
+            projectName: existingTask.projectName,
+            tag: existingTask.tag,
+            sortOrder: existingTask.sortOrder,
+            isRecurring: true,
+            recurrenceFrequency: existingTask.recurrenceFrequency,
+            recurrenceInterval: existingTask.recurrenceInterval,
+            recurrenceDaysOfWeek: existingTask.recurrenceDaysOfWeek,
+            recurrenceEndDate: existingTask.recurrenceEndDate,
+            recurrenceParentId: existingTask.recurrenceParentId || existingTask.id,
+          });
+        }
+      }
+
       res.json(task);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -8253,9 +8292,13 @@ export async function registerRoutes(
 
   app.get("/api/mytool/email-links", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const { taskId, priorityId } = req.query;
+      const { taskId, priorityId, operationalTaskId } = req.query;
       if (taskId) {
         const links = await storage.getEmailLinksByTask(parseInt(taskId as string));
+        return res.json(links);
+      }
+      if (operationalTaskId) {
+        const links = await storage.getEmailLinksByOperationalTask(parseInt(operationalTaskId as string));
         return res.json(links);
       }
       if (priorityId) {
@@ -8411,6 +8454,81 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/outlook/messages", requireAuth, async (req, res) => {
+    try {
+      const { search, top, skip, folder } = req.query;
+      const messages = await outlook.listMessages({
+        search: search ? String(search) : undefined,
+        top: top ? parseInt(String(top)) : 20,
+        skip: skip ? parseInt(String(skip)) : 0,
+        folder: folder ? String(folder) : "inbox",
+      });
+      res.json(messages);
+    } catch (err: any) {
+      if (err.message?.includes("not connected") || err.message?.includes("not available") || err.message?.includes("not configured")) {
+        return res.json([]);
+      }
+      console.error("[Outlook] Messages error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/outlook/messages/:id", requireAuth, async (req, res) => {
+    try {
+      const msg = await outlook.getMessageDetail(req.params.id);
+      res.json(msg);
+    } catch (err: any) {
+      console.error("[Outlook] Message detail error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/outlook/email-to-task", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const userId = (req.user as any).id;
+      const { outlookMessageId, subject, sender, receivedAt, snippet, webLink, targetType, targetId } = req.body;
+
+      if (!subject) {
+        return res.status(400).json({ error: "subject is required" });
+      }
+
+      let taskId: number | null = null;
+
+      if (targetType === "new") {
+        const task = await storage.createMytoolTask({
+          ownerUserId: userId,
+          title: subject,
+          status: "inbox",
+          priority: "normal",
+          notes: snippet ? `Email from: ${sender || "unknown"}\n\n${snippet}` : null,
+          sortOrder: 0,
+          isRecurring: false,
+        });
+        taskId = task.id;
+      } else if (targetType === "mytool" && targetId) {
+        taskId = parseInt(String(targetId));
+      }
+
+      const emailLink = await storage.createEmailLink({
+        subject,
+        sender: sender || null,
+        emailDate: receivedAt ? new Date(receivedAt).toISOString().slice(0, 10) : null,
+        snippet: snippet || null,
+        outlookMessageId: outlookMessageId || null,
+        webLink: webLink || null,
+        linkedTaskId: taskId,
+        linkedOperationalTaskId: targetType === "operational" && targetId ? parseInt(String(targetId)) : null,
+        linkedPriorityId: null,
+        createdBy: userId,
+      });
+
+      res.json({ task: taskId ? { id: taskId } : null, emailLink });
+    } catch (err: any) {
+      console.error("[Outlook] Email-to-task error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.post("/api/outlook/send-approval", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { to, subject, approvalTitle, approvalDescription, approveUrl, rejectUrl } = req.body;
@@ -8431,6 +8549,57 @@ export async function registerRoutes(
   });
 
   return httpServer;
+}
+
+function computeNextRecurrenceDate(
+  currentDate: string,
+  frequency: string,
+  interval: number,
+  daysOfWeek: string | null
+): string {
+  const d = new Date(currentDate + "T00:00:00Z");
+
+  switch (frequency) {
+    case "daily":
+      d.setUTCDate(d.getUTCDate() + interval);
+      break;
+    case "weekly":
+      if (daysOfWeek) {
+        const days = daysOfWeek.split(",").map(Number).sort();
+        const currentDay = d.getUTCDay();
+        const nextDay = days.find(day => day > currentDay);
+        if (nextDay !== undefined) {
+          d.setUTCDate(d.getUTCDate() + (nextDay - currentDay));
+        } else {
+          const daysToAdd = 7 * interval - currentDay + days[0];
+          d.setUTCDate(d.getUTCDate() + daysToAdd);
+        }
+      } else {
+        d.setUTCDate(d.getUTCDate() + 7 * interval);
+      }
+      break;
+    case "monthly":
+      d.setUTCMonth(d.getUTCMonth() + interval);
+      break;
+  }
+
+  return d.toISOString().slice(0, 10);
+}
+
+function computeNextDueDate(currentDue: Date, frequency: string, interval: number): Date {
+  const d = new Date(currentDue);
+  switch (frequency) {
+    case "daily":
+      d.setDate(d.getDate() + interval);
+      break;
+    case "weekly":
+      d.setDate(d.getDate() + 7 * interval);
+      break;
+    case "monthly":
+      d.setMonth(d.getMonth() + interval);
+      break;
+  }
+  return d;
 }
 
 function generateCSV(data: any[], columns: string[]): string {
