@@ -41,7 +41,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { useLocation } from "wouter";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, invalidateDashboardQueries } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import {
   Dialog,
@@ -186,6 +186,7 @@ function FinancialCloseCell({
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/projects-summary"] });
+      invalidateDashboardQueries(qc);
       setSaved(true);
       setOpen(false);
       setTimeout(() => setSaved(false), 2000);
@@ -516,6 +517,7 @@ function EditProjectInfoModal({
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/projects-summary"] });
+      invalidateDashboardQueries(qc);
       onOpenChange(false);
       onSaved?.(project.project_name);
     },
@@ -671,6 +673,7 @@ export default function ProjectsSummary() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects-summary"] });
+      invalidateDashboardQueries(queryClient);
     },
   });
 

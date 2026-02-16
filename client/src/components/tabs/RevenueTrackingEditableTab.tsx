@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { invalidateDashboardQueries } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,6 +39,7 @@ export function RevenueTrackingEditableTab({ projectName }: RevenueTrackingEdita
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey });
+      invalidateDashboardQueries(queryClient);
       setEdits(new Map());
       toast({
         title: "Changes Saved",
@@ -63,6 +65,7 @@ export function RevenueTrackingEditableTab({ projectName }: RevenueTrackingEdita
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey });
+      invalidateDashboardQueries(queryClient);
       setEdits(new Map());
       toast({
         title: "Overrides Reset",

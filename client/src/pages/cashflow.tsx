@@ -23,7 +23,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, invalidateDashboardQueries } from "@/lib/queryClient";
 import {
   Loader2,
   Eye,
@@ -385,6 +385,7 @@ function OpexBudgetModal({ open, onClose }: { open: boolean; onClose: () => void
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026/opex-budget"] });
       queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026"] });
+      invalidateDashboardQueries(queryClient);
       setEditedValues({});
       toast({ title: "OPEX Budget Saved", description: "Budget values updated successfully." });
     },
@@ -555,6 +556,7 @@ export default function CashflowPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026"] });
       queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026/balance-history"] });
+      invalidateDashboardQueries(queryClient);
       setEditingBalance(null);
       toast({ title: "Opening Balance Saved", description: "All forward weeks recalculated" });
     },
@@ -570,6 +572,7 @@ export default function CashflowPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026"] });
       queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026/balance-history"] });
+      invalidateDashboardQueries(queryClient);
       toast({ title: "Override Cleared", description: "Balance now uses cascaded value" });
     },
     onError: () => {
@@ -583,6 +586,7 @@ export default function CashflowPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026"] });
+      invalidateDashboardQueries(queryClient);
       setEditingOpex(null);
       toast({ title: "OPEX Saved", description: "Weekly OPEX updated and values recalculated" });
     },
@@ -597,6 +601,7 @@ export default function CashflowPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026"] });
+      invalidateDashboardQueries(queryClient);
       toast({ title: "OPEX Override Cleared", description: "Using monthly budget split value" });
     },
     onError: () => {

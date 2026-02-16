@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { invalidateDashboardQueries } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -133,6 +134,7 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["revenue-tab", projectName] });
+      invalidateDashboardQueries(queryClient);
       toast({ title: "Changes saved", description: "Revenue tracking updates saved successfully" });
     },
     onError: () => {
@@ -200,6 +202,7 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["revenue-tab", projectName] });
+      invalidateDashboardQueries(queryClient);
       setDateOverrideRow(null);
       setDateOverrideValues({ date: "", reason: "" });
       toast({ title: "Date updated", description: "Date override saved with reason" });
@@ -235,6 +238,7 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["revenue-tab", projectName] });
+      invalidateDashboardQueries(queryClient);
       setEditingCosted(false);
       toast({ title: "Costed values saved", description: "High-level costed values updated" });
     },

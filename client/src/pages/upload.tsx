@@ -8,6 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Upload, FileSpreadsheet, CheckCircle, AlertCircle, AlertTriangle, Loader2, ExternalLink } from "lucide-react";
 import { useProgramData } from "@/hooks/use-program-data";
 import { useToast } from "@/hooks/use-toast";
+import { invalidateDashboardQueries } from "@/lib/queryClient";
 import { useLocation } from "wouter";
 
 export default function UploadPage() {
@@ -79,8 +80,7 @@ export default function UploadPage() {
       const projectName = result.results?.[0]?.project_name || result.projectName;
       const uploadMode = result.results?.[0]?.mode || mode;
       setUploadResult({ ...result, projectName });
-      queryClient.invalidateQueries({ queryKey: ["projects-summary"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/projects-summary"] });
+      invalidateDashboardQueries(queryClient);
       
       toast({
         title: "Upload Successful",

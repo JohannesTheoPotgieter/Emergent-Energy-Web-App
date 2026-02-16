@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { invalidateDashboardQueries } from "@/lib/queryClient";
 import {
   LineChart,
   Line,
@@ -38,6 +39,7 @@ export function CashflowTab({ projectName }: CashflowTabProps) {
     mutationFn: cashflowApi.savePlanningOverrides,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["cashflow", projectName] });
+      invalidateDashboardQueries(queryClient);
       setEdits(new Map());
       toast({
         title: "Plan Saved",
@@ -57,6 +59,7 @@ export function CashflowTab({ projectName }: CashflowTabProps) {
     mutationFn: () => cashflowApi.resetPlanningOverrides(projectName),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["cashflow", projectName] });
+      invalidateDashboardQueries(queryClient);
       setEdits(new Map());
       toast({
         title: "Plan Reset",

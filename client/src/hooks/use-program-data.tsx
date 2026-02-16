@@ -4,6 +4,7 @@ import { dashboardApi, uploadApi, budgetsApi, overviewApi, DashboardData, Create
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { getErrorMessage } from "@/lib/errors";
+import { invalidateDashboardQueries } from "@/lib/queryClient";
 
 interface ProgramContextType {
   data: DashboardData | null;
@@ -53,9 +54,7 @@ export function ProgramProvider({ children }: { children: ReactNode }) {
   const refreshMutation = useMutation({
     mutationFn: dashboardApi.reprocessAll,
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-      queryClient.invalidateQueries({ queryKey: ["overview"] });
-      queryClient.invalidateQueries({ queryKey: ["projects-summary"] });
+      invalidateDashboardQueries(queryClient);
       const successCount = result.results.filter(r => r.status === "success").length;
       toast({
         title: "Data Reprocessed",
@@ -74,9 +73,7 @@ export function ProgramProvider({ children }: { children: ReactNode }) {
   const uploadMutation = useMutation({
     mutationFn: uploadApi.uploadFiles,
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-      queryClient.invalidateQueries({ queryKey: ["overview"] });
-      queryClient.invalidateQueries({ queryKey: ["projects-summary"] });
+      invalidateDashboardQueries(queryClient);
       setLastUploadResult(result);
       
       const successCount = result.results.filter(r => r.status === "success").length;
@@ -102,7 +99,7 @@ export function ProgramProvider({ children }: { children: ReactNode }) {
   const budgetMutation = useMutation({
     mutationFn: budgetsApi.create,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      invalidateDashboardQueries(queryClient);
       toast({
         title: "Budget Entry Saved",
         description: "Manual budget entry has been recorded.",
