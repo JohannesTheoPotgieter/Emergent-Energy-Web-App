@@ -314,6 +314,19 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
     }
   }, [data, drawerFilter]);
 
+  useEffect(() => {
+    if (!highlightId) return;
+    setHighlightedRowId(highlightId);
+    const timer = setTimeout(() => {
+      const el = document.querySelector(`[data-revenue-row-id="${highlightId}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }, 300);
+    const clearTimer = setTimeout(() => setHighlightedRowId(null), 5000);
+    return () => { clearTimeout(timer); clearTimeout(clearTimer); };
+  }, [highlightId]);
+
   if (isLoading) {
     return (
       <Card><CardContent className="flex items-center justify-center py-12">
@@ -331,19 +344,6 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
   }
 
   const { milestones, summary, highlevel } = data;
-
-  useEffect(() => {
-    if (!highlightId) return;
-    setHighlightedRowId(highlightId);
-    const timer = setTimeout(() => {
-      const el = document.querySelector(`[data-revenue-row-id="${highlightId}"]`);
-      if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
-      }
-    }, 300);
-    const clearTimer = setTimeout(() => setHighlightedRowId(null), 5000);
-    return () => { clearTimeout(timer); clearTimeout(clearTimer); };
-  }, [highlightId]);
 
   const StatusBadge = ({ status, flags }: { status: string; flags: string[] }) => {
     if (status === "inBank") return (
