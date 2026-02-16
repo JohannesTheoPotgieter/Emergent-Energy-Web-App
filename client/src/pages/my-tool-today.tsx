@@ -62,6 +62,8 @@ interface TimeBlock {
   taskId: number | null;
 }
 
+type PriorityStatus = "active" | "monitoring" | "closed";
+
 interface CompanyPriority {
   id: number;
   title: string;
@@ -69,7 +71,7 @@ interface CompanyPriority {
   horizon: Horizon;
   department: string | null;
   linkedProjectName: string | null;
-  isActive: boolean;
+  status: PriorityStatus;
 }
 
 const DEPARTMENTS = [
@@ -258,6 +260,13 @@ export default function MyToolTodayPage() {
     },
   });
 
+  const updatePriorityMutation = useMutation({
+    mutationFn: async ({ id, ...body }: { id: number } & Record<string, unknown>) => {
+      await apiRequest("PATCH", `/api/mytool/company-priorities/${id}`, body);
+    },
+    onSuccess: () => invalidateAll(),
+  });
+
   const deletePriorityMutation = useMutation({
     mutationFn: async (id: number) => {
       await apiRequest("DELETE", `/api/mytool/company-priorities/${id}`);
@@ -355,7 +364,8 @@ export default function MyToolTodayPage() {
   const doneTasks = tasks.filter((t) => t.status === "done");
   const cancelledTasks = tasks.filter((t) => t.status === "cancelled");
 
-  const activePriorities = priorities.filter((p) => p.isActive);
+  const activePriorities = priorities.filter((p) => p.status !== "closed");
+  const closedPriorities = priorities.filter((p) => p.status === "closed");
   const totalPriorityCount = activePriorities.length + escalatedItems.length;
 
   const isLoading = tasksLoading || blocksLoading || prioritiesLoading;
@@ -898,58 +908,38 @@ export default function MyToolTodayPage() {
                       </div>
                     ))}
                     {activePriorities.map((p) => (
-                      <div
+                      <PriorityCard
                         key={p.id}
-                        className="p-2 rounded-md border border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
-                        data-testid={`priority-item-${p.id}`}
-                      >
-                        <div className="flex items-start gap-2">
-                          <SeverityBadge severity={p.severity} />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-medium text-gray-800 dark:text-gray-200 truncate">{p.title}</p>
-                            <div className="flex items-center gap-1.5 mt-0.5">
-                              {p.department && (
-                                <span className="text-[10px] text-indigo-600">{p.department}</span>
-                              )}
-                              {p.linkedProjectName && (
-                                <Link
-                                  href={`/project/${encodeURIComponent(p.linkedProjectName)}`}
-                                  className="text-[10px] text-blue-600 hover:underline truncate"
-                                  data-testid={`link-priority-project-${p.id}`}
-                                >
-                                  {p.linkedProjectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
-                                </Link>
-                              )}
-                            </div>
-                            <EmailLinksWidget priorityId={p.id} />
-                          </div>
-                          <div className="flex gap-0.5 shrink-0">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-6 w-6 p-0 text-blue-600"
-                              onClick={() => handleConvertToTask(p)}
-                              disabled={createTaskMutation.isPending}
-                              title="Create task from priority"
-                              data-testid={`button-convert-task-${p.id}`}
-                            >
-                              <Plus className="h-3 w-3" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-6 w-6 p-0 text-gray-400 hover:text-red-500"
-                              onClick={() => deletePriorityMutation.mutate(p.id)}
-                              disabled={deletePriorityMutation.isPending}
-                              data-testid={`button-delete-priority-${p.id}`}
-                            >
-                              <X className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
+                        priority={p}
+                        onStatusChange={(status) => updatePriorityMutation.mutate({ id: p.id, status })}
+                        onConvertToTask={() => handleConvertToTask(p)}
+                        onDelete={() => deletePriorityMutation.mutate(p.id)}
+                        isUpdating={updatePriorityMutation.isPending}
+                        isCreatingTask={createTaskMutation.isPending}
+                        isDeleting={deletePriorityMutation.isPending}
+                      />
                     ))}
                   </>
+                )}
+
+                {closedPriorities.length > 0 && (
+                  <div className="pt-1 mt-1 border-t border-gray-100 dark:border-gray-800">
+                    <p className="text-[10px] uppercase tracking-wider font-semibold text-gray-400 mb-1.5">
+                      Closed ({closedPriorities.length})
+                    </p>
+                    {closedPriorities.map((p) => (
+                      <PriorityCard
+                        key={p.id}
+                        priority={p}
+                        onStatusChange={(status) => updatePriorityMutation.mutate({ id: p.id, status })}
+                        onConvertToTask={() => handleConvertToTask(p)}
+                        onDelete={() => deletePriorityMutation.mutate(p.id)}
+                        isUpdating={updatePriorityMutation.isPending}
+                        isCreatingTask={createTaskMutation.isPending}
+                        isDeleting={deletePriorityMutation.isPending}
+                      />
+                    ))}
+                  </div>
                 )}
               </CardContent>
             )}
@@ -1087,6 +1077,129 @@ function TaskRow({
             <ArrowRight className="h-3 w-3" />
           </Button>
         )}
+      </div>
+    </div>
+  );
+}
+
+const priorityStatusConfig: Record<PriorityStatus, { label: string; color: string; icon: typeof CheckCircle2 }> = {
+  active: { label: "Active", color: "bg-blue-100 text-blue-700", icon: Play },
+  monitoring: { label: "Monitoring", color: "bg-amber-100 text-amber-700", icon: Clock },
+  closed: { label: "Closed", color: "bg-gray-100 text-gray-500", icon: CheckCircle2 },
+};
+
+function PriorityCard({
+  priority: p,
+  onStatusChange,
+  onConvertToTask,
+  onDelete,
+  isUpdating,
+  isCreatingTask,
+  isDeleting,
+}: {
+  priority: CompanyPriority;
+  onStatusChange: (status: PriorityStatus) => void;
+  onConvertToTask: () => void;
+  onDelete: () => void;
+  isUpdating: boolean;
+  isCreatingTask: boolean;
+  isDeleting: boolean;
+}) {
+  const isClosed = p.status === "closed";
+  const stCfg = priorityStatusConfig[p.status] || priorityStatusConfig.active;
+
+  return (
+    <div
+      className={`p-2 rounded-md border transition-colors ${
+        isClosed
+          ? "border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/30 opacity-70"
+          : "border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50"
+      }`}
+      data-testid={`priority-item-${p.id}`}
+    >
+      <div className="flex items-start gap-2">
+        <SeverityBadge severity={p.severity} />
+        <div className="flex-1 min-w-0">
+          <p className={`text-xs font-medium truncate ${isClosed ? "line-through text-gray-400" : "text-gray-800 dark:text-gray-200"}`}>
+            {p.title}
+          </p>
+          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+            <select
+              value={p.status}
+              onChange={(e) => onStatusChange(e.target.value as PriorityStatus)}
+              disabled={isUpdating}
+              className={`text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded-full border-0 cursor-pointer ${stCfg.color}`}
+              data-testid={`select-priority-status-${p.id}`}
+            >
+              <option value="active">Active</option>
+              <option value="monitoring">Monitoring</option>
+              <option value="closed">Closed</option>
+            </select>
+            {p.department && (
+              <span className="text-[10px] text-indigo-600">{p.department}</span>
+            )}
+            {p.linkedProjectName && (
+              <Link
+                href={`/project/${encodeURIComponent(p.linkedProjectName)}`}
+                className="text-[10px] text-blue-600 hover:underline truncate"
+                data-testid={`link-priority-project-${p.id}`}
+              >
+                {p.linkedProjectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
+              </Link>
+            )}
+          </div>
+          {!isClosed && <EmailLinksWidget priorityId={p.id} />}
+        </div>
+        <div className="flex gap-0.5 shrink-0">
+          {!isClosed && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0 text-blue-600"
+              onClick={onConvertToTask}
+              disabled={isCreatingTask}
+              title="Create task from priority"
+              data-testid={`button-convert-task-${p.id}`}
+            >
+              <Plus className="h-3 w-3" />
+            </Button>
+          )}
+          {isClosed ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0 text-blue-500 hover:text-blue-600"
+              onClick={() => onStatusChange("active")}
+              disabled={isUpdating}
+              title="Reopen"
+              data-testid={`button-reopen-priority-${p.id}`}
+            >
+              <ArrowRight className="h-3 w-3" />
+            </Button>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0 text-emerald-500 hover:text-emerald-600"
+              onClick={() => onStatusChange("closed")}
+              disabled={isUpdating}
+              title="Close priority"
+              data-testid={`button-close-priority-${p.id}`}
+            >
+              <CheckCircle2 className="h-3 w-3" />
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 w-6 p-0 text-gray-400 hover:text-red-500"
+            onClick={onDelete}
+            disabled={isDeleting}
+            data-testid={`button-delete-priority-${p.id}`}
+          >
+            <X className="h-3 w-3" />
+          </Button>
+        </div>
       </div>
     </div>
   );
