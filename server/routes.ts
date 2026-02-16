@@ -2345,21 +2345,10 @@ export async function registerRoutes(
       const cosRealisedByMonth = new Map<string, number>();
       const cosTotalByMonth = new Map<string, number>();
 
-      let cosYtdTarget = 0;
-
       for (const exp of allExpenses) {
         if (exp.rowType !== 'item') continue;
         const amount = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
         if (isNaN(amount) || amount === 0) continue;
-
-        const hasInvoice = !!(exp.expenseInvoiceNumber && (exp.expenseInvoiceNumber as string).trim() !== '');
-
-        if (hasInvoice) {
-          const budgetAmt = exp.budgetTotal ? parseFloat(exp.budgetTotal as string) : 0;
-          if (!isNaN(budgetAmt) && budgetAmt > 0) {
-            cosYtdTarget += budgetAmt;
-          }
-        }
 
         const invDate = exp.expenseInvoicedDate as string | null;
         if (!invDate) continue;
@@ -2367,6 +2356,8 @@ export async function registerRoutes(
         if (!dateMatch) continue;
         const monthKey = `${dateMatch[1]}-${dateMatch[2]}`;
         cosTotalByMonth.set(monthKey, (cosTotalByMonth.get(monthKey) || 0) + amount);
+
+        const hasInvoice = !!(exp.expenseInvoiceNumber && (exp.expenseInvoiceNumber as string).trim() !== '');
         const dateConfirmed = exp.invoiceDateConfirmed === true;
         if (hasInvoice && dateConfirmed) {
           cosRealisedByMonth.set(monthKey, (cosRealisedByMonth.get(monthKey) || 0) + amount);
@@ -2377,6 +2368,7 @@ export async function registerRoutes(
       const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, '0')}`;
       const cosStartMonth = new Date(Date.UTC(2025, 8, 1));
 
+      let cosYtdTarget = 0;
       let cosYtdRealised = 0;
       let cosCurrentMonthRealised = 0;
       let cosCurrentMonthTarget = 0;
@@ -2393,6 +2385,7 @@ export async function registerRoutes(
 
         const manual = manualMap.get(mk);
         const budget = manual?.budget ? parseFloat(manual.budget) : (staticCosBudget[mk] ?? 0);
+        cosYtdTarget += budget;
 
         if (mk === currentMonthKey) {
           cosCurrentMonthRealised = cosRealisedByMonth.get(mk) || 0;
