@@ -6,6 +6,7 @@ import {
   CalendarDays,
   ListTodo,
   Settings,
+  HelpCircle,
 } from "lucide-react";
 
 const navTabs = [
@@ -22,13 +23,21 @@ export default function MyToolNav({ subtitle }: { subtitle?: string }) {
   return (
     <header className="space-y-3" data-testid="mytool-header">
       <div className="flex items-end justify-between">
-        <div>
+        <div className="flex items-center gap-2">
           <h1
             className="text-2xl font-bold tracking-tight text-gray-900 dark:text-gray-50"
             data-testid="text-page-title"
           >
             My Tool
           </h1>
+          <Link
+            href="/my-tool/help"
+            className="text-gray-400 hover:text-blue-600 transition-colors mt-1"
+            title="Help & Guide"
+            data-testid="nav-help-icon"
+          >
+            <HelpCircle className="h-5 w-5" />
+          </Link>
           {subtitle && (
             <p
               className="text-sm text-gray-500 dark:text-gray-400 mt-0.5"

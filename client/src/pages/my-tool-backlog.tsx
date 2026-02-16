@@ -1,12 +1,14 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Link, useLocation } from "wouter";
 import { format } from "date-fns";
 import MyToolNav from "@/components/my-tool-nav";
@@ -110,8 +112,10 @@ function StatusBadge({ status }: { status: string }) {
 export default function MyToolBacklogPage() {
   const { user } = useAuth();
   const [location] = useLocation();
+  const { toast } = useToast();
 
   const [searchText, setSearchText] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<TaskStatus[]>([]);
   const [priorityFilter, setPriorityFilter] = useState<Priority[]>([]);
   const [projectFilter, setProjectFilter] = useState("");
@@ -138,6 +142,11 @@ export default function MyToolBacklogPage() {
     department: "",
     linkedProjectName: "",
   });
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchText), 300);
+    return () => clearTimeout(timer);
+  }, [searchText]);
 
   const { data: tasks = [], isLoading } = useQuery<MyToolTask[]>({
     queryKey: ["/api/mytool/tasks"],
@@ -168,6 +177,9 @@ export default function MyToolBacklogPage() {
       setNewPriority("normal");
       setNewStatus("inbox");
     },
+    onError: () => {
+      toast({ title: "Failed to create task", variant: "destructive" });
+    },
   });
 
   const updateTaskMutation = useMutation({
@@ -175,6 +187,9 @@ export default function MyToolBacklogPage() {
       await apiRequest("PATCH", `/api/mytool/tasks/${id}`, body);
     },
     onSuccess: () => invalidateAll(),
+    onError: () => {
+      toast({ title: "Failed to update task", variant: "destructive" });
+    },
   });
 
   const deleteTaskMutation = useMutation({
@@ -182,6 +197,9 @@ export default function MyToolBacklogPage() {
       await apiRequest("DELETE", `/api/mytool/tasks/${id}`);
     },
     onSuccess: () => invalidateAll(),
+    onError: () => {
+      toast({ title: "Failed to delete task", variant: "destructive" });
+    },
   });
 
   const bulkUpdateMutation = useMutation({
@@ -194,6 +212,9 @@ export default function MyToolBacklogPage() {
       invalidateAll();
       setSelectedIds(new Set());
     },
+    onError: () => {
+      toast({ title: "Failed to update tasks", variant: "destructive" });
+    },
   });
 
   const bulkDeleteMutation = useMutation({
@@ -203,6 +224,9 @@ export default function MyToolBacklogPage() {
     onSuccess: () => {
       invalidateAll();
       setSelectedIds(new Set());
+    },
+    onError: () => {
+      toast({ title: "Failed to delete tasks", variant: "destructive" });
     },
   });
 
@@ -215,6 +239,9 @@ export default function MyToolBacklogPage() {
       setAddPriorityOpen(false);
       setNewPriorityForm({ title: "", severity: "normal", department: "", linkedProjectName: "" });
     },
+    onError: () => {
+      toast({ title: "Failed to create priority", variant: "destructive" });
+    },
   });
 
   const updatePriorityMutation = useMutation({
@@ -222,6 +249,9 @@ export default function MyToolBacklogPage() {
       await apiRequest("PATCH", `/api/mytool/company-priorities/${id}`, body);
     },
     onSuccess: () => invalidateAll(),
+    onError: () => {
+      toast({ title: "Failed to update priority", variant: "destructive" });
+    },
   });
 
   const deletePriorityMutation = useMutation({
@@ -229,9 +259,13 @@ export default function MyToolBacklogPage() {
       await apiRequest("DELETE", `/api/mytool/company-priorities/${id}`);
     },
     onSuccess: () => invalidateAll(),
+    onError: () => {
+      toast({ title: "Failed to delete priority", variant: "destructive" });
+    },
   });
 
   const handleCreateTask = () => {
+    if (createTaskMutation.isPending) return;
     const title = newTitle.trim();
     if (!title) return;
     createTaskMutation.mutate({ title, status: newStatus, priority: newPriority });
@@ -329,8 +363,8 @@ export default function MyToolBacklogPage() {
   const filteredTasks = useMemo(() => {
     let result = [...tasks];
 
-    if (searchText.trim()) {
-      const lower = searchText.toLowerCase();
+    if (debouncedSearch.trim()) {
+      const lower = debouncedSearch.toLowerCase();
       result = result.filter((t) => t.title.toLowerCase().includes(lower));
     }
     if (statusFilter.length > 0) {
@@ -366,7 +400,7 @@ export default function MyToolBacklogPage() {
     });
 
     return result;
-  }, [tasks, searchText, statusFilter, priorityFilter, projectFilter, tagFilter, sortField, sortDirection]);
+  }, [tasks, debouncedSearch, statusFilter, priorityFilter, projectFilter, tagFilter, sortField, sortDirection]);
 
   const selectedArray = Array.from(selectedIds);
 
@@ -375,8 +409,56 @@ export default function MyToolBacklogPage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-20" data-testid="loading-spinner">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+      <div className="max-w-[1400px] mx-auto space-y-5" data-testid="loading-skeleton">
+        <MyToolNav subtitle="All Tasks" />
+        <Card>
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2">
+              <Skeleton className="h-4 w-4" />
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-5 w-6 rounded-full" />
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0 space-y-3">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="flex items-center gap-2">
+                <Skeleton className="h-5 w-16" />
+                <Skeleton className="h-4 w-14 rounded" />
+                <Skeleton className="h-4 flex-1" />
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+        <div className="flex gap-3">
+          <Skeleton className="h-9 flex-1" />
+          <Skeleton className="h-9 w-20" />
+          <Skeleton className="h-9 w-20" />
+          <Skeleton className="h-9 w-28" />
+        </div>
+        <Card>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                    {Array.from({ length: 10 }).map((_, i) => (
+                      <th key={i} className="px-3 py-2"><Skeleton className="h-3 w-full" /></th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {[1, 2, 3, 4, 5].map((row) => (
+                    <tr key={row} className="border-b border-gray-100 dark:border-gray-800">
+                      {Array.from({ length: 10 }).map((_, i) => (
+                        <td key={i} className="px-3 py-3"><Skeleton className="h-4 w-full" /></td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }

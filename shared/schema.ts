@@ -956,6 +956,9 @@ export const mytoolTimeblocks = pgTable("mytool_timeblocks", {
   endTime: text("end_time").notNull(),
   label: text("label").notNull(),
   linkedTaskId: integer("linked_task_id").references(() => mytoolTasks.id),
+  outlookEventId: text("outlook_event_id"),
+  outlookCalendarId: text("outlook_calendar_id"),
+  idempotencyKey: text("idempotency_key"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -1035,3 +1038,73 @@ export const mytoolSettings = pgTable("mytool_settings", {
   defaultPriorityHorizon: text("default_priority_horizon").notNull().default('week'),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
+
+export const approvalStatusEnum = pgEnum('approval_status', ['pending', 'approved', 'rejected']);
+
+export const errorLogs = pgTable("error_logs", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id),
+  route: text("route"),
+  action: text("action"),
+  correlationId: text("correlation_id").notNull(),
+  errorMessage: text("error_message").notNull(),
+  errorStack: text("error_stack"),
+  payloadShape: text("payload_shape"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertErrorLogSchema = createInsertSchema(errorLogs).omit({ id: true, createdAt: true });
+export type InsertErrorLog = z.infer<typeof insertErrorLogSchema>;
+export type ErrorLog = typeof errorLogs.$inferSelect;
+
+export const outlookAccounts = pgTable("outlook_accounts", {
+  userId: integer("user_id").primaryKey().references(() => users.id),
+  tenantId: text("tenant_id"),
+  outlookUserId: text("outlook_user_id"),
+  accessTokenEncrypted: text("access_token_encrypted"),
+  refreshTokenEncrypted: text("refresh_token_encrypted"),
+  tokenExpiryUtc: timestamp("token_expiry_utc"),
+  connectedAt: timestamp("connected_at").notNull().defaultNow(),
+  lastSyncAt: timestamp("last_sync_at"),
+  deltaCursor: text("delta_cursor"),
+  calendarId: text("calendar_id"),
+});
+
+export const insertOutlookAccountSchema = createInsertSchema(outlookAccounts).omit({ connectedAt: true });
+export type InsertOutlookAccount = z.infer<typeof insertOutlookAccountSchema>;
+export type OutlookAccount = typeof outlookAccounts.$inferSelect;
+
+export const approvals = pgTable("approvals", {
+  id: serial("id").primaryKey(),
+  type: text("type").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  status: approvalStatusEnum("status").notNull().default('pending'),
+  requestedBy: integer("requested_by").notNull().references(() => users.id),
+  requestedAt: timestamp("requested_at").notNull().defaultNow(),
+  decidedBy: integer("decided_by").references(() => users.id),
+  decidedAt: timestamp("decided_at"),
+  decisionNote: text("decision_note"),
+  token: text("token"),
+  expiresAt: timestamp("expires_at"),
+});
+
+export const insertApprovalSchema = createInsertSchema(approvals).omit({ id: true, requestedAt: true, decidedAt: true });
+export type InsertApproval = z.infer<typeof insertApprovalSchema>;
+export type Approval = typeof approvals.$inferSelect;
+
+export const supportTickets = pgTable("support_tickets", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id),
+  summary: text("summary").notNull(),
+  stepsToReproduce: text("steps_to_reproduce").notNull(),
+  currentRoute: text("current_route"),
+  userAgent: text("user_agent"),
+  correlationId: text("correlation_id").notNull(),
+  status: text("status").notNull().default('open'),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertSupportTicketSchema = createInsertSchema(supportTickets).omit({ id: true, createdAt: true });
+export type InsertSupportTicket = z.infer<typeof insertSupportTicketSchema>;
+export type SupportTicket = typeof supportTickets.$inferSelect;
