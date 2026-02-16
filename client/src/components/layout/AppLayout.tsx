@@ -134,11 +134,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           {sidebarShowLabels && <span>Home</span>}
         </Link>
 
-        {navGroups.filter(group => (group.heading !== "ADMIN" && group.heading !== "WIP" && group.heading !== "PERSONAL") || user?.role === "admin").map((group) => (
+        {navGroups.filter(group => group.heading !== "WIP" && (group.heading !== "PERSONAL" || user?.role === "admin")).map((group) => (
           <div key={group.heading} className="pt-4">
             {sidebarShowLabels && (
               <p className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-sidebar-foreground/40">
-                {group.heading}
+                {group.heading === "ADMIN" && user?.role !== "admin" ? "IMPORT" : group.heading}
               </p>
             )}
             {!sidebarShowLabels && <div className="h-px bg-sidebar-border mx-2 mb-1" />}

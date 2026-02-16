@@ -2965,7 +2965,7 @@ export async function registerRoutes(
     { name: 'trackers', maxCount: 20 }
   ]);
 
-  app.post("/api/upload", requireAuth, requireAdmin, multiUpload, async (req, res) => {
+  app.post("/api/upload", requireAuth, multiUpload, async (req, res) => {
     try {
       // Normalize files from multiple possible field names
       const filesObj = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
