@@ -2976,7 +2976,7 @@ export async function registerRoutes(
         try {
           // Read and parse file first (no DB writes yet)
           const fileBuffer = fs.readFileSync(file.path);
-          const parseResult = parseTrackerFile(fileBuffer, file.originalname);
+          const parseResult = await parseTrackerFile(fileBuffer, file.originalname);
           
           await applyFontColors(parseResult.expenses, fileBuffer);
 
@@ -3177,7 +3177,7 @@ export async function registerRoutes(
           }
           
           const fileBuffer = fs.readFileSync(fileInfo.filePath);
-          const parseResult = parseTrackerFile(fileBuffer, fileInfo.fileName);
+          const parseResult = await parseTrackerFile(fileBuffer, fileInfo.fileName);
           
           await applyFontColors(parseResult.expenses, fileBuffer);
           
@@ -4490,7 +4490,7 @@ export async function registerRoutes(
               continue;
             }
             const fileBuffer = fs.readFileSync(fileInfo.filePath);
-            const parseResult = parseTrackerFile(fileBuffer, fileInfo.fileName);
+            const parseResult = await parseTrackerFile(fileBuffer, fileInfo.fileName);
             await applyFontColors(parseResult.expenses, fileBuffer);
             await storage.transaction(async (txStorage) => {
               await txStorage.deleteProgramExpensesByProject(parseResult.projectName);
