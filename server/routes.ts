@@ -4559,7 +4559,7 @@ export async function registerRoutes(
             continue;
           }
           const fileBuffer = fs.readFileSync(fileInfo.filePath);
-          const parseResult = parseTrackerFile(fileBuffer, fileInfo.fileName);
+          const parseResult = await parseTrackerFile(fileBuffer, fileInfo.fileName);
           await applyFontColors(parseResult.expenses, fileBuffer);
           await storage.transaction(async (txStorage) => {
             await txStorage.deleteProgramExpensesByProject(parseResult.projectName);
@@ -4764,7 +4764,7 @@ export async function registerRoutes(
           fileDate = stat.mtime.toISOString();
           
           const fileBuffer = fs.readFileSync(filePath);
-          const parseResult = parseTrackerFile(fileBuffer, fileName);
+          const parseResult = await parseTrackerFile(fileBuffer, fileName);
           await applyFontColors(parseResult.expenses, fileBuffer);
           
           await storage.transaction(async (txStorage) => {
@@ -7815,7 +7815,7 @@ export async function registerRoutes(
       const check = validateWorkbookPath(wbPath as string);
       if (!check.safe) return res.status(400).json({ error: check.error });
       const { getWorkbookSheets } = await import("./lib/writebackEngine");
-      const sheets = getWorkbookSheets(check.resolved);
+      const sheets = await getWorkbookSheets(check.resolved);
       res.json({ sheets });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -7845,7 +7845,7 @@ export async function registerRoutes(
       const dataByEntity = await buildDataByEntity();
 
       const { previewWriteback } = await import("./lib/writebackEngine");
-      const preview = previewWriteback(check.resolved, mappings, dataByEntity);
+      const preview = await previewWriteback(check.resolved, mappings, dataByEntity);
       res.json(preview);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -7895,7 +7895,7 @@ export async function registerRoutes(
       }
 
       const resolvedOutputPath = outputPath ? validateWorkbookPath(outputPath).resolved : undefined;
-      const writeResult = writeToWorkbook(check.resolved, writes, resolvedOutputPath);
+      const writeResult = await writeToWorkbook(check.resolved, writes, resolvedOutputPath);
 
       const userId = (req as any).user?.id;
       for (const batch of batchResults) {
@@ -7943,7 +7943,7 @@ export async function registerRoutes(
       if (!rollbackCheck.safe) return res.status(400).json({ error: rollbackCheck.error });
 
       const { writeToWorkbook } = await import("./lib/writebackEngine");
-      const result = writeToWorkbook(rollbackCheck.resolved, [{
+      const result = await writeToWorkbook(rollbackCheck.resolved, [{
         sheetName: auditEntry.sheetName,
         cellAddress: auditEntry.cellAddress,
         value: auditEntry.previousValue,
