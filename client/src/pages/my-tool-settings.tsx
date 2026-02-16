@@ -15,11 +15,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Link, useLocation } from "wouter";
+import { useLocation } from "wouter";
+import MyToolNav from "@/components/my-tool-nav";
 import {
-  Target,
-  CalendarDays,
-  ListTodo,
   Settings,
   Loader2,
   Save,
@@ -31,13 +29,6 @@ interface UserPreferences {
   workdayEndTime: string;
   showCompanyPriorities: boolean;
 }
-
-const navTabs = [
-  { label: "Today", path: "/my-tool", icon: Target },
-  { label: "Week", path: "/my-tool/week", icon: CalendarDays },
-  { label: "Backlog", path: "/my-tool/backlog", icon: ListTodo },
-  { label: "Settings", path: "/my-tool/settings", icon: Settings },
-];
 
 export default function MyToolSettingsPage() {
   const { user } = useAuth();
@@ -94,42 +85,8 @@ export default function MyToolSettingsPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-[1400px] mx-auto" data-testid="mytool-settings-page">
-      <header className="space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-50" data-testid="text-page-title">
-              My Tool
-            </h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Settings &amp; Preferences</p>
-          </div>
-          {user && (
-            <p className="text-sm text-gray-400" data-testid="text-user-greeting">
-              Hey, {user.name}
-            </p>
-          )}
-        </div>
-        <nav className="flex gap-1 border-b border-gray-200 dark:border-gray-700" data-testid="nav-tabs">
-          {navTabs.map((tab) => {
-            const isActive = location === tab.path;
-            return (
-              <Link
-                key={tab.path}
-                href={tab.path}
-                data-testid={`nav-tab-${tab.label.toLowerCase()}`}
-                className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-                  isActive
-                    ? "border-blue-600 text-blue-600"
-                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                }`}
-              >
-                <tab.icon className="h-4 w-4" />
-                {tab.label}
-              </Link>
-            );
-          })}
-        </nav>
-      </header>
+    <div className="max-w-[1400px] mx-auto space-y-5" data-testid="mytool-settings-page">
+      <MyToolNav subtitle="Settings &amp; Preferences" />
 
       <Card data-testid="card-preferences">
         <CardHeader>
