@@ -21,6 +21,7 @@ import {
   BookOpen,
   Camera,
   Cloud,
+  Upload,
 } from "lucide-react";
 import { useProgramData } from "@/hooks/use-program-data";
 import { useAuth } from "@/hooks/use-auth";
@@ -60,6 +61,12 @@ const navGroups: NavGroup[] = [
     heading: "PERSONAL",
     items: [
       { label: "My Tool", icon: Briefcase, path: "/my-tool" },
+    ],
+  },
+  {
+    heading: "DATA",
+    items: [
+      { label: "Data Import", icon: Upload, path: "/admin" },
     ],
   },
   {
@@ -142,7 +149,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           {sidebarShowLabels && <span>Home</span>}
         </Link>
 
-        {navGroups.filter(group => group.heading !== "WIP" && (group.heading !== "PERSONAL" || user?.role === "admin") && (group.heading !== "ADMIN" || user?.role === "admin")).map((group) => {
+        {navGroups.filter(group => group.heading !== "WIP" && (group.heading !== "PERSONAL" || user?.role === "admin") && (group.heading !== "ADMIN" || user?.role === "admin") && (group.heading !== "DATA" || user?.role !== "admin")).map((group) => {
           const visibleItems = group.items;
           if (visibleItems.length === 0) return null;
           return (

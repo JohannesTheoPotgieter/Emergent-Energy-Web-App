@@ -5039,7 +5039,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/admin/mark-active", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/admin/mark-active", requireAuth, async (req, res) => {
     try {
       const { projectNames } = req.body;
       if (!Array.isArray(projectNames)) {
