@@ -223,7 +223,10 @@ export default function MyToolTodayPage() {
   const { data: calendarEvents = [] } = useQuery<CalendarEvent[]>({
     queryKey: [`/api/outlook/events`, today],
     queryFn: async () => {
-      const res = await fetch(`/api/outlook/events?start=${today}&end=${today}`, { credentials: "include" });
+      const headers: Record<string, string> = {};
+      const token = localStorage.getItem('auth_token');
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`/api/outlook/events?start=${today}&end=${today}`, { credentials: "include", headers });
       if (!res.ok) return [];
       const data = await res.json();
       return Array.isArray(data) ? data.filter((e: CalendarEvent) => !e.isCancelled) : [];
@@ -251,7 +254,10 @@ export default function MyToolTodayPage() {
     queryFn: async () => {
       const params = new URLSearchParams({ top: "20", folder: emailFolder });
       if (debouncedInboxSearch.trim()) params.set("search", debouncedInboxSearch.trim());
-      const res = await fetch(`/api/outlook/messages?${params.toString()}`, { credentials: "include" });
+      const hdrs: Record<string, string> = {};
+      const tk = localStorage.getItem('auth_token');
+      if (tk) hdrs["Authorization"] = `Bearer ${tk}`;
+      const res = await fetch(`/api/outlook/messages?${params.toString()}`, { credentials: "include", headers: hdrs });
       if (!res.ok) return [];
       const data = await res.json();
       return Array.isArray(data) ? data : data.value || [];
@@ -261,7 +267,10 @@ export default function MyToolTodayPage() {
   const { data: mailFolders = [] } = useQuery<MailFolder[]>({
     queryKey: ["/api/outlook/folders"],
     queryFn: async () => {
-      const res = await fetch("/api/outlook/folders", { credentials: "include" });
+      const fh: Record<string, string> = {};
+      const ft = localStorage.getItem('auth_token');
+      if (ft) fh["Authorization"] = `Bearer ${ft}`;
+      const res = await fetch("/api/outlook/folders", { credentials: "include", headers: fh });
       if (!res.ok) return [];
       return res.json();
     },
@@ -271,7 +280,10 @@ export default function MyToolTodayPage() {
   const { data: emailDetail, isLoading: emailDetailLoading } = useQuery<EmailDetail>({
     queryKey: ["/api/outlook/messages", emailDetailId],
     queryFn: async () => {
-      const res = await fetch(`/api/outlook/messages/${emailDetailId}`, { credentials: "include" });
+      const dh: Record<string, string> = {};
+      const dt = localStorage.getItem('auth_token');
+      if (dt) dh["Authorization"] = `Bearer ${dt}`;
+      const res = await fetch(`/api/outlook/messages/${emailDetailId}`, { credentials: "include", headers: dh });
       if (!res.ok) throw new Error("Failed to fetch email");
       return res.json();
     },
