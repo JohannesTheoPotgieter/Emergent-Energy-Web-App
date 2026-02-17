@@ -191,6 +191,12 @@ async function seedUsers() {
       name: "Viewer",
       role: "member" as const,
     },
+    {
+      email: "qm@emergent.energy",
+      password: "quality123",
+      name: "Quality Manager",
+      role: "quality_manager" as const,
+    },
   ];
 
   for (const u of usersToSeed) {
