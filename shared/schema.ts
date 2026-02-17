@@ -1147,3 +1147,115 @@ export const supportTickets = pgTable("support_tickets", {
 export const insertSupportTicketSchema = createInsertSchema(supportTickets).omit({ id: true, createdAt: true });
 export type InsertSupportTicket = z.infer<typeof insertSupportTicketSchema>;
 export type SupportTicket = typeof supportTickets.$inferSelect;
+
+// ==================== SharePoint Import System ====================
+
+export const importTriggerTypeEnum = pgEnum('import_trigger_type', ['schedule', 'manual', 'webhook']);
+export const importRunStatusEnum = pgEnum('import_run_status', ['running', 'success', 'partial', 'fail']);
+export const changeEventTypeEnum = pgEnum('change_event_type', ['created', 'modified', 'deleted', 'renamed']);
+export const importStatusEnum = pgEnum('import_status_type', ['pending', 'imported', 'failed', 'skipped']);
+
+export const spSettings = pgTable("sp_settings", {
+  id: serial("id").primaryKey(),
+  siteId: text("site_id").notNull(),
+  driveId: text("drive_id").notNull(),
+  folderItemId: text("folder_item_id"),
+  folderPath: text("folder_path"),
+  intervalMinutes: integer("interval_minutes").notNull().default(30),
+  enabled: boolean("enabled").notNull().default(false),
+  lastRunAt: timestamp("last_run_at"),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  updatedBy: integer("updated_by").references(() => users.id),
+});
+
+export const insertSpSettingsSchema = createInsertSchema(spSettings).omit({ id: true, updatedAt: true });
+export type InsertSpSettings = z.infer<typeof insertSpSettingsSchema>;
+export type SpSettings = typeof spSettings.$inferSelect;
+
+export const spFiles = pgTable("sp_files", {
+  id: serial("id").primaryKey(),
+  siteId: text("site_id").notNull(),
+  driveId: text("drive_id").notNull(),
+  itemId: text("item_id").notNull(),
+  path: text("path"),
+  fileName: text("file_name").notNull(),
+  lastSeenEtag: text("last_seen_etag"),
+  lastSeenCtag: text("last_seen_ctag"),
+  spLastModifiedAt: timestamp("sp_last_modified_at"),
+  spLastModifiedByName: text("sp_last_modified_by_name"),
+  spLastModifiedByEmail: text("sp_last_modified_by_email"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertSpFileSchema = createInsertSchema(spFiles).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertSpFile = z.infer<typeof insertSpFileSchema>;
+export type SpFile = typeof spFiles.$inferSelect;
+
+export const importRuns = pgTable("import_runs", {
+  id: serial("id").primaryKey(),
+  triggerType: importTriggerTypeEnum("trigger_type").notNull(),
+  startedAt: timestamp("started_at").notNull().defaultNow(),
+  finishedAt: timestamp("finished_at"),
+  status: importRunStatusEnum("status").notNull().default('running'),
+  deltaTokenUsed: text("delta_token_used"),
+  triggeredBy: text("triggered_by").notNull().default('system'),
+  summaryJson: jsonb("summary_json"),
+});
+
+export const insertImportRunSchema = createInsertSchema(importRuns).omit({ id: true, startedAt: true });
+export type InsertImportRun = z.infer<typeof insertImportRunSchema>;
+export type ImportRun = typeof importRuns.$inferSelect;
+
+export const snapshots = pgTable("snapshots", {
+  id: serial("id").primaryKey(),
+  fileId: integer("file_id").notNull().references(() => spFiles.id),
+  importedAt: timestamp("imported_at").notNull().defaultNow(),
+  sourceEtag: text("source_etag"),
+  contentHash: text("content_hash").notNull(),
+  rowCountTotal: integer("row_count_total"),
+  parserVersion: text("parser_version").notNull().default('1.0'),
+  storageRef: text("storage_ref"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertSnapshotSchema = createInsertSchema(snapshots).omit({ id: true, importedAt: true, createdAt: true });
+export type InsertSnapshot = z.infer<typeof insertSnapshotSchema>;
+export type Snapshot = typeof snapshots.$inferSelect;
+
+export const changeLedger = pgTable("change_ledger", {
+  id: serial("id").primaryKey(),
+  runId: integer("run_id").notNull().references(() => importRuns.id),
+  fileId: integer("file_id").notNull().references(() => spFiles.id),
+  eventType: changeEventTypeEnum("event_type").notNull(),
+  oldEtag: text("old_etag"),
+  newEtag: text("new_etag"),
+  spModifiedAt: timestamp("sp_modified_at"),
+  spModifiedByName: text("sp_modified_by_name"),
+  spModifiedByEmail: text("sp_modified_by_email"),
+  detectedAt: timestamp("detected_at").notNull().defaultNow(),
+  importStatus: importStatusEnum("import_status").notNull().default('pending'),
+  snapshotId: integer("snapshot_id").references(() => snapshots.id),
+  errorCode: text("error_code"),
+  errorMessage: text("error_message"),
+});
+
+export const insertChangeLedgerSchema = createInsertSchema(changeLedger).omit({ id: true, detectedAt: true });
+export type InsertChangeLedger = z.infer<typeof insertChangeLedgerSchema>;
+export type ChangeLedger = typeof changeLedger.$inferSelect;
+
+export const snapshotMetrics = pgTable("snapshot_metrics", {
+  id: serial("id").primaryKey(),
+  snapshotId: integer("snapshot_id").notNull().references(() => snapshots.id),
+  tableName: text("table_name").notNull(),
+  rowCount: integer("row_count").notNull().default(0),
+  checksum: text("checksum"),
+  minDate: text("min_date"),
+  maxDate: text("max_date"),
+  totalsJson: jsonb("totals_json"),
+});
+
+export const insertSnapshotMetricSchema = createInsertSchema(snapshotMetrics).omit({ id: true });
+export type InsertSnapshotMetric = z.infer<typeof insertSnapshotMetricSchema>;
+export type SnapshotMetric = typeof snapshotMetrics.$inferSelect;

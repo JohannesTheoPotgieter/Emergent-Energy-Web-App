@@ -72,6 +72,13 @@ import {
   type MytoolEmailLink, type InsertMytoolEmailLink,
   type MytoolDodTemplate, type InsertMytoolDodTemplate,
   type ErrorLog, type InsertErrorLog, type SupportTicket, type InsertSupportTicket,
+  spSettings, spFiles, importRuns, changeLedger, snapshots, snapshotMetrics,
+  type SpSettings, type InsertSpSettings,
+  type SpFile, type InsertSpFile,
+  type ImportRun, type InsertImportRun,
+  type ChangeLedger, type InsertChangeLedger,
+  type Snapshot, type InsertSnapshot,
+  type SnapshotMetric, type InsertSnapshotMetric,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -403,6 +410,42 @@ export interface IStorage {
   // Support Tickets
   createSupportTicket(ticket: InsertSupportTicket): Promise<SupportTicket>;
   getSupportTickets(): Promise<SupportTicket[]>;
+
+  // SharePoint Settings
+  getSpSettings(): Promise<SpSettings | undefined>;
+  upsertSpSettings(data: InsertSpSettings): Promise<SpSettings>;
+
+  // SharePoint Files
+  getAllSpFiles(): Promise<SpFile[]>;
+  getSpFile(id: number): Promise<SpFile | undefined>;
+  getSpFileByItemId(siteId: string, driveId: string, itemId: string): Promise<SpFile | undefined>;
+  upsertSpFile(data: InsertSpFile): Promise<SpFile>;
+  deactivateSpFile(id: number): Promise<void>;
+
+  // Import Runs
+  getAllImportRuns(): Promise<ImportRun[]>;
+  getImportRun(id: number): Promise<ImportRun | undefined>;
+  createImportRun(data: InsertImportRun): Promise<ImportRun>;
+  updateImportRun(id: number, data: Partial<ImportRun>): Promise<ImportRun>;
+
+  // Change Ledger
+  getAllChangeLedger(filters?: { runId?: number; fileId?: number; eventType?: string; importStatus?: string }): Promise<ChangeLedger[]>;
+  getChangeLedgerEntry(id: number): Promise<ChangeLedger | undefined>;
+  createChangeLedgerEntry(data: InsertChangeLedger): Promise<ChangeLedger>;
+  updateChangeLedgerEntry(id: number, data: Partial<ChangeLedger>): Promise<ChangeLedger>;
+  getPendingLedgerEntries(): Promise<ChangeLedger[]>;
+  getFailedLedgerEntries(): Promise<ChangeLedger[]>;
+
+  // Snapshots
+  getAllSnapshots(fileId?: number): Promise<Snapshot[]>;
+  getSnapshot(id: number): Promise<Snapshot | undefined>;
+  getLatestSnapshotForFile(fileId: number): Promise<Snapshot | undefined>;
+  createSnapshot(data: InsertSnapshot): Promise<Snapshot>;
+
+  // Snapshot Metrics
+  getSnapshotMetrics(snapshotId: number): Promise<SnapshotMetric[]>;
+  createSnapshotMetric(data: InsertSnapshotMetric): Promise<SnapshotMetric>;
+  createManySnapshotMetrics(data: InsertSnapshotMetric[]): Promise<SnapshotMetric[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2101,6 +2144,158 @@ export class DatabaseStorage implements IStorage {
 
   async getSupportTickets(): Promise<SupportTicket[]> {
     return this.dbInstance.select().from(supportTickets).orderBy(desc(supportTickets.createdAt));
+  }
+
+  // SharePoint Settings
+  async getSpSettings(): Promise<SpSettings | undefined> {
+    const [row] = await this.dbInstance.select().from(spSettings);
+    return row;
+  }
+
+  async upsertSpSettings(data: InsertSpSettings): Promise<SpSettings> {
+    const existing = await this.getSpSettings();
+    if (existing) {
+      const [updated] = await this.dbInstance.update(spSettings)
+        .set({ ...data, updatedAt: new Date() })
+        .where(eq(spSettings.id, existing.id))
+        .returning();
+      return updated;
+    }
+    const [created] = await this.dbInstance.insert(spSettings).values(data).returning();
+    return created;
+  }
+
+  // SharePoint Files
+  async getAllSpFiles(): Promise<SpFile[]> {
+    return this.dbInstance.select().from(spFiles).orderBy(desc(spFiles.createdAt));
+  }
+
+  async getSpFile(id: number): Promise<SpFile | undefined> {
+    const [row] = await this.dbInstance.select().from(spFiles).where(eq(spFiles.id, id));
+    return row;
+  }
+
+  async getSpFileByItemId(siteId: string, driveId: string, itemId: string): Promise<SpFile | undefined> {
+    const [row] = await this.dbInstance.select().from(spFiles)
+      .where(and(eq(spFiles.siteId, siteId), eq(spFiles.driveId, driveId), eq(spFiles.itemId, itemId)));
+    return row;
+  }
+
+  async upsertSpFile(data: InsertSpFile): Promise<SpFile> {
+    const existing = await this.getSpFileByItemId(data.siteId, data.driveId, data.itemId);
+    if (existing) {
+      const [updated] = await this.dbInstance.update(spFiles)
+        .set({ ...data, updatedAt: new Date() })
+        .where(eq(spFiles.id, existing.id))
+        .returning();
+      return updated;
+    }
+    const [created] = await this.dbInstance.insert(spFiles).values(data).returning();
+    return created;
+  }
+
+  async deactivateSpFile(id: number): Promise<void> {
+    await this.dbInstance.update(spFiles)
+      .set({ isActive: false, updatedAt: new Date() })
+      .where(eq(spFiles.id, id));
+  }
+
+  // Import Runs
+  async getAllImportRuns(): Promise<ImportRun[]> {
+    return this.dbInstance.select().from(importRuns).orderBy(desc(importRuns.startedAt));
+  }
+
+  async getImportRun(id: number): Promise<ImportRun | undefined> {
+    const [row] = await this.dbInstance.select().from(importRuns).where(eq(importRuns.id, id));
+    return row;
+  }
+
+  async createImportRun(data: InsertImportRun): Promise<ImportRun> {
+    const [row] = await this.dbInstance.insert(importRuns).values(data).returning();
+    return row;
+  }
+
+  async updateImportRun(id: number, data: Partial<ImportRun>): Promise<ImportRun> {
+    const [row] = await this.dbInstance.update(importRuns).set(data).where(eq(importRuns.id, id)).returning();
+    return row;
+  }
+
+  // Change Ledger
+  async getAllChangeLedger(filters?: { runId?: number; fileId?: number; eventType?: string; importStatus?: string }): Promise<ChangeLedger[]> {
+    const conditions: any[] = [];
+    if (filters?.runId !== undefined) conditions.push(eq(changeLedger.runId, filters.runId));
+    if (filters?.fileId !== undefined) conditions.push(eq(changeLedger.fileId, filters.fileId));
+    if (filters?.eventType !== undefined) conditions.push(eq(changeLedger.eventType, filters.eventType as any));
+    if (filters?.importStatus !== undefined) conditions.push(eq(changeLedger.importStatus, filters.importStatus as any));
+
+    if (conditions.length > 0) {
+      return this.dbInstance.select().from(changeLedger).where(and(...conditions)).orderBy(desc(changeLedger.detectedAt));
+    }
+    return this.dbInstance.select().from(changeLedger).orderBy(desc(changeLedger.detectedAt));
+  }
+
+  async getChangeLedgerEntry(id: number): Promise<ChangeLedger | undefined> {
+    const [row] = await this.dbInstance.select().from(changeLedger).where(eq(changeLedger.id, id));
+    return row;
+  }
+
+  async createChangeLedgerEntry(data: InsertChangeLedger): Promise<ChangeLedger> {
+    const [row] = await this.dbInstance.insert(changeLedger).values(data).returning();
+    return row;
+  }
+
+  async updateChangeLedgerEntry(id: number, data: Partial<ChangeLedger>): Promise<ChangeLedger> {
+    const [row] = await this.dbInstance.update(changeLedger).set(data).where(eq(changeLedger.id, id)).returning();
+    return row;
+  }
+
+  async getPendingLedgerEntries(): Promise<ChangeLedger[]> {
+    return this.dbInstance.select().from(changeLedger).where(eq(changeLedger.importStatus, 'pending')).orderBy(desc(changeLedger.detectedAt));
+  }
+
+  async getFailedLedgerEntries(): Promise<ChangeLedger[]> {
+    return this.dbInstance.select().from(changeLedger).where(eq(changeLedger.importStatus, 'failed')).orderBy(desc(changeLedger.detectedAt));
+  }
+
+  // Snapshots
+  async getAllSnapshots(fileId?: number): Promise<Snapshot[]> {
+    if (fileId !== undefined) {
+      return this.dbInstance.select().from(snapshots).where(eq(snapshots.fileId, fileId)).orderBy(desc(snapshots.importedAt));
+    }
+    return this.dbInstance.select().from(snapshots).orderBy(desc(snapshots.importedAt));
+  }
+
+  async getSnapshot(id: number): Promise<Snapshot | undefined> {
+    const [row] = await this.dbInstance.select().from(snapshots).where(eq(snapshots.id, id));
+    return row;
+  }
+
+  async getLatestSnapshotForFile(fileId: number): Promise<Snapshot | undefined> {
+    const [row] = await this.dbInstance.select().from(snapshots)
+      .where(eq(snapshots.fileId, fileId))
+      .orderBy(desc(snapshots.importedAt))
+      .limit(1);
+    return row;
+  }
+
+  async createSnapshot(data: InsertSnapshot): Promise<Snapshot> {
+    const [row] = await this.dbInstance.insert(snapshots).values(data).returning();
+    return row;
+  }
+
+  // Snapshot Metrics
+  async getSnapshotMetrics(snapshotId: number): Promise<SnapshotMetric[]> {
+    return this.dbInstance.select().from(snapshotMetrics).where(eq(snapshotMetrics.snapshotId, snapshotId));
+  }
+
+  async createSnapshotMetric(data: InsertSnapshotMetric): Promise<SnapshotMetric> {
+    const [row] = await this.dbInstance.insert(snapshotMetrics).values(data).returning();
+    return row;
+  }
+
+  async createManySnapshotMetrics(data: InsertSnapshotMetric[]): Promise<SnapshotMetric[]> {
+    if (data.length === 0) return [];
+    return this.dbInstance.insert(snapshotMetrics).values(data).returning();
   }
 }
 
