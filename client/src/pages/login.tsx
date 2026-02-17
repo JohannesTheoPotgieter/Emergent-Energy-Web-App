@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Lock, Shield, Eye, X } from "lucide-react";
+import { Lock, Shield, Eye, X, ClipboardCheck } from "lucide-react";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -63,7 +63,7 @@ export default function LoginPage() {
         <CardContent className="space-y-5">
           <div className="space-y-2">
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Quick Login</p>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
                 onClick={handleAdminClick}
@@ -73,6 +73,16 @@ export default function LoginPage() {
                 <Shield className="w-5 h-5" />
                 <span className="text-sm font-semibold">Admin</span>
                 <span className="text-[10px] opacity-70 leading-tight">Full access — edit, upload, manage</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => { setEmail("qm@emergent.energy"); setPassword("quality123"); }}
+                className={`flex flex-col items-center gap-1 p-3 rounded-lg border text-center transition-all bg-emerald-500/10 border-emerald-500/30 text-emerald-700 hover:bg-emerald-500/20 ${email === "qm@emergent.energy" ? "ring-2 ring-offset-1 ring-primary" : ""}`}
+                data-testid="button-quick-login-qm"
+              >
+                <ClipboardCheck className="w-5 h-5" />
+                <span className="text-sm font-semibold">Quality</span>
+                <span className="text-[10px] opacity-70 leading-tight">QM checklists, risk & post-mortem</span>
               </button>
               <button
                 type="button"
