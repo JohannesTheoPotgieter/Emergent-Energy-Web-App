@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import MyToolLayout from "@/components/mytool/MyToolLayout";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -41,9 +41,15 @@ import {
   Pencil,
   Trash2,
   Loader2,
-  CheckCircle,
-  Archive,
+  ChevronDown,
+  ChevronRight,
+  ExternalLink,
+  Calendar,
+  User,
+  Users,
+  X,
 } from "lucide-react";
+import { format } from "date-fns";
 
 interface CompanyPriority {
   id: number;
@@ -55,30 +61,53 @@ interface CompanyPriority {
   linkedProjectName: string | null;
   severity: string;
   status: string;
+  priorityRank: number | null;
+  assignedTo: string | null;
+  nextAction: string | null;
+  support: string[] | null;
+  definitionOfDone: string | null;
+  dueDate: string | null;
+  linkedTaskId: number | null;
+  linkedTaskType: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
-const severityConfig: Record<string, { label: string; color: string; dot: string }> = {
-  critical: { label: "Critical", color: "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400", dot: "bg-red-500" },
-  important: { label: "Important", color: "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400", dot: "bg-amber-500" },
-  normal: { label: "Normal", color: "bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400", dot: "bg-blue-500" },
+const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
+  active: { label: "Active", color: "text-green-700 dark:text-green-400", bg: "bg-green-100 dark:bg-green-950/40" },
+  not_started: { label: "Not started", color: "text-slate-600 dark:text-slate-400", bg: "bg-slate-100 dark:bg-slate-800" },
+  in_progress: { label: "In progress", color: "text-amber-700 dark:text-amber-400", bg: "bg-amber-100 dark:bg-amber-950/40" },
+  complete: { label: "Complete", color: "text-green-700 dark:text-green-400", bg: "bg-green-100 dark:bg-green-950/40" },
+  monitoring: { label: "Monitoring", color: "text-blue-700 dark:text-blue-400", bg: "bg-blue-100 dark:bg-blue-950/40" },
+  closed: { label: "Closed", color: "text-gray-500 dark:text-gray-400", bg: "bg-gray-100 dark:bg-gray-800" },
 };
 
-const statusConfig: Record<string, { label: string; color: string }> = {
-  active: { label: "Active", color: "bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400" },
-  completed: { label: "Completed", color: "bg-slate-100 text-slate-700 dark:bg-slate-950/40 dark:text-slate-400" },
-  archived: { label: "Archived", color: "bg-gray-100 text-gray-500 dark:bg-gray-950/40 dark:text-gray-400" },
+const departmentColors: Record<string, string> = {
+  Accounts: "bg-yellow-100 text-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-400",
+  "Project Development": "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400",
+  "Project Management": "bg-blue-100 text-blue-800 dark:bg-blue-950/40 dark:text-blue-400",
+  Operations: "bg-purple-100 text-purple-800 dark:bg-purple-950/40 dark:text-purple-400",
+  Engineering: "bg-orange-100 text-orange-800 dark:bg-orange-950/40 dark:text-orange-400",
+  Finance: "bg-indigo-100 text-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-400",
 };
+
+const defaultDeptColor = "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300";
 
 const emptyForm = {
   title: "",
   description: "",
   department: "",
-  horizon: "week" as string,
-  ownerRole: "",
+  assignedTo: "",
+  nextAction: "",
+  supportText: "",
+  definitionOfDone: "",
+  dueDate: "",
   linkedProjectName: "",
+  linkedTaskId: "",
+  linkedTaskType: "",
   severity: "normal" as string,
+  status: "in_progress" as string,
+  priorityRank: "",
 };
 
 export default function MyToolPrioritiesPage() {
@@ -88,7 +117,8 @@ export default function MyToolPrioritiesPage() {
   const [showDialog, setShowDialog] = useState(false);
   const [editingPriority, setEditingPriority] = useState<CompanyPriority | null>(null);
   const [form, setForm] = useState(emptyForm);
-  const [statusFilter, setStatusFilter] = useState<string>("active");
+  const [statusFilter, setStatusFilter] = useState<string>("all_active");
+  const [collapsedDepts, setCollapsedDepts] = useState<Set<string>>(new Set());
 
   const { data: priorities = [], isLoading } = useQuery<CompanyPriority[]>({
     queryKey: ["/api/mytool/company-priorities"],
@@ -103,9 +133,51 @@ export default function MyToolPrioritiesPage() {
     },
   });
 
-  const filteredPriorities = priorities.filter(p =>
-    statusFilter === "all" ? true : p.status === statusFilter
-  );
+  const { data: allOperationalTasks = [] } = useQuery<any[]>({
+    queryKey: ["/api/operational-tasks-all"],
+    queryFn: async () => {
+      const projectNames = projects.map((p: any) => p.projectName || p.project_name).filter(Boolean);
+      const results: any[] = [];
+      for (const pn of projectNames.slice(0, 50)) {
+        try {
+          const res = await fetch(`/api/operational-tasks/${encodeURIComponent(pn)}`, { credentials: "include" });
+          if (res.ok) {
+            const data = await res.json();
+            const tasks = Array.isArray(data) ? data : data.tasks || [];
+            tasks.forEach((t: any) => results.push({ ...t, _projectName: pn }));
+          }
+        } catch {}
+      }
+      return results;
+    },
+    enabled: projects.length > 0 && isAdmin,
+  });
+
+  const filteredPriorities = useMemo(() => {
+    return priorities.filter(p => {
+      if (statusFilter === "all_active") return !["closed", "complete"].includes(p.status);
+      if (statusFilter === "all") return true;
+      return p.status === statusFilter;
+    });
+  }, [priorities, statusFilter]);
+
+  const groupedByDept = useMemo(() => {
+    const groups: Record<string, CompanyPriority[]> = {};
+    filteredPriorities.forEach(p => {
+      const dept = p.department || "Unassigned";
+      if (!groups[dept]) groups[dept] = [];
+      groups[dept].push(p);
+    });
+    Object.values(groups).forEach(items => {
+      items.sort((a, b) => (a.priorityRank ?? 999) - (b.priorityRank ?? 999));
+    });
+    const sortedKeys = Object.keys(groups).sort((a, b) => {
+      if (a === "Unassigned") return 1;
+      if (b === "Unassigned") return -1;
+      return a.localeCompare(b);
+    });
+    return sortedKeys.map(dept => ({ department: dept, items: groups[dept] }));
+  }, [filteredPriorities]);
 
   const createMutation = useMutation({
     mutationFn: (data: any) => apiRequest("POST", "/api/mytool/company-priorities", data),
@@ -141,9 +213,9 @@ export default function MyToolPrioritiesPage() {
     setForm(emptyForm);
   };
 
-  const openCreate = () => {
+  const openCreate = (dept?: string) => {
     setEditingPriority(null);
-    setForm(emptyForm);
+    setForm({ ...emptyForm, department: dept || "" });
     setShowDialog(true);
   };
 
@@ -153,24 +225,39 @@ export default function MyToolPrioritiesPage() {
       title: p.title,
       description: p.description || "",
       department: p.department || "",
-      horizon: p.horizon,
-      ownerRole: p.ownerRole || "",
+      assignedTo: p.assignedTo || "",
+      nextAction: p.nextAction || "",
+      supportText: (p.support || []).join(", "),
+      definitionOfDone: p.definitionOfDone || "",
+      dueDate: p.dueDate || "",
       linkedProjectName: p.linkedProjectName || "",
+      linkedTaskId: p.linkedTaskId?.toString() || "",
+      linkedTaskType: p.linkedTaskType || "",
       severity: p.severity,
+      status: p.status,
+      priorityRank: p.priorityRank?.toString() || "",
     });
     setShowDialog(true);
   };
 
   const handleSave = () => {
     if (!form.title.trim()) return;
-    const payload = {
+    const supportArr = form.supportText.split(",").map(s => s.trim()).filter(Boolean);
+    const payload: any = {
       title: form.title.trim(),
       description: form.description.trim() || null,
       department: form.department.trim() || null,
-      horizon: form.horizon,
-      ownerRole: form.ownerRole.trim() || null,
+      assignedTo: form.assignedTo.trim() || null,
+      nextAction: form.nextAction.trim() || null,
+      support: supportArr.length > 0 ? supportArr : null,
+      definitionOfDone: form.definitionOfDone.trim() || null,
+      dueDate: form.dueDate.trim() || null,
       linkedProjectName: form.linkedProjectName || null,
+      linkedTaskId: form.linkedTaskId ? parseInt(form.linkedTaskId) : null,
+      linkedTaskType: form.linkedTaskType || null,
       severity: form.severity,
+      status: form.status,
+      priorityRank: form.priorityRank ? parseInt(form.priorityRank) : null,
     };
     if (editingPriority) {
       updateMutation.mutate({ id: editingPriority.id, data: payload });
@@ -179,39 +266,60 @@ export default function MyToolPrioritiesPage() {
     }
   };
 
-  const toggleStatus = (p: CompanyPriority, newStatus: string) => {
-    updateMutation.mutate({ id: p.id, data: { status: newStatus } });
+  const toggleDept = (dept: string) => {
+    setCollapsedDepts(prev => {
+      const next = new Set(prev);
+      if (next.has(dept)) next.delete(dept);
+      else next.add(dept);
+      return next;
+    });
   };
 
   const projectNames = projects.map((p: any) => p.projectName || p.project_name).filter(Boolean);
 
+  const tasksForProject = useMemo(() => {
+    if (!form.linkedProjectName) return [];
+    return allOperationalTasks.filter((t: any) => t._projectName === form.linkedProjectName);
+  }, [form.linkedProjectName, allOperationalTasks]);
+
+  const formatDisplayDate = (d: string | null) => {
+    if (!d) return "";
+    try {
+      return format(new Date(d), "M/d/yyyy");
+    } catch {
+      return d;
+    }
+  };
+
   return (
     <MyToolLayout>
-      <div className="space-y-6 max-w-4xl" data-testid="mytool-priorities-page">
+      <div className="space-y-4 max-w-[1400px]" data-testid="mytool-priorities-page">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-xl font-semibold flex items-center gap-2">
               <Flag className="h-5 w-5 text-red-500" />
-              Company Priorities
+              Emergent Energy Company Priorities
             </h2>
-            <p className="text-sm text-muted-foreground mt-1">
-              {isAdmin ? "Manage company-wide priorities, assign departments, and link to projects." : "View current company-wide priorities."}
+            <p className="text-xs text-muted-foreground mt-1">
+              {filteredPriorities.length} {statusFilter === "all_active" ? "active" : statusFilter} priorities across {groupedByDept.length} departments
             </p>
           </div>
           <div className="flex items-center gap-2">
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="h-8 w-28 text-xs" data-testid="select-status-filter">
+              <SelectTrigger className="h-8 w-32 text-xs" data-testid="select-status-filter">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="completed">Completed</SelectItem>
-                <SelectItem value="archived">Archived</SelectItem>
+                <SelectItem value="all_active">Active</SelectItem>
+                <SelectItem value="in_progress">In progress</SelectItem>
+                <SelectItem value="not_started">Not started</SelectItem>
+                <SelectItem value="complete">Complete</SelectItem>
+                <SelectItem value="closed">Closed</SelectItem>
                 <SelectItem value="all">All</SelectItem>
               </SelectContent>
             </Select>
             {isAdmin && (
-              <Button size="sm" onClick={openCreate} data-testid="button-create-priority">
+              <Button size="sm" onClick={() => openCreate()} data-testid="button-create-priority">
                 <Plus className="h-4 w-4 mr-1" />
                 New Priority
               </Button>
@@ -227,9 +335,9 @@ export default function MyToolPrioritiesPage() {
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-16">
               <Flag className="h-10 w-10 text-muted-foreground/30 mb-3" />
-              <p className="text-muted-foreground text-sm">No {statusFilter !== "all" ? statusFilter : ""} priorities found.</p>
-              {isAdmin && statusFilter === "active" && (
-                <Button variant="outline" size="sm" className="mt-3" onClick={openCreate}>
+              <p className="text-muted-foreground text-sm">No priorities found.</p>
+              {isAdmin && (
+                <Button variant="outline" size="sm" className="mt-3" onClick={() => openCreate()}>
                   <Plus className="h-4 w-4 mr-1" />
                   Create First Priority
                 </Button>
@@ -237,203 +345,288 @@ export default function MyToolPrioritiesPage() {
             </CardContent>
           </Card>
         ) : (
-          <div className="space-y-2">
-            {filteredPriorities.map((p) => {
-              const sev = severityConfig[p.severity] || severityConfig.normal;
-              const stat = statusConfig[p.status] || statusConfig.active;
+          <div className="border rounded-lg overflow-hidden bg-background">
+            <div className="grid grid-cols-[40px_130px_1fr_100px_120px_1fr_140px_1fr_90px] gap-0 text-[11px] font-medium text-muted-foreground border-b bg-muted/30 px-3 py-2 sticky top-0">
+              <span className="text-center">#</span>
+              <span>Department</span>
+              <span>Priorities</span>
+              <span>Status</span>
+              <span>Assigned to</span>
+              <span>Next Action</span>
+              <span>Support</span>
+              <span>Definition of Done</span>
+              <span>Due Date</span>
+            </div>
+
+            {groupedByDept.map(({ department, items }) => {
+              const isCollapsed = collapsedDepts.has(department);
+              const deptColor = departmentColors[department] || defaultDeptColor;
               return (
-                <Card key={p.id} className={`transition-all hover:shadow-sm ${p.status !== "active" ? "opacity-60" : ""}`} data-testid={`priority-row-${p.id}`}>
-                  <CardContent className="p-4">
-                    <div className="flex items-start gap-3">
-                      <span className={`inline-block w-2.5 h-2.5 rounded-full mt-1 shrink-0 ${sev.dot}`} />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h3 className="font-medium text-sm" data-testid={`text-priority-${p.id}`}>{p.title}</h3>
-                          <Badge variant="secondary" className={`text-[10px] h-4 px-1.5 ${sev.color}`}>{sev.label}</Badge>
-                          <Badge variant="secondary" className={`text-[10px] h-4 px-1.5 ${stat.color}`}>{stat.label}</Badge>
-                          {p.horizon && <Badge variant="outline" className="text-[10px] h-4 px-1.5 capitalize">{p.horizon}</Badge>}
+                <div key={department} data-testid={`dept-group-${department}`}>
+                  <button
+                    onClick={() => toggleDept(department)}
+                    className="w-full flex items-center gap-2 px-3 py-2 bg-muted/20 hover:bg-muted/40 transition-colors border-b text-left"
+                    data-testid={`dept-toggle-${department}`}
+                  >
+                    {isCollapsed ? <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
+                    <span className="text-sm font-semibold">Department: {department}</span>
+                    <span className="text-xs text-muted-foreground">({items.length})</span>
+                  </button>
+                  {!isCollapsed && items.map((p, idx) => {
+                    const stat = statusConfig[p.status] || statusConfig.active;
+                    return (
+                      <div
+                        key={p.id}
+                        className="grid grid-cols-[40px_130px_1fr_100px_120px_1fr_140px_1fr_90px] gap-0 px-3 py-2.5 border-b hover:bg-muted/10 transition-colors items-start group text-sm"
+                        data-testid={`priority-row-${p.id}`}
+                      >
+                        <span className="text-center text-muted-foreground text-xs font-medium pt-0.5">{p.priorityRank ?? (idx + 1)}</span>
+                        <div className="pr-2">
+                          <Badge variant="secondary" className={`text-[10px] px-2 py-0.5 ${deptColor} truncate max-w-[120px]`}>
+                            {department === "Project Development" ? "Project Develop..." :
+                             department === "Project Management" ? "Project Manage..." :
+                             department.length > 14 ? department.slice(0, 12) + "..." : department}
+                          </Badge>
                         </div>
-                        {p.description && <p className="text-xs text-muted-foreground mt-1">{p.description}</p>}
-                        <div className="flex items-center gap-3 mt-1.5 text-[10px] text-muted-foreground flex-wrap">
-                          {p.department && <span>Dept: {p.department}</span>}
-                          {p.ownerRole && <span>Owner: {p.ownerRole}</span>}
+                        <div className="pr-2 flex items-center gap-1.5 min-w-0">
+                          <span className="font-medium truncate" data-testid={`text-priority-${p.id}`}>{p.title}</span>
                           {p.linkedProjectName && (
-                            <span>Project: {p.linkedProjectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}</span>
+                            <span title={`Linked to ${p.linkedProjectName}`}>
+                              <ExternalLink className="h-3 w-3 text-muted-foreground shrink-0" />
+                            </span>
                           )}
-                        </div>
-                      </div>
-                      {isAdmin && (
-                        <div className="flex items-center gap-1 shrink-0">
-                          {p.status === "active" && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 w-7 p-0 text-muted-foreground hover:text-green-600"
-                              onClick={() => toggleStatus(p, "completed")}
-                              title="Mark completed"
-                              data-testid={`button-complete-priority-${p.id}`}
-                            >
-                              <CheckCircle className="h-3.5 w-3.5" />
-                            </Button>
-                          )}
-                          {p.status === "active" && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 w-7 p-0 text-muted-foreground hover:text-slate-600"
-                              onClick={() => toggleStatus(p, "archived")}
-                              title="Archive"
-                              data-testid={`button-archive-priority-${p.id}`}
-                            >
-                              <Archive className="h-3.5 w-3.5" />
-                            </Button>
-                          )}
-                          {p.status !== "active" && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 w-7 p-0 text-muted-foreground hover:text-green-600"
-                              onClick={() => toggleStatus(p, "active")}
-                              title="Reactivate"
-                              data-testid={`button-reactivate-priority-${p.id}`}
-                            >
-                              <Flag className="h-3.5 w-3.5" />
-                            </Button>
-                          )}
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-                            onClick={() => openEdit(p)}
-                            data-testid={`button-edit-priority-${p.id}`}
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive" data-testid={`button-delete-priority-${p.id}`}>
-                                <Trash2 className="h-3.5 w-3.5" />
+                          {isAdmin && (
+                            <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 shrink-0 ml-1">
+                              <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => openEdit(p)} data-testid={`button-edit-priority-${p.id}`}>
+                                <Pencil className="h-3 w-3" />
                               </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Delete Priority</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  Are you sure you want to permanently delete "{p.title}"?
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction onClick={() => deleteMutation.mutate(p.id)}>Delete</AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive" data-testid={`button-delete-priority-${p.id}`}>
+                                    <Trash2 className="h-3 w-3" />
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Delete Priority</AlertDialogTitle>
+                                    <AlertDialogDescription>Are you sure you want to permanently delete "{p.title}"?</AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction onClick={() => deleteMutation.mutate(p.id)}>Delete</AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
+                        <div className="pr-2">
+                          <Badge variant="secondary" className={`text-[10px] px-2 py-0.5 ${stat.bg} ${stat.color}`}>
+                            {stat.label}
+                          </Badge>
+                        </div>
+                        <div className="pr-2 flex items-center gap-1 text-xs truncate">
+                          {p.assignedTo && (
+                            <>
+                              <User className="h-3 w-3 text-muted-foreground shrink-0" />
+                              <span className="truncate">{p.assignedTo}</span>
+                            </>
+                          )}
+                        </div>
+                        <div className="pr-2 text-xs text-muted-foreground line-clamp-2">{p.nextAction || ""}</div>
+                        <div className="pr-2">
+                          {p.support && p.support.length > 0 && (
+                            <div className="flex flex-col gap-0.5">
+                              {p.support.map((s, i) => (
+                                <span key={i} className="text-xs text-muted-foreground truncate">{s}</span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <div className="pr-2 text-xs text-muted-foreground line-clamp-2">{p.definitionOfDone || ""}</div>
+                        <div className="text-xs text-muted-foreground">{formatDisplayDate(p.dueDate)}</div>
+                      </div>
+                    );
+                  })}
+                </div>
               );
             })}
           </div>
         )}
 
         <Dialog open={showDialog} onOpenChange={(open) => { if (!open) closeDialog(); }}>
-          <DialogContent className="max-w-md">
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{editingPriority ? "Edit Priority" : "New Company Priority"}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
               <div>
-                <Label className="text-xs">Title</Label>
+                <Label className="text-xs font-medium">Priority Title *</Label>
                 <Input
                   value={form.title}
                   onChange={(e) => setForm({ ...form, title: e.target.value })}
-                  placeholder="Priority title..."
+                  placeholder="e.g. Coega 19.8 MWp costing Finalisation"
                   className="mt-1"
                   autoFocus
                   data-testid="input-dialog-title"
                 />
               </div>
-              <div>
-                <Label className="text-xs">Description</Label>
-                <Textarea
-                  value={form.description}
-                  onChange={(e) => setForm({ ...form, description: e.target.value })}
-                  placeholder="Optional details..."
-                  className="mt-1 h-20"
-                  data-testid="input-dialog-description"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
+
+              <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <Label className="text-xs">Severity</Label>
-                  <Select value={form.severity} onValueChange={(v) => setForm({ ...form, severity: v })}>
-                    <SelectTrigger className="mt-1" data-testid="select-dialog-severity">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="critical">Critical</SelectItem>
-                      <SelectItem value="important">Important</SelectItem>
-                      <SelectItem value="normal">Normal</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Label className="text-xs font-medium">Priority Rank</Label>
+                  <Input
+                    type="number"
+                    value={form.priorityRank}
+                    onChange={(e) => setForm({ ...form, priorityRank: e.target.value })}
+                    placeholder="1"
+                    className="mt-1"
+                    data-testid="input-dialog-rank"
+                  />
                 </div>
                 <div>
-                  <Label className="text-xs">Horizon</Label>
-                  <Select value={form.horizon} onValueChange={(v) => setForm({ ...form, horizon: v })}>
-                    <SelectTrigger className="mt-1" data-testid="select-dialog-horizon">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="day">Day</SelectItem>
-                      <SelectItem value="week">Week</SelectItem>
-                      <SelectItem value="month">Month</SelectItem>
-                      <SelectItem value="quarter">Quarter</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label className="text-xs">Department</Label>
+                  <Label className="text-xs font-medium">Department</Label>
                   <Input
                     value={form.department}
                     onChange={(e) => setForm({ ...form, department: e.target.value })}
-                    placeholder="e.g. Engineering"
+                    placeholder="e.g. Project Management"
                     className="mt-1"
                     data-testid="input-dialog-department"
                   />
                 </div>
                 <div>
-                  <Label className="text-xs">Owner Role</Label>
+                  <Label className="text-xs font-medium">Status</Label>
+                  <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
+                    <SelectTrigger className="mt-1" data-testid="select-dialog-status">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="not_started">Not started</SelectItem>
+                      <SelectItem value="in_progress">In progress</SelectItem>
+                      <SelectItem value="complete">Complete</SelectItem>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="monitoring">Monitoring</SelectItem>
+                      <SelectItem value="closed">Closed</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs font-medium">Assigned to</Label>
                   <Input
-                    value={form.ownerRole}
-                    onChange={(e) => setForm({ ...form, ownerRole: e.target.value })}
-                    placeholder="e.g. COO"
+                    value={form.assignedTo}
+                    onChange={(e) => setForm({ ...form, assignedTo: e.target.value })}
+                    placeholder="e.g. Tanaka Zimuto"
                     className="mt-1"
-                    data-testid="input-dialog-owner"
+                    data-testid="input-dialog-assigned"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs font-medium">Due Date</Label>
+                  <Input
+                    type="date"
+                    value={form.dueDate}
+                    onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
+                    className="mt-1"
+                    data-testid="input-dialog-duedate"
                   />
                 </div>
               </div>
+
               <div>
-                <Label className="text-xs">Linked Project</Label>
-                <Select
-                  value={form.linkedProjectName || "_none"}
-                  onValueChange={(v) => setForm({ ...form, linkedProjectName: v === "_none" ? "" : v })}
-                >
-                  <SelectTrigger className="mt-1" data-testid="select-dialog-project">
-                    <SelectValue placeholder="None" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="_none">None</SelectItem>
-                    {projectNames.map((name: string) => (
-                      <SelectItem key={name} value={name}>
-                        {name.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label className="text-xs font-medium">Next Action</Label>
+                <Textarea
+                  value={form.nextAction}
+                  onChange={(e) => setForm({ ...form, nextAction: e.target.value })}
+                  placeholder="What needs to happen next..."
+                  className="mt-1 h-16"
+                  data-testid="input-dialog-next-action"
+                />
+              </div>
+
+              <div>
+                <Label className="text-xs font-medium">Support (comma-separated names)</Label>
+                <Input
+                  value={form.supportText}
+                  onChange={(e) => setForm({ ...form, supportText: e.target.value })}
+                  placeholder="e.g. Mary Boakye, Natasha Watkins-Baker"
+                  className="mt-1"
+                  data-testid="input-dialog-support"
+                />
+              </div>
+
+              <div>
+                <Label className="text-xs font-medium">Definition of Done</Label>
+                <Textarea
+                  value={form.definitionOfDone}
+                  onChange={(e) => setForm({ ...form, definitionOfDone: e.target.value })}
+                  placeholder="What does completion look like..."
+                  className="mt-1 h-16"
+                  data-testid="input-dialog-dod"
+                />
+              </div>
+
+              <div>
+                <Label className="text-xs font-medium">Description (optional)</Label>
+                <Textarea
+                  value={form.description}
+                  onChange={(e) => setForm({ ...form, description: e.target.value })}
+                  placeholder="Additional context..."
+                  className="mt-1 h-16"
+                  data-testid="input-dialog-description"
+                />
+              </div>
+
+              <div className="border-t pt-4">
+                <Label className="text-xs font-medium text-muted-foreground">Link to Project / Task</Label>
+                <div className="grid grid-cols-2 gap-3 mt-2">
+                  <div>
+                    <Label className="text-[10px] text-muted-foreground">Linked Project</Label>
+                    <Select
+                      value={form.linkedProjectName || "_none"}
+                      onValueChange={(v) => setForm({ ...form, linkedProjectName: v === "_none" ? "" : v, linkedTaskId: "", linkedTaskType: "" })}
+                    >
+                      <SelectTrigger className="mt-1 text-xs" data-testid="select-dialog-project">
+                        <SelectValue placeholder="None" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="_none">None</SelectItem>
+                        {projectNames.map((name: string) => (
+                          <SelectItem key={name} value={name}>
+                            {name.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-[10px] text-muted-foreground">Linked Task</Label>
+                    <Select
+                      value={form.linkedTaskId || "_none"}
+                      onValueChange={(v) => {
+                        if (v === "_none") {
+                          setForm({ ...form, linkedTaskId: "", linkedTaskType: "" });
+                        } else {
+                          setForm({ ...form, linkedTaskId: v, linkedTaskType: "operational" });
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="mt-1 text-xs" data-testid="select-dialog-task">
+                        <SelectValue placeholder="None" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="_none">None</SelectItem>
+                        {tasksForProject.map((t: any) => (
+                          <SelectItem key={t.id} value={String(t.id)}>
+                            {t.title?.slice(0, 50)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
               </div>
             </div>
             <DialogFooter>
