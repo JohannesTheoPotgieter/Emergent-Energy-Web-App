@@ -1,5 +1,5 @@
 import { db, getDbMode } from "./db";
-import { eq, desc, and, gte, lte, isNotNull, isNull, sql, inArray, count, not } from "drizzle-orm";
+import { eq, desc, and, or, gte, lte, isNotNull, isNull, sql, inArray, count, not } from "drizzle-orm";
 import {
   users, projects, expenses, revenues, tasks, budgets, uploadMetadata, refreshLogs,
   projectInfo, programExpense, programInflows, projectPlan,
@@ -1859,7 +1859,13 @@ export class DatabaseStorage implements IStorage {
     return this.dbInstance.select().from(mytoolTasks)
       .where(and(
         eq(mytoolTasks.ownerUserId, ownerUserId),
-        eq(mytoolTasks.plannedForDate, date),
+        or(
+          eq(mytoolTasks.plannedForDate, date),
+          and(
+            not(inArray(mytoolTasks.status, ['done', 'cancelled'])),
+            sql`${mytoolTasks.plannedForDate} < ${date}`
+          )
+        ),
         not(inArray(mytoolTasks.status, ['done', 'cancelled']))
       ))
       .orderBy(mytoolTasks.sortOrder);
