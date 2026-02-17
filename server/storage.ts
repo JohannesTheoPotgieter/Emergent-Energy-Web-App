@@ -1,5 +1,5 @@
 import { db, getDbMode } from "./db";
-import { eq, desc, and, or, gte, lte, isNotNull, isNull, sql, inArray, count, not } from "drizzle-orm";
+import { eq, desc, and, or, gte, lte, isNotNull, isNull, sql, inArray, count, not, ilike } from "drizzle-orm";
 import {
   users, projects, expenses, revenues, tasks, budgets, uploadMetadata, refreshLogs,
   projectInfo, programExpense, programInflows, projectPlan,
@@ -79,6 +79,11 @@ import {
   type ChangeLedger, type InsertChangeLedger,
   type Snapshot, type InsertSnapshot,
   type SnapshotMetric, type InsertSnapshotMetric,
+  payspaceSettings, leaveRuns, leaveEvents, leaveLedger,
+  type PayspaceSettings, type InsertPayspaceSettings,
+  type LeaveRun, type InsertLeaveRun,
+  type LeaveEvent, type InsertLeaveEvent,
+  type LeaveLedger, type InsertLeaveLedger,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -446,6 +451,25 @@ export interface IStorage {
   getSnapshotMetrics(snapshotId: number): Promise<SnapshotMetric[]>;
   createSnapshotMetric(data: InsertSnapshotMetric): Promise<SnapshotMetric>;
   createManySnapshotMetrics(data: InsertSnapshotMetric[]): Promise<SnapshotMetric[]>;
+
+  // Leave System
+  getPayspaceSettings(): Promise<PayspaceSettings | undefined>;
+  upsertPayspaceSettings(data: InsertPayspaceSettings): Promise<PayspaceSettings>;
+
+  getAllLeaveRuns(): Promise<LeaveRun[]>;
+  getLeaveRun(id: number): Promise<LeaveRun | undefined>;
+  createLeaveRun(data: InsertLeaveRun): Promise<LeaveRun>;
+  updateLeaveRun(id: number, data: Partial<LeaveRun>): Promise<LeaveRun>;
+
+  getAllLeaveEvents(filters?: { from?: string; to?: string; status?: string; employee?: string }): Promise<LeaveEvent[]>;
+  getLeaveEvent(id: number): Promise<LeaveEvent | undefined>;
+  getLeaveEventByExternalId(externalLeaveId: string): Promise<LeaveEvent | undefined>;
+  upsertLeaveEvent(data: InsertLeaveEvent): Promise<LeaveEvent>;
+
+  getAllLeaveLedger(filters?: { runId?: number; eventType?: string; importStatus?: string; from?: string; to?: string; employee?: string }): Promise<LeaveLedger[]>;
+  createLeaveLedgerEntry(data: InsertLeaveLedger): Promise<LeaveLedger>;
+  updateLeaveLedgerEntry(id: number, data: Partial<LeaveLedger>): Promise<LeaveLedger>;
+  getFailedLeaveLedgerEntries(): Promise<LeaveLedger[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2296,6 +2320,112 @@ export class DatabaseStorage implements IStorage {
   async createManySnapshotMetrics(data: InsertSnapshotMetric[]): Promise<SnapshotMetric[]> {
     if (data.length === 0) return [];
     return this.dbInstance.insert(snapshotMetrics).values(data).returning();
+  }
+
+  // PaySpace Settings
+  async getPayspaceSettings(): Promise<PayspaceSettings | undefined> {
+    const [row] = await this.dbInstance.select().from(payspaceSettings);
+    return row;
+  }
+
+  async upsertPayspaceSettings(data: InsertPayspaceSettings): Promise<PayspaceSettings> {
+    const existing = await this.getPayspaceSettings();
+    if (existing) {
+      const [updated] = await this.dbInstance.update(payspaceSettings)
+        .set({ ...data, updatedAt: new Date() })
+        .where(eq(payspaceSettings.id, existing.id))
+        .returning();
+      return updated;
+    }
+    const [created] = await this.dbInstance.insert(payspaceSettings).values(data).returning();
+    return created;
+  }
+
+  // Leave Runs
+  async getAllLeaveRuns(): Promise<LeaveRun[]> {
+    return this.dbInstance.select().from(leaveRuns).orderBy(desc(leaveRuns.startedAt));
+  }
+
+  async getLeaveRun(id: number): Promise<LeaveRun | undefined> {
+    const [row] = await this.dbInstance.select().from(leaveRuns).where(eq(leaveRuns.id, id));
+    return row;
+  }
+
+  async createLeaveRun(data: InsertLeaveRun): Promise<LeaveRun> {
+    const [row] = await this.dbInstance.insert(leaveRuns).values(data).returning();
+    return row;
+  }
+
+  async updateLeaveRun(id: number, data: Partial<LeaveRun>): Promise<LeaveRun> {
+    const [row] = await this.dbInstance.update(leaveRuns).set(data).where(eq(leaveRuns.id, id)).returning();
+    return row;
+  }
+
+  // Leave Events
+  async getAllLeaveEvents(filters?: { from?: string; to?: string; status?: string; employee?: string }): Promise<LeaveEvent[]> {
+    const conditions: any[] = [];
+    if (filters?.from) conditions.push(gte(leaveEvents.startDate, filters.from));
+    if (filters?.to) conditions.push(lte(leaveEvents.endDate, filters.to));
+    if (filters?.status) conditions.push(eq(leaveEvents.status, filters.status as any));
+    if (filters?.employee) conditions.push(ilike(leaveEvents.employeeDisplayName, `%${filters.employee}%`));
+
+    if (conditions.length > 0) {
+      return this.dbInstance.select().from(leaveEvents).where(and(...conditions)).orderBy(desc(leaveEvents.updatedAt));
+    }
+    return this.dbInstance.select().from(leaveEvents).orderBy(desc(leaveEvents.updatedAt));
+  }
+
+  async getLeaveEvent(id: number): Promise<LeaveEvent | undefined> {
+    const [row] = await this.dbInstance.select().from(leaveEvents).where(eq(leaveEvents.id, id));
+    return row;
+  }
+
+  async getLeaveEventByExternalId(externalLeaveId: string): Promise<LeaveEvent | undefined> {
+    const [row] = await this.dbInstance.select().from(leaveEvents).where(eq(leaveEvents.externalLeaveId, externalLeaveId));
+    return row;
+  }
+
+  async upsertLeaveEvent(data: InsertLeaveEvent): Promise<LeaveEvent> {
+    const existing = await this.getLeaveEventByExternalId(data.externalLeaveId);
+    if (existing) {
+      const [updated] = await this.dbInstance.update(leaveEvents)
+        .set({ ...data, updatedAt: new Date() })
+        .where(eq(leaveEvents.id, existing.id))
+        .returning();
+      return updated;
+    }
+    const [created] = await this.dbInstance.insert(leaveEvents).values(data).returning();
+    return created;
+  }
+
+  // Leave Ledger
+  async getAllLeaveLedger(filters?: { runId?: number; eventType?: string; importStatus?: string; from?: string; to?: string; employee?: string }): Promise<LeaveLedger[]> {
+    const conditions: any[] = [];
+    if (filters?.runId !== undefined) conditions.push(eq(leaveLedger.runId, filters.runId));
+    if (filters?.eventType) conditions.push(eq(leaveLedger.eventType, filters.eventType as any));
+    if (filters?.importStatus) conditions.push(eq(leaveLedger.importStatus, filters.importStatus as any));
+    if (filters?.from) conditions.push(gte(leaveLedger.effectiveStartDate, filters.from));
+    if (filters?.to) conditions.push(lte(leaveLedger.effectiveStartDate, filters.to));
+    if (filters?.employee) conditions.push(ilike(leaveLedger.employeeDisplayName, `%${filters.employee}%`));
+
+    if (conditions.length > 0) {
+      return this.dbInstance.select().from(leaveLedger).where(and(...conditions)).orderBy(desc(leaveLedger.detectedAt));
+    }
+    return this.dbInstance.select().from(leaveLedger).orderBy(desc(leaveLedger.detectedAt));
+  }
+
+  async createLeaveLedgerEntry(data: InsertLeaveLedger): Promise<LeaveLedger> {
+    const [row] = await this.dbInstance.insert(leaveLedger).values(data).returning();
+    return row;
+  }
+
+  async updateLeaveLedgerEntry(id: number, data: Partial<LeaveLedger>): Promise<LeaveLedger> {
+    const [row] = await this.dbInstance.update(leaveLedger).set(data).where(eq(leaveLedger.id, id)).returning();
+    return row;
+  }
+
+  async getFailedLeaveLedgerEntries(): Promise<LeaveLedger[]> {
+    return this.dbInstance.select().from(leaveLedger).where(eq(leaveLedger.importStatus, 'failed')).orderBy(desc(leaveLedger.detectedAt));
   }
 }
 

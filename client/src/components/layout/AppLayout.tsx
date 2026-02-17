@@ -22,6 +22,9 @@ import {
   Camera,
   Cloud,
   Upload,
+  CalendarDays,
+  Users,
+  Play,
 } from "lucide-react";
 import { useProgramData } from "@/hooks/use-program-data";
 import { useAuth } from "@/hooks/use-auth";
@@ -70,6 +73,14 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
+    heading: "LEAVE",
+    items: [
+      { label: "Leave Calendar", icon: CalendarDays, path: "/leave" },
+      { label: "Leave List", icon: Users, path: "/leave/list" },
+      { label: "Leave Ledger", icon: BookOpen, path: "/leave/ledger" },
+    ],
+  },
+  {
     heading: "ADMIN",
     items: [
       { label: "Admin", icon: Settings, path: "/admin" },
@@ -78,6 +89,9 @@ const navGroups: NavGroup[] = [
       { label: "Import Runs", icon: Database, path: "/admin/sp-import-runs" },
       { label: "Change Ledger", icon: BookOpen, path: "/admin/sp-ledger" },
       { label: "Snapshots", icon: Camera, path: "/admin/sp-snapshots" },
+      { label: "Leave Settings", icon: CalendarDays, path: "/admin/leave/settings" },
+      { label: "Leave Runs", icon: Play, path: "/admin/leave/runs" },
+      { label: "Leave Actions", icon: Users, path: "/admin/leave/actions" },
     ],
   },
 ];
