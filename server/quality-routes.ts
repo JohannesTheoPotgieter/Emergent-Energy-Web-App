@@ -406,9 +406,11 @@ export function registerQualityRoutes(app: Express) {
   app.post("/api/quality/project/:projectName/plan-link", requireAuth, requireAdminOrQm, async (req, res) => {
     try {
       const projectName = decodeURIComponent(req.params.projectName);
-      const { planItemId, itemInstanceId, linkType } = req.body;
+      const { planItemId, itemInstanceId, phaseId, linkType } = req.body;
+      if (!planItemId) return res.status(400).json({ error: "planItemId is required" });
+      if (!itemInstanceId && !phaseId) return res.status(400).json({ error: "Either phaseId or itemInstanceId is required" });
       const [link] = await db.insert(qcPlanLink).values({
-        projectName, planItemId, itemInstanceId, linkType: linkType || "warning_surface",
+        projectName, planItemId, itemInstanceId: itemInstanceId || null, phaseId: phaseId || null, linkType: linkType || "phase_task",
       }).returning();
       res.json(link);
     } catch (err: any) {

@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Progress } from "@/components/ui/progress";
-import { AlertCircle, CheckCircle, ChevronDown, ChevronRight, FileText, Shield, AlertTriangle, Clock, User, Lock } from "lucide-react";
+import { AlertCircle, CheckCircle, ChevronDown, ChevronRight, FileText, Shield, AlertTriangle, Clock, User, Lock, Link2, X, Plus } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 
 function qFetch(url: string, options?: RequestInit) {
@@ -27,19 +27,6 @@ const PHASE_COLORS: Record<string, { bg: string; text: string; border: string; p
 
 function getPhaseColor(phaseKey: string) {
   return PHASE_COLORS[phaseKey] || PHASE_COLORS["planning_design"];
-}
-
-function getStatusBadge(status: string) {
-  switch (status) {
-    case "pass":
-      return <Badge className="bg-green-500/20 text-green-500 border-green-500/30">Pass</Badge>;
-    case "fail":
-      return <Badge className="bg-red-500/20 text-red-500 border-red-500/30">Fail</Badge>;
-    case "na":
-      return <Badge className="bg-gray-500/20 text-gray-400 border-gray-500/30">N/A</Badge>;
-    default:
-      return <Badge variant="outline" className="text-muted-foreground">Not Started</Badge>;
-  }
 }
 
 function getRiskSeverityColor(severity: string) {
@@ -65,6 +52,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
   const [expandedPhases, setExpandedPhases] = useState<Record<number, boolean>>({});
   const [editingItem, setEditingItem] = useState<number | null>(null);
   const [itemEdits, setItemEdits] = useState<Record<string, any>>({});
+  const [linkingPhaseId, setLinkingPhaseId] = useState<number | null>(null);
   const isQmOrAdmin = user?.role === "admin" || user?.role === "quality_manager";
   const canEdit = isQmOrAdmin;
 
@@ -82,6 +70,26 @@ export function QualityTab({ projectName }: QualityTabProps) {
     queryKey: ["quality-warnings", projectName],
     queryFn: async () => {
       const res = await qFetch(`/api/quality/project/${encodeURIComponent(projectName)}/warnings`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!projectName,
+  });
+
+  const { data: planLinks = [] } = useQuery({
+    queryKey: ["quality-plan-links", projectName],
+    queryFn: async () => {
+      const res = await qFetch(`/api/quality/project/${encodeURIComponent(projectName)}/plan-links`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!projectName,
+  });
+
+  const { data: projectTasks = [] } = useQuery({
+    queryKey: ["project-plan-tasks", projectName],
+    queryFn: async () => {
+      const res = await qFetch(`/api/project-plan/${encodeURIComponent(projectName)}`);
       if (!res.ok) return [];
       return res.json();
     },
@@ -130,6 +138,32 @@ export function QualityTab({ projectName }: QualityTabProps) {
     },
   });
 
+  const addPlanLinkMutation = useMutation({
+    mutationFn: async ({ planItemId, phaseId }: { planItemId: number; phaseId: number }) => {
+      const res = await qFetch(`/api/quality/project/${encodeURIComponent(projectName)}/plan-link`, {
+        method: "POST",
+        body: JSON.stringify({ planItemId, phaseId, linkType: "phase_task" }),
+      });
+      if (!res.ok) throw new Error("Failed to link task");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["quality-plan-links", projectName] });
+      setLinkingPhaseId(null);
+    },
+  });
+
+  const removePlanLinkMutation = useMutation({
+    mutationFn: async (linkId: number) => {
+      const res = await qFetch(`/api/quality/plan-link/${linkId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to unlink");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["quality-plan-links", projectName] });
+    },
+  });
+
   useEffect(() => {
     if (checklistData?.phases) {
       const initial: Record<number, boolean> = {};
@@ -149,7 +183,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
     );
   }
 
-  if (error || !checklistData?.checklist) {
+  if (!checklistData || error) {
     return (
       <Card>
         <CardContent className="py-12">
@@ -166,7 +200,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
 
   const { phases = [], groups = [], templateItems = [], itemInstances = [], riskQuestions = [], riskAnswers = [], evidence = [] } = checklistData;
 
-  const activeWarnings = warnings.filter((w: any) => w.status !== "resolved");
+  const activeWarnings = Array.isArray(warnings) ? warnings.filter((w: any) => w.status !== "resolved") : [];
 
   const togglePhase = (phaseId: number) => {
     setExpandedPhases(prev => ({ ...prev, [phaseId]: !prev[phaseId] }));
@@ -203,11 +237,23 @@ export function QualityTab({ projectName }: QualityTabProps) {
     return riskAnswers.find((ra: any) => ra.templateRiskQuestionId === riskQuestionId);
   };
 
+  const getPhaseRiskQuestions = (phaseId: number) => {
+    return riskQuestions.filter((rq: any) => rq.templatePhaseId === phaseId);
+  };
+
+  const getPhaseLinks = (phaseId: number) => {
+    return planLinks.filter((l: any) => l.phaseId === phaseId);
+  };
+
   const handleItemStatusChange = (itemInstanceId: number, field: string, value: any) => {
     const key = `${itemInstanceId}-${field}`;
     setItemEdits(prev => ({ ...prev, [key]: value }));
     updateItemMutation.mutate({ itemInstanceId, updates: { [field]: value } });
   };
+
+  const meaningfulTasks = projectTasks.filter((t: any) =>
+    t.taskNo && t.highLevelProgramme && t.taskNo !== "No." && t.highLevelProgramme !== "HIGH LEVEL PROGRAMME"
+  );
 
   return (
     <div className="space-y-6">
@@ -265,6 +311,8 @@ export function QualityTab({ projectName }: QualityTabProps) {
         const colors = getPhaseColor(phase.phaseKey);
         const progress = getPhaseProgress(phase.id);
         const isExpanded = expandedPhases[phase.id] ?? true;
+        const phaseRiskQs = getPhaseRiskQuestions(phase.id);
+        const phaseLinkedTasks = getPhaseLinks(phase.id);
 
         return (
           <Card key={phase.id} className={`${colors.border} border`} data-testid={`quality-phase-${phase.id}`}>
@@ -297,6 +345,82 @@ export function QualityTab({ projectName }: QualityTabProps) {
 
               <CollapsibleContent>
                 <CardContent className="pt-0 space-y-6">
+                  {phaseLinkedTasks.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Link2 className="w-4 h-4 text-muted-foreground" />
+                        <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Linked Project Tasks</h4>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {phaseLinkedTasks.map((link: any) => {
+                          const task = projectTasks.find((t: any) => t.id === link.planItemId);
+                          return (
+                            <Badge key={link.id} variant="outline" className="gap-1.5 py-1 pl-2 pr-1" data-testid={`plan-link-${link.id}`}>
+                              <span className="text-xs">
+                                {task ? `${task.taskNo} — ${task.highLevelProgramme}` : `Task #${link.planItemId}`}
+                              </span>
+                              {task?.actualPctComplete != null && (
+                                <span className="text-[10px] text-muted-foreground ml-1">
+                                  ({Math.round(task.actualPctComplete * 100)}%)
+                                </span>
+                              )}
+                              {canEdit && (
+                                <button
+                                  className="ml-1 p-0.5 rounded hover:bg-destructive/20 text-muted-foreground hover:text-destructive"
+                                  onClick={() => removePlanLinkMutation.mutate(link.id)}
+                                  data-testid={`unlink-task-${link.id}`}
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              )}
+                            </Badge>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {canEdit && (
+                    <div className="flex items-center gap-2">
+                      {linkingPhaseId === phase.id ? (
+                        <div className="flex items-center gap-2 flex-1">
+                          <Select
+                            onValueChange={(val) => {
+                              addPlanLinkMutation.mutate({ planItemId: parseInt(val), phaseId: phase.id });
+                            }}
+                          >
+                            <SelectTrigger className="h-8 text-xs flex-1" data-testid={`select-link-task-${phase.id}`}>
+                              <SelectValue placeholder="Select a project task to link..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {meaningfulTasks
+                                .filter((t: any) => !phaseLinkedTasks.some((l: any) => l.planItemId === t.id))
+                                .map((task: any) => (
+                                  <SelectItem key={task.id} value={String(task.id)}>
+                                    {task.taskNo} — {task.highLevelProgramme}
+                                  </SelectItem>
+                                ))}
+                            </SelectContent>
+                          </Select>
+                          <Button variant="ghost" size="sm" className="h-8" onClick={() => setLinkingPhaseId(null)}>
+                            Cancel
+                          </Button>
+                        </div>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs gap-1"
+                          onClick={() => setLinkingPhaseId(phase.id)}
+                          data-testid={`link-task-${phase.id}`}
+                        >
+                          <Plus className="w-3 h-3" />
+                          Link Project Task
+                        </Button>
+                      )}
+                    </div>
+                  )}
+
                   {phaseGroups.map((group: any) => {
                     const groupItems = templateItems.filter((ti: any) => ti.templateGroupId === group.id);
                     if (groupItems.length === 0) return null;
@@ -324,17 +448,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
                               >
                                 <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                                   <div className="flex-1 min-w-0">
-                                    <div className="flex items-start gap-2">
-                                      <div className="flex items-center gap-2 flex-1 min-w-0">
-                                        <p className="text-sm font-medium truncate">{templateItem.itemLabel}</p>
-                                        {templateItem.isMandatory && (
-                                          <Badge className="bg-red-500/20 text-red-400 text-[10px] shrink-0">Required</Badge>
-                                        )}
-                                      </div>
-                                    </div>
-                                    {templateItem.helpText && (
-                                      <p className="text-xs text-muted-foreground mt-1">{templateItem.helpText}</p>
-                                    )}
+                                    <p className="text-sm font-medium truncate">{templateItem.itemName}</p>
                                   </div>
 
                                   <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
@@ -472,83 +586,73 @@ export function QualityTab({ projectName }: QualityTabProps) {
                       </div>
                     );
                   })}
+
+                  {phaseRiskQs.length > 0 && (
+                    <div className="space-y-3 pt-2 border-t border-dashed">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 text-orange-500" />
+                        <h4 className="text-sm font-semibold">Risk Assessment</h4>
+                        <Badge variant="outline" className="text-xs">{phaseRiskQs.length}</Badge>
+                      </div>
+
+                      <div className="space-y-2">
+                        {phaseRiskQs.map((rq: any) => {
+                          const answer = getRiskAnswer(rq.id);
+                          if (!answer) return null;
+
+                          const riskOptions: { label: string; value: boolean | null; color: string }[] = [
+                            { label: "Yes", value: true, color: "bg-green-600 hover:bg-green-700" },
+                            { label: "No", value: false, color: "bg-red-600 hover:bg-red-700" },
+                            { label: "N/A", value: null, color: "bg-gray-600 hover:bg-gray-700" },
+                          ];
+
+                          return (
+                            <div
+                              key={rq.id}
+                              className="rounded-lg border bg-card/50 p-3"
+                              data-testid={`quality-risk-${rq.id}`}
+                            >
+                              <div className="flex flex-col sm:flex-row sm:items-start gap-3">
+                                <div className="flex-1 space-y-1">
+                                  <p className="text-sm font-medium">{rq.questionText}</p>
+                                  {rq.responseType !== "yesno" && (
+                                    <p className="text-xs text-muted-foreground">Response type: {rq.responseType}</p>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  {riskOptions.map((opt) => {
+                                    const isActive = answer.answerYesno === opt.value;
+                                    return (
+                                      <Button
+                                        key={opt.label}
+                                        variant={isActive ? "default" : "outline"}
+                                        size="sm"
+                                        disabled={!canEdit}
+                                        className={`h-8 text-xs min-w-[50px] ${isActive ? opt.color : ""}`}
+                                        onClick={() => updateRiskMutation.mutate({
+                                          riskAnswerId: answer.id,
+                                          updates: { answerYesno: opt.value },
+                                        })}
+                                        data-testid={`button-risk-${rq.id}-${opt.label.toLowerCase()}`}
+                                      >
+                                        {opt.label}
+                                      </Button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </CollapsibleContent>
             </Collapsible>
           </Card>
         );
       })}
-
-      {riskQuestions.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-orange-500" />
-              Risk Assessment Questions
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {riskQuestions.map((rq: any) => {
-              const answer = getRiskAnswer(rq.id);
-              if (!answer) return null;
-
-              const phase = phases.find((p: any) => p.id === rq.templatePhaseId);
-
-              return (
-                <div
-                  key={rq.id}
-                  className={`rounded-lg border p-4 ${getRiskSeverityColor(rq.severity)}`}
-                  data-testid={`quality-risk-${rq.id}`}
-                >
-                  <div className="flex flex-col sm:flex-row sm:items-start gap-3">
-                    <div className="flex-1 space-y-2">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-sm font-medium">{rq.questionText}</p>
-                        <Badge variant="outline" className="text-[10px]">{rq.severity}</Badge>
-                        {phase && (
-                          <Badge variant="outline" className="text-[10px]">{phase.phaseName}</Badge>
-                        )}
-                      </div>
-                      {rq.guidanceNote && (
-                        <p className="text-xs text-muted-foreground">{rq.guidanceNote}</p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      {["yes", "no", "na"].map((val) => (
-                        <Button
-                          key={val}
-                          variant={answer.answerYesno === val ? "default" : "outline"}
-                          size="sm"
-                          disabled={!canEdit}
-                          className={`h-8 text-xs min-w-[50px] ${
-                            answer.answerYesno === val
-                              ? val === "yes"
-                                ? "bg-green-600 hover:bg-green-700"
-                                : val === "no"
-                                ? "bg-red-600 hover:bg-red-700"
-                                : "bg-gray-600 hover:bg-gray-700"
-                              : ""
-                          }`}
-                          onClick={() => updateRiskMutation.mutate({
-                            riskAnswerId: answer.id,
-                            updates: { answerYesno: val },
-                          })}
-                          data-testid={`button-risk-${rq.id}-${val}`}
-                        >
-                          {val === "na" ? "N/A" : val.charAt(0).toUpperCase() + val.slice(1)}
-                        </Button>
-                      ))}
-                    </div>
-                  </div>
-                  {answer.answerText && (
-                    <p className="text-xs text-muted-foreground mt-2 pl-0">{answer.answerText}</p>
-                  )}
-                </div>
-              );
-            })}
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }
