@@ -14,9 +14,11 @@ export default function LoginPage() {
   const [, setLocation] = useLocation();
   const { login } = useAuth();
   const [showPinDialog, setShowPinDialog] = useState(false);
+  const [pinTarget, setPinTarget] = useState<"admin" | "qm">("admin");
   const [pin, setPin] = useState("");
   const [pinError, setPinError] = useState(false);
   const [adminUnlocked, setAdminUnlocked] = useState(false);
+  const [qmUnlocked, setQmUnlocked] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,6 +35,19 @@ export default function LoginPage() {
       setEmail("admin@emergent.energy");
       setPassword("admin123");
     } else {
+      setPinTarget("admin");
+      setPin("");
+      setPinError(false);
+      setShowPinDialog(true);
+    }
+  };
+
+  const handleQmClick = () => {
+    if (qmUnlocked) {
+      setEmail("qm@emergent.energy");
+      setPassword("quality123");
+    } else {
+      setPinTarget("qm");
       setPin("");
       setPinError(false);
       setShowPinDialog(true);
@@ -40,11 +55,16 @@ export default function LoginPage() {
   };
 
   const handlePinSubmit = () => {
-    if (pin === "2024") {
+    if (pinTarget === "admin" && pin === "2024") {
       setAdminUnlocked(true);
       setShowPinDialog(false);
       setEmail("admin@emergent.energy");
       setPassword("admin123");
+    } else if (pinTarget === "qm" && pin === "2026") {
+      setQmUnlocked(true);
+      setShowPinDialog(false);
+      setEmail("qm@emergent.energy");
+      setPassword("quality123");
     } else {
       setPinError(true);
     }
@@ -76,7 +96,7 @@ export default function LoginPage() {
               </button>
               <button
                 type="button"
-                onClick={() => { setEmail("qm@emergent.energy"); setPassword("quality123"); }}
+                onClick={handleQmClick}
                 className={`flex flex-col items-center gap-1 p-3 rounded-lg border text-center transition-all bg-emerald-500/10 border-emerald-500/30 text-emerald-700 hover:bg-emerald-500/20 ${email === "qm@emergent.energy" ? "ring-2 ring-offset-1 ring-primary" : ""}`}
                 data-testid="button-quick-login-qm"
               >
@@ -141,7 +161,7 @@ export default function LoginPage() {
           <Card className="w-80 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-lg">Admin Access</CardTitle>
+                <CardTitle className="text-lg">{pinTarget === "admin" ? "Admin Access" : "Quality Manager Access"}</CardTitle>
                 <button onClick={() => setShowPinDialog(false)} className="text-muted-foreground hover:text-foreground">
                   <X className="w-4 h-4" />
                 </button>
