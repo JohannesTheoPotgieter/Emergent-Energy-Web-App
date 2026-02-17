@@ -103,7 +103,7 @@ export default function SpSnapshotsPage() {
                   <TableRow
                     key={snap.id}
                     className="cursor-pointer hover:bg-muted/50"
-                    onClick={() => setLocation(`/sp-snapshots/${snap.id}`)}
+                    onClick={() => setLocation(`/admin/sp-snapshots/${snap.id}`)}
                     data-testid={`row-snapshot-${snap.id}`}
                   >
                     <TableCell className="font-mono" data-testid={`text-snapshot-id-${snap.id}`}>

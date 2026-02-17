@@ -19,7 +19,7 @@ function formatDate(d: string | null | undefined) {
 }
 
 export default function SpSnapshotDetailPage() {
-  const [, params] = useRoute("/sp-snapshots/:id");
+  const [, params] = useRoute("/admin/sp-snapshots/:id");
   const id = params?.id;
 
   const { data, isLoading, isError } = useQuery<any>({
@@ -44,7 +44,7 @@ export default function SpSnapshotDetailPage() {
     return (
       <div className="min-h-screen bg-background p-6">
         <div className="max-w-4xl mx-auto">
-          <Link to="/sp-snapshots">
+          <Link to="/admin/sp-snapshots">
             <Button variant="ghost" size="sm" data-testid="button-back-snapshots">
               <ArrowLeft className="h-4 w-4 mr-1" /> Back to Snapshots
             </Button>
@@ -64,7 +64,7 @@ export default function SpSnapshotDetailPage() {
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-4xl mx-auto space-y-6">
         <div className="flex items-center gap-4">
-          <Link to="/sp-snapshots">
+          <Link to="/admin/sp-snapshots">
             <Button variant="ghost" size="sm" data-testid="button-back-snapshots">
               <ArrowLeft className="h-4 w-4 mr-1" /> Back to Snapshots
             </Button>

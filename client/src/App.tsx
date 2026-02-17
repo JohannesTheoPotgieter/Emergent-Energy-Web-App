@@ -178,10 +178,10 @@ function ProtectedPages() {
         <Route path="/admin/my-tool-settings" component={MyToolAdminSettingsPage} />
         <Route path="/admin/sp-settings" component={SpAdminSettingsPage} />
         <Route path="/admin/sp-import-runs" component={SpImportRunsPage} />
-        <Route path="/sp-ledger" component={SpLedgerPage} />
-        <Route path="/sp-ledger/:id" component={SpLedgerDetailPage} />
-        <Route path="/sp-snapshots" component={SpSnapshotsPage} />
-        <Route path="/sp-snapshots/:id" component={SpSnapshotDetailPage} />
+        <Route path="/admin/sp-ledger" component={SpLedgerPage} />
+        <Route path="/admin/sp-ledger/:id" component={SpLedgerDetailPage} />
+        <Route path="/admin/sp-snapshots" component={SpSnapshotsPage} />
+        <Route path="/admin/sp-snapshots/:id" component={SpSnapshotDetailPage} />
         <Route path="/admin/sp-file-refresh" component={SpFileRefreshPage} />
         <Route component={NotFound} />
       </Switch>
