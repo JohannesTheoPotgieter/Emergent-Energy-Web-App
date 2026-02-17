@@ -7,32 +7,26 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link, useLocation } from "wouter";
 import { format, addDays, parse } from "date-fns";
 import MyToolLayout from "@/components/mytool/MyToolLayout";
-import TaskCard, { TaskItem, TaskStatus, PriorityBadge, PriorityDot } from "@/components/mytool/TaskCard";
+import { TaskItem, TaskStatus } from "@/components/mytool/TaskCard";
 import TaskDetailDrawer from "@/components/mytool/TaskDetailDrawer";
 import {
   ChevronDown,
   ChevronRight,
   Plus,
-  Play,
   CheckCircle2,
-  Ban,
   Clock,
   Target,
   Inbox,
   Loader2,
-  AlertCircle,
   X,
   Flag,
   Mail,
-  Zap,
   Search,
   ExternalLink,
-  Trash2,
   Calendar,
 } from "lucide-react";
 
@@ -139,7 +133,6 @@ export default function MyToolTodayPage() {
   const [emailInboxOpen, setEmailInboxOpen] = useState(true);
   const [emailInboxSearch, setEmailInboxSearch] = useState("");
   const [debouncedInboxSearch, setDebouncedInboxSearch] = useState("");
-  const [planDropOver, setPlanDropOver] = useState(false);
   const [addBlockOpen, setAddBlockOpen] = useState(false);
   const [blockStart, setBlockStart] = useState("");
   const [blockEnd, setBlockEnd] = useState("");
@@ -153,6 +146,8 @@ export default function MyToolTodayPage() {
   const [newPriority, setNewPriority] = useState({ title: "", department: "", severity: "normal" as string, linkedProjectName: "" });
   const [dodPromptTask, setDodPromptTask] = useState<TaskItem | null>(null);
   const [dodPromptText, setDodPromptText] = useState("");
+  const [projectCollapsed, setProjectCollapsed] = useState<Record<string, boolean>>({});
+  const [plannerDropHour, setPlannerDropHour] = useState<number | null>(null);
 
   const { data: tasks = [], isLoading: tasksLoading } = useQuery<TaskItem[]>({
     queryKey: [`/api/mytool/tasks?date=${today}`],
@@ -355,6 +350,20 @@ export default function MyToolTodayPage() {
     }
   };
 
+  const handleDropTaskOnPlanner = (taskId: number, hour: number) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+    const startTime = `${String(hour).padStart(2, "0")}:00`;
+    const endTime = `${String(hour + 1).padStart(2, "0")}:00`;
+    createBlockMutation.mutate({
+      date: today,
+      startTime,
+      endTime,
+      label: task.title,
+      taskId: task.id,
+    });
+  };
+
   const pinnedTasks = tasks.filter(t => t.pinnedToday && t.status !== "done" && t.status !== "cancelled");
   const inProgressTasks = tasks.filter(t => t.status === "in_progress" && !t.pinnedToday);
   const plannedTasks = tasks.filter(t => t.status === "planned" && t.plannedForDate === today && !t.pinnedToday).sort((a, b) => a.sortOrder - b.sortOrder);
@@ -363,6 +372,17 @@ export default function MyToolTodayPage() {
   const doneTasks = tasks.filter(t => t.status === "done");
 
   const activePriorities = priorities.filter(p => p.status !== "closed");
+
+  const openTasks = tasks.filter(t => t.status !== "done" && t.status !== "cancelled");
+  const tasksByProject = useMemo(() => {
+    const groups: Record<string, TaskItem[]> = {};
+    openTasks.forEach(t => {
+      const key = t.projectName || "No Project";
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(t);
+    });
+    return Object.entries(groups).sort(([a], [b]) => a === "No Project" ? 1 : b === "No Project" ? -1 : a.localeCompare(b));
+  }, [openTasks]);
 
   if (tasksLoading) {
     return (
@@ -380,7 +400,7 @@ export default function MyToolTodayPage() {
 
   return (
     <MyToolLayout onQuickAdd={handleQuickAdd}>
-      <div className="max-w-3xl space-y-6" data-testid="mytool-today-page">
+      <div className="space-y-4" data-testid="mytool-today-page">
         {/* Stats strip */}
         <div className="flex flex-wrap items-center gap-3 text-sm" data-testid="stats-strip">
           {[
@@ -416,134 +436,112 @@ export default function MyToolTodayPage() {
           </div>
         </div>
 
-        {/* Two-column layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-          {/* LEFT: Main task flow */}
-          <div className="lg:col-span-3 space-y-5">
-            {/* Pinned Today (Top 3) */}
-            {pinnedTasks.length > 0 && (
-              <section data-testid="section-pinned">
-                <div className="flex items-center gap-2 mb-2">
+        {/* Three-column layout */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+
+          {/* LEFT COLUMN: Open Tasks & Projects */}
+          <div className="lg:col-span-3 space-y-3" data-testid="column-tasks">
+            <div className="border border-border/50 rounded-lg">
+              <div className="flex items-center justify-between px-3 py-2.5 border-b border-border/30">
+                <div className="flex items-center gap-2">
                   <Target className="h-4 w-4 text-violet-600" />
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Today's Top</h3>
-                  <Badge variant="secondary" className="text-[10px] h-4 px-1">{pinnedTasks.length}</Badge>
-                  {pinnedTasks.length > 3 && <span className="text-[10px] text-amber-500">Consider limiting to 3</span>}
+                  <span className="text-sm font-medium">Open Tasks</span>
+                  <Badge variant="secondary" className="text-[10px] h-4 px-1">{openTasks.length}</Badge>
                 </div>
-                <div className="space-y-1.5">
-                  {pinnedTasks.map(task => (
-                    <TaskCard key={task.id} task={task} onStatusChange={handleStatusChange} onOpenDrawer={(t) => { setDrawerTask(t); setDrawerOpen(true); }} onQuickDone={handleQuickDone} showNextStep data-testid={`pinned-task-${task.id}`} />
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {/* In Progress */}
-            {inProgressTasks.length > 0 && (
-              <section data-testid="section-in-progress">
-                <div className="flex items-center gap-2 mb-2">
-                  <Zap className="h-4 w-4 text-amber-500" />
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">In Progress</h3>
-                  <Badge variant="secondary" className="text-[10px] h-4 px-1">{inProgressTasks.length}</Badge>
-                </div>
-                <div className="space-y-1.5">
-                  {inProgressTasks.map(task => (
-                    <TaskCard key={task.id} task={task} onStatusChange={handleStatusChange} onOpenDrawer={(t) => { setDrawerTask(t); setDrawerOpen(true); }} onQuickDone={handleQuickDone} showNextStep />
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {/* Blocked */}
-            {blockedWaitingTasks.length > 0 && (
-              <section data-testid="section-blocked">
-                <div className="flex items-center gap-2 mb-2">
-                  <AlertCircle className="h-4 w-4 text-red-500" />
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Blocked / Waiting</h3>
-                  <Badge variant="secondary" className="text-[10px] h-4 px-1">{blockedWaitingTasks.length}</Badge>
-                </div>
-                <div className="space-y-1.5">
-                  {blockedWaitingTasks.map(task => (
-                    <TaskCard key={task.id} task={task} onStatusChange={handleStatusChange} onOpenDrawer={(t) => { setDrawerTask(t); setDrawerOpen(true); }} onQuickDone={handleQuickDone} />
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {/* Today's Plan */}
-            <section
-              data-testid="section-planned"
-              onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setPlanDropOver(true); }}
-              onDragLeave={() => setPlanDropOver(false)}
-              onDrop={(e) => {
-                e.preventDefault();
-                setPlanDropOver(false);
-                try {
-                  const emailData = JSON.parse(e.dataTransfer.getData("application/json"));
-                  if (emailData?.id && emailData?.subject !== undefined) handleDropEmail(emailData);
-                } catch {}
-              }}
-              className={planDropOver ? "ring-2 ring-primary/40 bg-primary/5 rounded-lg p-2 -m-2 transition-all" : "transition-all"}
-            >
-              <div className="flex items-center gap-2 mb-2">
-                <Calendar className="h-4 w-4 text-blue-600" />
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Today's Plan</h3>
-                <Badge variant="secondary" className="text-[10px] h-4 px-1">{plannedTasks.length}</Badge>
-                {planDropOver && <span className="text-[10px] text-primary ml-auto">Drop email to create task</span>}
               </div>
-              {plannedTasks.length === 0 ? (
-                <div className="border border-dashed border-border rounded-lg py-8 text-center" data-testid="empty-planned">
-                  <Target className="h-8 w-8 text-muted-foreground/20 mx-auto mb-2" />
-                  <p className="text-sm text-muted-foreground">No tasks planned for today.</p>
-                  <p className="text-xs text-muted-foreground/60 mt-1">Use Quick Add (⌘K) or drag emails here.</p>
-                </div>
-              ) : (
-                <div className="space-y-1.5">
-                  {plannedTasks.map(task => (
-                    <TaskCard key={task.id} task={task} onStatusChange={handleStatusChange} onOpenDrawer={(t) => { setDrawerTask(t); setDrawerOpen(true); }} onQuickDone={handleQuickDone} />
-                  ))}
-                </div>
-              )}
-            </section>
+              <div className="overflow-y-auto max-h-[calc(100vh-220px)]">
+                {openTasks.length === 0 ? (
+                  <div className="text-center py-8 px-3" data-testid="empty-tasks">
+                    <Target className="h-6 w-6 text-muted-foreground/20 mx-auto mb-1" />
+                    <p className="text-xs text-muted-foreground">No open tasks.</p>
+                    <p className="text-[10px] text-muted-foreground/60 mt-1">Use Quick Add (⌘K)</p>
+                  </div>
+                ) : (
+                  <div className="p-2 space-y-1">
+                    {tasksByProject.map(([projectName, projectTasks]) => {
+                      const isCollapsed = projectCollapsed[projectName] ?? false;
+                      return (
+                        <div key={projectName} className="rounded-md border border-border/40" data-testid={`project-group-${projectName}`}>
+                          <button
+                            className="flex items-center gap-1.5 w-full px-2 py-1.5 text-left hover:bg-muted/30 transition-colors rounded-t-md"
+                            onClick={() => setProjectCollapsed(prev => ({ ...prev, [projectName]: !isCollapsed }))}
+                            data-testid={`toggle-project-${projectName}`}
+                          >
+                            {isCollapsed ? <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" /> : <ChevronDown className="h-3 w-3 text-muted-foreground shrink-0" />}
+                            <span className="text-[11px] font-medium text-foreground truncate flex-1">{projectName}</span>
+                            <Badge variant="secondary" className="text-[9px] h-3.5 px-1 shrink-0">{projectTasks.length}</Badge>
+                          </button>
+                          {!isCollapsed && (
+                            <div className="px-1 pb-1 space-y-0.5">
+                              {projectTasks.map(task => (
+                                <div
+                                  key={task.id}
+                                  draggable
+                                  onDragStart={(e) => {
+                                    e.dataTransfer.setData("text/plain", String(task.id));
+                                    e.dataTransfer.setData("application/x-task", JSON.stringify(task));
+                                    e.dataTransfer.effectAllowed = "copy";
+                                  }}
+                                  className="flex items-center gap-1.5 px-2 py-1.5 rounded text-[11px] hover:bg-muted/40 cursor-grab active:cursor-grabbing transition-colors group/task border border-transparent hover:border-border/30"
+                                  data-testid={`task-drag-${task.id}`}
+                                >
+                                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                                    task.status === "in_progress" ? "bg-amber-500" :
+                                    task.status === "blocked" || task.status === "waiting" ? "bg-red-500" :
+                                    task.pinnedToday ? "bg-violet-500" : "bg-blue-500"
+                                  }`} />
+                                  <span
+                                    className="flex-1 truncate text-foreground cursor-pointer hover:text-primary"
+                                    onClick={() => { setDrawerTask(task); setDrawerOpen(true); }}
+                                  >
+                                    {task.title}
+                                  </span>
+                                  {task.priority === "critical" && <span className="text-[8px] text-red-500 font-bold shrink-0">P1</span>}
+                                  {task.priority === "high" && <span className="text-[8px] text-amber-500 font-bold shrink-0">P2</span>}
+                                  <button
+                                    className="opacity-0 group-hover/task:opacity-100 shrink-0 text-emerald-500 hover:text-emerald-600"
+                                    onClick={(e) => { e.stopPropagation(); handleQuickDone(task); }}
+                                    data-testid={`done-task-${task.id}`}
+                                  >
+                                    <CheckCircle2 className="h-3 w-3" />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
 
-            {/* Inbox */}
-            {inboxTasks.length > 0 && (
-              <section data-testid="section-inbox">
-                <div className="flex items-center gap-2 mb-2">
-                  <Inbox className="h-4 w-4 text-muted-foreground" />
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Inbox</h3>
-                  <Badge variant="secondary" className="text-[10px] h-4 px-1">{inboxTasks.length}</Badge>
-                </div>
-                <div className="space-y-1.5">
-                  {inboxTasks.map(task => (
-                    <TaskCard key={task.id} task={task} onStatusChange={handleStatusChange} onOpenDrawer={(t) => { setDrawerTask(t); setDrawerOpen(true); }} onQuickDone={handleQuickDone} />
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {/* Done */}
-            {doneTasks.length > 0 && (
-              <section data-testid="section-done">
-                <button className="flex items-center gap-2 mb-2" onClick={() => setDoneCollapsed(!doneCollapsed)} data-testid="toggle-done-lane">
-                  {doneCollapsed ? <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
-                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Done</h3>
-                  <Badge variant="secondary" className="text-[10px] h-4 px-1">{doneTasks.length}</Badge>
-                </button>
-                {!doneCollapsed && (
-                  <div className="space-y-1.5">
-                    {doneTasks.map(task => (
-                      <TaskCard key={task.id} task={task} onStatusChange={handleStatusChange} onOpenDrawer={(t) => { setDrawerTask(t); setDrawerOpen(true); }} onQuickDone={handleQuickDone} />
-                    ))}
+                    {/* Done section (collapsed by default) */}
+                    {doneTasks.length > 0 && (
+                      <div className="mt-1 rounded-md border border-border/40">
+                        <button className="flex items-center gap-1.5 w-full px-2 py-1.5 text-left hover:bg-muted/30 transition-colors" onClick={() => setDoneCollapsed(!doneCollapsed)} data-testid="toggle-done-lane">
+                          {doneCollapsed ? <ChevronRight className="h-3 w-3 text-muted-foreground" /> : <ChevronDown className="h-3 w-3 text-muted-foreground" />}
+                          <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+                          <span className="text-[11px] font-medium text-muted-foreground">Done</span>
+                          <Badge variant="secondary" className="text-[9px] h-3.5 px-1">{doneTasks.length}</Badge>
+                        </button>
+                        {!doneCollapsed && (
+                          <div className="px-1 pb-1 space-y-0.5">
+                            {doneTasks.map(task => (
+                              <div key={task.id} className="flex items-center gap-1.5 px-2 py-1 rounded text-[11px] text-muted-foreground" data-testid={`done-task-item-${task.id}`}>
+                                <CheckCircle2 className="h-3 w-3 text-emerald-400 shrink-0" />
+                                <span className="flex-1 truncate line-through cursor-pointer hover:text-foreground" onClick={() => { setDrawerTask(task); setDrawerOpen(true); }}>{task.title}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
-              </section>
-            )}
-
+              </div>
+            </div>
           </div>
 
-          {/* RIGHT: Context column */}
-          <div className="lg:col-span-2 space-y-5">
+          {/* CENTER COLUMN: Daily Planner */}
+          <div className="lg:col-span-5 space-y-3" data-testid="column-planner">
             {/* Daily Planner */}
             <section
               className="border border-border/50 rounded-lg"
@@ -639,7 +637,7 @@ export default function MyToolTodayPage() {
                       {hours.map((hour) => (
                         <div
                           key={hour}
-                          className="absolute left-0 right-0 border-t border-border/30 group/slot cursor-pointer hover:bg-muted/20 transition-colors"
+                          className={`absolute left-0 right-0 border-t border-border/30 group/slot cursor-pointer transition-colors ${plannerDropHour === hour ? "bg-primary/10 ring-1 ring-primary/30" : "hover:bg-muted/20"}`}
                           style={{ top: (hour - plannerStartHour) * SLOT_HEIGHT, height: SLOT_HEIGHT }}
                           onClick={() => {
                             if (!addBlockOpen) {
@@ -650,14 +648,36 @@ export default function MyToolTodayPage() {
                               setBlockTaskId(null);
                             }
                           }}
+                          onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setPlannerDropHour(hour); }}
+                          onDragLeave={() => setPlannerDropHour(null)}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            setPlannerDropHour(null);
+                            const taskIdStr = e.dataTransfer.getData("text/plain");
+                            const taskId = parseInt(taskIdStr, 10);
+                            if (!isNaN(taskId)) {
+                              handleDropTaskOnPlanner(taskId, hour);
+                            } else {
+                              try {
+                                const emailData = JSON.parse(e.dataTransfer.getData("application/json"));
+                                if (emailData?.id && emailData?.subject !== undefined) {
+                                  handleDropEmail(emailData);
+                                }
+                              } catch {}
+                            }
+                          }}
                           data-testid={`slot-hour-${hour}`}
                         >
                           <span className="absolute -top-2.5 left-1 text-[10px] font-mono text-muted-foreground/60 select-none">
                             {hour === 0 ? "12 AM" : hour < 12 ? `${hour} AM` : hour === 12 ? "12 PM" : `${hour - 12} PM`}
                           </span>
-                          <span className="absolute right-1 top-1/2 -translate-y-1/2 text-[9px] text-primary/0 group-hover/slot:text-primary/60 transition-colors select-none">
-                            + Add
-                          </span>
+                          {plannerDropHour === hour ? (
+                            <span className="absolute right-1 top-1/2 -translate-y-1/2 text-[9px] text-primary font-medium select-none">Drop here</span>
+                          ) : (
+                            <span className="absolute right-1 top-1/2 -translate-y-1/2 text-[9px] text-primary/0 group-hover/slot:text-primary/60 transition-colors select-none">
+                              + Add
+                            </span>
+                          )}
                         </div>
                       ))}
 
@@ -759,7 +779,10 @@ export default function MyToolTodayPage() {
                 </div>
               </div>
             </section>
+          </div>
 
+          {/* RIGHT COLUMN: Email & Priorities */}
+          <div className="lg:col-span-4 space-y-3" data-testid="column-context">
             {/* Email Inbox */}
             <section className="border border-border/50 rounded-lg" data-testid="card-email-inbox">
               <button className="flex items-center gap-2 px-4 py-3 w-full text-left" onClick={() => setEmailInboxOpen(!emailInboxOpen)} data-testid="toggle-email-inbox">
