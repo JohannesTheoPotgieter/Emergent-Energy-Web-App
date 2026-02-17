@@ -8744,6 +8744,61 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/outlook/folders", requireAuth, async (req, res) => {
+    try {
+      const folders = await outlook.listMailFolders();
+      res.json(folders);
+    } catch (err: any) {
+      if (err.message?.includes("not connected") || err.message?.includes("not available") || err.message?.includes("not configured")) {
+        return res.json([]);
+      }
+      console.error("[Outlook] Folders error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/outlook/send", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { to, cc, subject, body, bodyType } = req.body;
+      if (!to || !Array.isArray(to) || to.length === 0 || !subject) {
+        return res.status(400).json({ error: "to (array) and subject are required" });
+      }
+      await outlook.sendMail({ to, cc: cc || [], subject, body: body || "", bodyType: bodyType || "Text" });
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("[Outlook] Send mail error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/outlook/messages/:id/reply", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { comment, replyAll } = req.body;
+      if (!comment) {
+        return res.status(400).json({ error: "comment is required" });
+      }
+      await outlook.replyToMessage(req.params.id, comment, !!replyAll);
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("[Outlook] Reply error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/outlook/messages/:id/forward", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { comment, to } = req.body;
+      if (!to || !Array.isArray(to) || to.length === 0) {
+        return res.status(400).json({ error: "to (array) is required" });
+      }
+      await outlook.forwardMessage(req.params.id, comment || "", to);
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("[Outlook] Forward error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   return httpServer;
 }
 

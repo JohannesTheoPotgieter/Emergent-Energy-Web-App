@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
+import DOMPurify from "dompurify";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -28,6 +29,14 @@ import {
   Search,
   ExternalLink,
   Calendar,
+  Send,
+  Reply,
+  ReplyAll,
+  Forward,
+  ArrowLeft,
+  FolderOpen,
+  Paperclip,
+  Pen,
 } from "lucide-react";
 
 type Horizon = "today" | "week" | "month" | "quarter";
@@ -40,6 +49,30 @@ interface OutlookEmail {
   senderEmail: string | null;
   receivedAt: string;
   snippet: string | null;
+  webLink: string | null;
+  isRead: boolean;
+  hasAttachments: boolean;
+}
+
+interface MailFolder {
+  id: string;
+  displayName: string;
+  totalItemCount: number;
+  unreadItemCount: number;
+  parentFolderId: string | null;
+}
+
+interface EmailDetail {
+  id: string;
+  subject: string;
+  sender: string | null;
+  senderEmail: string | null;
+  to: Array<{ name: string; email: string }>;
+  cc: Array<{ name: string; email: string }>;
+  receivedAt: string;
+  snippet: string | null;
+  body: string | null;
+  bodyType: string;
   webLink: string | null;
   isRead: boolean;
   hasAttachments: boolean;
@@ -122,7 +155,7 @@ function parseQuickAdd(text: string): { title: string; priority?: string; projec
 }
 
 export default function MyToolTodayPage() {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
 
@@ -133,6 +166,17 @@ export default function MyToolTodayPage() {
   const [emailInboxOpen, setEmailInboxOpen] = useState(true);
   const [emailInboxSearch, setEmailInboxSearch] = useState("");
   const [debouncedInboxSearch, setDebouncedInboxSearch] = useState("");
+  const [emailFolder, setEmailFolder] = useState("inbox");
+  const [showFolders, setShowFolders] = useState(false);
+  const [emailDetailId, setEmailDetailId] = useState<string | null>(null);
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [composeTo, setComposeTo] = useState("");
+  const [composeCc, setComposeCc] = useState("");
+  const [composeSubject, setComposeSubject] = useState("");
+  const [composeBody, setComposeBody] = useState("");
+  const [replyMode, setReplyMode] = useState<"reply" | "replyAll" | "forward" | null>(null);
+  const [replyText, setReplyText] = useState("");
+  const [forwardTo, setForwardTo] = useState("");
   const [addBlockOpen, setAddBlockOpen] = useState(false);
   const [blockStart, setBlockStart] = useState("");
   const [blockEnd, setBlockEnd] = useState("");
@@ -203,15 +247,75 @@ export default function MyToolTodayPage() {
   }, [emailInboxSearch]);
 
   const { data: inboxEmails = [], isLoading: inboxEmailsLoading } = useQuery<OutlookEmail[]>({
-    queryKey: ["/api/outlook/messages", "inbox-panel", debouncedInboxSearch],
+    queryKey: ["/api/outlook/messages", emailFolder, debouncedInboxSearch],
     queryFn: async () => {
-      const params = new URLSearchParams({ top: "15" });
+      const params = new URLSearchParams({ top: "20", folder: emailFolder });
       if (debouncedInboxSearch.trim()) params.set("search", debouncedInboxSearch.trim());
       const res = await fetch(`/api/outlook/messages?${params.toString()}`, { credentials: "include" });
       if (!res.ok) return [];
       const data = await res.json();
       return Array.isArray(data) ? data : data.value || [];
     },
+  });
+
+  const { data: mailFolders = [] } = useQuery<MailFolder[]>({
+    queryKey: ["/api/outlook/folders"],
+    queryFn: async () => {
+      const res = await fetch("/api/outlook/folders", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const { data: emailDetail, isLoading: emailDetailLoading } = useQuery<EmailDetail>({
+    queryKey: ["/api/outlook/messages", emailDetailId],
+    queryFn: async () => {
+      const res = await fetch(`/api/outlook/messages/${emailDetailId}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch email");
+      return res.json();
+    },
+    enabled: !!emailDetailId,
+  });
+
+  const sendMailMutation = useMutation({
+    mutationFn: (data: { to: string[]; cc?: string[]; subject: string; body: string }) =>
+      apiRequest("POST", "/api/outlook/send", data),
+    onSuccess: () => {
+      toast({ title: "Email sent" });
+      setComposeOpen(false);
+      setComposeTo("");
+      setComposeCc("");
+      setComposeSubject("");
+      setComposeBody("");
+      queryClient.invalidateQueries({ queryKey: ["/api/outlook/messages"] });
+    },
+    onError: (err: any) => toast({ title: "Failed to send email", description: err.message, variant: "destructive" }),
+  });
+
+  const replyMutation = useMutation({
+    mutationFn: (data: { id: string; comment: string; replyAll: boolean }) =>
+      apiRequest("POST", `/api/outlook/messages/${data.id}/reply`, { comment: data.comment, replyAll: data.replyAll }),
+    onSuccess: () => {
+      toast({ title: "Reply sent" });
+      setReplyMode(null);
+      setReplyText("");
+      queryClient.invalidateQueries({ queryKey: ["/api/outlook/messages"] });
+    },
+    onError: (err: any) => toast({ title: "Failed to send reply", description: err.message, variant: "destructive" }),
+  });
+
+  const forwardMutation = useMutation({
+    mutationFn: (data: { id: string; comment: string; to: string[] }) =>
+      apiRequest("POST", `/api/outlook/messages/${data.id}/forward`, { comment: data.comment, to: data.to }),
+    onSuccess: () => {
+      toast({ title: "Email forwarded" });
+      setReplyMode(null);
+      setReplyText("");
+      setForwardTo("");
+      queryClient.invalidateQueries({ queryKey: ["/api/outlook/messages"] });
+    },
+    onError: (err: any) => toast({ title: "Failed to forward email", description: err.message, variant: "destructive" }),
   });
 
   const invalidateAll = useCallback(() => {
@@ -785,55 +889,227 @@ export default function MyToolTodayPage() {
           <div className="lg:col-span-4 space-y-3" data-testid="column-context">
             {/* Email Inbox */}
             <section className="border border-border/50 rounded-lg" data-testid="card-email-inbox">
-              <button className="flex items-center gap-2 px-4 py-3 w-full text-left" onClick={() => setEmailInboxOpen(!emailInboxOpen)} data-testid="toggle-email-inbox">
-                {emailInboxOpen ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
-                <Mail className="h-4 w-4 text-blue-600" />
-                <span className="text-sm font-medium">Email Inbox</span>
-              </button>
+              <div className="flex items-center justify-between px-4 py-3">
+                <button className="flex items-center gap-2 text-left" onClick={() => setEmailInboxOpen(!emailInboxOpen)} data-testid="toggle-email-inbox">
+                  {emailInboxOpen ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+                  <Mail className="h-4 w-4 text-blue-600" />
+                  <span className="text-sm font-medium">Email</span>
+                </button>
+                <div className="flex items-center gap-1">
+                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setShowFolders(!showFolders)} title="Browse folders" data-testid="button-show-folders">
+                    <FolderOpen className="h-3.5 w-3.5" />
+                  </Button>
+                  {isAdmin && (
+                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => { setComposeOpen(true); setEmailDetailId(null); setReplyMode(null); }} title="Compose email" data-testid="button-compose-email">
+                      <Pen className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </div>
+              </div>
               {emailInboxOpen && (
                 <div className="px-4 pb-4 space-y-2">
-                  <div className="relative">
-                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                    <Input placeholder="Search emails..." value={emailInboxSearch} onChange={(e) => setEmailInboxSearch(e.target.value)} className="pl-8 text-xs h-8" data-testid="input-inbox-search" />
-                  </div>
-                  {inboxEmailsLoading ? (
-                    <div className="flex items-center justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
-                  ) : inboxEmails.length === 0 ? (
-                    <div className="text-center py-4" data-testid="inbox-empty">
-                      <Mail className="h-6 w-6 text-muted-foreground/20 mx-auto mb-1" />
-                      <p className="text-xs text-muted-foreground">{emailInboxSearch ? "No emails found" : "No emails available."}</p>
-                      <p className="text-[10px] text-muted-foreground mt-1">Connect Outlook in <Link href="/my-tool/settings" className="text-primary hover:underline">Settings</Link></p>
-                    </div>
-                  ) : (
-                    <div className="space-y-1 max-h-[350px] overflow-y-auto" data-testid="inbox-email-list">
-                      {inboxEmails.map(email => (
-                        <div
-                          key={email.id}
-                          draggable
-                          onDragStart={(e) => { e.dataTransfer.setData("application/json", JSON.stringify(email)); e.dataTransfer.effectAllowed = "copy"; }}
-                          className="px-2.5 py-2 rounded-md border border-border/50 hover:bg-muted/30 cursor-grab active:cursor-grabbing transition-colors group/email"
-                          data-testid={`inbox-email-${email.id}`}
+                  {/* Folder list */}
+                  {showFolders && (
+                    <div className="border border-border/40 rounded-md p-2 space-y-0.5 max-h-[200px] overflow-y-auto bg-muted/10" data-testid="email-folder-list">
+                      {mailFolders.length === 0 ? (
+                        <p className="text-[10px] text-muted-foreground text-center py-2">No folders available</p>
+                      ) : mailFolders.map(folder => (
+                        <button
+                          key={folder.id}
+                          className={`w-full flex items-center justify-between px-2 py-1 rounded text-left text-xs transition-colors ${emailFolder === folder.id ? "bg-primary/10 text-primary font-medium" : "hover:bg-muted/30 text-foreground"}`}
+                          onClick={() => { setEmailFolder(folder.id); setEmailDetailId(null); setShowFolders(false); }}
+                          data-testid={`folder-${folder.id}`}
                         >
-                          <div className="flex items-start gap-2">
-                            <Mail className="h-3 w-3 text-blue-500 mt-0.5 shrink-0" />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs font-medium text-foreground truncate">{email.subject || "(No subject)"}</p>
-                              <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                                <span className="truncate">{email.sender || email.senderEmail || "Unknown"}</span>
-                                <span>·</span>
-                                <span className="shrink-0">{email.receivedAt ? format(new Date(email.receivedAt), "d MMM") : ""}</span>
-                              </div>
-                            </div>
-                            {email.webLink && (
-                              <a href={email.webLink} target="_blank" rel="noopener noreferrer" className="text-primary opacity-0 group-hover/email:opacity-100 shrink-0" data-testid={`link-inbox-email-${email.id}`}>
-                                <ExternalLink className="h-3 w-3" />
+                          <span className="truncate">{folder.displayName}</span>
+                          {folder.unreadItemCount > 0 && (
+                            <Badge variant="secondary" className="text-[9px] h-4 px-1 ml-1 shrink-0">{folder.unreadItemCount}</Badge>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Compose form */}
+                  {composeOpen && !emailDetailId && (
+                    <div className="border border-primary/20 rounded-lg p-3 space-y-2 bg-primary/5" data-testid="compose-email-form">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-medium">New Email</span>
+                        <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={() => setComposeOpen(false)}>
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </div>
+                      <Input placeholder="To (comma-separated)" value={composeTo} onChange={(e) => setComposeTo(e.target.value)} className="h-7 text-xs" data-testid="input-compose-to" />
+                      <Input placeholder="Cc (optional)" value={composeCc} onChange={(e) => setComposeCc(e.target.value)} className="h-7 text-xs" data-testid="input-compose-cc" />
+                      <Input placeholder="Subject" value={composeSubject} onChange={(e) => setComposeSubject(e.target.value)} className="h-7 text-xs" data-testid="input-compose-subject" />
+                      <Textarea placeholder="Write your message..." value={composeBody} onChange={(e) => setComposeBody(e.target.value)} className="text-xs min-h-[80px]" data-testid="textarea-compose-body" />
+                      <div className="flex justify-end">
+                        <Button
+                          size="sm"
+                          className="h-7 text-xs gap-1"
+                          disabled={!composeTo.trim() || !composeSubject.trim() || sendMailMutation.isPending}
+                          onClick={() => {
+                            const toList = composeTo.split(",").map(s => s.trim()).filter(Boolean);
+                            const ccList = composeCc ? composeCc.split(",").map(s => s.trim()).filter(Boolean) : [];
+                            sendMailMutation.mutate({ to: toList, cc: ccList, subject: composeSubject, body: composeBody });
+                          }}
+                          data-testid="button-send-compose"
+                        >
+                          {sendMailMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
+                          Send
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Email detail view */}
+                  {emailDetailId && !composeOpen && (
+                    <div className="space-y-2" data-testid="email-detail-view">
+                      <button className="flex items-center gap-1 text-xs text-primary hover:underline" onClick={() => { setEmailDetailId(null); setReplyMode(null); setReplyText(""); }} data-testid="button-back-to-list">
+                        <ArrowLeft className="h-3 w-3" /> Back to list
+                      </button>
+                      {emailDetailLoading ? (
+                        <div className="flex items-center justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+                      ) : emailDetail ? (
+                        <div className="space-y-2">
+                          <div>
+                            <p className="text-xs font-semibold">{emailDetail.subject}</p>
+                            <p className="text-[10px] text-muted-foreground mt-0.5">From: {emailDetail.sender || emailDetail.senderEmail}</p>
+                            {emailDetail.to.length > 0 && <p className="text-[10px] text-muted-foreground">To: {emailDetail.to.map(r => r.name || r.email).join(", ")}</p>}
+                            {emailDetail.cc.length > 0 && <p className="text-[10px] text-muted-foreground">Cc: {emailDetail.cc.map(r => r.name || r.email).join(", ")}</p>}
+                            <p className="text-[10px] text-muted-foreground">{emailDetail.receivedAt ? format(new Date(emailDetail.receivedAt), "d MMM yyyy, h:mm a") : ""}</p>
+                          </div>
+                          <div className="border border-border/30 rounded-md p-2 max-h-[250px] overflow-y-auto bg-background">
+                            {emailDetail.bodyType === "html" || emailDetail.bodyType === "HTML" ? (
+                              <div className="text-xs prose prose-sm max-w-none [&_*]:text-xs" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(emailDetail.body || "", { ALLOWED_TAGS: ["p", "br", "b", "i", "strong", "em", "a", "ul", "ol", "li", "div", "span", "table", "tr", "td", "th", "thead", "tbody", "h1", "h2", "h3", "h4", "h5", "h6", "img", "blockquote", "pre", "code", "hr"], ALLOWED_ATTR: ["href", "src", "alt", "style", "class", "target", "rel", "width", "height", "colspan", "rowspan"], ALLOW_DATA_ATTR: false }) }} />
+                            ) : (
+                              <pre className="text-xs whitespace-pre-wrap text-foreground">{emailDetail.body || emailDetail.snippet || ""}</pre>
+                            )}
+                          </div>
+                          {/* Action buttons */}
+                          <div className="flex items-center gap-1 flex-wrap">
+                            {isAdmin && (
+                              <>
+                                <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => { setReplyMode("reply"); setReplyText(""); }} data-testid="button-reply">
+                                  <Reply className="h-3 w-3" /> Reply
+                                </Button>
+                                <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => { setReplyMode("replyAll"); setReplyText(""); }} data-testid="button-reply-all">
+                                  <ReplyAll className="h-3 w-3" /> Reply All
+                                </Button>
+                                <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => { setReplyMode("forward"); setReplyText(""); setForwardTo(""); }} data-testid="button-forward">
+                                  <Forward className="h-3 w-3" /> Forward
+                                </Button>
+                              </>
+                            )}
+                            {emailDetail.webLink && (
+                              <a href={emailDetail.webLink} target="_blank" rel="noopener noreferrer" className="ml-auto">
+                                <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" data-testid="button-open-in-outlook">
+                                  <ExternalLink className="h-3 w-3" /> Open
+                                </Button>
                               </a>
                             )}
                           </div>
-                          <p className="text-[9px] text-primary/60 mt-0.5 select-none">↕ Drag to plan</p>
+                          {/* Reply/Forward form */}
+                          {replyMode && (
+                            <div className="border border-primary/20 rounded-lg p-2.5 space-y-2 bg-primary/5" data-testid="reply-form">
+                              <span className="text-[10px] font-medium text-muted-foreground uppercase">
+                                {replyMode === "reply" ? "Reply" : replyMode === "replyAll" ? "Reply All" : "Forward"}
+                              </span>
+                              {replyMode === "forward" && (
+                                <Input placeholder="Forward to (comma-separated)" value={forwardTo} onChange={(e) => setForwardTo(e.target.value)} className="h-7 text-xs" data-testid="input-forward-to" />
+                              )}
+                              <Textarea
+                                placeholder="Type your message..."
+                                value={replyText}
+                                onChange={(e) => setReplyText(e.target.value)}
+                                className="text-xs min-h-[60px]"
+                                autoFocus
+                                data-testid="textarea-reply-body"
+                              />
+                              <div className="flex justify-end gap-1">
+                                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => { setReplyMode(null); setReplyText(""); }}>Cancel</Button>
+                                <Button
+                                  size="sm"
+                                  className="h-7 text-xs gap-1"
+                                  disabled={!replyText.trim() || (replyMode === "forward" && !forwardTo.trim()) || replyMutation.isPending || forwardMutation.isPending}
+                                  onClick={() => {
+                                    if (replyMode === "forward") {
+                                      const toList = forwardTo.split(",").map(s => s.trim()).filter(Boolean);
+                                      forwardMutation.mutate({ id: emailDetailId!, comment: replyText, to: toList });
+                                    } else {
+                                      replyMutation.mutate({ id: emailDetailId!, comment: replyText, replyAll: replyMode === "replyAll" });
+                                    }
+                                  }}
+                                  data-testid="button-send-reply"
+                                >
+                                  {(replyMutation.isPending || forwardMutation.isPending) ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
+                                  Send
+                                </Button>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      ))}
+                      ) : (
+                        <p className="text-xs text-muted-foreground text-center py-4">Email not found</p>
+                      )}
                     </div>
+                  )}
+
+                  {/* Email list (when not viewing detail or composing) */}
+                  {!emailDetailId && !composeOpen && (
+                    <>
+                      <div className="flex items-center gap-1.5">
+                        <div className="relative flex-1">
+                          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                          <Input placeholder="Search emails..." value={emailInboxSearch} onChange={(e) => setEmailInboxSearch(e.target.value)} className="pl-8 text-xs h-8" data-testid="input-inbox-search" />
+                        </div>
+                        {emailFolder !== "inbox" && (
+                          <Button variant="ghost" size="sm" className="h-8 text-[10px] px-2" onClick={() => setEmailFolder("inbox")} data-testid="button-back-to-inbox">
+                            <Inbox className="h-3 w-3 mr-1" /> Inbox
+                          </Button>
+                        )}
+                      </div>
+                      {emailFolder !== "inbox" && (
+                        <p className="text-[10px] text-muted-foreground px-1">
+                          Folder: {mailFolders.find(f => f.id === emailFolder)?.displayName || emailFolder}
+                        </p>
+                      )}
+                      {inboxEmailsLoading ? (
+                        <div className="flex items-center justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+                      ) : inboxEmails.length === 0 ? (
+                        <div className="text-center py-4" data-testid="inbox-empty">
+                          <Mail className="h-6 w-6 text-muted-foreground/20 mx-auto mb-1" />
+                          <p className="text-xs text-muted-foreground">{emailInboxSearch ? "No emails found" : "No emails in this folder."}</p>
+                          <p className="text-[10px] text-muted-foreground mt-1">Connect Outlook in <Link href="/my-tool/settings" className="text-primary hover:underline">Settings</Link></p>
+                        </div>
+                      ) : (
+                        <div className="space-y-1 max-h-[400px] overflow-y-auto" data-testid="inbox-email-list">
+                          {inboxEmails.map(email => (
+                            <div
+                              key={email.id}
+                              draggable
+                              onDragStart={(e) => { e.dataTransfer.setData("application/json", JSON.stringify(email)); e.dataTransfer.effectAllowed = "copy"; }}
+                              className={`px-2.5 py-2 rounded-md border border-border/50 hover:bg-muted/30 cursor-pointer transition-colors group/email ${!email.isRead ? "bg-blue-50/30 dark:bg-blue-950/10 border-blue-200/30" : ""}`}
+                              onClick={() => { setEmailDetailId(email.id); setReplyMode(null); setReplyText(""); }}
+                              data-testid={`inbox-email-${email.id}`}
+                            >
+                              <div className="flex items-start gap-2">
+                                <Mail className={`h-3 w-3 mt-0.5 shrink-0 ${!email.isRead ? "text-blue-600" : "text-muted-foreground/40"}`} />
+                                <div className="flex-1 min-w-0">
+                                  <p className={`text-xs truncate ${!email.isRead ? "font-semibold text-foreground" : "font-medium text-foreground/80"}`}>{email.subject || "(No subject)"}</p>
+                                  <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                                    <span className="truncate">{email.sender || email.senderEmail || "Unknown"}</span>
+                                    <span>·</span>
+                                    <span className="shrink-0">{email.receivedAt ? format(new Date(email.receivedAt), "d MMM") : ""}</span>
+                                    {email.hasAttachments && <Paperclip className="h-2.5 w-2.5 ml-0.5 shrink-0" />}
+                                  </div>
+                                  {email.snippet && <p className="text-[10px] text-muted-foreground/70 truncate mt-0.5">{email.snippet}</p>}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               )}
