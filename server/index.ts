@@ -12,6 +12,7 @@ import MemoryStore from "memorystore";
 import pg from "pg";
 import { dbMode, dbConfig, initializeDatabase } from "./db";
 import { runBackfill } from "./lib/backfill";
+import { startScheduler } from "./importPipeline";
 
 const app = express();
 const httpServer = createServer(app);
@@ -262,6 +263,8 @@ async function seedUsers() {
     () => {
       log(`serving on port ${port}`);
       runBackfill().catch(err => console.error('[Backfill] startup error:', err));
+      startScheduler();
+      log('SharePoint scheduled import checker started');
     },
   );
 })();

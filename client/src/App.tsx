@@ -30,6 +30,12 @@ import MyToolSettingsPage from "@/pages/my-tool-settings";
 import MyToolAdminSettingsPage from "@/pages/my-tool-admin-settings";
 import MyToolHelpPage from "@/pages/my-tool-help";
 import MyToolPrioritiesPage from "@/pages/my-tool-priorities";
+import SpAdminSettingsPage from "@/pages/sp-admin-settings";
+import SpImportRunsPage from "@/pages/sp-import-runs";
+import SpLedgerPage from "@/pages/sp-ledger";
+import SpLedgerDetailPage from "@/pages/sp-ledger-detail";
+import SpSnapshotsPage from "@/pages/sp-snapshots";
+import SpSnapshotDetailPage from "@/pages/sp-snapshot-detail";
 import { useProgramData } from "@/hooks/use-program-data";
 import { TrackerTable } from "@/components/dashboard/TrackerTable";
 import { format } from "date-fns";
@@ -169,6 +175,12 @@ function ProtectedPages() {
         <Route path="/upload">{() => <Redirect to="/admin" />}</Route>
         <Route path="/admin" component={AdminPage} />
         <Route path="/admin/my-tool-settings" component={MyToolAdminSettingsPage} />
+        <Route path="/admin/sp-settings" component={SpAdminSettingsPage} />
+        <Route path="/admin/sp-import-runs" component={SpImportRunsPage} />
+        <Route path="/sp-ledger" component={SpLedgerPage} />
+        <Route path="/sp-ledger/:id" component={SpLedgerDetailPage} />
+        <Route path="/sp-snapshots" component={SpSnapshotsPage} />
+        <Route path="/sp-snapshots/:id" component={SpSnapshotDetailPage} />
         <Route component={NotFound} />
       </Switch>
     </AppLayout>

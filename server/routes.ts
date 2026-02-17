@@ -8799,6 +8799,202 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== SHAREPOINT IMPORT ROUTES ====================
+
+  const { testConnection, isSharePointConfigured } = await import("./sharepoint");
+  const { runFullImport, retryFailedImports } = await import("./importPipeline");
+
+  // Admin: Get SP settings
+  app.get("/api/admin/sp-settings", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const settings = await storage.getSpSettings();
+      res.json(settings || null);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Admin: Save SP settings
+  app.post("/api/admin/sp-settings", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { siteId, driveId, folderItemId, folderPath, intervalMinutes, enabled } = req.body;
+      if (!siteId || !driveId) {
+        return res.status(400).json({ error: "siteId and driveId are required" });
+      }
+      const settings = await storage.upsertSpSettings({
+        siteId,
+        driveId,
+        folderItemId: folderItemId || null,
+        folderPath: folderPath || null,
+        intervalMinutes: intervalMinutes || 30,
+        enabled: enabled ?? false,
+        updatedBy: (req.user as any)?.id || null,
+      });
+      res.json(settings);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Admin: Test SP connection
+  app.post("/api/admin/sp-settings/test", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { siteId, driveId } = req.body;
+      if (!siteId || !driveId) {
+        return res.status(400).json({ error: "siteId and driveId are required" });
+      }
+      const result = await testConnection(siteId, driveId);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Admin: Run import now
+  app.post("/api/admin/import/run", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const result = await runFullImport("manual", user?.email || user?.name || "admin");
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Admin: Retry failed imports
+  app.post("/api/admin/import/retry-failed", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const result = await retryFailedImports(user?.email || user?.name || "admin");
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Admin: List import runs
+  app.get("/api/admin/import/runs", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const runs = await storage.getAllImportRuns();
+      res.json(runs);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Admin: Get single import run + ledger entries
+  app.get("/api/admin/import/runs/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const runId = parseInt(req.params.id);
+      const run = await storage.getImportRun(runId);
+      if (!run) return res.status(404).json({ error: "Run not found" });
+      const entries = await storage.getAllChangeLedger({ runId });
+      res.json({ run, entries });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Viewer: List change ledger
+  app.get("/api/ledger", requireAuth, async (req, res) => {
+    try {
+      const filters: any = {};
+      if (req.query.runId) filters.runId = parseInt(req.query.runId as string);
+      if (req.query.fileId) filters.fileId = parseInt(req.query.fileId as string);
+      if (req.query.eventType) filters.eventType = req.query.eventType as string;
+      if (req.query.importStatus) filters.importStatus = req.query.importStatus as string;
+      const entries = await storage.getAllChangeLedger(filters);
+      const files = await storage.getAllSpFiles();
+      const fileMap = Object.fromEntries(files.map(f => [f.id, f]));
+      const enriched = entries.map(e => ({
+        ...e,
+        fileName: fileMap[e.fileId]?.fileName || "Unknown",
+        filePath: fileMap[e.fileId]?.path || null,
+      }));
+      res.json(enriched);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Viewer: Get single ledger entry
+  app.get("/api/ledger/:id", requireAuth, async (req, res) => {
+    try {
+      const entry = await storage.getChangeLedgerEntry(parseInt(req.params.id));
+      if (!entry) return res.status(404).json({ error: "Ledger entry not found" });
+      const file = await storage.getSpFile(entry.fileId);
+      let snapshot = null;
+      if (entry.snapshotId) {
+        snapshot = await storage.getSnapshot(entry.snapshotId);
+        if (snapshot) {
+          const metrics = await storage.getSnapshotMetrics(snapshot.id);
+          (snapshot as any).metrics = metrics;
+        }
+      }
+      res.json({ ...entry, file, snapshot });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Viewer: List snapshots
+  app.get("/api/snapshots", requireAuth, async (req, res) => {
+    try {
+      const fileId = req.query.fileId ? parseInt(req.query.fileId as string) : undefined;
+      const snaps = await storage.getAllSnapshots(fileId);
+      const files = await storage.getAllSpFiles();
+      const fileMap = Object.fromEntries(files.map(f => [f.id, f]));
+      const enriched = snaps.map(s => ({
+        ...s,
+        fileName: fileMap[s.fileId]?.fileName || "Unknown",
+      }));
+      res.json(enriched);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Viewer: Get single snapshot with metrics + diff
+  app.get("/api/snapshots/:id", requireAuth, async (req, res) => {
+    try {
+      const snap = await storage.getSnapshot(parseInt(req.params.id));
+      if (!snap) return res.status(404).json({ error: "Snapshot not found" });
+      const metrics = await storage.getSnapshotMetrics(snap.id);
+      const file = await storage.getSpFile(snap.fileId);
+
+      let previousSnapshot = null;
+      let previousMetrics: any[] = [];
+      const allSnapshots = await storage.getAllSnapshots(snap.fileId);
+      const sorted = allSnapshots
+        .filter(s => s.id < snap.id)
+        .sort((a, b) => b.id - a.id);
+      if (sorted.length > 0) {
+        previousSnapshot = sorted[0];
+        previousMetrics = await storage.getSnapshotMetrics(previousSnapshot.id);
+      }
+
+      res.json({
+        ...snap,
+        file,
+        metrics,
+        previousSnapshot,
+        previousMetrics,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Viewer: List SP files
+  app.get("/api/sp-files", requireAuth, async (req, res) => {
+    try {
+      const files = await storage.getAllSpFiles();
+      res.json(files);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   return httpServer;
 }
 

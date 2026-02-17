@@ -18,6 +18,9 @@ import {
   AlertTriangle,
   X,
   Briefcase,
+  BookOpen,
+  Camera,
+  Cloud,
 } from "lucide-react";
 import { useProgramData } from "@/hooks/use-program-data";
 import { useAuth } from "@/hooks/use-auth";
@@ -57,6 +60,15 @@ const navGroups: NavGroup[] = [
     heading: "PERSONAL",
     items: [
       { label: "My Tool", icon: Briefcase, path: "/my-tool" },
+    ],
+  },
+  {
+    heading: "SHAREPOINT",
+    items: [
+      { label: "Change Ledger", icon: BookOpen, path: "/sp-ledger" },
+      { label: "Snapshots", icon: Camera, path: "/sp-snapshots" },
+      { label: "SP Settings", icon: Cloud, path: "/admin/sp-settings" },
+      { label: "Import Runs", icon: Database, path: "/admin/sp-import-runs" },
     ],
   },
   {
@@ -134,7 +146,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           {sidebarShowLabels && <span>Home</span>}
         </Link>
 
-        {navGroups.filter(group => group.heading !== "WIP" && (group.heading !== "PERSONAL" || user?.role === "admin")).map((group) => (
+        {navGroups.filter(group => group.heading !== "WIP" && (group.heading !== "PERSONAL" || user?.role === "admin")).map((group) => {
+          const visibleItems = group.heading === "SHAREPOINT" && user?.role !== "admin"
+            ? group.items.filter(i => !i.path.startsWith("/admin/"))
+            : group.items;
+          if (visibleItems.length === 0) return null;
+          return (
           <div key={group.heading} className="pt-4">
             {sidebarShowLabels && (
               <p className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-sidebar-foreground/40">
@@ -142,7 +159,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </p>
             )}
             {!sidebarShowLabels && <div className="h-px bg-sidebar-border mx-2 mb-1" />}
-            {group.items.map((item) => {
+            {visibleItems.map((item) => {
               const isActive = location === item.path || (item.path === "/my-tool" && location.startsWith("/my-tool"));
               return (
               <Link key={item.path} href={item.path} className={cn(
@@ -157,7 +174,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               );
             })}
           </div>
-        ))}
+          );
+        })}
       </nav>
 
       <div className="p-3 md:p-4 border-t border-sidebar-border">

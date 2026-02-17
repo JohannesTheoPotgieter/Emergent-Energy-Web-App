@@ -41,6 +41,12 @@ Preferred communication style: Simple, everyday language.
 -   `mytool_tasks`, `mytool_timeblocks`, `mytool_daily_reviews`, `mytool_company_priorities`, `mytool_user_preferences`: My Tool entities.
 -   `mytool_dod_templates`: Definition of Done reusable templates.
 -   `uploadMetadata`, `refreshLogs`: Audit trails for data ingestion.
+-   `sp_settings`: SharePoint connection configuration (siteId, driveId, folder, schedule).
+-   `sp_files`: Tracked SharePoint files with etag/ctag for change detection.
+-   `import_runs`: Import execution history with status and summaries.
+-   `change_ledger`: File change detection log with import status tracking.
+-   `snapshots`: Immutable file snapshots with content hash and row counts.
+-   `snapshot_metrics`: Per-sheet metrics (row count, checksum, date ranges, totals).
 
 ### New API Endpoints (Examples)
 -   `/api/cos-control/*`: Endpoints for COS KPI aggregation, breakdowns, line-item explorers, and scenario-based analysis.
