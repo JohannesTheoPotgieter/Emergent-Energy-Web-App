@@ -22,6 +22,7 @@ import {
   ChevronRight,
   X,
   Keyboard,
+  HelpCircle,
 } from "lucide-react";
 
 type TaskStatus = "inbox" | "planned" | "in_progress" | "blocked" | "waiting" | "done" | "cancelled";
@@ -53,6 +54,7 @@ const navTabs = [
   { label: "Backlog", path: "/my-tool/backlog", icon: ListTodo },
   { label: "Priorities", path: "/my-tool/priorities", icon: Flag },
   { label: "Settings", path: "/my-tool/settings", icon: Settings },
+  { label: "Help", path: "/my-tool/help", icon: HelpCircle },
 ];
 
 const priorityLabels: Record<string, string> = {

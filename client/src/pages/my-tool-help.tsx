@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import MyToolNav from "@/components/my-tool-nav";
+import MyToolLayout from "@/components/mytool/MyToolLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -190,8 +190,8 @@ export default function MyToolHelpPage() {
   ];
 
   return (
-    <div className="max-w-[1400px] mx-auto space-y-5" data-testid="mytool-help-page">
-      <MyToolNav subtitle="Help & Documentation" />
+    <MyToolLayout>
+      <div className="space-y-5" data-testid="mytool-help-page">
 
       <div className="flex items-center justify-between" data-testid="help-header">
         <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -278,6 +278,7 @@ export default function MyToolHelpPage() {
           </Card>
         ))}
       </div>
-    </div>
+      </div>
+    </MyToolLayout>
   );
 }
