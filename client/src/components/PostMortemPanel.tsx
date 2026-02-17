@@ -43,6 +43,7 @@ interface TemplateMetric {
   metricGroup?: string;
   inputType?: string;
   weight?: number;
+  scoringRuleJson?: any;
 }
 
 interface PostMortemData {
@@ -223,11 +224,31 @@ export default function PostMortemPanel({ projectName, checklistId }: PostMortem
                   <SelectValue placeholder="Select an option" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="excellent">Excellent</SelectItem>
-                  <SelectItem value="good">Good</SelectItem>
-                  <SelectItem value="acceptable">Acceptable</SelectItem>
-                  <SelectItem value="poor">Poor</SelectItem>
-                  <SelectItem value="very_poor">Very Poor</SelectItem>
+                  {(() => {
+                    const rule = metric.scoringRuleJson;
+                    if (rule?.choices) {
+                      const descParts = (rule.description || "").split(",").map((s: string) => s.trim());
+                      const labelMap: Record<string, string> = {};
+                      descParts.forEach((part: string) => {
+                        const match = part.match(/^(\d+)\s*=\s*(.+)/);
+                        if (match) labelMap[match[1]] = match[2];
+                      });
+                      return Object.keys(rule.choices).map((key) => (
+                        <SelectItem key={key} value={key}>
+                          {labelMap[key] ? `${key} — ${labelMap[key]}` : key}
+                        </SelectItem>
+                      ));
+                    }
+                    return (
+                      <>
+                        <SelectItem value="none">None</SelectItem>
+                        <SelectItem value="minor">Minor</SelectItem>
+                        <SelectItem value="moderate">Moderate</SelectItem>
+                        <SelectItem value="major">Major</SelectItem>
+                        <SelectItem value="critical">Critical</SelectItem>
+                      </>
+                    );
+                  })()}
                 </SelectContent>
               </Select>
             ) : (
