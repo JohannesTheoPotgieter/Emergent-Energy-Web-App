@@ -121,6 +121,20 @@ export function QualityTab({ projectName }: QualityTabProps) {
     },
   });
 
+  const approveItemMutation = useMutation({
+    mutationFn: async ({ itemInstanceId, approved }: { itemInstanceId: number; approved: boolean }) => {
+      const res = await qFetch(`/api/quality/project/${encodeURIComponent(projectName)}/item/${itemInstanceId}/approve`, {
+        method: "POST",
+        body: JSON.stringify({ approved }),
+      });
+      if (!res.ok) throw new Error("Failed to update approval");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["quality-checklist", projectName] });
+    },
+  });
+
   const updateRiskMutation = useMutation({
     mutationFn: async ({ riskAnswerId, updates }: { riskAnswerId: number; updates: any }) => {
       const res = await qFetch(`/api/quality/project/${encodeURIComponent(projectName)}/risk-answer`, {
@@ -357,13 +371,19 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                       onValueChange={(val) => {
                                         if (val === "na") {
                                           handleItemStatusChange(instance.id, "isApplicable", false);
+                                          if (instance.approved) {
+                                            approveItemMutation.mutate({ itemInstanceId: instance.id, approved: false });
+                                          }
                                         } else if (val === "pass") {
-                                          updateItemMutation.mutate({
-                                            itemInstanceId: instance.id,
-                                            updates: { isApplicable: true },
-                                          });
+                                          if (!instance.isApplicable) {
+                                            updateItemMutation.mutate({ itemInstanceId: instance.id, updates: { isApplicable: true } });
+                                          }
+                                          approveItemMutation.mutate({ itemInstanceId: instance.id, approved: true });
                                         } else {
                                           handleItemStatusChange(instance.id, "isApplicable", true);
+                                          if (instance.approved) {
+                                            approveItemMutation.mutate({ itemInstanceId: instance.id, approved: false });
+                                          }
                                         }
                                       }}
                                     >
