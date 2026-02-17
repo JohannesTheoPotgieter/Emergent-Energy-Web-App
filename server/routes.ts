@@ -3917,10 +3917,8 @@ export async function registerRoutes(
             costedExpenditure += parseFloat(String((row as any).budgetTotal || 0)) || 0;
             const actualAmt = parseFloat(String((row as any).expenseActualTotal || 0)) || 0;
             allExpenditure += actualAmt;
-            const hasPaid = !!(row as any).expensePaymentDate && /^\d{4}-\d{2}-\d{2}/.test((row as any).expensePaymentDate);
-            const hasInvoice = !!((row as any).expenseInvoiceNumber && (row as any).expenseInvoiceNumber.trim());
-            const hasPO = !!((row as any).expensePoNumber && (row as any).expensePoNumber.trim());
-            if (hasPaid && hasInvoice && hasPO && actualAmt > 0) {
+            const state = (row as any).computedState || classifyExpenseState(row as any);
+            if (state === 'Paid' && actualAmt > 0) {
               actualExpenditure += actualAmt;
             }
           }
