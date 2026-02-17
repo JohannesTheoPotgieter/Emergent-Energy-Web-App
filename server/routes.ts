@@ -9031,6 +9031,205 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== Leave Calendar API Routes ====================
+
+  // Viewer: Get leave events (POPIA-safe)
+  app.get("/api/leave/events", requireAuth, async (req, res) => {
+    try {
+      const { from, to, employee, status } = req.query;
+      const events = await storage.getAllLeaveEvents({
+        from: from as string,
+        to: to as string,
+        employee: employee as string,
+        status: status as string,
+      });
+      const settings = await storage.getPayspaceSettings();
+      const showLeaveType = settings?.showLeaveType ?? false;
+
+      const isAdmin = (req.user as any)?.role === "admin";
+      const safeEvents = events.map(e => ({
+        id: e.id,
+        externalLeaveId: e.externalLeaveId,
+        employeeDisplayName: e.employeeDisplayName,
+        leaveType: showLeaveType ? e.leaveType : null,
+        startDate: e.startDate,
+        endDate: e.endDate,
+        isAllDay: e.isAllDay,
+        status: e.status,
+        approvedBy: isAdmin ? e.approvedBy : null,
+      }));
+      res.json(safeEvents);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Viewer: Get leave ledger (redacted for non-admins)
+  app.get("/api/leave/ledger", requireAuth, async (req, res) => {
+    try {
+      const { runId, eventType, importStatus, from, to, employee } = req.query;
+      const entries = await storage.getAllLeaveLedger({
+        runId: runId ? Number(runId) : undefined,
+        eventType: eventType as string,
+        importStatus: importStatus as string,
+        from: from as string,
+        to: to as string,
+        employee: employee as string,
+      });
+      const isAdmin = (req.user as any)?.role === "admin";
+      const safeEntries = entries.map(e => ({
+        ...e,
+        approvedBy: isAdmin ? e.approvedBy : null,
+        oldHash: isAdmin ? e.oldHash : null,
+        newHash: isAdmin ? e.newHash : null,
+      }));
+      res.json(safeEntries);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Viewer: Get leave runs
+  app.get("/api/leave/runs", requireAuth, async (req, res) => {
+    try {
+      const runs = await storage.getAllLeaveRuns();
+      res.json(runs);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Admin: Get PaySpace settings
+  app.get("/api/admin/leave/settings", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const settings = await storage.getPayspaceSettings();
+      if (!settings) {
+        return res.json({
+          isEnabled: false,
+          companyCode: "",
+          apiBaseUrl: "",
+          authMode: "oauth",
+          apiUsername: "",
+          showLeaveType: false,
+          showFullSurname: false,
+          timezone: "Africa/Johannesburg",
+          syncFrequencyMinutes: 60,
+          lookbackDays: 90,
+          lookaheadDays: 365,
+          lastSyncAt: null,
+          nextSyncAt: null,
+        });
+      }
+      const { apiPasswordEncrypted, apiTokenEncrypted, ...safeSettings } = settings;
+      res.json({
+        ...safeSettings,
+        hasPassword: !!apiPasswordEncrypted,
+        hasToken: !!apiTokenEncrypted,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Admin: Save PaySpace settings
+  app.post("/api/admin/leave/settings", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const data = req.body;
+      const updateData: any = {
+        isEnabled: data.isEnabled ?? false,
+        companyCode: data.companyCode || "",
+        apiBaseUrl: data.apiBaseUrl || "",
+        authMode: data.authMode || "oauth",
+        apiUsername: data.apiUsername || "",
+        showLeaveType: data.showLeaveType ?? false,
+        showFullSurname: data.showFullSurname ?? false,
+        timezone: data.timezone || "Africa/Johannesburg",
+        syncFrequencyMinutes: data.syncFrequencyMinutes || 60,
+        lookbackDays: data.lookbackDays || 90,
+        lookaheadDays: data.lookaheadDays || 365,
+      };
+      if (data.apiPassword) {
+        updateData.apiPasswordEncrypted = data.apiPassword;
+      }
+      if (data.apiToken) {
+        updateData.apiTokenEncrypted = data.apiToken;
+      }
+      const saved = await storage.upsertPayspaceSettings(updateData);
+      const { apiPasswordEncrypted, apiTokenEncrypted, ...safeSettings } = saved;
+      res.json({ ...safeSettings, hasPassword: !!apiPasswordEncrypted, hasToken: !!apiTokenEncrypted });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Admin: Test PaySpace connection
+  app.post("/api/admin/leave/test-connection", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { testConnection: testConn } = await import("./payspaceClient");
+      const settings = await storage.getPayspaceSettings();
+      const config = {
+        apiBaseUrl: req.body.apiBaseUrl || settings?.apiBaseUrl || process.env.PAYSPACE_BASE_URL || "",
+        companyCode: req.body.companyCode || settings?.companyCode || process.env.PAYSPACE_COMPANY_CODE || "",
+        authMode: (req.body.authMode || settings?.authMode || "oauth") as any,
+        username: req.body.apiUsername || settings?.apiUsername || process.env.PAYSPACE_USERNAME,
+        password: req.body.apiPassword || settings?.apiPasswordEncrypted || process.env.PAYSPACE_PASSWORD,
+        token: req.body.apiToken || settings?.apiTokenEncrypted || process.env.PAYSPACE_TOKEN,
+      };
+      const result = await testConn(config);
+      res.json(result);
+    } catch (err: any) {
+      res.json({ success: false, message: err.message });
+    }
+  });
+
+  // Admin: Sync now
+  app.post("/api/admin/leave/sync-now", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { runLeaveSync } = await import("./leaveSyncEngine");
+      const result = await runLeaveSync("manual", req.user?.email || "admin");
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Admin: Retry failed imports
+  app.post("/api/admin/leave/retry-failed", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { retryFailedLeaveImports } = await import("./leaveSyncEngine");
+      const result = await retryFailedLeaveImports(req.user?.email || "admin");
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Admin: Get single leave run details
+  app.get("/api/admin/leave/runs/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const run = await storage.getLeaveRun(Number(req.params.id));
+      if (!run) return res.status(404).json({ error: "Run not found" });
+      const ledger = await storage.getAllLeaveLedger({ runId: run.id });
+      res.json({ run, ledger });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Viewer: Get leave sync status (for display)
+  app.get("/api/leave/status", requireAuth, async (req, res) => {
+    try {
+      const settings = await storage.getPayspaceSettings();
+      res.json({
+        isEnabled: settings?.isEnabled ?? false,
+        lastSyncAt: settings?.lastSyncAt || null,
+        nextSyncAt: settings?.nextSyncAt || null,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   return httpServer;
 }
 
