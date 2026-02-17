@@ -1390,8 +1390,9 @@ export const qcPlanLink = pgTable("qc_plan_link", {
   id: serial("id").primaryKey(),
   projectName: text("project_name").notNull(),
   planItemId: integer("plan_item_id").notNull(),
-  itemInstanceId: integer("item_instance_id").notNull().references(() => qcItemInstance.id, { onDelete: 'cascade' }),
-  linkType: text("link_type").notNull().default("warning_surface"),
+  itemInstanceId: integer("item_instance_id"),
+  phaseId: integer("phase_id"),
+  linkType: text("link_type").notNull().default("phase_task"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 export const insertQcPlanLinkSchema = createInsertSchema(qcPlanLink).omit({ id: true, createdAt: true });
