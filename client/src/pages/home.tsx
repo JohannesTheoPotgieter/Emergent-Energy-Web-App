@@ -17,6 +17,8 @@ import {
   ArrowRight,
   Flag,
   Loader2,
+  ShieldCheck,
+  ClipboardCheck,
 } from "lucide-react";
 
 interface QuickLink {
@@ -271,8 +273,55 @@ function CompanyPrioritiesSection({ isAdmin }: { isAdmin: boolean }) {
   );
 }
 
+const qmLinks: QuickLink[] = [
+  {
+    label: "QM Dashboard",
+    description: "Overview of quality status, warnings, and project completion",
+    icon: ShieldCheck,
+    path: "/quality",
+    color: "text-emerald-600",
+    bg: "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 hover:border-emerald-400",
+  },
+  {
+    label: "Project Summary",
+    description: "View projects and access quality checklists",
+    icon: FileSpreadsheet,
+    path: "/projects",
+    color: "text-blue-600",
+    bg: "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 hover:border-blue-400",
+  },
+];
+
 export default function Home() {
-  const { isAdmin } = useAuth();
+  const { isAdmin, isQm } = useAuth();
+
+  if (isQm) {
+    return (
+      <div className="space-y-8" data-testid="home-page">
+        <div>
+          <div className="flex items-center gap-3 mb-1">
+            <div className="p-2.5 rounded-lg bg-emerald-100 dark:bg-emerald-950/40">
+              <ClipboardCheck className="h-6 w-6 text-emerald-600" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold">Quality Management</h1>
+              <p className="text-muted-foreground mt-0.5">Checklists, risk assessments, warnings, and post-mortem scoring.</p>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Quality Tools</h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {qmLinks.map((link) => (
+              <NavTile key={link.path} link={link} />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8" data-testid="home-page">
       <div>

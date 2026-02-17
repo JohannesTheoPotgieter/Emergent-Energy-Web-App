@@ -155,8 +155,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           {sidebarShowLabels && <span>Home</span>}
         </Link>
 
-        {navGroups.filter(group => group.heading !== "WIP" && (group.heading !== "PERSONAL" || user?.role === "admin") && (group.heading !== "ADMIN" || user?.role === "admin")).map((group) => {
-          const visibleItems = group.items;
+        {navGroups.filter(group => {
+          const role = user?.role;
+          if (role === "quality_manager") {
+            return group.heading === "QUALITY" || group.heading === "CURRENT";
+          }
+          if (group.heading === "WIP") return false;
+          if (group.heading === "PERSONAL" && role !== "admin") return false;
+          if (group.heading === "ADMIN" && role !== "admin") return false;
+          return true;
+        }).map((group) => {
+          const visibleItems = user?.role === "quality_manager" && group.heading === "CURRENT"
+            ? group.items.filter(i => i.path === "/projects")
+            : group.items;
           if (visibleItems.length === 0) return null;
           return (
           <div key={group.heading} className="pt-4">

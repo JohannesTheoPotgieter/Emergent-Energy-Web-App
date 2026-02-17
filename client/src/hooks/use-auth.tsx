@@ -9,6 +9,7 @@ interface AuthContextType {
   isLoading: boolean;
   isAuthenticated: boolean;
   isAdmin: boolean;
+  isQm: boolean;
   login: (email: string, password: string) => Promise<boolean>;
   logout: () => Promise<void>;
 }
@@ -81,6 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isLoading, 
       isAuthenticated: !!user,
       isAdmin: user?.role === 'admin',
+      isQm: user?.role === 'quality_manager',
       login, 
       logout 
     }}>
