@@ -924,7 +924,7 @@ export const mytoolTaskStatusEnum = pgEnum('mytool_task_status', ['inbox', 'plan
 export const mytoolTaskPriorityEnum = pgEnum('mytool_task_priority', ['low', 'normal', 'high', 'critical']);
 export const mytoolPriorityHorizonEnum = pgEnum('mytool_priority_horizon', ['today', 'week', 'month', 'quarter']);
 export const mytoolPrioritySeverityEnum = pgEnum('mytool_priority_severity', ['normal', 'important', 'critical']);
-export const mytoolPriorityStatusEnum = pgEnum('mytool_priority_status', ['active', 'monitoring', 'closed']);
+export const mytoolPriorityStatusEnum = pgEnum('mytool_priority_status', ['active', 'monitoring', 'closed', 'not_started', 'in_progress', 'complete']);
 
 export const mytoolRecurrenceFrequencyEnum = pgEnum('mytool_recurrence_frequency', ['daily', 'weekly', 'monthly']);
 
@@ -1008,6 +1008,14 @@ export const mytoolCompanyPriorities = pgTable("mytool_company_priorities", {
   linkedProjectName: text("linked_project_name"),
   severity: mytoolPrioritySeverityEnum("severity").notNull().default('normal'),
   status: mytoolPriorityStatusEnum("status").notNull().default('active'),
+  priorityRank: integer("priority_rank"),
+  assignedTo: text("assigned_to"),
+  nextAction: text("next_action"),
+  support: text("support").array(),
+  definitionOfDone: text("definition_of_done"),
+  dueDate: text("due_date"),
+  linkedTaskId: integer("linked_task_id"),
+  linkedTaskType: text("linked_task_type"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

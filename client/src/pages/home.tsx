@@ -1,13 +1,9 @@
-import { useState } from "react";
 import { Link } from "wouter";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/use-auth";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
+import { useQuery } from "@tanstack/react-query";
 import {
   LayoutDashboard,
   FileSpreadsheet,
@@ -20,20 +16,8 @@ import {
   Settings,
   ArrowRight,
   Flag,
-  Plus,
-  Pencil,
-  Trash2,
-  Check,
-  X,
   Loader2,
 } from "lucide-react";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 
 interface QuickLink {
   label: string;
@@ -54,6 +38,14 @@ interface CompanyPriority {
   linkedProjectName: string | null;
   severity: string;
   status: string;
+  priorityRank: number | null;
+  assignedTo: string | null;
+  nextAction: string | null;
+  support: string[] | null;
+  definitionOfDone: string | null;
+  dueDate: string | null;
+  linkedTaskId: number | null;
+  linkedTaskType: string | null;
 }
 
 const currentLinks: QuickLink[] = [
@@ -126,17 +118,6 @@ const wipLinks: QuickLink[] = [
   },
 ];
 
-const severityColors: Record<string, string> = {
-  critical: "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400",
-  important: "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400",
-  normal: "bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400",
-};
-
-const severityDots: Record<string, string> = {
-  critical: "bg-red-500",
-  important: "bg-amber-500",
-  normal: "bg-blue-500",
-};
 
 function NavTile({ link }: { link: QuickLink }) {
   return (
@@ -159,59 +140,41 @@ function NavTile({ link }: { link: QuickLink }) {
   );
 }
 
-function CompanyPrioritiesSection({ isAdmin }: { isAdmin: boolean }) {
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [editTitle, setEditTitle] = useState("");
-  const [editSeverity, setEditSeverity] = useState("normal");
-  const [editDepartment, setEditDepartment] = useState("");
-  const [showAdd, setShowAdd] = useState(false);
-  const [newTitle, setNewTitle] = useState("");
-  const [newSeverity, setNewSeverity] = useState("normal");
-  const [newDepartment, setNewDepartment] = useState("");
+const statusLabels: Record<string, { label: string; color: string }> = {
+  active: { label: "Active", color: "bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400" },
+  not_started: { label: "Not started", color: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400" },
+  in_progress: { label: "In progress", color: "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400" },
+  complete: { label: "Complete", color: "bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400" },
+  monitoring: { label: "Monitoring", color: "bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400" },
+  closed: { label: "Closed", color: "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400" },
+};
 
+const homeDeptColors: Record<string, string> = {
+  Accounts: "bg-yellow-100 text-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-400",
+  "Project Development": "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400",
+  "Project Management": "bg-blue-100 text-blue-800 dark:bg-blue-950/40 dark:text-blue-400",
+  Operations: "bg-purple-100 text-purple-800 dark:bg-purple-950/40 dark:text-purple-400",
+  Engineering: "bg-orange-100 text-orange-800 dark:bg-orange-950/40 dark:text-orange-400",
+  Finance: "bg-indigo-100 text-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-400",
+};
+
+function CompanyPrioritiesSection({ isAdmin }: { isAdmin: boolean }) {
   const { data: priorities = [], isLoading } = useQuery<CompanyPriority[]>({
     queryKey: ["/api/mytool/company-priorities"],
   });
 
-  const activePriorities = priorities.filter(p => p.status === "active");
+  const activePriorities = priorities.filter(p => !["closed", "complete"].includes(p.status));
 
-  const createMutation = useMutation({
-    mutationFn: (data: any) => apiRequest("POST", "/api/mytool/company-priorities", data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
-      setShowAdd(false);
-      setNewTitle("");
-      setNewSeverity("normal");
-      setNewDepartment("");
-      toast({ title: "Priority Added" });
-    },
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: any }) => apiRequest("PATCH", `/api/mytool/company-priorities/${id}`, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
-      setEditingId(null);
-      toast({ title: "Priority Updated" });
-    },
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: number) => apiRequest("DELETE", `/api/mytool/company-priorities/${id}`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
-      toast({ title: "Priority Removed" });
-    },
-  });
-
-  const startEdit = (p: CompanyPriority) => {
-    setEditingId(p.id);
-    setEditTitle(p.title);
-    setEditSeverity(p.severity);
-    setEditDepartment(p.department || "");
-  };
+  const grouped = (() => {
+    const groups: Record<string, CompanyPriority[]> = {};
+    activePriorities.forEach(p => {
+      const dept = p.department || "Unassigned";
+      if (!groups[dept]) groups[dept] = [];
+      groups[dept].push(p);
+    });
+    Object.values(groups).forEach(items => items.sort((a, b) => (a.priorityRank ?? 999) - (b.priorityRank ?? 999)));
+    return Object.keys(groups).sort((a, b) => a === "Unassigned" ? 1 : b === "Unassigned" ? -1 : a.localeCompare(b)).map(d => ({ department: d, items: groups[d] }));
+  })();
 
   if (isLoading) {
     return (
@@ -227,181 +190,80 @@ function CompanyPrioritiesSection({ isAdmin }: { isAdmin: boolean }) {
 
   return (
     <Card className="border-red-200 dark:border-red-900/50 bg-gradient-to-br from-red-50/50 to-orange-50/30 dark:from-red-950/20 dark:to-orange-950/10" data-testid="company-priorities-section">
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
+      <CardContent className="p-0">
+        <div className="flex items-center justify-between px-4 pt-4 pb-2">
           <div className="flex items-center gap-2">
             <div className="p-2 rounded-lg bg-red-100 dark:bg-red-950/40">
               <Flag className="h-5 w-5 text-red-600 dark:text-red-400" />
             </div>
             <div>
-              <CardTitle className="text-base">Company Priorities</CardTitle>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {activePriorities.length} active {activePriorities.length === 1 ? "priority" : "priorities"}
-              </p>
+              <h3 className="text-base font-semibold">Company Priorities</h3>
+              <p className="text-xs text-muted-foreground">{activePriorities.length} active across {grouped.length} departments</p>
             </div>
           </div>
           {isAdmin && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 text-xs"
-              onClick={() => setShowAdd(!showAdd)}
-              data-testid="button-add-priority"
-            >
-              <Plus className="h-3.5 w-3.5 mr-1" />
-              Add Priority
-            </Button>
+            <Link href="/my-tool/priorities">
+              <Button variant="outline" size="sm" className="h-8 text-xs" data-testid="button-manage-priorities">
+                Manage
+                <ArrowRight className="h-3.5 w-3.5 ml-1" />
+              </Button>
+            </Link>
           )}
         </div>
-      </CardHeader>
-      <CardContent className="space-y-2">
-        {isAdmin && showAdd && (
-          <div className="flex items-center gap-2 p-2.5 rounded-lg border bg-background" data-testid="priority-add-form">
-            <Input
-              placeholder="Priority title..."
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              className="h-8 text-sm flex-1"
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && newTitle.trim()) {
-                  createMutation.mutate({ title: newTitle.trim(), severity: newSeverity, department: newDepartment || undefined });
-                }
-                if (e.key === "Escape") setShowAdd(false);
-              }}
-              data-testid="input-new-priority-title"
-            />
-            <Input
-              placeholder="Dept"
-              value={newDepartment}
-              onChange={(e) => setNewDepartment(e.target.value)}
-              className="h-8 text-sm w-24"
-              data-testid="input-new-priority-dept"
-            />
-            <Select value={newSeverity} onValueChange={setNewSeverity}>
-              <SelectTrigger className="h-8 w-28 text-xs" data-testid="select-new-priority-severity">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="critical">Critical</SelectItem>
-                <SelectItem value="important">Important</SelectItem>
-                <SelectItem value="normal">Normal</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button
-              size="sm"
-              className="h-8 w-8 p-0"
-              disabled={!newTitle.trim() || createMutation.isPending}
-              onClick={() => createMutation.mutate({ title: newTitle.trim(), severity: newSeverity, department: newDepartment || undefined })}
-              data-testid="button-save-new-priority"
-            >
-              <Check className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 w-8 p-0"
-              onClick={() => setShowAdd(false)}
-            >
-              <X className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        )}
 
         {activePriorities.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-4">
-            No active company priorities. {isAdmin ? "Click \"Add Priority\" to create one." : ""}
+          <p className="text-sm text-muted-foreground text-center py-6 px-4">
+            No active company priorities.
           </p>
         ) : (
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {activePriorities.map((p) => (
-              <div
-                key={p.id}
-                className="flex items-start gap-3 p-3 rounded-lg border bg-background hover:shadow-sm transition-shadow"
-                data-testid={`priority-card-${p.id}`}
-              >
-                {editingId === p.id && isAdmin ? (
-                  <div className="flex-1 space-y-2">
-                    <Input
-                      value={editTitle}
-                      onChange={(e) => setEditTitle(e.target.value)}
-                      className="h-7 text-sm"
-                      autoFocus
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && editTitle.trim()) {
-                          updateMutation.mutate({ id: p.id, data: { title: editTitle.trim(), severity: editSeverity, department: editDepartment || null } });
-                        }
-                        if (e.key === "Escape") setEditingId(null);
-                      }}
-                      data-testid="input-edit-priority-title"
-                    />
-                    <div className="flex gap-1.5">
-                      <Input
-                        value={editDepartment}
-                        onChange={(e) => setEditDepartment(e.target.value)}
-                        placeholder="Dept"
-                        className="h-7 text-xs w-20"
-                        data-testid="input-edit-priority-dept"
-                      />
-                      <Select value={editSeverity} onValueChange={setEditSeverity}>
-                        <SelectTrigger className="h-7 w-24 text-xs">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="critical">Critical</SelectItem>
-                          <SelectItem value="important">Important</SelectItem>
-                          <SelectItem value="normal">Normal</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <Button
-                        size="sm"
-                        className="h-7 w-7 p-0"
-                        disabled={!editTitle.trim() || updateMutation.isPending}
-                        onClick={() => updateMutation.mutate({ id: p.id, data: { title: editTitle.trim(), severity: editSeverity, department: editDepartment || null } })}
-                      >
-                        <Check className="h-3 w-3" />
-                      </Button>
-                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setEditingId(null)}>
-                        <X className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <span className={`inline-block w-2 h-2 rounded-full mt-1.5 shrink-0 ${severityDots[p.severity] || "bg-blue-500"}`} />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate" data-testid={`text-priority-title-${p.id}`}>{p.title}</p>
-                      <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                        <Badge variant="secondary" className={`text-[10px] h-4 px-1.5 ${severityColors[p.severity] || ""}`}>
-                          {p.severity}
-                        </Badge>
-                        {p.department && (
-                          <Badge variant="outline" className="text-[10px] h-4 px-1.5">{p.department}</Badge>
-                        )}
-                        {p.linkedProjectName && (
-                          <Link
-                            href={`/project/${encodeURIComponent(p.linkedProjectName)}`}
-                            className="text-[10px] text-primary hover:underline truncate"
-                          >
-                            {p.linkedProjectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
-                          </Link>
-                        )}
-                      </div>
-                    </div>
-                    {isAdmin && (
-                      <div className="flex items-center gap-0.5 shrink-0">
-                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground" onClick={() => startEdit(p)} data-testid={`button-edit-priority-${p.id}`}>
-                          <Pencil className="h-3 w-3" />
-                        </Button>
-                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive" onClick={() => deleteMutation.mutate(p.id)} data-testid={`button-delete-priority-${p.id}`}>
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            ))}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-[11px] text-muted-foreground border-y bg-muted/30">
+                  <th className="text-center px-2 py-1.5 w-8">#</th>
+                  <th className="text-left px-2 py-1.5 w-28">Department</th>
+                  <th className="text-left px-2 py-1.5">Priority</th>
+                  <th className="text-left px-2 py-1.5 w-24">Status</th>
+                  <th className="text-left px-2 py-1.5 w-28">Assigned to</th>
+                  <th className="text-left px-2 py-1.5 hidden lg:table-cell">Next Action</th>
+                  <th className="text-left px-2 py-1.5 w-20 hidden md:table-cell">Due Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {grouped.map(({ department, items }) => (
+                  items.map((p, idx) => {
+                    const stat = statusLabels[p.status] || statusLabels.active;
+                    const deptColor = homeDeptColors[department] || "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300";
+                    return (
+                      <tr key={p.id} className="border-b hover:bg-muted/10 transition-colors" data-testid={`priority-row-${p.id}`}>
+                        <td className="text-center px-2 py-2 text-xs text-muted-foreground">{p.priorityRank ?? (idx + 1)}</td>
+                        <td className="px-2 py-2">
+                          <Badge variant="secondary" className={`text-[10px] px-1.5 py-0.5 ${deptColor} truncate`}>
+                            {department.length > 12 ? department.slice(0, 10) + "..." : department}
+                          </Badge>
+                        </td>
+                        <td className="px-2 py-2">
+                          <span className="font-medium text-sm" data-testid={`text-priority-title-${p.id}`}>{p.title}</span>
+                          {p.linkedProjectName && (
+                            <span className="ml-1.5 text-[10px] text-primary">
+                              {p.linkedProjectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-2 py-2">
+                          <Badge variant="secondary" className={`text-[10px] px-1.5 py-0.5 ${stat.color}`}>
+                            {stat.label}
+                          </Badge>
+                        </td>
+                        <td className="px-2 py-2 text-xs text-muted-foreground truncate">{p.assignedTo || ""}</td>
+                        <td className="px-2 py-2 text-xs text-muted-foreground truncate hidden lg:table-cell max-w-[200px]">{p.nextAction || ""}</td>
+                        <td className="px-2 py-2 text-xs text-muted-foreground hidden md:table-cell">{p.dueDate || ""}</td>
+                      </tr>
+                    );
+                  })
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </CardContent>
