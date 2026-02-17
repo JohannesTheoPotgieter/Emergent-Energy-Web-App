@@ -17,6 +17,11 @@ import {
   AlertTriangle,
   Clock,
   CloudCog,
+  Folder,
+  FolderOpen,
+  FileSpreadsheet,
+  ChevronRight,
+  ArrowLeft,
 } from "lucide-react";
 
 interface SpSettings {
@@ -36,6 +41,14 @@ interface TestResult {
   error?: string;
 }
 
+interface BrowseItem {
+  id: string;
+  name: string;
+  path: string;
+  childCount: number;
+  isFolder: boolean;
+}
+
 export default function SpAdminSettingsPage() {
   const { isAdmin } = useAuth();
   const { toast } = useToast();
@@ -51,6 +64,12 @@ export default function SpAdminSettingsPage() {
   });
 
   const [testResult, setTestResult] = useState<TestResult | null>(null);
+  const [showBrowser, setShowBrowser] = useState(false);
+  const [browseStack, setBrowseStack] = useState<{ id: string | null; name: string }[]>([
+    { id: null, name: "Root" },
+  ]);
+
+  const currentFolderId = browseStack[browseStack.length - 1]?.id || undefined;
 
   const { data: settings, isLoading } = useQuery<SpSettings>({
     queryKey: ["/api/admin/sp-settings"],
@@ -59,6 +78,18 @@ export default function SpAdminSettingsPage() {
       if (!res.ok) throw new Error("Failed to load settings");
       return res.json();
     },
+  });
+
+  const { data: browseItems, isLoading: browseLoading } = useQuery<BrowseItem[]>({
+    queryKey: ["/api/admin/sp-browse", form.driveId, currentFolderId],
+    queryFn: async () => {
+      const params = new URLSearchParams({ driveId: form.driveId });
+      if (currentFolderId) params.set("folderId", currentFolderId);
+      const res = await fetch(`/api/admin/sp-browse?${params}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to browse folders");
+      return res.json();
+    },
+    enabled: showBrowser && !!form.driveId,
   });
 
   useEffect(() => {
@@ -119,6 +150,39 @@ export default function SpAdminSettingsPage() {
     },
   });
 
+  const handleOpenBrowser = () => {
+    if (!form.driveId) {
+      toast({ title: "Drive ID required", description: "Enter a Drive ID first to browse folders.", variant: "destructive" });
+      return;
+    }
+    setBrowseStack([{ id: null, name: "Root" }]);
+    setShowBrowser(true);
+  };
+
+  const handleNavigateInto = (item: BrowseItem) => {
+    setBrowseStack([...browseStack, { id: item.id, name: item.name }]);
+  };
+
+  const handleNavigateBack = () => {
+    if (browseStack.length > 1) {
+      setBrowseStack(browseStack.slice(0, -1));
+    }
+  };
+
+  const handleSelectFolder = (item: BrowseItem) => {
+    setForm({ ...form, folderItemId: item.id, folderPath: item.path });
+    setShowBrowser(false);
+    toast({ title: "Folder selected", description: item.path });
+  };
+
+  const handleSelectCurrentFolder = () => {
+    const current = browseStack[browseStack.length - 1];
+    const path = browseStack.map(b => b.name).join("/").replace("Root/", "/").replace("Root", "/");
+    setForm({ ...form, folderItemId: current.id || "", folderPath: path === "/" ? "" : path });
+    setShowBrowser(false);
+    toast({ title: "Folder selected", description: path || "Root" });
+  };
+
   if (!isAdmin) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -140,6 +204,9 @@ export default function SpAdminSettingsPage() {
       </div>
     );
   }
+
+  const folders = (browseItems || []).filter(i => i.isFolder);
+  const files = (browseItems || []).filter(i => !i.isFolder);
 
   return (
     <div className="space-y-6 max-w-[900px] mx-auto" data-testid="sp-admin-settings-page">
@@ -208,32 +275,136 @@ export default function SpAdminSettingsPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="folder-item-id" data-testid="label-folder-item-id">
-                Folder Item ID <span className="text-xs text-muted-foreground">(optional)</span>
-              </Label>
-              <Input
-                id="folder-item-id"
-                value={form.folderItemId}
-                onChange={(e) => setForm({ ...form, folderItemId: e.target.value })}
-                placeholder="Specific folder item ID"
-                data-testid="input-folder-item-id"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="folder-path" data-testid="label-folder-path">
-                Folder Path <span className="text-xs text-muted-foreground">(optional)</span>
-              </Label>
-              <Input
-                id="folder-path"
-                value={form.folderPath}
-                onChange={(e) => setForm({ ...form, folderPath: e.target.value })}
-                placeholder="e.g. /Trackers/Active"
-                data-testid="input-folder-path"
-              />
+          <div className="space-y-2">
+            <Label data-testid="label-folder">Target Folder</Label>
+            <div className="flex items-center gap-3">
+              <div className="flex-1 min-w-0 p-3 bg-muted/50 border rounded-md">
+                {form.folderPath || form.folderItemId ? (
+                  <div className="flex items-center gap-2">
+                    <FolderOpen className="h-4 w-4 text-blue-600 shrink-0" />
+                    <span className="text-sm font-medium truncate" data-testid="text-selected-folder">
+                      {form.folderPath || form.folderItemId}
+                    </span>
+                  </div>
+                ) : (
+                  <span className="text-sm text-muted-foreground">No folder selected (root will be used)</span>
+                )}
+              </div>
+              <Button
+                variant="outline"
+                onClick={handleOpenBrowser}
+                disabled={!form.driveId}
+                data-testid="button-browse-folders"
+              >
+                <Folder className="h-4 w-4 mr-2" />
+                Browse
+              </Button>
+              {(form.folderPath || form.folderItemId) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setForm({ ...form, folderItemId: "", folderPath: "" })}
+                  data-testid="button-clear-folder"
+                >
+                  <XCircle className="h-4 w-4" />
+                </Button>
+              )}
             </div>
           </div>
+
+          {showBrowser && (
+            <Card className="border-2 border-blue-200 bg-blue-50/30 dark:bg-blue-900/10 dark:border-blue-800">
+              <CardContent className="p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm font-medium">
+                    <FolderOpen className="h-4 w-4 text-blue-600" />
+                    <span>Browse Folders</span>
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={() => setShowBrowser(false)}>
+                    <XCircle className="h-4 w-4" />
+                  </Button>
+                </div>
+
+                <div className="flex items-center gap-1 text-xs text-muted-foreground overflow-x-auto pb-1">
+                  {browseStack.map((crumb, i) => (
+                    <span key={i} className="flex items-center gap-1 shrink-0">
+                      {i > 0 && <ChevronRight className="h-3 w-3" />}
+                      <button
+                        className="hover:text-blue-600 hover:underline"
+                        onClick={() => setBrowseStack(browseStack.slice(0, i + 1))}
+                      >
+                        {crumb.name}
+                      </button>
+                    </span>
+                  ))}
+                </div>
+
+                <div className="flex gap-2">
+                  {browseStack.length > 1 && (
+                    <Button variant="ghost" size="sm" onClick={handleNavigateBack} data-testid="button-browse-back">
+                      <ArrowLeft className="h-4 w-4 mr-1" />
+                      Back
+                    </Button>
+                  )}
+                  <Button variant="outline" size="sm" onClick={handleSelectCurrentFolder} data-testid="button-select-current">
+                    <CheckCircle className="h-4 w-4 mr-1" />
+                    Select this folder
+                  </Button>
+                </div>
+
+                {browseLoading ? (
+                  <div className="flex items-center justify-center py-6">
+                    <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
+                  </div>
+                ) : (
+                  <div className="max-h-64 overflow-y-auto border rounded-md bg-white dark:bg-gray-900 divide-y">
+                    {folders.length === 0 && files.length === 0 && (
+                      <div className="p-4 text-center text-sm text-muted-foreground">
+                        This folder is empty
+                      </div>
+                    )}
+                    {folders.map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-center justify-between px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer group"
+                        data-testid={`browse-folder-${item.id}`}
+                      >
+                        <button
+                          className="flex items-center gap-2 flex-1 min-w-0 text-left"
+                          onClick={() => handleNavigateInto(item)}
+                        >
+                          <Folder className="h-4 w-4 text-amber-500 shrink-0" />
+                          <span className="text-sm truncate">{item.name}</span>
+                          <span className="text-xs text-muted-foreground shrink-0">
+                            ({item.childCount} items)
+                          </span>
+                        </button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="opacity-0 group-hover:opacity-100"
+                          onClick={() => handleSelectFolder(item)}
+                          data-testid={`select-folder-${item.id}`}
+                        >
+                          Select
+                        </Button>
+                      </div>
+                    ))}
+                    {files.map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-center gap-2 px-3 py-2 text-muted-foreground"
+                        data-testid={`browse-file-${item.id}`}
+                      >
+                        <FileSpreadsheet className="h-4 w-4 text-green-500 shrink-0" />
+                        <span className="text-sm truncate">{item.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           <div className="space-y-2 max-w-xs">
             <Label htmlFor="interval-minutes" data-testid="label-interval-minutes">Sync Interval (minutes)</Label>

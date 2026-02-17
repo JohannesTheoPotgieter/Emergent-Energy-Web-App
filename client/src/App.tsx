@@ -36,6 +36,7 @@ import SpLedgerPage from "@/pages/sp-ledger";
 import SpLedgerDetailPage from "@/pages/sp-ledger-detail";
 import SpSnapshotsPage from "@/pages/sp-snapshots";
 import SpSnapshotDetailPage from "@/pages/sp-snapshot-detail";
+import SpFileRefreshPage from "@/pages/sp-file-refresh";
 import { useProgramData } from "@/hooks/use-program-data";
 import { TrackerTable } from "@/components/dashboard/TrackerTable";
 import { format } from "date-fns";
@@ -181,6 +182,7 @@ function ProtectedPages() {
         <Route path="/sp-ledger/:id" component={SpLedgerDetailPage} />
         <Route path="/sp-snapshots" component={SpSnapshotsPage} />
         <Route path="/sp-snapshots/:id" component={SpSnapshotDetailPage} />
+        <Route path="/admin/sp-file-refresh" component={SpFileRefreshPage} />
         <Route component={NotFound} />
       </Switch>
     </AppLayout>

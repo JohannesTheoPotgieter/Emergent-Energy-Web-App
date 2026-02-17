@@ -67,6 +67,7 @@ const navGroups: NavGroup[] = [
     items: [
       { label: "Change Ledger", icon: BookOpen, path: "/sp-ledger" },
       { label: "Snapshots", icon: Camera, path: "/sp-snapshots" },
+      { label: "File Refresh", icon: FileSpreadsheet, path: "/admin/sp-file-refresh" },
       { label: "SP Settings", icon: Cloud, path: "/admin/sp-settings" },
       { label: "Import Runs", icon: Database, path: "/admin/sp-import-runs" },
     ],

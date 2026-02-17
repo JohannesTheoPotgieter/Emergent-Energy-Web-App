@@ -8801,8 +8801,8 @@ export async function registerRoutes(
 
   // ==================== SHAREPOINT IMPORT ROUTES ====================
 
-  const { testConnection, isSharePointConfigured } = await import("./sharepoint");
-  const { runFullImport, retryFailedImports } = await import("./importPipeline");
+  const { testConnection, isSharePointConfigured, browseFolders } = await import("./sharepoint");
+  const { runFullImport, retryFailedImports, importSingleFile } = await import("./importPipeline");
 
   // Admin: Get SP settings
   app.get("/api/admin/sp-settings", requireAuth, requireAdmin, async (req, res) => {
@@ -8844,6 +8844,36 @@ export async function registerRoutes(
         return res.status(400).json({ error: "siteId and driveId are required" });
       }
       const result = await testConnection(siteId, driveId);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Admin: Browse SharePoint folders
+  app.get("/api/admin/sp-browse", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const driveId = req.query.driveId as string;
+      const folderId = req.query.folderId as string | undefined;
+      if (!driveId) {
+        return res.status(400).json({ error: "driveId is required" });
+      }
+      const items = await browseFolders(driveId, folderId || undefined);
+      res.json(items);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Admin: Import single file from SharePoint
+  app.post("/api/admin/import/single", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { driveId, siteId, itemId } = req.body;
+      if (!driveId || !siteId || !itemId) {
+        return res.status(400).json({ error: "driveId, siteId, and itemId are required" });
+      }
+      const user = req.user as any;
+      const result = await importSingleFile(driveId, siteId, itemId, user?.email || user?.name || "admin");
       res.json(result);
     } catch (err: any) {
       res.status(500).json({ error: err.message });

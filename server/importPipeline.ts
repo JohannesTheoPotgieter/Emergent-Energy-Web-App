@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { storage } from "./storage";
-import { downloadFileContent, detectChanges } from "./sharepoint";
-import type { ChangeLedger, InsertSnapshot, InsertSnapshotMetric } from "@shared/schema";
+import { downloadFileContent, detectChanges, downloadSingleFile, getFileMetadata } from "./sharepoint";
+import type { ChangeLedger, InsertSnapshot, InsertSnapshotMetric, InsertChangeLedger, InsertSpFile } from "@shared/schema";
 import ExcelJS from "exceljs";
 
 const PARSER_VERSION = "1.0";
@@ -267,6 +267,76 @@ export async function retryFailedImports(triggeredBy: string = "system"): Promis
   const summary = { retried: failedEntries.length, imported, failed, skipped };
   const status = failed > 0 ? (imported > 0 ? "partial" : "fail") : "success";
 
+  await storage.updateImportRun(run.id, {
+    status: status as any,
+    finishedAt: new Date(),
+    summaryJson: summary,
+  });
+
+  return { runId: run.id, summary };
+}
+
+export async function importSingleFile(
+  driveId: string,
+  siteId: string,
+  itemId: string,
+  triggeredBy: string = "admin"
+): Promise<{ runId: number; summary: any }> {
+  const meta = await getFileMetadata(driveId, itemId);
+  const fileName = meta.name;
+
+  const existing = await storage.getSpFileByItemId(siteId, driveId, itemId);
+  const oldEtag = existing?.lastSeenEtag || null;
+  const eventType = existing ? "modified" : "created";
+
+  const run = await storage.createImportRun({
+    triggerType: "manual",
+    status: "running",
+    triggeredBy,
+    summaryJson: null,
+  });
+
+  const fileData: InsertSpFile = {
+    siteId,
+    driveId,
+    itemId,
+    path: meta.parentReference?.path || null,
+    fileName,
+    lastSeenEtag: meta.eTag || null,
+    lastSeenCtag: meta.cTag || null,
+    spLastModifiedAt: meta.lastModifiedDateTime ? new Date(meta.lastModifiedDateTime) : null,
+    spLastModifiedByName: meta.lastModifiedBy?.user?.displayName || null,
+    spLastModifiedByEmail: meta.lastModifiedBy?.user?.email || null,
+    isActive: true,
+  };
+  const spFile = await storage.upsertSpFile(fileData);
+
+  const ledgerEntry: InsertChangeLedger = {
+    runId: run.id,
+    fileId: spFile.id,
+    eventType,
+    oldEtag,
+    newEtag: meta.eTag || null,
+    spModifiedAt: meta.lastModifiedDateTime ? new Date(meta.lastModifiedDateTime) : null,
+    spModifiedByName: meta.lastModifiedBy?.user?.displayName || null,
+    spModifiedByEmail: meta.lastModifiedBy?.user?.email || null,
+    importStatus: "pending",
+    snapshotId: null,
+    errorCode: null,
+    errorMessage: null,
+  };
+  const entry = await storage.createChangeLedgerEntry(ledgerEntry);
+
+  await processLedgerEntry(entry);
+  const updated = await storage.getChangeLedgerEntry(entry.id);
+
+  const summary = {
+    fileName,
+    importStatus: updated?.importStatus || "unknown",
+    snapshotId: updated?.snapshotId || null,
+  };
+
+  const status = updated?.importStatus === "imported" ? "success" : updated?.importStatus === "failed" ? "fail" : "success";
   await storage.updateImportRun(run.id, {
     status: status as any,
     finishedAt: new Date(),
