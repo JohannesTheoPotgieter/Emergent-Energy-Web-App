@@ -7,7 +7,7 @@ export interface JWTPayload {
   userId: number;
   email: string;
   name: string;
-  role: "admin" | "member";
+  role: "admin" | "member" | "quality_manager" | "viewer";
 }
 
 export function generateToken(user: JWTPayload): string {

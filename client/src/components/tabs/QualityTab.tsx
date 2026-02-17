@@ -8,7 +8,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Progress } from "@/components/ui/progress";
-import { AlertCircle, CheckCircle, ChevronDown, ChevronRight, FileText, Shield, AlertTriangle, Clock, User } from "lucide-react";
+import { AlertCircle, CheckCircle, ChevronDown, ChevronRight, FileText, Shield, AlertTriangle, Clock, User, Lock } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
+import { QmChallengeModal } from "@/components/QmChallengeModal";
 
 function qFetch(url: string, options?: RequestInit) {
   const token = localStorage.getItem('auth_token');
@@ -60,9 +62,30 @@ interface QualityTabProps {
 
 export function QualityTab({ projectName }: QualityTabProps) {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const [expandedPhases, setExpandedPhases] = useState<Record<number, boolean>>({});
   const [editingItem, setEditingItem] = useState<number | null>(null);
   const [itemEdits, setItemEdits] = useState<Record<string, any>>({});
+  const [showChallengeModal, setShowChallengeModal] = useState(false);
+  const [challengePassed, setChallengePassed] = useState(false);
+
+  const { data: accessStatus } = useQuery({
+    queryKey: ["qm-access-status"],
+    queryFn: async () => {
+      const res = await qFetch("/api/quality/access/status");
+      if (!res.ok) return { needsChallenge: false };
+      return res.json();
+    },
+  });
+
+  useEffect(() => {
+    if (accessStatus?.needsChallenge && !challengePassed) {
+      setShowChallengeModal(true);
+    }
+  }, [accessStatus, challengePassed]);
+
+  const isQmOrAdmin = user?.role === "admin" || user?.role === "quality_manager";
+  const canEdit = isQmOrAdmin && (!accessStatus?.needsChallenge || challengePassed);
 
   const { data: checklistData, isLoading, error } = useQuery({
     queryKey: ["quality-checklist", projectName],
@@ -193,6 +216,23 @@ export function QualityTab({ projectName }: QualityTabProps) {
 
   return (
     <div className="space-y-6">
+      <QmChallengeModal
+        open={showChallengeModal}
+        onSuccess={() => { setChallengePassed(true); setShowChallengeModal(false); }}
+        onClose={() => setShowChallengeModal(false)}
+      />
+
+      {!canEdit && (
+        <div className="rounded-lg border border-blue-500/30 bg-blue-500/5 p-3 flex items-center gap-2" data-testid="quality-readonly-banner">
+          <Lock className="w-4 h-4 text-blue-500 shrink-0" />
+          <span className="text-sm text-blue-500">
+            {isQmOrAdmin && needsChallenge && !challengePassed
+              ? <button className="underline cursor-pointer font-medium" onClick={() => setShowChallengeModal(true)}>Enter access code to enable editing</button>
+              : "View-only mode — editing requires Quality Manager access"}
+          </span>
+        </div>
+      )}
+
       {activeWarnings.length > 0 && (
         <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-4" data-testid="quality-warnings">
           <div className="flex items-start gap-3">
@@ -312,6 +352,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
 
                                   <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
                                     <Select
+                                      disabled={!canEdit}
                                       value={instance.isApplicable === false ? "na" : (instance.approved ? "pass" : "not_started")}
                                       onValueChange={(val) => {
                                         if (val === "na") {
@@ -485,6 +526,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
                           key={val}
                           variant={answer.answerYesno === val ? "default" : "outline"}
                           size="sm"
+                          disabled={!canEdit}
                           className={`h-8 text-xs min-w-[50px] ${
                             answer.answerYesno === val
                               ? val === "yes"
