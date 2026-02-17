@@ -59,7 +59,7 @@ export default function ProjectDetailPage() {
   const { data: revenueData = [] } = useQuery({
     queryKey: ["program-inflows", projectName],
     queryFn: async () => {
-      const res = await fetch(`/api/program-inflows/${encodeURIComponent(projectName)}`);
+      const res = await fetch(`/api/program-inflows?projectName=${encodeURIComponent(projectName)}`);
       if (!res.ok) return [];
       return res.json();
     },
@@ -79,7 +79,7 @@ export default function ProjectDetailPage() {
   const { data: financeRevData = [] } = useQuery({
     queryKey: ["finance-revenue", projectName],
     queryFn: async () => {
-      const res = await fetch(`/api/finance-revenue/${encodeURIComponent(projectName)}`);
+      const res = await fetch(`/api/finance/revenue?projectName=${encodeURIComponent(projectName)}`);
       if (!res.ok) return [];
       return res.json();
     },
@@ -89,7 +89,7 @@ export default function ProjectDetailPage() {
   const { data: financeCosData = [] } = useQuery({
     queryKey: ["finance-cos", projectName],
     queryFn: async () => {
-      const res = await fetch(`/api/finance-cos/${encodeURIComponent(projectName)}`);
+      const res = await fetch(`/api/finance/cos?projectName=${encodeURIComponent(projectName)}`);
       if (!res.ok) return [];
       return res.json();
     },
