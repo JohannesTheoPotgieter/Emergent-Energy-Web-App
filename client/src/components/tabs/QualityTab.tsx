@@ -226,7 +226,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
         <div className="rounded-lg border border-blue-500/30 bg-blue-500/5 p-3 flex items-center gap-2" data-testid="quality-readonly-banner">
           <Lock className="w-4 h-4 text-blue-500 shrink-0" />
           <span className="text-sm text-blue-500">
-            {isQmOrAdmin && needsChallenge && !challengePassed
+            {isQmOrAdmin && accessStatus?.needsChallenge && !challengePassed
               ? <button className="underline cursor-pointer font-medium" onClick={() => setShowChallengeModal(true)}>Enter access code to enable editing</button>
               : "View-only mode — editing requires Quality Manager access"}
           </span>
