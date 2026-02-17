@@ -22,9 +22,6 @@ import {
   Camera,
   Cloud,
   Upload,
-  CalendarDays,
-  Users,
-  Play,
 } from "lucide-react";
 import { useProgramData } from "@/hooks/use-program-data";
 import { useAuth } from "@/hooks/use-auth";
@@ -67,32 +64,14 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
-    heading: "DATA",
-    items: [
-      { label: "Data Import", icon: Upload, path: "/admin" },
-    ],
-  },
-  {
-    heading: "LEAVE",
-    items: [
-      { label: "Leave Calendar", icon: CalendarDays, path: "/leave" },
-      { label: "Leave List", icon: Users, path: "/leave/list" },
-      { label: "Leave Ledger", icon: BookOpen, path: "/leave/ledger" },
-    ],
-  },
-  {
     heading: "ADMIN",
     items: [
-      { label: "Admin", icon: Settings, path: "/admin" },
+      { label: "Data Import", icon: Upload, path: "/admin" },
       { label: "SP Settings", icon: Cloud, path: "/admin/sp-settings" },
       { label: "File Refresh", icon: FileSpreadsheet, path: "/admin/sp-file-refresh" },
       { label: "Import Runs", icon: Database, path: "/admin/sp-import-runs" },
       { label: "Change Ledger", icon: BookOpen, path: "/admin/sp-ledger" },
       { label: "Snapshots", icon: Camera, path: "/admin/sp-snapshots" },
-      { label: "Leave Settings", icon: CalendarDays, path: "/admin/leave/settings" },
-      { label: "Leave Runs", icon: Play, path: "/admin/leave/runs" },
-      { label: "Leave Actions", icon: Users, path: "/admin/leave/actions" },
-      { label: "Leave Upload", icon: Upload, path: "/admin/leave/upload" },
     ],
   },
 ];
@@ -164,7 +143,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           {sidebarShowLabels && <span>Home</span>}
         </Link>
 
-        {navGroups.filter(group => group.heading !== "WIP" && (group.heading !== "PERSONAL" || user?.role === "admin") && (group.heading !== "ADMIN" || user?.role === "admin") && (group.heading !== "DATA" || user?.role !== "admin")).map((group) => {
+        {navGroups.filter(group => group.heading !== "WIP" && (group.heading !== "PERSONAL" || user?.role === "admin") && (group.heading !== "ADMIN" || user?.role === "admin")).map((group) => {
           const visibleItems = group.items;
           if (visibleItems.length === 0) return null;
           return (

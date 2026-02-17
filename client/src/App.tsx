@@ -37,13 +37,7 @@ import SpLedgerDetailPage from "@/pages/sp-ledger-detail";
 import SpSnapshotsPage from "@/pages/sp-snapshots";
 import SpSnapshotDetailPage from "@/pages/sp-snapshot-detail";
 import SpFileRefreshPage from "@/pages/sp-file-refresh";
-import LeaveCalendarPage from "@/pages/leave-calendar";
-import LeaveListPage from "@/pages/leave-list";
-import LeaveLedgerPage from "@/pages/leave-ledger";
-import LeaveAdminSettingsPage from "@/pages/leave-admin-settings";
-import LeaveAdminRunsPage from "@/pages/leave-admin-runs";
-import LeaveAdminActionsPage from "@/pages/leave-admin-actions";
-import LeaveUploadPage from "@/pages/leave-upload";
+
 import { useProgramData } from "@/hooks/use-program-data";
 import { TrackerTable } from "@/components/dashboard/TrackerTable";
 import { format } from "date-fns";
@@ -190,13 +184,7 @@ function ProtectedPages() {
         <Route path="/admin/sp-snapshots" component={SpSnapshotsPage} />
         <Route path="/admin/sp-snapshots/:id" component={SpSnapshotDetailPage} />
         <Route path="/admin/sp-file-refresh" component={SpFileRefreshPage} />
-        <Route path="/leave" component={LeaveCalendarPage} />
-        <Route path="/leave/list" component={LeaveListPage} />
-        <Route path="/leave/ledger" component={LeaveLedgerPage} />
-        <Route path="/admin/leave/settings" component={LeaveAdminSettingsPage} />
-        <Route path="/admin/leave/runs" component={LeaveAdminRunsPage} />
-        <Route path="/admin/leave/actions" component={LeaveAdminActionsPage} />
-        <Route path="/admin/leave/upload" component={LeaveUploadPage} />
+
         <Route component={NotFound} />
       </Switch>
     </AppLayout>

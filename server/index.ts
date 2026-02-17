@@ -13,7 +13,6 @@ import pg from "pg";
 import { dbMode, dbConfig, initializeDatabase } from "./db";
 import { runBackfill } from "./lib/backfill";
 import { startScheduler } from "./importPipeline";
-import { startLeaveScheduler } from "./leaveScheduler";
 
 const app = express();
 const httpServer = createServer(app);
@@ -266,8 +265,6 @@ async function seedUsers() {
       runBackfill().catch(err => console.error('[Backfill] startup error:', err));
       startScheduler();
       log('SharePoint scheduled import checker started');
-      startLeaveScheduler();
-      log('PaySpace leave sync scheduler started');
     },
   );
 })();

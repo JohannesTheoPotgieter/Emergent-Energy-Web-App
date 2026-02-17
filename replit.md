@@ -85,4 +85,3 @@ Preferred communication style: Simple, everyday language.
 
 ### Third-Party Integrations
 -   **Microsoft Graph API**: For Outlook calendar integration in My Tool, using Replit Connector for OAuth/token management (no custom MSAL or encrypted token storage).
--   **PaySpace Leave Calendar**: Leave absence tracking integration with POPIA-safe privacy controls. Uses hash-based change detection (create/modify/cancel), audit ledger, scheduled sync, and RBAC (viewers see masked calendar; admins manage settings/sync). Tables: `payspace_settings`, `leave_runs`, `leave_events`, `leave_ledger`. Pages: `/leave` (calendar), `/leave/list`, `/leave/ledger`, `/admin/leave/settings`, `/admin/leave/runs`, `/admin/leave/actions`.
