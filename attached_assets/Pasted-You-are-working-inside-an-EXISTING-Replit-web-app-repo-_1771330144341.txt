@@ -1,0 +1,404 @@
+You are working inside an EXISTING Replit web app repo (do not rebuild from scratch).
+
+Context
+- This app already has Projects and an underlying Project Plan (tasks/milestones).
+- We already use SharePoint/Microsoft integration elsewhere in the app.
+- We want to integrate an Excel-based “Project Checklist Template V1” into the app as a native Quality module.
+- We do NOT want hard blocking gates. Only BRIGHT RED WARNINGS and very visible risk indicators.
+
+Hard constraints
+- Do not remove or break any existing functionality.
+- No placeholder code. No placeholder buttons. No fake pages. Everything must work end-to-end.
+- Follow existing repo patterns (routing, API conventions, DB/ORM, auth, UI components).
+- Where data models already exist (Project, PlanTask, User), extend them — don’t duplicate.
+- Any warning behavior must NOT prevent users from completing tasks/milestones. It can only warn loudly and log acknowledgement.
+
+Primary goals
+1) Add a QUALITY MANAGER role with correct access and dashboards.
+2) Implement the Excel checklist as:
+   - Template (admin-managed)
+   - Checklist instance per project
+   - Item approvals + audit log (who/when)
+   - Risk questions per phase
+   - Evidence links (SharePoint URL at minimum)
+3) Link checklist items to Project Plan tasks/milestones (mapping table) so warnings appear in:
+   - Project plan view (task/milestone row)
+   - Project dashboard (summary tiles)
+   - Quality Manager dashboard (global control tower)
+4) Build an automated QC Warning engine:
+   - creates/updates warnings based on checklist state + plan context
+   - shows warnings in bright red
+   - never blocks anything
+5) IMPORTANT: Add a QUALITY MANAGER “popup access code” confirmation (like Admin has)
+   - On QUALITY_MANAGER login / first access to Quality pages, show a modal popup requiring an access code.
+   - The access code must be configurable via Replit Secrets, NOT hardcoded.
+   - The user wants the code to be “2026”, so set the Replit Secret default/documentation to use 2026.
+   - Log successful and failed attempts (rate limit to prevent brute-force).
+   - This popup must not appear for VIEWER users.
+   - This popup should appear for QUALITY_MANAGER users and optionally ADMIN (if admin already has similar behavior, keep consistent).
+   - If the code is not set in secrets, show a clear Admin-only warning in settings and disable QM access until set.
+
+Step 0: Inspect the repo
+- Identify stack (Next.js/React/Node expected), DB/ORM, auth method, existing models:
+  - Project model/table
+  - Plan task/milestone model/table
+  - User model/table + existing roles
+- Identify existing pages/routes for:
+  - Project list and project detail
+  - Project plan view
+- Identify existing “flags/issues” feature if it exists and extend it; otherwise add a QC warnings module.
+- Identify whether an Admin popup / secondary confirmation exists already and replicate the same UX pattern for QUALITY_MANAGER.
+
+RBAC roles
+- ADMIN: full access
+- QUALITY_MANAGER: global quality oversight, approvals, warnings, templates (optional), post-mortems
+- VIEWER: read-only visibility (no edits)
+If additional roles already exist (PM/Engineer/etc), keep them and map permissions cleanly.
+
+Permissions (must enforce UI + API)
+QUALITY_MANAGER can:
+- view all projects and all project plans
+- edit checklist item dates/comments
+- approve/unapprove checklist items (with audit)
+- mark item Not Applicable (requires reason; logged)
+- add/verify evidence links
+- create/assign/close QC warnings
+- complete post-mortem scorecards
+QUALITY_MANAGER cannot:
+- edit plan baseline dates (view only)
+- remove projects, admin system settings unrelated to quality
+
+Data model (extend existing, names can differ but functionality must match)
+
+Checklist templates
+- qc_template
+  - id, name, version, is_active, created_at
+- qc_template_phase
+  - id, template_id, phase_key, phase_name, sort_order
+- qc_template_group
+  - id, template_phase_id, group_name, sort_order
+- qc_template_item
+  - id, template_group_id, item_name, sort_order
+  - is_evidence_required (bool default false)
+  - default_severity (High/Med/Low)
+- qc_template_risk_question
+  - id, template_phase_id, question_text, sort_order
+  - response_type (yesno|text|number)
+  - triggers_warning (bool)
+  - trigger_severity (High/Med/Low)
+- qc_template_postmortem_metric
+  - id, name, input_type (enum: count|days|choice)
+  - scoring_rule_json (store rule so we can compute score like Excel)
+  - group (contractor_quality|engineering_quality)
+
+Checklist instances (per project)
+- qc_checklist
+  - id, project_id (FK to existing Projects), template_id, status, created_at
+- qc_item_instance
+  - id, checklist_id, template_item_id
+  - is_applicable (bool default true)
+  - start_date, end_date
+  - approved (bool default false)
+  - approved_by_user_id (nullable)
+  - approved_at (nullable)
+  - approval_comment (nullable)
+  - not_applicable_reason (nullable)
+  - working_days (int computed)
+  - last_updated_at
+- qc_item_evidence
+  - id, item_instance_id
+  - evidence_url (SharePoint URL)
+  - evidence_note (nullable)
+- qc_risk_answer
+  - id, checklist_id, template_risk_question_id
+  - answer_yesno (nullable), answer_text (nullable), answer_number (nullable)
+  - last_updated_by, last_updated_at
+
+Plan linkage
+- qc_plan_link
+  - id, project_id
+  - plan_item_id (FK to existing plan task/milestone table)
+  - item_instance_id (FK qc_item_instance)
+  - link_type (reference|prefill_dates|warning_surface)
+  - created_at
+
+Warnings (bright red, not blocking)
+- qc_warning
+  - id, project_id
+  - severity (High/Med/Low)
+  - warning_type (overdue|missing_evidence|risk_trigger|invalid_dates|phase_incomplete|data_inconsistent)
+  - title, description
+  - related_plan_item_id (nullable)
+  - related_item_instance_id (nullable)
+  - status (open|in_progress|resolved)
+  - owner_user_id (nullable)
+  - due_date (nullable)
+  - created_at, updated_at
+- qc_warning_event (audit trail)
+  - id, warning_id
+  - event_type (created|updated|acknowledged|resolved)
+  - note (nullable)
+  - actor_user_id
+  - created_at
+
+Post-mortem per project
+- qc_postmortem
+  - id, project_id, completed_at, completed_by_user_id
+- qc_postmortem_metric_value
+  - id, postmortem_id, template_metric_id
+  - input_value_number (nullable)
+  - input_value_choice (nullable)
+  - score (computed)
+- qc_postmortem_summary
+  - postmortem_id
+  - contractor_quality_score
+  - engineering_quality_score
+  - red_flag (bool if any core score < 0.85)
+
+QM popup access code tracking (for the “2026” requirement)
+- qc_access_challenge
+  - id
+  - user_id (FK existing users)
+  - role (ADMIN|QUALITY_MANAGER)
+  - last_success_at (nullable)
+  - failed_attempts_count (int)
+  - locked_until (nullable timestamp)
+  - created_at, updated_at
+- qc_access_event (optional, if you want more detail)
+  - id, user_id, role, event_type (success|fail|lock), ip_hash(optional), created_at
+
+Secrets / config (Replit Secrets)
+- QM_ACCESS_CODE = "2026"   // user requirement, but do NOT hardcode in repo
+- ADMIN_ACCESS_CODE (if admin already uses one; keep consistent)
+- APP_ENCRYPTION_KEY (if you store anything sensitive)
+- Any existing auth secrets (NextAuth/Entra etc)
+
+QM popup behavior
+- On any QUALITY_MANAGER route load:
+  - If user role is QUALITY_MANAGER and has not passed challenge in current session:
+    - Show modal popup: “Enter Quality Manager Access Code”
+    - Validate code against QM_ACCESS_CODE secret
+    - If correct:
+      - mark session flag “qmChallengePassed=true” (server-side session or signed cookie)
+      - update qc_access_challenge.last_success_at
+      - reset failed attempts
+    - If incorrect:
+      - increment failed attempts
+      - after 5 failed attempts, lock user for 15 minutes (locked_until)
+      - show clear error
+- This is a “soft second factor”, not a full auth system. Real auth still comes from normal login.
+- Ensure all ADMIN/QM API endpoints ALSO verify challenge flag (not only UI).
+
+Working days + holidays
+- Implement business day calculation similar to Excel NETWORKDAYS:
+  - businessDaysBetween(start,end, holidays[])
+- Add a holidays table:
+  - calendar_holiday (date, name, country_code default “ZA”)
+- Provide admin UI to manage holidays OR seed ZA public holidays for current year and allow editing.
+- Use timezone Africa/Johannesburg.
+
+Seed the template EXACTLY from Excel (Project Checklist_Template_V1.xlsx)
+Create a seed script or migration that inserts this template content (no placeholders).
+
+PHASE: Planning & Design
+Group: PVSol
+- Shading correct
+- Positioning correct
+- Modules as per tracker
+- Stringing optimal
+- PV strings paths defined on modules
+- Techsitter targets P90 done?
+Group: Site inspections
+- Inspection report done
+- Clear view on execution
+- All info aquired for SSEG
+- SSEG SLD created
+- Roof drone images uploaded & reviewed
+Risk questions (Planning & Design)
+- If shading was incorrect, does this impact P90? (yesno, triggers warning severity=High if Yes)
+- If yes, by how much is it impacted? (%) (number)
+- Can the roof sheets be easily damaged (yesno, triggers warning severity=Med if Yes)
+- Steps to be taken if roof can be damaged (text)
+- Has cooling been considered? (yesno, triggers warning severity=Med if No)
+
+PHASE: Construction
+Group: Quality checks
+- Engineering pack timeline
+- Legend information correct
+- SDP showing relevant information as per site inspection
+- Module layout & dimentions correct
+- Cable trays designed as per SANS and adeqaute routes
+- Earthing/Bonding according to SANS
+- DC SLD as per PVSol & string layout
+- AC SLD according to site OEM, info, SANS & Eskom/Munic req.
+- DB GA drawing and SLD match up
+- GA according to site info and OEM specifications/requirements (If applicable)
+- Aesthetics of EP acceptable
+- Index and pages correlate (Version and page numbers)
+- Subcontractor Roof entry report inspected
+Risk questions (Construction)
+- Is the AC route length as per costing sheet? (yesno, triggers warning severity=Med if No)
+- If no, how much of a difference is there? (number)
+- Is the DC route length as per costing sheet? (yesno, triggers warning severity=Med if No)
+- If no, how much of a difference is there? (number)
+- Is there a tenant metering system in place? (yesno, triggers warning severity=High if Yes AND no linked plan item exists for tenant metering)
+
+PHASE: Commissioning
+Group: Form preparation
+- Timeline
+- Site info correct
+- Test page set up correctly
+- Communication correct as per portal, SLD
+Group: Site activities
+- Commissioning successful
+- Portal showing inverters as per EP
+- Capacity test reached
+- RTI conducted and reviewed
+- CoC concluded and reviewed
+- Q&A list uploaded with clear directive
+Risk questions (Commissioning)
+- Has the project followed the install schedule? (yesno, triggers warning severity=Med if No)
+- If no, what is the delay caused? (text)
+- Has the initial setups been done correctly? (yesno, triggers warning severity=High if No)
+- If no, what is the delay caused? (text)
+- Have the CT's been placed in the right place and direction? (yesno, triggers warning severity=High if No)
+- Is the meter giving the correct information? (yesno, triggers warning severity=High if No)
+
+PHASE: Handover
+Group: Document completions
+- Timeline
+- As-built PVSol design in folder
+- Techsitter targets in folder
+- As-built EP signed and in folder
+- Entry report in folder
+- Exit report in folder
+- Snag rectifications approved
+- Techsitter report approved
+- Inspection report approved
+- Testing report approved
+- CoC in folder
+- PR engineer sign off in folder
+Risk questions (Handover)
+- Has the pre-admin work been done correctly? (yesno, triggers warning severity=Med if No)
+- If no, what is the delay caused? (text)
+- Has the IV curve testing been done correctly? (yesno, triggers warning severity=High if No)
+- If no, what is the delay caused? (text)
+- Have the snags been uploaded timeously (RTI incl)? (yesno, triggers warning severity=Med if No)
+- If no, what is the delay caused? (text)
+
+Post-mortem metrics (scoring rules like Excel)
+- Commissioning pass rate: input choice 1/2/3 -> score 1 / 0.5 / 0.33
+- Snag count: score = (100 - (count*10))/100
+- Snag completion MTTR (days): score = (100 - (days*12.5))/100
+- Contractor quality score = average(commissioning pass rate, snag count score, snag MTTR score)
+- Pre-engineering - PVSol (count): score = (100 - (count*15))/100
+- Engineering Pack revisions (count): score = (100 - (count*15))/100
+- Construction challenges (count): score = (100 - (count*15))/100
+- Time to complete EP (days): score = (100 - (days*2.5))/100
+- Engineering quality score = average(these four)
+- Red flag threshold: any core score < 0.85 -> mark red and show in dashboards.
+
+Warning engine rules (NO hard blocks)
+Implement a service that recalculates warnings when:
+- checklist item changes
+- risk answers change
+- plan milestones/tasks change (if linked)
+- nightly scheduled job (safety net)
+
+Create or update warnings:
+1) Overdue item: end_date < today AND approved=false AND is_applicable=true -> High or Med depending on phase (Commissioning/Handover default High)
+2) Invalid dates: start_date exists AND end_date exists AND end_date < start_date -> High
+3) Missing evidence: item approved=true AND item is_evidence_required=true AND no evidence_url -> High
+4) Risk triggers: based on risk yes/no rules above -> High/Med
+5) Phase incomplete near milestone:
+   - if a plan milestone due within X days (default 7) and linked checklist phase < 100% approved -> High warning linked to that plan item
+NOTE: This must never block completion. Only show bright red indicators.
+
+UI integration (must touch Projects + Plan)
+A) Project detail page
+- Add a “Quality” tab/section:
+  - phase progress (approved/applicable)
+  - checklist table (items, start/end, working days, approved toggle, evidence link, comments)
+  - risk questions form per phase
+  - warnings panel (bright red)
+  - post-mortem page (if project completed)
+
+B) Project plan view
+- For tasks/milestones that have qc_plan_link or related warnings:
+  - show a bright red badge: “QC ⚠ (n)”
+  - clicking badge opens a side panel listing warnings and linked checklist items
+- When user marks milestone complete and open High warnings exist:
+  - show a NON-BLOCKING modal listing warnings with a single button “Proceed anyway”
+  - log acknowledgement in qc_warning_event (event_type=acknowledged, actor=current user)
+
+C) Quality Manager dashboard (default landing page for QUALITY_MANAGER)
+Route: /quality/dashboard (or follow existing route naming)
+- NOTE: Access to this dashboard must require QM popup code success.
+Widgets:
+1) Approvals queue
+2) Open warnings (global)
+3) Projects at risk (High warnings + readiness %)
+4) Handover readiness
+5) Post-mortem outstanding
+
+D) Viewer views
+- VIEWER can view read-only quality pages but cannot edit/approve/acknowledge.
+
+Admin views
+- /admin/quality/templates (versioned template editing)
+- /admin/quality/settings (thresholds + severity mapping + holidays)
+- /admin/users (if roles managed locally)
+- /admin/quality/access (optional): show whether QM_ACCESS_CODE secret exists + basic stats (locked users)
+
+API routes (RBAC + QM popup enforced server-side)
+Viewer:
+- GET /api/quality/project/:projectId/summary
+- GET /api/quality/project/:projectId/checklist
+- GET /api/quality/project/:projectId/warnings
+- GET /api/quality/warnings (global list with filters)
+Admin/QM:
+- POST /api/quality/project/:projectId/item/:itemInstanceId (edit start/end/applicable/comment)
+- POST /api/quality/project/:projectId/item/:itemInstanceId/approve
+- POST /api/quality/project/:projectId/item/:itemInstanceId/evidence
+- POST /api/quality/project/:projectId/risk-answer
+- POST /api/quality/warning/:warningId/acknowledge
+- POST /api/quality/warning/:warningId/resolve
+- POST /api/quality/postmortem/:projectId (create/update)
+Admin only:
+- POST /api/admin/quality/templates
+- POST /api/admin/quality/settings
+- POST /api/admin/roles/users
+- POST /api/admin/quality/access/unlock-user (optional admin action)
+
+UX requirements
+- Bright red warnings must be visually unavoidable.
+- Every warning must be actionable: owner + status + audit trail.
+- Quality progress must be simple: approved/applicable counts per phase.
+- No “hard block” behavior anywhere.
+- QM popup must be the same style/UX as Admin popup (if Admin already has one).
+
+Definition of Done (acceptance checks)
+- QUALITY_MANAGER can log in and must pass QM popup code to access quality dashboard/pages.
+- QM popup code is read from Replit Secret QM_ACCESS_CODE (set to “2026”).
+- Failed attempts rate-limited and locked after threshold.
+- QUALITY_MANAGER can approve checklist items and add evidence; actions are audited.
+- Warnings appear automatically and show in:
+  - project quality tab
+  - project plan rows (red badge)
+  - quality dashboard (global)
+- Milestones can still be completed even with warnings (no blocks).
+- “Proceed anyway” acknowledgement logs an audit event.
+- VIEWER cannot edit or approve anything.
+- Existing project + plan functionality remains intact.
+
+Implementation sequence (do it in this order)
+1) RBAC guards (UI + API)
+2) QM popup challenge (server-verified) + tracking tables
+3) DB migrations + seed template data
+4) Project quality tab (checklist + risk questions)
+5) Warning engine + warning UI surfaces
+6) Plan view integration (red badges + side panel + acknowledgement modal)
+7) Quality Manager dashboard
+8) Post-mortem scoring UI + rollups
+9) README section: roles, routes, Replit Secrets required (QM_ACCESS_CODE=2026), how to test, lockout behavior
+Now implement it by adapting to the repo’s patterns and existing schema.

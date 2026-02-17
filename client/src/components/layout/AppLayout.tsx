@@ -22,6 +22,7 @@ import {
   Camera,
   Cloud,
   Upload,
+  ShieldCheck,
 } from "lucide-react";
 import { useProgramData } from "@/hooks/use-program-data";
 import { useAuth } from "@/hooks/use-auth";
@@ -55,6 +56,12 @@ const navGroups: NavGroup[] = [
       { label: "Forecast", icon: BarChart3, path: "/cashflow-forecast" },
       { label: "Planning", icon: Kanban, path: "/planning" },
       { label: "Risks & Flags", icon: AlertTriangle, path: "/risks-flags" },
+    ],
+  },
+  {
+    heading: "QUALITY",
+    items: [
+      { label: "QM Dashboard", icon: ShieldCheck, path: "/quality" },
     ],
   },
   {
@@ -191,9 +198,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   "text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full shrink-0",
                   user?.role === "admin" 
                     ? "bg-amber-500/20 text-amber-300" 
+                    : user?.role === "quality_manager"
+                    ? "bg-emerald-500/20 text-emerald-300"
                     : "bg-blue-500/20 text-blue-300"
                 )}>
-                  {user?.role === "admin" ? "Admin" : "Viewer"}
+                  {user?.role === "admin" ? "Admin" : user?.role === "quality_manager" ? "QM" : "Viewer"}
                 </span>
               </div>
               <p className="text-xs text-sidebar-foreground/50 truncate">{user?.email}</p>

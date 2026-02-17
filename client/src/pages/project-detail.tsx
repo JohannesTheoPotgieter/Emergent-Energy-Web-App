@@ -5,7 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { FileText, DollarSign, CreditCard, TrendingUp, BarChart3, Activity, ArrowLeft, User, Calendar, CheckCircle, AlertCircle, Columns, CalendarDays, ListTodo } from "lucide-react";
+import { FileText, DollarSign, CreditCard, TrendingUp, BarChart3, Activity, ArrowLeft, User, Calendar, CheckCircle, AlertCircle, Columns, CalendarDays, ListTodo, ShieldCheck } from "lucide-react";
 import { ProjectPlanTab } from "@/components/tabs/ProjectPlanTab";
 import { RevenueTrackingTab } from "@/components/tabs/RevenueTrackingTab";
 import { ExpenditureEditableTab } from "@/components/tabs/ExpenditureEditableTab";
@@ -17,6 +17,7 @@ import BoardView from "@/components/BoardView";
 import CalendarView from "@/components/CalendarView";
 import TaskGridView from "@/components/TaskGridView";
 import KeyDatesPanel from "@/components/KeyDatesPanel";
+import { QualityTab } from "@/components/tabs/QualityTab";
 import { useProgramData } from "@/hooks/use-program-data";
 
 export default function ProjectDetailPage() {
@@ -227,6 +228,10 @@ export default function ProjectDetailPage() {
             <Activity className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Cashflow</span>
           </TabsTrigger>
+          <TabsTrigger value="quality" className="flex items-center gap-1.5 text-xs" data-testid="tab-quality">
+            <ShieldCheck className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Quality</span>
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="task-grid" className="space-y-4">
@@ -267,6 +272,10 @@ export default function ProjectDetailPage() {
 
         <TabsContent value="cashflow" className="space-y-4">
           <CashflowTab projectName={projectName} />
+        </TabsContent>
+
+        <TabsContent value="quality" className="space-y-4">
+          <QualityTab projectName={projectName} />
         </TabsContent>
       </Tabs>
 

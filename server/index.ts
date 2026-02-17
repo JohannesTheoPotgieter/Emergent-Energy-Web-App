@@ -224,6 +224,13 @@ async function seedUsers() {
   await initializeDatabase();
   
   await seedUsers();
+  
+  const { seedQualityTemplate } = await import("./seed-quality-template");
+  await seedQualityTemplate().catch(err => console.error('[Seed] Quality template error:', err));
+  
+  const { registerQualityRoutes } = await import("./quality-routes");
+  registerQualityRoutes(app);
+  
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
