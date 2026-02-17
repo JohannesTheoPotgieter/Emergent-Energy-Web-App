@@ -10,7 +10,6 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Progress } from "@/components/ui/progress";
 import { AlertCircle, CheckCircle, ChevronDown, ChevronRight, FileText, Shield, AlertTriangle, Clock, User, Lock } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
-import { QmChallengeModal } from "@/components/QmChallengeModal";
 
 function qFetch(url: string, options?: RequestInit) {
   const token = localStorage.getItem('auth_token');
@@ -66,26 +65,8 @@ export function QualityTab({ projectName }: QualityTabProps) {
   const [expandedPhases, setExpandedPhases] = useState<Record<number, boolean>>({});
   const [editingItem, setEditingItem] = useState<number | null>(null);
   const [itemEdits, setItemEdits] = useState<Record<string, any>>({});
-  const [showChallengeModal, setShowChallengeModal] = useState(false);
-  const [challengePassed, setChallengePassed] = useState(false);
-
-  const { data: accessStatus } = useQuery({
-    queryKey: ["qm-access-status"],
-    queryFn: async () => {
-      const res = await qFetch("/api/quality/access/status");
-      if (!res.ok) return { needsChallenge: false };
-      return res.json();
-    },
-  });
-
-  useEffect(() => {
-    if (accessStatus?.needsChallenge && !challengePassed) {
-      setShowChallengeModal(true);
-    }
-  }, [accessStatus, challengePassed]);
-
   const isQmOrAdmin = user?.role === "admin" || user?.role === "quality_manager";
-  const canEdit = isQmOrAdmin && (!accessStatus?.needsChallenge || challengePassed);
+  const canEdit = isQmOrAdmin;
 
   const { data: checklistData, isLoading, error } = useQuery({
     queryKey: ["quality-checklist", projectName],
@@ -230,19 +211,11 @@ export function QualityTab({ projectName }: QualityTabProps) {
 
   return (
     <div className="space-y-6">
-      <QmChallengeModal
-        open={showChallengeModal}
-        onSuccess={() => { setChallengePassed(true); setShowChallengeModal(false); }}
-        onClose={() => setShowChallengeModal(false)}
-      />
-
       {!canEdit && (
         <div className="rounded-lg border border-blue-500/30 bg-blue-500/5 p-3 flex items-center gap-2" data-testid="quality-readonly-banner">
           <Lock className="w-4 h-4 text-blue-500 shrink-0" />
           <span className="text-sm text-blue-500">
-            {isQmOrAdmin && accessStatus?.needsChallenge && !challengePassed
-              ? <button className="underline cursor-pointer font-medium" onClick={() => setShowChallengeModal(true)}>Enter access code to enable editing</button>
-              : "View-only mode — editing requires Quality Manager access"}
+            View-only mode — editing requires Quality Manager access
           </span>
         </div>
       )}
