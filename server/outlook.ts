@@ -300,18 +300,84 @@ export async function listMessages(options: {
 }
 
 export async function getMessageDetail(messageId: string): Promise<any> {
-  const msg = await graphGet(`/me/messages/${messageId}?$select=id,subject,from,receivedDateTime,bodyPreview,webLink,body,isRead,hasAttachments`);
+  const msg = await graphGet(`/me/messages/${messageId}?$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,bodyPreview,webLink,body,isRead,hasAttachments,conversationId`);
   return {
     id: msg.id,
     subject: msg.subject || "(No Subject)",
     sender: msg.from?.emailAddress?.name || msg.from?.emailAddress?.address || null,
     senderEmail: msg.from?.emailAddress?.address || null,
+    to: (msg.toRecipients || []).map((r: any) => ({ name: r.emailAddress?.name, email: r.emailAddress?.address })),
+    cc: (msg.ccRecipients || []).map((r: any) => ({ name: r.emailAddress?.name, email: r.emailAddress?.address })),
     receivedAt: msg.receivedDateTime,
     snippet: msg.bodyPreview || null,
+    body: msg.body?.content || null,
+    bodyType: msg.body?.contentType || "text",
     webLink: msg.webLink || null,
     isRead: msg.isRead,
     hasAttachments: msg.hasAttachments,
+    conversationId: msg.conversationId || null,
   };
+}
+
+export async function listMailFolders(): Promise<any[]> {
+  const data = await graphGet("/me/mailFolders?$top=100&$select=id,displayName,totalItemCount,unreadItemCount,parentFolderId");
+  const folders = (data.value || []).map((f: any) => ({
+    id: f.id,
+    displayName: f.displayName,
+    totalItemCount: f.totalItemCount,
+    unreadItemCount: f.unreadItemCount,
+    parentFolderId: f.parentFolderId,
+  }));
+
+  const result: any[] = [];
+  for (const folder of folders) {
+    result.push(folder);
+    try {
+      const childData = await graphGet(`/me/mailFolders/${folder.id}/childFolders?$top=50&$select=id,displayName,totalItemCount,unreadItemCount,parentFolderId`);
+      for (const child of (childData.value || [])) {
+        result.push({
+          id: child.id,
+          displayName: child.displayName,
+          totalItemCount: child.totalItemCount,
+          unreadItemCount: child.unreadItemCount,
+          parentFolderId: child.parentFolderId,
+        });
+      }
+    } catch {}
+  }
+  return result;
+}
+
+export async function sendMail(options: {
+  to: string[];
+  cc?: string[];
+  subject: string;
+  body: string;
+  bodyType?: "Text" | "HTML";
+}): Promise<void> {
+  await graphPost("/me/sendMail", {
+    message: {
+      subject: options.subject,
+      body: { contentType: options.bodyType || "Text", content: options.body },
+      toRecipients: options.to.map(addr => ({ emailAddress: { address: addr } })),
+      ccRecipients: (options.cc || []).map(addr => ({ emailAddress: { address: addr } })),
+    },
+    saveToSentItems: true,
+  });
+}
+
+export async function replyToMessage(messageId: string, comment: string, replyAll: boolean = false): Promise<void> {
+  const endpoint = replyAll ? "replyAll" : "reply";
+  await graphPost(`/me/messages/${messageId}/${endpoint}`, {
+    comment,
+  });
+}
+
+export async function forwardMessage(messageId: string, comment: string, toRecipients: string[]): Promise<void> {
+  await graphPost(`/me/messages/${messageId}/forward`, {
+    comment,
+    toRecipients: toRecipients.map(addr => ({ emailAddress: { address: addr } })),
+  });
 }
 
 export async function sendApprovalEmail(options: {
