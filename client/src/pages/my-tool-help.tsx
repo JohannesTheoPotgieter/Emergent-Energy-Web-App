@@ -93,7 +93,7 @@ export default function MyToolHelpPage() {
             <li><strong>Done</strong> — completed tasks (collapsed by default so they don't clutter your view).</li>
             <li><strong>Time Blocks</strong> (right column) — schedule focused work sessions by setting a start time, end time, and label. These blocks sync to your Outlook calendar if connected.</li>
             <li><strong>Company Priorities</strong> panel — see the priorities that leadership has flagged. You can convert any priority into a personal task with one click.</li>
-            <li><strong>End-of-Day Wrap</strong> — a short reflection at the bottom. Capture what went well, what moved forward, what's still blocked, and any notes for tomorrow.</li>
+            <li><strong>Auto Rollover</strong> — any unfinished tasks from previous days automatically appear in today's view, so nothing slips through the cracks.</li>
           </ul>
         </>
       ),

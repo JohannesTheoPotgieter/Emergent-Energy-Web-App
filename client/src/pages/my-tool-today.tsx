@@ -25,14 +25,11 @@ import {
   Target,
   Inbox,
   Loader2,
-  Save,
   AlertCircle,
   X,
   Flag,
   Mail,
   Zap,
-  Moon,
-  Repeat,
   Search,
   ExternalLink,
   Trash2,
@@ -70,15 +67,6 @@ interface TimeBlock {
   endTime: string;
   label: string;
   taskId: number | null;
-}
-
-interface DailyReview {
-  id: number;
-  date: string;
-  wentWell: string;
-  movedForward: string;
-  blocked: string;
-  notes: string;
 }
 
 const DEPARTMENTS = [
@@ -134,7 +122,6 @@ export default function MyToolTodayPage() {
   const [drawerTask, setDrawerTask] = useState<TaskItem | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [doneCollapsed, setDoneCollapsed] = useState(true);
-  const [wrapOpen, setWrapOpen] = useState(false);
   const [emailInboxOpen, setEmailInboxOpen] = useState(true);
   const [emailInboxSearch, setEmailInboxSearch] = useState("");
   const [debouncedInboxSearch, setDebouncedInboxSearch] = useState("");
@@ -148,7 +135,6 @@ export default function MyToolTodayPage() {
   const [horizon, setHorizon] = useState<Horizon>("week");
   const [addPriorityOpen, setAddPriorityOpen] = useState(false);
   const [newPriority, setNewPriority] = useState({ title: "", department: "", severity: "normal" as string, linkedProjectName: "" });
-  const [reviewForm, setReviewForm] = useState({ wentWell: "", movedForward: "", blocked: "", notes: "" });
   const [dodPromptTask, setDodPromptTask] = useState<TaskItem | null>(null);
   const [dodPromptText, setDodPromptText] = useState("");
 
@@ -190,10 +176,6 @@ export default function MyToolTodayPage() {
     queryKey: ["/api/mytool/escalated-priorities"],
   });
 
-  const { data: dailyReview } = useQuery<DailyReview | null>({
-    queryKey: [`/api/mytool/daily-review?date=${today}`],
-  });
-
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedInboxSearch(emailInboxSearch), 400);
     return () => clearTimeout(timer);
@@ -215,7 +197,6 @@ export default function MyToolTodayPage() {
     queryClient.invalidateQueries({ queryKey: [`/api/mytool/tasks?date=${today}`] });
     queryClient.invalidateQueries({ queryKey: [`/api/mytool/timeblocks?date=${today}`] });
     queryClient.invalidateQueries({ queryKey: [`/api/mytool/company-priorities?horizon=${horizon}`] });
-    queryClient.invalidateQueries({ queryKey: [`/api/mytool/daily-review?date=${today}`] });
     queryClient.invalidateQueries({ queryKey: ["/api/mytool/tasks"] });
   }, [horizon]);
 
@@ -276,12 +257,6 @@ export default function MyToolTodayPage() {
 
   const deletePriorityMutation = useMutation({
     mutationFn: async (id: number) => apiRequest("DELETE", `/api/mytool/company-priorities/${id}`),
-    onSuccess: () => invalidateAll(),
-    ...errHandler,
-  });
-
-  const saveReviewMutation = useMutation({
-    mutationFn: async (body: Record<string, unknown>) => apiRequest("POST", "/api/mytool/daily-review", body),
     onSuccess: () => invalidateAll(),
     ...errHandler,
   });
@@ -545,47 +520,6 @@ export default function MyToolTodayPage() {
               </section>
             )}
 
-            {/* Daily Wrap */}
-            <section className="border border-border/50 rounded-lg" data-testid="card-daily-wrap">
-              <button className="flex items-center gap-2 px-4 py-3 w-full text-left" onClick={() => {
-                setWrapOpen(!wrapOpen);
-                if (!wrapOpen && dailyReview) {
-                  setReviewForm({ wentWell: dailyReview.wentWell || "", movedForward: dailyReview.movedForward || "", blocked: dailyReview.blocked || "", notes: dailyReview.notes || "" });
-                }
-              }} data-testid="toggle-daily-wrap">
-                {wrapOpen ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
-                <Moon className="h-4 w-4 text-indigo-500" />
-                <span className="text-sm font-medium">End-of-Day Wrap</span>
-                {dailyReview && <Badge variant="outline" className="text-[10px] text-emerald-600 border-emerald-300 ml-2">Saved</Badge>}
-              </button>
-              {wrapOpen && (
-                <div className="px-4 pb-4 space-y-3">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {[
-                      { key: "wentWell", label: "What went well?", placeholder: "Wins, progress..." },
-                      { key: "movedForward", label: "What moved forward?", placeholder: "Projects advanced..." },
-                      { key: "blocked", label: "What's blocked?", placeholder: "Blockers, waiting on..." },
-                      { key: "notes", label: "Notes", placeholder: "Anything else..." },
-                    ].map(field => (
-                      <div key={field.key}>
-                        <label className="text-xs font-medium text-muted-foreground mb-1 block">{field.label}</label>
-                        <Textarea
-                          value={(reviewForm as any)[field.key]}
-                          onChange={(e) => setReviewForm(p => ({ ...p, [field.key]: e.target.value }))}
-                          placeholder={field.placeholder}
-                          className="text-sm min-h-[60px]"
-                          data-testid={`textarea-${field.key}`}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                  <Button onClick={() => saveReviewMutation.mutate({ date: today, ...reviewForm })} disabled={saveReviewMutation.isPending} size="sm" data-testid="button-save-review">
-                    {saveReviewMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Save className="h-3.5 w-3.5 mr-1" />}
-                    Save Review
-                  </Button>
-                </div>
-              )}
-            </section>
           </div>
 
           {/* RIGHT: Context column */}
