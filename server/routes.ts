@@ -3154,6 +3154,12 @@ export async function registerRoutes(
             mode: mode
           });
 
+          try {
+            await createSnapshotFromUpload(fileBuffer, file.originalname, (req.user as any)?.email || "admin");
+          } catch (snapErr: any) {
+            console.error("[Snapshot] Non-blocking snapshot creation failed:", snapErr.message);
+          }
+
         } catch (fileError: any) {
           console.error("File parse/upload error:", fileError);
           const { dbMode } = await import("./db");
@@ -8802,7 +8808,7 @@ export async function registerRoutes(
   // ==================== SHAREPOINT IMPORT ROUTES ====================
 
   const { testConnection, isSharePointConfigured, browseFolders } = await import("./sharepoint");
-  const { runFullImport, retryFailedImports, importSingleFile } = await import("./importPipeline");
+  const { runFullImport, retryFailedImports, importSingleFile, createSnapshotFromUpload } = await import("./importPipeline");
 
   // Admin: Get SP settings
   app.get("/api/admin/sp-settings", requireAuth, requireAdmin, async (req, res) => {
@@ -8925,8 +8931,8 @@ export async function registerRoutes(
     }
   });
 
-  // Viewer: List change ledger
-  app.get("/api/ledger", requireAuth, async (req, res) => {
+  // Admin: List change ledger
+  app.get("/api/ledger", requireAuth, requireAdmin, async (req, res) => {
     try {
       const filters: any = {};
       if (req.query.runId) filters.runId = parseInt(req.query.runId as string);
@@ -8947,8 +8953,8 @@ export async function registerRoutes(
     }
   });
 
-  // Viewer: Get single ledger entry
-  app.get("/api/ledger/:id", requireAuth, async (req, res) => {
+  // Admin: Get single ledger entry
+  app.get("/api/ledger/:id", requireAuth, requireAdmin, async (req, res) => {
     try {
       const entry = await storage.getChangeLedgerEntry(parseInt(req.params.id));
       if (!entry) return res.status(404).json({ error: "Ledger entry not found" });
@@ -8967,8 +8973,8 @@ export async function registerRoutes(
     }
   });
 
-  // Viewer: List snapshots
-  app.get("/api/snapshots", requireAuth, async (req, res) => {
+  // Admin: List snapshots
+  app.get("/api/snapshots", requireAuth, requireAdmin, async (req, res) => {
     try {
       const fileId = req.query.fileId ? parseInt(req.query.fileId as string) : undefined;
       const snaps = await storage.getAllSnapshots(fileId);
@@ -8984,8 +8990,8 @@ export async function registerRoutes(
     }
   });
 
-  // Viewer: Get single snapshot with metrics + diff
-  app.get("/api/snapshots/:id", requireAuth, async (req, res) => {
+  // Admin: Get single snapshot with metrics + diff
+  app.get("/api/snapshots/:id", requireAuth, requireAdmin, async (req, res) => {
     try {
       const snap = await storage.getSnapshot(parseInt(req.params.id));
       if (!snap) return res.status(404).json({ error: "Snapshot not found" });
@@ -9015,8 +9021,8 @@ export async function registerRoutes(
     }
   });
 
-  // Viewer: List SP files
-  app.get("/api/sp-files", requireAuth, async (req, res) => {
+  // Admin: List SP files
+  app.get("/api/sp-files", requireAuth, requireAdmin, async (req, res) => {
     try {
       const files = await storage.getAllSpFiles();
       res.json(files);

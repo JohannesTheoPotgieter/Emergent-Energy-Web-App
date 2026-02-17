@@ -161,7 +161,7 @@ export default function SpLedgerPage() {
                   <TableRow
                     key={entry.id}
                     className="cursor-pointer hover:bg-muted/50"
-                    onClick={() => setLocation(`/sp-ledger/${entry.id}`)}
+                    onClick={() => setLocation(`/admin/sp-ledger/${entry.id}`)}
                     data-testid={`row-ledger-${entry.id}`}
                   >
                     <TableCell className="font-medium" data-testid={`text-filename-${entry.id}`}>

@@ -63,19 +63,14 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
-    heading: "SHAREPOINT",
-    items: [
-      { label: "Change Ledger", icon: BookOpen, path: "/sp-ledger" },
-      { label: "Snapshots", icon: Camera, path: "/sp-snapshots" },
-      { label: "File Refresh", icon: FileSpreadsheet, path: "/admin/sp-file-refresh" },
-      { label: "SP Settings", icon: Cloud, path: "/admin/sp-settings" },
-      { label: "Import Runs", icon: Database, path: "/admin/sp-import-runs" },
-    ],
-  },
-  {
     heading: "ADMIN",
     items: [
       { label: "Admin", icon: Settings, path: "/admin" },
+      { label: "SP Settings", icon: Cloud, path: "/admin/sp-settings" },
+      { label: "File Refresh", icon: FileSpreadsheet, path: "/admin/sp-file-refresh" },
+      { label: "Import Runs", icon: Database, path: "/admin/sp-import-runs" },
+      { label: "Change Ledger", icon: BookOpen, path: "/admin/sp-ledger" },
+      { label: "Snapshots", icon: Camera, path: "/admin/sp-snapshots" },
     ],
   },
 ];
@@ -147,16 +142,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           {sidebarShowLabels && <span>Home</span>}
         </Link>
 
-        {navGroups.filter(group => group.heading !== "WIP" && (group.heading !== "PERSONAL" || user?.role === "admin")).map((group) => {
-          const visibleItems = group.heading === "SHAREPOINT" && user?.role !== "admin"
-            ? group.items.filter(i => !i.path.startsWith("/admin/"))
-            : group.items;
+        {navGroups.filter(group => group.heading !== "WIP" && (group.heading !== "PERSONAL" || user?.role === "admin") && (group.heading !== "ADMIN" || user?.role === "admin")).map((group) => {
+          const visibleItems = group.items;
           if (visibleItems.length === 0) return null;
           return (
           <div key={group.heading} className="pt-4">
             {sidebarShowLabels && (
               <p className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-sidebar-foreground/40">
-                {group.heading === "ADMIN" && user?.role !== "admin" ? "IMPORT" : group.heading}
+                {group.heading}
               </p>
             )}
             {!sidebarShowLabels && <div className="h-px bg-sidebar-border mx-2 mb-1" />}

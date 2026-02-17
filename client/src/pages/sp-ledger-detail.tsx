@@ -35,7 +35,7 @@ function formatDate(d: string | null | undefined) {
 }
 
 export default function SpLedgerDetailPage() {
-  const [, params] = useRoute("/sp-ledger/:id");
+  const [, params] = useRoute("/admin/sp-ledger/:id");
   const id = params?.id;
 
   const { data, isLoading, isError } = useQuery<any>({
@@ -61,7 +61,7 @@ export default function SpLedgerDetailPage() {
     return (
       <div className="min-h-screen bg-background p-6">
         <div className="max-w-4xl mx-auto">
-          <Link to="/sp-ledger">
+          <Link to="/admin/sp-ledger">
             <Button variant="ghost" size="sm" data-testid="button-back-ledger">
               <ArrowLeft className="h-4 w-4 mr-1" /> Back to Ledger
             </Button>
@@ -81,7 +81,7 @@ export default function SpLedgerDetailPage() {
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-4xl mx-auto space-y-6">
         <div className="flex items-center gap-4">
-          <Link to="/sp-ledger">
+          <Link to="/admin/sp-ledger">
             <Button variant="ghost" size="sm" data-testid="button-back-ledger">
               <ArrowLeft className="h-4 w-4 mr-1" /> Back to Ledger
             </Button>

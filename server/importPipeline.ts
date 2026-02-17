@@ -276,6 +276,69 @@ export async function retryFailedImports(triggeredBy: string = "system"): Promis
   return { runId: run.id, summary };
 }
 
+export async function createSnapshotFromUpload(
+  fileBuffer: Buffer,
+  fileName: string,
+  triggeredBy: string = "admin"
+): Promise<{ snapshotId: number | null; status: string }> {
+  try {
+    const contentHash = computeHash(fileBuffer);
+    const sheets = await parseExcelSheets(fileBuffer);
+
+    let totalRows = 0;
+    const sheetEntries = Array.from(sheets.entries());
+    for (const [, rows] of sheetEntries) {
+      totalRows += rows.length;
+    }
+
+    const snapshotData: InsertSnapshot = {
+      fileId: 0,
+      sourceEtag: null,
+      contentHash,
+      rowCountTotal: totalRows,
+      parserVersion: PARSER_VERSION,
+      storageRef: `upload:${fileName}`,
+    };
+
+    const snapshot = await storage.createSnapshot(snapshotData);
+
+    const metrics: InsertSnapshotMetric[] = [];
+    for (const [sheetName, rows] of sheetEntries) {
+      const checksum = computeSheetChecksum(rows);
+      const dates = extractDates(rows);
+
+      let totals: Record<string, number> = {};
+      for (const row of rows) {
+        for (const [key, val] of Object.entries(row)) {
+          const num = parseFloat(val as string);
+          if (!isNaN(num) && typeof val !== "boolean") {
+            totals[key] = (totals[key] || 0) + num;
+          }
+        }
+      }
+
+      metrics.push({
+        snapshotId: snapshot.id,
+        tableName: sheetName,
+        rowCount: rows.length,
+        checksum,
+        minDate: dates.min,
+        maxDate: dates.max,
+        totalsJson: Object.keys(totals).length > 0 ? totals : null,
+      });
+    }
+
+    if (metrics.length > 0) {
+      await storage.createManySnapshotMetrics(metrics);
+    }
+
+    return { snapshotId: snapshot.id, status: "created" };
+  } catch (err: any) {
+    console.error("[Snapshot] Failed to create snapshot from upload:", err.message);
+    return { snapshotId: null, status: "failed" };
+  }
+}
+
 export async function importSingleFile(
   driveId: string,
   siteId: string,
