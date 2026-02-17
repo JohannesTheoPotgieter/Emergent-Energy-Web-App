@@ -37,6 +37,9 @@ import {
   FolderOpen,
   Paperclip,
   Pen,
+  ListPlus,
+  Trash2,
+  Edit,
 } from "lucide-react";
 
 type Horizon = "today" | "week" | "month" | "quarter";
@@ -192,6 +195,9 @@ export default function MyToolTodayPage() {
   const [dodPromptText, setDodPromptText] = useState("");
   const [projectCollapsed, setProjectCollapsed] = useState<Record<string, boolean>>({});
   const [plannerDropHour, setPlannerDropHour] = useState<number | null>(null);
+  const [editingBlockId, setEditingBlockId] = useState<number | null>(null);
+  const [editBlockStart, setEditBlockStart] = useState("");
+  const [editBlockEnd, setEditBlockEnd] = useState("");
 
   const { data: tasks = [], isLoading: tasksLoading } = useQuery<TaskItem[]>({
     queryKey: [`/api/mytool/tasks?date=${today}`],
@@ -377,6 +383,12 @@ export default function MyToolTodayPage() {
   const deleteBlockMutation = useMutation({
     mutationFn: async (id: number) => apiRequest("DELETE", `/api/mytool/timeblocks/${id}`),
     onSuccess: () => invalidateAll(),
+    ...errHandler,
+  });
+
+  const updateBlockMutation = useMutation({
+    mutationFn: async ({ id, ...body }: { id: number } & Record<string, unknown>) => apiRequest("PATCH", `/api/mytool/timeblocks/${id}`, body),
+    onSuccess: () => { invalidateAll(); setEditingBlockId(null); },
     ...errHandler,
   });
 
@@ -805,75 +817,128 @@ export default function MyToolTodayPage() {
                         </div>
                       )}
 
-                      {/* Calendar events (Outlook) */}
-                      {timedEvents.map((evt) => {
-                        const startMins = eventToMinutes(evt.start);
-                        const endMins = eventToMinutes(evt.end);
-                        const top = minToTop(startMins);
-                        const height = minToHeight(startMins, endMins);
-                        const startFmt = `${String(Math.floor(startMins / 60)).padStart(2, "0")}:${String(startMins % 60).padStart(2, "0")}`;
-                        const endFmt = `${String(Math.floor(endMins / 60)).padStart(2, "0")}:${String(endMins % 60).padStart(2, "0")}`;
-                        return (
-                          <div
-                            key={evt.id}
-                            className="absolute left-10 right-1 z-10 rounded-md bg-blue-100/80 dark:bg-blue-900/30 border border-blue-300/60 dark:border-blue-700/40 px-2 py-1 overflow-hidden cursor-default"
-                            style={{ top, height: Math.max(height, 20) }}
-                            title={`${evt.subject}\n${startFmt} – ${endFmt}${evt.location ? `\n${evt.location}` : ""}`}
-                            data-testid={`calendar-event-${evt.id}`}
-                          >
-                            <div className="flex items-start gap-1">
-                              <Mail className="h-3 w-3 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
-                              <div className="min-w-0 flex-1">
-                                <p className="text-[11px] font-medium text-blue-800 dark:text-blue-200 truncate leading-tight">{evt.subject}</p>
-                                <p className="text-[9px] text-blue-600 dark:text-blue-400">{startFmt} – {endFmt}</p>
-                                {evt.location && height > 40 && <p className="text-[9px] text-blue-500 truncate">{evt.location}</p>}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
+                      {/* Calendar events & time blocks — per-cluster overlap layout */}
+                      {(() => {
+                        type PlannerItem = { type: "event"; data: typeof timedEvents[0]; startMins: number; endMins: number } | { type: "block"; data: typeof sortedBlocks[0]; startMins: number; endMins: number };
+                        const allItems: PlannerItem[] = [
+                          ...timedEvents.map(e => ({ type: "event" as const, data: e, startMins: eventToMinutes(e.start), endMins: eventToMinutes(e.end) })),
+                          ...sortedBlocks.map(b => ({ type: "block" as const, data: b, startMins: timeToMinutes(b.startTime), endMins: timeToMinutes(b.endTime) })),
+                        ].sort((a, b) => a.startMins - b.startMins || a.endMins - b.endMins);
 
-                      {/* Time blocks */}
-                      {sortedBlocks.map((block) => {
-                        const startMins = timeToMinutes(block.startTime);
-                        const endMins = timeToMinutes(block.endTime);
-                        const top = minToTop(startMins);
-                        const height = minToHeight(startMins, endMins);
-                        const linkedTask = block.taskId ? tasks.find(t => t.id === block.taskId) : null;
-                        return (
-                          <div
-                            key={block.id}
-                            className="absolute left-10 z-20 rounded-md bg-violet-100/80 dark:bg-violet-900/30 border border-violet-300/60 dark:border-violet-700/40 px-2 py-1 overflow-hidden group/block"
-                            style={{
-                              top, height: Math.max(height, 20),
-                              right: timedEvents.some(e => {
-                                const es = eventToMinutes(e.start);
-                                const ee = eventToMinutes(e.end);
-                                return startMins < ee && endMins > es;
-                              }) ? "calc(50% + 2px)" : "4px"
-                            }}
-                            title={`${block.label}\n${block.startTime} – ${block.endTime}`}
-                            data-testid={`timeblock-${block.id}`}
-                          >
-                            <div className="flex items-start gap-1">
-                              <Clock className="h-3 w-3 text-violet-600 dark:text-violet-400 mt-0.5 shrink-0" />
-                              <div className="min-w-0 flex-1">
-                                <p className="text-[11px] font-medium text-violet-800 dark:text-violet-200 truncate leading-tight">{block.label}</p>
-                                <p className="text-[9px] text-violet-600 dark:text-violet-400">{block.startTime} – {block.endTime}</p>
-                                {linkedTask && height > 35 && (
-                                  <p className="text-[9px] text-violet-500 truncate mt-0.5">
-                                    <span className={`inline-block w-1 h-1 rounded-full mr-0.5 ${linkedTask.status === "done" ? "bg-emerald-500" : linkedTask.status === "in_progress" ? "bg-amber-500" : "bg-blue-500"}`} />
-                                    {linkedTask.title}
-                                  </p>
+                        const clusters: PlannerItem[][] = [];
+                        let clusterEnd = -1;
+                        allItems.forEach(item => {
+                          if (item.startMins >= clusterEnd) {
+                            clusters.push([item]);
+                            clusterEnd = item.endMins;
+                          } else {
+                            clusters[clusters.length - 1].push(item);
+                            clusterEnd = Math.max(clusterEnd, item.endMins);
+                          }
+                        });
+
+                        type Positioned = PlannerItem & { col: number; totalCols: number };
+                        const positioned: Positioned[] = [];
+                        clusters.forEach(cluster => {
+                          const cols: PlannerItem[][] = [];
+                          cluster.forEach(item => {
+                            let placed = false;
+                            for (const col of cols) {
+                              if (col[col.length - 1].endMins <= item.startMins) {
+                                col.push(item);
+                                placed = true;
+                                break;
+                              }
+                            }
+                            if (!placed) cols.push([item]);
+                          });
+                          const totalCols = cols.length;
+                          cols.forEach((col, colIdx) => {
+                            col.forEach(item => positioned.push({ ...item, col: colIdx, totalCols }));
+                          });
+                        });
+
+                        return positioned.map(item => {
+                          const top = minToTop(item.startMins);
+                          const height = minToHeight(item.startMins, item.endMins);
+                          const isSingle = item.totalCols === 1;
+                          const colWidth = isSingle ? undefined : `calc((100% - 44px) / ${item.totalCols} - 2px)`;
+                          const colLeft = `calc(40px + ${item.col} * ((100% - 44px) / ${item.totalCols}))`;
+
+                          if (item.type === "event") {
+                            const evt = item.data;
+                            const startFmt = `${String(Math.floor(item.startMins / 60)).padStart(2, "0")}:${String(item.startMins % 60).padStart(2, "0")}`;
+                            const endFmt = `${String(Math.floor(item.endMins / 60)).padStart(2, "0")}:${String(item.endMins % 60).padStart(2, "0")}`;
+                            return (
+                              <div
+                                key={`evt-${evt.id}`}
+                                className="absolute z-10 rounded-md bg-blue-100/80 dark:bg-blue-900/30 border border-blue-300/60 dark:border-blue-700/40 px-2 py-1 overflow-hidden cursor-default"
+                                style={{ top, height: Math.max(height, 20), left: colLeft, width: colWidth, right: isSingle ? "4px" : undefined }}
+                                title={`${evt.subject}\n${startFmt} – ${endFmt}${evt.location ? `\n${evt.location}` : ""}`}
+                                data-testid={`calendar-event-${evt.id}`}
+                              >
+                                <div className="flex items-start gap-1">
+                                  <Mail className="h-3 w-3 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-[11px] font-medium text-blue-800 dark:text-blue-200 truncate leading-tight">{evt.subject}</p>
+                                    <p className="text-[9px] text-blue-600 dark:text-blue-400">{startFmt} – {endFmt}</p>
+                                    {evt.location && height > 40 && <p className="text-[9px] text-blue-500 truncate">{evt.location}</p>}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          } else {
+                            const block = item.data;
+                            const linkedTask = block.taskId ? tasks.find(t => t.id === block.taskId) : null;
+                            const isEditing = editingBlockId === block.id;
+                            return (
+                              <div
+                                key={`blk-${block.id}`}
+                                className="absolute z-20 rounded-md bg-violet-100/80 dark:bg-violet-900/30 border border-violet-300/60 dark:border-violet-700/40 px-2 py-1 overflow-hidden group/block"
+                                style={{ top, height: Math.max(height, 20), left: colLeft, width: colWidth, right: isSingle ? "4px" : undefined }}
+                                title={`${block.label}\n${block.startTime} – ${block.endTime}`}
+                                data-testid={`timeblock-${block.id}`}
+                              >
+                                {isEditing ? (
+                                  <div className="flex flex-col gap-1" onClick={e => e.stopPropagation()}>
+                                    <div className="flex gap-1">
+                                      <input type="time" value={editBlockStart} onChange={e => setEditBlockStart(e.target.value)} className="text-[10px] h-5 w-[70px] border border-violet-300 rounded px-1 bg-background" data-testid={`input-edit-block-start-${block.id}`} />
+                                      <span className="text-[10px] text-violet-500">–</span>
+                                      <input type="time" value={editBlockEnd} onChange={e => setEditBlockEnd(e.target.value)} className="text-[10px] h-5 w-[70px] border border-violet-300 rounded px-1 bg-background" data-testid={`input-edit-block-end-${block.id}`} />
+                                    </div>
+                                    <div className="flex gap-1 justify-end">
+                                      <Button variant="ghost" size="sm" className="h-4 px-1 text-[9px]" onClick={() => setEditingBlockId(null)}>Cancel</Button>
+                                      <Button size="sm" className="h-4 px-1.5 text-[9px]" onClick={() => updateBlockMutation.mutate({ id: block.id, startTime: editBlockStart, endTime: editBlockEnd })} disabled={!editBlockStart || !editBlockEnd} data-testid={`button-save-edit-block-${block.id}`}>Save</Button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-start gap-1">
+                                    <Clock className="h-3 w-3 text-violet-600 dark:text-violet-400 mt-0.5 shrink-0" />
+                                    <div className="min-w-0 flex-1">
+                                      <p className="text-[11px] font-medium text-violet-800 dark:text-violet-200 truncate leading-tight">{block.label}</p>
+                                      <p className="text-[9px] text-violet-600 dark:text-violet-400">{block.startTime} – {block.endTime}</p>
+                                      {linkedTask && height > 35 && (
+                                        <p className="text-[9px] text-violet-500 truncate mt-0.5">
+                                          <span className={`inline-block w-1 h-1 rounded-full mr-0.5 ${linkedTask.status === "done" ? "bg-emerald-500" : linkedTask.status === "in_progress" ? "bg-amber-500" : "bg-blue-500"}`} />
+                                          {linkedTask.title}
+                                        </p>
+                                      )}
+                                    </div>
+                                    <div className="flex flex-col gap-0.5 opacity-0 group-hover/block:opacity-100 shrink-0">
+                                      <Button variant="ghost" size="sm" className="h-4 w-4 p-0 text-violet-400 hover:text-violet-600" onClick={(e) => { e.stopPropagation(); setEditingBlockId(block.id); setEditBlockStart(block.startTime); setEditBlockEnd(block.endTime); }} data-testid={`button-edit-block-${block.id}`}>
+                                        <Edit className="h-2.5 w-2.5" />
+                                      </Button>
+                                      <Button variant="ghost" size="sm" className="h-4 w-4 p-0 text-violet-400 hover:text-destructive" onClick={(e) => { e.stopPropagation(); deleteBlockMutation.mutate(block.id); }} data-testid={`button-delete-block-${block.id}`}>
+                                        <Trash2 className="h-2.5 w-2.5" />
+                                      </Button>
+                                    </div>
+                                  </div>
                                 )}
                               </div>
-                              <Button variant="ghost" size="sm" className="h-4 w-4 p-0 opacity-0 group-hover/block:opacity-100 text-violet-400 hover:text-destructive shrink-0" onClick={(e) => { e.stopPropagation(); deleteBlockMutation.mutate(block.id); }} data-testid={`button-delete-block-${block.id}`}>
-                                <X className="h-2.5 w-2.5" />
-                              </Button>
-                            </div>
-                          </div>
-                        );
-                      })}
+                            );
+                          }
+                        });
+                      })()}
                     </div>
                   );
                 })()}
@@ -1116,6 +1181,16 @@ export default function MyToolTodayPage() {
                                   </div>
                                   {email.snippet && <p className="text-[10px] text-muted-foreground/70 truncate mt-0.5">{email.snippet}</p>}
                                 </div>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 w-6 p-0 opacity-0 group-hover/email:opacity-100 shrink-0 text-muted-foreground hover:text-primary"
+                                  title="Add as task"
+                                  onClick={(e) => { e.stopPropagation(); handleDropEmail(email); }}
+                                  data-testid={`button-email-to-task-${email.id}`}
+                                >
+                                  <ListPlus className="h-3.5 w-3.5" />
+                                </Button>
                               </div>
                             </div>
                           ))}
