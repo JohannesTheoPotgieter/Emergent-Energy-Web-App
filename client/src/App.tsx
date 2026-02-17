@@ -29,6 +29,7 @@ import MyToolBacklogPage from "@/pages/my-tool-backlog";
 import MyToolSettingsPage from "@/pages/my-tool-settings";
 import MyToolAdminSettingsPage from "@/pages/my-tool-admin-settings";
 import MyToolHelpPage from "@/pages/my-tool-help";
+import MyToolPrioritiesPage from "@/pages/my-tool-priorities";
 import { useProgramData } from "@/hooks/use-program-data";
 import { TrackerTable } from "@/components/dashboard/TrackerTable";
 import { format } from "date-fns";
@@ -163,6 +164,7 @@ function ProtectedPages() {
         <Route path="/my-tool/week" component={MyToolWeekPage} />
         <Route path="/my-tool/backlog" component={MyToolBacklogPage} />
         <Route path="/my-tool/settings" component={MyToolSettingsPage} />
+        <Route path="/my-tool/priorities" component={MyToolPrioritiesPage} />
         <Route path="/my-tool/help" component={MyToolHelpPage} />
         <Route path="/upload">{() => <Redirect to="/admin" />}</Route>
         <Route path="/admin" component={AdminPage} />
