@@ -64,9 +64,14 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
-    heading: "ADMIN",
+    heading: "DATA",
     items: [
       { label: "Data Import", icon: Upload, path: "/admin" },
+    ],
+  },
+  {
+    heading: "ADMIN",
+    items: [
       { label: "SP Settings", icon: Cloud, path: "/admin/sp-settings" },
       { label: "File Refresh", icon: FileSpreadsheet, path: "/admin/sp-file-refresh" },
       { label: "Import Runs", icon: Database, path: "/admin/sp-import-runs" },
