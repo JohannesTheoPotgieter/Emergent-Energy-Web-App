@@ -407,6 +407,21 @@ function requireAdmin(req: Request, res: Response, next: NextFunction) {
   res.status(403).json({ error: "admin_required", message: "Admin access required", code: "ADMIN_REQUIRED" });
 }
 
+function requireRole(...roles: string[]) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (req.user?.role && roles.includes(req.user.role)) {
+      return next();
+    }
+    res.status(403).json({ error: "forbidden", message: `Requires one of: ${roles.join(', ')}`, code: "ROLE_REQUIRED" });
+  };
+}
+
+function requireQmChallenge(req: Request, res: Response, next: NextFunction) {
+  if (req.user?.role === "admin") return next();
+  if ((req.session as any)?.qmChallengePassed) return next();
+  res.status(403).json({ error: "qm_challenge_required", message: "Quality Manager access code required", code: "QM_CHALLENGE_REQUIRED" });
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express

@@ -43,3 +43,8 @@ waitForPort = 5000
 stack = "MOCKUP_JS"
 mockupState = "FULLSTACK"
 integrations = ["outlook:1.0.0"]
+
+[userenv]
+
+[userenv.shared]
+QM_ACCESS_CODE = "2026"
