@@ -145,7 +145,10 @@ export default function MyToolBacklogPage() {
     queryFn: async () => {
       const params = new URLSearchParams({ top: "15" });
       if (debouncedInboxSearch.trim()) params.set("search", debouncedInboxSearch.trim());
-      const res = await fetch(`/api/outlook/messages?${params.toString()}`, { credentials: "include" });
+      const bh: Record<string, string> = {};
+      const bt = localStorage.getItem('auth_token');
+      if (bt) bh["Authorization"] = `Bearer ${bt}`;
+      const res = await fetch(`/api/outlook/messages?${params.toString()}`, { credentials: "include", headers: bh });
       if (!res.ok) return [];
       const data = await res.json();
       return Array.isArray(data) ? data : data.value || [];
