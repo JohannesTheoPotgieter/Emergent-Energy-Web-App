@@ -61,13 +61,13 @@ async function graphGetBuffer(url: string): Promise<Buffer> {
   return Buffer.from(arrayBuf);
 }
 
-export async function testConnection(siteId: string, driveId: string): Promise<{ ok: boolean; siteName?: string; driveName?: string; error?: string }> {
+export async function testConnection(siteId: string, driveId: string): Promise<{ ok: boolean; success: boolean; siteName?: string; driveName?: string; error?: string }> {
   try {
     const site = await graphGet(`https://graph.microsoft.com/v1.0/sites/${siteId}`);
     const drive = await graphGet(`https://graph.microsoft.com/v1.0/drives/${driveId}`);
-    return { ok: true, siteName: site.displayName, driveName: drive.name };
+    return { ok: true, success: true, siteName: site.displayName, driveName: drive.name };
   } catch (err: any) {
-    return { ok: false, error: err.message };
+    return { ok: false, success: false, error: err.message };
   }
 }
 
@@ -89,6 +89,40 @@ export async function listFolderChildren(
   return (result.value || []).filter((item: any) =>
     item.name?.endsWith('.xlsx') || item.name?.endsWith('.xlsm') || item.name?.endsWith('.xls')
   );
+}
+
+export async function browseFolders(
+  driveId: string,
+  folderId?: string
+): Promise<{ id: string; name: string; path: string; childCount: number; isFolder: boolean }[]> {
+  let url: string;
+  if (folderId) {
+    url = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${folderId}/children`;
+  } else {
+    url = `https://graph.microsoft.com/v1.0/drives/${driveId}/root/children`;
+  }
+
+  const result = await graphGet(url);
+  return (result.value || []).map((item: any) => ({
+    id: item.id,
+    name: item.name,
+    path: item.parentReference?.path
+      ? item.parentReference.path.replace(/\/drives\/[^/]+\/root:?/, "") + "/" + item.name
+      : "/" + item.name,
+    childCount: item.folder?.childCount ?? 0,
+    isFolder: !!item.folder,
+  }));
+}
+
+export async function downloadSingleFile(driveId: string, itemId: string): Promise<{ buffer: Buffer; fileName: string; etag: string; ctag: string }> {
+  const meta = await getFileMetadata(driveId, itemId);
+  const buffer = await downloadFileContent(driveId, itemId);
+  return {
+    buffer,
+    fileName: meta.name,
+    etag: meta.eTag || "",
+    ctag: meta.cTag || "",
+  };
 }
 
 export async function downloadFileContent(driveId: string, itemId: string): Promise<Buffer> {
