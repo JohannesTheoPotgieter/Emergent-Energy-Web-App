@@ -69,6 +69,20 @@ interface TimeBlock {
   taskId: number | null;
 }
 
+interface CalendarEvent {
+  id: string;
+  subject: string;
+  start: string;
+  end: string;
+  isAllDay: boolean;
+  location: string | null;
+  organizer: string | null;
+  showAs: string;
+  isCancelled: boolean;
+  isRecurring: boolean;
+  source: "outlook";
+}
+
 const DEPARTMENTS = [
   "Engineering", "Finance", "Operations", "Sales",
   "Procurement", "Legal", "HR", "Executive",
@@ -126,11 +140,13 @@ export default function MyToolTodayPage() {
   const [emailInboxSearch, setEmailInboxSearch] = useState("");
   const [debouncedInboxSearch, setDebouncedInboxSearch] = useState("");
   const [planDropOver, setPlanDropOver] = useState(false);
-  const [blockDropOver, setBlockDropOver] = useState(false);
   const [addBlockOpen, setAddBlockOpen] = useState(false);
   const [blockStart, setBlockStart] = useState("");
   const [blockEnd, setBlockEnd] = useState("");
   const [blockLabel, setBlockLabel] = useState("");
+  const [blockTaskId, setBlockTaskId] = useState<number | null>(null);
+  const plannerStartHour = 6;
+  const plannerEndHour = 21;
   const [prioritiesOpen, setPrioritiesOpen] = useState(true);
   const [horizon, setHorizon] = useState<Horizon>("week");
   const [addPriorityOpen, setAddPriorityOpen] = useState(false);
@@ -163,6 +179,16 @@ export default function MyToolTodayPage() {
 
   const { data: timeblocks = [] } = useQuery<TimeBlock[]>({
     queryKey: [`/api/mytool/timeblocks?date=${today}`],
+  });
+
+  const { data: calendarEvents = [] } = useQuery<CalendarEvent[]>({
+    queryKey: [`/api/outlook/events`, today],
+    queryFn: async () => {
+      const res = await fetch(`/api/outlook/events?start=${today}&end=${today}`, { credentials: "include" });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data) ? data.filter((e: CalendarEvent) => !e.isCancelled) : [];
+    },
   });
 
   const { data: priorities = [] } = useQuery<CompanyPriority[]>({
@@ -233,7 +259,7 @@ export default function MyToolTodayPage() {
 
   const createBlockMutation = useMutation({
     mutationFn: async (body: Record<string, unknown>) => apiRequest("POST", "/api/mytool/timeblocks", body),
-    onSuccess: () => { invalidateAll(); setAddBlockOpen(false); setBlockStart(""); setBlockEnd(""); setBlockLabel(""); },
+    onSuccess: () => { invalidateAll(); setAddBlockOpen(false); setBlockStart(""); setBlockEnd(""); setBlockLabel(""); setBlockTaskId(null); },
     ...errHandler,
   });
 
@@ -327,12 +353,6 @@ export default function MyToolTodayPage() {
     } catch {
       toast({ title: "Failed to create task from email", variant: "destructive" });
     }
-  };
-
-  const handleDropEmailToBlock = async (email: OutlookEmail) => {
-    await handleDropEmail(email);
-    setAddBlockOpen(true);
-    setBlockLabel(email.subject || "(No subject)");
   };
 
   const pinnedTasks = tasks.filter(t => t.pinnedToday && t.status !== "done" && t.status !== "cancelled");
@@ -524,61 +544,219 @@ export default function MyToolTodayPage() {
 
           {/* RIGHT: Context column */}
           <div className="lg:col-span-2 space-y-5">
-            {/* Time Blocks */}
+            {/* Daily Planner */}
             <section
-              className={`border border-border/50 rounded-lg transition-all ${blockDropOver ? "ring-2 ring-primary/40 bg-primary/5" : ""}`}
-              onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setBlockDropOver(true); }}
-              onDragLeave={() => setBlockDropOver(false)}
-              onDrop={(e) => {
-                e.preventDefault();
-                setBlockDropOver(false);
-                try {
-                  const emailData = JSON.parse(e.dataTransfer.getData("application/json"));
-                  if (emailData?.id && emailData?.subject !== undefined) handleDropEmailToBlock(emailData);
-                } catch {}
-              }}
-              data-testid="card-time-blocks"
+              className="border border-border/50 rounded-lg"
+              data-testid="card-daily-planner"
             >
               <div className="flex items-center justify-between px-4 py-3">
                 <div className="flex items-center gap-2">
-                  <Clock className="h-4 w-4 text-violet-600" />
-                  <span className="text-sm font-medium">Time Blocks</span>
-                  {blockDropOver && <span className="text-[10px] text-primary">Drop to create</span>}
+                  <Calendar className="h-4 w-4 text-violet-600" />
+                  <span className="text-sm font-medium">Daily Planner</span>
+                  <Badge variant="secondary" className="text-[10px] h-4 px-1">
+                    {timeblocks.length + calendarEvents.filter(e => !e.isAllDay).length}
+                  </Badge>
                 </div>
-                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setAddBlockOpen(!addBlockOpen)} data-testid="button-add-block">
+                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => {
+                  setAddBlockOpen(!addBlockOpen);
+                  if (!addBlockOpen) { setBlockStart(""); setBlockEnd(""); setBlockLabel(""); setBlockTaskId(null); }
+                }} data-testid="button-add-block">
                   {addBlockOpen ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
                 </Button>
               </div>
-              <div className="px-4 pb-4 space-y-1.5">
-                {addBlockOpen && (
-                  <div className="space-y-2 p-3 bg-muted/30 rounded-lg border border-border/50 mb-2" data-testid="form-add-block">
-                    <div className="flex gap-2">
-                      <Input type="time" value={blockStart} onChange={(e) => setBlockStart(e.target.value)} className="text-xs h-8" data-testid="input-block-start" />
-                      <Input type="time" value={blockEnd} onChange={(e) => setBlockEnd(e.target.value)} className="text-xs h-8" data-testid="input-block-end" />
+
+              {/* All-day events banner */}
+              {calendarEvents.filter(e => e.isAllDay).length > 0 && (
+                <div className="px-4 pb-2 space-y-1">
+                  {calendarEvents.filter(e => e.isAllDay).map(evt => (
+                    <div key={evt.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded bg-blue-50 dark:bg-blue-950/20 border border-blue-200/50 dark:border-blue-800/30" data-testid={`allday-event-${evt.id}`}>
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
+                      <span className="text-[11px] text-blue-700 dark:text-blue-300 truncate flex-1">{evt.subject}</span>
+                      <span className="text-[9px] text-blue-500 uppercase shrink-0">All day</span>
                     </div>
-                    <Input value={blockLabel} onChange={(e) => setBlockLabel(e.target.value)} className="text-xs h-8" placeholder="What are you working on?" onKeyDown={(e) => e.key === "Enter" && blockStart && blockEnd && blockLabel.trim() && createBlockMutation.mutate({ date: today, startTime: blockStart, endTime: blockEnd, label: blockLabel.trim() })} data-testid="input-block-label" />
-                    <Button size="sm" className="w-full h-7 text-xs" onClick={() => createBlockMutation.mutate({ date: today, startTime: blockStart, endTime: blockEnd, label: blockLabel.trim() })} disabled={!blockStart || !blockEnd || !blockLabel.trim()} data-testid="button-save-block">
-                      Add Block
-                    </Button>
+                  ))}
+                </div>
+              )}
+
+              {/* Add block form */}
+              {addBlockOpen && (
+                <div className="mx-4 mb-3 space-y-2 p-3 bg-muted/30 rounded-lg border border-border/50" data-testid="form-add-block">
+                  <div className="flex gap-2">
+                    <Input type="time" value={blockStart} onChange={(e) => setBlockStart(e.target.value)} className="text-xs h-8" data-testid="input-block-start" />
+                    <Input type="time" value={blockEnd} onChange={(e) => setBlockEnd(e.target.value)} className="text-xs h-8" data-testid="input-block-end" />
                   </div>
-                )}
-                {timeblocks.length === 0 && !addBlockOpen ? (
-                  <div className="text-center py-4" data-testid="empty-timeblocks">
-                    <Clock className="h-6 w-6 text-muted-foreground/20 mx-auto mb-1" />
-                    <p className="text-xs text-muted-foreground">No time blocks yet.</p>
-                    <button onClick={() => setAddBlockOpen(true)} className="text-xs text-primary hover:underline mt-1" data-testid="link-add-first-block">Add your first block</button>
-                  </div>
-                ) : (
-                  timeblocks.sort((a, b) => a.startTime.localeCompare(b.startTime)).map(block => (
-                    <div key={block.id} className="flex items-center gap-2 px-2.5 py-2 rounded-md bg-violet-50/30 dark:bg-violet-950/10 border border-violet-100/50 dark:border-violet-900/30 group" data-testid={`timeblock-${block.id}`}>
-                      <span className="text-[11px] font-mono text-violet-600 dark:text-violet-400 shrink-0">{block.startTime}–{block.endTime}</span>
-                      <span className="flex-1 text-xs text-foreground truncate">{block.label}</span>
-                      <Button variant="ghost" size="sm" className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive" onClick={() => deleteBlockMutation.mutate(block.id)} data-testid={`button-delete-block-${block.id}`}>
-                        <X className="h-3 w-3" />
-                      </Button>
+                  <Input value={blockLabel} onChange={(e) => setBlockLabel(e.target.value)} className="text-xs h-8" placeholder="What are you working on?" onKeyDown={(e) => e.key === "Enter" && blockStart && blockEnd && blockLabel.trim() && createBlockMutation.mutate({ date: today, startTime: blockStart, endTime: blockEnd, label: blockLabel.trim(), taskId: blockTaskId })} data-testid="input-block-label" />
+                  <select value={blockTaskId ?? ""} onChange={(e) => setBlockTaskId(e.target.value ? Number(e.target.value) : null)} className="w-full h-8 text-xs border border-border rounded px-2 bg-background" data-testid="select-block-task">
+                    <option value="">Link a task (optional)</option>
+                    {tasks.filter(t => t.status !== "done" && t.status !== "cancelled").map(t => (
+                      <option key={t.id} value={t.id}>{t.title}</option>
+                    ))}
+                  </select>
+                  <Button size="sm" className="w-full h-7 text-xs" onClick={() => createBlockMutation.mutate({ date: today, startTime: blockStart, endTime: blockEnd, label: blockLabel.trim(), taskId: blockTaskId })} disabled={!blockStart || !blockEnd || !blockLabel.trim()} data-testid="button-save-block">
+                    Add Block
+                  </Button>
+                </div>
+              )}
+
+              {/* Timeline view */}
+              <div className="px-2 pb-3 overflow-y-auto max-h-[600px]" data-testid="planner-timeline">
+                {(() => {
+                  const SLOT_HEIGHT = 48;
+                  const hours = Array.from({ length: plannerEndHour - plannerStartHour }, (_, i) => plannerStartHour + i);
+
+                  const timeToMinutes = (t: string) => {
+                    const [h, m] = t.split(":").map(Number);
+                    return h * 60 + (m || 0);
+                  };
+
+                  const eventToMinutes = (dt: string) => {
+                    try {
+                      const d = new Date(dt);
+                      return d.getHours() * 60 + d.getMinutes();
+                    } catch { return 0; }
+                  };
+
+                  const minToTop = (mins: number) => {
+                    const offset = mins - plannerStartHour * 60;
+                    return Math.max(0, (offset / 60) * SLOT_HEIGHT);
+                  };
+
+                  const minToHeight = (startMins: number, endMins: number) => {
+                    const dur = Math.max(endMins - startMins, 15);
+                    return (dur / 60) * SLOT_HEIGHT;
+                  };
+
+                  const timedEvents = calendarEvents.filter(e => !e.isAllDay && !e.isCancelled);
+                  const sortedBlocks = [...timeblocks].sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+                  const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
+                  const nowTop = minToTop(nowMinutes);
+                  const showNowLine = nowMinutes >= plannerStartHour * 60 && nowMinutes <= plannerEndHour * 60;
+
+                  return (
+                    <div className="relative" style={{ height: hours.length * SLOT_HEIGHT }}>
+                      {/* Hour grid lines */}
+                      {hours.map((hour) => (
+                        <div
+                          key={hour}
+                          className="absolute left-0 right-0 border-t border-border/30 group/slot cursor-pointer hover:bg-muted/20 transition-colors"
+                          style={{ top: (hour - plannerStartHour) * SLOT_HEIGHT, height: SLOT_HEIGHT }}
+                          onClick={() => {
+                            if (!addBlockOpen) {
+                              setAddBlockOpen(true);
+                              setBlockStart(`${String(hour).padStart(2, "0")}:00`);
+                              setBlockEnd(`${String(hour + 1).padStart(2, "0")}:00`);
+                              setBlockLabel("");
+                              setBlockTaskId(null);
+                            }
+                          }}
+                          data-testid={`slot-hour-${hour}`}
+                        >
+                          <span className="absolute -top-2.5 left-1 text-[10px] font-mono text-muted-foreground/60 select-none">
+                            {hour === 0 ? "12 AM" : hour < 12 ? `${hour} AM` : hour === 12 ? "12 PM" : `${hour - 12} PM`}
+                          </span>
+                          <span className="absolute right-1 top-1/2 -translate-y-1/2 text-[9px] text-primary/0 group-hover/slot:text-primary/60 transition-colors select-none">
+                            + Add
+                          </span>
+                        </div>
+                      ))}
+
+                      {/* Now indicator */}
+                      {showNowLine && (
+                        <div className="absolute left-8 right-1 z-30 pointer-events-none flex items-center" style={{ top: nowTop }} data-testid="now-indicator">
+                          <span className="w-2 h-2 rounded-full bg-red-500 -ml-1 shrink-0" />
+                          <div className="flex-1 h-[1.5px] bg-red-500" />
+                        </div>
+                      )}
+
+                      {/* Calendar events (Outlook) */}
+                      {timedEvents.map((evt) => {
+                        const startMins = eventToMinutes(evt.start);
+                        const endMins = eventToMinutes(evt.end);
+                        const top = minToTop(startMins);
+                        const height = minToHeight(startMins, endMins);
+                        const startFmt = `${String(Math.floor(startMins / 60)).padStart(2, "0")}:${String(startMins % 60).padStart(2, "0")}`;
+                        const endFmt = `${String(Math.floor(endMins / 60)).padStart(2, "0")}:${String(endMins % 60).padStart(2, "0")}`;
+                        return (
+                          <div
+                            key={evt.id}
+                            className="absolute left-10 right-1 z-10 rounded-md bg-blue-100/80 dark:bg-blue-900/30 border border-blue-300/60 dark:border-blue-700/40 px-2 py-1 overflow-hidden cursor-default"
+                            style={{ top, height: Math.max(height, 20) }}
+                            title={`${evt.subject}\n${startFmt} – ${endFmt}${evt.location ? `\n${evt.location}` : ""}`}
+                            data-testid={`calendar-event-${evt.id}`}
+                          >
+                            <div className="flex items-start gap-1">
+                              <Mail className="h-3 w-3 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
+                              <div className="min-w-0 flex-1">
+                                <p className="text-[11px] font-medium text-blue-800 dark:text-blue-200 truncate leading-tight">{evt.subject}</p>
+                                <p className="text-[9px] text-blue-600 dark:text-blue-400">{startFmt} – {endFmt}</p>
+                                {evt.location && height > 40 && <p className="text-[9px] text-blue-500 truncate">{evt.location}</p>}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {/* Time blocks */}
+                      {sortedBlocks.map((block) => {
+                        const startMins = timeToMinutes(block.startTime);
+                        const endMins = timeToMinutes(block.endTime);
+                        const top = minToTop(startMins);
+                        const height = minToHeight(startMins, endMins);
+                        const linkedTask = block.taskId ? tasks.find(t => t.id === block.taskId) : null;
+                        return (
+                          <div
+                            key={block.id}
+                            className="absolute left-10 z-20 rounded-md bg-violet-100/80 dark:bg-violet-900/30 border border-violet-300/60 dark:border-violet-700/40 px-2 py-1 overflow-hidden group/block"
+                            style={{
+                              top, height: Math.max(height, 20),
+                              right: timedEvents.some(e => {
+                                const es = eventToMinutes(e.start);
+                                const ee = eventToMinutes(e.end);
+                                return startMins < ee && endMins > es;
+                              }) ? "calc(50% + 2px)" : "4px"
+                            }}
+                            title={`${block.label}\n${block.startTime} – ${block.endTime}`}
+                            data-testid={`timeblock-${block.id}`}
+                          >
+                            <div className="flex items-start gap-1">
+                              <Clock className="h-3 w-3 text-violet-600 dark:text-violet-400 mt-0.5 shrink-0" />
+                              <div className="min-w-0 flex-1">
+                                <p className="text-[11px] font-medium text-violet-800 dark:text-violet-200 truncate leading-tight">{block.label}</p>
+                                <p className="text-[9px] text-violet-600 dark:text-violet-400">{block.startTime} – {block.endTime}</p>
+                                {linkedTask && height > 35 && (
+                                  <p className="text-[9px] text-violet-500 truncate mt-0.5">
+                                    <span className={`inline-block w-1 h-1 rounded-full mr-0.5 ${linkedTask.status === "done" ? "bg-emerald-500" : linkedTask.status === "in_progress" ? "bg-amber-500" : "bg-blue-500"}`} />
+                                    {linkedTask.title}
+                                  </p>
+                                )}
+                              </div>
+                              <Button variant="ghost" size="sm" className="h-4 w-4 p-0 opacity-0 group-hover/block:opacity-100 text-violet-400 hover:text-destructive shrink-0" onClick={(e) => { e.stopPropagation(); deleteBlockMutation.mutate(block.id); }} data-testid={`button-delete-block-${block.id}`}>
+                                <X className="h-2.5 w-2.5" />
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                  ))
-                )}
+                  );
+                })()}
+              </div>
+
+              {/* Legend */}
+              <div className="flex items-center gap-4 px-4 pb-3 border-t border-border/30 pt-2">
+                <div className="flex items-center gap-1">
+                  <span className="w-2.5 h-2.5 rounded bg-violet-200 dark:bg-violet-800 border border-violet-300" />
+                  <span className="text-[10px] text-muted-foreground">Tasks</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="w-2.5 h-2.5 rounded bg-blue-200 dark:bg-blue-800 border border-blue-300" />
+                  <span className="text-[10px] text-muted-foreground">Meetings</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="w-2.5 h-[2px] bg-red-500" />
+                  <span className="text-[10px] text-muted-foreground">Now</span>
+                </div>
               </div>
             </section>
 
