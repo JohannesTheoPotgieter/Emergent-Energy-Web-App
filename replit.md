@@ -18,6 +18,7 @@ Preferred communication style: Simple, everyday language.
     -   **Financial Tracking**: Expenditure Breakdown (parsing budget/costed vs. actual/finance from Excel), Cashflow Planning (editable grid with real-time updates), COS Tracker Page (monthly matrix with KPIs), COS Control Tower (scenario-aware what-if shifting tool), Cashflow Page (chart-first layout, weekly timeline, OPEX budget modal), and Cashflow Forecast (scenario-aware weekly forecast with baseline vs scenario balance overlay).
     -   **Project Management**: Planning Board (scenario-aware Gantt-lite timeline, key dates, resource capacity heatmap), Project Plan View (CPM scheduling with Gantt visualization, critical path calculation), and Operational Task Management (ClickUp-style task system with multiple views and detail drawers).
     -   **Data Quality & Scenarios**: Risks & Flags (severity-ranked data quality issues), Scenario System (reusable component for creating/managing scenarios across financial and planning modules).
+    -   **Quality Management**: Quality Tab (4-phase checklist with Planning & Design, Construction, Commissioning, Handover phases; 13 groups, 46 items, 22 risk questions; non-blocking red warnings engine), QM Dashboard (stats overview, project table, warnings), Post-Mortem Panel (contractor/engineering quality scoring with 7 metrics), QM Access Code Challenge (4-digit code gate for quality_manager role editing).
     -   **Utilities & Admin**: SafeMoney Utilities (NaN-safe currency handling), My Tool (COO Execution Cockpit — Linear/Notion/Sunsama-style premium minimal interface with shared components: MyToolLayout, TaskCard, TaskDetailDrawer; DoD enforcement; natural language quick add; keyboard shortcuts ⌘K/⌘⏎; drag-drop email-to-task; time blocks; daily wrap), and Excel Writeback Manager (admin UI for configuring and executing Excel writebacks).
 
 ### Backend
@@ -47,6 +48,13 @@ Preferred communication style: Simple, everyday language.
 -   `change_ledger`: File change detection log with import status tracking.
 -   `snapshots`: Immutable file snapshots with content hash and row counts.
 -   `snapshot_metrics`: Per-sheet metrics (row count, checksum, date ranges, totals).
+-   `qm_templates`, `qm_template_phases`, `qm_template_groups`, `qm_template_items`: Quality checklist template hierarchy.
+-   `qm_template_risk_questions`: Risk questions per template phase.
+-   `qm_checklists`, `qm_checklist_items`, `qm_risk_answers`: Per-project checklist instances and risk answers.
+-   `qm_warnings`, `qm_warning_overrides`: Non-blocking warning engine with override tracking.
+-   `qm_postmortems`, `qm_postmortem_metrics`, `qm_postmortem_metric_values`: Post-mortem scoring system.
+-   `qm_access_challenges`: Access code challenge audit trail with rate limiting.
+-   `qm_holidays`: ZA public holidays for scheduling calculations.
 
 ### New API Endpoints (Examples)
 -   `/api/cos-control/*`: Endpoints for COS KPI aggregation, breakdowns, line-item explorers, and scenario-based analysis.
@@ -57,6 +65,7 @@ Preferred communication style: Simple, everyday language.
 -   `/api/operational-tasks/*`: CRUD operations for operational tasks, comments, checklists, and activity logs.
 -   `/api/writeback/*`: Endpoints for managing writeback mappings, previewing, executing, and rolling back writebacks.
 -   `/api/mytool/*`: Endpoints for My Tool settings, tasks, time blocks, daily reviews, company priorities, and user preferences.
+-   `/api/quality/*`: Quality management endpoints — templates, checklists (CRUD + instantiation), risk answers, warnings engine, post-mortem scoring, access code challenge with rate limiting.
 
 ## External Dependencies
 
