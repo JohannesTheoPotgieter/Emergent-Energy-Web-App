@@ -92,6 +92,7 @@ const navGroups: NavGroup[] = [
       { label: "Leave Settings", icon: CalendarDays, path: "/admin/leave/settings" },
       { label: "Leave Runs", icon: Play, path: "/admin/leave/runs" },
       { label: "Leave Actions", icon: Users, path: "/admin/leave/actions" },
+      { label: "Leave Upload", icon: Upload, path: "/admin/leave/upload" },
     ],
   },
 ];

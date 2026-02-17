@@ -9216,6 +9216,302 @@ export async function registerRoutes(
     }
   });
 
+  // Admin: Upload leave data from Excel/CSV
+  const leaveUpload = multer({
+    storage: multer.diskStorage({
+      destination: (req, file, cb) => { cb(null, uploadDir); },
+      filename: (req, file, cb) => { cb(null, `${Date.now()}_${file.originalname.replace(/[^a-zA-Z0-9_.-]/g, '_')}`); },
+    }),
+    limits: { fileSize: 20 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+      const ext = file.originalname.toLowerCase();
+      if (ext.endsWith('.csv') || ext.endsWith('.xlsx') || ext.endsWith('.xls')) {
+        cb(null, true);
+      } else {
+        cb(new Error('Invalid file type. Only CSV (.csv) and Excel (.xlsx, .xls) files are allowed.'));
+      }
+    },
+  });
+
+  app.post("/api/admin/leave/upload", requireAuth, requireAdmin, leaveUpload.single("file"), async (req, res) => {
+    let filePath: string | null = null;
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      filePath = req.file.path;
+      const fileName = req.file.originalname.toLowerCase();
+      const isCSV = fileName.endsWith(".csv");
+
+      let records: Array<{
+        externalLeaveId: string;
+        employeeId: string;
+        firstName: string;
+        surname: string;
+        leaveType: string;
+        startDate: string;
+        endDate: string;
+        status: string;
+        approvedBy: string;
+      }> = [];
+
+      if (isCSV) {
+        const content = fs.readFileSync(filePath, "utf-8");
+        const lines = content.split(/\r?\n/).filter(l => l.trim());
+        if (lines.length < 2) {
+          fs.unlinkSync(filePath);
+          return res.status(400).json({ error: "CSV file is empty or has no data rows" });
+        }
+        const headerLine = lines[0];
+        const headers = parseCSVLine(headerLine).map(h => h.trim().toLowerCase().replace(/['"]/g, ""));
+
+        const findCol = (names: string[]) => {
+          for (const n of names) {
+            const idx = headers.findIndex(h => h.includes(n));
+            if (idx >= 0) return idx;
+          }
+          return -1;
+        };
+
+        const idCol = findCol(["leave id", "leaveid", "transaction id", "transactionid", "id", "leave_id"]);
+        const empIdCol = findCol(["employee number", "employeenumber", "employee id", "emp id", "employee_id", "emp_id", "empid"]);
+        const firstNameCol = findCol(["first name", "firstname", "first_name", "name"]);
+        const surnameCol = findCol(["surname", "last name", "lastname", "last_name"]);
+        const typeCol = findCol(["leave type", "leavetype", "leave_type", "type"]);
+        const startCol = findCol(["start date", "startdate", "start_date", "from date", "from_date", "fromdate"]);
+        const endCol = findCol(["end date", "enddate", "end_date", "to date", "to_date", "todate"]);
+        const statusCol = findCol(["status"]);
+        const approverCol = findCol(["approved by", "approvedby", "approved_by", "approver"]);
+
+        if (startCol < 0 || endCol < 0) {
+          fs.unlinkSync(filePath);
+          return res.status(400).json({ error: "Could not find Start Date and End Date columns. Required columns: Start Date, End Date. Also recommended: First Name, Surname, Leave Type." });
+        }
+
+        for (let i = 1; i < lines.length; i++) {
+          const vals = parseCSVLine(lines[i]);
+          if (vals.length < 2) continue;
+          const get = (idx: number) => (idx >= 0 && idx < vals.length) ? vals[idx].trim().replace(/^['"]|['"]$/g, "") : "";
+
+          records.push({
+            externalLeaveId: get(idCol) || `upload-${Date.now()}-${i}`,
+            employeeId: get(empIdCol) || "",
+            firstName: get(firstNameCol) || "Unknown",
+            surname: get(surnameCol) || "",
+            leaveType: get(typeCol) || "Leave",
+            startDate: normalizeUploadDate(get(startCol)),
+            endDate: normalizeUploadDate(get(endCol)),
+            status: (get(statusCol) || "approved").toLowerCase(),
+            approvedBy: get(approverCol) || "",
+          });
+        }
+      } else {
+        const ExcelJS = (await import("exceljs")).default;
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.readFile(filePath);
+        const worksheet = workbook.worksheets[0];
+        if (!worksheet || worksheet.rowCount < 2) {
+          fs.unlinkSync(filePath);
+          return res.status(400).json({ error: "Excel file is empty or has no data rows" });
+        }
+
+        const headerRow = worksheet.getRow(1);
+        const headers: string[] = [];
+        headerRow.eachCell((cell, colNum) => {
+          headers[colNum - 1] = String(cell.value || "").toLowerCase().trim();
+        });
+
+        const findCol = (names: string[]) => {
+          for (const n of names) {
+            const idx = headers.findIndex(h => h.includes(n));
+            if (idx >= 0) return idx;
+          }
+          return -1;
+        };
+
+        const idCol = findCol(["leave id", "leaveid", "transaction id", "transactionid", "id", "leave_id"]);
+        const empIdCol = findCol(["employee number", "employeenumber", "employee id", "emp id", "employee_id"]);
+        const firstNameCol = findCol(["first name", "firstname", "first_name", "name"]);
+        const surnameCol = findCol(["surname", "last name", "lastname", "last_name"]);
+        const typeCol = findCol(["leave type", "leavetype", "leave_type", "type"]);
+        const startCol = findCol(["start date", "startdate", "start_date", "from date", "from_date"]);
+        const endCol = findCol(["end date", "enddate", "end_date", "to date", "to_date"]);
+        const statusCol = findCol(["status"]);
+        const approverCol = findCol(["approved by", "approvedby", "approved_by", "approver"]);
+
+        if (startCol < 0 || endCol < 0) {
+          fs.unlinkSync(filePath);
+          return res.status(400).json({ error: "Could not find Start Date and End Date columns. Required columns: Start Date, End Date. Also recommended: First Name, Surname, Leave Type." });
+        }
+
+        for (let rowNum = 2; rowNum <= worksheet.rowCount; rowNum++) {
+          const row = worksheet.getRow(rowNum);
+          const get = (idx: number) => {
+            if (idx < 0) return "";
+            const cell = row.getCell(idx + 1);
+            if (cell.value instanceof Date) {
+              return cell.value.toISOString().split("T")[0];
+            }
+            return String(cell.value || "").trim();
+          };
+
+          const startDate = get(startCol);
+          if (!startDate) continue;
+
+          records.push({
+            externalLeaveId: get(idCol) || `upload-${Date.now()}-${rowNum}`,
+            employeeId: get(empIdCol) || "",
+            firstName: get(firstNameCol) || "Unknown",
+            surname: get(surnameCol) || "",
+            leaveType: get(typeCol) || "Leave",
+            startDate: normalizeUploadDate(startDate),
+            endDate: normalizeUploadDate(get(endCol) || startDate),
+            status: (get(statusCol) || "approved").toLowerCase(),
+            approvedBy: get(approverCol) || "",
+          });
+        }
+      }
+
+      fs.unlinkSync(filePath);
+
+      if (records.length === 0) {
+        return res.status(400).json({ error: "No valid leave records found in the file" });
+      }
+
+      const settings = await storage.getPayspaceSettings();
+      const showFullSurname = settings?.showFullSurname ?? false;
+
+      const run = await storage.createLeaveRun({
+        triggerType: "manual",
+        triggeredBy: req.user?.email || "admin",
+        status: "running",
+      });
+
+      const { computeLeaveHash, formatDisplayName } = await import("./payspaceClient");
+      const summary = { created: 0, modified: 0, unchanged: 0, errors: 0, total: records.length };
+
+      for (const rec of records) {
+        try {
+          const payRec = {
+            externalLeaveId: rec.externalLeaveId,
+            employeeId: rec.employeeId,
+            employeeFirstName: rec.firstName,
+            employeeSurname: rec.surname,
+            leaveType: rec.leaveType,
+            startDate: rec.startDate,
+            endDate: rec.endDate,
+            status: rec.status,
+            approvedBy: rec.approvedBy,
+          };
+          const newHash = computeLeaveHash(payRec);
+          const displayName = formatDisplayName(rec.firstName, rec.surname, showFullSurname);
+          const existing = await storage.getLeaveEventByExternalId(rec.externalLeaveId);
+
+          if (!existing) {
+            const event = await storage.upsertLeaveEvent({
+              externalLeaveId: rec.externalLeaveId,
+              employeeId: rec.employeeId,
+              employeeDisplayName: displayName,
+              leaveType: rec.leaveType,
+              startDate: rec.startDate,
+              endDate: rec.endDate,
+              isAllDay: true,
+              status: "approved",
+              approvedBy: rec.approvedBy || null,
+              lastSeenAt: new Date(),
+              sourceHash: newHash,
+            });
+            await storage.createLeaveLedgerEntry({
+              runId: run.id,
+              externalLeaveId: rec.externalLeaveId,
+              eventType: "created",
+              effectiveStartDate: rec.startDate,
+              effectiveEndDate: rec.endDate,
+              employeeDisplayName: displayName,
+              approvedBy: rec.approvedBy || null,
+              importStatus: "applied",
+              newHash: newHash,
+              leaveEventId: event.id,
+            });
+            summary.created++;
+          } else if (existing.sourceHash !== newHash) {
+            await storage.upsertLeaveEvent({
+              externalLeaveId: rec.externalLeaveId,
+              employeeId: rec.employeeId,
+              employeeDisplayName: displayName,
+              leaveType: rec.leaveType,
+              startDate: rec.startDate,
+              endDate: rec.endDate,
+              isAllDay: true,
+              status: "approved",
+              approvedBy: rec.approvedBy || null,
+              lastSeenAt: new Date(),
+              sourceHash: newHash,
+            });
+            await storage.createLeaveLedgerEntry({
+              runId: run.id,
+              externalLeaveId: rec.externalLeaveId,
+              eventType: "modified",
+              effectiveStartDate: rec.startDate,
+              effectiveEndDate: rec.endDate,
+              employeeDisplayName: displayName,
+              approvedBy: rec.approvedBy || null,
+              importStatus: "applied",
+              oldHash: existing.sourceHash,
+              newHash: newHash,
+              leaveEventId: existing.id,
+            });
+            summary.modified++;
+          } else {
+            summary.unchanged++;
+          }
+        } catch (err: any) {
+          summary.errors++;
+        }
+      }
+
+      const finalStatus = summary.errors > 0 ? (summary.created + summary.modified > 0 ? "partial" : "fail") : "success";
+      await storage.updateLeaveRun(run.id, {
+        finishedAt: new Date(),
+        status: finalStatus as any,
+        summaryJson: summary,
+      });
+
+      res.json({
+        success: true,
+        runId: run.id,
+        status: finalStatus,
+        summary,
+        message: `Processed ${summary.total} records: ${summary.created} new, ${summary.modified} updated, ${summary.unchanged} unchanged, ${summary.errors} errors`,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    } finally {
+      if (filePath && fs.existsSync(filePath)) {
+        try { fs.unlinkSync(filePath); } catch {}
+      }
+    }
+  });
+
+  // Admin: Download leave template
+  app.get("/api/admin/leave/template", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const csvContent = [
+        "Leave ID,Employee Number,First Name,Surname,Leave Type,Start Date,End Date,Status,Approved By",
+        "L001,EMP001,John,Smith,Annual Leave,2026-03-01,2026-03-05,Approved,Jane Manager",
+        "L002,EMP002,Sarah,Jones,Sick Leave,2026-03-10,2026-03-11,Approved,Jane Manager",
+        "L003,EMP003,Mike,Williams,Family Responsibility,2026-03-15,2026-03-15,Approved,Bob Director",
+      ].join("\n");
+
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", "attachment; filename=leave-template.csv");
+      res.send(csvContent);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Viewer: Get leave sync status (for display)
   app.get("/api/leave/status", requireAuth, async (req, res) => {
     try {
@@ -9303,4 +9599,60 @@ function generateCSV(data: any[], columns: string[]): string {
   );
   
   return [header, ...rows].join("\n");
+}
+
+function parseCSVLine(line: string): string[] {
+  const result: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"' && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else if (ch === '"') {
+        inQuotes = false;
+      } else {
+        current += ch;
+      }
+    } else {
+      if (ch === '"') {
+        inQuotes = true;
+      } else if (ch === ',') {
+        result.push(current);
+        current = "";
+      } else {
+        current += ch;
+      }
+    }
+  }
+  result.push(current);
+  return result;
+}
+
+function normalizeUploadDate(dateStr: string): string {
+  if (!dateStr) return new Date().toISOString().split("T")[0];
+  const trimmed = dateStr.trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+    return trimmed.substring(0, 10);
+  }
+  const slashMatch = trimmed.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
+  if (slashMatch) {
+    const [, a, b, year] = slashMatch;
+    const aNum = parseInt(a, 10);
+    const bNum = parseInt(b, 10);
+    if (aNum > 12) {
+      return `${year}-${bNum.toString().padStart(2, "0")}-${aNum.toString().padStart(2, "0")}`;
+    }
+    if (bNum > 12) {
+      return `${year}-${aNum.toString().padStart(2, "0")}-${bNum.toString().padStart(2, "0")}`;
+    }
+    return `${year}-${bNum.toString().padStart(2, "0")}-${aNum.toString().padStart(2, "0")}`;
+  }
+  try {
+    const d = new Date(trimmed);
+    if (!isNaN(d.getTime())) return d.toISOString().split("T")[0];
+  } catch {}
+  return trimmed;
 }
