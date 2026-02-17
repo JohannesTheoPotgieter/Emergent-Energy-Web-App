@@ -8324,7 +8324,7 @@ export async function registerRoutes(
 
   // ==================== MY TOOL - COMPANY PRIORITIES ====================
 
-  app.get("/api/mytool/company-priorities", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/mytool/company-priorities", requireAuth, async (req, res) => {
     try {
       const { horizon } = req.query;
       const priorities = await storage.getMytoolCompanyPriorities(horizon as string | undefined);
