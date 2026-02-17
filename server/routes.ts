@@ -8328,6 +8328,23 @@ export async function registerRoutes(
     try {
       const { horizon } = req.query;
       const priorities = await storage.getMytoolCompanyPriorities(horizon as string | undefined);
+      const nullRanked = priorities.filter(p => p.priorityRank == null);
+      if (nullRanked.length > 0) {
+        const deptMaxRanks: Record<string, number> = {};
+        priorities.forEach(p => {
+          const dept = p.department || "_none_";
+          if (p.priorityRank != null) {
+            deptMaxRanks[dept] = Math.max(deptMaxRanks[dept] || 0, p.priorityRank);
+          }
+        });
+        for (const p of nullRanked) {
+          const dept = p.department || "_none_";
+          const nextRank = (deptMaxRanks[dept] || 0) + 1;
+          deptMaxRanks[dept] = nextRank;
+          await storage.updateMytoolCompanyPriority(p.id, { priorityRank: nextRank });
+          p.priorityRank = nextRank;
+        }
+      }
       res.json(priorities);
     } catch (err: any) {
       res.status(500).json({ error: err.message });

@@ -1954,11 +1954,55 @@ export class DatabaseStorage implements IStorage {
 
   async createMytoolCompanyPriority(data: InsertMytoolCompanyPriority): Promise<MytoolCompanyPriority> {
     const now = new Date();
+    if (data.priorityRank != null) {
+      const conditions = [gte(mytoolCompanyPriorities.priorityRank, data.priorityRank)];
+      if (data.department) {
+        conditions.push(eq(mytoolCompanyPriorities.department, data.department) as any);
+      }
+      await this.dbInstance.update(mytoolCompanyPriorities)
+        .set({ priorityRank: sql`${mytoolCompanyPriorities.priorityRank} + 1`, updatedAt: now })
+        .where(and(...conditions));
+    } else {
+      const existing = await this.dbInstance.select().from(mytoolCompanyPriorities)
+        .where(data.department ? eq(mytoolCompanyPriorities.department, data.department) : sql`true`);
+      const maxRank = existing.reduce((max: number, p: any) => Math.max(max, p.priorityRank ?? 0), 0);
+      data = { ...data, priorityRank: maxRank + 1 };
+    }
     const [created] = await this.dbInstance.insert(mytoolCompanyPriorities).values({ ...data, createdAt: now, updatedAt: now }).returning();
     return created;
   }
 
   async updateMytoolCompanyPriority(id: number, data: Partial<InsertMytoolCompanyPriority>): Promise<MytoolCompanyPriority> {
+    if (data.priorityRank != null) {
+      const current = await this.dbInstance.select().from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, id));
+      if (current.length > 0) {
+        const oldRank = current[0].priorityRank;
+        const dept = data.department ?? current[0].department;
+        const newRank = data.priorityRank;
+        if (oldRank !== newRank) {
+          const deptCondition = dept ? eq(mytoolCompanyPriorities.department, dept) : sql`true`;
+          if (oldRank == null || newRank < oldRank) {
+            await this.dbInstance.update(mytoolCompanyPriorities)
+              .set({ priorityRank: sql`${mytoolCompanyPriorities.priorityRank} + 1`, updatedAt: new Date() })
+              .where(and(
+                gte(mytoolCompanyPriorities.priorityRank, newRank),
+                oldRank != null ? lte(mytoolCompanyPriorities.priorityRank, oldRank - 1) : sql`true`,
+                deptCondition as any,
+                not(eq(mytoolCompanyPriorities.id, id))
+              ));
+          } else {
+            await this.dbInstance.update(mytoolCompanyPriorities)
+              .set({ priorityRank: sql`${mytoolCompanyPriorities.priorityRank} - 1`, updatedAt: new Date() })
+              .where(and(
+                gte(mytoolCompanyPriorities.priorityRank, oldRank + 1),
+                lte(mytoolCompanyPriorities.priorityRank, newRank),
+                deptCondition as any,
+                not(eq(mytoolCompanyPriorities.id, id))
+              ));
+          }
+        }
+      }
+    }
     const [updated] = await this.dbInstance.update(mytoolCompanyPriorities).set({ ...data, updatedAt: new Date() }).where(eq(mytoolCompanyPriorities.id, id)).returning();
     return updated;
   }
