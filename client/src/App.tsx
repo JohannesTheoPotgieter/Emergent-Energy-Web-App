@@ -45,6 +45,7 @@ import ExecCockpitPage from "@/pages/exec-cockpit";
 import TriageInboxPage from "@/pages/triage-inbox";
 import UnclassifiedTasksPage from "@/pages/unclassified-tasks";
 import RoleSettingsPage from "@/pages/role-settings";
+import LifecycleBoardPage from "@/pages/lifecycle-board";
 
 import { useAuth } from "@/hooks/use-auth";
 import { useProgramData } from "@/hooks/use-program-data";
@@ -229,6 +230,7 @@ function ProtectedPages() {
         <Route path="/admin/reports/operational-overview" component={OperationalOverviewReport} />
         <Route path="/admin/phase-templates" component={PhaseTemplatesPage} />
         <Route path="/project-create" component={ProjectCreatePage} />
+        <Route path="/lifecycle-board" component={LifecycleBoardPage} />
         <Route path="/exec-portfolio" component={ExecPortfolioPage} />
         <Route path="/my-tool/cockpit" component={ExecCockpitPage} />
         <Route path="/admin/triage-inbox" component={TriageInboxPage} />

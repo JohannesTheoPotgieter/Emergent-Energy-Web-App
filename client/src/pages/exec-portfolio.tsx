@@ -165,7 +165,10 @@ export default function ExecPortfolioPage() {
     setPhaseChanging(false);
   };
 
-  if (!isAdmin) return <div className="p-8 text-center text-muted-foreground">Admin access required</div>;
+  const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
+  const execRoles = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO"];
+  const hasAccess = isAdmin || (companyRole && execRoles.includes(companyRole));
+  if (!hasAccess) return <div className="p-8 text-center text-muted-foreground">Executive access required</div>;
 
   const phaseLabels = constants?.projectPhaseLabels || {};
   const phases = constants?.projectPhases || [];
