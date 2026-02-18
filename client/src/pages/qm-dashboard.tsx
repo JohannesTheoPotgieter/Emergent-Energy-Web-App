@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
-import { Shield, ShieldCheck, AlertTriangle, Search, ChevronRight, ClipboardCheck, BarChart3 } from "lucide-react";
+import { Shield, ShieldCheck, AlertTriangle, Search, ChevronRight, ClipboardCheck, BarChart3, Target, ArrowRight } from "lucide-react";
 
 async function qFetch(url: string) {
   const token = localStorage.getItem('auth_token');
@@ -46,6 +46,21 @@ interface Warning {
   createdAt: string;
 }
 
+interface CompanyPriority {
+  id: number;
+  title: string;
+  description: string | null;
+  department: string | null;
+  horizon: string;
+  severity: string;
+  status: string;
+  priorityRank: number | null;
+  assignedTo: string | null;
+  linkedProjectName: string | null;
+  nextAction: string | null;
+  dueDate: string | null;
+}
+
 export default function QmDashboardPage() {
   const [, setLocation] = useLocation();
   const [searchTerm, setSearchTerm] = useState("");
@@ -58,6 +73,11 @@ export default function QmDashboardPage() {
   const { data: warnings = [], isLoading: warningsLoading } = useQuery<Warning[]>({
     queryKey: ["quality-warnings-all"],
     queryFn: () => qFetch("/api/quality/warnings?status=open"),
+  });
+
+  const { data: priorities = [] } = useQuery<CompanyPriority[]>({
+    queryKey: ["company-priorities"],
+    queryFn: () => qFetch("/api/mytool/company-priorities"),
   });
 
   const filtered = checklists.filter(c =>
@@ -159,6 +179,78 @@ export default function QmDashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {priorities.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Target className="h-5 w-5 text-primary" />
+              Company Priorities
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {priorities
+                .filter(p => p.status !== "completed" && p.status !== "cancelled")
+                .sort((a, b) => (a.priorityRank ?? 99) - (b.priorityRank ?? 99))
+                .map((priority) => (
+                <div
+                  key={priority.id}
+                  className="flex items-start gap-3 p-3 rounded-lg border border-border/50 bg-card/50"
+                  data-testid={`qm-priority-${priority.id}`}
+                >
+                  <div className="flex items-center justify-center h-7 w-7 rounded-full bg-primary/10 text-primary text-xs font-bold shrink-0 mt-0.5">
+                    {priority.priorityRank ?? "—"}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium text-sm">{priority.title}</span>
+                      <Badge variant="outline" className={
+                        priority.severity === "critical" ? "bg-red-500/10 text-red-400 border-red-500/30 text-xs" :
+                        priority.severity === "high" ? "bg-orange-500/10 text-orange-400 border-orange-500/30 text-xs" :
+                        "bg-blue-500/10 text-blue-400 border-blue-500/30 text-xs"
+                      }>
+                        {priority.severity}
+                      </Badge>
+                      <Badge variant="outline" className={
+                        priority.status === "in_progress" ? "bg-blue-500/10 text-blue-400 border-blue-500/30 text-xs" :
+                        priority.status === "blocked" ? "bg-red-500/10 text-red-400 border-red-500/30 text-xs" :
+                        "bg-gray-500/10 text-gray-400 border-gray-500/30 text-xs"
+                      }>
+                        {priority.status.replace(/_/g, " ")}
+                      </Badge>
+                    </div>
+                    {priority.description && (
+                      <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{priority.description}</p>
+                    )}
+                    <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+                      {priority.department && (
+                        <span className="text-xs text-muted-foreground">{priority.department}</span>
+                      )}
+                      {priority.assignedTo && (
+                        <span className="text-xs text-muted-foreground flex items-center gap-1">
+                          <ArrowRight className="h-3 w-3" /> {priority.assignedTo}
+                        </span>
+                      )}
+                      {priority.linkedProjectName && (
+                        <span
+                          className="text-xs text-primary cursor-pointer hover:underline"
+                          onClick={() => setLocation(`/project/${encodeURIComponent(priority.linkedProjectName!)}?tab=quality`)}
+                        >
+                          {priority.linkedProjectName}
+                        </span>
+                      )}
+                    </div>
+                    {priority.nextAction && (
+                      <p className="text-xs text-muted-foreground mt-1 italic">Next: {priority.nextAction}</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader className="pb-3">
