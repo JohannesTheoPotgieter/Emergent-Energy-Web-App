@@ -1,4 +1,3 @@
-import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -20,9 +19,7 @@ import {
   Link2,
   Clock,
   Loader2,
-  ShieldAlert,
 } from "lucide-react";
-import { EpmChallengeModal } from "@/components/EpmChallengeModal";
 
 async function engFetch(url: string) {
   const token = localStorage.getItem("auth_token");
@@ -96,33 +93,21 @@ const pipelineColors: Record<string, string> = {
   "COMPLETE": "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
 };
 
+function transformPipeline(raw: any): PipelineStatus[] {
+  if (Array.isArray(raw)) return raw;
+  if (raw && typeof raw === "object") {
+    return Object.entries(raw).map(([status, count]) => ({
+      status,
+      count: Number(count) || 0,
+    }));
+  }
+  return [];
+}
+
 export default function EngineeringDashboard() {
-  const [accessGranted, setAccessGranted] = useState(false);
-  const [showChallenge, setShowChallenge] = useState(false);
-  const [checkingAccess, setCheckingAccess] = useState(true);
-
-  useEffect(() => {
-    async function checkAccess() {
-      try {
-        const data = await engFetch("/api/engineering/access/status");
-        if (data.needsChallenge) {
-          setShowChallenge(true);
-        } else {
-          setAccessGranted(true);
-        }
-      } catch {
-        setShowChallenge(true);
-      } finally {
-        setCheckingAccess(false);
-      }
-    }
-    checkAccess();
-  }, []);
-
   const { data: workload = [], isLoading: workloadLoading } = useQuery<WorkloadRow[]>({
     queryKey: ["eng-dashboard-workload"],
     queryFn: () => engFetch("/api/eng/dashboard/workload"),
-    enabled: accessGranted,
     refetchOnMount: "always",
     staleTime: 0,
   });
@@ -130,15 +115,16 @@ export default function EngineeringDashboard() {
   const { data: milestones = [], isLoading: milestonesLoading } = useQuery<MilestoneAtRisk[]>({
     queryKey: ["eng-dashboard-milestones"],
     queryFn: () => engFetch("/api/eng/dashboard/milestones-at-risk"),
-    enabled: accessGranted,
     refetchOnMount: "always",
     staleTime: 0,
   });
 
   const { data: pipeline = [], isLoading: pipelineLoading } = useQuery<PipelineStatus[]>({
     queryKey: ["eng-dashboard-pipeline"],
-    queryFn: () => engFetch("/api/eng/dashboard/deliverables-pipeline"),
-    enabled: accessGranted,
+    queryFn: async () => {
+      const raw = await engFetch("/api/eng/dashboard/deliverables-pipeline");
+      return transformPipeline(raw);
+    },
     refetchOnMount: "always",
     staleTime: 0,
   });
@@ -146,7 +132,6 @@ export default function EngineeringDashboard() {
   const { data: warnings = [], isLoading: warningsLoading } = useQuery<WarningItem[]>({
     queryKey: ["eng-dashboard-warnings"],
     queryFn: () => engFetch("/api/eng/dashboard/warning-tower"),
-    enabled: accessGranted,
     refetchOnMount: "always",
     staleTime: 0,
   });
@@ -154,50 +139,9 @@ export default function EngineeringDashboard() {
   const { data: orphanTasks = [], isLoading: orphansLoading } = useQuery<OrphanTask[]>({
     queryKey: ["eng-dashboard-orphans"],
     queryFn: () => engFetch("/api/eng/dashboard/orphan-tasks"),
-    enabled: accessGranted,
     refetchOnMount: "always",
     staleTime: 0,
   });
-
-  if (checkingAccess) {
-    return (
-      <div data-testid="eng-dashboard-loading" className="flex items-center justify-center min-h-[400px]">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
-  if (!accessGranted) {
-    return (
-      <div data-testid="eng-dashboard-locked" className="space-y-6">
-        <div className="flex items-center gap-3">
-          <Wrench className="h-8 w-8 text-orange-500" />
-          <h2 className="text-3xl font-heading font-bold text-foreground">Engineering Dashboard</h2>
-        </div>
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-16 gap-4">
-            <ShieldAlert className="h-12 w-12 text-orange-500" />
-            <p className="text-lg font-medium text-muted-foreground">Access verification required</p>
-            <Button
-              data-testid="button-unlock-engineering"
-              className="bg-orange-600 hover:bg-orange-700"
-              onClick={() => setShowChallenge(true)}
-            >
-              Enter Access Code
-            </Button>
-          </CardContent>
-        </Card>
-        <EpmChallengeModal
-          open={showChallenge}
-          onSuccess={() => {
-            setShowChallenge(false);
-            setAccessGranted(true);
-          }}
-          onClose={() => setShowChallenge(false)}
-        />
-      </div>
-    );
-  }
 
   const pipelineMap = new Map(pipeline.map((p) => [p.status, p.count]));
   const orderedPipeline = PIPELINE_ORDER.map((status) => ({
@@ -220,7 +164,6 @@ export default function EngineeringDashboard() {
         </div>
       </div>
 
-      {/* Team Workload */}
       <Card data-testid="card-team-workload">
         <CardHeader className="pb-3">
           <CardTitle className="text-lg flex items-center gap-2">
@@ -276,7 +219,6 @@ export default function EngineeringDashboard() {
         </CardContent>
       </Card>
 
-      {/* Milestones at Risk */}
       <Card data-testid="card-milestones-risk">
         <CardHeader className="pb-3">
           <CardTitle className="text-lg flex items-center gap-2">
@@ -346,7 +288,6 @@ export default function EngineeringDashboard() {
         </CardContent>
       </Card>
 
-      {/* Deliverables Pipeline */}
       <Card data-testid="card-deliverables-pipeline">
         <CardHeader className="pb-3">
           <CardTitle className="text-lg flex items-center gap-2">
@@ -394,7 +335,6 @@ export default function EngineeringDashboard() {
         </CardContent>
       </Card>
 
-      {/* Warning Control Tower */}
       <Card data-testid="card-warning-tower" className="border-red-200 dark:border-red-800/50">
         <CardHeader className="pb-3">
           <CardTitle className="text-lg flex items-center gap-2 text-red-600 dark:text-red-400">
@@ -453,7 +393,6 @@ export default function EngineeringDashboard() {
         </CardContent>
       </Card>
 
-      {/* Orphan Tasks */}
       <Card data-testid="card-orphan-tasks">
         <CardHeader className="pb-3">
           <CardTitle className="text-lg flex items-center gap-2">

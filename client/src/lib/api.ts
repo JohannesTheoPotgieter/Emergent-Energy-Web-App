@@ -257,7 +257,7 @@ export interface User {
   id: number;
   email: string;
   name: string;
-  role: "admin" | "member" | "quality_manager" | "viewer";
+  role: "admin" | "member" | "quality_manager" | "viewer" | "eng_program_manager";
 }
 
 export interface Project {

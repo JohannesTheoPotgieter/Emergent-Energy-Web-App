@@ -24,6 +24,7 @@ import {
   Upload,
   ShieldCheck,
   Wrench,
+  Users,
 } from "lucide-react";
 import { useProgramData } from "@/hooks/use-program-data";
 import { useAuth } from "@/hooks/use-auth";
@@ -70,6 +71,9 @@ const navGroups: NavGroup[] = [
     heading: "ENGINEERING",
     items: [
       { label: "Eng Dashboard", icon: Wrench, path: "/engineering" },
+      { label: "Task Board", icon: Kanban, path: "/engineering/tasks" },
+      { label: "Deliverables", icon: FileSpreadsheet, path: "/engineering/deliverables" },
+      { label: "Teams", icon: Users, path: "/engineering/teams" },
     ],
   },
   {
@@ -189,7 +193,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             )}
             {!sidebarShowLabels && <div className="h-px bg-sidebar-border mx-2 mb-1" />}
             {visibleItems.map((item) => {
-              const isActive = location === item.path || (item.path === "/my-tool" && location.startsWith("/my-tool"));
+              const isActive = location === item.path || (item.path === "/my-tool" && location.startsWith("/my-tool")) || (item.path !== "/" && item.path !== "/engineering" && location.startsWith(item.path));
               return (
               <Link key={item.path} href={item.path} className={cn(
                 "flex items-center gap-3 px-3 py-2.5 rounded-md transition-all duration-200 group",
