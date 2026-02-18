@@ -206,6 +206,7 @@ export default function MyToolTodayPage() {
       plannedForDate: t.plannedForDate || t.planned_for_date || null,
       dueAt: t.dueAt || t.due_at || null,
       sortOrder: t.sortOrder || t.sort_order || 0,
+      bucket: t.bucket || null,
       projectName: t.projectName || t.project_name || null,
       department: t.department || null,
       tag: t.tag || null,

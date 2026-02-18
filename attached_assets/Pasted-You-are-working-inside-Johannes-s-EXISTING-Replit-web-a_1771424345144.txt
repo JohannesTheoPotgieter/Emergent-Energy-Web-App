@@ -1,0 +1,328 @@
+You are working inside Johannes’s EXISTING Replit web app repo (“My Tool”). DO NOT rebuild from scratch.
+
+CRITICAL RULES
+1) Do not change or break any existing functionality. Additive changes only.
+2) No placeholder code. No placeholder buttons. Everything you add must work end-to-end.
+3) Never assume. If you are unsure about any repo detail, you must:
+   - produce a Discovery Report (see Step 0)
+   - list “Questions for Johannes”
+   - STOP at the last safe step that does not risk breaking existing features.
+4) No hard blocks anywhere. Only BRIGHT RED warnings + acknowledgement logs.
+5) Project phases are strict enums and only EXEC Admin can change them.
+
+WHAT JOHANNES IS TRYING TO ACHIEVE (context you must respect)
+- This tool is becoming EE’s COO/CEO operating system.
+- Projects are tracked as ONE top-level object across a strict lifecycle.
+- EXEC Admin (COO/CEO) controls phase movement.
+- Each phase has an in-app editable template that auto-sets up departmental functionality:
+  - PM tasks/views
+  - Engineering tasks/deliverables
+  - Quality checklist links/approvals/evidence expectations
+  - Warnings and notifications tied to delivery risk
+- There is also personal productivity: daily planner + email triage + “next actions”.
+- Projects currently exist in BOTH Excel and in the web app (hybrid reality).
+- Email triage must support BOTH flagged emails and keyword-based triage.
+- Tasks without a project are allowed ONLY if bucketed as Company Ops or Personal.
+
+EXPECTED REPO STATE (verify; do not assume)
+From prior implementation, the app was scaffolded as:
+- Next.js + Postgres + Prisma
+- Existing left-nav modules include: Dashboard, KPI Register, Weekly Priorities, Decision Log, Escalation Log
+- Single-user mode (no auth) previously existed
+YOU MUST VERIFY THIS IN STEP 0. If any differs, document it and adjust approach safely.
+
+STEP 0 — DISCOVERY REPORT (mandatory, before coding)
+Create a file: /docs/DISCOVERY_REPORT.md
+It must contain:
+1) Tech stack (frontend/backend)
+2) DB/ORM + how migrations run
+3) Current auth/RBAC: does login exist? roles? how enforced?
+4) Existing modules and routes:
+   - Projects (exists? fields?)
+   - Tasks (exists? Weekly Priorities only? any Task model?)
+   - Plan/milestones
+   - Quality module
+   - Deliverables module
+   - Warnings/notifications module
+   - Email integration (Graph?) and Calendar integration (Graph?)
+5) Existing “admin access code popup” patterns, if any
+6) STOP CONDITIONS + “Questions for Johannes” section:
+   - list only what you truly need to proceed (e.g., Graph credentials model, project table structure, etc.)
+
+If Discovery finds missing prerequisites for a section below, implement the safe parts first, log warnings, and STOP where required.
+
+========================================
+PART A — EXEC ADMIN MODE (single-user safe control)
+Johannes said “Admin only has my tool”. If there is no auth, implement a lightweight “EXEC Admin Mode” gate:
+- Use a modal access code challenge for sensitive actions:
+  - creating projects
+  - editing/activating phase templates
+  - changing project phases
+- The code must NOT be hardcoded. Read from Replit Secrets:
+  EXEC_ACCESS_CODE="2026"
+- Store “challenge passed” in a signed cookie or server session.
+- Rate limit: 5 fails => lock 15 minutes.
+- Log audit events for fail/success.
+
+If auth already exists with roles, then:
+- enforce EXEC-only actions using existing ADMIN role (if truly exec-only)
+- otherwise add EXEC_ADMIN role and use it.
+Do not guess—decide based on Discovery Report.
+
+========================================
+PART B — PROJECTS AS THE TOP-LEVEL OBJECT (one project, then tasks/subtasks underneath)
+Requirement
+- All portfolio views show ONE row/card per project.
+- Work is represented as tasks/subtasks under the project.
+- Do NOT duplicate “projects” as tasks.
+
+Data model (only add what’s missing; do not refactor destructively)
+- Ensure there is a Project table/model.
+- Ensure there is a Task model that supports:
+  - project_id (nullable ONLY if bucket != PROJECT)
+  - parent_task_id (nullable) for subtasks
+  - bucket enum: PROJECT | COMPANY_OPS | PERSONAL
+Rules:
+- If bucket = PROJECT => project_id is required
+- If bucket != PROJECT => project_id must be null
+- Enforce this server-side.
+
+UI
+- Create a Projects list/board that displays project rows/cards.
+- Project detail page shows tasks and subtasks.
+
+========================================
+PART C — EE LIFECYCLE PHASES (strict enum) + EXEC-ONLY MOVEMENT
+EE Phases (single source of truth enum)
+Project.phase must be exactly:
+- P0_FIRST_ASSESSMENT
+- P1_COST_PROPOSAL_DESIGN
+- P2_PD_PM_HANDOVER
+- P3_DETAILED_DESIGN_PROC_RELEASE
+- P4_CONSTRUCTION_INSTALLATION
+- P5_COMMISSIONING_TESTING
+- P6_HANDOVER_CLIENT_MATRIARCH
+- P7_CLOSEOUT_POSTMORTEM
+
+Display labels:
+- P0: "Phase 0 - First Assessment"
+- P1: "Phase 1 - Cost Proposal/Design"
+- P2: "Phase 2 - PD → PM Handover"
+- P3: "Phase 3 - Detailed Design & Procurement Release"
+- P4: "Phase 4 - Construction / Installation"
+- P5: "Phase 5 - Commissioning & Testing"
+- P6: "Phase 6 - Handover (Client + Matriarch)"
+- P7: "Phase 7 - Close-out & Post-mortem"
+
+Add audit table:
+project_phase_history
+- id, project_id, from_phase, to_phase, changed_by, changed_at, reason (required)
+
+API (exec-only)
+- POST /api/projects  (create)
+- PATCH /api/projects/:id/phase  (change phase)
+Both must:
+- require exec admin gate (auth role or access code challenge)
+- require “reason” for phase change
+- write to project_phase_history
+
+========================================
+PART D — IN-APP EDITABLE PHASE TEMPLATES (tasks + deliverables links + quality links + view shortcuts)
+Requirement
+- Each phase has an editable template (GUI).
+- Templates are versioned, auditable, and can be cloned.
+- Templates can be previewed (“what will be created”) before activation and before applying to a project.
+- Applying templates is idempotent (no duplicates).
+
+Stable Keys (non-negotiable)
+Every template item must have a stable item_key that never changes. This is used for upserts.
+
+Schema (adapt to Prisma/ORM conventions found in Discovery)
+phase_template
+- id
+- phase (enum)
+- name
+- version (int)
+- is_active (bool)
+- created_at, updated_at
+
+phase_template_item
+- id
+- template_id
+- item_key (string, unique per template)
+- item_type: TASK | DELIVERABLE | QUALITY_LINK | VIEW_SHORTCUT
+- title
+- description (nullable)
+- primary_workstream: PD|PM|Engineering|Quality|Procurement|Construction|Commissioning|Handover|Finance|OandM
+TASK fields:
+- default_status (must match allowed statuses in system if Task system exists)
+- default_priority
+- offset_days_from_phase_start (nullable)
+- requires_approval (bool)
+- approver_role (nullable)
+- link_target_type: NONE|PLAN|DELIVERABLE|QUALITY
+- link_target_key (nullable)
+DELIVERABLE fields:
+- deliverable_type_key (nullable)
+- requires_qc_approval (bool)
+- requires_operational_approval (bool)
+QUALITY_LINK fields:
+- quality_item_key (nullable)
+- evidence_required (bool)
+VIEW_SHORTCUT fields:
+- view_key (nullable)
+Common:
+- sort_order
+- is_deleted (soft delete)
+
+Audit:
+phase_template_item_history
+- id, template_item_id, changed_by, changed_at, change_json
+
+Admin UI (exec-only)
+Route: /exec/templates/phases
+Features:
+- Select phase
+- View active version and all versions
+- Create new version (clone current)
+- Edit items (CRUD, reorder, soft-delete)
+- Activate version (one active per phase)
+
+CLONE FEATURE (exec-only)
+- “Clone template” button:
+  - choose source phase+version, target phase
+  - clone all items
+  - handle key collisions by suffixing _COPY1/_COPY2 and show collision report
+  - do not auto-activate
+
+PREVIEW FEATURE (exec-only)
+A) Template preview
+- GET /api/phase-templates/:templateId/preview
+Returns counts + lists by item type.
+
+B) Project phase apply preview
+- POST /api/projects/:projectId/phase-preview { toPhase }
+Returns:
+- to_create
+- to_skip (already exists by keys)
+- to_update (non-destructive link enforcement only)
+- warnings_that_would_be_created (missing modules/links/etc.)
+
+UI requirement:
+- Activation requires showing preview first + checkbox “Reviewed preview”.
+- Phase change modal must show project preview and require confirmation.
+
+========================================
+PART E — TEMPLATE APPLY ENGINE (idempotent, non-destructive)
+Implement PhaseTemplateApplyService(projectId, phase, actor):
+- Load active template for phase
+- Idempotency ledger:
+  phase_template_application
+  - id, project_id, phase, template_id, template_version, applied_by, applied_at, application_key(unique), result_summary_json
+- application_key = hash(project_id + phase + template_id + template_version)
+- If already applied, return summary (do nothing)
+
+Upsert rules:
+- TASK: upsert by (project_id, item_key)
+- DELIVERABLE: upsert by (project_id, deliverable_type_key) ONLY if deliverables module exists
+- QUALITY_LINK: upsert by (project_id, quality_item_key) ONLY if quality module exists
+- VIEW_SHORTCUT: upsert by (project_id, view_key) if supported
+
+Non-destructive rules:
+- Never overwrite task status/owner/due date if user already progressed it.
+- Only add missing links and metadata safely.
+
+If a referenced module does not exist (quality/deliverables/plan):
+- Do NOT fabricate fake screens.
+- Create a BRIGHT RED warning record (or use existing warning system) with clear remediation text.
+- Record it in apply summary.
+
+========================================
+PART F — COO/CEO EXEC PORTFOLIO + COO COCKPIT (new screens, additive)
+Add two new top-level routes (exec-only):
+
+1) /exec/portfolio (Portfolio Summary Board)
+One row per project showing (only from real data; otherwise show N/A):
+- Project name + client
+- Phase badge + “phase age”
+- Next milestone date (if plan exists)
+- Readiness % (computed from tasks/deliverables/quality if those exist)
+- Open HIGH warnings count (bright red)
+- Pending approvals count
+
+2) /exec/cockpit (COO Cockpit)
+This is the COO-first home:
+- “Projects at risk” (HIGH warnings)
+- “Milestones in next 14 days”
+- “Overdue approvals”
+- “Overdue tasks by owner”
+- “Handover readiness” (if data exists)
+- Optional panels: cash/COS if modules exist, else N/A
+
+Do not remove current “My Tool” day planner view.
+Add a toggle/tab: “My Day” vs “COO Cockpit”.
+
+========================================
+PART G — EMAIL TRIAGE + CALENDAR (both flagged + keyword-based)
+Johannes requires BOTH:
+- flagged emails
+- keyword-based triage
+
+Do not replace the email client view. Add “Triage Inbox” view:
+- only shows:
+  - flagged emails OR
+  - emails matching configured keywords OR
+  - emails from configured key domains/contacts
+- For each email:
+  - Create Task (bucket default = PROJECT; prompt project picker if ambiguous)
+  - Assign owner
+  - Schedule 15/30 min calendar block
+  - Store backlink to email (message id/web link)
+
+Configuration (exec-only settings)
+- keywords list (editable in-app)
+- important senders/domains list (editable)
+- throttle rules for notifications
+
+If Graph integration already exists, reuse its auth pattern.
+If Graph integration does not exist, document exactly what secrets are needed and STOP after safe UI scaffolding + config storage (no fake data).
+
+========================================
+PART H — “NO PROJECT” RULE (Johannes selected option A)
+Tasks without a project are allowed ONLY if bucketed as:
+- COMPANY_OPS
+- PERSONAL
+UI enforcement:
+- Quick Add defaults to last used project OR bucket
+- A red counter shows “Unlinked tasks needing bucket/project”
+- Provide a cleanup view: “Unclassified tasks” (exec-only)
+
+========================================
+DELIVERABLES / QUALITY / ENGINEERING INTEGRATION (do not assume)
+- If those modules exist: phase templates should create the correct hooks and links.
+- If they do not exist yet: store template items and create warnings when phase applies.
+- Never invent fake module behaviors.
+
+DEFINITION OF DONE
+- Discovery Report created and accurate; any unknowns listed as Questions for Johannes.
+- Exec admin gate works (role or access code challenge).
+- Projects can be created in-app (exec-only).
+- Project phases enforced as enum; phase change exec-only; audited with reason.
+- Phase templates editable in-app with versioning + clone + preview.
+- Phase change shows preview and applies template idempotently without duplicates.
+- New exec screens exist: /exec/portfolio and /exec/cockpit, additive only.
+- Email triage supports flagged + keyword triage (if Graph exists) without breaking current email panel.
+- “No project” rule implemented as bucket = Company Ops or Personal.
+- No existing modules are broken.
+
+IMPLEMENTATION ORDER (do not skip)
+1) Discovery Report
+2) Exec admin gate (role or access code)
+3) Project phase enum + history
+4) Project create (exec-only)
+5) Phase template schema + CRUD UI
+6) Clone + preview endpoints + UI
+7) Apply engine + idempotency ledger
+8) Exec portfolio + cockpit screens
+9) Email triage + calendar actions (only after confirming Graph integration)
+10) “No project” bucketing + cleanup view

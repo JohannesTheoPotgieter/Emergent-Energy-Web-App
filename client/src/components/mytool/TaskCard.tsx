@@ -29,9 +29,12 @@ export interface TaskItem {
   plannedForDate: string | null;
   dueAt: string | null;
   sortOrder: number;
+  bucket: string | null;
   projectName: string | null;
   department: string | null;
   tag: string | null;
+  sourceEmailId?: string | null;
+  sourceEmailSubject?: string | null;
   blockedReason: string | null;
   nextStep: string | null;
   definitionOfDone: string | null;

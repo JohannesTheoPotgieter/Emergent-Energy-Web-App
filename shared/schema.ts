@@ -1040,6 +1040,8 @@ export const mytoolPriorityStatusEnum = pgEnum('mytool_priority_status', ['activ
 
 export const mytoolRecurrenceFrequencyEnum = pgEnum('mytool_recurrence_frequency', ['daily', 'weekly', 'monthly']);
 
+export const mytoolTaskBucketEnum = pgEnum('mytool_task_bucket', ['project', 'company_ops', 'personal']);
+
 export const mytoolTasks = pgTable("mytool_tasks", {
   id: serial("id").primaryKey(),
   ownerUserId: integer("owner_user_id").notNull().references(() => users.id),
@@ -1050,9 +1052,12 @@ export const mytoolTasks = pgTable("mytool_tasks", {
   dueAt: timestamp("due_at"),
   startDate: text("start_date"),
   notes: text("notes"),
+  bucket: mytoolTaskBucketEnum("bucket").default('personal'),
   projectName: text("project_name"),
   department: text("department"),
   tag: text("tag"),
+  sourceEmailId: text("source_email_id"),
+  sourceEmailSubject: text("source_email_subject"),
   blockedReason: text("blocked_reason"),
   nextStep: text("next_step"),
   definitionOfDone: text("definition_of_done"),
@@ -1848,3 +1853,27 @@ export const taskWatchers = pgTable("task_watchers", {
 export const insertTaskWatcherSchema = createInsertSchema(taskWatchers).omit({ id: true, createdAt: true });
 export type InsertTaskWatcher = z.infer<typeof insertTaskWatcherSchema>;
 export type TaskWatcher = typeof taskWatchers.$inferSelect;
+
+// ===================== EMAIL TRIAGE RULES =====================
+
+export const triageRuleTypeEnum = pgEnum('triage_rule_type', ['keyword', 'sender', 'domain']);
+
+export const triageRules = pgTable("triage_rules", {
+  id: serial("id").primaryKey(),
+  ownerUserId: integer("owner_user_id").notNull().references(() => users.id),
+  ruleType: triageRuleTypeEnum("rule_type").notNull(),
+  value: text("value").notNull(),
+  enabled: boolean("enabled").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const insertTriageRuleSchema = createInsertSchema(triageRules).omit({ id: true, createdAt: true });
+export type InsertTriageRule = z.infer<typeof insertTriageRuleSchema>;
+export type TriageRule = typeof triageRules.$inferSelect;
+
+export const TASK_BUCKETS = ['project', 'company_ops', 'personal'] as const;
+export type TaskBucket = typeof TASK_BUCKETS[number];
+export const TASK_BUCKET_LABELS: Record<TaskBucket, string> = {
+  project: "Project",
+  company_ops: "Company Ops",
+  personal: "Personal",
+};
