@@ -73,7 +73,6 @@ const navGroups: NavGroup[] = [
       { label: "Eng Dashboard", icon: Wrench, path: "/engineering" },
       { label: "Task Board", icon: Kanban, path: "/engineering/tasks" },
       { label: "Deliverables", icon: FileSpreadsheet, path: "/engineering/deliverables" },
-      { label: "Teams", icon: Users, path: "/engineering/teams" },
     ],
   },
   {
@@ -91,6 +90,7 @@ const navGroups: NavGroup[] = [
   {
     heading: "ADMIN",
     items: [
+      { label: "Teams & Roles", icon: Users, path: "/admin/teams" },
       { label: "SP Settings", icon: Cloud, path: "/admin/sp-settings" },
       { label: "File Refresh", icon: FileSpreadsheet, path: "/admin/sp-file-refresh" },
       { label: "Import Runs", icon: Database, path: "/admin/sp-import-runs" },

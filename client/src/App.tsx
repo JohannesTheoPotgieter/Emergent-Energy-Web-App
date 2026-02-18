@@ -50,7 +50,7 @@ import { format } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 
-const EPM_ALLOWED_PATHS = ["/", "/engineering", "/engineering/tasks", "/engineering/deliverables", "/engineering/teams", "/quality", "/projects"];
+const EPM_ALLOWED_PATHS = ["/", "/engineering", "/engineering/tasks", "/engineering/deliverables", "/quality", "/projects"];
 
 function RoleGuard({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -73,6 +73,10 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
     if (!allowed) {
       return <Redirect to="/" />;
     }
+  }
+
+  if (user?.role !== "admin" && location.startsWith("/admin")) {
+    return <Redirect to="/" />;
   }
 
   return <>{children}</>;
@@ -223,7 +227,7 @@ function ProtectedPages() {
         <Route path="/engineering" component={EngineeringDashboardPage} />
         <Route path="/engineering/tasks" component={EngineeringTasksPage} />
         <Route path="/engineering/deliverables" component={EngineeringDeliverablesPage} />
-        <Route path="/engineering/teams" component={EngineeringTeamsPage} />
+        <Route path="/admin/teams" component={EngineeringTeamsPage} />
 
         <Route component={NotFound} />
       </Switch>
