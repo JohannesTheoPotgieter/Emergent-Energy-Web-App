@@ -53,6 +53,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
   const [editingItem, setEditingItem] = useState<number | null>(null);
   const [itemEdits, setItemEdits] = useState<Record<string, any>>({});
   const [linkingPhaseId, setLinkingPhaseId] = useState<number | null>(null);
+  const [linkingItemId, setLinkingItemId] = useState<number | null>(null);
   const isQmOrAdmin = user?.role === "admin" || user?.role === "quality_manager";
   const canEdit = isQmOrAdmin;
 
@@ -139,10 +140,15 @@ export function QualityTab({ projectName }: QualityTabProps) {
   });
 
   const addPlanLinkMutation = useMutation({
-    mutationFn: async ({ planItemId, phaseId }: { planItemId: number; phaseId: number }) => {
+    mutationFn: async ({ planItemId, phaseId, itemInstanceId }: { planItemId: number; phaseId?: number; itemInstanceId?: number }) => {
       const res = await qFetch(`/api/quality/project/${encodeURIComponent(projectName)}/plan-link`, {
         method: "POST",
-        body: JSON.stringify({ planItemId, phaseId, linkType: "phase_task" }),
+        body: JSON.stringify({
+          planItemId,
+          phaseId: phaseId || null,
+          itemInstanceId: itemInstanceId || null,
+          linkType: itemInstanceId ? "item_task" : "phase_task",
+        }),
       });
       if (!res.ok) throw new Error("Failed to link task");
       return res.json();
@@ -150,6 +156,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["quality-plan-links", projectName] });
       setLinkingPhaseId(null);
+      setLinkingItemId(null);
     },
   });
 
@@ -243,6 +250,15 @@ export function QualityTab({ projectName }: QualityTabProps) {
 
   const getPhaseLinks = (phaseId: number) => {
     return planLinks.filter((l: any) => l.phaseId === phaseId);
+  };
+
+  const getItemLinks = (itemInstanceId: number) => {
+    return planLinks.filter((l: any) => l.itemInstanceId === itemInstanceId);
+  };
+
+  const isTaskCompleted = (planItemId: number) => {
+    const task = projectTasks.find((t: any) => t.id === planItemId);
+    return task && task.actualPctComplete != null && task.actualPctComplete >= 1;
   };
 
   const handleItemStatusChange = (itemInstanceId: number, field: string, value: any) => {
@@ -439,16 +455,60 @@ export function QualityTab({ projectName }: QualityTabProps) {
                             if (!instance) return null;
                             const itemEvidence = getItemEvidence(instance.id);
                             const isEditing = editingItem === instance.id;
+                            const itemLinks = getItemLinks(instance.id);
+                            const hasRedWarning = itemLinks.some((l: any) => isTaskCompleted(l.planItemId)) && !instance.approved;
 
                             return (
                               <div
                                 key={instance.id}
-                                className="rounded-lg border bg-card/50 p-3 hover:bg-muted/20 transition-colors"
+                                className={`rounded-lg border p-3 transition-colors ${
+                                  hasRedWarning
+                                    ? "bg-red-500/10 border-red-500 ring-1 ring-red-500/40"
+                                    : "bg-card/50 hover:bg-muted/20"
+                                }`}
                                 data-testid={`quality-item-${instance.id}`}
                               >
                                 <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                                   <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-medium truncate">{templateItem.itemName}</p>
+                                    <div className="flex items-center gap-2">
+                                      <p className={`text-sm font-medium truncate ${hasRedWarning ? "text-red-600 dark:text-red-400" : ""}`}>{templateItem.itemName}</p>
+                                      {hasRedWarning && (
+                                        <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-5 shrink-0" data-testid={`warning-unchecked-${instance.id}`}>
+                                          <AlertCircle className="w-3 h-3 mr-0.5" />
+                                          Task done — not checked
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    {itemLinks.length > 0 && (
+                                      <div className="flex flex-wrap gap-1 mt-1">
+                                        {itemLinks.map((link: any) => {
+                                          const task = projectTasks.find((t: any) => t.id === link.planItemId);
+                                          const taskDone = isTaskCompleted(link.planItemId);
+                                          return (
+                                            <Badge
+                                              key={link.id}
+                                              variant="outline"
+                                              className={`text-[10px] gap-1 py-0.5 ${taskDone && !instance.approved ? "border-red-500 text-red-600 dark:text-red-400 bg-red-500/5" : ""}`}
+                                              data-testid={`item-link-${link.id}`}
+                                            >
+                                              <Link2 className="w-3 h-3" />
+                                              {task ? `${task.taskNo}` : `#${link.planItemId}`}
+                                              {task?.actualPctComplete != null && (
+                                                <span className="ml-0.5">({Math.round(task.actualPctComplete * 100)}%)</span>
+                                              )}
+                                              {canEdit && (
+                                                <button
+                                                  className="ml-0.5 p-0.5 rounded hover:bg-destructive/20 text-muted-foreground hover:text-destructive"
+                                                  onClick={(e) => { e.stopPropagation(); removePlanLinkMutation.mutate(link.id); }}
+                                                >
+                                                  <X className="w-2.5 h-2.5" />
+                                                </button>
+                                              )}
+                                            </Badge>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
                                   </div>
 
                                   <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
@@ -491,6 +551,19 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                       </Badge>
                                     )}
 
+                                    {canEdit && (
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8"
+                                        title="Link project task"
+                                        onClick={(e) => { e.stopPropagation(); setLinkingItemId(linkingItemId === instance.id ? null : instance.id); }}
+                                        data-testid={`link-item-task-${instance.id}`}
+                                      >
+                                        <Link2 className={`w-4 h-4 ${linkingItemId === instance.id ? "text-primary" : "text-muted-foreground"}`} />
+                                      </Button>
+                                    )}
+
                                     <Button
                                       variant="ghost"
                                       size="sm"
@@ -502,6 +575,32 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                     </Button>
                                   </div>
                                 </div>
+
+                                {linkingItemId === instance.id && (
+                                  <div className="mt-2 flex items-center gap-2">
+                                    <Select
+                                      onValueChange={(val) => {
+                                        addPlanLinkMutation.mutate({ planItemId: parseInt(val), itemInstanceId: instance.id });
+                                      }}
+                                    >
+                                      <SelectTrigger className="h-8 text-xs flex-1" data-testid={`select-link-item-task-${instance.id}`}>
+                                        <SelectValue placeholder="Select a project task to link..." />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {meaningfulTasks
+                                          .filter((t: any) => !itemLinks.some((l: any) => l.planItemId === t.id))
+                                          .map((task: any) => (
+                                            <SelectItem key={task.id} value={String(task.id)}>
+                                              {task.taskNo} — {task.highLevelProgramme} {task.actualPctComplete != null ? `(${Math.round(task.actualPctComplete * 100)}%)` : ""}
+                                            </SelectItem>
+                                          ))}
+                                      </SelectContent>
+                                    </Select>
+                                    <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => setLinkingItemId(null)}>
+                                      Cancel
+                                    </Button>
+                                  </div>
+                                )}
 
                                 {isEditing && (
                                   <div className="mt-4 pt-4 border-t space-y-3">

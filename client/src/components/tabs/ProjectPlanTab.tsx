@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { invalidateDashboardQueries } from "@/lib/queryClient";
+import { invalidateDashboardQueries, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -160,6 +160,43 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
     },
     enabled: !!projectName,
   });
+
+  const { data: qualityPlanLinks = [] } = useQuery<any[]>({
+    queryKey: ["/api/quality/project", projectName, "plan-links"],
+    queryFn: async () => {
+      try {
+        const res = await apiRequest("GET", `/api/quality/project/${encodeURIComponent(projectName)}/plan-links`);
+        return res.json();
+      } catch { return []; }
+    },
+    enabled: !!projectName,
+  });
+
+  const { data: qualityChecklistData } = useQuery<any>({
+    queryKey: ["/api/quality/project", projectName, "checklist"],
+    queryFn: async () => {
+      try {
+        const res = await apiRequest("GET", `/api/quality/project/${encodeURIComponent(projectName)}/checklist`);
+        return res.json();
+      } catch { return null; }
+    },
+    enabled: !!projectName,
+  });
+
+  const qualityWarningTaskIds = useMemo(() => {
+    if (!qualityPlanLinks.length || !qualityChecklistData?.itemInstances) return new Set<number>();
+    const itemInstances = qualityChecklistData.itemInstances as any[];
+    const ids = new Set<number>();
+    qualityPlanLinks.forEach((link: any) => {
+      if (link.itemInstanceId) {
+        const instance = itemInstances.find((ii: any) => ii.id === link.itemInstanceId);
+        if (instance && !instance.approved) {
+          ids.add(link.planItemId);
+        }
+      }
+    });
+    return ids;
+  }, [qualityPlanLinks, qualityChecklistData]);
 
   const updateTaskMutation = useMutation({
     mutationFn: async ({ taskId, changes }: { taskId: number; changes: any }) => {
@@ -580,14 +617,16 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
                 const actualPct = Math.round((task.percentComplete || 0) * 100);
                 const expectedPct = getExpectedPercent(task);
                 const isLate = expectedPct !== null && actualPct < expectedPct && actualPct < 100;
+                const hasQualityWarning = actualPct >= 100 && qualityWarningTaskIds.has(task.id);
                 
                 return (
                   <TableRow 
                     key={task.id} 
                     className={`
-                      ${isCritical ? "bg-red-50/50 dark:bg-red-950/10" : ""} 
-                      ${isHovered ? "bg-emerald-50 dark:bg-emerald-950/20" : ""}
-                      ${idx % 2 === 1 ? "bg-muted/20" : ""}
+                      ${hasQualityWarning ? "!bg-red-100 dark:!bg-red-950/30 ring-1 ring-inset ring-red-500/40" : ""}
+                      ${isCritical && !hasQualityWarning ? "bg-red-50/50 dark:bg-red-950/10" : ""} 
+                      ${isHovered && !hasQualityWarning ? "bg-emerald-50 dark:bg-emerald-950/20" : ""}
+                      ${!hasQualityWarning && idx % 2 === 1 ? "bg-muted/20" : ""}
                       hover:bg-muted/40 cursor-pointer transition-colors
                     `}
                     onMouseEnter={() => setHoveredTaskId(task.id)}
@@ -614,10 +653,15 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
                               CRIT
                             </Badge>
                           )}
+                          {hasQualityWarning && (
+                            <Badge variant="destructive" className="text-[10px] px-1 py-0 bg-red-600" data-testid={`badge-qwarn-${task.id}`}>
+                              QC
+                            </Badge>
+                          )}
                           {isLate && (
                             <AlertCircle className="h-3.5 w-3.5 text-amber-500" data-testid={`icon-late-${task.id}`} />
                           )}
-                          <span className={`text-sm ${isCritical ? "font-medium" : ""}`} data-testid={`text-name-${task.id}`}>
+                          <span className={`text-sm ${isCritical ? "font-medium" : ""} ${hasQualityWarning ? "text-red-600 dark:text-red-400 font-medium" : ""}`} data-testid={`text-name-${task.id}`}>
                             {task.name || "-"}
                           </span>
                         </div>
@@ -843,14 +887,16 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
             const actualPct = Math.round((task.percentComplete || 0) * 100);
             const expectedPct = getExpectedPercent(task);
             const barStyle = getTaskBarStyle(task);
+            const ganttQualityWarning = actualPct >= 100 && qualityWarningTaskIds.has(task.id);
             
             return (
               <div 
                 key={task.id} 
                 className={`flex border-b transition-colors cursor-pointer
-                  ${task.isCritical ? "bg-red-50/30 dark:bg-red-950/10" : ""}
-                  ${isHovered ? "bg-emerald-50 dark:bg-emerald-950/20" : ""}
-                  ${idx % 2 === 1 && !isHovered ? "bg-muted/10" : ""}
+                  ${ganttQualityWarning ? "!bg-red-100 dark:!bg-red-950/30 ring-1 ring-inset ring-red-500/40" : ""}
+                  ${task.isCritical && !ganttQualityWarning ? "bg-red-50/30 dark:bg-red-950/10" : ""}
+                  ${isHovered && !ganttQualityWarning ? "bg-emerald-50 dark:bg-emerald-950/20" : ""}
+                  ${!ganttQualityWarning && idx % 2 === 1 && !isHovered ? "bg-muted/10" : ""}
                   hover:bg-muted/30
                 `}
                 onMouseEnter={() => setHoveredTaskId(task.id)}
@@ -858,9 +904,12 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
                 onClick={() => handleTaskClick(task)}
                 data-testid={`gantt-row-${task.id}`}
               >
-                <div className="w-40 flex-shrink-0 p-1.5 border-r text-xs truncate flex items-center gap-1" data-testid={`gantt-label-${task.id}`}>
+                <div className={`w-40 flex-shrink-0 p-1.5 border-r text-xs truncate flex items-center gap-1 ${ganttQualityWarning ? "text-red-600 dark:text-red-400 font-medium" : ""}`} data-testid={`gantt-label-${task.id}`}>
                   {task.isCritical && (
                     <span className="text-destructive font-bold">!</span>
+                  )}
+                  {ganttQualityWarning && (
+                    <span className="text-red-600 font-bold text-[10px]">QC</span>
                   )}
                   <span className="truncate">{task.name || task.taskNo || "-"}</span>
                 </div>
