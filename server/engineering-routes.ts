@@ -9,6 +9,7 @@ import {
   projectTeamMembers, projectPlan, qcWarning, qcWarningEvent,
   qcItemInstance, users, projectInfo, projectPhaseHistory,
   phaseTemplate as phaseTemplateTbl,
+  uploadMetadata, refreshLogs, writebackAuditLog, phaseTemplateApplication,
   TASK_STATUSES, TASK_WORKSTREAMS, TASK_PRIORITIES, PROJECT_PHASES,
   DELIVERABLE_STATUSES, PROJECT_PHASE_LABELS,
   type ProjectPhase,
@@ -1187,6 +1188,183 @@ export function registerEngineeringRoutes(app: Express) {
     if (role === "admin") return next();
     res.status(403).json({ error: "forbidden", message: "Admin access required" });
   }
+
+  app.get("/api/eng/unified-audit", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { category, search, limit: qLimit, offset: qOffset } = req.query;
+      const pageLimit = Math.min(parseInt(qLimit as string) || 100, 500);
+      const pageOffset = parseInt(qOffset as string) || 0;
+      const searchTerm = (search as string || "").trim().toLowerCase();
+
+      const catFilter = (!category || category === "all") ? null : (category as string);
+      const searchFilter = searchTerm ? `%${searchTerm}%` : null;
+
+      const unionParts: string[] = [];
+      const unionParams: any[] = [];
+
+      if (!catFilter || catFilter === "task_changes") {
+        unionParts.push(`
+          SELECT
+            'task_' || tal.id::text AS id,
+            'task_changes' AS category,
+            tal.action_type AS action_type,
+            CASE
+              WHEN tal.action_type = 'field_changed' AND tal.field_name IS NOT NULL
+                THEN 'Changed ' || tal.field_name
+              WHEN tal.action_type = 'created' THEN 'Task created'
+              ELSE 'Task ' || replace(tal.action_type, '_', ' ')
+            END AS summary,
+            CASE
+              WHEN tal.action_type = 'field_changed'
+                THEN coalesce(tal.old_value, '—') || ' → ' || coalesce(tal.new_value, '—')
+              WHEN tal.action_type = 'created'
+                THEN coalesce(tal.new_value, ot.title)
+              ELSE ot.title
+            END AS detail,
+            u.name AS actor_name,
+            replace(ot.project_name, '_', ' ') AS project_name,
+            tal.created_at AS timestamp
+          FROM task_activity_log tal
+          LEFT JOIN users u ON tal.actor_id = u.id
+          LEFT JOIN operational_tasks ot ON tal.task_id = ot.id
+        `);
+      }
+
+      if (!catFilter || catFilter === "phase_changes") {
+        unionParts.push(`
+          SELECT
+            'phase_' || pph.id::text AS id,
+            'phase_changes' AS category,
+            'phase_changed' AS action_type,
+            'Phase: ' || coalesce(pph.from_phase, 'None') || ' → ' || pph.to_phase AS summary,
+            pph.reason AS detail,
+            u.name AS actor_name,
+            replace(replace(pi.project_name, '_Tracker', ''), '_', ' ') AS project_name,
+            pph.changed_at AS timestamp
+          FROM project_phase_history pph
+          LEFT JOIN users u ON pph.changed_by_user_id = u.id
+          LEFT JOIN project_info pi ON pph.project_id = pi.id
+        `);
+      }
+
+      if (!catFilter || catFilter === "data_imports") {
+        unionParts.push(`
+          SELECT
+            'upload_' || um.id::text AS id,
+            'data_imports' AS category,
+            CASE WHEN um.status = 'success' THEN 'import_success' ELSE 'import_failed' END AS action_type,
+            'Data import: ' || um.file_name AS summary,
+            um.records_processed::text || ' records processed' ||
+              CASE WHEN um.validation_errors IS NOT NULL THEN ' — ' || um.validation_errors ELSE '' END AS detail,
+            u.name AS actor_name,
+            NULL AS project_name,
+            um.uploaded_at AS timestamp
+          FROM upload_metadata um
+          LEFT JOIN users u ON um.uploaded_by = u.id
+        `);
+        unionParts.push(`
+          SELECT
+            'refresh_' || rl.id::text AS id,
+            'data_imports' AS category,
+            'data_refresh' AS action_type,
+            'Data refresh triggered' AS summary,
+            'Status: ' || rl.status AS detail,
+            u.name AS actor_name,
+            NULL AS project_name,
+            rl.refreshed_at AS timestamp
+          FROM refresh_logs rl
+          LEFT JOIN users u ON rl.triggered_by = u.id
+        `);
+      }
+
+      if (!catFilter || catFilter === "writebacks") {
+        unionParts.push(`
+          SELECT
+            'wb_' || wal.id::text AS id,
+            'writebacks' AS category,
+            CASE
+              WHEN wal.status = 'applied' THEN 'writeback_applied'
+              WHEN wal.status = 'rolled_back' THEN 'writeback_rolled_back'
+              ELSE 'writeback_error'
+            END AS action_type,
+            'Writeback: ' || wal.sheet_name || '!' || wal.cell_address AS summary,
+            coalesce(wal.previous_value, '—') || ' → ' || wal.new_value ||
+              CASE WHEN wal.error_message IS NOT NULL THEN ' (Error: ' || wal.error_message || ')' ELSE '' END AS detail,
+            u.name AS actor_name,
+            wal.project_id AS project_name,
+            wal.applied_at AS timestamp
+          FROM writeback_audit_log wal
+          LEFT JOIN users u ON wal.actor_id = u.id
+        `);
+      }
+
+      if (!catFilter || catFilter === "template_applications") {
+        unionParts.push(`
+          SELECT
+            'tpl_' || pta.id::text AS id,
+            'template_applications' AS category,
+            'template_applied' AS action_type,
+            'Template applied: ' || coalesce(pt.name, 'Unknown') || ' v' || pta.template_version::text AS summary,
+            'Phase: ' || pta.phase AS detail,
+            u.name AS actor_name,
+            replace(replace(pi.project_name, '_Tracker', ''), '_', ' ') AS project_name,
+            pta.applied_at AS timestamp
+          FROM phase_template_application pta
+          LEFT JOIN users u ON pta.applied_by_user_id = u.id
+          LEFT JOIN project_info pi ON pta.project_id = pi.id
+          LEFT JOIN phase_template pt ON pta.template_id = pt.id
+        `);
+      }
+
+      if (unionParts.length === 0) {
+        return res.json({ entries: [], total: 0, categoryCounts: {} });
+      }
+
+      const unionQuery = unionParts.join(" UNION ALL ");
+
+      let whereClause = "";
+      if (searchFilter) {
+        whereClause = ` WHERE lower(summary) LIKE $1 OR lower(detail) LIKE $1 OR lower(actor_name) LIKE $1 OR lower(project_name) LIKE $1`;
+        unionParams.push(searchFilter);
+      }
+
+      const countQuery = `SELECT category, count(*)::int AS cnt FROM (${unionQuery}) unified ${whereClause} GROUP BY category`;
+      const countResult = await db.execute(sql.raw(
+        searchFilter
+          ? countQuery.replace(/\$1/g, `'${searchFilter.replace(/'/g, "''")}'`)
+          : countQuery
+      ));
+
+      const categoryCounts: Record<string, number> = {};
+      let total = 0;
+      for (const row of countResult.rows as any[]) {
+        categoryCounts[row.category] = row.cnt;
+        total += row.cnt;
+      }
+
+      const dataQuery = `SELECT * FROM (${unionQuery}) unified ${whereClause} ORDER BY timestamp DESC NULLS LAST LIMIT ${pageLimit} OFFSET ${pageOffset}`;
+      const dataResult = await db.execute(sql.raw(
+        searchFilter
+          ? dataQuery.replace(/\$1/g, `'${searchFilter.replace(/'/g, "''")}'`)
+          : dataQuery
+      ));
+
+      const entries = (dataResult.rows as any[]).map((r: any) => ({
+        id: r.id,
+        category: r.category,
+        actionType: r.action_type,
+        summary: r.summary,
+        detail: r.detail,
+        actorName: r.actor_name,
+        projectName: r.project_name,
+        timestamp: r.timestamp,
+      }));
+
+      res.json({ entries, total, categoryCounts });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
 
   app.get("/api/eng/audit-log", requireAuth, requireAdmin, async (req, res) => {
     try {
