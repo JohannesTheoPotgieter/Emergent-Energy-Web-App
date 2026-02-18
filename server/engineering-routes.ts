@@ -1385,10 +1385,10 @@ export function registerEngineeringRoutes(app: Express) {
           reason: reason.trim(),
         });
 
-        const fromP2OrBefore = !fromPhase || PROJECT_PHASES.indexOf(fromPhase as any) <= 2;
-        const toP3OrBeyond = PROJECT_PHASES.indexOf(toPhase as any) >= 3;
+        const fromP1OrBefore = !fromPhase || PROJECT_PHASES.indexOf(fromPhase as any) <= 1;
+        const toP2OrBeyond = PROJECT_PHASES.indexOf(toPhase as any) >= 2;
 
-        if (fromP2OrBefore && toP3OrBeyond) {
+        if (fromP1OrBefore && toP2OrBeyond) {
           const cleanName = project.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ");
           const existing = await tx.select({ id: operationalTasks.id })
             .from(operationalTasks)
