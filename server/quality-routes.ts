@@ -243,11 +243,12 @@ export function registerQualityRoutes(app: Express) {
   app.post("/api/quality/project/:projectName/item/:itemInstanceId", requireAuth, requireAdminOrQm, async (req, res) => {
     try {
       const itemId = parseInt(req.params.itemInstanceId);
-      const { startDate, endDate, isApplicable, notApplicableReason, approvalComment } = req.body;
+      const { startDate, endDate, isApplicable, notApplicableReason, approvalComment, allowedWorkingDays } = req.body;
 
       const updates: any = { lastUpdatedAt: new Date() };
       if (startDate !== undefined) updates.startDate = startDate;
       if (endDate !== undefined) updates.endDate = endDate;
+      if (allowedWorkingDays !== undefined) updates.allowedWorkingDays = allowedWorkingDays;
       if (isApplicable !== undefined) {
         updates.isApplicable = isApplicable;
         if (!isApplicable && notApplicableReason) updates.notApplicableReason = notApplicableReason;
