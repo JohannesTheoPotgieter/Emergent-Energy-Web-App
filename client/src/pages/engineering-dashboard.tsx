@@ -76,9 +76,11 @@ interface OrphanTask {
 const PIPELINE_ORDER = [
   "TO DO",
   "IN PROGRESS",
+  "HOLD",
+  "PROJECTS ASSISTANCE",
   "NEEDS APPROVAL",
-  "PROVIDE FEEDBACK",
   "QC APPROVED",
+  "PROVIDE FEEDBACK",
   "OPERATIONAL APPROVAL",
   "COMPLETE",
 ];
@@ -86,6 +88,8 @@ const PIPELINE_ORDER = [
 const pipelineColors: Record<string, string> = {
   "TO DO": "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
   "IN PROGRESS": "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+  "HOLD": "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+  "PROJECTS ASSISTANCE": "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300",
   "NEEDS APPROVAL": "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
   "PROVIDE FEEDBACK": "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
   "QC APPROVED": "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
@@ -223,8 +227,8 @@ export default function EngineeringDashboard() {
         <CardHeader className="pb-3">
           <CardTitle className="text-lg flex items-center gap-2">
             <Target className="h-5 w-5 text-amber-500" />
-            Milestones at Risk
-            <span className="text-sm font-normal text-muted-foreground">(next 14 days)</span>
+            Projects at Risk
+            <span className="text-sm font-normal text-muted-foreground">(tasks due within 14 days)</span>
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -292,7 +296,7 @@ export default function EngineeringDashboard() {
         <CardHeader className="pb-3">
           <CardTitle className="text-lg flex items-center gap-2">
             <Package className="h-5 w-5 text-indigo-500" />
-            Deliverables Pipeline
+            Task Pipeline
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -302,7 +306,7 @@ export default function EngineeringDashboard() {
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3 mb-4">
+              <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-2 mb-4">
                 {orderedPipeline.map((p) => (
                   <div
                     key={p.status}
