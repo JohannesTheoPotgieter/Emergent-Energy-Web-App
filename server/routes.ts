@@ -9291,9 +9291,9 @@ export async function registerRoutes(
       const upcomingMilestones = await db.select().from(opTasksTable)
         .where(
           and(
-            sql`${opTasksTable.dueDate} IS NOT NULL`,
-            sql`${opTasksTable.dueDate} >= CURRENT_DATE`,
-            sql`${opTasksTable.dueDate} <= CURRENT_DATE + INTERVAL '14 days'`,
+            sql`${opTasksTable.dueDate} IS NOT NULL AND ${opTasksTable.dueDate} != ''`,
+            sql`${opTasksTable.dueDate}::date >= CURRENT_DATE`,
+            sql`${opTasksTable.dueDate}::date <= CURRENT_DATE + INTERVAL '14 days'`,
             sql`${opTasksTable.status} != 'Complete'`,
           )
         );
