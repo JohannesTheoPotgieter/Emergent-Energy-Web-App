@@ -80,14 +80,6 @@ const engLinks: QuickLink[] = [
     color: "text-indigo-600",
     bg: "bg-indigo-50 dark:bg-indigo-950/30 border-indigo-200 dark:border-indigo-800 hover:border-indigo-400",
   },
-  {
-    label: "Project Teams",
-    description: "Manage team assignments and roles",
-    icon: Users,
-    path: "/engineering/teams",
-    color: "text-emerald-600",
-    bg: "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 hover:border-emerald-400",
-  },
 ];
 
 const currentLinks: QuickLink[] = [
