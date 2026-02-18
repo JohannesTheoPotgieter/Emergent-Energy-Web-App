@@ -18,9 +18,6 @@ import {
   AlertTriangle,
   X,
   Briefcase,
-  BookOpen,
-  Camera,
-  Cloud,
   Upload,
   ShieldCheck,
   Wrench,
@@ -55,8 +52,8 @@ const navGroups: NavGroup[] = [
   {
     heading: "EXCO",
     items: [
-      { label: "Dashboard", icon: LayoutDashboard, path: "/dashboard" },
       { label: "Portfolio Board", icon: Layers, path: "/exec-portfolio" },
+      { label: "Reports", icon: FileBarChart, path: "/admin/reports" },
       { label: "Company Priorities", icon: Flag, path: "/my-tool/priorities" },
       { label: "My Tool", icon: Briefcase, path: "/my-tool" },
     ],
@@ -64,6 +61,7 @@ const navGroups: NavGroup[] = [
   {
     heading: "PROJECT MANAGEMENT",
     items: [
+      { label: "Execution Dashboard", icon: LayoutDashboard, path: "/dashboard" },
       { label: "Project Summary", icon: FileSpreadsheet, path: "/projects" },
       { label: "Cashflow", icon: Wallet, path: "/cashflow" },
       { label: "COS Tracker", icon: TrendingUp, path: "/cos", className: "rotate-180" },
@@ -86,17 +84,11 @@ const navGroups: NavGroup[] = [
   {
     heading: "ADMIN",
     items: [
-      { label: "Reports", icon: FileBarChart, path: "/admin/reports" },
       { label: "Phase Templates", icon: Layers, path: "/admin/phase-templates" },
       { label: "New Project", icon: FolderPlus, path: "/project-create" },
       { label: "Audit Log", icon: History, path: "/admin/audit-log" },
       { label: "Teams & Roles", icon: Users, path: "/admin/teams" },
       { label: "Data Import", icon: Upload, path: "/admin" },
-      { label: "SP Settings", icon: Cloud, path: "/admin/sp-settings" },
-      { label: "File Refresh", icon: FileSpreadsheet, path: "/admin/sp-file-refresh" },
-      { label: "Import Runs", icon: Database, path: "/admin/sp-import-runs" },
-      { label: "Change Ledger", icon: BookOpen, path: "/admin/sp-ledger" },
-      { label: "Snapshots", icon: Camera, path: "/admin/sp-snapshots" },
     ],
   },
 ];

@@ -30,13 +30,6 @@ import MyToolSettingsPage from "@/pages/my-tool-settings";
 import MyToolAdminSettingsPage from "@/pages/my-tool-admin-settings";
 import MyToolHelpPage from "@/pages/my-tool-help";
 import MyToolPrioritiesPage from "@/pages/my-tool-priorities";
-import SpAdminSettingsPage from "@/pages/sp-admin-settings";
-import SpImportRunsPage from "@/pages/sp-import-runs";
-import SpLedgerPage from "@/pages/sp-ledger";
-import SpLedgerDetailPage from "@/pages/sp-ledger-detail";
-import SpSnapshotsPage from "@/pages/sp-snapshots";
-import SpSnapshotDetailPage from "@/pages/sp-snapshot-detail";
-import SpFileRefreshPage from "@/pages/sp-file-refresh";
 import QmDashboardPage from "@/pages/qm-dashboard";
 import EngineeringDashboardPage from "@/pages/engineering-dashboard";
 import EngineeringTasksPage from "@/pages/engineering-tasks";
@@ -81,7 +74,7 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
     }
   }
 
-  if (user?.role !== "admin" && location.startsWith("/admin")) {
+  if (user?.role !== "admin" && location.startsWith("/admin") && !location.startsWith("/admin/reports")) {
     return <Redirect to="/" />;
   }
 
@@ -222,13 +215,6 @@ function ProtectedPages() {
         <Route path="/upload">{() => <Redirect to="/admin" />}</Route>
         <Route path="/admin" component={AdminPage} />
         <Route path="/admin/my-tool-settings" component={MyToolAdminSettingsPage} />
-        <Route path="/admin/sp-settings" component={SpAdminSettingsPage} />
-        <Route path="/admin/sp-import-runs" component={SpImportRunsPage} />
-        <Route path="/admin/sp-ledger" component={SpLedgerPage} />
-        <Route path="/admin/sp-ledger/:id" component={SpLedgerDetailPage} />
-        <Route path="/admin/sp-snapshots" component={SpSnapshotsPage} />
-        <Route path="/admin/sp-snapshots/:id" component={SpSnapshotDetailPage} />
-        <Route path="/admin/sp-file-refresh" component={SpFileRefreshPage} />
         <Route path="/quality" component={QmDashboardPage} />
         <Route path="/engineering" component={EngineeringDashboardPage} />
         <Route path="/engineering/tasks" component={EngineeringTasksPage} />
