@@ -53,11 +53,15 @@ export default function QmDashboardPage() {
   const { data: checklists = [], isLoading: checklistsLoading } = useQuery<Checklist[]>({
     queryKey: ["quality-checklists"],
     queryFn: () => qFetch("/api/quality/checklists"),
+    refetchOnMount: "always",
+    staleTime: 0,
   });
 
   const { data: warnings = [], isLoading: warningsLoading } = useQuery<Warning[]>({
     queryKey: ["quality-warnings-all"],
     queryFn: () => qFetch("/api/quality/warnings?status=open"),
+    refetchOnMount: "always",
+    staleTime: 0,
   });
 
   const filtered = checklists.filter(c =>

@@ -285,6 +285,8 @@ export function registerQualityRoutes(app: Express) {
       }
 
       const [updated] = await db.update(qcItemInstance).set(updates).where(eq(qcItemInstance.id, itemId)).returning();
+      const pName = decodeURIComponent(req.params.projectName);
+      recalculateWarnings(pName).catch(() => {});
       res.json(updated);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -326,6 +328,8 @@ export function registerQualityRoutes(app: Express) {
       if (answerNumber !== undefined) updates.answerNumber = answerNumber;
 
       const [updated] = await db.update(qcRiskAnswer).set(updates).where(eq(qcRiskAnswer.id, riskAnswerId)).returning();
+      const pName = decodeURIComponent(req.params.projectName);
+      recalculateWarnings(pName).catch(() => {});
       res.json(updated);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -349,14 +353,51 @@ export function registerQualityRoutes(app: Express) {
   app.get("/api/quality/warnings", requireAuth, async (req, res) => {
     try {
       const statusFilter = req.query.status as string;
-      let warnings;
+      let storedWarnings: any[];
       if (statusFilter) {
-        warnings = await db.select().from(qcWarning)
+        storedWarnings = await db.select().from(qcWarning)
           .where(eq(qcWarning.status, statusFilter))
           .orderBy(desc(qcWarning.createdAt));
       } else {
-        warnings = await db.select().from(qcWarning).orderBy(desc(qcWarning.createdAt));
+        storedWarnings = await db.select().from(qcWarning).orderBy(desc(qcWarning.createdAt));
       }
+
+      const warnings = storedWarnings.filter((w: any) => w.warningType !== "task_complete_unapproved");
+
+      const allPlanLinks = await db.select().from(qcPlanLink);
+      if (allPlanLinks.length) {
+        const allItems = await db.select().from(qcItemInstance);
+        const projectsWithLinks = [...new Set(allPlanLinks.map((l: any) => l.projectName))];
+        const allPlanTasks = await db.select().from(projectPlan)
+          .where(inArray(projectPlan.projectName, projectsWithLinks));
+        const templateItemIds = [...new Set(allItems.map((i: any) => i.templateItemId))];
+        const templateItems = templateItemIds.length
+          ? await db.select().from(qcTemplateItem).where(inArray(qcTemplateItem.id, templateItemIds))
+          : [];
+
+        for (const link of allPlanLinks) {
+          if (!link.itemInstanceId) continue;
+          const item = allItems.find((i: any) => i.id === link.itemInstanceId);
+          if (!item || !item.isApplicable || item.approved) continue;
+          const task = allPlanTasks.find((t: any) => t.id === link.planItemId);
+          if (task && (task.actualPctComplete ?? 0) >= 1) {
+            const tmpl = templateItems.find((t: any) => t.id === item.templateItemId);
+            warnings.push({
+              id: -(link.id),
+              projectName: link.projectName,
+              severity: "High",
+              warningType: "task_complete_unapproved",
+              title: `Task done — QC not checked: ${tmpl?.itemName || 'Unknown item'}`,
+              description: `Task "${task.taskNo || task.highLevelProgramme}" is 100% complete but linked quality item "${tmpl?.itemName}" has not been approved`,
+              relatedPlanItemId: task.id,
+              relatedItemInstanceId: item.id,
+              status: "open",
+              createdAt: new Date().toISOString(),
+            });
+          }
+        }
+      }
+
       res.json(warnings);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -412,6 +453,7 @@ export function registerQualityRoutes(app: Express) {
       const [link] = await db.insert(qcPlanLink).values({
         projectName, planItemId, itemInstanceId: itemInstanceId || null, phaseId: phaseId || null, linkType: linkType || "phase_task",
       }).returning();
+      recalculateWarnings(projectName).catch(() => {});
       res.json(link);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -420,7 +462,9 @@ export function registerQualityRoutes(app: Express) {
 
   app.delete("/api/quality/plan-link/:linkId", requireAuth, requireAdminOrQm, async (req, res) => {
     try {
+      const [deletedLink] = await db.select().from(qcPlanLink).where(eq(qcPlanLink.id, parseInt(req.params.linkId)));
       await db.delete(qcPlanLink).where(eq(qcPlanLink.id, parseInt(req.params.linkId)));
+      if (deletedLink) recalculateWarnings(deletedLink.projectName).catch(() => {});
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -491,11 +535,29 @@ export function registerQualityRoutes(app: Express) {
       const allWarnings = await db.select().from(qcWarning).where(sql`${qcWarning.status} != 'resolved'`);
       const warningsByProject: Record<string, number> = {};
       for (const w of allWarnings) {
+        if (w.warningType === "task_complete_unapproved") continue;
         warningsByProject[w.projectName] = (warningsByProject[w.projectName] || 0) + 1;
       }
 
+      const allPlanLinks = await db.select().from(qcPlanLink);
       const allItems = await db.select().from(qcItemInstance);
-      const templateItemIds = [...new Set(allItems.map(i => i.templateItemId))];
+
+      const projectsWithLinks = [...new Set(allPlanLinks.map((l: any) => l.projectName))];
+      const allPlanTasks = projectsWithLinks.length
+        ? await db.select().from(projectPlan).where(inArray(projectPlan.projectName, projectsWithLinks))
+        : [];
+
+      for (const link of allPlanLinks) {
+        if (!link.itemInstanceId) continue;
+        const item = allItems.find((i: any) => i.id === link.itemInstanceId);
+        if (!item || !item.isApplicable || item.approved) continue;
+        const task = allPlanTasks.find((t: any) => t.id === link.planItemId);
+        if (task && (task.actualPctComplete ?? 0) >= 1) {
+          warningsByProject[link.projectName] = (warningsByProject[link.projectName] || 0) + 1;
+        }
+      }
+
+      const templateItemIds = [...new Set(allItems.map((i: any) => i.templateItemId))];
       const templateItems = templateItemIds.length
         ? await db.select().from(qcTemplateItem).where(inArray(qcTemplateItem.id, templateItemIds))
         : [];
@@ -859,13 +921,23 @@ export async function recalculateWarnings(projectName: string): Promise<number> 
       const task = planTasks.find(t => t.id === link.planItemId);
       if (!task) continue;
 
-      const linkedItem = items.find(i => i.id === link.itemInstanceId);
+      const linkedItem = link.itemInstanceId ? items.find(i => i.id === link.itemInstanceId) : null;
       if (linkedItem && !linkedItem.approved && linkedItem.isApplicable) {
-        if (task.actualEnd) {
+        const taskPct = task.actualPctComplete ?? 0;
+        const tmpl = templateItems.find(t => t.id === linkedItem.templateItemId);
+
+        if (taskPct >= 1) {
+          newWarnings.push({
+            projectName, severity: "High", warningType: "task_complete_unapproved",
+            title: `Task done — QC not checked: ${tmpl?.itemName || 'Unknown item'}`,
+            description: `Task "${task.taskNo || task.highLevelProgramme}" is 100% complete but linked quality item "${tmpl?.itemName}" has not been approved`,
+            relatedPlanItemId: task.id,
+            relatedItemInstanceId: linkedItem.id,
+          });
+        } else if (task.actualEnd) {
           const taskEndDate = new Date(task.actualEnd);
           const daysUntil = Math.floor((taskEndDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
           if (daysUntil <= 7 && daysUntil >= 0) {
-            const tmpl = templateItems.find(t => t.id === linkedItem.templateItemId);
             newWarnings.push({
               projectName, severity: "High", warningType: "phase_incomplete",
               title: `Incomplete QC near milestone: ${task.taskNo || task.highLevelProgramme}`,
