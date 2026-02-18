@@ -4151,6 +4151,8 @@ export async function registerRoutes(
         expenseRateUnit: "expenseRateUnit",
         budgetQty: "budgetQty",
         budgetRateUnit: "budgetRateUnit",
+        invoiceDateFontColor: "invoiceDateFontColor",
+        paymentDateFontColor: "paymentDateFontColor",
       };
 
       const projectNames = [...new Set(overrides.map((o: any) => o.projectName))];
@@ -4167,14 +4169,13 @@ export async function registerRoutes(
           if (!expense) continue;
           if (!rowGroups.has(expense.id)) rowGroups.set(expense.id, {});
           const fields = rowGroups.get(expense.id)!;
-          fields[colName] = ov.overrideValue;
-          if (ov.fieldName === 'expenseInvoicedDate' && ov.overrideValue) {
+          const effectiveValue = ov.overrideValue === "__null__" ? null : ov.overrideValue;
+          fields[colName] = effectiveValue;
+          if (ov.fieldName === 'expenseInvoicedDate' && effectiveValue) {
             fields.invoiceDateConfirmed = true;
-            fields.invoiceDateFontColor = null;
           }
-          if (ov.fieldName === 'expensePaymentDate' && ov.overrideValue) {
+          if (ov.fieldName === 'expensePaymentDate' && effectiveValue) {
             fields.paymentDateConfirmed = true;
-            fields.paymentDateFontColor = null;
           }
         }
 
