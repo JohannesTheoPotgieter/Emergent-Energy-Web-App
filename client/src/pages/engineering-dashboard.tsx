@@ -1,24 +1,20 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   AlertTriangle,
   Wrench,
-  Users,
-  Target,
-  Package,
-  Link2,
+  Search,
+  Calendar,
+  ChevronDown,
+  ChevronRight,
   Clock,
   Loader2,
+  User,
+  Circle,
 } from "lucide-react";
 
 async function engFetch(url: string) {
@@ -30,434 +26,307 @@ async function engFetch(url: string) {
   return res.json();
 }
 
-interface WorkloadRow {
-  name: string;
+interface ProjectTask {
+  id: number;
+  title: string;
+  status: string;
+  priority: string;
+  dueDate: string | null;
+  assignees: string[] | null;
+  trackingRag: string | null;
+}
+
+interface ProjectData {
+  projectName: string;
+  displayName: string;
+  phase: string;
+  totalTasks: number;
   activeTasks: number;
-  dueThisWeek: number;
-  overdue: number;
-  onHold: number;
-  needsApproval: number;
-  provideFeedback: number;
+  completedTasks: number;
+  overdueTasks: number;
+  holdTasks: number;
+  tasks: ProjectTask[];
 }
 
-interface MilestoneAtRisk {
-  id: number;
-  projectName: string;
-  milestoneName: string;
-  dueDate: string;
-  linkedTasks: number;
-  incompleteTasks: number;
-  highWarnings: number;
-  deliverableStatuses: Array<{ name: string; status: string }>;
-}
+const statusDot: Record<string, string> = {
+  "TO DO": "text-gray-400",
+  "IN PROGRESS": "text-blue-500",
+  "HOLD": "text-red-500",
+  "NEEDS APPROVAL": "text-amber-500",
+  "QC APPROVED": "text-emerald-500",
+  "PROVIDE FEEDBACK": "text-purple-500",
+  "OPERATIONAL APPROVAL": "text-indigo-500",
+  "PROJECTS ASSISTANCE": "text-cyan-500",
+  "COMPLETE": "text-green-500",
+};
 
-interface PipelineStatus {
-  status: string;
-  count: number;
-}
-
-interface WarningItem {
-  id: number;
-  projectName: string;
-  title: string;
-  description: string;
-  ageDays: number;
-  severity: string;
-}
-
-interface OrphanTask {
-  id: number;
-  title: string;
-  projectName: string;
-  assignee: string | null;
-  status: string;
-}
-
-const PIPELINE_ORDER = [
-  "TO DO",
-  "IN PROGRESS",
-  "HOLD",
-  "PROJECTS ASSISTANCE",
-  "NEEDS APPROVAL",
-  "QC APPROVED",
-  "PROVIDE FEEDBACK",
-  "OPERATIONAL APPROVAL",
-  "COMPLETE",
-];
-
-const pipelineColors: Record<string, string> = {
+const statusBadge: Record<string, string> = {
   "TO DO": "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
   "IN PROGRESS": "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
   "HOLD": "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
-  "PROJECTS ASSISTANCE": "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300",
   "NEEDS APPROVAL": "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
-  "PROVIDE FEEDBACK": "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
   "QC APPROVED": "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
+  "PROVIDE FEEDBACK": "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
   "OPERATIONAL APPROVAL": "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300",
+  "PROJECTS ASSISTANCE": "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300",
   "COMPLETE": "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
 };
 
-function transformPipeline(raw: any): PipelineStatus[] {
-  if (Array.isArray(raw)) return raw;
-  if (raw && typeof raw === "object") {
-    return Object.entries(raw).map(([status, count]) => ({
-      status,
-      count: Number(count) || 0,
-    }));
-  }
-  return [];
+const phaseColors: Record<string, string> = {
+  "Prospecting": "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
+  "First Assessment": "bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300",
+  "Cost Proposal": "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300",
+  "Design": "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+  "Procurement": "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300",
+  "Construction": "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300",
+  "Commissioning": "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+  "Handover": "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
+  "Operational": "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
+  "In Progress": "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+};
+
+function formatDate(d: string | null) {
+  if (!d) return "";
+  try {
+    return new Date(d).toLocaleDateString("en-ZA", { day: "2-digit", month: "short" });
+  } catch { return d; }
+}
+
+function isOverdue(dueDate: string | null) {
+  if (!dueDate) return false;
+  return new Date(dueDate) < new Date();
+}
+
+function ProjectRow({ project, defaultExpanded }: { project: ProjectData; defaultExpanded: boolean }) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  const hasOverdue = project.overdueTasks > 0;
+  const hasHold = project.holdTasks > 0;
+
+  return (
+    <div
+      className={`border rounded-lg overflow-hidden transition-all ${hasOverdue ? "border-red-200 dark:border-red-800/50" : "border-border"}`}
+      data-testid={`project-row-${project.projectName}`}
+    >
+      <div
+        className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-muted/30 transition-colors ${hasOverdue ? "bg-red-50/30 dark:bg-red-950/10" : ""}`}
+        onClick={() => setExpanded(!expanded)}
+      >
+        {expanded ? (
+          <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+        ) : (
+          <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+        )}
+
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h3 className="font-semibold text-sm truncate" data-testid={`text-project-name-${project.projectName}`}>
+              {project.displayName}
+            </h3>
+            <Badge className={`text-[10px] px-1.5 py-0 ${phaseColors[project.phase] || phaseColors["In Progress"]}`}>
+              {project.phase}
+            </Badge>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 shrink-0">
+          {hasOverdue && (
+            <span className="flex items-center gap-1 text-[11px] text-red-600 font-semibold">
+              <AlertTriangle className="h-3.5 w-3.5" />
+              {project.overdueTasks} overdue
+            </span>
+          )}
+          {hasHold && (
+            <span className="flex items-center gap-1 text-[11px] text-red-500">
+              {project.holdTasks} on hold
+            </span>
+          )}
+          <span className="text-xs text-muted-foreground whitespace-nowrap">
+            {project.activeTasks} open
+            {project.completedTasks > 0 && ` · ${project.completedTasks} done`}
+          </span>
+        </div>
+      </div>
+
+      {expanded && project.tasks.length > 0 && (
+        <div className="border-t bg-muted/10">
+          {project.tasks.map(task => (
+            <div
+              key={task.id}
+              className="flex items-center gap-3 px-4 py-2 pl-11 border-b last:border-b-0 hover:bg-muted/20 transition-colors text-sm"
+              data-testid={`task-row-${task.id}`}
+            >
+              <Circle className={`h-2.5 w-2.5 fill-current shrink-0 ${statusDot[task.status] || "text-gray-400"}`} />
+
+              <span className="flex-1 min-w-0 truncate" data-testid={`text-task-title-${task.id}`}>
+                {task.title}
+              </span>
+
+              <Badge className={`text-[9px] px-1.5 py-0 shrink-0 ${statusBadge[task.status] || "bg-gray-100"}`}>
+                {task.status}
+              </Badge>
+
+              {task.dueDate && (
+                <span className={`text-[11px] flex items-center gap-0.5 shrink-0 ${isOverdue(task.dueDate) ? "text-red-600 font-semibold" : "text-muted-foreground"}`}>
+                  <Calendar className="h-3 w-3" />
+                  {formatDate(task.dueDate)}
+                  {isOverdue(task.dueDate) && <AlertTriangle className="h-3 w-3" />}
+                </span>
+              )}
+
+              {task.assignees && task.assignees[0] && (
+                <span className="text-[11px] text-muted-foreground flex items-center gap-0.5 shrink-0 max-w-[100px] truncate">
+                  <User className="h-3 w-3" />
+                  {task.assignees[0]}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {expanded && project.tasks.length === 0 && (
+        <div className="border-t px-4 py-3 text-xs text-muted-foreground text-center">
+          All tasks complete
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function EngineeringDashboard() {
-  const { data: workload = [], isLoading: workloadLoading } = useQuery<WorkloadRow[]>({
-    queryKey: ["eng-dashboard-workload"],
-    queryFn: () => engFetch("/api/eng/dashboard/workload"),
+  const [searchTerm, setSearchTerm] = useState("");
+  const [phaseFilter, setPhaseFilter] = useState<string>("all");
+
+  const { data, isLoading } = useQuery<{ projects: ProjectData[]; lifecyclePhases: string[] }>({
+    queryKey: ["eng-dashboard-projects"],
+    queryFn: () => engFetch("/api/eng/dashboard/projects"),
     refetchOnMount: "always",
     staleTime: 0,
   });
 
-  const { data: milestones = [], isLoading: milestonesLoading } = useQuery<MilestoneAtRisk[]>({
-    queryKey: ["eng-dashboard-milestones"],
-    queryFn: () => engFetch("/api/eng/dashboard/milestones-at-risk"),
-    refetchOnMount: "always",
-    staleTime: 0,
+  const projects = data?.projects || [];
+  const lifecyclePhases = data?.lifecyclePhases || [];
+
+  const filtered = projects.filter(p => {
+    if (phaseFilter !== "all" && p.phase !== phaseFilter) return false;
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      return p.displayName.toLowerCase().includes(term) ||
+        p.tasks.some(t => t.title.toLowerCase().includes(term));
+    }
+    return true;
   });
 
-  const { data: pipeline = [], isLoading: pipelineLoading } = useQuery<PipelineStatus[]>({
-    queryKey: ["eng-dashboard-pipeline"],
-    queryFn: async () => {
-      const raw = await engFetch("/api/eng/dashboard/deliverables-pipeline");
-      return transformPipeline(raw);
-    },
-    refetchOnMount: "always",
-    staleTime: 0,
-  });
+  const totalActive = filtered.reduce((s, p) => s + p.activeTasks, 0);
+  const totalOverdue = filtered.reduce((s, p) => s + p.overdueTasks, 0);
+  const totalHold = filtered.reduce((s, p) => s + p.holdTasks, 0);
 
-  const { data: warnings = [], isLoading: warningsLoading } = useQuery<WarningItem[]>({
-    queryKey: ["eng-dashboard-warnings"],
-    queryFn: () => engFetch("/api/eng/dashboard/warning-tower"),
-    refetchOnMount: "always",
-    staleTime: 0,
-  });
-
-  const { data: orphanTasks = [], isLoading: orphansLoading } = useQuery<OrphanTask[]>({
-    queryKey: ["eng-dashboard-orphans"],
-    queryFn: () => engFetch("/api/eng/dashboard/orphan-tasks"),
-    refetchOnMount: "always",
-    staleTime: 0,
-  });
-
-  const pipelineMap = new Map(pipeline.map((p) => [p.status, p.count]));
-  const orderedPipeline = PIPELINE_ORDER.map((status) => ({
-    status,
-    count: pipelineMap.get(status) ?? 0,
-  }));
-  const totalPipeline = orderedPipeline.reduce((s, p) => s + p.count, 0);
+  const phaseCounts = new Map<string, number>();
+  for (const p of projects) {
+    phaseCounts.set(p.phase, (phaseCounts.get(p.phase) || 0) + 1);
+  }
 
   return (
-    <div data-testid="eng-dashboard" className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div data-testid="eng-dashboard" className="space-y-5">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex items-center gap-3">
-          <Wrench className="h-8 w-8 text-orange-500" />
+          <Wrench className="h-7 w-7 text-orange-500" />
           <div>
-            <h2 className="text-2xl sm:text-3xl font-heading font-bold text-foreground" data-testid="text-eng-dashboard-title">
+            <h2 className="text-2xl font-heading font-bold" data-testid="text-eng-dashboard-title">
               Engineering Dashboard
             </h2>
-            <p className="text-sm text-muted-foreground">Engineering Program Manager overview</p>
+            <p className="text-xs text-muted-foreground">
+              {projects.length} projects · {totalActive} active tasks · {totalOverdue} overdue
+            </p>
           </div>
         </div>
       </div>
 
-      <Card data-testid="card-team-workload">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-lg flex items-center gap-2">
-            <Users className="h-5 w-5 text-blue-500" />
-            Team Workload
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {workloadLoading ? (
-            <div className="flex justify-center py-8">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            </div>
-          ) : workload.length === 0 ? (
-            <p className="text-center py-8 text-muted-foreground" data-testid="text-workload-empty">No workload data available</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead className="text-center">Active Tasks</TableHead>
-                    <TableHead className="text-center">Due This Week</TableHead>
-                    <TableHead className="text-center">Overdue</TableHead>
-                    <TableHead className="text-center">On Hold</TableHead>
-                    <TableHead className="text-center">Needs Approval</TableHead>
-                    <TableHead className="text-center">Provide Feedback</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {workload.map((row, i) => (
-                    <TableRow key={i} data-testid={`row-workload-${i}`}>
-                      <TableCell className="font-medium" data-testid={`text-workload-name-${i}`}>{row.name}</TableCell>
-                      <TableCell className="text-center" data-testid={`text-workload-active-${i}`}>{row.activeTasks}</TableCell>
-                      <TableCell className="text-center" data-testid={`text-workload-due-${i}`}>{row.dueThisWeek}</TableCell>
-                      <TableCell className="text-center">
-                        {row.overdue > 0 ? (
-                          <Badge variant="destructive" className="bg-red-600 text-white" data-testid={`badge-workload-overdue-${i}`}>
-                            {row.overdue}
-                          </Badge>
-                        ) : (
-                          <span className="text-muted-foreground" data-testid={`text-workload-overdue-${i}`}>0</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-center" data-testid={`text-workload-hold-${i}`}>{row.onHold}</TableCell>
-                      <TableCell className="text-center" data-testid={`text-workload-approval-${i}`}>{row.needsApproval}</TableCell>
-                      <TableCell className="text-center" data-testid={`text-workload-feedback-${i}`}>{row.provideFeedback}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <Card className="p-3">
+          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Projects</p>
+          <p className="text-2xl font-bold mt-1" data-testid="stat-total-projects">{projects.length}</p>
+        </Card>
+        <Card className="p-3">
+          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Active Tasks</p>
+          <p className="text-2xl font-bold mt-1" data-testid="stat-active-tasks">{totalActive}</p>
+        </Card>
+        <Card className="p-3 border-red-200 dark:border-red-800/50">
+          <p className="text-[10px] text-red-600 uppercase tracking-wider">Overdue</p>
+          <p className="text-2xl font-bold mt-1 text-red-600" data-testid="stat-overdue">{totalOverdue}</p>
+        </Card>
+        <Card className="p-3">
+          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">On Hold</p>
+          <p className="text-2xl font-bold mt-1 text-amber-600" data-testid="stat-hold">{totalHold}</p>
+        </Card>
+      </div>
 
-      <Card data-testid="card-milestones-risk">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-lg flex items-center gap-2">
-            <Target className="h-5 w-5 text-amber-500" />
-            Projects at Risk
-            <span className="text-sm font-normal text-muted-foreground">(tasks due within 14 days)</span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {milestonesLoading ? (
-            <div className="flex justify-center py-8">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            </div>
-          ) : milestones.length === 0 ? (
-            <p className="text-center py-8 text-muted-foreground" data-testid="text-milestones-empty">No milestones at risk</p>
-          ) : (
-            <div className="space-y-3">
-              {milestones.map((ms, i) => (
-                <div
-                  key={ms.id ?? i}
-                  data-testid={`card-milestone-${i}`}
-                  className={`p-4 rounded-lg border ${
-                    ms.highWarnings > 0
-                      ? "border-red-300 bg-red-50/50 dark:bg-red-950/20 dark:border-red-800/50"
-                      : "border-border"
-                  }`}
-                >
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                    <div>
-                      <p className="font-medium" data-testid={`text-milestone-project-${i}`}>{ms.projectName}</p>
-                      <p className="text-sm text-muted-foreground" data-testid={`text-milestone-name-${i}`}>{ms.milestoneName}</p>
-                    </div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <Badge variant="outline" className="text-xs" data-testid={`badge-milestone-due-${i}`}>
-                        <Clock className="h-3 w-3 mr-1" />
-                        Due: {ms.dueDate ? new Date(ms.dueDate).toLocaleDateString() : "—"}
-                      </Badge>
-                      <Badge variant="secondary" className="text-xs" data-testid={`badge-milestone-tasks-${i}`}>
-                        {ms.linkedTasks} tasks ({ms.incompleteTasks} incomplete)
-                      </Badge>
-                      {ms.highWarnings > 0 && (
-                        <Badge className="bg-red-600 text-white text-xs font-bold" data-testid={`badge-milestone-warnings-${i}`}>
-                          <AlertTriangle className="h-3 w-3 mr-1" />
-                          {ms.highWarnings} HIGH
-                        </Badge>
-                      )}
-                    </div>
-                  </div>
-                  {ms.deliverableStatuses && ms.deliverableStatuses.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 mt-2">
-                      {ms.deliverableStatuses.map((d, di) => (
-                        <Badge
-                          key={di}
-                          variant="outline"
-                          className="text-[10px]"
-                          data-testid={`badge-deliverable-${i}-${di}`}
-                        >
-                          {d.name}: {d.status}
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 min-w-[200px] max-w-xs">
+          <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
+          <Input
+            data-testid="input-project-search"
+            placeholder="Search projects or tasks..."
+            className="pl-9 h-8 text-xs"
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+          />
+        </div>
+        <div className="flex flex-wrap gap-1">
+          <button
+            className={`px-2 py-1 text-[10px] rounded-md border transition-colors ${phaseFilter === "all" ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
+            onClick={() => setPhaseFilter("all")}
+            data-testid="filter-phase-all"
+          >
+            All Phases
+          </button>
+          {lifecyclePhases.map(phase => {
+            const count = phaseCounts.get(phase) || 0;
+            if (count === 0) return null;
+            return (
+              <button
+                key={phase}
+                className={`px-2 py-1 text-[10px] rounded-md border transition-colors ${phaseFilter === phase ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
+                onClick={() => setPhaseFilter(phase)}
+                data-testid={`filter-phase-${phase.toLowerCase().replace(/\s+/g, "-")}`}
+              >
+                {phase} ({count})
+              </button>
+            );
+          })}
+          {phaseCounts.has("In Progress") && (
+            <button
+              className={`px-2 py-1 text-[10px] rounded-md border transition-colors ${phaseFilter === "In Progress" ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
+              onClick={() => setPhaseFilter("In Progress")}
+              data-testid="filter-phase-in-progress"
+            >
+              In Progress ({phaseCounts.get("In Progress") || 0})
+            </button>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
-      <Card data-testid="card-deliverables-pipeline">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-lg flex items-center gap-2">
-            <Package className="h-5 w-5 text-indigo-500" />
-            Task Pipeline
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {pipelineLoading ? (
-            <div className="flex justify-center py-8">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            </div>
-          ) : (
-            <>
-              <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-2 mb-4">
-                {orderedPipeline.map((p) => (
-                  <div
-                    key={p.status}
-                    data-testid={`card-pipeline-${p.status.toLowerCase().replace(/\s+/g, "-")}`}
-                    className={`rounded-lg p-3 text-center ${pipelineColors[p.status] ?? "bg-gray-100 text-gray-700"}`}
-                  >
-                    <p className="text-2xl font-bold" data-testid={`text-pipeline-count-${p.status.toLowerCase().replace(/\s+/g, "-")}`}>
-                      {p.count}
-                    </p>
-                    <p className="text-[10px] font-medium uppercase tracking-wider mt-1">{p.status}</p>
-                  </div>
-                ))}
-              </div>
-              {totalPipeline > 0 && (
-                <div className="flex h-4 rounded-full overflow-hidden" data-testid="bar-pipeline-progress">
-                  {orderedPipeline
-                    .filter((p) => p.count > 0)
-                    .map((p) => (
-                      <div
-                        key={p.status}
-                        className={`${pipelineColors[p.status]?.split(" ")[0] ?? "bg-gray-200"} transition-all`}
-                        style={{ width: `${(p.count / totalPipeline) * 100}%` }}
-                        title={`${p.status}: ${p.count}`}
-                      />
-                    ))}
-                </div>
-              )}
-            </>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card data-testid="card-warning-tower" className="border-red-200 dark:border-red-800/50">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-lg flex items-center gap-2 text-red-600 dark:text-red-400">
-            <AlertTriangle className="h-5 w-5" />
-            Warning Control Tower
-            {warnings.length > 0 && (
-              <Badge className="bg-red-600 text-white ml-2" data-testid="badge-warning-count">
-                {warnings.length}
-              </Badge>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {warningsLoading ? (
-            <div className="flex justify-center py-8">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            </div>
-          ) : warnings.length === 0 ? (
-            <p className="text-center py-8 text-muted-foreground" data-testid="text-warnings-empty">No active high-severity warnings</p>
-          ) : (
-            <div className="space-y-2">
-              {warnings.map((w, i) => (
-                <div
-                  key={w.id ?? i}
-                  data-testid={`card-warning-${i}`}
-                  className="p-4 rounded-lg border border-red-300 bg-red-50 dark:bg-red-950/30 dark:border-red-800/60"
-                >
-                  <div className="flex items-start gap-3">
-                    <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-400 mt-0.5 shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-semibold text-red-800 dark:text-red-300" data-testid={`text-warning-title-${i}`}>
-                          {w.title}
-                        </span>
-                        <Badge className="bg-red-600 text-white text-[10px] font-bold" data-testid={`badge-warning-severity-${i}`}>
-                          HIGH
-                        </Badge>
-                        <Badge variant="outline" className="text-[10px] border-red-300 text-red-700 dark:text-red-400" data-testid={`badge-warning-age-${i}`}>
-                          {w.ageDays}d old
-                        </Badge>
-                      </div>
-                      <p className="text-sm text-red-700/80 dark:text-red-400/80 mt-0.5" data-testid={`text-warning-project-${i}`}>
-                        {w.projectName}
-                      </p>
-                      {w.description && (
-                        <p className="text-xs text-red-600/70 dark:text-red-400/60 mt-1 line-clamp-2" data-testid={`text-warning-desc-${i}`}>
-                          {w.description}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card data-testid="card-orphan-tasks">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-lg flex items-center gap-2">
-            <Link2 className="h-5 w-5 text-gray-500" />
-            Orphan Tasks (Unlinked)
-            {orphanTasks.length > 0 && (
-              <Badge variant="secondary" className="ml-2" data-testid="badge-orphan-count">
-                {orphanTasks.length}
-              </Badge>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {orphansLoading ? (
-            <div className="flex justify-center py-8">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            </div>
-          ) : orphanTasks.length === 0 ? (
-            <p className="text-center py-8 text-muted-foreground" data-testid="text-orphans-empty">No orphan tasks</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Task</TableHead>
-                    <TableHead>Project</TableHead>
-                    <TableHead>Assignee</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Action</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {orphanTasks.map((task, i) => (
-                    <TableRow key={task.id ?? i} data-testid={`row-orphan-${i}`}>
-                      <TableCell className="font-medium" data-testid={`text-orphan-title-${i}`}>{task.title}</TableCell>
-                      <TableCell data-testid={`text-orphan-project-${i}`}>{task.projectName}</TableCell>
-                      <TableCell data-testid={`text-orphan-assignee-${i}`}>{task.assignee ?? "—"}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="text-xs" data-testid={`badge-orphan-status-${i}`}>
-                          {task.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-7 text-xs"
-                          data-testid={`button-link-orphan-${i}`}
-                        >
-                          <Link2 className="h-3 w-3 mr-1" />
-                          Link
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {isLoading ? (
+        <div className="flex justify-center py-16">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-16 text-muted-foreground">
+          <Wrench className="h-12 w-12 mx-auto mb-3 opacity-30" />
+          <p className="text-lg font-medium">No projects found</p>
+          <p className="text-sm mt-1">Adjust your filters or search term</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map((project, i) => (
+            <ProjectRow
+              key={project.projectName}
+              project={project}
+              defaultExpanded={i < 5}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

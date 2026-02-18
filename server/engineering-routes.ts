@@ -926,6 +926,88 @@ export function registerEngineeringRoutes(app: Express) {
 
   // ========== ENGINEERING DASHBOARD DATA ==========
 
+  const EE_LIFECYCLE_PHASES = [
+    "Prospecting",
+    "First Assessment",
+    "Cost Proposal",
+    "Design",
+    "Procurement",
+    "Construction",
+    "Commissioning",
+    "Handover",
+    "Operational",
+  ];
+
+  function derivePhaseFromProject(projectName: string): string {
+    const lower = projectName.toLowerCase();
+    if (lower.includes("first assessment") || lower.includes("site visit")) return "First Assessment";
+    if (lower.includes("cost proposal") || lower.includes("sizing rational")) return "Cost Proposal";
+    if (lower.includes("commissioning") || lower.includes("qc")) return "Commissioning";
+    if (lower.includes("metering") || lower.includes("scada") || lower.includes("data analysis")) return "Design";
+    if (lower.includes("expansion") || lower.includes("phase 2") || lower.includes("phase 3") || lower.includes("ph 2") || lower.includes("ph3")) return "Construction";
+    return "In Progress";
+  }
+
+  app.get("/api/eng/dashboard/projects", requireAuth, requireAdminOrEpm, async (req, res) => {
+    try {
+      const allTasks = await db.select().from(operationalTasks)
+        .orderBy(asc(operationalTasks.projectName), asc(operationalTasks.sortOrder));
+
+      const projectMap = new Map<string, {
+        projectName: string;
+        phase: string;
+        tasks: typeof allTasks;
+      }>();
+
+      for (const t of allTasks) {
+        const key = t.projectName || "Unassigned";
+        if (!projectMap.has(key)) {
+          const phase = t.phase || derivePhaseFromProject(key);
+          projectMap.set(key, { projectName: key, phase, tasks: [] });
+        }
+        projectMap.get(key)!.tasks.push(t);
+      }
+
+      const todayStr = new Date().toISOString().split('T')[0];
+      const openStatuses = new Set(["TO DO", "IN PROGRESS", "NEEDS APPROVAL", "PROVIDE FEEDBACK", "PROJECTS ASSISTANCE"]);
+
+      const result = Array.from(projectMap.values()).map(p => {
+        const openTasks = p.tasks.filter(t => openStatuses.has(t.status));
+        const holdTasks = p.tasks.filter(t => t.status === "HOLD");
+        const completedTasks = p.tasks.filter(t => t.status === "COMPLETE");
+        const allActive = p.tasks.filter(t => t.status !== "COMPLETE");
+        const overdueTasks = allActive.filter(t => t.dueDate && t.dueDate < todayStr);
+
+        return {
+          projectName: p.projectName,
+          displayName: p.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " "),
+          phase: p.phase,
+          totalTasks: p.tasks.length,
+          activeTasks: allActive.length,
+          completedTasks: completedTasks.length,
+          overdueTasks: overdueTasks.length,
+          holdTasks: holdTasks.length,
+          tasks: [...openTasks, ...holdTasks].map(t => ({
+            id: t.id,
+            title: t.title,
+            status: t.status,
+            priority: t.priority,
+            dueDate: t.dueDate,
+            assignees: t.assignees,
+            trackingRag: t.trackingRag,
+          })),
+        };
+      }).sort((a, b) => {
+        if (a.overdueTasks !== b.overdueTasks) return b.overdueTasks - a.overdueTasks;
+        return b.activeTasks - a.activeTasks;
+      });
+
+      res.json({ projects: result, lifecyclePhases: EE_LIFECYCLE_PHASES });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get("/api/eng/dashboard/workload", requireAuth, requireAdminOrEpm, async (req, res) => {
     try {
       const allUsers = await db.select().from(users);
