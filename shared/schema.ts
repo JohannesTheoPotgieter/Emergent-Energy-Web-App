@@ -1355,6 +1355,7 @@ export const qcItemInstance = pgTable("qc_item_instance", {
   approvalComment: text("approval_comment"),
   notApplicableReason: text("not_applicable_reason"),
   workingDays: integer("working_days"),
+  allowedWorkingDays: integer("allowed_working_days"),
   lastUpdatedAt: timestamp("last_updated_at").notNull().defaultNow(),
 });
 export const insertQcItemInstanceSchema = createInsertSchema(qcItemInstance).omit({ id: true, lastUpdatedAt: true });

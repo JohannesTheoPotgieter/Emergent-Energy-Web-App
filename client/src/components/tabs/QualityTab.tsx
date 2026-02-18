@@ -42,6 +42,20 @@ function getRiskSeverityColor(severity: string) {
   }
 }
 
+function calculateBusinessDays(start: string, end: string): number {
+  const startDate = new Date(start);
+  const endDate = new Date(end);
+  if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) return 0;
+  let count = 0;
+  const current = new Date(startDate);
+  while (current <= endDate) {
+    const day = current.getDay();
+    if (day !== 0 && day !== 6) count++;
+    current.setDate(current.getDate() + 1);
+  }
+  return count;
+}
+
 interface QualityTabProps {
   projectName: string;
 }
@@ -672,7 +686,70 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                           disabled
                                         />
                                       </div>
+                                      <div className="space-y-1.5">
+                                        <label className="text-xs font-medium text-muted-foreground">Allowed Working Days</label>
+                                        <Input
+                                          type="number"
+                                          className="h-8 text-sm"
+                                          placeholder="Enter allowed days"
+                                          min="0"
+                                          disabled={!canEdit}
+                                          defaultValue={instance.allowedWorkingDays ?? ""}
+                                          onBlur={(e) => {
+                                            const val = e.target.value ? parseInt(e.target.value) : null;
+                                            handleItemStatusChange(instance.id, "allowedWorkingDays", val);
+                                          }}
+                                          data-testid={`input-allowed-days-${instance.id}`}
+                                        />
+                                      </div>
+                                      <div className="space-y-1.5">
+                                        <label className="text-xs font-medium text-muted-foreground">Actual Working Days</label>
+                                        <Input
+                                          className="h-8 text-sm"
+                                          value={instance.startDate && instance.endDate ? calculateBusinessDays(instance.startDate, instance.endDate) : "—"}
+                                          disabled
+                                          data-testid={`input-actual-days-${instance.id}`}
+                                        />
+                                      </div>
                                     </div>
+                                    {instance.endDate && instance.startDate && new Date(instance.endDate) < new Date(instance.startDate) && (
+                                      <p className="text-xs text-red-500 font-medium" data-testid={`date-error-${instance.id}`}>End date cannot be before start date</p>
+                                    )}
+                                    {(() => {
+                                      const actualDays = instance.startDate && instance.endDate ? calculateBusinessDays(instance.startDate, instance.endDate) : null;
+                                      const allowed = instance.allowedWorkingDays;
+                                      if (actualDays !== null && allowed && allowed > 0 && actualDays > allowed) {
+                                        return (
+                                          <Badge variant="destructive" className="text-xs gap-1" data-testid={`badge-overdue-${instance.id}`}>
+                                            <AlertCircle className="w-3 h-3" />
+                                            Overdue by {actualDays - allowed} day{actualDays - allowed !== 1 ? "s" : ""}
+                                          </Badge>
+                                        );
+                                      }
+                                      if (actualDays !== null && allowed && allowed > 0 && actualDays <= allowed) {
+                                        return (
+                                          <Badge className="text-xs gap-1 bg-green-600 hover:bg-green-700" data-testid={`badge-ontrack-${instance.id}`}>
+                                            <CheckCircle className="w-3 h-3" />
+                                            On Track
+                                          </Badge>
+                                        );
+                                      }
+                                      if (!instance.startDate && !instance.endDate) {
+                                        return (
+                                          <Badge variant="secondary" className="text-xs gap-1" data-testid={`badge-notstarted-${instance.id}`}>
+                                            Not started
+                                          </Badge>
+                                        );
+                                      }
+                                      if (instance.startDate && !instance.endDate) {
+                                        return (
+                                          <Badge variant="secondary" className="text-xs gap-1" data-testid={`badge-inprogress-${instance.id}`}>
+                                            In progress
+                                          </Badge>
+                                        );
+                                      }
+                                      return null;
+                                    })()}
                                     <div className="space-y-1.5">
                                       <label className="text-xs font-medium text-muted-foreground">Notes</label>
                                       <Textarea
@@ -718,9 +795,16 @@ export function QualityTab({ projectName }: QualityTabProps) {
                       </div>
 
                       <div className="space-y-2">
-                        {phaseRiskQs.map((rq: any) => {
-                          const answer = getRiskAnswer(rq.id);
-                          if (!answer) return null;
+                        {(() => {
+                          const sorted = [...phaseRiskQs].sort((a: any, b: any) => (a.sortOrder || 0) - (b.sortOrder || 0));
+                          const grouped: { parent: any; children: any[] }[] = [];
+                          for (const rq of sorted) {
+                            if (rq.responseType === "yesno") {
+                              grouped.push({ parent: rq, children: [] });
+                            } else if (grouped.length > 0) {
+                              grouped[grouped.length - 1].children.push(rq);
+                            }
+                          }
 
                           const riskOptions: { label: string; value: boolean | null; color: string }[] = [
                             { label: "Yes", value: true, color: "bg-green-600 hover:bg-green-700" },
@@ -728,44 +812,119 @@ export function QualityTab({ projectName }: QualityTabProps) {
                             { label: "N/A", value: null, color: "bg-gray-600 hover:bg-gray-700" },
                           ];
 
-                          return (
-                            <div
-                              key={rq.id}
-                              className="rounded-lg border bg-card/50 p-3"
-                              data-testid={`quality-risk-${rq.id}`}
-                            >
-                              <div className="flex flex-col sm:flex-row sm:items-start gap-3">
-                                <div className="flex-1 space-y-1">
-                                  <p className="text-sm font-medium">{rq.questionText}</p>
-                                  {rq.responseType !== "yesno" && (
-                                    <p className="text-xs text-muted-foreground">Response type: {rq.responseType}</p>
-                                  )}
+                          return grouped.map(({ parent, children }) => {
+                            const parentAnswer = getRiskAnswer(parent.id);
+                            if (!parentAnswer) return null;
+
+                            return (
+                              <div key={parent.id} className="space-y-2">
+                                <div
+                                  className="rounded-lg border bg-card/50 p-3"
+                                  data-testid={`quality-risk-${parent.id}`}
+                                >
+                                  <div className="flex flex-col sm:flex-row sm:items-start gap-3">
+                                    <div className="flex-1 space-y-1">
+                                      <p className="text-sm font-medium">{parent.questionText}</p>
+                                    </div>
+                                    <div className="flex items-center gap-1.5">
+                                      {riskOptions.map((opt) => {
+                                        const isActive = parentAnswer.answerYesno === opt.value;
+                                        return (
+                                          <Button
+                                            key={opt.label}
+                                            variant={isActive ? "default" : "outline"}
+                                            size="sm"
+                                            disabled={!canEdit}
+                                            className={`h-8 text-xs min-w-[50px] ${isActive ? opt.color : ""}`}
+                                            onClick={() => {
+                                              updateRiskMutation.mutate({
+                                                riskAnswerId: parentAnswer.id,
+                                                updates: { answerYesno: opt.value },
+                                              });
+                                              if (opt.value !== null) {
+                                                for (const child of children) {
+                                                  const childAnswer = getRiskAnswer(child.id);
+                                                  if (!childAnswer) continue;
+                                                  const textLower = (child.questionText || "").trim().toLowerCase();
+                                                  const showOnNo = /^if\s+no\b/i.test(textLower);
+                                                  const shouldShow = showOnNo ? opt.value === false : opt.value === true;
+                                                  if (!shouldShow) {
+                                                    updateRiskMutation.mutate({
+                                                      riskAnswerId: childAnswer.id,
+                                                      updates: { answerText: null, answerNumber: null },
+                                                    });
+                                                  }
+                                                }
+                                              }
+                                            }}
+                                            data-testid={`button-risk-${parent.id}-${opt.label.toLowerCase()}`}
+                                          >
+                                            {opt.label}
+                                          </Button>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
                                 </div>
-                                <div className="flex items-center gap-1.5">
-                                  {riskOptions.map((opt) => {
-                                    const isActive = answer.answerYesno === opt.value;
-                                    return (
-                                      <Button
-                                        key={opt.label}
-                                        variant={isActive ? "default" : "outline"}
-                                        size="sm"
-                                        disabled={!canEdit}
-                                        className={`h-8 text-xs min-w-[50px] ${isActive ? opt.color : ""}`}
-                                        onClick={() => updateRiskMutation.mutate({
-                                          riskAnswerId: answer.id,
-                                          updates: { answerYesno: opt.value },
-                                        })}
-                                        data-testid={`button-risk-${rq.id}-${opt.label.toLowerCase()}`}
-                                      >
-                                        {opt.label}
-                                      </Button>
-                                    );
-                                  })}
-                                </div>
+
+                                {children.map((child: any) => {
+                                  const childAnswer = getRiskAnswer(child.id);
+                                  if (!childAnswer) return null;
+                                  const textTrimmed = (child.questionText || "").trim();
+                                  const showOnNo = /^if\s+no\b/i.test(textTrimmed);
+                                  const shouldShow = showOnNo
+                                    ? parentAnswer.answerYesno === false
+                                    : parentAnswer.answerYesno === true;
+
+                                  if (!shouldShow) return null;
+
+                                  return (
+                                    <div
+                                      key={child.id}
+                                      className="ml-6 rounded-lg border border-dashed bg-muted/30 p-3 space-y-2"
+                                      data-testid={`quality-risk-followup-${child.id}`}
+                                    >
+                                      <label className="text-xs font-medium text-muted-foreground">{child.questionText}</label>
+                                      {child.responseType === "text" ? (
+                                        <Textarea
+                                          className="text-sm min-h-[40px]"
+                                          placeholder="Enter response..."
+                                          disabled={!canEdit}
+                                          defaultValue={childAnswer.answerText || ""}
+                                          onBlur={(e) => {
+                                            updateRiskMutation.mutate({
+                                              riskAnswerId: childAnswer.id,
+                                              updates: { answerText: e.target.value },
+                                            });
+                                          }}
+                                          data-testid={`input-risk-text-${child.id}`}
+                                        />
+                                      ) : (
+                                        <Input
+                                          type="number"
+                                          step="0.01"
+                                          min="0"
+                                          max="100"
+                                          className="h-8 text-sm"
+                                          placeholder="Enter value..."
+                                          disabled={!canEdit}
+                                          defaultValue={childAnswer.answerNumber ?? ""}
+                                          onBlur={(e) => {
+                                            updateRiskMutation.mutate({
+                                              riskAnswerId: childAnswer.id,
+                                              updates: { answerNumber: e.target.value ? parseFloat(e.target.value) : null },
+                                            });
+                                          }}
+                                          data-testid={`input-risk-number-${child.id}`}
+                                        />
+                                      )}
+                                    </div>
+                                  );
+                                })}
                               </div>
-                            </div>
-                          );
-                        })}
+                            );
+                          });
+                        })()}
                       </div>
                     </div>
                   )}
