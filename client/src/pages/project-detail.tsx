@@ -300,7 +300,7 @@ function EngTasksTab({ projectInfoId, isAdmin }: { projectInfoId: number | null;
         <div>
           <p className="text-lg font-medium text-muted-foreground">No engineering tasks yet</p>
           <p className="text-sm text-muted-foreground/70 mt-1">
-            Engineering tasks are auto-created when a project moves past Phase 2 (PD/PM Handover).
+            Engineering tasks are auto-created when a project moves past Phase 1 (Cost Proposal).
           </p>
         </div>
         {isAdmin && (
