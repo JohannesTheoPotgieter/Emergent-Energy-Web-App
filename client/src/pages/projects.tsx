@@ -151,14 +151,6 @@ function getPhaseLabel(phase: string | null): string {
   return PROJECT_PHASE_LABELS[phase as ProjectPhase] || phase;
 }
 
-function getPhaseShortLabel(phase: string | null): string {
-  if (!phase) return "—";
-  const label = PROJECT_PHASE_LABELS[phase as ProjectPhase];
-  if (!label) return phase;
-  const match = label.match(/^Phase (\d)/);
-  return match ? `P${match[1]}` : label;
-}
-
 function progressColor(pct: number): string {
   if (pct >= 90) return "bg-emerald-500";
   if (pct >= 60) return "bg-blue-500";
@@ -939,7 +931,7 @@ export default function ProjectsSummary() {
             title={getPhaseLabel(p.phase)}
           >
             <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
-            {getPhaseShortLabel(p.phase)}
+            {getPhaseLabel(p.phase)}
           </span>
         );
       },

@@ -49,13 +49,6 @@ function getPhaseLabel(phase: string | null): string {
   return PROJECT_PHASE_LABELS[phase as ProjectPhase] || phase;
 }
 
-function getPhaseShortLabel(phase: string | null): string {
-  if (!phase) return "—";
-  const label = PROJECT_PHASE_LABELS[phase as ProjectPhase];
-  if (!label) return phase;
-  const match = label.match(/^Phase \d/);
-  return match ? match[0] : label;
-}
 
 function PhaseBadge({ phase }: { phase: string | null }) {
   const colors = phase ? PHASE_COLORS[phase] || PHASE_COLORS.P0_FIRST_ASSESSMENT : PHASE_COLORS.P0_FIRST_ASSESSMENT;
@@ -217,9 +210,9 @@ function PhaseHistoryTimeline({ projectId }: { projectId: number }) {
             <div className="mt-0.5 h-2 w-2 rounded-full bg-emerald-500 shrink-0" />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1 flex-wrap">
-                <span className="text-muted-foreground">{getPhaseShortLabel(entry.fromPhase)}</span>
+                <span className="text-muted-foreground">{getPhaseLabel(entry.fromPhase)}</span>
                 <ArrowRight className="h-3 w-3 text-muted-foreground" />
-                <span className="font-medium">{getPhaseShortLabel(entry.toPhase)}</span>
+                <span className="font-medium">{getPhaseLabel(entry.toPhase)}</span>
               </div>
               <p className="text-muted-foreground mt-0.5">{entry.reason}</p>
               <p className="text-[10px] text-muted-foreground/60 mt-0.5">

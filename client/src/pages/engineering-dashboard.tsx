@@ -92,11 +92,8 @@ const PHASE_COLORS: Record<string, { bg: string; text: string; accent: string; r
   P7_CLOSEOUT_POSTMORTEM: { bg: "bg-emerald-50", text: "text-emerald-700", accent: "bg-emerald-500", ring: "ring-emerald-200" },
 };
 
-function getPhaseShort(phase: string): string {
-  const label = PROJECT_PHASE_LABELS[phase as ProjectPhase];
-  if (!label) return phase;
-  const match = label.match(/^Phase (\d)/);
-  return match ? `P${match[1]}` : label;
+function getPhaseLabel(phase: string): string {
+  return PROJECT_PHASE_LABELS[phase as ProjectPhase] || phase;
 }
 
 function formatDate(d: string | null) {
@@ -141,7 +138,7 @@ function ProjectCard({ project }: { project: ProjectData }) {
                 {project.displayName}
               </button>
               <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${colors.bg} ${colors.text}`}>
-                {getPhaseShort(project.phase)}
+                {getPhaseLabel(project.phase)}
               </span>
             </div>
           </div>
@@ -279,7 +276,7 @@ function PhasePipeline({ projects, phaseFilter, onPhaseClick }: {
             data-testid={`filter-phase-${phase}`}
           >
             <span className={`w-2 h-2 rounded-full ${isActive ? "bg-primary-foreground" : colors.accent}`} />
-            {getPhaseShort(phase)}
+            {getPhaseLabel(phase)}
             <span className="opacity-70">({count})</span>
           </button>
         );
@@ -333,7 +330,7 @@ export default function EngineeringDashboard() {
       if (count > 0) {
         dist.push({
           phase,
-          label: getPhaseShort(phase),
+          label: getPhaseLabel(phase),
           count,
           color: PHASE_COLORS[phase]?.accent || "bg-slate-500",
         });
