@@ -413,6 +413,26 @@ export default function Home() {
     );
   }
 
+  if (!isAdmin) {
+    return (
+      <div className="space-y-8" data-testid="home-page">
+        <div>
+          <h1 className="text-3xl font-bold">Emergent Energy Dashboard</h1>
+          <p className="text-muted-foreground mt-1">Navigate to the section you need below.</p>
+        </div>
+
+        <div>
+          <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Project Management</h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {pmLinks.map((link) => (
+              <NavTile key={link.path} link={link} />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8" data-testid="home-page">
       <div>
@@ -458,16 +478,14 @@ export default function Home() {
         </div>
       </div>
 
-      {isAdmin && (
-        <div>
-          <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Admin / Settings</h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {adminLinks.map((link) => (
-              <NavTile key={link.path} link={link} />
-            ))}
-          </div>
+      <div>
+        <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Admin / Settings</h2>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {adminLinks.map((link) => (
+            <NavTile key={link.path} link={link} />
+          ))}
         </div>
-      )}
+      </div>
     </div>
   );
 }
