@@ -1,0 +1,204 @@
+You are working inside an EXISTING Replit web app repo (do not rebuild from scratch).
+
+Context
+We are migrating away from ClickUp entirely.
+We have a one-time Excel export of the Engineering board:
+Path in repo runtime: /mnt/data/2026-02-18T09_14_31.723Z Emergent Energy - Emergent Energy - Engineering - Engineering.xlsx
+Sheet name: “Tasks”
+
+IMPORTANT: This is a ONCE-OFF migration. Do NOT build any UI import tool/wizard.
+
+Goals (this ticket)
+1) Ensure the Engineering module in the app has ClickUp-like click functionality (board + task detail interactions).
+2) Perform a one-time migration of tasks from the Excel export into the new Task system.
+3) Create a migration report (CSV/JSON) detailing what was created, skipped, mapped, or needs follow-up.
+
+Hard constraints
+- Do not remove or break any existing functionality.
+- No placeholder code. No placeholder buttons.
+- Follow existing repo conventions (routing, API, DB/ORM, auth).
+- No hard blocks. Only BRIGHT RED warnings and acknowledgements.
+- Do NOT implement any re-usable import UI.
+- Script must be safe to run multiple times without duplicating data (idempotent).
+
+Task Statuses (MUST MATCH EXACTLY)
+All tasks in the new system must use these statuses:
+- TO DO
+- IN PROGRESS
+- HOLD
+- PROJECTS ASSISTANCE
+- NEEDS APPROVAL
+- QC APPROVED
+- PROVIDE FEEDBACK
+- OPERATIONAL APPROVAL
+- COMPLETE
+
+Note: Excel export contains inconsistent spellings:
+- “NEEDS APROVAL” (typo) must map to “NEEDS APPROVAL”
+- “OPERATIONAL SITES” exists in export and must be mapped (default map to “IN PROGRESS” unless config says otherwise)
+
+Step 0: Inspect repo
+- Identify DB, ORM, and existing models: Project, User, Task (or equivalent).
+- Identify existing Engineering board and task detail UI. If missing, implement them.
+- Identify existing SharePoint integration patterns. Keep them.
+
+Part A — Engineering click functionality parity (minimum viable ClickUp replacement)
+Engineering must have these interactions:
+
+1) Engineering Board View (Kanban)
+- Columns grouped by STATUS (the exact status list above).
+- Cards show:
+  - Task name
+  - Project name
+  - Owner
+  - Due date
+  - Warning badge count (bright red)
+- Drag and drop between statuses updates status and writes an audit log.
+- Quick inline edits: owner, due date, priority.
+- Filters: assignee, project, due date range, status, warnings only.
+- Saved filters for ENG_PROGRAM_MANAGER: “Overdue”, “Needs approval”, “Provide feedback”, “Hold”, “QC approved”.
+
+2) Task Detail Drawer/Page (ClickUp-like)
+- Title + status dropdown
+- Owner, watchers
+- Description
+- Comments thread with @mentions
+- Activity/Audit log (status changes, assignments, due dates)
+- Subtasks (create/edit) + dependencies
+- Linked items:
+  - Linked Plan item (milestone/task)
+  - Linked Deliverable
+  - Linked Quality item
+- Files section:
+  - Folder picker (SharePoint)
+  - Upload to chosen folder
+  - Display list of files (Graph list)
+  - Store file pointers by Graph IDs (siteId/driveId/itemId)
+
+3) Approval rules tied to statuses
+- NEEDS APPROVAL requires approver set and notifies approver
+- PROVIDE FEEDBACK stores reviewer feedback and notifies owner
+- QC APPROVED only Quality role can set
+- OPERATIONAL APPROVAL only ENG_PROGRAM_MANAGER (and/or Admin/COO) can set
+- COMPLETE closes task; if HIGH warnings exist, show non-blocking “Proceed anyway” modal and log acknowledgement
+
+Part B — One-time migration script (NO UI)
+Create a script in the repo that can be executed from the terminal:
+- e.g. scripts/migrate_clickup_engineering_from_excel.ts (or .js/.py based on repo)
+- It must read the Excel file path above and parse sheet “Tasks”
+
+Parsing rules (Excel)
+- Detect header row by finding a row containing “Task ID” and “Task Name”
+- Parse rows below header until blank Task ID
+- Columns in export include (not limited to):
+  - Task ID
+  - Task Name
+  - Task Type (Task/Project)
+  - Status
+  - Assignee (may contain multiple)
+  - Date Created / Date Updated
+  - Start Date / Due Date
+  - Task Content
+  - Latest Comment
+  - Comment Count
+  - Subtask IDs / Subtask URLs
+  - TRACKING (drop down)
+  - Summary (text)
+
+Migration mapping
+1) Status mapping
+- “NEEDS APROVAL” -> “NEEDS APPROVAL”
+- “OPERATIONAL SITES” -> “IN PROGRESS” (default)
+- Any unknown status -> map to “TO DO” and log a HIGH warning + report entry
+
+2) Assignee mapping
+- Match assignees to internal Users by:
+  - email if available
+  - else display name (case-insensitive)
+- If multiple assignees:
+  - first becomes owner_user_id
+  - remaining become watchers
+- If no matching internal user:
+  - set owner_user_id to ENG_PROGRAM_MANAGER (fallback)
+  - create MED warning “Unmapped assignee from ClickUp export”
+  - log in migration report
+
+3) Project mapping
+- Each task must attach to a Project.
+- Prefer “Site (labels)” / any project label field if present in sheet.
+- If absent, derive project name from Task Name using safe heuristics:
+  - split on “ - ” and take first segment
+  - strip generic suffixes like “Project Engineering”, “Cost Proposal” etc
+- Try to match to existing Projects by normalized name.
+- If no match:
+  - create a Project record (only if allowed) OR attach to a default “Unassigned (Imported)” project
+  - log this in report
+Use a config flag at top of script:
+  CREATE_MISSING_PROJECTS=true/false (default true)
+
+4) Task content mapping
+- Task Content -> task.description
+- Latest Comment -> create an imported comment record with author = system “Imported from ClickUp”
+- Comment Count -> store as imported_comment_count for reference
+
+5) Metadata preservation
+Store these fields on Task (or a related metadata table):
+- external_source = "clickup"
+- external_task_id = Task ID
+- external_subtask_ids / urls (if present)
+- tracking_rag = TRACKING field (e.g., Green)
+- summary_text = Summary
+
+6) Task type
+- Keep Task Type from export:
+  - if Task Type = “Project”, map to a TaskType enum or tag “PROJECT”
+  - else normal “TASK”
+But do NOT create duplicate “projects” if this is just ClickUp grouping.
+
+Idempotency (must-have)
+- Use (external_source, external_task_id) as unique key.
+- If a task already exists:
+  - update it (upsert) rather than creating a duplicate
+- Log counts for created vs updated.
+
+Warnings to create post-migration (no blocks)
+For each imported task:
+1) Orphan link warning (MED)
+- Most tasks won’t have plan/deliverable/quality links yet
+- Create MED warning “Task not linked to Plan/Deliverable/Quality”
+- Owner: ENG_PROGRAM_MANAGER
+
+2) Subtask limitation warning (MED)
+- If Subtask IDs exist but details not present
+- Create MED warning “Subtasks exist in ClickUp but only IDs were imported”
+
+3) Approval hygiene warning (MED)
+- If status=NEEDS APPROVAL but no approver mapped
+- Assign warning to ENG_PROGRAM_MANAGER
+
+Migration report output (required)
+Write files to:
+- /mnt/data/migration_report_engineering.json
+- /mnt/data/migration_report_engineering.csv
+Include:
+- totals: rows parsed, tasks created, tasks updated, skipped
+- status mapping summary
+- assignee mapping summary (unmapped list)
+- projects created list
+- tasks with warnings created
+- errors with row numbers
+
+Terminal command and docs (required)
+- Add a package script or README instructions:
+  - “npm run migrate:clickup-engineering” (or equivalent)
+- Document required env vars and file path.
+- Ensure script exits non-zero on fatal validation issues (e.g., cannot read file, DB connection missing).
+
+Definition of Done
+- Engineering board + task detail UI works (click functionality parity) as specified.
+- One-time migration script successfully imports the provided Excel export without duplicates.
+- Output report files are generated and downloadable from /mnt/data.
+- No import UI exists in the app.
+- Existing app functionality remains intact.
+
+Now implement within the existing repo patterns.

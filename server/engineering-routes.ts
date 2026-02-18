@@ -344,6 +344,132 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
+  // ========== TASK DETAIL ENDPOINTS ==========
+
+  app.get("/api/eng/tasks/:id", requireAuth, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const [task] = await db.select().from(operationalTasks).where(eq(operationalTasks.id, id));
+      if (!task) return res.status(404).json({ error: "Task not found" });
+      res.json(task);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/eng/tasks/:id/comments", requireAuth, async (req, res) => {
+    try {
+      const comments = await db.select({
+        id: taskComments.id,
+        taskId: taskComments.taskId,
+        authorId: taskComments.authorId,
+        body: taskComments.body,
+        createdAt: taskComments.createdAt,
+        authorName: users.name,
+      })
+      .from(taskComments)
+      .leftJoin(users, eq(taskComments.authorId, users.id))
+      .where(eq(taskComments.taskId, parseInt(req.params.id)))
+      .orderBy(asc(taskComments.createdAt));
+      res.json(comments);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/eng/tasks/:id/comments", requireAuth, async (req, res) => {
+    try {
+      const taskId = parseInt(req.params.id);
+      const { body } = req.body;
+      if (!body || !body.trim()) {
+        return res.status(400).json({ error: "Comment body is required" });
+      }
+      const [comment] = await db.insert(taskComments).values({
+        taskId,
+        authorId: getUser(req).id,
+        body: body.trim(),
+      }).returning();
+
+      await db.insert(taskActivityLog).values({
+        taskId,
+        actorId: getUser(req).id,
+        actionType: "comment_added",
+        newValue: body.trim(),
+      });
+
+      res.json(comment);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/eng/tasks/:id/activity", requireAuth, async (req, res) => {
+    try {
+      const activity = await db.select({
+        id: taskActivityLog.id,
+        taskId: taskActivityLog.taskId,
+        actorId: taskActivityLog.actorId,
+        actionType: taskActivityLog.actionType,
+        fieldName: taskActivityLog.fieldName,
+        oldValue: taskActivityLog.oldValue,
+        newValue: taskActivityLog.newValue,
+        createdAt: taskActivityLog.createdAt,
+        actorName: users.name,
+      })
+      .from(taskActivityLog)
+      .leftJoin(users, eq(taskActivityLog.actorId, users.id))
+      .where(eq(taskActivityLog.taskId, parseInt(req.params.id)))
+      .orderBy(desc(taskActivityLog.createdAt));
+      res.json(activity);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/eng/tasks/:id/subtasks", requireAuth, async (req, res) => {
+    try {
+      const subtasks = await db.select().from(operationalTasks)
+        .where(eq(operationalTasks.parentTaskId, parseInt(req.params.id)))
+        .orderBy(asc(operationalTasks.sortOrder));
+      res.json(subtasks);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/eng/tasks/:id/subtasks", requireAuth, async (req, res) => {
+    try {
+      const parentId = parseInt(req.params.id);
+      const [parent] = await db.select().from(operationalTasks).where(eq(operationalTasks.id, parentId));
+      if (!parent) return res.status(404).json({ error: "Parent task not found" });
+
+      const data = req.body;
+      if (!data.title) {
+        return res.status(400).json({ error: "Subtask title is required" });
+      }
+
+      const [subtask] = await db.insert(operationalTasks).values({
+        ...data,
+        parentTaskId: parentId,
+        projectName: data.projectName || parent.projectName,
+        status: data.status || "TO DO",
+        priority: data.priority || "Med",
+        createdBy: getUser(req).id,
+      }).returning();
+
+      await db.insert(taskActivityLog).values({
+        taskId: parentId,
+        actorId: getUser(req).id,
+        actionType: "subtask_created",
+        newValue: subtask.title,
+      });
+
+      res.json(subtask);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // ========== DELIVERABLES ==========
 
   app.get("/api/deliverables", requireAuth, async (req, res) => {
