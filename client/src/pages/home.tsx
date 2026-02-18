@@ -9,10 +9,6 @@ import {
   FileSpreadsheet,
   Wallet,
   TrendingUp,
-  Target,
-  BarChart3,
-  Kanban,
-  AlertTriangle,
   Settings,
   ArrowRight,
   Flag,
@@ -24,6 +20,10 @@ import {
   Package,
   Users,
   FolderOpen,
+  Briefcase,
+  FileBarChart,
+  History,
+  Upload,
 } from "lucide-react";
 
 interface QuickLink {
@@ -55,6 +55,52 @@ interface CompanyPriority {
   linkedTaskType: string | null;
 }
 
+const excoLinks: QuickLink[] = [
+  {
+    label: "Dashboard",
+    description: "High-priority actions, milestones, and PM summary",
+    icon: LayoutDashboard,
+    path: "/dashboard",
+    color: "text-blue-600",
+    bg: "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 hover:border-blue-400",
+  },
+  {
+    label: "My Tool",
+    description: "Personal execution cockpit with tasks and time blocks",
+    icon: Briefcase,
+    path: "/my-tool",
+    color: "text-slate-600",
+    bg: "bg-slate-50 dark:bg-slate-950/30 border-slate-200 dark:border-slate-800 hover:border-slate-400",
+  },
+];
+
+const pmLinks: QuickLink[] = [
+  {
+    label: "Project Summary",
+    description: "All projects with progress, financials, and status",
+    icon: FileSpreadsheet,
+    path: "/projects",
+    color: "text-emerald-600",
+    bg: "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 hover:border-emerald-400",
+  },
+  {
+    label: "Cashflow",
+    description: "Weekly cashflow with inflow/outflow detail and forecast",
+    icon: Wallet,
+    path: "/cashflow",
+    color: "text-violet-600",
+    bg: "bg-violet-50 dark:bg-violet-950/30 border-violet-200 dark:border-violet-800 hover:border-violet-400",
+  },
+  {
+    label: "COS Tracker",
+    description: "Monthly cost of sales: planned vs realised vs budget",
+    icon: TrendingUp,
+    path: "/cos",
+    color: "text-amber-600",
+    bg: "bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800 hover:border-amber-400",
+  },
+];
+
 const engLinks: QuickLink[] = [
   {
     label: "Engineering Dashboard",
@@ -82,77 +128,7 @@ const engLinks: QuickLink[] = [
   },
 ];
 
-const currentLinks: QuickLink[] = [
-  {
-    label: "Dashboard",
-    description: "High-priority actions, milestones, and PM summary",
-    icon: LayoutDashboard,
-    path: "/dashboard",
-    color: "text-blue-600",
-    bg: "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 hover:border-blue-400",
-  },
-  {
-    label: "Project Summary",
-    description: "All projects with progress, financials, and status",
-    icon: FileSpreadsheet,
-    path: "/projects",
-    color: "text-emerald-600",
-    bg: "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 hover:border-emerald-400",
-  },
-  {
-    label: "Cashflow",
-    description: "Weekly cashflow with inflow/outflow detail and forecast",
-    icon: Wallet,
-    path: "/cashflow",
-    color: "text-violet-600",
-    bg: "bg-violet-50 dark:bg-violet-950/30 border-violet-200 dark:border-violet-800 hover:border-violet-400",
-  },
-  {
-    label: "COS Tracker",
-    description: "Monthly cost of sales: planned vs realised vs budget",
-    icon: TrendingUp,
-    path: "/cos",
-    color: "text-amber-600",
-    bg: "bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800 hover:border-amber-400",
-  },
-];
-
-const wipLinks: QuickLink[] = [
-  {
-    label: "COS Control",
-    description: "What-if scenario analysis for invoice date shifting",
-    icon: Target,
-    path: "/cos-control",
-    color: "text-rose-600",
-    bg: "bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800 hover:border-rose-400",
-  },
-  {
-    label: "Forecast",
-    description: "Line-item driven weekly cashflow forecast",
-    icon: BarChart3,
-    path: "/cashflow-forecast",
-    color: "text-cyan-600",
-    bg: "bg-cyan-50 dark:bg-cyan-950/30 border-cyan-200 dark:border-cyan-800 hover:border-cyan-400",
-  },
-  {
-    label: "Planning",
-    description: "Resource capacity, scheduling, and clash detection",
-    icon: Kanban,
-    path: "/planning",
-    color: "text-indigo-600",
-    bg: "bg-indigo-50 dark:bg-indigo-950/30 border-indigo-200 dark:border-indigo-800 hover:border-indigo-400",
-  },
-  {
-    label: "Risks & Flags",
-    description: "Data quality issues and actionable risk flags",
-    icon: AlertTriangle,
-    path: "/risks-flags",
-    color: "text-orange-600",
-    bg: "bg-orange-50 dark:bg-orange-950/30 border-orange-200 dark:border-orange-800 hover:border-orange-400",
-  },
-];
-
-const qmLinks: QuickLink[] = [
+const qualityLinks: QuickLink[] = [
   {
     label: "QM Dashboard",
     description: "Overview of quality status, warnings, and project completion",
@@ -161,16 +137,42 @@ const qmLinks: QuickLink[] = [
     color: "text-emerald-600",
     bg: "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 hover:border-emerald-400",
   },
-  {
-    label: "Project Summary",
-    description: "View projects and access quality checklists",
-    icon: FileSpreadsheet,
-    path: "/projects",
-    color: "text-blue-600",
-    bg: "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 hover:border-blue-400",
-  },
 ];
 
+const adminLinks: QuickLink[] = [
+  {
+    label: "Reports",
+    description: "Operational overview and project RAG reports",
+    icon: FileBarChart,
+    path: "/admin/reports",
+    color: "text-purple-600",
+    bg: "bg-purple-50 dark:bg-purple-950/30 border-purple-200 dark:border-purple-800 hover:border-purple-400",
+  },
+  {
+    label: "Audit Log",
+    description: "Task changes, phase transitions, and activity history",
+    icon: History,
+    path: "/admin/audit-log",
+    color: "text-slate-600",
+    bg: "bg-slate-50 dark:bg-slate-950/30 border-slate-200 dark:border-slate-800 hover:border-slate-400",
+  },
+  {
+    label: "Teams & Roles",
+    description: "Manage users, roles, and team assignments",
+    icon: Users,
+    path: "/admin/teams",
+    color: "text-cyan-600",
+    bg: "bg-cyan-50 dark:bg-cyan-950/30 border-cyan-200 dark:border-cyan-800 hover:border-cyan-400",
+  },
+  {
+    label: "Data Import",
+    description: "Upload trackers and manage data ingestion",
+    icon: Upload,
+    path: "/admin",
+    color: "text-teal-600",
+    bg: "bg-teal-50 dark:bg-teal-950/30 border-teal-200 dark:border-teal-800 hover:border-teal-400",
+  },
+];
 
 function NavTile({ link }: { link: QuickLink }) {
   return (
@@ -348,9 +350,17 @@ export default function Home() {
         <div>
           <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Quality Tools</h2>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {qmLinks.map((link) => (
+            {qualityLinks.map((link) => (
               <NavTile key={link.path} link={link} />
             ))}
+            <NavTile link={{
+              label: "Project Summary",
+              description: "View projects and access quality checklists",
+              icon: FileSpreadsheet,
+              path: "/projects",
+              color: "text-blue-600",
+              bg: "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 hover:border-blue-400",
+            }} />
           </div>
         </div>
       </div>
@@ -375,8 +385,8 @@ export default function Home() {
         <CompanyPrioritiesSection isAdmin={false} />
 
         <div>
-          <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Engineering Tools</h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Engineering</h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {engLinks.map((link) => (
               <NavTile key={link.path} link={link} />
             ))}
@@ -386,9 +396,17 @@ export default function Home() {
         <div>
           <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Quality & Projects</h2>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {qmLinks.map((link) => (
+            {qualityLinks.map((link) => (
               <NavTile key={link.path} link={link} />
             ))}
+            <NavTile link={{
+              label: "Project Summary",
+              description: "View projects and access quality checklists",
+              icon: FileSpreadsheet,
+              path: "/projects",
+              color: "text-blue-600",
+              bg: "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 hover:border-blue-400",
+            }} />
           </div>
         </div>
       </div>
@@ -405,8 +423,26 @@ export default function Home() {
       <CompanyPrioritiesSection isAdmin={isAdmin} />
 
       <div>
-        <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Engineering</h2>
+        <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Exco</h2>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {excoLinks.map((link) => (
+            <NavTile key={link.path} link={link} />
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Project Management</h2>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {pmLinks.map((link) => (
+            <NavTile key={link.path} link={link} />
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Engineering</h2>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {engLinks.map((link) => (
             <NavTile key={link.path} link={link} />
           ))}
@@ -414,9 +450,9 @@ export default function Home() {
       </div>
 
       <div>
-        <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Current</h2>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {currentLinks.map((link) => (
+        <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Quality</h2>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {qualityLinks.map((link) => (
             <NavTile key={link.path} link={link} />
           ))}
         </div>
@@ -424,27 +460,11 @@ export default function Home() {
 
       {isAdmin && (
         <div>
-          <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Work in Progress</h2>
+          <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Admin / Settings</h2>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {wipLinks.map((link) => (
+            {adminLinks.map((link) => (
               <NavTile key={link.path} link={link} />
             ))}
-          </div>
-        </div>
-      )}
-
-      {isAdmin && (
-        <div>
-          <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Admin</h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <NavTile link={{
-              label: "Admin",
-              description: "Upload trackers, manage users, and system settings",
-              icon: Settings,
-              path: "/admin",
-              color: "text-slate-600",
-              bg: "bg-slate-50 dark:bg-slate-950/30 border-slate-200 dark:border-slate-800 hover:border-slate-400",
-            }} />
           </div>
         </div>
       )}
