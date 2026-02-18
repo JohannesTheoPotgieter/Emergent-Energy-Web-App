@@ -78,10 +78,6 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
     }
   }
 
-  if (user?.role === "member" && location === "/quality") {
-    return <Redirect to="/" />;
-  }
-
   if (user?.role !== "admin" && location.startsWith("/admin")) {
     return <Redirect to="/" />;
   }
