@@ -38,7 +38,8 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
 
 function requireAdmin(req: Request, res: Response, next: NextFunction) {
   const role = getUser(req)?.role;
-  if (role !== "admin") return res.status(403).json({ error: "Admin access required" });
+  const execRoles = ["admin", "COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER"];
+  if (!role || !execRoles.includes(role)) return res.status(403).json({ error: "Admin access required" });
   next();
 }
 

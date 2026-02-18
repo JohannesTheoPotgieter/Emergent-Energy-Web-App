@@ -78,8 +78,7 @@ function getNavGroups(): NavGroup[] {
       visibleTo: ["COO_ADMIN", "CEO_ADMIN", "CCO", "ENGINEERING_MANAGER", "CONSTRUCTION_MANAGER", "PROGRAM_MANAGER", "admin", "eng_program_manager"],
       items: [
         { label: "Eng Dashboard", icon: Wrench, path: "/engineering" },
-        { label: "Engineering Tasks", icon: ListTodo, path: "/eng-tasks" },
-        { label: "Deliverables", icon: Package, path: "/engineering/deliverables" },
+        { label: "Task Board", icon: ListTodo, path: "/engineering/tasks" },
       ],
     },
     {
