@@ -1,0 +1,153 @@
+You are working inside an existing web application (do NOT remove or break any current functionality, especially any ClickUp/task-board integrations already implemented). Implement an Admin-only “Reports” section that can generate a monthly “Operational Overview” report in the SAME theme and layout as the current slide (green/white, right-side green vertical bar, rounded green tiles, same typography/spacing). Add ONE new KPI tile: “Projects On Track (RAG)”.
+
+NON-NEGOTIABLES
+1) Keep the existing theme, layout, and styles. Match the screenshot’s look (tiles, spacing, right green bar).
+2) No placeholder code, no stub buttons, no fake data. Everything must work end-to-end.
+3) Do not change existing routes/components except where required to add navigation links.
+4) Reports must be visible/accessible ONLY to Admin role users (both UI and API protected).
+5) PDF export must be generated from the real report layout (print background ON) so it looks like the slide.
+
+ASSUMPTIONS (IF ANY ARE FALSE, ADAPT TO THE EXISTING CODEBASE INSTEAD OF ASKING ME)
+- The app already has authentication and a role field on the user (e.g., user.role === 'admin').
+- The app already has a “Project” concept stored either in DB or via synced ClickUp data.
+- Projects have (or can be extended to have) status/stage and milestone dates.
+If any required fields do not exist, add them safely (migration + backfill rules) and add minimal UI to maintain them where needed (admin only if appropriate).
+
+WHERE THIS MUST LIVE (NAV + ROUTES)
+- Add an “Admin” area that already exists OR extend the existing admin area.
+- Under Admin navigation/sidebar, add a “Reports” section.
+- Create a Reports index page: /admin/reports
+- Add a report: “Operational Overview” page: /admin/reports/operational-overview
+- This report page must have:
+  - Month selector (YYYY-MM)
+  - “Generate” (renders preview on screen)
+  - “Export PDF” (downloads PDF)
+  - Optional: “Publish snapshot” (nice-to-have). If implemented: once published for a month, PDF uses the snapshot values.
+
+DATA + KPI DEFINITIONS (CALCULATION LOGIC MUST BE EXACT)
+All calculations are for a selected calendar month (e.g., 2026-01):
+- monthStart = first day 00:00:00 Africa/Johannesburg
+- monthEnd = last day 23:59:59 Africa/Johannesburg
+
+Create a single backend function that returns the KPI payload for a month, used by both preview and PDF.
+
+KPI 1: Active Projects
+Definition: Count of projects considered “active” as at monthEnd.
+Rule: active if project is not cancelled/archived AND project lifecycle stage is NOT “Completed/Handover Complete/Closed”.
+Implementation detail:
+- Use existing project.status/stage fields. If statuses vary, implement a config mapping:
+  - inactiveStatuses = ['Cancelled','Archived','Complete','Closed','Handover Complete']
+  - active = NOT in inactiveStatuses
+- Count distinct projects.
+
+KPI 2: Construction Starts (Actual)
+Definition: Count of projects where Construction Start ACTUAL date falls within the month.
+Rule:
+- If you store milestones: milestone.type == 'CONSTRUCTION_START' and milestone.actualDate between monthStart and monthEnd.
+- If you store a project field: project.constructionStartActual between monthStart and monthEnd.
+- Count distinct projects (avoid double-count if multiple records exist).
+
+KPI 3: PD → PM Handovers
+Definition: Count of PD→PM handovers completed within the month.
+Rule:
+- milestone.type == 'PD_PM_HANDOVER' and milestone.completedDate (or actualDate) between monthStart and monthEnd
+- Count distinct projects.
+
+KPI 4: Commissionings
+Definition: Count of projects commissioned within the month.
+Rule:
+- milestone.type == 'COMMISSIONING_COMPLETE' and milestone.actualDate between monthStart and monthEnd
+- Count distinct projects.
+
+KPI 5: Client Handovers (Planned)
+Definition: Count of projects with PLANNED client handover date in the month.
+Rule:
+- milestone.type == 'CLIENT_HANDOVER' and milestone.plannedDate between monthStart and monthEnd
+- Count distinct projects.
+Note: This is planned, not actual. Do NOT use actual handover date for this KPI.
+
+KPI 6 (NEW): Projects On Track (RAG)
+Definition: RAG distribution for ACTIVE projects as at monthEnd + main “On Track” number.
+Rules:
+- Each project must have a RAG status that represents health as-of a date:
+  - ragStatus in ['GREEN','AMBER','RED']
+  - ragUpdatedAt datetime
+- For monthEnd, determine each active project’s ragStatus as follows:
+  - Use the latest ragStatus update where ragUpdatedAt <= monthEnd.
+  - If no ragUpdatedAt exists for the project before monthEnd, treat as AMBER (unknown risk) unless the codebase already has a “GREY/UNKNOWN”; if it does, support it but still show counts for G/A/R at minimum.
+- Output:
+  - greenCount, amberCount, redCount for active projects
+  - “onTrackCount” displayed as the GREEN count (big number)
+- Also display small text on the tile: “G: x / A: y / R: z”
+
+If the app does not yet store ragStatus + ragUpdatedAt:
+- Add these fields to the project model.
+- Add a simple admin-only control to update ragStatus for a project (dropdown + save) that writes ragUpdatedAt automatically.
+- Do NOT build a big workflow. Keep it minimal but functional.
+
+API DESIGN (ADMIN PROTECTED)
+Implement:
+1) GET /api/admin/reports/operational-overview?month=YYYY-MM
+Returns JSON:
+{
+  month: "2026-01",
+  generatedAt: ISO,
+  kpis: {
+    activeProjects: number,
+    constructionStarts: number,
+    pdPmHandovers: number,
+    commissionings: number,
+    clientHandoversPlanned: number,
+    rag: { green: number, amber: number, red: number, onTrack: number }
+  }
+}
+2) GET /api/admin/reports/operational-overview/pdf?month=YYYY-MM
+Returns application/pdf stream (download).
+Both endpoints must enforce admin role server-side. If not admin, return 403.
+
+UI (KEEP THE SAME LOOK)
+Operational Overview page must render EXACTLY like the current slide:
+- Header: “Operational Overview – {Month Year}”
+- Tile layout (same sizes, rounded corners, dark green fill, white text):
+  - Row 1 tiles: Active Projects, Construction Starts, PD → PM Handovers
+  - Row 2 tiles: Commissionings, Client Handovers (Planned), Projects On Track (RAG)  <-- put new tile in the empty space on the right to keep balance.
+- Projects On Track tile:
+  - Big number: rag.onTrack (GREEN)
+  - Label: “Projects On Track”
+  - Subtext: “G: {green} / A: {amber} / R: {red}”
+- Right vertical green bar stays.
+- Keep footer area; add small text (not intrusive): “Generated: {date time}”
+- Use the existing design system/theme variables. Do not invent a new theme.
+
+PDF GENERATION (MUST MATCH PREVIEW)
+Generate the PDF by rendering the SAME report layout and printing it to PDF with background graphics enabled.
+Preferred approach in Node environments:
+- Use Playwright or Puppeteer headless to open a dedicated “print” route that renders ONLY the slide (no admin nav, no extra UI).
+- Print to PDF in landscape 16:9 proportions. Use printBackground: true.
+- Ensure fonts load. Ensure the output resembles the slide visually.
+Implementation details:
+- Create a route /admin/reports/operational-overview/print?month=YYYY-MM that is admin-protected.
+- In the PDF endpoint, create an authenticated session OR generate a short-lived signed token for the headless browser to access the print route securely.
+- Return the PDF with filename: “Operational Overview - {Month Year}.pdf”
+
+ERROR HANDLING + QUALITY
+- If KPI calculation finds missing data (e.g., no projects), show zeros but do not crash.
+- If month is invalid, show a clear error message in UI.
+- Ensure no double counts per KPI (distinct project IDs).
+- Add basic logging for report generation (month, userId, duration).
+- Keep performance reasonable (avoid N+1 queries; fetch needed project + milestone data in batches).
+
+DELIVERABLES
+- Admin navigation updated with “Reports”
+- Reports index page
+- Operational Overview report page with month selector, preview, Export PDF
+- Admin-protected API endpoints for JSON and PDF
+- KPI calculation implemented exactly per definitions above
+- New RAG tile included, same theme, same layout
+- No placeholders, fully working
+
+After implementation, add a short README section in the repo explaining:
+- Where the report lives
+- How KPIs are defined
+- How to export PDF
+- What fields are required for RAG

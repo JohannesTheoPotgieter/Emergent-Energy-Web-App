@@ -43,6 +43,12 @@ export const projectInfo = pgTable("project_info", {
   omHandoverDate: text("om_handover_date"),
   clientHandoverDate: text("client_handover_date"),
   escalationLevel: text("escalation_level"),
+  constructionStartActual: text("construction_start_actual"),
+  pdHandoverActual: text("pd_handover_actual"),
+  commissioningActual: text("commissioning_actual"),
+  clientHandoverActual: text("client_handover_actual"),
+  ragStatus: text("rag_status"),
+  ragUpdatedAt: timestamp("rag_updated_at"),
   isActive: boolean("is_active").notNull().default(true),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

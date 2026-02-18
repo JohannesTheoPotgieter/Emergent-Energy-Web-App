@@ -239,6 +239,9 @@ async function seedUsers() {
   
   const { registerEngineeringRoutes } = await import("./engineering-routes");
   registerEngineeringRoutes(app);
+
+  const { registerReportRoutes } = await import("./report-routes");
+  registerReportRoutes(app);
   
   await registerRoutes(httpServer, app);
 
