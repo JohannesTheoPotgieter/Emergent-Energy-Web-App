@@ -44,6 +44,7 @@ import ExecPortfolioPage from "@/pages/exec-portfolio";
 import ExecCockpitPage from "@/pages/exec-cockpit";
 import TriageInboxPage from "@/pages/triage-inbox";
 import UnclassifiedTasksPage from "@/pages/unclassified-tasks";
+import RoleSettingsPage from "@/pages/role-settings";
 
 import { useAuth } from "@/hooks/use-auth";
 import { useProgramData } from "@/hooks/use-program-data";
@@ -232,6 +233,7 @@ function ProtectedPages() {
         <Route path="/my-tool/cockpit" component={ExecCockpitPage} />
         <Route path="/admin/triage-inbox" component={TriageInboxPage} />
         <Route path="/admin/unclassified-tasks" component={UnclassifiedTasksPage} />
+        <Route path="/admin/settings" component={RoleSettingsPage} />
 
         <Route component={NotFound} />
       </Switch>
