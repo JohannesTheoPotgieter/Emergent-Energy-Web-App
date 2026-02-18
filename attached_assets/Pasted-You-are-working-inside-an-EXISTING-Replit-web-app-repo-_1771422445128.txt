@@ -1,0 +1,308 @@
+You are working inside an EXISTING Replit web app repo. DO NOT rebuild from scratch.
+
+ZERO-ASSUMPTION POLICY (critical)
+- Do not assume the stack, DB, ORM, auth model, existing roles, or existing modules.
+- First, inspect the repo and produce a short “Discovery Report” (in the console logs and/or a markdown file in the repo) listing:
+  1) Tech stack (frontend + backend)
+  2) DB/ORM and how migrations are handled
+  3) Current auth + RBAC roles and how they’re enforced
+  4) Existing modules that already exist: Projects, Tasks, Plan, Quality, Deliverables, Warnings, Notifications, SharePoint/Graph integration
+  5) Any existing “admin popup code” pattern (modal + secret)
+- If any required detail is unclear, do NOT implement guessed behavior.
+  Instead, add a section called “Questions for Johannes” in the Discovery Report with the exact items you need answered, and stop at the last safe step that doesn’t risk breaking anything.
+
+Primary Objective (what Johannes is building)
+We are building a COO/CEO-level operating system for Emergent Energy (EE):
+- Projects are tracked as ONE top-level item through a strict lifecycle phase model.
+- Only EXEC Admins (COO/CEO) can move a project between phases.
+- Each phase has an in-app editable template that auto-sets up functionality across departments:
+  - Project Management (tasks/views)
+  - Engineering (deliverables/tasks)
+  - Quality (checklists/approvals/evidence expectations)
+  - Warnings + notifications tied to the lifecycle
+- No hard blocks. Only bright red warnings + acknowledgement logs.
+- Do not change or break any existing functionality.
+
+Hard Constraints
+- Do not remove or rewrite existing functionality. Additive changes only.
+- No placeholder code or placeholder buttons. Everything implemented must be wired end-to-end.
+- Enforce permissions server-side (API), not only in UI.
+- Template application must be idempotent (safe re-run; no duplicates).
+- Phase changes must be audited (who/when/from/to/reason).
+- Phases are strict enums; no free-text phases.
+
+EE Lifecycle Phases (single source of truth enum)
+Project.phase MUST be exactly these enums:
+- P0_FIRST_ASSESSMENT
+- P1_COST_PROPOSAL_DESIGN
+- P2_PD_PM_HANDOVER
+- P3_DETAILED_DESIGN_PROC_RELEASE
+- P4_CONSTRUCTION_INSTALLATION
+- P5_COMMISSIONING_TESTING
+- P6_HANDOVER_CLIENT_MATRIARCH
+- P7_CLOSEOUT_POSTMORTEM
+
+UI display labels (mapped from enum):
+- P0: "Phase 0 - First Assessment"
+- P1: "Phase 1 - Cost Proposal/Design"
+- P2: "Phase 2 - PD → PM Handover"
+- P3: "Phase 3 - Detailed Design & Procurement Release"
+- P4: "Phase 4 - Construction / Installation"
+- P5: "Phase 5 - Commissioning & Testing"
+- P6: "Phase 6 - Handover (Client + Matriarch)"
+- P7: "Phase 7 - Close-out & Post-mortem"
+
+Task Statuses (do not change; must remain exact)
+If the app already has a task status set, keep it. If it does not, implement this exact set:
+- TO DO
+- IN PROGRESS
+- HOLD
+- PROJECTS ASSISTANCE
+- NEEDS APPROVAL
+- QC APPROVED
+- PROVIDE FEEDBACK
+- OPERATIONAL APPROVAL
+- COMPLETE
+
+RBAC / Permissions (do not assume)
+We need an “EXEC Admin” permission for:
+- creating projects
+- editing and activating phase templates
+- moving projects between phases
+
+Implementation rule:
+- If an ADMIN role already exists and is reserved for COO/CEO, use it.
+- If ADMIN exists but includes non-exec users, create a new role EXEC_ADMIN (COO/CEO only) and enforce exec-only actions with it.
+Do not guess which is correct—confirm from the repo and list in Discovery Report.
+
+Deliverables / Quality / Warnings / Notifications / SharePoint (do not assume)
+- Integrate with existing modules if they exist.
+- If a module does not exist yet, do not fabricate a fake UI.
+  Instead:
+  - create the minimum data hooks needed for templates (links/keys/ledger)
+  - and log a MED/HIGH warning when a template references a missing module
+  - and write “Questions for Johannes” if it blocks implementation.
+
+PART 1 — Project Creation (exec-only)
+Requirement
+- EXEC Admin can add projects in-app.
+
+Implementation
+1) Add route/page (exec-only): /exec/projects/new (or match repo route conventions)
+2) Add API endpoint (exec-only): POST /api/projects
+   Body: { project_name, client_name?, project_code?, location?, sharepoint_root_folder_ref?, initial_phase? }
+   Behavior:
+   - create Project with phase default P0_FIRST_ASSESSMENT (unless initial_phase given)
+   - write phase history record (created)
+   - OPTIONAL: show preview (see Preview section) and require confirm before applying initial phase template
+   - apply active phase template for the initial phase via PhaseTemplateApplyService
+   - return created project + apply summary
+
+PART 2 — Phase Governance (exec-only)
+Requirement
+- Only EXEC Admin can move a project between phases.
+- Phase move creates/activates the applicable departmental functionality (tasks, dashboards/views shortcuts, deliverables links, quality links, warning rules).
+- No hard blocks. Warnings only.
+
+Implementation
+1) Add API endpoint (exec-only): PATCH /api/projects/:projectId/phase
+   Body: { toPhase: enum, reason: string }
+   Behavior:
+   - validate enum + reason required
+   - update project.phase + phase_updated_at + phase_updated_by
+   - insert history record
+   - show preview (must) + require explicit confirmation in UI
+   - call PhaseTemplateApplyService(projectId, toPhase, actorUserId)
+   - return updated project + apply summary
+
+2) Add audit table: project_phase_history
+   - id, project_id, from_phase, to_phase, changed_by_user_id, changed_at, reason (required)
+
+PART 3 — “One project with subtasks” (project-centric views)
+Requirement
+- All top-level views show ONE project entry.
+- Work sits beneath the project as tasks/subtasks.
+- Do not duplicate “projects” as tasks.
+
+Implementation
+- Ensure Task has project_id and parent_task_id nullable:
+  - parent_task_id null = top-level task under project
+  - parent_task_id set = subtask
+- Refactor/implement project list/board to display projects as primary entities.
+- Provide a Project Detail screen where tasks/subtasks live.
+- Do not break existing boards; add an exec portfolio view instead of rewriting existing engineering boards unless repo already uses a unified view system.
+
+PART 4 — In-app editable Phase Templates (GUI)
+Requirement
+- Each phase has an editable template in-app.
+- Templates define “what gets set up” on phase entry:
+  - tasks (by workstream + status + links)
+  - deliverables links (engineering outputs) if deliverables module exists
+  - quality checklist links + evidence requirements if quality module exists
+  - view/dashboard shortcuts (as navigation aids)
+- Templates must be versioned, auditable, and activatable.
+- Must support:
+  1) Clone phase template
+  2) Preview “what will be created” before activation and before phase apply
+
+Critical: Stable keys (idempotency)
+- Every template item must have a stable item_key that never changes.
+- These keys are used to upsert (avoid duplicates) even if templates evolve.
+
+Data model (use repo migration conventions)
+1) phase_template
+- id
+- phase (enum)
+- name
+- version (int)
+- is_active (bool)
+- created_at, updated_at
+
+2) phase_template_item (unified)
+- id
+- template_id
+- item_key (string, unique per template)  // required, stable
+- item_type (TASK | DELIVERABLE | QUALITY_LINK | VIEW_SHORTCUT)
+- title
+- description (nullable)
+- primary_workstream (PD|Engineering|Quality|PM|Procurement|Construction|Commissioning|Handover|Finance|OandM)
+- default_status (TASK only; must be in allowed statuses)
+- default_priority (TASK only)
+- offset_days_from_phase_start (TASK only, nullable)
+- requires_approval (TASK only)
+- approver_role (TASK only, nullable)
+- link_target_type (TASK only: NONE | PLAN | DELIVERABLE | QUALITY)
+- link_target_key (TASK only, nullable) // key pointing to deliverable_type_key or quality_item_key or plan_key
+- deliverable_type_key (DELIVERABLE only, nullable)
+- requires_qc_approval (DELIVERABLE only)
+- requires_operational_approval (DELIVERABLE only)
+- quality_item_key (QUALITY_LINK only, nullable)
+- evidence_required (QUALITY_LINK only)
+- view_key (VIEW_SHORTCUT only, nullable)
+- sort_order (int)
+- is_deleted (bool default false)
+
+3) phase_template_item_history (audit)
+- id, template_item_id, changed_by_user_id, changed_at, change_json
+
+Admin UI (exec-only)
+Route: /exec/templates/phases
+- Select phase P0..P7
+- View active template + versions list
+- Create new version (clone current)
+- CRUD items (create/edit/reorder/soft delete)
+- Activate a version (is_active toggle; one active per phase)
+- Show audit history per item
+
+NEW UX FEATURE: Clone Template
+- Button “Clone template”
+- Choose source phase + version and target phase
+- Clone items. Handle key collisions by suffixing _COPY1/_COPY2 and show a collision report.
+- Do not auto-activate the cloned template; user must activate explicitly.
+
+NEW UX FEATURE: Preview “What will be created”
+We must preview in two contexts:
+1) Template activation preview (what the template contains in terms of items by type)
+2) Project phase apply preview (create vs skip vs update against a specific project)
+
+Endpoints
+- GET /api/phase-templates/:templateId/preview
+  Returns counts + lists by item type.
+- POST /api/projects/:projectId/phase-preview
+  Body: { toPhase: enum }
+  Returns:
+  - items_to_create
+  - items_to_skip (already exists due to idempotency keys)
+  - items_to_update (only link enforcement / non-destructive updates)
+  - warnings_that_would_be_created (e.g. missing module)
+
+UI behavior
+- Activating a template requires the preview panel be shown first and a checkbox “Reviewed preview”.
+- Changing project phase requires showing the phase-preview results before the confirm button is enabled.
+
+PART 5 — PhaseTemplateApplyService (idempotent)
+Requirement
+- On phase entry, apply the active template for that phase.
+- Must not create duplicates (idempotency ledger).
+- Must not overwrite user progress destructively.
+
+Idempotency ledger table
+phase_template_application
+- id
+- project_id
+- phase
+- template_id
+- template_version
+- applied_by_user_id
+- applied_at
+- application_key (unique)
+- result_summary_json
+
+Application keys
+- application_key = hash(project_id + phase + template_id + template_version)
+
+Upsert rules (no assumptions)
+- TASK: upsert by (project_id, item_key)
+- DELIVERABLE: upsert by (project_id, deliverable_type_key) IF deliverables module exists
+- QUALITY_LINK: upsert by (project_id, quality_item_key) IF quality module exists
+- VIEW_SHORTCUT: upsert by (project_id, view_key) IF supported
+
+Non-destructive behavior
+- If a task already exists, do NOT reset its status/owner/due date.
+- Only enforce missing linkages and missing metadata that does not overwrite user work.
+
+Warnings (no hard blocks)
+- If a template references a missing module or an unresolvable link_target_key:
+  - create a BRIGHT RED warning object (or use existing warning system if present)
+  - assign to EXEC Admin by default (or configurable)
+  - include clear remediation text
+
+PART 6 — Exec Portfolio Board (COO/CEO)
+Requirement
+- Exec-level board showing one project per row.
+- Track project across lifecycle.
+- Phase changes only by exec.
+- Must surface warnings and readiness.
+
+Routes (exec-only)
+- /exec/portfolio (projects summary list/board)
+- /exec/projects/:projectId (exec project summary)
+
+Portfolio row/card must show (if data exists; do not invent)
+- project name + client
+- phase badge
+- phase age (days since last phase update)
+- next milestone date (if plan module exists)
+- readiness % (computed only from real data; otherwise show “N/A”)
+- open warnings count (HIGH/MED) in bright red
+- pending approvals count (based on tasks with NEEDS APPROVAL / PROVIDE FEEDBACK)
+
+Exec project summary must show
+- current phase + phase history
+- “Change phase” button (exec-only) with reason required and preview required
+- what got set up for the current phase (template apply summary)
+- high warnings list with owners and age
+
+Definition of Done
+- Repo Discovery Report exists and lists what was found; any unknowns are listed under “Questions for Johannes”.
+- Projects support strict phase enum + history.
+- Exec-only project creation works and optionally applies Phase 0 template.
+- Exec-only phase change works, requires reason, shows preview, applies template idempotently.
+- Phase templates are editable in-app, versioned, auditable, with clone + preview.
+- Project views are project-centric (one project entry) with tasks/subtasks beneath.
+- No existing functionality is broken.
+
+Implementation sequence (do not skip)
+1) Repo Discovery Report + confirm RBAC model + confirm existing modules
+2) Add Project.phase enum + project_phase_history
+3) Add exec-only Project create (API + page)
+4) Add phase templates schema + CRUD UI + audit history
+5) Add clone + preview endpoints + UI
+6) Implement PhaseTemplateApplyService + idempotency ledger
+7) Add exec portfolio + exec project summary pages
+8) Add phase-preview to phase change flow and require confirm
+
+STOP CONDITIONS (to avoid assumptions)
+- If auth/RBAC model is unclear, stop after Discovery Report and list exact questions.
+- If DB migration approach is unclear, stop after Discovery Report and list exact questions.
+- If Quality/Deliverables/Warn/Notifications modules do not exist, do not fabricate; implement template linkage keys and warnings about missing modules.
