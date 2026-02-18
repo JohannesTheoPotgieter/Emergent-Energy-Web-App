@@ -403,6 +403,10 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
       const rowEdits = edits.get(row.id);
       return rowEdits ? { ...row, ...rowEdits } : row;
     });
+    data = data.filter(e => {
+      const val = parseFloat(e.expenseActualTotal || "0");
+      return !isNaN(val) && val !== 0;
+    });
     if (statusFilter !== "all") {
       data = data.filter(e => e.cosStatus === statusFilter || e.paymentStatus === statusFilter);
     }
