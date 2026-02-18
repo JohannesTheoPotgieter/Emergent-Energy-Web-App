@@ -27,6 +27,11 @@ import {
   Users,
   FileBarChart,
   History,
+  ListTodo,
+  Package,
+  Flag,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { useProgramData } from "@/hooks/use-program-data";
 import { useAuth } from "@/hooks/use-auth";
@@ -46,21 +51,27 @@ interface NavGroup {
 
 const navGroups: NavGroup[] = [
   {
-    heading: "CURRENT",
+    heading: "EXCO",
     items: [
       { label: "Dashboard", icon: LayoutDashboard, path: "/dashboard" },
+      { label: "Company Priorities", icon: Flag, path: "/my-tool/priorities" },
+      { label: "My Tool", icon: Briefcase, path: "/my-tool" },
+    ],
+  },
+  {
+    heading: "PROJECT MANAGEMENT",
+    items: [
       { label: "Project Summary", icon: FileSpreadsheet, path: "/projects" },
       { label: "Cashflow", icon: Wallet, path: "/cashflow" },
       { label: "COS Tracker", icon: TrendingUp, path: "/cos", className: "rotate-180" },
     ],
   },
   {
-    heading: "WIP",
+    heading: "ENGINEERING",
     items: [
-      { label: "COS Control", icon: Target, path: "/cos-control" },
-      { label: "Forecast", icon: BarChart3, path: "/cashflow-forecast" },
-      { label: "Planning", icon: Kanban, path: "/planning" },
-      { label: "Risks & Flags", icon: AlertTriangle, path: "/risks-flags" },
+      { label: "Eng Dashboard", icon: Wrench, path: "/engineering" },
+      { label: "Task Board", icon: ListTodo, path: "/engineering/tasks" },
+      { label: "Deliverables", icon: Package, path: "/engineering/deliverables" },
     ],
   },
   {
@@ -70,31 +81,12 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
-    heading: "ENGINEERING",
-    items: [
-      { label: "Eng Dashboard", icon: Wrench, path: "/engineering" },
-      { label: "Task Board", icon: Kanban, path: "/engineering/tasks" },
-      { label: "Deliverables", icon: FileSpreadsheet, path: "/engineering/deliverables" },
-    ],
-  },
-  {
-    heading: "PERSONAL",
-    items: [
-      { label: "My Tool", icon: Briefcase, path: "/my-tool" },
-    ],
-  },
-  {
-    heading: "DATA",
-    items: [
-      { label: "Data Import", icon: Upload, path: "/admin" },
-    ],
-  },
-  {
     heading: "ADMIN",
     items: [
       { label: "Reports", icon: FileBarChart, path: "/admin/reports" },
       { label: "Audit Log", icon: History, path: "/admin/audit-log" },
       { label: "Teams & Roles", icon: Users, path: "/admin/teams" },
+      { label: "Data Import", icon: Upload, path: "/admin" },
       { label: "SP Settings", icon: Cloud, path: "/admin/sp-settings" },
       { label: "File Refresh", icon: FileSpreadsheet, path: "/admin/sp-file-refresh" },
       { label: "Import Runs", icon: Database, path: "/admin/sp-import-runs" },
@@ -109,6 +101,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [desktopCollapsed, setDesktopCollapsed] = useState(false);
   const [showValidationReport, setShowValidationReport] = useState(false);
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
   const { data, overview, refreshData, isLoading, importFiles, lastUploadResult } = useProgramData();
   const { user, logout } = useAuth();
   const { data: healthStatus } = useQuery({
@@ -132,6 +125,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     }
     return () => { document.body.style.overflow = ""; };
   }, [mobileOpen]);
+
+  const toggleSection = (heading: string) => {
+    setCollapsedSections(prev => ({ ...prev, [heading]: !prev[heading] }));
+  };
 
   const allItems = navGroups.flatMap(g => g.items);
   const currentPageLabel = location === "/" 
@@ -160,54 +157,74 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </button>
       </div>
 
-      <nav className="flex-1 overflow-y-auto py-2 px-2 space-y-1">
+      <nav className="flex-1 overflow-y-auto py-2 px-2 space-y-0.5">
         <Link href="/" className={cn(
-          "flex items-center gap-3 px-3 py-2.5 rounded-md transition-all duration-200 group",
+          "flex items-center gap-3 px-3 py-2 rounded-md transition-all duration-200 group",
           location === "/" 
             ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium shadow-md" 
             : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
         )}>
-          <Home className="w-5 h-5 shrink-0" />
-          {sidebarShowLabels && <span>Home</span>}
+          <Home className="w-4.5 h-4.5 shrink-0" />
+          {sidebarShowLabels && <span className="text-sm">Home</span>}
         </Link>
 
         {navGroups.filter(group => {
           const role = user?.role;
           if (role === "quality_manager") {
-            return group.heading === "QUALITY" || group.heading === "CURRENT";
+            return group.heading === "QUALITY" || group.heading === "PROJECT MANAGEMENT";
           }
           if (role === "eng_program_manager") {
-            return group.heading === "ENGINEERING" || group.heading === "QUALITY" || group.heading === "CURRENT";
+            return group.heading === "ENGINEERING" || group.heading === "QUALITY" || group.heading === "PROJECT MANAGEMENT";
           }
           if (role === "admin") return true;
-          return group.heading === "CURRENT";
+          return group.heading === "EXCO" || group.heading === "PROJECT MANAGEMENT";
         }).map((group) => {
           let visibleItems = group.items;
-          if (user?.role === "quality_manager" && group.heading === "CURRENT") {
+          if (user?.role === "quality_manager" && group.heading === "PROJECT MANAGEMENT") {
             visibleItems = group.items.filter(i => i.path === "/projects");
           }
-          if (user?.role === "eng_program_manager" && group.heading === "CURRENT") {
+          if (user?.role === "eng_program_manager" && group.heading === "PROJECT MANAGEMENT") {
             visibleItems = group.items.filter(i => i.path === "/projects");
           }
           if (visibleItems.length === 0) return null;
+
+          const isCollapsed = collapsedSections[group.heading] && sidebarShowLabels;
+          const hasActiveItem = visibleItems.some(item => 
+            location === item.path || 
+            (item.path === "/my-tool" && location.startsWith("/my-tool")) || 
+            (item.path !== "/" && item.path !== "/engineering" && location.startsWith(item.path))
+          );
+
           return (
-          <div key={group.heading} className="pt-4">
-            {sidebarShowLabels && (
-              <p className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-sidebar-foreground/40">
-                {group.heading}
-              </p>
+          <div key={group.heading} className="pt-3">
+            {sidebarShowLabels ? (
+              <button
+                onClick={() => toggleSection(group.heading)}
+                className={cn(
+                  "w-full flex items-center justify-between px-3 pb-1 text-[10px] font-bold uppercase tracking-widest transition-colors",
+                  hasActiveItem ? "text-sidebar-foreground/60" : "text-sidebar-foreground/35 hover:text-sidebar-foreground/50"
+                )}
+              >
+                <span>{group.heading}</span>
+                {isCollapsed ? (
+                  <ChevronRight className="w-3 h-3" />
+                ) : (
+                  <ChevronDown className="w-3 h-3" />
+                )}
+              </button>
+            ) : (
+              <div className="h-px bg-sidebar-border mx-2 mb-1" />
             )}
-            {!sidebarShowLabels && <div className="h-px bg-sidebar-border mx-2 mb-1" />}
-            {visibleItems.map((item) => {
+            {!isCollapsed && visibleItems.map((item) => {
               const isActive = location === item.path || (item.path === "/my-tool" && location.startsWith("/my-tool")) || (item.path !== "/" && item.path !== "/engineering" && location.startsWith(item.path));
               return (
               <Link key={item.path} href={item.path} className={cn(
-                "flex items-center gap-3 px-3 py-2.5 rounded-md transition-all duration-200 group",
+                "flex items-center gap-3 px-3 py-2 rounded-md transition-all duration-200 group text-[13px]",
                 isActive 
                   ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium shadow-md" 
                   : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
               )}>
-                <item.icon className={cn("w-5 h-5 shrink-0", item.className)} />
+                <item.icon className={cn("w-4 h-4 shrink-0", item.className)} />
                 {sidebarShowLabels && <span>{item.label}</span>}
               </Link>
               );
