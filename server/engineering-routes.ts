@@ -1364,6 +1364,8 @@ export function registerEngineeringRoutes(app: Express) {
         });
       }
 
+      let tasksCreated = 0;
+
       await db.transaction(async (tx) => {
         await tx.update(projectInfo)
           .set({
@@ -1382,12 +1384,67 @@ export function registerEngineeringRoutes(app: Express) {
           changedByUserId: user.id,
           reason: reason.trim(),
         });
+
+        const fromP1OrBefore = !fromPhase || PROJECT_PHASES.indexOf(fromPhase as any) <= 1;
+        const toP2OrBeyond = PROJECT_PHASES.indexOf(toPhase as any) >= 2;
+
+        if (fromP1OrBefore && toP2OrBeyond) {
+          const cleanName = project.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ");
+          const existing = await tx.select({ id: operationalTasks.id })
+            .from(operationalTasks)
+            .where(eq(operationalTasks.projectName, cleanName))
+            .limit(1);
+
+          if (existing.length === 0) {
+            const DEFAULT_ENG_TASKS = [
+              { title: "PD/PM Handover", workstream: "PD", priority: "High", phase: "P2_PD_PM_HANDOVER" },
+              { title: "Detailed Design Package", workstream: "Engineering", priority: "High", phase: "P3_DETAILED_DESIGN_PROC_RELEASE" },
+              { title: "Structural Design Review", workstream: "Engineering", priority: "High", phase: "P3_DETAILED_DESIGN_PROC_RELEASE" },
+              { title: "Electrical Design Review", workstream: "Engineering", priority: "High", phase: "P3_DETAILED_DESIGN_PROC_RELEASE" },
+              { title: "Equipment Procurement Release", workstream: "Procurement", priority: "High", phase: "P3_DETAILED_DESIGN_PROC_RELEASE" },
+              { title: "BOM Finalisation", workstream: "Procurement", priority: "Med", phase: "P3_DETAILED_DESIGN_PROC_RELEASE" },
+              { title: "Construction Method Statement", workstream: "Construction", priority: "Med", phase: "P4_CONSTRUCTION_INSTALLATION" },
+              { title: "H&S File Preparation", workstream: "Quality", priority: "Med", phase: "P4_CONSTRUCTION_INSTALLATION" },
+              { title: "Site Mobilisation Checklist", workstream: "Construction", priority: "High", phase: "P4_CONSTRUCTION_INSTALLATION" },
+              { title: "Installation & Construction", workstream: "Construction", priority: "High", phase: "P4_CONSTRUCTION_INSTALLATION" },
+              { title: "QC Inspections", workstream: "Quality", priority: "High", phase: "P5_COMMISSIONING_TESTING" },
+              { title: "Commissioning & Testing", workstream: "Commissioning", priority: "High", phase: "P5_COMMISSIONING_TESTING" },
+              { title: "Performance Verification", workstream: "Commissioning", priority: "Med", phase: "P5_COMMISSIONING_TESTING" },
+              { title: "Client Handover Documentation", workstream: "Handover", priority: "High", phase: "P6_HANDOVER_CLIENT_MATRIARCH" },
+              { title: "O&M Handover", workstream: "Handover", priority: "Med", phase: "P6_HANDOVER_CLIENT_MATRIARCH" },
+              { title: "Close-out Report", workstream: "PM", priority: "Med", phase: "P7_CLOSEOUT_POSTMORTEM" },
+            ];
+
+            for (let i = 0; i < DEFAULT_ENG_TASKS.length; i++) {
+              const t = DEFAULT_ENG_TASKS[i];
+              await tx.insert(operationalTasks).values({
+                projectName: cleanName,
+                title: t.title,
+                status: "TO DO",
+                priority: t.priority,
+                phase: t.phase,
+                primaryWorkstream: t.workstream,
+                createdBy: user.id,
+                sortOrder: (i + 1) * 10,
+              });
+            }
+            tasksCreated = DEFAULT_ENG_TASKS.length;
+
+            await tx.insert(taskActivityLog).values({
+              taskId: 0,
+              actorId: user.id,
+              actionType: "auto_generated",
+              newValue: `${tasksCreated} engineering tasks auto-created for ${cleanName} on phase transition to ${PROJECT_PHASE_LABELS[toPhase as ProjectPhase]}`,
+            });
+          }
+        }
       });
 
       const [updated] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
       res.json({
         project: updated,
         phaseLabel: PROJECT_PHASE_LABELS[toPhase as ProjectPhase] || toPhase,
+        tasksCreated,
       });
     } catch (err: any) {
       console.error("[Phase] Error:", err.message);
@@ -1420,6 +1477,100 @@ export function registerEngineeringRoutes(app: Express) {
       res.json({ history, phaseLabels: PROJECT_PHASE_LABELS });
     } catch (err: any) {
       console.error("[Phase] History error:", err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ========== PROJECT ENGINEERING TASKS (for project detail page) ==========
+
+  app.get("/api/projects/:projectId/eng-tasks", requireAuth, async (req, res) => {
+    try {
+      const projectId = parseInt(req.params.projectId);
+      if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
+
+      const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
+      if (!project) return res.status(404).json({ error: "Project not found" });
+
+      const cleanName = project.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ");
+
+      const tasks = await db.select().from(operationalTasks)
+        .where(eq(operationalTasks.projectName, cleanName))
+        .orderBy(asc(operationalTasks.sortOrder), asc(operationalTasks.id));
+
+      res.json({
+        projectName: cleanName,
+        phase: project.phase,
+        tasks,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/projects/:projectId/generate-eng-tasks", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const user = getUser(req);
+      const projectId = parseInt(req.params.projectId);
+      if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
+
+      const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
+      if (!project) return res.status(404).json({ error: "Project not found" });
+
+      const cleanName = project.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ");
+
+      const existing = await db.select({ id: operationalTasks.id })
+        .from(operationalTasks)
+        .where(eq(operationalTasks.projectName, cleanName))
+        .limit(1);
+
+      if (existing.length > 0) {
+        return res.status(400).json({ error: "Engineering tasks already exist for this project" });
+      }
+
+      const DEFAULT_ENG_TASKS = [
+        { title: "PD/PM Handover", workstream: "PD", priority: "High", phase: "P2_PD_PM_HANDOVER" },
+        { title: "Detailed Design Package", workstream: "Engineering", priority: "High", phase: "P3_DETAILED_DESIGN_PROC_RELEASE" },
+        { title: "Structural Design Review", workstream: "Engineering", priority: "High", phase: "P3_DETAILED_DESIGN_PROC_RELEASE" },
+        { title: "Electrical Design Review", workstream: "Engineering", priority: "High", phase: "P3_DETAILED_DESIGN_PROC_RELEASE" },
+        { title: "Equipment Procurement Release", workstream: "Procurement", priority: "High", phase: "P3_DETAILED_DESIGN_PROC_RELEASE" },
+        { title: "BOM Finalisation", workstream: "Procurement", priority: "Med", phase: "P3_DETAILED_DESIGN_PROC_RELEASE" },
+        { title: "Construction Method Statement", workstream: "Construction", priority: "Med", phase: "P4_CONSTRUCTION_INSTALLATION" },
+        { title: "H&S File Preparation", workstream: "Quality", priority: "Med", phase: "P4_CONSTRUCTION_INSTALLATION" },
+        { title: "Site Mobilisation Checklist", workstream: "Construction", priority: "High", phase: "P4_CONSTRUCTION_INSTALLATION" },
+        { title: "Installation & Construction", workstream: "Construction", priority: "High", phase: "P4_CONSTRUCTION_INSTALLATION" },
+        { title: "QC Inspections", workstream: "Quality", priority: "High", phase: "P5_COMMISSIONING_TESTING" },
+        { title: "Commissioning & Testing", workstream: "Commissioning", priority: "High", phase: "P5_COMMISSIONING_TESTING" },
+        { title: "Performance Verification", workstream: "Commissioning", priority: "Med", phase: "P5_COMMISSIONING_TESTING" },
+        { title: "Client Handover Documentation", workstream: "Handover", priority: "High", phase: "P6_HANDOVER_CLIENT_MATRIARCH" },
+        { title: "O&M Handover", workstream: "Handover", priority: "Med", phase: "P6_HANDOVER_CLIENT_MATRIARCH" },
+        { title: "Close-out Report", workstream: "PM", priority: "Med", phase: "P7_CLOSEOUT_POSTMORTEM" },
+      ];
+
+      const created = [];
+      for (let i = 0; i < DEFAULT_ENG_TASKS.length; i++) {
+        const t = DEFAULT_ENG_TASKS[i];
+        const [task] = await db.insert(operationalTasks).values({
+          projectName: cleanName,
+          title: t.title,
+          status: "TO DO",
+          priority: t.priority,
+          phase: t.phase,
+          primaryWorkstream: t.workstream,
+          createdBy: user.id,
+          sortOrder: (i + 1) * 10,
+        }).returning();
+        created.push(task);
+
+        await db.insert(taskActivityLog).values({
+          taskId: task.id,
+          actorId: user.id,
+          actionType: "created",
+          newValue: `${t.title} (auto-generated)`,
+        });
+      }
+
+      res.json({ tasksCreated: created.length, tasks: created });
+    } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
   });

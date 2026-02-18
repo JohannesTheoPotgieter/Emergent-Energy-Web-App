@@ -374,6 +374,7 @@ export interface OverviewData {
 }
 
 export interface ProjectSummary {
+  project_info_id: number | null;
   project_name: string;
   size_kwp: number | null;
   pd: string | null;
