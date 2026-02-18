@@ -229,7 +229,7 @@ function ProtectedPages() {
         <Route path="/admin/phase-templates" component={PhaseTemplatesPage} />
         <Route path="/project-create" component={ProjectCreatePage} />
         <Route path="/exec-portfolio" component={ExecPortfolioPage} />
-        <Route path="/exec/cockpit" component={ExecCockpitPage} />
+        <Route path="/my-tool/cockpit" component={ExecCockpitPage} />
         <Route path="/admin/triage-inbox" component={TriageInboxPage} />
         <Route path="/admin/unclassified-tasks" component={UnclassifiedTasksPage} />
 

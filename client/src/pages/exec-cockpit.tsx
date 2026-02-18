@@ -1,5 +1,6 @@
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
+import MyToolLayout from "@/components/mytool/MyToolLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -84,23 +85,28 @@ export default function ExecCockpitPage() {
 
   if (!isAdmin) {
     return (
-      <div className="p-8 text-center" data-testid="text-admin-required">
-        <Shield className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-        <h2 className="text-xl font-semibold mb-2">Admin Access Required</h2>
-        <p className="text-muted-foreground">You do not have permission to view this page.</p>
-      </div>
+      <MyToolLayout>
+        <div className="p-8 text-center" data-testid="text-admin-required">
+          <Shield className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+          <h2 className="text-xl font-semibold mb-2">Admin Access Required</h2>
+          <p className="text-muted-foreground">You do not have permission to view this page.</p>
+        </div>
+      </MyToolLayout>
     );
   }
 
   if (isLoading || !data) {
     return (
-      <div className="flex justify-center py-20" data-testid="loading-cockpit">
-        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-      </div>
+      <MyToolLayout>
+        <div className="flex justify-center py-20" data-testid="loading-cockpit">
+          <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+        </div>
+      </MyToolLayout>
     );
   }
 
   return (
+    <MyToolLayout>
     <div className="p-6 max-w-[1600px] mx-auto space-y-6" data-testid="exec-cockpit-page">
       <div>
         <h1 className="text-2xl font-bold" data-testid="text-cockpit-title">COO Execution Cockpit</h1>
@@ -272,5 +278,6 @@ export default function ExecCockpitPage() {
         </CardContent>
       </Card>
     </div>
+    </MyToolLayout>
   );
 }
