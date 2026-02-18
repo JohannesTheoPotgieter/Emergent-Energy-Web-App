@@ -67,6 +67,7 @@ Preferred communication style: Simple, everyday language.
 -   `/api/writeback/*`: Endpoints for managing writeback mappings, previewing, executing, and rolling back writebacks.
 -   `/api/mytool/*`: Endpoints for My Tool settings, tasks, time blocks, daily reviews, company priorities, and user preferences.
 -   `/api/quality/*`: Quality management endpoints — templates, checklists (CRUD + instantiation), risk answers, warnings engine, post-mortem scoring, access code challenge with rate limiting.
+-   `/api/admin/reports/*`: Admin-only reporting endpoints — Operational Overview KPI JSON, PDF/print HTML, project RAG status management.
 
 ## External Dependencies
 
