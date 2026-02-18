@@ -8,6 +8,7 @@ import { storage } from "./storage";
 import { parseTrackerFile, applyFontColors } from "./excelParser";
 import { insertBudgetSchema, programExpense, programInflows, projectInfo } from "@shared/schema";
 import { db } from "./db";
+import { eq, and, or, sql, isNull, asc } from "drizzle-orm";
 import { z } from "zod";
 import { format } from "date-fns";
 import { generateToken, verifyToken } from "./jwt";
@@ -8224,7 +8225,14 @@ export async function registerRoutes(
   app.post("/api/mytool/tasks", requireAuth, requireAdmin, async (req, res) => {
     try {
       const userId = (req.user as any).id;
-      const task = await storage.createMytoolTask({ ...req.body, ownerUserId: userId });
+      const bucket = req.body.bucket || 'personal';
+      if (bucket === 'project' && !req.body.projectName) {
+        return res.status(400).json({ error: "Project name is required when bucket is 'project'" });
+      }
+      if (bucket !== 'project' && req.body.projectName) {
+        req.body.projectName = null;
+      }
+      const task = await storage.createMytoolTask({ ...req.body, bucket, ownerUserId: userId });
       res.json(task);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -8236,6 +8244,17 @@ export async function registerRoutes(
       const taskId = parseInt(req.params.id);
       const userId = (req.user as any).id;
       const existingTask = await storage.getMytoolTask(taskId);
+
+      if (req.body.bucket !== undefined || req.body.projectName !== undefined) {
+        const bucket = req.body.bucket || existingTask?.bucket || 'personal';
+        const projectName = req.body.projectName !== undefined ? req.body.projectName : existingTask?.projectName;
+        if (bucket === 'project' && !projectName) {
+          return res.status(400).json({ error: "Project name is required when bucket is 'project'" });
+        }
+        if (bucket !== 'project') {
+          req.body.projectName = null;
+        }
+      }
 
       if (req.body.status === 'done' && existingTask) {
         const dod = req.body.definitionOfDone || existingTask.definitionOfDone;
@@ -9067,6 +9086,238 @@ export async function registerRoutes(
       const files = await storage.getAllSpFiles();
       res.json(files);
     } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ==================== TRIAGE RULES CRUD ====================
+
+  app.get("/api/mytool/triage-rules", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const userId = (req.user as any).id;
+      const { triageRules: triageRulesTable } = await import("@shared/schema");
+      const rules = await db.select().from(triageRulesTable).where(eq(triageRulesTable.ownerUserId, userId));
+      res.json(rules);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/mytool/triage-rules", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const userId = (req.user as any).id;
+      const { ruleType, value } = req.body;
+      if (!ruleType || !value) return res.status(400).json({ error: "ruleType and value required" });
+      const { triageRules: triageRulesTable } = await import("@shared/schema");
+      const [rule] = await db.insert(triageRulesTable).values({
+        ownerUserId: userId,
+        ruleType,
+        value: value.trim(),
+        enabled: true,
+      }).returning();
+      res.json(rule);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/mytool/triage-rules/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const ruleId = parseInt(req.params.id);
+      const { triageRules: triageRulesTable } = await import("@shared/schema");
+      const updates: any = {};
+      if (req.body.value !== undefined) updates.value = req.body.value.trim();
+      if (req.body.enabled !== undefined) updates.enabled = req.body.enabled;
+      const [rule] = await db.update(triageRulesTable).set(updates).where(eq(triageRulesTable.id, ruleId)).returning();
+      res.json(rule);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/mytool/triage-rules/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const ruleId = parseInt(req.params.id);
+      const { triageRules: triageRulesTable } = await import("@shared/schema");
+      await db.delete(triageRulesTable).where(eq(triageRulesTable.id, ruleId));
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ==================== TRIAGE INBOX ====================
+
+  app.get("/api/mytool/triage-inbox", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const userId = (req.user as any).id;
+      const outlook = await import("./outlook");
+      if (!outlook.isOutlookConfigured()) {
+        return res.json({ flagged: [], keywordMatches: [], senderMatches: [], rules: [] });
+      }
+
+      const { triageRules: triageRulesTable } = await import("@shared/schema");
+      const rules = await db.select().from(triageRulesTable)
+        .where(and(eq(triageRulesTable.ownerUserId, userId), eq(triageRulesTable.enabled, true)));
+
+      const keywords = rules.filter(r => r.ruleType === 'keyword').map(r => r.value.toLowerCase());
+      const senders = rules.filter(r => r.ruleType === 'sender').map(r => r.value.toLowerCase());
+      const domains = rules.filter(r => r.ruleType === 'domain').map(r => r.value.toLowerCase());
+
+      let flagged: any[] = [];
+      try {
+        flagged = await outlook.listFlaggedMessages(30);
+      } catch {}
+
+      let recentEmails: any[] = [];
+      try {
+        recentEmails = await outlook.listMessages({ top: 50 });
+      } catch {}
+
+      const keywordMatches: any[] = [];
+      const senderMatches: any[] = [];
+      const flaggedIds = new Set(flagged.map((e: any) => e.id));
+
+      for (const email of recentEmails) {
+        if (flaggedIds.has(email.id)) continue;
+        const subjectLower = (email.subject || "").toLowerCase();
+        const snippetLower = (email.snippet || "").toLowerCase();
+        const senderEmailLower = (email.senderEmail || "").toLowerCase();
+
+        const matchedKeyword = keywords.find(kw => subjectLower.includes(kw) || snippetLower.includes(kw));
+        if (matchedKeyword) {
+          keywordMatches.push({ ...email, matchedRule: matchedKeyword, matchType: 'keyword' });
+          continue;
+        }
+
+        const matchedSender = senders.find(s => senderEmailLower === s || (email.sender || "").toLowerCase() === s);
+        if (matchedSender) {
+          senderMatches.push({ ...email, matchedRule: matchedSender, matchType: 'sender' });
+          continue;
+        }
+
+        const matchedDomain = domains.find(d => senderEmailLower.endsWith("@" + d) || senderEmailLower.endsWith("." + d));
+        if (matchedDomain) {
+          senderMatches.push({ ...email, matchedRule: matchedDomain, matchType: 'domain' });
+        }
+      }
+
+      res.json({ flagged, keywordMatches, senderMatches, rules });
+    } catch (err: any) {
+      if (err.message?.includes("not connected") || err.message?.includes("not available")) {
+        return res.json({ flagged: [], keywordMatches: [], senderMatches: [], rules: [] });
+      }
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ==================== UNCLASSIFIED TASKS ====================
+
+  app.get("/api/mytool/unclassified-tasks", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { mytoolTasks: mytoolTasksTable } = await import("@shared/schema");
+      const tasks = await db.select().from(mytoolTasksTable)
+        .where(
+          or(
+            isNull(mytoolTasksTable.bucket),
+            and(eq(mytoolTasksTable.bucket, 'project'), isNull(mytoolTasksTable.projectName))
+          )
+        );
+      res.json(tasks);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ==================== COO COCKPIT ====================
+
+  app.get("/api/exec/cockpit", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const projects = await db.select().from(projectInfo)
+        .where(eq(projectInfo.isActive, true));
+
+      const { qcWarning } = await import("@shared/schema");
+
+      const allWarnings = await db.select({
+        id: qcWarning.id,
+        severity: qcWarning.severity,
+        projectName: qcWarning.projectName,
+        title: qcWarning.title,
+        status: qcWarning.status,
+      }).from(qcWarning).where(eq(qcWarning.status, "open"));
+
+      const highWarnings = allWarnings.filter(w =>
+        w.severity === "High" || w.severity === "HIGH"
+      );
+
+      const projectsAtRisk = projects.filter(p => {
+        const cleanName = p.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ");
+        return highWarnings.some(w => w.projectName === cleanName);
+      }).map(p => {
+        const cleanName = p.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ");
+        const warnings = highWarnings.filter(w => w.projectName === cleanName);
+        return {
+          id: p.id,
+          projectName: cleanName,
+          phase: p.phase || "P0_FIRST_ASSESSMENT",
+          warningCount: warnings.length,
+          warnings: warnings.slice(0, 5).map(w => ({ title: w.title, severity: w.severity })),
+        };
+      });
+
+      const { mytoolTasks: mytoolTasksTable } = await import("@shared/schema");
+      const overdueTasks = await db.select().from(mytoolTasksTable)
+        .where(
+          and(
+            sql`${mytoolTasksTable.dueAt} < NOW()`,
+            sql`${mytoolTasksTable.status} NOT IN ('done', 'cancelled')`,
+          )
+        );
+
+      const overdueByOwner: Record<string, any[]> = {};
+      for (const t of overdueTasks) {
+        const owner = String(t.ownerUserId);
+        if (!overdueByOwner[owner]) overdueByOwner[owner] = [];
+        overdueByOwner[owner].push({
+          id: t.id,
+          title: t.title,
+          dueAt: t.dueAt,
+          status: t.status,
+          projectName: t.projectName,
+        });
+      }
+
+      const { operationalTasks: opTasksTable } = await import("@shared/schema");
+      const upcomingMilestones = await db.select().from(opTasksTable)
+        .where(
+          and(
+            sql`${opTasksTable.dueDate} IS NOT NULL`,
+            sql`${opTasksTable.dueDate} >= CURRENT_DATE`,
+            sql`${opTasksTable.dueDate} <= CURRENT_DATE + INTERVAL '14 days'`,
+            sql`${opTasksTable.status} != 'Complete'`,
+          )
+        );
+
+      const milestones = upcomingMilestones.map(m => ({
+        id: m.id,
+        title: m.title,
+        projectName: m.projectName,
+        dueDate: m.dueDate,
+        status: m.status,
+        priority: m.priority,
+      }));
+
+      res.json({
+        projectsAtRisk,
+        milestones,
+        overdueByOwner,
+        overdueTotalCount: overdueTasks.length,
+        totalProjects: projects.length,
+        totalOpenWarnings: allWarnings.length,
+        totalHighWarnings: highWarnings.length,
+      });
+    } catch (err: any) {
+      console.error("[Cockpit] Error:", err);
       res.status(500).json({ error: err.message });
     }
   });

@@ -82,6 +82,7 @@ export default function TaskDetailDrawer({ task, open, onOpenChange, onInvalidat
     definitionOfDone: "",
     completionNote: "",
     notes: "",
+    bucket: "personal" as string,
     projectName: "",
     department: "",
     blockedReason: "",
@@ -104,6 +105,7 @@ export default function TaskDetailDrawer({ task, open, onOpenChange, onInvalidat
         definitionOfDone: task.definitionOfDone || "",
         completionNote: task.completionNote || "",
         notes: task.notes || "",
+        bucket: (task as any).bucket || "personal",
         projectName: task.projectName || "",
         department: task.department || "",
         blockedReason: task.blockedReason || "",
@@ -183,7 +185,9 @@ export default function TaskDetailDrawer({ task, open, onOpenChange, onInvalidat
     if (form.definitionOfDone !== (task.definitionOfDone || "")) updates.definitionOfDone = form.definitionOfDone || null;
     if (form.completionNote !== (task.completionNote || "")) updates.completionNote = form.completionNote || null;
     if (form.notes !== (task.notes || "")) updates.notes = form.notes || null;
-    if (form.projectName !== (task.projectName || "")) updates.projectName = form.projectName || null;
+    if (form.bucket !== ((task as any).bucket || "personal")) updates.bucket = form.bucket;
+    if (form.bucket !== "project") updates.projectName = null;
+    else if (form.projectName !== (task.projectName || "")) updates.projectName = form.projectName || null;
     if (form.department !== (task.department || "")) updates.department = form.department || null;
     if (form.blockedReason !== (task.blockedReason || "")) updates.blockedReason = form.blockedReason || null;
     if (form.plannedForDate !== (task.plannedForDate || "")) updates.plannedForDate = form.plannedForDate || null;
@@ -331,38 +335,57 @@ export default function TaskDetailDrawer({ task, open, onOpenChange, onInvalidat
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">
-                <FolderOpen className="h-3 w-3 inline mr-1" />Project
+                <FolderOpen className="h-3 w-3 inline mr-1" />Bucket
               </Label>
-              <Select value={form.projectName || "__none__"} onValueChange={(v) => setForm((f) => ({ ...f, projectName: v === "__none__" ? "" : v }))}>
-                <SelectTrigger className="h-8 text-sm" data-testid="select-project">
-                  <SelectValue placeholder="None" />
+              <Select value={form.bucket} onValueChange={(v) => setForm((f) => ({ ...f, bucket: v, projectName: v !== "project" ? "" : f.projectName }))}>
+                <SelectTrigger className="h-8 text-sm" data-testid="select-bucket">
+                  <SelectValue placeholder="Select bucket" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__none__">None</SelectItem>
-                  {allProjects.map((p) => (
-                    <SelectItem key={p.project_name} value={p.project_name}>
-                      {p.project_name.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
-                    </SelectItem>
-                  ))}
+                  <SelectItem value="project">Project</SelectItem>
+                  <SelectItem value="company_ops">Company Ops</SelectItem>
+                  <SelectItem value="personal">Personal</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            <div>
-              <Label className="text-xs text-muted-foreground mb-1 block">
-                <Building2 className="h-3 w-3 inline mr-1" />Department
-              </Label>
-              <Select value={form.department || "__none__"} onValueChange={(v) => setForm((f) => ({ ...f, department: v === "__none__" ? "" : v }))}>
-                <SelectTrigger className="h-8 text-sm" data-testid="select-department">
-                  <SelectValue placeholder="None" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">None</SelectItem>
-                  {DEPARTMENTS.map((d) => (
-                    <SelectItem key={d} value={d}>{d}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {form.bucket === "project" && (
+              <div>
+                <Label className="text-xs text-muted-foreground mb-1 block">
+                  <FolderOpen className="h-3 w-3 inline mr-1" />Project
+                </Label>
+                <Select value={form.projectName || "__none__"} onValueChange={(v) => setForm((f) => ({ ...f, projectName: v === "__none__" ? "" : v }))}>
+                  <SelectTrigger className="h-8 text-sm" data-testid="select-project">
+                    <SelectValue placeholder="None" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">None</SelectItem>
+                    {allProjects.map((p) => (
+                      <SelectItem key={p.project_name} value={p.project_name}>
+                        {p.project_name.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {form.bucket !== "project" && (
+              <div>
+                <Label className="text-xs text-muted-foreground mb-1 block">
+                  <Building2 className="h-3 w-3 inline mr-1" />Department
+                </Label>
+                <Select value={form.department || "__none__"} onValueChange={(v) => setForm((f) => ({ ...f, department: v === "__none__" ? "" : v }))}>
+                  <SelectTrigger className="h-8 text-sm" data-testid="select-department">
+                    <SelectValue placeholder="None" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">None</SelectItem>
+                    {DEPARTMENTS.map((d) => (
+                      <SelectItem key={d} value={d}>{d}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
 
           <Separator />

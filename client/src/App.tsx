@@ -41,6 +41,9 @@ import OperationalOverviewReport from "@/pages/operational-overview-report";
 import PhaseTemplatesPage from "@/pages/phase-templates";
 import ProjectCreatePage from "@/pages/project-create";
 import ExecPortfolioPage from "@/pages/exec-portfolio";
+import ExecCockpitPage from "@/pages/exec-cockpit";
+import TriageInboxPage from "@/pages/triage-inbox";
+import UnclassifiedTasksPage from "@/pages/unclassified-tasks";
 
 import { useAuth } from "@/hooks/use-auth";
 import { useProgramData } from "@/hooks/use-program-data";
@@ -226,6 +229,9 @@ function ProtectedPages() {
         <Route path="/admin/phase-templates" component={PhaseTemplatesPage} />
         <Route path="/project-create" component={ProjectCreatePage} />
         <Route path="/exec-portfolio" component={ExecPortfolioPage} />
+        <Route path="/exec/cockpit" component={ExecCockpitPage} />
+        <Route path="/admin/triage-inbox" component={TriageInboxPage} />
+        <Route path="/admin/unclassified-tasks" component={UnclassifiedTasksPage} />
 
         <Route component={NotFound} />
       </Switch>
