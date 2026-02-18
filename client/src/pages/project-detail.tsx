@@ -16,6 +16,7 @@ import {
   FileText, DollarSign, CreditCard, TrendingUp, BarChart3, Activity,
   ArrowLeft, User, CheckCircle, AlertCircle, Columns, CalendarDays,
   ListTodo, ShieldCheck, Clock, History, ArrowRight, Loader2,
+  Wrench, PlusCircle, Circle, Calendar, PauseCircle, AlertTriangle,
 } from "lucide-react";
 import { ProjectPlanTab } from "@/components/tabs/ProjectPlanTab";
 import { RevenueTrackingTab } from "@/components/tabs/RevenueTrackingTab";
@@ -222,6 +223,183 @@ function PhaseHistoryTimeline({ projectId }: { projectId: number }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+const STATUS_DOT: Record<string, string> = {
+  "TO DO": "text-gray-400", "IN PROGRESS": "text-blue-500", "HOLD": "text-red-500",
+  "NEEDS APPROVAL": "text-amber-500", "COMPLETE": "text-green-500",
+  "QC APPROVED": "text-emerald-500", "PROVIDE FEEDBACK": "text-purple-500",
+  "OPERATIONAL APPROVAL": "text-indigo-500", "PROJECTS ASSISTANCE": "text-cyan-500",
+};
+const STATUS_BADGE: Record<string, string> = {
+  "TO DO": "bg-gray-100 text-gray-700", "IN PROGRESS": "bg-blue-100 text-blue-700",
+  "HOLD": "bg-red-100 text-red-700", "NEEDS APPROVAL": "bg-amber-100 text-amber-700",
+  "COMPLETE": "bg-green-100 text-green-700", "QC APPROVED": "bg-emerald-100 text-emerald-700",
+  "PROVIDE FEEDBACK": "bg-purple-100 text-purple-700",
+};
+
+function EngTasksTab({ projectInfoId, isAdmin }: { projectInfoId: number | null; isAdmin: boolean }) {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [, setLocation] = useLocation();
+
+  const { data: engData, isLoading } = useQuery<{ projectName: string; phase: string; tasks: any[] }>({
+    queryKey: ["project-eng-tasks", projectInfoId],
+    queryFn: async () => {
+      const res = await engFetch(`/api/projects/${projectInfoId}/eng-tasks`);
+      if (!res.ok) return { projectName: "", phase: "", tasks: [] };
+      return res.json();
+    },
+    enabled: !!projectInfoId,
+  });
+
+  const generateMutation = useMutation({
+    mutationFn: async () => {
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`/api/projects/${projectInfoId}/generate-eng-tasks`, {
+        method: "POST",
+        headers,
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to generate tasks");
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: `${data.tasksCreated} engineering tasks created` });
+      qc.invalidateQueries({ queryKey: ["project-eng-tasks", projectInfoId] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  if (!projectInfoId) {
+    return <div className="text-center py-12 text-muted-foreground text-sm">Project info not available</div>;
+  }
+
+  if (isLoading) {
+    return <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+  }
+
+  const tasks = engData?.tasks || [];
+  const openTasks = tasks.filter((t: any) => t.status !== "COMPLETE");
+  const completedTasks = tasks.filter((t: any) => t.status === "COMPLETE");
+  const overdue = tasks.filter((t: any) => t.dueDate && t.dueDate < new Date().toISOString().split("T")[0] && t.status !== "COMPLETE");
+
+  if (tasks.length === 0) {
+    return (
+      <div className="text-center py-12 space-y-4">
+        <Wrench className="h-12 w-12 mx-auto text-muted-foreground/30" />
+        <div>
+          <p className="text-lg font-medium text-muted-foreground">No engineering tasks yet</p>
+          <p className="text-sm text-muted-foreground/70 mt-1">
+            Engineering tasks are auto-created when a project moves past Phase 1 (Cost Proposal).
+          </p>
+        </div>
+        {isAdmin && (
+          <Button
+            onClick={() => generateMutation.mutate()}
+            disabled={generateMutation.isPending}
+            className="gap-2"
+            data-testid="button-generate-eng-tasks"
+          >
+            {generateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlusCircle className="h-4 w-4" />}
+            Generate Engineering Tasks
+          </Button>
+        )}
+      </div>
+    );
+  }
+
+  const phaseGroups = new Map<string, any[]>();
+  for (const t of tasks) {
+    const ph = t.phase || "Unassigned";
+    if (!phaseGroups.has(ph)) phaseGroups.set(ph, []);
+    phaseGroups.get(ph)!.push(t);
+  }
+
+  return (
+    <div className="space-y-4" data-testid="eng-tasks-tab">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <Card className="p-3">
+          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Total</p>
+          <p className="text-xl font-bold mt-1">{tasks.length}</p>
+        </Card>
+        <Card className="p-3">
+          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Open</p>
+          <p className="text-xl font-bold mt-1 text-blue-600">{openTasks.length}</p>
+        </Card>
+        <Card className="p-3">
+          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Completed</p>
+          <p className="text-xl font-bold mt-1 text-emerald-600">{completedTasks.length}</p>
+        </Card>
+        <Card className={`p-3 ${overdue.length > 0 ? "border-red-200" : ""}`}>
+          <p className={`text-[10px] uppercase tracking-wider ${overdue.length > 0 ? "text-red-600" : "text-muted-foreground"}`}>Overdue</p>
+          <p className={`text-xl font-bold mt-1 ${overdue.length > 0 ? "text-red-600" : ""}`}>{overdue.length}</p>
+        </Card>
+      </div>
+
+      {tasks.length > 0 && (
+        <div className="w-full h-2.5 bg-muted rounded-full overflow-hidden">
+          <div
+            className="h-full bg-emerald-500 rounded-full transition-all"
+            style={{ width: `${tasks.length > 0 ? (completedTasks.length / tasks.length) * 100 : 0}%` }}
+          />
+        </div>
+      )}
+
+      {Array.from(phaseGroups.entries()).map(([phase, phaseTasks]) => (
+        <div key={phase} className="space-y-1">
+          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5 py-2">
+            <span className={`w-2 h-2 rounded-full ${PHASE_COLORS[phase]?.bg.replace("bg-", "bg-") || "bg-slate-200"}`} />
+            {getPhaseLabel(phase)}
+            <span className="font-normal">({phaseTasks.length})</span>
+          </h4>
+          <Card>
+            <div className="divide-y">
+              {phaseTasks.map((task: any) => {
+                const isTaskOverdue = task.dueDate && task.dueDate < new Date().toISOString().split("T")[0] && task.status !== "COMPLETE";
+                return (
+                  <div
+                    key={task.id}
+                    className={`flex items-center gap-2.5 px-4 py-2.5 hover:bg-muted/20 transition-colors text-sm cursor-pointer ${isTaskOverdue ? "bg-red-50/30" : ""}`}
+                    onClick={() => setLocation(`/engineering?task=${task.id}`)}
+                    data-testid={`eng-task-row-${task.id}`}
+                  >
+                    <Circle className={`h-2.5 w-2.5 fill-current shrink-0 ${STATUS_DOT[task.status] || "text-gray-400"}`} />
+                    <span className="flex-1 min-w-0 truncate">{task.title}</span>
+                    {task.primaryWorkstream && (
+                      <Badge variant="outline" className="text-[9px] px-1.5 py-0 shrink-0">{task.primaryWorkstream}</Badge>
+                    )}
+                    <Badge className={`text-[9px] px-1.5 py-0 shrink-0 ${STATUS_BADGE[task.status] || "bg-gray-100"}`}>
+                      {task.status}
+                    </Badge>
+                    {task.dueDate && (
+                      <span className={`text-[10px] flex items-center gap-0.5 shrink-0 ${isTaskOverdue ? "text-red-600 font-semibold" : "text-muted-foreground"}`}>
+                        <Calendar className="h-3 w-3" />
+                        {new Date(task.dueDate).toLocaleDateString("en-ZA", { day: "2-digit", month: "short" })}
+                      </span>
+                    )}
+                    {task.assignees && task.assignees[0] && (
+                      <span className="text-[10px] text-muted-foreground flex items-center gap-0.5 shrink-0 max-w-[80px] truncate">
+                        <User className="h-3 w-3" />
+                        {task.assignees[0]}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+        </div>
+      ))}
     </div>
   );
 }
@@ -447,6 +625,10 @@ export default function ProjectDetailPage() {
             <ShieldCheck className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Quality</span>
           </TabsTrigger>
+          <TabsTrigger value="eng-tasks" className="flex items-center gap-1.5 text-xs" data-testid="tab-eng-tasks">
+            <Wrench className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Eng Tasks</span>
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="task-grid" className="space-y-4">
@@ -491,6 +673,10 @@ export default function ProjectDetailPage() {
 
         <TabsContent value="quality" className="space-y-4">
           <QualityTab projectName={projectName} />
+        </TabsContent>
+
+        <TabsContent value="eng-tasks" className="space-y-4">
+          <EngTasksTab projectInfoId={projectInfoId ?? null} isAdmin={isAdmin} />
         </TabsContent>
       </Tabs>
 
