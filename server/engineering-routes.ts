@@ -8,10 +8,12 @@ import {
   notifications, notificationThrottle, spFilePointers,
   projectTeamMembers, projectPlan, qcWarning, qcWarningEvent,
   qcItemInstance, users, projectInfo, projectPhaseHistory,
+  phaseTemplate as phaseTemplateTbl,
   TASK_STATUSES, TASK_WORKSTREAMS, TASK_PRIORITIES, PROJECT_PHASES,
   DELIVERABLE_STATUSES, PROJECT_PHASE_LABELS,
   type ProjectPhase,
 } from "@shared/schema";
+import { applyTemplate } from "./template-routes";
 
 type AppUser = { id: number; email: string; name: string; role: string; };
 
@@ -1365,6 +1367,8 @@ export function registerEngineeringRoutes(app: Express) {
       }
 
       let tasksCreated = 0;
+      let templateApplied = false;
+      let templateResult: any = null;
 
       await db.transaction(async (tx) => {
         await tx.update(projectInfo)
@@ -1384,13 +1388,28 @@ export function registerEngineeringRoutes(app: Express) {
           changedByUserId: user.id,
           reason: reason.trim(),
         });
+      });
 
+      try {
+        const [activeTemplate] = await db.select().from(phaseTemplateTbl)
+          .where(and(eq(phaseTemplateTbl.phase, toPhase), eq(phaseTemplateTbl.isActive, true)));
+
+        if (activeTemplate) {
+          templateResult = await applyTemplate(projectId, toPhase, activeTemplate.id, activeTemplate.version, user.id);
+          templateApplied = true;
+          tasksCreated = templateResult.tasksCreated || 0;
+        }
+      } catch (err: any) {
+        console.warn("[Phase] Template apply error (non-fatal):", err.message);
+      }
+
+      if (!templateApplied) {
         const fromP1OrBefore = !fromPhase || PROJECT_PHASES.indexOf(fromPhase as any) <= 1;
         const toP2OrBeyond = PROJECT_PHASES.indexOf(toPhase as any) >= 2;
 
         if (fromP1OrBefore && toP2OrBeyond) {
           const cleanName = project.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ");
-          const existing = await tx.select({ id: operationalTasks.id })
+          const existing = await db.select({ id: operationalTasks.id })
             .from(operationalTasks)
             .where(eq(operationalTasks.projectName, cleanName))
             .limit(1);
@@ -1417,7 +1436,7 @@ export function registerEngineeringRoutes(app: Express) {
 
             for (let i = 0; i < DEFAULT_ENG_TASKS.length; i++) {
               const t = DEFAULT_ENG_TASKS[i];
-              await tx.insert(operationalTasks).values({
+              await db.insert(operationalTasks).values({
                 projectName: cleanName,
                 title: t.title,
                 status: "TO DO",
@@ -1430,7 +1449,7 @@ export function registerEngineeringRoutes(app: Express) {
             }
             tasksCreated = DEFAULT_ENG_TASKS.length;
 
-            await tx.insert(taskActivityLog).values({
+            await db.insert(taskActivityLog).values({
               taskId: 0,
               actorId: user.id,
               actionType: "auto_generated",
@@ -1438,13 +1457,15 @@ export function registerEngineeringRoutes(app: Express) {
             });
           }
         }
-      });
+      }
 
       const [updated] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
       res.json({
         project: updated,
         phaseLabel: PROJECT_PHASE_LABELS[toPhase as ProjectPhase] || toPhase,
         tasksCreated,
+        templateApplied,
+        templateResult,
       });
     } catch (err: any) {
       console.error("[Phase] Error:", err.message);

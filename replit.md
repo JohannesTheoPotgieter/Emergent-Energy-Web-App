@@ -19,6 +19,7 @@ Preferred communication style: Simple, everyday language.
     -   **Project Management**: Planning Board (scenario-aware Gantt-lite timeline, key dates, resource capacity heatmap), Project Plan View (CPM scheduling with Gantt visualization, critical path calculation), and Operational Task Management (ClickUp-style task system with multiple views and detail drawers).
     -   **Data Quality & Scenarios**: Risks & Flags (severity-ranked data quality issues), Scenario System (reusable component for creating/managing scenarios across financial and planning modules).
     -   **Quality Management**: Quality Tab (4-phase checklist with Planning & Design, Construction, Commissioning, Handover phases; 13 groups, 46 items, 22 risk questions; non-blocking red warnings engine), QM Dashboard (stats overview, project table, warnings), Post-Mortem Panel (contractor/engineering quality scoring with 7 metrics), QM Access Code Challenge (4-digit code gate for quality_manager role editing).
+    -   **Phase Templates & Portfolio**: Phase Template Admin (template CRUD with items, versioning, clone, activate, preview), Project Create (exec-only in-app project creation with auto-template application), Exec Portfolio Board (project-centric lifecycle view with phase badges, readiness %, warnings, approvals, phase change with template preview).
     -   **Utilities & Admin**: SafeMoney Utilities (NaN-safe currency handling), My Tool (COO Execution Cockpit — Linear/Notion/Sunsama-style premium minimal interface with shared components: MyToolLayout, TaskCard, TaskDetailDrawer; DoD enforcement; natural language quick add; keyboard shortcuts ⌘K/⌘⏎; drag-drop email-to-task; time blocks; daily wrap), and Excel Writeback Manager (admin UI for configuring and executing Excel writebacks).
 
 ### Backend
@@ -55,6 +56,8 @@ Preferred communication style: Simple, everyday language.
 -   `qm_postmortems`, `qm_postmortem_metrics`, `qm_postmortem_metric_values`: Post-mortem scoring system.
 -   `qm_access_challenges`: Access code challenge audit trail with rate limiting.
 -   `qm_holidays`: ZA public holidays for scheduling calculations.
+-   `phase_template`, `phase_template_item`, `phase_template_item_history`: Lifecycle phase template system with versioning and audit trail.
+-   `phase_template_application`: Idempotent template application ledger keyed by projectId+phase+templateId+version.
 
 ### New API Endpoints (Examples)
 -   `/api/cos-control/*`: Endpoints for COS KPI aggregation, breakdowns, line-item explorers, and scenario-based analysis.
@@ -68,6 +71,11 @@ Preferred communication style: Simple, everyday language.
 -   `/api/mytool/*`: Endpoints for My Tool settings, tasks, time blocks, daily reviews, company priorities, and user preferences.
 -   `/api/quality/*`: Quality management endpoints — templates, checklists (CRUD + instantiation), risk answers, warnings engine, post-mortem scoring, access code challenge with rate limiting.
 -   `/api/admin/reports/*`: Admin-only reporting endpoints — Operational Overview KPI JSON, PDF/print HTML, project RAG status management.
+-   `/api/phase-templates/*`: Phase template CRUD, item management, versioning, clone, activate, preview.
+-   `/api/projects`: POST for exec-only in-app project creation with auto-template application.
+-   `/api/projects/:projectId/phase-preview`: POST preview of template application for phase change.
+-   `/api/projects/:projectId/apply-template`: POST to apply active template for a phase.
+-   `/api/exec/portfolio/*`: Executive portfolio board endpoints — project list with readiness/warnings, project detail with phase history/template applications.
 
 ## External Dependencies
 

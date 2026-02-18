@@ -1611,6 +1611,88 @@ export const insertProjectTeamMemberSchema = createInsertSchema(projectTeamMembe
 export type InsertProjectTeamMember = z.infer<typeof insertProjectTeamMemberSchema>;
 export type ProjectTeamMember = typeof projectTeamMembers.$inferSelect;
 
+// ===================== PHASE TEMPLATES (Lifecycle Governance) =====================
+
+export const TEMPLATE_ITEM_TYPES = ["TASK", "DELIVERABLE", "QUALITY_LINK", "VIEW_SHORTCUT"] as const;
+export type TemplateItemType = typeof TEMPLATE_ITEM_TYPES[number];
+
+export const TEMPLATE_WORKSTREAMS = [
+  "PD", "Engineering", "Quality", "PM", "Procurement",
+  "Construction", "Commissioning", "Handover", "Finance", "OandM"
+] as const;
+export type TemplateWorkstream = typeof TEMPLATE_WORKSTREAMS[number];
+
+export const TEMPLATE_LINK_TARGET_TYPES = ["NONE", "PLAN", "DELIVERABLE", "QUALITY"] as const;
+export type TemplateLinkTargetType = typeof TEMPLATE_LINK_TARGET_TYPES[number];
+
+export const phaseTemplate = pgTable("phase_template", {
+  id: serial("id").primaryKey(),
+  phase: text("phase").notNull(),
+  name: text("name").notNull(),
+  version: integer("version").notNull().default(1),
+  isActive: boolean("is_active").notNull().default(false),
+  createdByUserId: integer("created_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertPhaseTemplateSchema = createInsertSchema(phaseTemplate).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertPhaseTemplate = z.infer<typeof insertPhaseTemplateSchema>;
+export type PhaseTemplate = typeof phaseTemplate.$inferSelect;
+
+export const phaseTemplateItem = pgTable("phase_template_item", {
+  id: serial("id").primaryKey(),
+  templateId: integer("template_id").notNull().references(() => phaseTemplate.id, { onDelete: "cascade" }),
+  itemKey: text("item_key").notNull(),
+  itemType: text("item_type").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  primaryWorkstream: text("primary_workstream"),
+  defaultStatus: text("default_status"),
+  defaultPriority: text("default_priority"),
+  offsetDaysFromPhaseStart: integer("offset_days_from_phase_start"),
+  requiresApproval: boolean("requires_approval").notNull().default(false),
+  approverRole: text("approver_role"),
+  linkTargetType: text("link_target_type").notNull().default("NONE"),
+  linkTargetKey: text("link_target_key"),
+  deliverableTypeKey: text("deliverable_type_key"),
+  requiresQcApproval: boolean("requires_qc_approval").notNull().default(false),
+  requiresOperationalApproval: boolean("requires_operational_approval").notNull().default(false),
+  qualityItemKey: text("quality_item_key"),
+  evidenceRequired: boolean("evidence_required").notNull().default(false),
+  viewKey: text("view_key"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  isDeleted: boolean("is_deleted").notNull().default(false),
+});
+export const insertPhaseTemplateItemSchema = createInsertSchema(phaseTemplateItem).omit({ id: true });
+export type InsertPhaseTemplateItem = z.infer<typeof insertPhaseTemplateItemSchema>;
+export type PhaseTemplateItem = typeof phaseTemplateItem.$inferSelect;
+
+export const phaseTemplateItemHistory = pgTable("phase_template_item_history", {
+  id: serial("id").primaryKey(),
+  templateItemId: integer("template_item_id").notNull().references(() => phaseTemplateItem.id, { onDelete: "cascade" }),
+  changedByUserId: integer("changed_by_user_id").references(() => users.id),
+  changedAt: timestamp("changed_at").notNull().defaultNow(),
+  changeJson: jsonb("change_json"),
+});
+export const insertPhaseTemplateItemHistorySchema = createInsertSchema(phaseTemplateItemHistory).omit({ id: true, changedAt: true });
+export type InsertPhaseTemplateItemHistory = z.infer<typeof insertPhaseTemplateItemHistorySchema>;
+export type PhaseTemplateItemHistory = typeof phaseTemplateItemHistory.$inferSelect;
+
+export const phaseTemplateApplication = pgTable("phase_template_application", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
+  phase: text("phase").notNull(),
+  templateId: integer("template_id").notNull().references(() => phaseTemplate.id),
+  templateVersion: integer("template_version").notNull(),
+  appliedByUserId: integer("applied_by_user_id").references(() => users.id),
+  appliedAt: timestamp("applied_at").notNull().defaultNow(),
+  applicationKey: text("application_key").notNull().unique(),
+  resultSummaryJson: jsonb("result_summary_json"),
+});
+export const insertPhaseTemplateApplicationSchema = createInsertSchema(phaseTemplateApplication).omit({ id: true, appliedAt: true });
+export type InsertPhaseTemplateApplication = z.infer<typeof insertPhaseTemplateApplicationSchema>;
+export type PhaseTemplateApplication = typeof phaseTemplateApplication.$inferSelect;
+
 // ===================== ENGINEERING DELIVERABLES =====================
 
 export const DELIVERABLE_STATUSES = [

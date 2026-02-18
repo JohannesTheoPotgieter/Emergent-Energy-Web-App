@@ -45,6 +45,9 @@ import EngineeringTeamsPage from "@/pages/engineering-teams";
 import EngineeringAuditLogPage from "@/pages/engineering-audit-log";
 import AdminReportsPage from "@/pages/admin-reports";
 import OperationalOverviewReport from "@/pages/operational-overview-report";
+import PhaseTemplatesPage from "@/pages/phase-templates";
+import ProjectCreatePage from "@/pages/project-create";
+import ExecPortfolioPage from "@/pages/exec-portfolio";
 
 import { useAuth } from "@/hooks/use-auth";
 import { useProgramData } from "@/hooks/use-program-data";
@@ -234,6 +237,9 @@ function ProtectedPages() {
         <Route path="/admin/teams" component={EngineeringTeamsPage} />
         <Route path="/admin/reports" component={AdminReportsPage} />
         <Route path="/admin/reports/operational-overview" component={OperationalOverviewReport} />
+        <Route path="/admin/phase-templates" component={PhaseTemplatesPage} />
+        <Route path="/project-create" component={ProjectCreatePage} />
+        <Route path="/exec-portfolio" component={ExecPortfolioPage} />
 
         <Route component={NotFound} />
       </Switch>
