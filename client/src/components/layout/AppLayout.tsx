@@ -174,7 +174,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             return group.heading === "ENGINEERING" || group.heading === "QUALITY" || group.heading === "PROJECT MANAGEMENT";
           }
           if (role === "admin") return true;
-          return group.heading === "EXCO" || group.heading === "PROJECT MANAGEMENT";
+          return group.heading === "PROJECT MANAGEMENT";
         }).map((group) => {
           let visibleItems = group.items;
           if (user?.role === "quality_manager" && group.heading === "PROJECT MANAGEMENT") {
