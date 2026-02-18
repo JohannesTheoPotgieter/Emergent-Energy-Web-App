@@ -12,7 +12,7 @@ import { getErrorMessage } from "@/lib/errors";
 import {
   Save, RotateCcw, Loader2, ChevronDown, ChevronRight, Filter,
   Columns, ChevronsUpDown, ChevronsDownUp, Plus, Link, Unlink,
-  X, Search, ListPlus, ClipboardList
+  X, Search, ListPlus, ClipboardList, CalendarIcon, Palette
 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
@@ -35,6 +35,9 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { format, parse, isValid } from "date-fns";
 
 interface EnrichedExpense {
   id: number;
@@ -580,6 +583,88 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
     );
   };
 
+  const DatePickerCell = ({ rowId, field, value, fontColor, fontColorField }: {
+    rowId: number; field: string; value: string | null; fontColor: string | null; fontColorField: string;
+  }) => {
+    const editedColor = edits.get(rowId)?.[fontColorField];
+    const currentColor = editedColor !== undefined ? editedColor : (fontColor || "black");
+    const isRed = currentColor === "red";
+
+    const parseDate = (val: string | null): Date | undefined => {
+      if (!val) return undefined;
+      try {
+        const d = new Date(val);
+        return isValid(d) ? d : undefined;
+      } catch { return undefined; }
+    };
+
+    const editedVal = edits.get(rowId)?.[field];
+    const selectedDate = editedVal === "__null__" ? undefined : parseDate(editedVal ?? value);
+
+    const handleDateSelect = (date: Date | undefined) => {
+      if (date) {
+        const iso = format(date, "yyyy-MM-dd");
+        handleCellEdit(rowId, field, iso);
+      }
+    };
+
+    const handleClearDate = () => {
+      handleCellEdit(rowId, field, "__null__");
+    };
+
+    const toggleColor = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      const newColor = isRed ? "black" : "red";
+      handleCellEdit(rowId, fontColorField, newColor);
+    };
+
+    if (!isAdmin) {
+      return (
+        <span className={`text-xs px-1 py-0.5 block truncate ${isRed ? "text-red-500" : ""}`}>
+          {formatDate(value)}
+        </span>
+      );
+    }
+
+    return (
+      <div className="flex items-center gap-0.5">
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              className={`flex items-center gap-1 px-1 py-0.5 rounded text-xs hover:bg-blue-50 cursor-pointer truncate ${isRed ? "text-red-500 font-medium" : ""}`}
+              data-testid={`button-datepicker-${rowId}-${field}`}
+            >
+              <CalendarIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
+              <span>{selectedDate ? formatDate(format(selectedDate, "yyyy-MM-dd")) : "-"}</span>
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-0" align="start" side="bottom">
+            <Calendar
+              mode="single"
+              selected={selectedDate}
+              onSelect={handleDateSelect}
+              initialFocus
+            />
+            <div className="flex items-center justify-between border-t px-3 py-2">
+              <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground" onClick={handleClearDate}
+                data-testid={`button-clear-date-${rowId}-${field}`}>
+                Clear
+              </Button>
+            </div>
+          </PopoverContent>
+        </Popover>
+        <button
+          onClick={toggleColor}
+          className={`shrink-0 w-4 h-4 rounded-full border flex items-center justify-center transition-colors ${isRed ? "bg-red-500 border-red-600" : "bg-gray-800 border-gray-900"}`}
+          title={isRed ? "Switch to black" : "Switch to red"}
+          data-testid={`button-color-toggle-${rowId}-${field}`}
+        >
+          <span className="sr-only">{isRed ? "Red" : "Black"}</span>
+        </button>
+      </div>
+    );
+  };
+
   const renderLinkedTask = (exp: EnrichedExpense) => {
     if (exp.linkedTask) {
       return (
@@ -671,13 +756,13 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
       case "invoiceNo":
         return <EditableCell rowId={exp.id} field="expenseInvoiceNumber" value={exp.expenseInvoiceNumber} />;
       case "invoiceDate":
-        return <EditableCell rowId={exp.id} field="expenseInvoicedDate" value={exp.expenseInvoicedDate} type="date"
-          colorClass={exp.invoiceDateFontColor === "red" ? "text-red-500" : ""} />;
+        return <DatePickerCell rowId={exp.id} field="expenseInvoicedDate" value={exp.expenseInvoicedDate}
+          fontColor={exp.invoiceDateFontColor} fontColorField="invoiceDateFontColor" />;
       case "paymentDate":
         return (
           <div className="flex items-center gap-0.5">
-            <EditableCell rowId={exp.id} field="expensePaymentDate" value={exp.effectivePaymentDate} type="date"
-              colorClass={exp.paymentDateFontColor === "red" ? "text-red-500" : ""} />
+            <DatePickerCell rowId={exp.id} field="expensePaymentDate" value={exp.expensePaymentDate || exp.effectivePaymentDate}
+              fontColor={exp.paymentDateFontColor} fontColorField="paymentDateFontColor" />
             {exp.hasDateOverride && <span className="text-amber-500 text-[10px]" title={exp.dateOverrideReason || "Override"}>*</span>}
           </div>
         );
@@ -803,9 +888,12 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
             </DropdownMenu>
           )}
 
-          {isAdmin && hasEdits && (
-            <Button onClick={handleSave} disabled={saveMutation.isPending} size="sm" className="h-7 text-xs" data-testid="button-save-edits">
-              <Save className="h-3.5 w-3.5 mr-1" /> {saveMutation.isPending ? "Saving..." : `Save (${edits.size})`}
+          {isAdmin && (
+            <Button onClick={handleSave} disabled={!hasEdits || saveMutation.isPending} size="sm"
+              className={`h-7 text-xs ${hasEdits ? "bg-blue-600 hover:bg-blue-700 text-white shadow-sm" : ""}`}
+              variant={hasEdits ? "default" : "outline"}
+              data-testid="button-save-edits">
+              <Save className="h-3.5 w-3.5 mr-1" /> {saveMutation.isPending ? "Saving..." : hasEdits ? `Save (${edits.size})` : "Save"}
             </Button>
           )}
 
