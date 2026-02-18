@@ -18,11 +18,22 @@ import {
   Flag,
   Loader2,
   ShieldCheck,
+  ClipboardCheck,
   Wrench,
   ListTodo,
   Package,
-  Briefcase,
+  Users,
+  FolderOpen,
 } from "lucide-react";
+
+interface QuickLink {
+  label: string;
+  description: string;
+  icon: any;
+  path: string;
+  color: string;
+  bg: string;
+}
 
 interface CompanyPriority {
   id: number;
@@ -44,105 +55,266 @@ interface CompanyPriority {
   linkedTaskType: string | null;
 }
 
-interface QuickLink {
-  label: string;
-  description: string;
-  icon: any;
-  path: string;
+const engLinks: QuickLink[] = [
+  {
+    label: "Engineering Dashboard",
+    description: "Workload, milestones at risk, pipeline, warnings",
+    icon: Wrench,
+    path: "/engineering",
+    color: "text-orange-600",
+    bg: "bg-orange-50 dark:bg-orange-950/30 border-orange-200 dark:border-orange-800 hover:border-orange-400",
+  },
+  {
+    label: "Task Board",
+    description: "Manage engineering tasks across all projects",
+    icon: ListTodo,
+    path: "/engineering/tasks",
+    color: "text-blue-600",
+    bg: "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 hover:border-blue-400",
+  },
+  {
+    label: "Deliverables Register",
+    description: "Track deliverables, versions, and approvals",
+    icon: Package,
+    path: "/engineering/deliverables",
+    color: "text-indigo-600",
+    bg: "bg-indigo-50 dark:bg-indigo-950/30 border-indigo-200 dark:border-indigo-800 hover:border-indigo-400",
+  },
+];
+
+const currentLinks: QuickLink[] = [
+  {
+    label: "Dashboard",
+    description: "High-priority actions, milestones, and PM summary",
+    icon: LayoutDashboard,
+    path: "/dashboard",
+    color: "text-blue-600",
+    bg: "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 hover:border-blue-400",
+  },
+  {
+    label: "Project Summary",
+    description: "All projects with progress, financials, and status",
+    icon: FileSpreadsheet,
+    path: "/projects",
+    color: "text-emerald-600",
+    bg: "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 hover:border-emerald-400",
+  },
+  {
+    label: "Cashflow",
+    description: "Weekly cashflow with inflow/outflow detail and forecast",
+    icon: Wallet,
+    path: "/cashflow",
+    color: "text-violet-600",
+    bg: "bg-violet-50 dark:bg-violet-950/30 border-violet-200 dark:border-violet-800 hover:border-violet-400",
+  },
+  {
+    label: "COS Tracker",
+    description: "Monthly cost of sales: planned vs realised vs budget",
+    icon: TrendingUp,
+    path: "/cos",
+    color: "text-amber-600",
+    bg: "bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800 hover:border-amber-400",
+  },
+];
+
+const wipLinks: QuickLink[] = [
+  {
+    label: "COS Control",
+    description: "What-if scenario analysis for invoice date shifting",
+    icon: Target,
+    path: "/cos-control",
+    color: "text-rose-600",
+    bg: "bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800 hover:border-rose-400",
+  },
+  {
+    label: "Forecast",
+    description: "Line-item driven weekly cashflow forecast",
+    icon: BarChart3,
+    path: "/cashflow-forecast",
+    color: "text-cyan-600",
+    bg: "bg-cyan-50 dark:bg-cyan-950/30 border-cyan-200 dark:border-cyan-800 hover:border-cyan-400",
+  },
+  {
+    label: "Planning",
+    description: "Resource capacity, scheduling, and clash detection",
+    icon: Kanban,
+    path: "/planning",
+    color: "text-indigo-600",
+    bg: "bg-indigo-50 dark:bg-indigo-950/30 border-indigo-200 dark:border-indigo-800 hover:border-indigo-400",
+  },
+  {
+    label: "Risks & Flags",
+    description: "Data quality issues and actionable risk flags",
+    icon: AlertTriangle,
+    path: "/risks-flags",
+    color: "text-orange-600",
+    bg: "bg-orange-50 dark:bg-orange-950/30 border-orange-200 dark:border-orange-800 hover:border-orange-400",
+  },
+];
+
+const qmLinks: QuickLink[] = [
+  {
+    label: "QM Dashboard",
+    description: "Overview of quality status, warnings, and project completion",
+    icon: ShieldCheck,
+    path: "/quality",
+    color: "text-emerald-600",
+    bg: "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 hover:border-emerald-400",
+  },
+  {
+    label: "Project Summary",
+    description: "View projects and access quality checklists",
+    icon: FileSpreadsheet,
+    path: "/projects",
+    color: "text-blue-600",
+    bg: "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 hover:border-blue-400",
+  },
+];
+
+
+function NavTile({ link }: { link: QuickLink }) {
+  return (
+    <Link href={link.path} data-testid={`tile-${link.label.toLowerCase().replace(/\s+/g, '-')}`}>
+      <Card className={`${link.bg} border transition-all duration-200 cursor-pointer hover:shadow-md group h-full`}>
+        <CardContent className="p-5 flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <div className={`p-2.5 rounded-lg bg-white/60 dark:bg-white/10 ${link.color}`}>
+              <link.icon className="h-6 w-6" />
+            </div>
+            <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-base">{link.label}</h3>
+            <p className="text-sm text-muted-foreground mt-0.5 leading-snug">{link.description}</p>
+          </div>
+        </CardContent>
+      </Card>
+    </Link>
+  );
 }
 
 const statusLabels: Record<string, { label: string; color: string }> = {
-  active: { label: "Active", color: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300" },
+  active: { label: "Active", color: "bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400" },
   not_started: { label: "Not started", color: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400" },
-  in_progress: { label: "In progress", color: "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300" },
-  complete: { label: "Complete", color: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300" },
-  monitoring: { label: "Monitoring", color: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300" },
+  in_progress: { label: "In progress", color: "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400" },
+  complete: { label: "Complete", color: "bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400" },
+  monitoring: { label: "Monitoring", color: "bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400" },
   closed: { label: "Closed", color: "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400" },
 };
 
-const deptColors: Record<string, string> = {
-  Accounts: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300",
-  "Project Development": "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-300",
-  "Project Management": "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300",
-  Operations: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300",
-  Engineering: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300",
-  Finance: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-300",
+const homeDeptColors: Record<string, string> = {
+  Accounts: "bg-yellow-100 text-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-400",
+  "Project Development": "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400",
+  "Project Management": "bg-blue-100 text-blue-800 dark:bg-blue-950/40 dark:text-blue-400",
+  Operations: "bg-purple-100 text-purple-800 dark:bg-purple-950/40 dark:text-purple-400",
+  Engineering: "bg-orange-100 text-orange-800 dark:bg-orange-950/40 dark:text-orange-400",
+  Finance: "bg-indigo-100 text-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-400",
 };
 
-function CompanyPrioritiesCard({ isAdmin }: { isAdmin: boolean }) {
+function CompanyPrioritiesSection({ isAdmin }: { isAdmin: boolean }) {
   const { data: priorities = [], isLoading } = useQuery<CompanyPriority[]>({
     queryKey: ["/api/mytool/company-priorities"],
   });
 
-  const active = priorities.filter(p => !["closed", "complete"].includes(p.status));
+  const activePriorities = priorities.filter(p => !["closed", "complete"].includes(p.status));
+
+  const grouped = (() => {
+    const groups: Record<string, CompanyPriority[]> = {};
+    activePriorities.forEach(p => {
+      const dept = p.department || "Unassigned";
+      if (!groups[dept]) groups[dept] = [];
+      groups[dept].push(p);
+    });
+    Object.values(groups).forEach(items => items.sort((a, b) => (a.priorityRank ?? 999) - (b.priorityRank ?? 999)));
+    return Object.keys(groups).sort((a, b) => a === "Unassigned" ? 1 : b === "Unassigned" ? -1 : a.localeCompare(b)).map(d => ({ department: d, items: groups[d] }));
+  })();
 
   if (isLoading) {
     return (
       <Card>
-        <CardContent className="flex items-center justify-center py-6">
-          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+        <CardContent className="flex items-center justify-center py-8">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
         </CardContent>
       </Card>
     );
   }
 
-  if (active.length === 0 && !isAdmin) return null;
+  if (activePriorities.length === 0 && !isAdmin) return null;
 
   return (
-    <Card data-testid="company-priorities-section">
+    <Card className="border-red-200 dark:border-red-900/50 bg-gradient-to-br from-red-50/50 to-orange-50/30 dark:from-red-950/20 dark:to-orange-950/10" data-testid="company-priorities-section">
       <CardContent className="p-0">
-        <div className="flex items-center justify-between px-4 pt-3 pb-2">
+        <div className="flex items-center justify-between px-4 pt-4 pb-2">
           <div className="flex items-center gap-2">
-            <Flag className="h-4 w-4 text-red-500" />
-            <h3 className="text-sm font-semibold">Company Priorities</h3>
-            <span className="text-xs text-muted-foreground">{active.length} active</span>
+            <div className="p-2 rounded-lg bg-red-100 dark:bg-red-950/40">
+              <Flag className="h-5 w-5 text-red-600 dark:text-red-400" />
+            </div>
+            <div>
+              <h3 className="text-base font-semibold">Company Priorities</h3>
+              <p className="text-xs text-muted-foreground">{activePriorities.length} active across {grouped.length} departments</p>
+            </div>
           </div>
           {isAdmin && (
             <Link href="/my-tool/priorities">
-              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" data-testid="button-manage-priorities">
-                Manage <ArrowRight className="h-3 w-3" />
+              <Button variant="outline" size="sm" className="h-8 text-xs" data-testid="button-manage-priorities">
+                Manage
+                <ArrowRight className="h-3.5 w-3.5 ml-1" />
               </Button>
             </Link>
           )}
         </div>
 
-        {active.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-4 px-4">No active priorities.</p>
+        {activePriorities.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-6 px-4">
+            No active company priorities.
+          </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-[11px] text-muted-foreground border-y bg-muted/20">
-                  <th className="text-left px-3 py-1.5 w-28">Dept</th>
-                  <th className="text-left px-3 py-1.5">Priority</th>
-                  <th className="text-left px-3 py-1.5 w-24">Status</th>
-                  <th className="text-left px-3 py-1.5 w-28 hidden md:table-cell">Assigned</th>
-                  <th className="text-left px-3 py-1.5 hidden lg:table-cell">Next Action</th>
+                <tr className="text-[11px] text-muted-foreground border-y bg-muted/30">
+                  <th className="text-center px-2 py-1.5 w-8">#</th>
+                  <th className="text-left px-2 py-1.5 w-28">Department</th>
+                  <th className="text-left px-2 py-1.5">Priority</th>
+                  <th className="text-left px-2 py-1.5 w-24">Status</th>
+                  <th className="text-left px-2 py-1.5 w-28">Assigned to</th>
+                  <th className="text-left px-2 py-1.5 hidden lg:table-cell">Next Action</th>
+                  <th className="text-left px-2 py-1.5 w-20 hidden md:table-cell">Due Date</th>
                 </tr>
               </thead>
               <tbody>
-                {active.sort((a, b) => (a.priorityRank ?? 999) - (b.priorityRank ?? 999)).map((p) => {
-                  const stat = statusLabels[p.status] || statusLabels.active;
-                  const dept = p.department || "—";
-                  const dc = deptColors[dept] || "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300";
-                  return (
-                    <tr key={p.id} className="border-b last:border-0 hover:bg-muted/5" data-testid={`priority-row-${p.id}`}>
-                      <td className="px-3 py-2">
-                        <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 ${dc}`}>
-                          {dept.length > 14 ? dept.slice(0, 12) + "…" : dept}
-                        </Badge>
-                      </td>
-                      <td className="px-3 py-2">
-                        <span className="text-sm font-medium" data-testid={`text-priority-title-${p.id}`}>{p.title}</span>
-                      </td>
-                      <td className="px-3 py-2">
-                        <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 ${stat.color}`}>{stat.label}</Badge>
-                      </td>
-                      <td className="px-3 py-2 text-xs text-muted-foreground hidden md:table-cell">{p.assignedTo || "—"}</td>
-                      <td className="px-3 py-2 text-xs text-muted-foreground truncate max-w-[200px] hidden lg:table-cell">{p.nextAction || "—"}</td>
-                    </tr>
-                  );
-                })}
+                {grouped.map(({ department, items }) => (
+                  items.map((p, idx) => {
+                    const stat = statusLabels[p.status] || statusLabels.active;
+                    const deptColor = homeDeptColors[department] || "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300";
+                    return (
+                      <tr key={p.id} className="border-b hover:bg-muted/10 transition-colors" data-testid={`priority-row-${p.id}`}>
+                        <td className="text-center px-2 py-2 text-xs text-muted-foreground">{p.priorityRank ?? (idx + 1)}</td>
+                        <td className="px-2 py-2">
+                          <Badge variant="secondary" className={`text-[10px] px-1.5 py-0.5 ${deptColor} truncate`}>
+                            {department.length > 12 ? department.slice(0, 10) + "..." : department}
+                          </Badge>
+                        </td>
+                        <td className="px-2 py-2">
+                          <span className="font-medium text-sm" data-testid={`text-priority-title-${p.id}`}>{p.title}</span>
+                          {p.linkedProjectName && (
+                            <span className="ml-1.5 text-[10px] text-primary">
+                              {p.linkedProjectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-2 py-2">
+                          <Badge variant="secondary" className={`text-[10px] px-1.5 py-0.5 ${stat.color}`}>
+                            {stat.label}
+                          </Badge>
+                        </td>
+                        <td className="px-2 py-2 text-xs text-muted-foreground truncate">{p.assignedTo || ""}</td>
+                        <td className="px-2 py-2 text-xs text-muted-foreground truncate hidden lg:table-cell max-w-[200px]">{p.nextAction || ""}</td>
+                        <td className="px-2 py-2 text-xs text-muted-foreground hidden md:table-cell">{p.dueDate || ""}</td>
+                      </tr>
+                    );
+                  })
+                ))}
               </tbody>
             </table>
           </div>
@@ -152,86 +324,130 @@ function CompanyPrioritiesCard({ isAdmin }: { isAdmin: boolean }) {
   );
 }
 
-function QuickNav({ links }: { links: QuickLink[] }) {
-  return (
-    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-      {links.map(link => (
-        <Link key={link.path} href={link.path} data-testid={`tile-${link.label.toLowerCase().replace(/\s+/g, '-')}`}>
-          <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg border bg-card hover:bg-accent/50 transition-colors cursor-pointer group">
-            <link.icon className="h-4 w-4 text-muted-foreground group-hover:text-foreground shrink-0" />
-            <div className="min-w-0">
-              <p className="text-sm font-medium truncate">{link.label}</p>
-              <p className="text-[11px] text-muted-foreground truncate">{link.description}</p>
-            </div>
-          </div>
-        </Link>
-      ))}
-    </div>
-  );
-}
-
 export default function Home() {
   const { user, isAdmin, isQm } = useAuth();
   const isEpm = user?.role === "eng_program_manager";
 
-  const adminLinks: QuickLink[] = [
-    { label: "Dashboard", description: "Overview & alerts", icon: LayoutDashboard, path: "/dashboard" },
-    { label: "Projects", description: "All project summaries", icon: FileSpreadsheet, path: "/projects" },
-    { label: "Eng Dashboard", description: "Engineering workload", icon: Wrench, path: "/engineering" },
-    { label: "Task Board", description: "Engineering tasks", icon: ListTodo, path: "/engineering/tasks" },
-    { label: "Cashflow", description: "Inflow/outflow tracking", icon: Wallet, path: "/cashflow" },
-    { label: "COS Tracker", description: "Cost of sales", icon: TrendingUp, path: "/cos" },
-    { label: "Planning", description: "Capacity & scheduling", icon: Kanban, path: "/planning" },
-    { label: "Quality", description: "QM dashboard", icon: ShieldCheck, path: "/quality" },
-    { label: "My Tool", description: "Personal workspace", icon: Briefcase, path: "/my-tool" },
-    { label: "Reports", description: "Admin reports", icon: Settings, path: "/admin/reports" },
-  ];
-
-  const epmLinks: QuickLink[] = [
-    { label: "Projects", description: "All project summaries", icon: FileSpreadsheet, path: "/projects" },
-    { label: "Eng Dashboard", description: "Engineering workload", icon: Wrench, path: "/engineering" },
-    { label: "Task Board", description: "Engineering tasks", icon: ListTodo, path: "/engineering/tasks" },
-    { label: "Deliverables", description: "Versions & approvals", icon: Package, path: "/engineering/deliverables" },
-    { label: "Quality", description: "QM dashboard", icon: ShieldCheck, path: "/quality" },
-  ];
-
-  const qmLinks: QuickLink[] = [
-    { label: "Quality Dashboard", description: "Warnings & completion", icon: ShieldCheck, path: "/quality" },
-    { label: "Projects", description: "View project checklists", icon: FileSpreadsheet, path: "/projects" },
-  ];
-
-  const viewerLinks: QuickLink[] = [
-    { label: "Dashboard", description: "Overview & alerts", icon: LayoutDashboard, path: "/dashboard" },
-    { label: "Projects", description: "All project summaries", icon: FileSpreadsheet, path: "/projects" },
-    { label: "Cashflow", description: "Inflow/outflow tracking", icon: Wallet, path: "/cashflow" },
-    { label: "COS Tracker", description: "Cost of sales", icon: TrendingUp, path: "/cos" },
-  ];
-
-  let links = adminLinks;
-  let greeting = "Emergent Energy Dashboard";
   if (isQm) {
-    links = qmLinks;
-    greeting = "Quality Management";
-  } else if (isEpm) {
-    links = epmLinks;
-    greeting = "Engineering Program Management";
-  } else if (!isAdmin) {
-    links = viewerLinks;
+    return (
+      <div className="space-y-8" data-testid="home-page">
+        <div>
+          <div className="flex items-center gap-3 mb-1">
+            <div className="p-2.5 rounded-lg bg-emerald-100 dark:bg-emerald-950/40">
+              <ClipboardCheck className="h-6 w-6 text-emerald-600" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold">Quality Management</h1>
+              <p className="text-muted-foreground mt-0.5">Checklists, risk assessments, warnings, and post-mortem scoring.</p>
+            </div>
+          </div>
+        </div>
+
+        <CompanyPrioritiesSection isAdmin={false} />
+
+        <div>
+          <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Quality Tools</h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {qmLinks.map((link) => (
+              <NavTile key={link.path} link={link} />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isEpm) {
+    return (
+      <div className="space-y-8" data-testid="home-page">
+        <div>
+          <div className="flex items-center gap-3 mb-1">
+            <div className="p-2.5 rounded-lg bg-orange-100 dark:bg-orange-950/40">
+              <Wrench className="h-6 w-6 text-orange-600" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold">Engineering Program Management</h1>
+              <p className="text-muted-foreground mt-0.5">Tasks, deliverables, team management, and project oversight.</p>
+            </div>
+          </div>
+        </div>
+
+        <CompanyPrioritiesSection isAdmin={false} />
+
+        <div>
+          <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Engineering Tools</h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {engLinks.map((link) => (
+              <NavTile key={link.path} link={link} />
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Quality & Projects</h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {qmLinks.map((link) => (
+              <NavTile key={link.path} link={link} />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="space-y-5" data-testid="home-page">
+    <div className="space-y-8" data-testid="home-page">
       <div>
-        <h1 className="text-2xl font-bold">{greeting}</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Welcome back, {user?.name?.split(" ")[0] || "User"}</p>
+        <h1 className="text-3xl font-bold">Emergent Energy Dashboard</h1>
+        <p className="text-muted-foreground mt-1">Navigate to the section you need below.</p>
       </div>
 
-      <CompanyPrioritiesCard isAdmin={isAdmin} />
+      <CompanyPrioritiesSection isAdmin={isAdmin} />
 
       <div>
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Quick Access</h2>
-        <QuickNav links={links} />
+        <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Engineering</h2>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {engLinks.map((link) => (
+            <NavTile key={link.path} link={link} />
+          ))}
+        </div>
       </div>
+
+      <div>
+        <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Current</h2>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {currentLinks.map((link) => (
+            <NavTile key={link.path} link={link} />
+          ))}
+        </div>
+      </div>
+
+      {isAdmin && (
+        <div>
+          <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Work in Progress</h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {wipLinks.map((link) => (
+              <NavTile key={link.path} link={link} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {isAdmin && (
+        <div>
+          <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Admin</h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <NavTile link={{
+              label: "Admin",
+              description: "Upload trackers, manage users, and system settings",
+              icon: Settings,
+              path: "/admin",
+              color: "text-slate-600",
+              bg: "bg-slate-50 dark:bg-slate-950/30 border-slate-200 dark:border-slate-800 hover:border-slate-400",
+            }} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
