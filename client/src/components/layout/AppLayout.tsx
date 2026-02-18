@@ -26,6 +26,7 @@ import {
   Wrench,
   Users,
   FileBarChart,
+  History,
 } from "lucide-react";
 import { useProgramData } from "@/hooks/use-program-data";
 import { useAuth } from "@/hooks/use-auth";
@@ -92,6 +93,7 @@ const navGroups: NavGroup[] = [
     heading: "ADMIN",
     items: [
       { label: "Reports", icon: FileBarChart, path: "/admin/reports" },
+      { label: "Audit Log", icon: History, path: "/admin/audit-log" },
       { label: "Teams & Roles", icon: Users, path: "/admin/teams" },
       { label: "SP Settings", icon: Cloud, path: "/admin/sp-settings" },
       { label: "File Refresh", icon: FileSpreadsheet, path: "/admin/sp-file-refresh" },

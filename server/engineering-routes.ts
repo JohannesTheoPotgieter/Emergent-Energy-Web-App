@@ -1178,6 +1178,154 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
+  // ========== ADMIN AUDIT LOG (global activity across all tasks) ==========
+
+  function requireAdmin(req: Request, res: Response, next: NextFunction) {
+    const role = getUserRole(req);
+    if (role === "admin") return next();
+    res.status(403).json({ error: "forbidden", message: "Admin access required" });
+  }
+
+  app.get("/api/eng/audit-log", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { projectName, actorId, actionType, dateFrom, dateTo, limit: qLimit, offset: qOffset } = req.query;
+      const pageLimit = Math.min(parseInt(qLimit as string) || 100, 500);
+      const pageOffset = parseInt(qOffset as string) || 0;
+
+      const conditions: any[] = [];
+      if (projectName) {
+        conditions.push(eq(operationalTasks.projectName, projectName as string));
+      }
+      if (actorId) {
+        conditions.push(eq(taskActivityLog.actorId, parseInt(actorId as string)));
+      }
+      if (actionType) {
+        conditions.push(eq(taskActivityLog.actionType, actionType as string));
+      }
+      if (dateFrom) {
+        conditions.push(gt(taskActivityLog.createdAt, new Date(dateFrom as string)));
+      }
+      if (dateTo) {
+        conditions.push(lt(taskActivityLog.createdAt, new Date(dateTo as string)));
+      }
+
+      const baseQuery = db.select({
+        id: taskActivityLog.id,
+        taskId: taskActivityLog.taskId,
+        actionType: taskActivityLog.actionType,
+        fieldName: taskActivityLog.fieldName,
+        oldValue: taskActivityLog.oldValue,
+        newValue: taskActivityLog.newValue,
+        createdAt: taskActivityLog.createdAt,
+        actorName: users.name,
+        actorEmail: users.email,
+        taskTitle: operationalTasks.title,
+        projectName: operationalTasks.projectName,
+      })
+      .from(taskActivityLog)
+      .leftJoin(users, eq(taskActivityLog.actorId, users.id))
+      .leftJoin(operationalTasks, eq(taskActivityLog.taskId, operationalTasks.id));
+
+      const countResult = await db.select({ count: sql<number>`count(*)` })
+        .from(taskActivityLog)
+        .leftJoin(operationalTasks, eq(taskActivityLog.taskId, operationalTasks.id))
+        .where(conditions.length > 0 ? and(...conditions) : undefined);
+
+      const rows = await baseQuery
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(taskActivityLog.createdAt))
+        .limit(pageLimit)
+        .offset(pageOffset);
+
+      const allActions = await db.selectDistinct({ actionType: taskActivityLog.actionType })
+        .from(taskActivityLog);
+      const allProjects = await db.selectDistinct({ projectName: operationalTasks.projectName })
+        .from(taskActivityLog)
+        .leftJoin(operationalTasks, eq(taskActivityLog.taskId, operationalTasks.id))
+        .where(sql`${operationalTasks.projectName} IS NOT NULL`);
+      const allActors = await db.select({ id: users.id, name: users.name })
+        .from(users)
+        .orderBy(asc(users.name));
+
+      res.json({
+        entries: rows,
+        total: Number(countResult[0]?.count || 0),
+        limit: pageLimit,
+        offset: pageOffset,
+        filters: {
+          actionTypes: allActions.map(a => a.actionType),
+          projectNames: allProjects.map(p => p.projectName).filter(Boolean),
+          actors: allActors,
+        },
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/eng/audit-log/stats", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const totalResult = await db.select({ count: sql<number>`count(*)` }).from(taskActivityLog);
+      const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+      const todayResult = await db.select({ count: sql<number>`count(*)` })
+        .from(taskActivityLog)
+        .where(gt(taskActivityLog.createdAt, todayStart));
+
+      const weekStart = new Date(); weekStart.setDate(weekStart.getDate() - 7);
+      const weekResult = await db.select({ count: sql<number>`count(*)` })
+        .from(taskActivityLog)
+        .where(gt(taskActivityLog.createdAt, weekStart));
+
+      const byAction = await db.select({
+        actionType: taskActivityLog.actionType,
+        count: sql<number>`count(*)`,
+      }).from(taskActivityLog).groupBy(taskActivityLog.actionType);
+
+      const topActors = await db.select({
+        actorId: taskActivityLog.actorId,
+        actorName: users.name,
+        count: sql<number>`count(*)`,
+      })
+      .from(taskActivityLog)
+      .leftJoin(users, eq(taskActivityLog.actorId, users.id))
+      .groupBy(taskActivityLog.actorId, users.name)
+      .orderBy(desc(sql`count(*)`))
+      .limit(10);
+
+      res.json({
+        total: Number(totalResult[0]?.count || 0),
+        today: Number(todayResult[0]?.count || 0),
+        thisWeek: Number(weekResult[0]?.count || 0),
+        byAction,
+        topActors,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/eng/audit-log/phase-history", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const history = await db.select({
+        id: projectPhaseHistory.id,
+        projectId: projectPhaseHistory.projectId,
+        fromPhase: projectPhaseHistory.fromPhase,
+        toPhase: projectPhaseHistory.toPhase,
+        reason: projectPhaseHistory.reason,
+        changedAt: projectPhaseHistory.changedAt,
+        changedByName: users.name,
+        projectName: projectInfo.projectName,
+      })
+      .from(projectPhaseHistory)
+      .leftJoin(users, eq(projectPhaseHistory.changedByUserId, users.id))
+      .leftJoin(projectInfo, eq(projectPhaseHistory.projectId, projectInfo.id))
+      .orderBy(desc(projectPhaseHistory.changedAt));
+      res.json(history);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // ========== PROJECT PHASE MANAGEMENT ==========
 
   app.patch("/api/projects/:projectId/phase", jwtAuth, requireAuth, async (req, res) => {
