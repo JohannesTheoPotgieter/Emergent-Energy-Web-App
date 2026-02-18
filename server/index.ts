@@ -245,6 +245,10 @@ async function seedUsers() {
 
   const { registerTemplateRoutes } = await import("./template-routes");
   registerTemplateRoutes(app);
+
+  const { registerRoleAuthRoutes, seedRoleCredentials } = await import("./role-auth-routes");
+  registerRoleAuthRoutes(app);
+  await seedRoleCredentials().catch(err => console.error('[Seed] Role credentials error:', err));
   
   await registerRoutes(httpServer, app);
 

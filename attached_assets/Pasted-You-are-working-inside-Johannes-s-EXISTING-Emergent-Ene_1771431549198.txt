@@ -1,0 +1,375 @@
+You are working inside Johannes’s EXISTING Emergent Energy (EE) web application repo on Replit.
+DO NOT rebuild from scratch. Additive changes only.
+
+NON-NEGOTIABLE RULES
+1) Keep current “My Tools” section 100% unchanged. No UI changes. No refactors. No logic changes.
+2) Keep all existing financial rules, COS/payment logic, cashflow logic, and dashboard calculations exactly as-is.
+   - You may wrap with audit logging and permission checks, but you may NOT change outputs.
+3) No placeholder buttons. No dead UI. If a feature isn’t implemented, hide it or show a read-only placeholder page with no actions.
+4) Everything must be audited: any create/update/delete/import/settings change must log actor_role, what, from→to, when, and source.
+5) Admin can do everything. Non-admin permissions must be enforced server-side (not only UI).
+6) Front-end-first mentality:
+   - Normal admin operations must be possible in-app (Settings/UIs).
+   - If something is only fixable via DB edits, the UI/UX is wrong and must be improved.
+7) UX must be sleek, minimalistic, modern, Emergent Energy theme:
+   - white base, EE green accents, subtle gray borders, clean typography, consistent spacing
+   - only BRIGHT RED for warnings
+8) No assumptions. First perform Discovery (Step 0). If uncertain, document questions and STOP at the last safe step.
+
+NOTE: Johannes previously mentioned a “second requirement” but did not provide it. Create /docs/PENDING_REQUIREMENTS.md and record “Requirement #2 pending – awaiting details from Johannes.” Do not create UI for it.
+
+========================================================
+STEP 0 — DISCOVERY REPORT (MANDATORY BEFORE CODING)
+Create /docs/DISCOVERY_REPORT.md and include:
+- Tech stack (frontend/backend)
+- DB/ORM + migrations
+- Current role-tile login implementation (if any) and settings storage
+- Existing modules that must remain:
+  - My Tools (must remain untouched)
+  - Program view / Execution dashboard (Excel-driven)
+  - COS tracker
+  - Cashflow tracker
+  - Company priorities
+  - Quality approval flows (if present)
+  - Any existing Excel import code
+- Where existing finance logic lives (identify files/functions; do not modify)
+- Existing auditing patterns (if any)
+- “Questions for Johannes” ONLY if needed to proceed safely
+
+STOP CONDITIONS
+- If no persistent storage exists for audit logs / settings, STOP and list what’s required.
+
+========================================================
+PART A — ROLES + ROLE-TILE LOGIN (KEEP CURRENT UX)
+Login UX:
+- Role tiles on login screen
+- Click role → password popup → login session
+- Role-based auditing is acceptable (no per-person yet)
+
+Roles (must exist)
+Admin tiles:
+- COO_ADMIN (tile: “COO Admin”)
+- CEO_ADMIN (tile: “CEO Admin”)
+Business roles:
+- CCO
+- CFO
+- PROGRAM_MANAGER
+- PROGRAM_FINANCE_MANAGER
+- CONSTRUCTION_MANAGER
+- PROCUREMENT_MANAGER
+- QUALITY_MANAGER
+- ENGINEERING_MANAGER
+Placeholder role (exists but placeholder module only):
+- KEY_ACCOUNTS_MANAGER
+
+Passwords
+- Store password hashes per role (salted).
+- COO_ADMIN can set/reset role passwords in Settings.
+- CEO_ADMIN cannot change passwords by default (configurable toggle in Settings).
+- Rate limit 5 failed attempts per role => 15 min lock.
+- Log attempts in audit.
+
+========================================================
+PART B — NAVIGATION + HOME PAGES (SLEEK, MINIMAL)
+Left nav (minimal, role-aware). Do not change My Tools screens; just link to them.
+- Home
+- Projects
+- Engineering Board (if role has access)
+- Quality (if role has access)
+- Company Lifecycle Board (CCO/CFO/Admin)
+- Program Reporting (existing)
+- COS (existing)
+- Cashflow (existing)
+- Company Priorities (existing)
+- Audit Log (Admin + CFO + CCO)
+- Settings (COO_ADMIN only)
+- My Tools (existing, unchanged)
+
+Home page requirement:
+- Every role sees “Company Priorities” widget at top (existing per-department priorities).
+- Below: role-specific widgets.
+
+Placeholder modules:
+- KEY_ACCOUNTS_MANAGER sees: Company Priorities + “module not enabled yet” (no actions).
+
+========================================================
+PART C — PROJECT SPINE + COMPANY LIFECYCLE PHASES (SOURCE OF TRUTH)
+Company lifecycle phase enum:
+- FIRST_ASSESSMENT
+- COST_PROPOSAL_DESIGN
+- PD_PM_HANDOVER
+- EXECUTION
+- AFTER_SALES
+
+Projects
+- Admin can manually create a project (COO_ADMIN and CEO_ADMIN).
+- project fields:
+  - id
+  - project_name (string)
+  - project_key (string, nullable initially)  // becomes Excel filename key when matched via import
+  - company_lifecycle_phase (enum, default FIRST_ASSESSMENT)
+  - phase_start_date
+  - phase_due_date (optional)
+  - created_at/updated_at
+
+Phase ownership mapping (for display)
+Store mapping in Settings (editable in UI):
+Defaults (as provided):
+- FIRST_ASSESSMENT owners: CCO
+- COST_PROPOSAL_DESIGN owners: ENGINEERING_MANAGER + CCO
+- PD_PM_HANDOVER owners: COO_ADMIN + PROGRAM_MANAGER
+- EXECUTION owners: PROGRAM_MANAGER + CONSTRUCTION_MANAGER
+- AFTER_SALES owners: COO_ADMIN + KEY_ACCOUNTS_MANAGER (placeholder)
+
+Visibility
+- Company Lifecycle Board visible to: CCO, CFO, COO_ADMIN, CEO_ADMIN
+- Engineering and Quality do NOT see Company Lifecycle Board.
+
+========================================================
+PART D — CCO/CFO COMPANY LIFECYCLE BOARD (PROGRESS %)
+Board shows one row/card per project with:
+- Project name
+- Current lifecycle phase
+- Phase start + due date
+- Owner(s) (from Settings mapping)
+- Open tasks count / Closed tasks count for that phase bucket
+- Progress % = closed / total, where CLOSED is status == COMPLETE only
+- BRIGHT RED warning if total == 0 (“No engineering tasks tagged to this phase yet”)
+
+Click project → Project Detail (read-only for CFO).
+
+NOTE: For now, lifecycle progress is computed ONLY from ENGINEERING tasks tagged to lifecycle phases (engineering templates only).
+
+========================================================
+PART E — ENGINEERING BOARD (OPTION B: ENGINEERING VIEW + LIFECYCLE TAG)
+Johannes requirement:
+- Engineering board is engineering-native but each task has a lifecycle_phase_tag (Option B).
+- Only ADMIN can add/delete tasks.
+- Delete is SOFT DELETE.
+- Multiple document references per task.
+- Everyone can attach docs.
+- Minimal approval workflow must exist on engineering tasks:
+  - QC approval by QUALITY_MANAGER
+  - Ops approval by COO_ADMIN
+  - Task cannot become COMPLETE if required approvals not done
+- Closed for reporting remains: status == COMPLETE only
+- Status update: ONLY CCO for now.
+
+Engineering task model (create if absent; if exists, extend without breaking other modules):
+engineering_task:
+- id
+- project_id
+- title
+- description
+- lifecycle_phase_tag (enum of company lifecycle phases)
+- status (string/enum; reuse existing if present)
+- requires_qc_approval (bool)
+- requires_ops_approval (bool)
+- qc_approved_at (nullable)
+- qc_approved_by_role (nullable)
+- ops_approved_at (nullable)
+- ops_approved_by_role (nullable)
+- soft_deleted_at (nullable)
+- created_at/updated_at
+
+Permissions
+- Create task: ADMIN only
+- Soft-delete task: ADMIN only
+- Status update: ONLY CCO (Johannes rule)
+- QC Approve: QUALITY_MANAGER (and ADMIN)
+- Ops Approve: COO_ADMIN (and ADMIN; CEO_ADMIN optional toggle in Settings)
+
+Approval gating rules (server-side enforced):
+- If requires_qc_approval and qc_approved_at is null → cannot set status to COMPLETE
+- If requires_ops_approval and ops_approved_at is null → cannot set status to COMPLETE
+
+Engineering board UI
+- Board/list of engineering tasks
+- Filters:
+  - by project
+  - group/filter by lifecycle_phase_tag
+  - show approval badges (QC pending / Ops pending / approved)
+- Task detail panel includes:
+  - status control (visible only to allowed role)
+  - QC approve button (only QUALITY_MANAGER/Admin)
+  - Ops approve button (only COO_ADMIN/Admin)
+  - Document references list + attach action (see Part F)
+
+Engineering templates (PLACEHOLDER ONLY FOR NOW)
+- Build template framework + editor UI, but seed with empty templates.
+- One template per lifecycle phase (empty list).
+- Admin can add template items via UI later.
+- Apply template to project:
+  - creates tasks ONCE (idempotent)
+  - does not re-create duplicates
+- Provide an “Apply Templates” action per project (ADMIN only), with a preview count.
+
+========================================================
+PART F — DOCUMENTS (NO SHAREPOINT INTEGRATION) — SELECT FILE, STORE PATH REFERENCE
+Johannes requirement (explicit):
+- No integration for now.
+- User must select a file via Windows Explorer and the system stores that file path reference.
+- Multiple docs per task.
+- Everyone can attach docs.
+- Fast and simple UX.
+
+IMPORTANT TECHNICAL CONSTRAINT (must be documented in Discovery and UI):
+- Browsers do NOT expose the true Windows absolute file path for security reasons.
+- Many browsers return “C:\fakepath\filename.ext”.
+- Therefore implement “Local File Reference” storage as:
+  - browser_provided_path_string (often fakepath)
+  - file metadata (name, size, last_modified)
+  - and optionally a computed_full_path if a “Local Sync Root” is configured in Settings.
+
+DO NOT build Graph or SharePoint browsing. Purely local selection + stored reference.
+
+Settings (COO_ADMIN only):
+- Add “Local Sync Root” text fields (optional):
+  - global_default_sync_root (e.g., "C:\Users\...\OneDrive - Emergent Energy\")
+  - per-role override (optional)
+This allows computing a “full path reference” = sync_root + file_name (or relative path if available).
+
+Task attachments table:
+engineering_task_attachment:
+- id
+- engineering_task_id
+- display_name (string; default file name)
+- browser_path_string (string; capture from input if available; may be fakepath)
+- local_file_name (string)
+- local_file_size (number)
+- local_last_modified (datetime)
+- computed_full_path_reference (string, nullable; derived from sync root + name)
+- notes (nullable)
+- uploaded_by_role
+- uploaded_at
+- soft_deleted_at (nullable)
+
+Attach UX (EVERYONE can attach):
+On Engineering Task Detail:
+- “Attach Document” button
+- Step 1: file picker (Windows Explorer)
+- Step 2: show captured metadata and the stored “path string” that the browser provides
+- Step 3: save attachment record
+
+Rules:
+- Save must succeed without requiring a pasted link.
+- If browser_path_string is empty or clearly fakepath, show a BRIGHT RED warning banner:
+  “Browser cannot expose real file path. Stored reference may be incomplete.”
+  but do not block save.
+- If sync root is configured, compute and display computed_full_path_reference and store it.
+
+Soft delete:
+- Default: ADMIN only soft-deletes attachments (safe).
+- All attachment adds/deletes are audited.
+
+========================================================
+PART G — EXCEL IMPORT (KEEP AS-IS) + AUDIT + CHANGE LEDGER + PROJECT KEY MATCHING
+Johannes requirement:
+- Existing Excel-driven modules must remain exactly as-is.
+- Add import runs + diffs + audit.
+- Projects can be created manually, then later matched to Excel filename and override name.
+
+Import matching rule:
+- When importing an Excel file:
+  - derive import_project_key = filename without extension
+  - if a Project exists with project_key == import_project_key → update it
+  - else show an ADMIN-only “Match Import to Project” dialog:
+     - option A: create new project with name = filename, project_key set
+     - option B: select an existing project and assign its project_key = filename (and override project_name to filename)
+- After matching, proceed with existing import logic (do not change calculations).
+
+Import logging:
+import_run:
+- id, module, project_key, filename, source_ref (if any), imported_at, imported_by_role, status, error
+
+Diffing:
+- field-level diff vs last successful import for same module+project_key
+- store in import_diff_event: import_run_id, entity_key, field_name, old_value, new_value
+- do not change any finance outputs; only record diffs
+
+Audit:
+- every import_run logged as audit_event with correlation_id
+
+========================================================
+PART H — CFO VIEW
+CFO sees:
+- Company Lifecycle Board
+- Cashflow (existing)
+- COS (existing)
+- Revenue/Sales tracker (existing if present; else read-only placeholder page with no actions)
+- Company Priorities on home
+CFO is read-only.
+
+========================================================
+PART I — CCO VIEW
+CCO sees:
+- Company Lifecycle Board
+- Project Detail + Engineering tasks
+- Can update engineering task statuses (but cannot create/delete tasks)
+- Company Priorities on home
+
+========================================================
+PART J — QUALITY MANAGER VIEW
+Quality Manager sees:
+- Engineering board + QC Approve actions
+- Quality module as-is (do not break)
+- Company Priorities on home
+Quality Manager does NOT see Company Lifecycle Board.
+
+========================================================
+PART K — GLOBAL AUDIT LOG (SEARCHABLE)
+Implement/extend global audit log:
+audit_event:
+- id, actor_role, source (UI|IMPORT|SETTINGS|DOCS), entity_type, entity_id, action, changes_json, created_at, correlation_id
+
+Audit must include:
+- task status changes
+- approvals
+- task create/delete (admin)
+- attachment add/delete
+- settings changes
+- imports + diffs
+
+Audit viewer UI:
+- filters: project, module/source, actor_role, date range
+- click to view diffs
+
+========================================================
+UI DESIGN REQUIREMENTS (MANDATORY)
+- EE theme: white + EE green accent, minimal, modern.
+- BRIGHT RED only for warnings.
+- Compact cards > massive tables where possible.
+- Predictable navigation, fast scanning.
+
+========================================================
+OUT OF SCOPE (explicit)
+- SharePoint/Graph integration
+- Pipedrive integration (later)
+- ClickUp migration (later)
+- Full PM migration (later)
+Only document future hooks in /docs/ROADMAP.md
+
+========================================================
+ACCEPTANCE CHECKS (MUST PASS)
+1) My Tools unchanged and still works.
+2) Two admin tiles exist with separate passwords.
+3) COO Admin can manage role passwords and Local Sync Root settings.
+4) CCO/CFO lifecycle board shows correct progress % (COMPLETE/total in phase bucket).
+5) Engineering tasks have lifecycle phase tags and approval gating blocks COMPLETE until approvals.
+6) Quality Manager can QC approve; COO Admin can Ops approve.
+7) Documents:
+   - Any user can attach a document by selecting a local file; system stores metadata + path string reference.
+   - Multiple attachments per task.
+   - Attach actions and deletes are audited.
+8) Excel imports still work as-is and now produce import_run + diffs + audits.
+9) No dead buttons. Any visible action works.
+10) Finance outputs unchanged vs baseline before changes.
+
+IMPLEMENTATION ORDER
+1) Discovery report
+2) Role login + password settings (two admin tiles)
+3) Project model + lifecycle board (CCO/CFO)
+4) Engineering tasks + lifecycle tags + approvals
+5) Documents/attachments storage (file picker + metadata + path reference) + audit
+6) Import audit/diff wrapping (without touching finance logic)
+7) Audit viewer + UI polish + regression testing

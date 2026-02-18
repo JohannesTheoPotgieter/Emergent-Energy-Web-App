@@ -1877,3 +1877,202 @@ export const TASK_BUCKET_LABELS: Record<TaskBucket, string> = {
   company_ops: "Company Ops",
   personal: "Personal",
 };
+
+// ===================== COMPANY ROLES (Part A) =====================
+
+export const COMPANY_ROLES = [
+  'COO_ADMIN',
+  'CEO_ADMIN',
+  'CCO',
+  'CFO',
+  'PROGRAM_MANAGER',
+  'PROGRAM_FINANCE_MANAGER',
+  'CONSTRUCTION_MANAGER',
+  'PROCUREMENT_MANAGER',
+  'QUALITY_MANAGER',
+  'ENGINEERING_MANAGER',
+  'KEY_ACCOUNTS_MANAGER',
+] as const;
+export type CompanyRole = typeof COMPANY_ROLES[number];
+
+export const COMPANY_ROLE_LABELS: Record<CompanyRole, string> = {
+  COO_ADMIN: "COO Admin",
+  CEO_ADMIN: "CEO Admin",
+  CCO: "CCO",
+  CFO: "CFO",
+  PROGRAM_MANAGER: "Program Manager",
+  PROGRAM_FINANCE_MANAGER: "Program Finance Manager",
+  CONSTRUCTION_MANAGER: "Construction Manager",
+  PROCUREMENT_MANAGER: "Procurement Manager",
+  QUALITY_MANAGER: "Quality Manager",
+  ENGINEERING_MANAGER: "Engineering Manager",
+  KEY_ACCOUNTS_MANAGER: "Key Accounts Manager",
+};
+
+export const ADMIN_ROLES: CompanyRole[] = ['COO_ADMIN', 'CEO_ADMIN'];
+
+export const roleCredentials = pgTable("role_credentials", {
+  id: serial("id").primaryKey(),
+  role: text("role").notNull().unique(),
+  passwordHash: text("password_hash").notNull(),
+  failedAttempts: integer("failed_attempts").notNull().default(0),
+  lockedUntil: timestamp("locked_until"),
+  updatedBy: text("updated_by"),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const insertRoleCredentialSchema = createInsertSchema(roleCredentials).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertRoleCredential = z.infer<typeof insertRoleCredentialSchema>;
+export type RoleCredential = typeof roleCredentials.$inferSelect;
+
+// ===================== APP SETTINGS (Part A) =====================
+
+export const appSettings = pgTable("app_settings", {
+  id: serial("id").primaryKey(),
+  key: text("key").notNull().unique(),
+  value: text("value"),
+  updatedBy: text("updated_by"),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export type AppSetting = typeof appSettings.$inferSelect;
+
+// ===================== COMPANY LIFECYCLE PHASES (Part C) =====================
+
+export const COMPANY_LIFECYCLE_PHASES = [
+  'FIRST_ASSESSMENT',
+  'COST_PROPOSAL_DESIGN',
+  'PD_PM_HANDOVER',
+  'EXECUTION',
+  'AFTER_SALES',
+] as const;
+export type CompanyLifecyclePhase = typeof COMPANY_LIFECYCLE_PHASES[number];
+
+export const COMPANY_LIFECYCLE_PHASE_LABELS: Record<CompanyLifecyclePhase, string> = {
+  FIRST_ASSESSMENT: "First Assessment",
+  COST_PROPOSAL_DESIGN: "Cost Proposal & Design",
+  PD_PM_HANDOVER: "PD → PM Handover",
+  EXECUTION: "Execution",
+  AFTER_SALES: "After Sales",
+};
+
+export const companyLifecyclePhaseEnum = pgEnum('company_lifecycle_phase', [
+  'FIRST_ASSESSMENT',
+  'COST_PROPOSAL_DESIGN',
+  'PD_PM_HANDOVER',
+  'EXECUTION',
+  'AFTER_SALES',
+]);
+
+export const companyProjects = pgTable("company_projects", {
+  id: serial("id").primaryKey(),
+  projectName: text("project_name").notNull().unique(),
+  projectKey: text("project_key"),
+  lifecyclePhase: companyLifecyclePhaseEnum("lifecycle_phase").notNull().default('FIRST_ASSESSMENT'),
+  phaseStartDate: text("phase_start_date"),
+  phaseDueDate: text("phase_due_date"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertCompanyProjectSchema = createInsertSchema(companyProjects).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertCompanyProject = z.infer<typeof insertCompanyProjectSchema>;
+export type CompanyProject = typeof companyProjects.$inferSelect;
+
+// ===================== ENGINEERING TASKS (Part E) =====================
+
+export const engTaskStatusEnum = pgEnum('eng_task_status', ['NOT_STARTED', 'IN_PROGRESS', 'COMPLETE', 'ON_HOLD']);
+
+export const engineeringTasks = pgTable("engineering_tasks", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").references(() => companyProjects.id),
+  projectName: text("project_name"),
+  title: text("title").notNull(),
+  description: text("description"),
+  lifecyclePhaseTag: companyLifecyclePhaseEnum("lifecycle_phase_tag").notNull().default('EXECUTION'),
+  status: engTaskStatusEnum("status").notNull().default('NOT_STARTED'),
+  requiresQcApproval: boolean("requires_qc_approval").notNull().default(false),
+  requiresOpsApproval: boolean("requires_ops_approval").notNull().default(false),
+  qcApprovedAt: timestamp("qc_approved_at"),
+  qcApprovedByRole: text("qc_approved_by_role"),
+  opsApprovedAt: timestamp("ops_approved_at"),
+  opsApprovedByRole: text("ops_approved_by_role"),
+  softDeletedAt: timestamp("soft_deleted_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertEngineeringTaskSchema = createInsertSchema(engineeringTasks).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertEngineeringTask = z.infer<typeof insertEngineeringTaskSchema>;
+export type EngineeringTask = typeof engineeringTasks.$inferSelect;
+
+// ===================== ENGINEERING TASK ATTACHMENTS (Part F) =====================
+
+export const engineeringTaskAttachments = pgTable("engineering_task_attachments", {
+  id: serial("id").primaryKey(),
+  engineeringTaskId: integer("engineering_task_id").notNull().references(() => engineeringTasks.id, { onDelete: 'cascade' }),
+  displayName: text("display_name").notNull(),
+  browserPathString: text("browser_path_string"),
+  localFileName: text("local_file_name").notNull(),
+  localFileSize: integer("local_file_size"),
+  localLastModified: timestamp("local_last_modified"),
+  computedFullPathReference: text("computed_full_path_reference"),
+  notes: text("notes"),
+  uploadedByRole: text("uploaded_by_role").notNull(),
+  uploadedAt: timestamp("uploaded_at").notNull().defaultNow(),
+  softDeletedAt: timestamp("soft_deleted_at"),
+});
+export const insertEngTaskAttachmentSchema = createInsertSchema(engineeringTaskAttachments).omit({ id: true, uploadedAt: true });
+export type InsertEngTaskAttachment = z.infer<typeof insertEngTaskAttachmentSchema>;
+export type EngTaskAttachment = typeof engineeringTaskAttachments.$inferSelect;
+
+// ===================== ENGINEERING TEMPLATES (Part E placeholder) =====================
+
+export const engineeringTemplates = pgTable("engineering_templates", {
+  id: serial("id").primaryKey(),
+  lifecyclePhase: companyLifecyclePhaseEnum("lifecycle_phase").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const engineeringTemplateItems = pgTable("engineering_template_items", {
+  id: serial("id").primaryKey(),
+  templateId: integer("template_id").notNull().references(() => engineeringTemplates.id, { onDelete: 'cascade' }),
+  title: text("title").notNull(),
+  description: text("description"),
+  requiresQcApproval: boolean("requires_qc_approval").notNull().default(false),
+  requiresOpsApproval: boolean("requires_ops_approval").notNull().default(false),
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
+// ===================== GLOBAL AUDIT LOG (Part K) =====================
+
+export const auditSourceEnum = pgEnum('audit_source', ['UI', 'IMPORT', 'SETTINGS', 'DOCS', 'SYSTEM']);
+
+export const auditEvents = pgTable("audit_events", {
+  id: serial("id").primaryKey(),
+  actorRole: text("actor_role").notNull(),
+  source: auditSourceEnum("source").notNull().default('UI'),
+  entityType: text("entity_type").notNull(),
+  entityId: text("entity_id"),
+  action: text("action").notNull(),
+  changesJson: jsonb("changes_json"),
+  projectName: text("project_name"),
+  correlationId: text("correlation_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const insertAuditEventSchema = createInsertSchema(auditEvents).omit({ id: true, createdAt: true });
+export type InsertAuditEvent = z.infer<typeof insertAuditEventSchema>;
+export type AuditEvent = typeof auditEvents.$inferSelect;
+
+// ===================== IMPORT DIFF EVENTS (Part G) =====================
+
+export const importDiffEvents = pgTable("import_diff_events", {
+  id: serial("id").primaryKey(),
+  importRunId: integer("import_run_id").notNull().references(() => importRuns.id),
+  entityKey: text("entity_key").notNull(),
+  fieldName: text("field_name").notNull(),
+  oldValue: text("old_value"),
+  newValue: text("new_value"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export type ImportDiffEvent = typeof importDiffEvents.$inferSelect;

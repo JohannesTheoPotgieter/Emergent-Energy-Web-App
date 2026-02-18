@@ -48,54 +48,63 @@ import { NotificationBell } from "@/components/NotificationBell";
 interface NavGroup {
   heading: string;
   items: { label: string; icon: any; path: string; className?: string }[];
+  visibleTo?: string[];
 }
 
-const navGroups: NavGroup[] = [
-  {
-    heading: "EXCO",
-    items: [
-      { label: "Portfolio Board", icon: Layers, path: "/exec-portfolio" },
-      { label: "Reports", icon: FileBarChart, path: "/admin/reports" },
-      { label: "Company Priorities", icon: Flag, path: "/my-tool/priorities" },
-      { label: "My Tool", icon: Briefcase, path: "/my-tool" },
-    ],
-  },
-  {
-    heading: "PROJECT MANAGEMENT",
-    items: [
-      { label: "Execution Dashboard", icon: LayoutDashboard, path: "/dashboard" },
-      { label: "Project Summary", icon: FileSpreadsheet, path: "/projects" },
-      { label: "Cashflow", icon: Wallet, path: "/cashflow" },
-      { label: "COS Tracker", icon: TrendingUp, path: "/cos", className: "rotate-180" },
-    ],
-  },
-  {
-    heading: "ENGINEERING",
-    items: [
-      { label: "Eng Dashboard", icon: Wrench, path: "/engineering" },
-      { label: "Task Board", icon: ListTodo, path: "/engineering/tasks" },
-      { label: "Deliverables", icon: Package, path: "/engineering/deliverables" },
-    ],
-  },
-  {
-    heading: "QUALITY",
-    items: [
-      { label: "QM Dashboard", icon: ShieldCheck, path: "/quality" },
-    ],
-  },
-  {
-    heading: "ADMIN",
-    items: [
-      { label: "Phase Templates", icon: Layers, path: "/admin/phase-templates" },
-      { label: "New Project", icon: FolderPlus, path: "/project-create" },
-      { label: "Triage Inbox", icon: Mail, path: "/admin/triage-inbox" },
-      { label: "Unclassified Tasks", icon: InboxIcon, path: "/admin/unclassified-tasks" },
-      { label: "Audit Log", icon: History, path: "/admin/audit-log" },
-      { label: "Teams & Roles", icon: Users, path: "/admin/teams" },
-      { label: "Data Import", icon: Upload, path: "/admin" },
-    ],
-  },
-];
+function getNavGroups(): NavGroup[] {
+  return [
+    {
+      heading: "EXCO",
+      visibleTo: ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "admin"],
+      items: [
+        { label: "Lifecycle Board", icon: Layers, path: "/lifecycle-board" },
+        { label: "Portfolio Board", icon: Layers, path: "/exec-portfolio" },
+        { label: "Reports", icon: FileBarChart, path: "/admin/reports" },
+        { label: "Company Priorities", icon: Flag, path: "/my-tool/priorities" },
+        { label: "My Tool", icon: Briefcase, path: "/my-tool" },
+      ],
+    },
+    {
+      heading: "PROJECT MANAGEMENT",
+      items: [
+        { label: "Execution Dashboard", icon: LayoutDashboard, path: "/dashboard" },
+        { label: "Project Summary", icon: FileSpreadsheet, path: "/projects" },
+        { label: "Cashflow", icon: Wallet, path: "/cashflow" },
+        { label: "COS Tracker", icon: TrendingUp, path: "/cos", className: "rotate-180" },
+      ],
+    },
+    {
+      heading: "ENGINEERING",
+      visibleTo: ["COO_ADMIN", "CEO_ADMIN", "CCO", "ENGINEERING_MANAGER", "CONSTRUCTION_MANAGER", "PROGRAM_MANAGER", "admin", "eng_program_manager"],
+      items: [
+        { label: "Eng Dashboard", icon: Wrench, path: "/engineering" },
+        { label: "Engineering Tasks", icon: ListTodo, path: "/eng-tasks" },
+        { label: "Deliverables", icon: Package, path: "/engineering/deliverables" },
+      ],
+    },
+    {
+      heading: "QUALITY",
+      visibleTo: ["COO_ADMIN", "CEO_ADMIN", "QUALITY_MANAGER", "admin", "quality_manager"],
+      items: [
+        { label: "QM Dashboard", icon: ShieldCheck, path: "/quality" },
+      ],
+    },
+    {
+      heading: "ADMIN",
+      visibleTo: ["COO_ADMIN", "admin"],
+      items: [
+        { label: "Settings", icon: Settings, path: "/admin/settings" },
+        { label: "Phase Templates", icon: Layers, path: "/admin/phase-templates" },
+        { label: "New Project", icon: FolderPlus, path: "/project-create" },
+        { label: "Triage Inbox", icon: Mail, path: "/admin/triage-inbox" },
+        { label: "Unclassified Tasks", icon: InboxIcon, path: "/admin/unclassified-tasks" },
+        { label: "Audit Log", icon: History, path: "/admin/audit-log" },
+        { label: "Teams & Roles", icon: Users, path: "/admin/teams" },
+        { label: "Data Import", icon: Upload, path: "/admin" },
+      ],
+    },
+  ];
+}
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
@@ -131,6 +140,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     setCollapsedSections(prev => ({ ...prev, [heading]: !prev[heading] }));
   };
 
+  const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
+  const navGroups = getNavGroups();
   const allItems = navGroups.flatMap(g => g.items);
   const currentPageLabel = location === "/" 
     ? "Home" 
@@ -171,6 +182,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
         {navGroups.filter(group => {
           const role = user?.role;
+          const cr = companyRole;
+          if (cr) {
+            if (cr === "COO_ADMIN") return true;
+            if (group.visibleTo) return group.visibleTo.includes(cr);
+            return true;
+          }
           if (role === "quality_manager") {
             return group.heading === "QUALITY" || group.heading === "PROJECT MANAGEMENT";
           }
@@ -254,17 +271,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     ? "bg-orange-500/20 text-orange-300"
                     : "bg-blue-500/20 text-blue-300"
                 )}>
-                  {user?.role === "admin" ? "Admin" : user?.role === "quality_manager" ? "QM" : user?.role === "eng_program_manager" ? "EPM" : "Viewer"}
+                  {companyRole
+                    ? (companyRole === "COO_ADMIN" ? "COO" : companyRole === "CEO_ADMIN" ? "CEO" : companyRole.replace(/_/g, " ").split(" ").map(w => w[0]).join(""))
+                    : user?.role === "admin" ? "Admin" : user?.role === "quality_manager" ? "QM" : user?.role === "eng_program_manager" ? "EPM" : "Viewer"}
                 </span>
               </div>
-              <p className="text-xs text-sidebar-foreground/50 truncate">{user?.email}</p>
+              <p className="text-xs text-sidebar-foreground/50 truncate">{companyRole ? companyRole.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, c => c.toUpperCase()) : user?.email}</p>
             </div>
           )}
           <Button 
             variant="ghost" 
             size="icon" 
             className="h-8 w-8 text-sidebar-foreground/50 hover:text-white shrink-0"
-            onClick={logout}
+            onClick={() => { localStorage.removeItem("company_role"); localStorage.removeItem("auth_token"); logout(); }}
             title="Log out"
           >
             <LogOut className="w-4 h-4" />

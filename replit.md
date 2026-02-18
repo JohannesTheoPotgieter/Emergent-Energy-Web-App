@@ -24,7 +24,7 @@ Preferred communication style: Simple, everyday language.
 
 ### Backend
 - **Framework**: Express.js with TypeScript
-- **Authentication**: Passport.js with local strategy and PostgreSQL-backed sessions
+- **Authentication**: Passport.js with local strategy and PostgreSQL-backed sessions. Role-based company authentication via JWT (`role_credentials` table) with 10 company roles (COO_ADMIN, CEO_ADMIN, CCO, CFO, PROGRAM_MANAGER, etc.). Tile-based login at `/auth/login`. Rate limiting (5 attempts → 15 min lockout). Role stored in localStorage as `company_role` for navigation gating.
 - **File Handling**: Multer for Excel file uploads, `exceljs` for parsing.
 - **Data Storage**: PostgreSQL (primary) with SQLite fallback, using Drizzle ORM.
 - **Data Integrity**: Transactional safety for all data modifications and reprocessing of uploaded files.
