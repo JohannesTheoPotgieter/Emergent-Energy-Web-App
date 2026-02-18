@@ -23,6 +23,7 @@ import {
   Cloud,
   Upload,
   ShieldCheck,
+  Wrench,
 } from "lucide-react";
 import { useProgramData } from "@/hooks/use-program-data";
 import { useAuth } from "@/hooks/use-auth";
@@ -33,6 +34,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { DatabaseStatusBanner } from "@/components/DatabaseStatusBanner";
 import { UploadValidationReport } from "@/components/UploadValidationReport";
+import { NotificationBell } from "@/components/NotificationBell";
 
 interface NavGroup {
   heading: string;
@@ -62,6 +64,12 @@ const navGroups: NavGroup[] = [
     heading: "QUALITY",
     items: [
       { label: "QM Dashboard", icon: ShieldCheck, path: "/quality" },
+    ],
+  },
+  {
+    heading: "ENGINEERING",
+    items: [
+      { label: "Eng Dashboard", icon: Wrench, path: "/engineering" },
     ],
   },
   {
@@ -211,9 +219,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     ? "bg-amber-500/20 text-amber-300" 
                     : user?.role === "quality_manager"
                     ? "bg-emerald-500/20 text-emerald-300"
+                    : user?.role === "eng_program_manager"
+                    ? "bg-orange-500/20 text-orange-300"
                     : "bg-blue-500/20 text-blue-300"
                 )}>
-                  {user?.role === "admin" ? "Admin" : user?.role === "quality_manager" ? "QM" : "Viewer"}
+                  {user?.role === "admin" ? "Admin" : user?.role === "quality_manager" ? "QM" : user?.role === "eng_program_manager" ? "EPM" : "Viewer"}
                 </span>
               </div>
               <p className="text-xs text-sidebar-foreground/50 truncate">{user?.email}</p>
@@ -293,6 +303,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               <Input placeholder="Search projects..." className="pl-9 h-9 bg-muted/30 border-none focus-visible:ring-1" />
             </div>
             
+            <NotificationBell />
+
             <div className="h-8 w-px bg-border mx-1 hidden sm:block" />
 
             <div className="hidden sm:flex flex-col items-end mr-1">

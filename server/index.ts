@@ -237,6 +237,9 @@ async function seedUsers() {
   const { registerQualityRoutes } = await import("./quality-routes");
   registerQualityRoutes(app);
   
+  const { registerEngineeringRoutes } = await import("./engineering-routes");
+  registerEngineeringRoutes(app);
+  
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {

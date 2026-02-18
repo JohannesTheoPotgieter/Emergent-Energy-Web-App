@@ -422,6 +422,17 @@ function requireQmChallenge(req: Request, res: Response, next: NextFunction) {
   res.status(403).json({ error: "qm_challenge_required", message: "Quality Manager access code required", code: "QM_CHALLENGE_REQUIRED" });
 }
 
+function requireEpmChallenge(req: Request, res: Response, next: NextFunction) {
+  if (req.user?.role === "admin") return next();
+  if ((req.session as any)?.epmChallengePassed) return next();
+  res.status(403).json({ error: "epm_challenge_required", message: "Engineering Program Manager access code required", code: "EPM_CHALLENGE_REQUIRED" });
+}
+
+function requireAdminOrEpm(req: Request, res: Response, next: NextFunction) {
+  if (req.user?.role === "admin" || req.user?.role === "eng_program_manager") return next();
+  res.status(403).json({ error: "forbidden", message: "Admin or Engineering Program Manager access required", code: "ROLE_REQUIRED" });
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
