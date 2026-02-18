@@ -1,11 +1,22 @@
 import { useState, useEffect, useMemo } from "react";
 import { useRoute, useLocation, useSearch } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { FileText, DollarSign, CreditCard, TrendingUp, BarChart3, Activity, ArrowLeft, User, Calendar, CheckCircle, AlertCircle, Columns, CalendarDays, ListTodo, ShieldCheck } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { useToast } from "@/hooks/use-toast";
+import {
+  FileText, DollarSign, CreditCard, TrendingUp, BarChart3, Activity,
+  ArrowLeft, User, CheckCircle, AlertCircle, Columns, CalendarDays,
+  ListTodo, ShieldCheck, Clock, History, ArrowRight, Loader2,
+} from "lucide-react";
 import { ProjectPlanTab } from "@/components/tabs/ProjectPlanTab";
 import { RevenueTrackingTab } from "@/components/tabs/RevenueTrackingTab";
 import { ExpenditureEditableTab } from "@/components/tabs/ExpenditureEditableTab";
@@ -19,6 +30,208 @@ import TaskGridView from "@/components/TaskGridView";
 import KeyDatesPanel from "@/components/KeyDatesPanel";
 import { QualityTab } from "@/components/tabs/QualityTab";
 import { useProgramData } from "@/hooks/use-program-data";
+import { useAuth } from "@/hooks/use-auth";
+import { PROJECT_PHASES, PROJECT_PHASE_LABELS, type ProjectPhase } from "@shared/schema";
+
+const PHASE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
+  P0_FIRST_ASSESSMENT: { bg: "bg-slate-100", text: "text-slate-700", border: "border-slate-300" },
+  P1_COST_PROPOSAL_DESIGN: { bg: "bg-violet-100", text: "text-violet-700", border: "border-violet-300" },
+  P2_PD_PM_HANDOVER: { bg: "bg-indigo-100", text: "text-indigo-700", border: "border-indigo-300" },
+  P3_DETAILED_DESIGN_PROC_RELEASE: { bg: "bg-blue-100", text: "text-blue-700", border: "border-blue-300" },
+  P4_CONSTRUCTION_INSTALLATION: { bg: "bg-amber-100", text: "text-amber-700", border: "border-amber-300" },
+  P5_COMMISSIONING_TESTING: { bg: "bg-orange-100", text: "text-orange-700", border: "border-orange-300" },
+  P6_HANDOVER_CLIENT_MATRIARCH: { bg: "bg-teal-100", text: "text-teal-700", border: "border-teal-300" },
+  P7_CLOSEOUT_POSTMORTEM: { bg: "bg-emerald-100", text: "text-emerald-700", border: "border-emerald-300" },
+};
+
+function getPhaseLabel(phase: string | null): string {
+  if (!phase) return "Unknown";
+  return PROJECT_PHASE_LABELS[phase as ProjectPhase] || phase;
+}
+
+function getPhaseShortLabel(phase: string | null): string {
+  if (!phase) return "—";
+  const label = PROJECT_PHASE_LABELS[phase as ProjectPhase];
+  if (!label) return phase;
+  const match = label.match(/^Phase \d/);
+  return match ? match[0] : label;
+}
+
+function PhaseBadge({ phase }: { phase: string | null }) {
+  const colors = phase ? PHASE_COLORS[phase] || PHASE_COLORS.P0_FIRST_ASSESSMENT : PHASE_COLORS.P0_FIRST_ASSESSMENT;
+  return (
+    <span
+      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border ${colors.bg} ${colors.text} ${colors.border}`}
+      data-testid="badge-project-phase"
+      title={getPhaseLabel(phase)}
+    >
+      {getPhaseLabel(phase)}
+    </span>
+  );
+}
+
+function engFetch(url: string) {
+  const token = localStorage.getItem("auth_token");
+  const headers: Record<string, string> = {};
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  return fetch(url, { headers, credentials: "include" });
+}
+
+function PhaseChangeModal({ projectId, currentPhase, open, onClose }: {
+  projectId: number; currentPhase: string | null; open: boolean; onClose: () => void;
+}) {
+  const [toPhase, setToPhase] = useState<string>("");
+  const [reason, setReason] = useState("");
+  const [overrideSequence, setOverrideSequence] = useState(false);
+  const { toast } = useToast();
+  const qc = useQueryClient();
+
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`/api/projects/${projectId}/phase`, {
+        method: "PATCH",
+        headers,
+        credentials: "include",
+        body: JSON.stringify({ toPhase, reason, overrideSequence }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || err.error || "Failed to update phase");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Phase updated successfully" });
+      qc.invalidateQueries({ queryKey: ["/api/projects-summary"] });
+      qc.invalidateQueries({ queryKey: ["phase-history", projectId] });
+      setToPhase("");
+      setReason("");
+      setOverrideSequence(false);
+      onClose();
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const currentIdx = PROJECT_PHASES.indexOf(currentPhase as any);
+  const toIdx = PROJECT_PHASES.indexOf(toPhase as any);
+  const needsOverride = currentIdx >= 0 && toIdx >= 0 && Math.abs(toIdx - currentIdx) > 1;
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-md" data-testid="dialog-phase-change">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <History className="h-5 w-5" />
+            Change Project Phase
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div>
+            <Label className="text-xs text-muted-foreground">Current Phase</Label>
+            <p className="text-sm font-medium mt-1">{getPhaseLabel(currentPhase)}</p>
+          </div>
+          <div>
+            <Label htmlFor="toPhase">New Phase</Label>
+            <Select value={toPhase} onValueChange={setToPhase}>
+              <SelectTrigger data-testid="select-to-phase">
+                <SelectValue placeholder="Select phase..." />
+              </SelectTrigger>
+              <SelectContent>
+                {PROJECT_PHASES.map(p => (
+                  <SelectItem key={p} value={p} disabled={p === currentPhase}>
+                    {PROJECT_PHASE_LABELS[p]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="reason">Reason (required)</Label>
+            <Textarea
+              id="reason"
+              value={reason}
+              onChange={e => setReason(e.target.value)}
+              placeholder="Explain why this phase change is happening..."
+              className="mt-1"
+              data-testid="input-phase-reason"
+            />
+          </div>
+          {needsOverride && (
+            <div className="flex items-center gap-3 p-3 rounded-lg bg-amber-50 border border-amber-200">
+              <Switch
+                checked={overrideSequence}
+                onCheckedChange={setOverrideSequence}
+                data-testid="switch-override-sequence"
+              />
+              <div className="text-sm">
+                <p className="font-medium text-amber-800">Override sequential order</p>
+                <p className="text-xs text-amber-600 mt-0.5">Phases normally move one step at a time. Enable this to skip phases.</p>
+              </div>
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} data-testid="button-cancel-phase">Cancel</Button>
+          <Button
+            onClick={() => mutation.mutate()}
+            disabled={!toPhase || !reason.trim() || (needsOverride && !overrideSequence) || mutation.isPending}
+            data-testid="button-save-phase"
+          >
+            {mutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+            Update Phase
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function PhaseHistoryTimeline({ projectId }: { projectId: number }) {
+  const { data } = useQuery({
+    queryKey: ["phase-history", projectId],
+    queryFn: async () => {
+      const res = await engFetch(`/api/projects/${projectId}/phase-history`);
+      if (!res.ok) return { history: [] };
+      return res.json();
+    },
+    enabled: !!projectId,
+  });
+
+  const history = data?.history || [];
+  if (history.length === 0) return null;
+
+  return (
+    <div className="space-y-2" data-testid="phase-history-timeline">
+      <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+        <History className="h-3.5 w-3.5" />
+        Phase History
+      </h4>
+      <div className="space-y-1">
+        {history.slice(0, 10).map((entry: any) => (
+          <div key={entry.id} className="flex items-start gap-2 text-xs py-1.5 px-2 rounded hover:bg-muted/30">
+            <div className="mt-0.5 h-2 w-2 rounded-full bg-emerald-500 shrink-0" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1 flex-wrap">
+                <span className="text-muted-foreground">{getPhaseShortLabel(entry.fromPhase)}</span>
+                <ArrowRight className="h-3 w-3 text-muted-foreground" />
+                <span className="font-medium">{getPhaseShortLabel(entry.toPhase)}</span>
+              </div>
+              <p className="text-muted-foreground mt-0.5">{entry.reason}</p>
+              <p className="text-[10px] text-muted-foreground/60 mt-0.5">
+                {entry.changedByName} &middot; {new Date(entry.changedAt).toLocaleDateString("en-ZA", { day: "2-digit", month: "short", year: "numeric" })}
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function ProjectDetailPage() {
   const [, params] = useRoute("/project/:projectName");
@@ -26,8 +239,10 @@ export default function ProjectDetailPage() {
   const searchString = useSearch();
   const projectName = params?.projectName ? decodeURIComponent(params.projectName) : "";
   const { projectsSummary } = useProgramData();
+  const { user } = useAuth();
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [phaseModalOpen, setPhaseModalOpen] = useState(false);
 
   const searchParams = useMemo(() => new URLSearchParams(searchString), [searchString]);
   const urlTab = searchParams.get("tab");
@@ -40,7 +255,7 @@ export default function ProjectDetailPage() {
     if (urlTab) setActiveTab(urlTab);
   }, [urlTab]);
 
-  const projectInfo = projectsSummary?.find(p => p.project_name === projectName);
+  const projectInfo = projectsSummary?.find((p: any) => p.project_name === projectName);
 
   const handleTaskClick = (taskId: number) => {
     setSelectedTaskId(taskId);
@@ -117,13 +332,15 @@ export default function ProjectDetailPage() {
   }
 
   const displayName = projectName.replace("_Tracker", "");
-  const phase = projectInfo?.phase || "Unknown";
+  const phase = projectInfo?.phase || null;
   const pd = projectInfo?.pd || "—";
   const pm = projectInfo?.pm || "—";
   const sizeKwp = projectInfo?.size_kwp ? `${projectInfo.size_kwp.toFixed(0)} kWp` : "—";
-  const completion = projectInfo?.project_pct_complete !== null 
-    ? `${(projectInfo!.project_pct_complete * 100).toFixed(0)}%` 
+  const completion = projectInfo?.project_pct_complete !== null
+    ? `${(projectInfo!.project_pct_complete * 100).toFixed(0)}%`
     : "—";
+  const isAdmin = user?.role === "admin";
+  const projectInfoId = projectInfo?.project_info_id;
 
   const dataHealth = [
     { name: "Project Plan", rows: (projectPlanData as any[]).length, present: (projectPlanData as any[]).length > 0 },
@@ -148,9 +365,13 @@ export default function ProjectDetailPage() {
         <div className="space-y-2">
           <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
             <h2 className="text-xl sm:text-3xl font-heading font-bold text-foreground" data-testid="text-project-name">{displayName}</h2>
-            <Badge variant={phase === "Construction" ? "default" : phase === "Handover" ? "secondary" : "outline"}>
-              {phase}
-            </Badge>
+            <PhaseBadge phase={phase} />
+            {isAdmin && projectInfoId && (
+              <Button variant="outline" size="sm" onClick={() => setPhaseModalOpen(true)} className="h-7 text-xs gap-1" data-testid="button-change-phase">
+                <History className="h-3.5 w-3.5" />
+                Change Phase
+              </Button>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs sm:text-sm text-muted-foreground">
             <span className="flex items-center gap-1"><User className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> PD: {pd}</span>
@@ -158,6 +379,7 @@ export default function ProjectDetailPage() {
             <span className="flex items-center gap-1"><Activity className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> {sizeKwp}</span>
             <span className="flex items-center gap-1"><TrendingUp className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> {completion} complete</span>
           </div>
+          {projectInfoId && <PhaseHistoryTimeline projectId={projectInfoId} />}
         </div>
 
         <Card className="lg:w-auto">
@@ -175,8 +397,8 @@ export default function ProjectDetailPage() {
               <div className="h-8 w-px bg-border" />
               <div className="flex flex-wrap gap-1">
                 {dataHealth.map(sheet => (
-                  <Badge 
-                    key={sheet.name} 
+                  <Badge
+                    key={sheet.name}
                     variant={sheet.present ? "default" : "outline"}
                     className={`text-xs ${!sheet.present && "opacity-50"}`}
                   >
@@ -285,6 +507,15 @@ export default function ProjectDetailPage() {
         onClose={() => { setDrawerOpen(false); setSelectedTaskId(null); }}
         projectName={projectName}
       />
+
+      {isAdmin && projectInfoId && (
+        <PhaseChangeModal
+          projectId={projectInfoId}
+          currentPhase={phase}
+          open={phaseModalOpen}
+          onClose={() => setPhaseModalOpen(false)}
+        />
+      )}
     </div>
   );
 }

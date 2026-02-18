@@ -1,0 +1,141 @@
+You are working inside an EXISTING Replit web app repo (do not rebuild from scratch).
+
+Goal (this ticket)
+1) Implement the official EE Project Lifecycle Phases as a strict set of phases a Project can be in.
+2) Only ADMIN can move a Project between phases (phase changes must be audited).
+3) Update all project views so that each Project is shown as ONE item, and the work underneath it is shown as subtasks/child items (not duplicated projects across boards).
+
+Hard constraints
+- Do not break existing functionality.
+- No placeholder code or placeholder buttons.
+- Follow existing repo patterns (routing, API, DB/ORM, auth, UI components).
+- Enforce permissions server-side (API), not only in the UI.
+- Every phase change must be logged (who/when/from/to/reason).
+
+Part A — Project phases (single source of truth)
+Create a strict enum for project.phase with these values (do not allow free text):
+- P0_FIRST_ASSESSMENT            (Phase 0 - First Assessment)
+- P1_COST_PROPOSAL_DESIGN        (Phase 1 - Cost Proposal/Design)
+- P2_PD_PM_HANDOVER              (Phase 2 - PD -> PM Handover)
+- P3_DETAILED_DESIGN_PROC_RELEASE (Phase 3 - Detailed Design & Procurement Release)
+- P4_CONSTRUCTION_INSTALLATION   (Phase 4 - Construction / Installation)
+- P5_COMMISSIONING_TESTING       (Phase 5 - Commissioning & Testing)
+- P6_HANDOVER_CLIENT_MATRIARCH   (Phase 6 - Handover (Client + Matriarch))
+- P7_CLOSEOUT_POSTMORTEM         (Phase 7 - Close-out & Post-mortem)
+
+Also store display labels (for UI) mapped from the enum:
+- P0_FIRST_ASSESSMENT: "Phase 0 - First Assessment"
+- P1_COST_PROPOSAL_DESIGN: "Phase 1 - Cost Proposal/Design"
+- P2_PD_PM_HANDOVER: "Phase 2 - PD → PM Handover"
+- P3_DETAILED_DESIGN_PROC_RELEASE: "Phase 3 - Detailed Design & Procurement Release"
+- P4_CONSTRUCTION_INSTALLATION: "Phase 4 - Construction / Installation"
+- P5_COMMISSIONING_TESTING: "Phase 5 - Commissioning & Testing"
+- P6_HANDOVER_CLIENT_MATRIARCH: "Phase 6 - Handover (Client + Matriarch)"
+- P7_CLOSEOUT_POSTMORTEM: "Phase 7 - Close-out & Post-mortem"
+
+Data model changes
+- Add/ensure Project.phase (enum) and Project.phase_updated_at
+- Add Project.phase_updated_by_user_id (FK to User)
+- Add Project.phase_notes (nullable) for reason/context
+
+Audit trail (required)
+Create a phase history table:
+- project_phase_history
+  - id
+  - project_id
+  - from_phase
+  - to_phase
+  - changed_by_user_id
+  - changed_at
+  - reason (required for phase moves)
+
+Phase movement rules
+- Only ADMIN can change Project.phase.
+- UI must show phase dropdown as read-only for non-admins.
+- API must reject any non-admin attempt (403).
+- Optional: enforce sequential movement by default (P0→P1→P2...), but allow admin override.
+  - If you enforce sequential, provide an admin-only toggle “Override sequence” and still require a reason.
+
+API endpoints
+- PATCH /api/projects/:projectId/phase
+  Body: { toPhase: enum, reason: string, overrideSequence?: boolean }
+  - RBAC: ADMIN only
+  - Writes to Project + inserts into project_phase_history
+- GET /api/projects/:projectId/phase-history
+  - RBAC: Admin + users on the project team (or all authenticated users if repo currently allows)
+
+UI requirements (phase)
+- On Project Overview page:
+  - show current phase clearly (badge)
+  - show a “Change phase” button only for ADMIN
+  - open modal: select phase + reason (required) + optional override toggle
+  - show phase history timeline
+
+Part B — “Only one project with subtasks” across all views
+Interpretation requirement (must implement this model):
+- Projects are top-level containers.
+- Tasks are child items under a project.
+- Subtasks are child items under a task.
+- Views must show Projects as the primary list/rows/cards.
+- Expanding a Project shows its child tasks (and optionally subtasks).
+
+Do NOT represent projects as tasks. Do NOT duplicate projects across boards as multiple rows.
+
+Implementation (Views)
+1) Projects List / Projects Board
+- Each card/row = ONE project.
+- Filters: phase, client, PM, workstream, warnings.
+- Each project card/row shows:
+  - project name
+  - phase badge
+  - next due milestone (if plan exists)
+  - open warnings count (bright red)
+  - task counts by status (TO DO / IN PROGRESS / HOLD / NEEDS APPROVAL / PROVIDE FEEDBACK / QC APPROVED / OPERATIONAL APPROVAL / COMPLETE)
+- Clicking the project opens Project Detail.
+
+2) Project Detail page must be the main “expand view”
+- Tabs recommended:
+  - Overview
+  - Tasks (default)
+  - Plan (milestones)
+  - Deliverables
+  - Quality
+  - Warnings
+  - Files
+- In the Tasks tab:
+  - show a task board/list filtered to that project
+  - tasks can be expanded to show subtasks
+  - allow quick create subtask under a task
+
+3) Optional: Projects “expand in place”
+- In Projects list view, allow a caret/expand:
+  - expanding a project shows a compact list of its top 10 open tasks and allows jump into full Tasks tab
+
+Task/Subtask model requirements (if not already present)
+- Task has project_id and parent_task_id (nullable)
+  - parent_task_id null = top-level task for that project
+  - parent_task_id set = subtask
+- Task must have status using the existing status set:
+  - TO DO, IN PROGRESS, HOLD, PROJECTS ASSISTANCE, NEEDS APPROVAL, QC APPROVED, PROVIDE FEEDBACK, OPERATIONAL APPROVAL, COMPLETE
+
+Permissions
+- Anyone with access to the project can create tasks/subtasks (unless repo uses stricter rules).
+- Only ADMIN can move project phases (as above).
+
+Definition of Done
+- Project.phase is enforced as enum; users cannot set arbitrary values.
+- Only ADMIN can change phase via UI and API.
+- Every phase change requires a reason and is written to project_phase_history.
+- All main views show Projects as ONE item and reveal work as tasks/subtasks underneath.
+- Project detail Tasks tab supports subtasks reliably.
+- Existing app functionality remains intact.
+
+Implementation sequence (do in this order)
+1) Add phase enum + DB migration + history table
+2) Add ADMIN-only phase change endpoint + audit
+3) Update UI to show phase badge + admin change modal + history
+4) Refactor project views to be project-centric (one project row/card)
+5) Ensure task/subtask relationships exist and display correctly in project tasks view
+6) Add counts + warning rollups on project cards/rows
+
+Now implement this within existing repo conventions without breaking anything.

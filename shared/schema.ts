@@ -37,6 +37,9 @@ export const projectInfo = pgTable("project_info", {
   pm: text("pm"),
   contractValue: decimal("contract_value", { precision: 15, scale: 2 }),
   phase: text("phase"),
+  phaseUpdatedAt: timestamp("phase_updated_at"),
+  phaseUpdatedByUserId: integer("phase_updated_by_user_id").references(() => users.id),
+  phaseNotes: text("phase_notes"),
   pdHandoverDate: text("pd_handover_date"),
   constructionStartDate: text("construction_start_date"),
   commissioningDate: text("commissioning_date"),
@@ -56,6 +59,20 @@ export const projectInfo = pgTable("project_info", {
 export const insertProjectInfoSchema = createInsertSchema(projectInfo).omit({ id: true, updatedAt: true });
 export type InsertProjectInfo = z.infer<typeof insertProjectInfoSchema>;
 export type ProjectInfo = typeof projectInfo.$inferSelect;
+
+export const projectPhaseHistory = pgTable("project_phase_history", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
+  fromPhase: text("from_phase"),
+  toPhase: text("to_phase").notNull(),
+  changedByUserId: integer("changed_by_user_id").notNull().references(() => users.id),
+  changedAt: timestamp("changed_at").notNull().defaultNow(),
+  reason: text("reason").notNull(),
+});
+
+export const insertProjectPhaseHistorySchema = createInsertSchema(projectPhaseHistory).omit({ id: true, changedAt: true });
+export type InsertProjectPhaseHistory = z.infer<typeof insertProjectPhaseHistorySchema>;
+export type ProjectPhaseHistory = typeof projectPhaseHistory.$inferSelect;
 
 // Program Expense Table (from Expenditure Breakdown sheet - dual table structure)
 export const programExpense = pgTable("program_expense", {
@@ -750,10 +767,57 @@ export const TASK_PRIORITIES = ["Low", "Med", "High", "Urgent"] as const;
 export type TaskPriority = typeof TASK_PRIORITIES[number];
 
 export const PROJECT_PHASES = [
-  "PD", "Planning & Design", "Construction",
-  "Commissioning", "Handover", "Close-out"
+  "P0_FIRST_ASSESSMENT",
+  "P1_COST_PROPOSAL_DESIGN",
+  "P2_PD_PM_HANDOVER",
+  "P3_DETAILED_DESIGN_PROC_RELEASE",
+  "P4_CONSTRUCTION_INSTALLATION",
+  "P5_COMMISSIONING_TESTING",
+  "P6_HANDOVER_CLIENT_MATRIARCH",
+  "P7_CLOSEOUT_POSTMORTEM",
 ] as const;
 export type ProjectPhase = typeof PROJECT_PHASES[number];
+
+export const PROJECT_PHASE_LABELS: Record<ProjectPhase, string> = {
+  P0_FIRST_ASSESSMENT: "Phase 0 - First Assessment",
+  P1_COST_PROPOSAL_DESIGN: "Phase 1 - Cost Proposal/Design",
+  P2_PD_PM_HANDOVER: "Phase 2 - PD \u2192 PM Handover",
+  P3_DETAILED_DESIGN_PROC_RELEASE: "Phase 3 - Detailed Design & Procurement Release",
+  P4_CONSTRUCTION_INSTALLATION: "Phase 4 - Construction / Installation",
+  P5_COMMISSIONING_TESTING: "Phase 5 - Commissioning & Testing",
+  P6_HANDOVER_CLIENT_MATRIARCH: "Phase 6 - Handover (Client + Matriarch)",
+  P7_CLOSEOUT_POSTMORTEM: "Phase 7 - Close-out & Post-mortem",
+};
+
+export const PHASE_TEXT_TO_ENUM: Record<string, ProjectPhase> = {
+  "first assessment": "P0_FIRST_ASSESSMENT",
+  "cost proposal": "P1_COST_PROPOSAL_DESIGN",
+  "cost proposal/design": "P1_COST_PROPOSAL_DESIGN",
+  "design": "P1_COST_PROPOSAL_DESIGN",
+  "pd": "P1_COST_PROPOSAL_DESIGN",
+  "planning & design": "P1_COST_PROPOSAL_DESIGN",
+  "development": "P1_COST_PROPOSAL_DESIGN",
+  "pd handover": "P2_PD_PM_HANDOVER",
+  "pd -> pm handover": "P2_PD_PM_HANDOVER",
+  "handover pd": "P2_PD_PM_HANDOVER",
+  "detailed design": "P3_DETAILED_DESIGN_PROC_RELEASE",
+  "procurement": "P3_DETAILED_DESIGN_PROC_RELEASE",
+  "procurement release": "P3_DETAILED_DESIGN_PROC_RELEASE",
+  "construction": "P4_CONSTRUCTION_INSTALLATION",
+  "installation": "P4_CONSTRUCTION_INSTALLATION",
+  "construction / installation": "P4_CONSTRUCTION_INSTALLATION",
+  "commissioning": "P5_COMMISSIONING_TESTING",
+  "testing": "P5_COMMISSIONING_TESTING",
+  "commissioning & testing": "P5_COMMISSIONING_TESTING",
+  "handover": "P6_HANDOVER_CLIENT_MATRIARCH",
+  "client handover": "P6_HANDOVER_CLIENT_MATRIARCH",
+  "o&m": "P6_HANDOVER_CLIENT_MATRIARCH",
+  "complete": "P7_CLOSEOUT_POSTMORTEM",
+  "completed": "P7_CLOSEOUT_POSTMORTEM",
+  "close-out": "P7_CLOSEOUT_POSTMORTEM",
+  "closeout": "P7_CLOSEOUT_POSTMORTEM",
+  "post-mortem": "P7_CLOSEOUT_POSTMORTEM",
+};
 
 export const operationalTasks = pgTable("operational_tasks", {
   id: serial("id").primaryKey(),

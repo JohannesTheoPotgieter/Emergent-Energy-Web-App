@@ -1351,6 +1351,17 @@ export async function registerRoutes(
       for (const inflow of allInflows) allProjectNames.add(inflow.projectName);
       for (const plan of allPlans) allProjectNames.add(plan.projectName);
 
+      const taskCountsByProject = new Map<string, Record<string, number>>();
+      for (const task of allOpTasks) {
+        const rawName = task.projectName;
+        const trackerName = rawName.replace(/ /g, "_") + (rawName.endsWith("_Tracker") ? "" : "_Tracker");
+        const key = allProjectNames.has(trackerName) ? trackerName : rawName;
+        if (!taskCountsByProject.has(key)) taskCountsByProject.set(key, {});
+        const counts = taskCountsByProject.get(key)!;
+        const status = task.status || "TO DO";
+        counts[status] = (counts[status] || 0) + 1;
+      }
+
       const projectInfoMap = new Map(allProjectInfo.map(info => [info.projectName, info]));
 
       const projectsSummary = Array.from(allProjectNames).map(projectName => {
@@ -1519,6 +1530,8 @@ export async function registerRoutes(
           current_vo_total: editable?.currentVoTotal ? parseFloat(editable.currentVoTotal) : 0,
           comments: editable?.comments || null,
           escalation_level: info?.escalationLevel || null,
+          task_status_counts: taskCountsByProject.get(projectName) || {},
+          phase_updated_at: info?.phaseUpdatedAt || null,
         };
       });
 

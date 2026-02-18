@@ -43,6 +43,7 @@ import {
 import { useLocation } from "wouter";
 import { apiRequest, invalidateDashboardQueries } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
+import { PROJECT_PHASES, PROJECT_PHASE_LABELS, type ProjectPhase } from "@shared/schema";
 import {
   Dialog,
   DialogContent,
@@ -96,6 +97,8 @@ interface ProjectSummary {
   current_vo_total: number | null;
   comments: string | null;
   escalation_level: string | null;
+  task_status_counts: Record<string, number>;
+  phase_updated_at: string | null;
 }
 
 type SortDir = "asc" | "desc";
@@ -130,14 +133,30 @@ function safeNum(val: number | null): number {
 }
 
 function phaseConfig(phase: string | null): { bg: string; text: string; border: string; dot: string } {
-  switch (phase) {
-    case "Development": return { bg: "bg-violet-50", text: "text-violet-700", border: "border-violet-200", dot: "bg-violet-500" };
-    case "Construction": return { bg: "bg-blue-50", text: "text-blue-700", border: "border-blue-200", dot: "bg-blue-500" };
-    case "Commissioning": return { bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-200", dot: "bg-amber-500" };
-    case "Complete": return { bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200", dot: "bg-emerald-500" };
-    case "O&M": return { bg: "bg-teal-50", text: "text-teal-700", border: "border-teal-200", dot: "bg-teal-500" };
-    default: return { bg: "bg-slate-50", text: "text-slate-600", border: "border-slate-200", dot: "bg-slate-400" };
-  }
+  const map: Record<string, { bg: string; text: string; border: string; dot: string }> = {
+    P0_FIRST_ASSESSMENT: { bg: "bg-slate-50", text: "text-slate-700", border: "border-slate-200", dot: "bg-slate-500" },
+    P1_COST_PROPOSAL_DESIGN: { bg: "bg-violet-50", text: "text-violet-700", border: "border-violet-200", dot: "bg-violet-500" },
+    P2_PD_PM_HANDOVER: { bg: "bg-indigo-50", text: "text-indigo-700", border: "border-indigo-200", dot: "bg-indigo-500" },
+    P3_DETAILED_DESIGN_PROC_RELEASE: { bg: "bg-blue-50", text: "text-blue-700", border: "border-blue-200", dot: "bg-blue-500" },
+    P4_CONSTRUCTION_INSTALLATION: { bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-200", dot: "bg-amber-500" },
+    P5_COMMISSIONING_TESTING: { bg: "bg-orange-50", text: "text-orange-700", border: "border-orange-200", dot: "bg-orange-500" },
+    P6_HANDOVER_CLIENT_MATRIARCH: { bg: "bg-teal-50", text: "text-teal-700", border: "border-teal-200", dot: "bg-teal-500" },
+    P7_CLOSEOUT_POSTMORTEM: { bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200", dot: "bg-emerald-500" },
+  };
+  return (phase && map[phase]) || { bg: "bg-slate-50", text: "text-slate-600", border: "border-slate-200", dot: "bg-slate-400" };
+}
+
+function getPhaseLabel(phase: string | null): string {
+  if (!phase) return "—";
+  return PROJECT_PHASE_LABELS[phase as ProjectPhase] || phase;
+}
+
+function getPhaseShortLabel(phase: string | null): string {
+  if (!phase) return "—";
+  const label = PROJECT_PHASE_LABELS[phase as ProjectPhase];
+  if (!label) return phase;
+  const match = label.match(/^Phase (\d)/);
+  return match ? `P${match[1]}` : label;
 }
 
 function progressColor(pct: number): string {
@@ -478,11 +497,7 @@ function FinancialCloseCell({
   );
 }
 
-const PHASE_OPTIONS = [
-  "", "Planning", "Financial Close", "Construction", "QA", "Commissioning",
-  "Handover", "Compliance Handover", "Commercial Close Out", "DLP", "TBC",
-  "Hold", "Refiloe Mohohlo",
-];
+const PHASE_OPTIONS = PROJECT_PHASES;
 
 function EditProjectInfoModal({
   project,
@@ -564,9 +579,10 @@ function EditProjectInfoModal({
                 <SelectValue placeholder="Select phase" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="__blank">(blank)</SelectItem>
                 {PHASE_OPTIONS.map((p) => (
-                  <SelectItem key={p || "__blank"} value={p || "__blank"}>
-                    {p || "(blank)"}
+                  <SelectItem key={p} value={p}>
+                    {PROJECT_PHASE_LABELS[p]}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -814,7 +830,7 @@ export default function ProjectsSummary() {
   const columnGroups: { label: string; colSpan: number; color: string; stickyFirst?: boolean }[] = [
     { label: "Project Info", colSpan: 4, color: "bg-slate-50 text-slate-600", stickyFirst: true },
     { label: "Financial Close", colSpan: 4, color: "bg-emerald-50 text-emerald-700" },
-    { label: "Phase & Schedule", colSpan: 8, color: "bg-blue-50 text-blue-700" },
+    { label: "Phase & Schedule", colSpan: 9, color: "bg-blue-50 text-blue-700" },
     { label: "Progress", colSpan: 3, color: "bg-violet-50 text-violet-700" },
     ...(isAdmin ? [{ label: "", colSpan: 1, color: "bg-white" }] : []),
   ];
@@ -918,10 +934,33 @@ export default function ProjectsSummary() {
       render: (p) => {
         const cfg = phaseConfig(p.phase);
         return (
-          <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${cfg.bg} ${cfg.text} ${cfg.border}`}>
+          <span
+            className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${cfg.bg} ${cfg.text} ${cfg.border}`}
+            title={getPhaseLabel(p.phase)}
+          >
             <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
-            {p.phase || "—"}
+            {getPhaseShortLabel(p.phase)}
           </span>
+        );
+      },
+    },
+    {
+      key: "task_counts",
+      header: "Tasks",
+      minW: "min-w-[100px]",
+      render: (p) => {
+        const counts = p.task_status_counts || {};
+        const total = Object.values(counts).reduce((s, c) => s + c, 0);
+        const done = (counts["DONE"] || 0) + (counts["COMPLETE"] || 0);
+        const inProgress = counts["IN PROGRESS"] || 0;
+        if (total === 0) return <span className="text-slate-400 text-[10px]">—</span>;
+        return (
+          <div className="flex items-center gap-1" title={Object.entries(counts).map(([k, v]) => `${k}: ${v}`).join(", ")}>
+            <span className="text-[10px] font-mono text-slate-600">{done}/{total}</span>
+            {inProgress > 0 && (
+              <span className="text-[10px] px-1 py-0 rounded bg-blue-50 text-blue-600 border border-blue-200">{inProgress} WIP</span>
+            )}
+          </div>
         );
       },
     },
@@ -1191,7 +1230,7 @@ export default function ProjectsSummary() {
           <SelectContent>
             <SelectItem value="all">All Phases</SelectItem>
             {uniquePhases.map((ph) => (
-              <SelectItem key={ph} value={ph}>{ph}</SelectItem>
+              <SelectItem key={ph} value={ph}>{getPhaseLabel(ph)}</SelectItem>
             ))}
           </SelectContent>
         </Select>
