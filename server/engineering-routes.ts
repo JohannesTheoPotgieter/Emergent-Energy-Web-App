@@ -201,7 +201,11 @@ export function registerEngineeringRoutes(app: Express) {
 
       const updates = { ...req.body, updatedAt: new Date() };
 
-      if (updates.status === "HOLD" && !updates.holdReason && !existing.holdReason) {
+      if (updates.status && !TASK_STATUSES.includes(updates.status)) {
+        return res.status(400).json({ error: `Invalid status. Must be one of: ${TASK_STATUSES.join(", ")}` });
+      }
+
+      if (updates.status === "HOLD" && !updates.holdReason) {
         return res.status(400).json({ error: "Hold reason required when setting status to HOLD" });
       }
       if (updates.status === "PROJECTS ASSISTANCE" && !updates.requesterUserId && !existing.requesterUserId) {
@@ -621,8 +625,15 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.post("/api/eng/file-pointers", requireAuth, async (req, res) => {
     try {
+      const { entityType, entityId, spSiteId, spDriveId, spFileItemId, fileName, label, siteId, driveId, fileItemId, webUrl } = req.body;
       const [pointer] = await db.insert(spFilePointers).values({
-        ...req.body,
+        entityType,
+        entityId,
+        siteId: siteId || spSiteId,
+        driveId: driveId || spDriveId,
+        fileItemId: fileItemId || spFileItemId,
+        fileName,
+        webUrl: webUrl || null,
         uploadedByUserId: getUser(req).id,
       }).returning();
       res.json(pointer);
