@@ -684,6 +684,8 @@ export default function ProjectsSummary() {
       if (!res.ok) throw new Error("Failed to fetch projects summary");
       return res.json();
     },
+    refetchOnMount: "always",
+    staleTime: 0,
   });
 
   const uniquePMs = useMemo(() => {

@@ -65,6 +65,8 @@ export function QualityTab({ projectName }: QualityTabProps) {
       return res.json();
     },
     enabled: !!projectName,
+    refetchOnMount: "always",
+    staleTime: 0,
   });
 
   const { data: warnings = [] } = useQuery({
@@ -75,6 +77,8 @@ export function QualityTab({ projectName }: QualityTabProps) {
       return res.json();
     },
     enabled: !!projectName,
+    refetchOnMount: "always",
+    staleTime: 0,
   });
 
   const { data: planLinks = [] } = useQuery({
@@ -85,6 +89,8 @@ export function QualityTab({ projectName }: QualityTabProps) {
       return res.json();
     },
     enabled: !!projectName,
+    refetchOnMount: "always",
+    staleTime: 0,
   });
 
   const { data: projectTasks = [] } = useQuery({
@@ -95,6 +101,8 @@ export function QualityTab({ projectName }: QualityTabProps) {
       return res.json();
     },
     enabled: !!projectName,
+    refetchOnMount: "always",
+    staleTime: 0,
   });
 
   const updateItemMutation = useMutation({
@@ -108,6 +116,9 @@ export function QualityTab({ projectName }: QualityTabProps) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["quality-checklist", projectName] });
+      queryClient.invalidateQueries({ queryKey: ["quality-warnings", projectName] });
+      queryClient.invalidateQueries({ queryKey: ["quality-warnings-all"] });
+      queryClient.invalidateQueries({ queryKey: ["quality-checklists"] });
     },
   });
 
@@ -122,6 +133,9 @@ export function QualityTab({ projectName }: QualityTabProps) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["quality-checklist", projectName] });
+      queryClient.invalidateQueries({ queryKey: ["quality-warnings", projectName] });
+      queryClient.invalidateQueries({ queryKey: ["quality-warnings-all"] });
+      queryClient.invalidateQueries({ queryKey: ["quality-checklists"] });
     },
   });
 
@@ -136,6 +150,9 @@ export function QualityTab({ projectName }: QualityTabProps) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["quality-checklist", projectName] });
+      queryClient.invalidateQueries({ queryKey: ["quality-warnings", projectName] });
+      queryClient.invalidateQueries({ queryKey: ["quality-warnings-all"] });
+      queryClient.invalidateQueries({ queryKey: ["quality-checklists"] });
     },
   });
 
@@ -155,6 +172,9 @@ export function QualityTab({ projectName }: QualityTabProps) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["quality-plan-links", projectName] });
+      queryClient.invalidateQueries({ queryKey: ["quality-warnings", projectName] });
+      queryClient.invalidateQueries({ queryKey: ["quality-warnings-all"] });
+      queryClient.invalidateQueries({ queryKey: ["quality-checklists"] });
       setLinkingPhaseId(null);
       setLinkingItemId(null);
     },
@@ -168,6 +188,9 @@ export function QualityTab({ projectName }: QualityTabProps) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["quality-plan-links", projectName] });
+      queryClient.invalidateQueries({ queryKey: ["quality-warnings", projectName] });
+      queryClient.invalidateQueries({ queryKey: ["quality-warnings-all"] });
+      queryClient.invalidateQueries({ queryKey: ["quality-checklists"] });
     },
   });
 
