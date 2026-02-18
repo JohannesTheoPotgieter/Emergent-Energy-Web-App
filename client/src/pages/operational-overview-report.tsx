@@ -1,12 +1,9 @@
 import { useState, useRef } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, Download, FileBarChart, ArrowLeft, ChevronDown, ChevronRight, Circle } from "lucide-react";
+import { Loader2, Download, FileBarChart, ArrowLeft } from "lucide-react";
 import { Link } from "wouter";
-import { Badge } from "@/components/ui/badge";
-import { useAuth } from "@/hooks/use-auth";
-import { useToast } from "@/hooks/use-toast";
 
 async function fetchReport(month: string, token: string | null) {
   const headers: Record<string, string> = {};
@@ -31,7 +28,6 @@ interface KPIData {
     pdPmHandovers: number;
     commissionings: number;
     clientHandoversPlanned: number;
-    rag: { green: number; amber: number; red: number; onTrack: number };
   };
 }
 
@@ -93,11 +89,6 @@ function ReportSlide({ data }: { data: KPIData }) {
           <KPITile
             value={kpis.clientHandoversPlanned}
             label="Client Handovers (Planned)"
-          />
-          <KPITile
-            value={kpis.rag.onTrack}
-            label="Projects On Track"
-            sub={`G: ${kpis.rag.green} / A: ${kpis.rag.amber} / R: ${kpis.rag.red}`}
           />
         </div>
 
@@ -236,134 +227,6 @@ export default function OperationalOverviewReport() {
         </div>
       )}
 
-      <RagManager />
-    </div>
-  );
-}
-
-interface RagProject {
-  id: number;
-  projectName: string;
-  phase: string | null;
-  ragStatus: string | null;
-  ragUpdatedAt: string | null;
-}
-
-const RAG_COLORS: Record<string, string> = {
-  GREEN: "bg-emerald-500",
-  AMBER: "bg-amber-500",
-  RED: "bg-red-500",
-};
-
-const RAG_BADGE: Record<string, string> = {
-  GREEN: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
-  AMBER: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
-  RED: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
-};
-
-function RagManager() {
-  const [expanded, setExpanded] = useState(false);
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-
-  const { data: ragData, isLoading } = useQuery<{ projects: RagProject[] }>({
-    queryKey: ["admin-rag-summary"],
-    queryFn: async () => {
-      const token = localStorage.getItem("auth_token");
-      const headers: Record<string, string> = {};
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-      const res = await fetch("/api/admin/projects/rag-summary", { headers, credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch");
-      return res.json();
-    },
-    enabled: expanded,
-  });
-
-  const updateRag = useMutation({
-    mutationFn: async ({ id, ragStatus }: { id: number; ragStatus: string }) => {
-      const token = localStorage.getItem("auth_token");
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-      const res = await fetch(`/api/admin/projects/${id}/rag`, {
-        method: "PATCH",
-        headers,
-        credentials: "include",
-        body: JSON.stringify({ ragStatus }),
-      });
-      if (!res.ok) throw new Error("Failed to update");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-rag-summary"] });
-      queryClient.invalidateQueries({ queryKey: ["operational-overview"] });
-      toast({ title: "RAG status updated" });
-    },
-  });
-
-  const projects = ragData?.projects || [];
-
-  return (
-    <div className="border rounded-lg overflow-hidden" data-testid="rag-manager">
-      <button
-        className="w-full flex items-center gap-2 px-4 py-3 text-sm font-medium hover:bg-muted/30 transition-colors text-left"
-        onClick={() => setExpanded(!expanded)}
-      >
-        {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-        Manage Project RAG Status
-        <span className="text-xs text-muted-foreground ml-1">({projects.length} active projects)</span>
-      </button>
-
-      {expanded && (
-        <div className="border-t divide-y">
-          {isLoading ? (
-            <div className="p-6 text-center">
-              <Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" />
-            </div>
-          ) : projects.length === 0 ? (
-            <div className="p-4 text-center text-sm text-muted-foreground">No active projects found</div>
-          ) : (
-            projects.map((p) => (
-              <div key={p.id} className="flex items-center gap-3 px-4 py-2.5" data-testid={`rag-row-${p.id}`}>
-                <div className="flex-1 min-w-0">
-                  <span className="text-sm font-medium truncate block">{p.projectName}</span>
-                  {p.phase && <span className="text-[10px] text-muted-foreground">{p.phase}</span>}
-                </div>
-
-                <div className="flex items-center gap-1.5">
-                  {p.ragStatus && (
-                    <Badge className={`text-[9px] px-1.5 py-0 ${RAG_BADGE[p.ragStatus] || ""}`}>
-                      {p.ragStatus}
-                    </Badge>
-                  )}
-                  {p.ragUpdatedAt && (
-                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                      {new Date(p.ragUpdatedAt).toLocaleDateString("en-ZA", { day: "2-digit", month: "short" })}
-                    </span>
-                  )}
-                </div>
-
-                <div className="flex gap-1 shrink-0">
-                  {(["GREEN", "AMBER", "RED"] as const).map((rag) => (
-                    <button
-                      key={rag}
-                      className={`w-6 h-6 rounded-full border-2 transition-all ${
-                        p.ragStatus === rag
-                          ? `${RAG_COLORS[rag]} border-transparent shadow-md scale-110`
-                          : `bg-transparent border-current opacity-30 hover:opacity-70`
-                      }`}
-                      style={{ color: rag === "GREEN" ? "#10b981" : rag === "AMBER" ? "#f59e0b" : "#ef4444" }}
-                      onClick={() => updateRag.mutate({ id: p.id, ragStatus: rag })}
-                      disabled={updateRag.isPending}
-                      title={`Set ${rag}`}
-                      data-testid={`button-rag-${p.id}-${rag.toLowerCase()}`}
-                    />
-                  ))}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      )}
     </div>
   );
 }
