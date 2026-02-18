@@ -7,9 +7,10 @@ import {
   deliverables, deliverableVersions, deliverableFiles, deliverableEvents,
   notifications, notificationThrottle, spFilePointers,
   projectTeamMembers, projectPlan, qcWarning, qcWarningEvent,
-  qcItemInstance, users,
+  qcItemInstance, users, projectInfo, projectPhaseHistory,
   TASK_STATUSES, TASK_WORKSTREAMS, TASK_PRIORITIES, PROJECT_PHASES,
-  DELIVERABLE_STATUSES,
+  DELIVERABLE_STATUSES, PROJECT_PHASE_LABELS,
+  type ProjectPhase,
 } from "@shared/schema";
 
 type AppUser = { id: number; email: string; name: string; role: string; };
@@ -1170,6 +1171,104 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
+  // ========== PROJECT PHASE MANAGEMENT ==========
+
+  app.patch("/api/projects/:projectId/phase", jwtAuth, requireAuth, async (req, res) => {
+    try {
+      const user = getUser(req);
+      if (user.role !== "admin") {
+        return res.status(403).json({ error: "forbidden", message: "Only admins can change project phases" });
+      }
+
+      const projectId = parseInt(req.params.projectId);
+      if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
+
+      const { toPhase, reason, overrideSequence } = req.body;
+      if (!toPhase || !reason || typeof reason !== "string" || reason.trim().length === 0) {
+        return res.status(400).json({ error: "toPhase and reason are required" });
+      }
+      if (!PROJECT_PHASES.includes(toPhase as any)) {
+        return res.status(400).json({ error: "Invalid phase value", validPhases: PROJECT_PHASES });
+      }
+
+      const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
+      if (!project) return res.status(404).json({ error: "Project not found" });
+
+      const fromPhase = project.phase;
+
+      if (fromPhase === toPhase) {
+        return res.status(400).json({ error: "Project is already in this phase" });
+      }
+
+      const fromIdx = PROJECT_PHASES.indexOf(fromPhase as any);
+      const toIdx = PROJECT_PHASES.indexOf(toPhase as any);
+      if (fromIdx >= 0 && toIdx >= 0 && Math.abs(toIdx - fromIdx) > 1 && !overrideSequence) {
+        return res.status(400).json({
+          error: "sequential_required",
+          message: `Phase can only move one step at a time (${PROJECT_PHASE_LABELS[fromPhase as ProjectPhase] || fromPhase} → next). Set overrideSequence=true to skip.`,
+        });
+      }
+
+      await db.transaction(async (tx) => {
+        await tx.update(projectInfo)
+          .set({
+            phase: toPhase,
+            phaseUpdatedAt: new Date(),
+            phaseUpdatedByUserId: user.id,
+            phaseNotes: reason.trim(),
+            updatedAt: new Date(),
+          })
+          .where(eq(projectInfo.id, projectId));
+
+        await tx.insert(projectPhaseHistory).values({
+          projectId,
+          fromPhase: fromPhase || null,
+          toPhase,
+          changedByUserId: user.id,
+          reason: reason.trim(),
+        });
+      });
+
+      const [updated] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
+      res.json({
+        project: updated,
+        phaseLabel: PROJECT_PHASE_LABELS[toPhase as ProjectPhase] || toPhase,
+      });
+    } catch (err: any) {
+      console.error("[Phase] Error:", err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/projects/:projectId/phase-history", jwtAuth, requireAuth, async (req, res) => {
+    try {
+      const projectId = parseInt(req.params.projectId);
+      if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
+
+      const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
+      if (!project) return res.status(404).json({ error: "Project not found" });
+
+      const history = await db.select({
+        id: projectPhaseHistory.id,
+        fromPhase: projectPhaseHistory.fromPhase,
+        toPhase: projectPhaseHistory.toPhase,
+        changedAt: projectPhaseHistory.changedAt,
+        reason: projectPhaseHistory.reason,
+        changedByUserId: projectPhaseHistory.changedByUserId,
+        changedByName: users.name,
+      })
+        .from(projectPhaseHistory)
+        .leftJoin(users, eq(projectPhaseHistory.changedByUserId, users.id))
+        .where(eq(projectPhaseHistory.projectId, projectId))
+        .orderBy(desc(projectPhaseHistory.changedAt));
+
+      res.json({ history, phaseLabels: PROJECT_PHASE_LABELS });
+    } catch (err: any) {
+      console.error("[Phase] History error:", err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // ========== CONSTANTS ==========
 
   app.get("/api/eng/constants", (req, res) => {
@@ -1178,6 +1277,7 @@ export function registerEngineeringRoutes(app: Express) {
       taskWorkstreams: TASK_WORKSTREAMS,
       taskPriorities: TASK_PRIORITIES,
       projectPhases: PROJECT_PHASES,
+      projectPhaseLabels: PROJECT_PHASE_LABELS,
       deliverableStatuses: DELIVERABLE_STATUSES,
     });
   });
