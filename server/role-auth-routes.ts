@@ -44,7 +44,7 @@ export async function seedRoleCredentials() {
     if (existing.length > 0) return;
 
     const defaultPasswords: Record<string, string> = {
-      COO_ADMIN: "coo2026",
+      COO_ADMIN: "2024",
       CEO_ADMIN: "ceo2026",
     };
 
