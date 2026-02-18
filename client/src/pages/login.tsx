@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Lock, Shield, Eye, X, ClipboardCheck } from "lucide-react";
+import { Lock, Shield, Eye, X, ClipboardCheck, Wrench } from "lucide-react";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -14,11 +14,12 @@ export default function LoginPage() {
   const [, setLocation] = useLocation();
   const { login } = useAuth();
   const [showPinDialog, setShowPinDialog] = useState(false);
-  const [pinTarget, setPinTarget] = useState<"admin" | "qm">("admin");
+  const [pinTarget, setPinTarget] = useState<"admin" | "qm" | "epm">("admin");
   const [pin, setPin] = useState("");
   const [pinError, setPinError] = useState(false);
   const [adminUnlocked, setAdminUnlocked] = useState(false);
   const [qmUnlocked, setQmUnlocked] = useState(false);
+  const [epmUnlocked, setEpmUnlocked] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,6 +55,18 @@ export default function LoginPage() {
     }
   };
 
+  const handleEpmClick = () => {
+    if (epmUnlocked) {
+      setEmail("epm@emergent.energy");
+      setPassword("epm123");
+    } else {
+      setPinTarget("epm");
+      setPin("");
+      setPinError(false);
+      setShowPinDialog(true);
+    }
+  };
+
   const handlePinSubmit = () => {
     if (pinTarget === "admin" && pin === "2024") {
       setAdminUnlocked(true);
@@ -65,6 +78,11 @@ export default function LoginPage() {
       setShowPinDialog(false);
       setEmail("qm@emergent.energy");
       setPassword("quality123");
+    } else if (pinTarget === "epm" && pin === "2026") {
+      setEpmUnlocked(true);
+      setShowPinDialog(false);
+      setEmail("epm@emergent.energy");
+      setPassword("epm123");
     } else {
       setPinError(true);
     }
@@ -83,7 +101,7 @@ export default function LoginPage() {
         <CardContent className="space-y-5">
           <div className="space-y-2">
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Quick Login</p>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-4 gap-2">
               <button
                 type="button"
                 onClick={handleAdminClick}
@@ -103,6 +121,16 @@ export default function LoginPage() {
                 <ClipboardCheck className="w-5 h-5" />
                 <span className="text-sm font-semibold">Quality</span>
                 <span className="text-[10px] opacity-70 leading-tight">QM checklists, risk & post-mortem</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleEpmClick}
+                className={`flex flex-col items-center gap-1 p-3 rounded-lg border text-center transition-all bg-orange-500/10 border-orange-500/30 text-orange-700 hover:bg-orange-500/20 ${email === "epm@emergent.energy" ? "ring-2 ring-offset-1 ring-primary" : ""}`}
+                data-testid="button-quick-login-epm"
+              >
+                <Wrench className="w-5 h-5" />
+                <span className="text-sm font-semibold">EPM</span>
+                <span className="text-[10px] opacity-70 leading-tight">Engineering program management</span>
               </button>
               <button
                 type="button"
@@ -161,7 +189,7 @@ export default function LoginPage() {
           <Card className="w-80 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-lg">{pinTarget === "admin" ? "Admin Access" : "Quality Manager Access"}</CardTitle>
+                <CardTitle className="text-lg">{pinTarget === "admin" ? "Admin Access" : pinTarget === "qm" ? "Quality Manager Access" : "Engineering PM Access"}</CardTitle>
                 <button onClick={() => setShowPinDialog(false)} className="text-muted-foreground hover:text-foreground">
                   <X className="w-4 h-4" />
                 </button>

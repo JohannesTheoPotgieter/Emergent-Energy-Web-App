@@ -168,6 +168,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           if (role === "quality_manager") {
             return group.heading === "QUALITY" || group.heading === "CURRENT";
           }
+          if (role === "eng_program_manager") {
+            return group.heading === "ENGINEERING" || group.heading === "CURRENT" || group.heading === "QUALITY";
+          }
           if (group.heading === "WIP") return false;
           if (group.heading === "PERSONAL" && role !== "admin") return false;
           if (group.heading === "ADMIN" && role !== "admin") return false;
