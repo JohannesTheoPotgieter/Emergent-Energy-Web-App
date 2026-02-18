@@ -1,0 +1,52 @@
+You are working inside an EXISTING Replit web app repo.
+
+Goal
+Add ONE new role: ENG_PROGRAM_MANAGER (Engineering Program Manager).
+This role must have:
+- a dedicated dashboard to manage engineering task allocation + lifecycle tracking
+- EPM-only permissions (RBAC enforced UI + API)
+- an access popup code (like Admin) with code = 2026 (via Replit Secrets)
+- deep integration with: Projects, Project Plan, Quality module, Deliverables, Warnings, Notifications.
+
+Hard constraints
+- Do not remove or break any existing functionality.
+- No placeholder code. No placeholder buttons. Everything must be wired end-to-end.
+- Follow existing repo patterns for routes, API, DB/ORM, auth, UI.
+- The popup access code must NOT be hardcoded. Must be read from Replit Secrets.
+
+Step 0: Inspect repo
+- Identify how auth works and where roles are stored.
+- Identify existing roles: ADMIN, QUALITY_MANAGER, VIEWER (or similar).
+- Identify existing modules/routes for:
+  - Projects
+  - Project Plan (milestones/tasks)
+  - Tasks (if already implemented) or the work tracking module
+  - Warnings + Notifications (if already implemented)
+  - Quality checklist module (Excel-based)
+  - Deliverables register (engineering outputs)
+If any of these are not implemented yet, DO NOT fake them. Integrate with what exists and add what is missing for EPM function.
+
+RBAC
+Add role: ENG_PROGRAM_MANAGER
+Permissions:
+ENG_PROGRAM_MANAGER CAN:
+- view all projects and project plans
+- create/edit/assign/reassign tasks across Engineering workstream
+- bulk update task owners, due dates, priority, status
+- manage task templates for Engineering lifecycle + ad-hoc tickets
+- apply templates to projects (create tasks/deliverables/links)
+- view all warnings and assign warning owners and due dates (but not delete history)
+- trigger/send notification digests (engineering team)
+- enforce linking discipline (resolve “orphan tasks”)
+ENG_PROGRAM_MANAGER CANNOT:
+- change global app settings (admin only)
+- change project baseline plan dates (PM/Program/Admin only)
+- approve deliverables (keep approvals for Senior Engineer / Quality Manager unless repo already uses a different approval model)
+
+Popup access code requirement (EPM)
+- On first access to any /engineering-program-manager/* route (and on sensitive EPM admin actions),
+  show a modal popup: “Enter Engineering Program Manager Access Code”.
+- Validate input against Replit Secret: EPM_ACCESS_CODE.
+- User requirement: EPM_ACCESS_CODE should be set to “2026” in Replit Secrets.
+- Do not store the code in DB.
+- Store challenge pass

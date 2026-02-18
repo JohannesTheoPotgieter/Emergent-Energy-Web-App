@@ -12,7 +12,7 @@ export const revenueTypeEnum = pgEnum('revenue_type', ['PPA', 'Merchant', 'LGC',
 export const revenueStatusEnum = pgEnum('revenue_status', ['Realised', 'Forecast']);
 export const taskStatusEnum = pgEnum('task_status', ['Not Started', 'In Progress', 'Complete', 'Delayed']);
 export const budgetCategoryEnum = pgEnum('budget_category', ['REV', 'COS', 'OPS']);
-export const userRoleEnum = pgEnum('user_role', ['admin', 'member', 'quality_manager', 'viewer']);
+export const userRoleEnum = pgEnum('user_role', ['admin', 'member', 'quality_manager', 'viewer', 'eng_program_manager']);
 
 // Users Table
 export const users = pgTable("users", {
@@ -727,6 +727,28 @@ export const insertDateOverrideSchema = createInsertSchema(dateOverrides).omit({
 export type InsertDateOverride = z.infer<typeof insertDateOverrideSchema>;
 export type DateOverride = typeof dateOverrides.$inferSelect;
 
+export const TASK_STATUSES = [
+  "TO DO", "IN PROGRESS", "HOLD", "PROJECTS ASSISTANCE",
+  "NEEDS APPROVAL", "QC APPROVED", "PROVIDE FEEDBACK",
+  "OPERATIONAL APPROVAL", "COMPLETE"
+] as const;
+export type TaskStatus = typeof TASK_STATUSES[number];
+
+export const TASK_WORKSTREAMS = [
+  "PD", "Engineering", "Quality", "PM", "Procurement",
+  "Construction", "Commissioning", "Handover"
+] as const;
+export type TaskWorkstream = typeof TASK_WORKSTREAMS[number];
+
+export const TASK_PRIORITIES = ["Low", "Med", "High", "Urgent"] as const;
+export type TaskPriority = typeof TASK_PRIORITIES[number];
+
+export const PROJECT_PHASES = [
+  "PD", "Planning & Design", "Construction",
+  "Commissioning", "Handover", "Close-out"
+] as const;
+export type ProjectPhase = typeof PROJECT_PHASES[number];
+
 export const operationalTasks = pgTable("operational_tasks", {
   id: serial("id").primaryKey(),
   projectName: text("project_name").notNull(),
@@ -735,18 +757,27 @@ export const operationalTasks = pgTable("operational_tasks", {
   parentTaskId: integer("parent_task_id"),
   title: text("title").notNull(),
   description: text("description"),
-  status: text("status").notNull().default("Not Started"),
-  priority: text("priority").notNull().default("Normal"),
+  status: text("status").notNull().default("TO DO"),
+  priority: text("priority").notNull().default("Med"),
+  phase: text("phase"),
+  primaryWorkstream: text("primary_workstream"),
+  ownerUserId: integer("owner_user_id").references(() => users.id),
+  requesterUserId: integer("requester_user_id").references(() => users.id),
+  approverUserId: integer("approver_user_id").references(() => users.id),
+  holdReason: text("hold_reason"),
+  approvalRequired: boolean("approval_required").notNull().default(false),
   startDate: text("start_date"),
   dueDate: text("due_date"),
   durationDays: integer("duration_days"),
   actualStartDate: text("actual_start_date"),
   actualEndDate: text("actual_end_date"),
   actualDurationDays: integer("actual_duration_days"),
+  completedAt: timestamp("completed_at"),
   percentComplete: integer("percent_complete").notNull().default(0),
   expectedPercentComplete: integer("expected_percent_complete"),
   comment: text("comment"),
   assignees: text("assignees").array(),
+  watchers: text("watchers").array(),
   tags: text("tags").array(),
   blockerReason: text("blocker_reason"),
   plannedHours: real("planned_hours"),
@@ -754,6 +785,9 @@ export const operationalTasks = pgTable("operational_tasks", {
   escalationLevel: text("escalation_level"),
   sortOrder: integer("sort_order").notNull().default(0),
   isBaseline: boolean("is_baseline").notNull().default(false),
+  linkedPlanItemId: integer("linked_plan_item_id"),
+  linkedDeliverableId: integer("linked_deliverable_id"),
+  linkedQualityItemInstanceId: integer("linked_quality_item_instance_id"),
   createdBy: integer("created_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -1485,3 +1519,172 @@ export const calendarHoliday = pgTable("calendar_holiday", {
   name: text("name").notNull(),
   countryCode: text("country_code").notNull().default("ZA"),
 });
+
+// ===================== PROJECT TEAM MEMBERSHIP =====================
+
+export const projectTeamMembers = pgTable("project_team_members", {
+  id: serial("id").primaryKey(),
+  projectName: text("project_name").notNull(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  roleOnProject: text("role_on_project").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const insertProjectTeamMemberSchema = createInsertSchema(projectTeamMembers).omit({ id: true, createdAt: true });
+export type InsertProjectTeamMember = z.infer<typeof insertProjectTeamMemberSchema>;
+export type ProjectTeamMember = typeof projectTeamMembers.$inferSelect;
+
+// ===================== ENGINEERING DELIVERABLES =====================
+
+export const DELIVERABLE_STATUSES = [
+  "TO DO", "IN PROGRESS", "NEEDS APPROVAL", "PROVIDE FEEDBACK",
+  "QC APPROVED", "OPERATIONAL APPROVAL", "COMPLETE"
+] as const;
+export type DeliverableStatus = typeof DELIVERABLE_STATUSES[number];
+
+export const deliverables = pgTable("deliverables", {
+  id: serial("id").primaryKey(),
+  projectName: text("project_name").notNull(),
+  deliverableType: text("deliverable_type").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  phase: text("phase"),
+  ownerUserId: integer("owner_user_id").references(() => users.id),
+  reviewerUserId: integer("reviewer_user_id").references(() => users.id),
+  qcReviewerUserId: integer("qc_reviewer_user_id").references(() => users.id),
+  status: text("status").notNull().default("TO DO"),
+  currentVersion: integer("current_version").notNull().default(1),
+  sharepointFolderSiteId: text("sharepoint_folder_site_id"),
+  sharepointFolderDriveId: text("sharepoint_folder_drive_id"),
+  sharepointFolderItemId: text("sharepoint_folder_item_id"),
+  linkedPlanItemId: integer("linked_plan_item_id"),
+  linkedQualityItemInstanceId: integer("linked_quality_item_instance_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertDeliverableSchema = createInsertSchema(deliverables).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertDeliverable = z.infer<typeof insertDeliverableSchema>;
+export type Deliverable = typeof deliverables.$inferSelect;
+
+export const deliverableVersions = pgTable("deliverable_versions", {
+  id: serial("id").primaryKey(),
+  deliverableId: integer("deliverable_id").notNull().references(() => deliverables.id, { onDelete: 'cascade' }),
+  versionNumber: integer("version_number").notNull(),
+  changeReason: text("change_reason"),
+  impactJson: jsonb("impact_json"),
+  status: text("status").notNull().default("IN PROGRESS"),
+  createdByUserId: integer("created_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const insertDeliverableVersionSchema = createInsertSchema(deliverableVersions).omit({ id: true, createdAt: true });
+export type InsertDeliverableVersion = z.infer<typeof insertDeliverableVersionSchema>;
+export type DeliverableVersion = typeof deliverableVersions.$inferSelect;
+
+export const deliverableFiles = pgTable("deliverable_files", {
+  id: serial("id").primaryKey(),
+  deliverableId: integer("deliverable_id").notNull().references(() => deliverables.id, { onDelete: 'cascade' }),
+  versionId: integer("version_id").references(() => deliverableVersions.id, { onDelete: 'cascade' }),
+  siteId: text("site_id"),
+  driveId: text("drive_id"),
+  fileItemId: text("file_item_id"),
+  fileName: text("file_name").notNull(),
+  webUrl: text("web_url"),
+  isApproved: boolean("is_approved").notNull().default(false),
+  uploadedByUserId: integer("uploaded_by_user_id").references(() => users.id),
+  uploadedAt: timestamp("uploaded_at").notNull().defaultNow(),
+});
+export const insertDeliverableFileSchema = createInsertSchema(deliverableFiles).omit({ id: true, uploadedAt: true });
+export type InsertDeliverableFile = z.infer<typeof insertDeliverableFileSchema>;
+export type DeliverableFile = typeof deliverableFiles.$inferSelect;
+
+export const deliverableEvents = pgTable("deliverable_events", {
+  id: serial("id").primaryKey(),
+  deliverableId: integer("deliverable_id").notNull().references(() => deliverables.id, { onDelete: 'cascade' }),
+  eventType: text("event_type").notNull(),
+  fromStatus: text("from_status"),
+  toStatus: text("to_status"),
+  feedbackText: text("feedback_text"),
+  actorUserId: integer("actor_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const insertDeliverableEventSchema = createInsertSchema(deliverableEvents).omit({ id: true, createdAt: true });
+export type InsertDeliverableEvent = z.infer<typeof insertDeliverableEventSchema>;
+export type DeliverableEvent = typeof deliverableEvents.$inferSelect;
+
+// ===================== ENHANCED WARNING ENGINE =====================
+
+export const WARNING_TYPES = [
+  "overdue_task", "missing_approval", "missing_evidence", "orphan_task",
+  "milestone_risk", "invalid_dates", "deliverable_version_risk",
+  "folder_mismatch", "risk_trigger", "review_stuck", "task_complete_unapproved"
+] as const;
+export type WarningType = typeof WARNING_TYPES[number];
+
+export const WARNING_SEVERITIES = ["HIGH", "MED", "LOW"] as const;
+export type WarningSeverity = typeof WARNING_SEVERITIES[number];
+
+export const WARNING_STATUSES = ["open", "in_progress", "resolved", "accepted_risk"] as const;
+export type WarningStatus = typeof WARNING_STATUSES[number];
+
+// ===================== NOTIFICATIONS ENGINE =====================
+
+export const notifications = pgTable("notifications", {
+  id: serial("id").primaryKey(),
+  recipientUserId: integer("recipient_user_id").notNull().references(() => users.id),
+  eventType: text("event_type").notNull(),
+  title: text("title").notNull(),
+  body: text("body"),
+  projectName: text("project_name"),
+  linkedTaskId: integer("linked_task_id"),
+  linkedDeliverableId: integer("linked_deliverable_id"),
+  linkedWarningId: integer("linked_warning_id"),
+  linkedPlanItemId: integer("linked_plan_item_id"),
+  isRead: boolean("is_read").notNull().default(false),
+  readAt: timestamp("read_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const insertNotificationSchema = createInsertSchema(notifications).omit({ id: true, createdAt: true });
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+export type Notification = typeof notifications.$inferSelect;
+
+export const notificationThrottle = pgTable("notification_throttle", {
+  id: serial("id").primaryKey(),
+  recipientUserId: integer("recipient_user_id").notNull().references(() => users.id),
+  eventType: text("event_type").notNull(),
+  entityType: text("entity_type").notNull(),
+  entityId: integer("entity_id").notNull(),
+  lastSentAt: timestamp("last_sent_at").notNull().defaultNow(),
+});
+export const insertNotificationThrottleSchema = createInsertSchema(notificationThrottle).omit({ id: true });
+export type InsertNotificationThrottle = z.infer<typeof insertNotificationThrottleSchema>;
+export type NotificationThrottle = typeof notificationThrottle.$inferSelect;
+
+// ===================== SHAREPOINT FILE POINTERS =====================
+
+export const spFilePointers = pgTable("sp_file_pointers", {
+  id: serial("id").primaryKey(),
+  entityType: text("entity_type").notNull(),
+  entityId: integer("entity_id").notNull(),
+  siteId: text("site_id").notNull(),
+  driveId: text("drive_id").notNull(),
+  folderItemId: text("folder_item_id"),
+  fileItemId: text("file_item_id").notNull(),
+  fileName: text("file_name").notNull(),
+  webUrl: text("web_url"),
+  uploadedByUserId: integer("uploaded_by_user_id").references(() => users.id),
+  uploadedAt: timestamp("uploaded_at").notNull().defaultNow(),
+});
+export const insertSpFilePointerSchema = createInsertSchema(spFilePointers).omit({ id: true, uploadedAt: true });
+export type InsertSpFilePointer = z.infer<typeof insertSpFilePointerSchema>;
+export type SpFilePointer = typeof spFilePointers.$inferSelect;
+
+// ===================== TASK WATCHER JUNCTION =====================
+
+export const taskWatchers = pgTable("task_watchers", {
+  id: serial("id").primaryKey(),
+  taskId: integer("task_id").notNull().references(() => operationalTasks.id, { onDelete: 'cascade' }),
+  userId: integer("user_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const insertTaskWatcherSchema = createInsertSchema(taskWatchers).omit({ id: true, createdAt: true });
+export type InsertTaskWatcher = z.infer<typeof insertTaskWatcherSchema>;
+export type TaskWatcher = typeof taskWatchers.$inferSelect;
