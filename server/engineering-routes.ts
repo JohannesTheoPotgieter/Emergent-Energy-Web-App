@@ -927,32 +927,34 @@ export function registerEngineeringRoutes(app: Express) {
 
   // ========== ENGINEERING DASHBOARD DATA ==========
 
-  const EE_LIFECYCLE_PHASES = [
-    "Prospecting",
-    "First Assessment",
-    "Cost Proposal",
-    "Design",
-    "Procurement",
-    "Construction",
-    "Commissioning",
-    "Handover",
-    "Operational",
-  ];
-
-  function derivePhaseFromProject(projectName: string): string {
-    const lower = projectName.toLowerCase();
-    if (lower.includes("first assessment") || lower.includes("site visit")) return "First Assessment";
-    if (lower.includes("cost proposal") || lower.includes("sizing rational")) return "Cost Proposal";
-    if (lower.includes("commissioning") || lower.includes("qc")) return "Commissioning";
-    if (lower.includes("metering") || lower.includes("scada") || lower.includes("data analysis")) return "Design";
-    if (lower.includes("expansion") || lower.includes("phase 2") || lower.includes("phase 3") || lower.includes("ph 2") || lower.includes("ph3")) return "Construction";
-    return "In Progress";
-  }
-
   app.get("/api/eng/dashboard/projects", requireAuth, requireAdminOrEpm, async (req, res) => {
     try {
-      const allTasks = await db.select().from(operationalTasks)
-        .orderBy(asc(operationalTasks.projectName), asc(operationalTasks.sortOrder));
+      const [allTasks, allProjectInfoRows] = await Promise.all([
+        db.select().from(operationalTasks)
+          .orderBy(asc(operationalTasks.projectName), asc(operationalTasks.sortOrder)),
+        db.select({ projectName: projectInfo.projectName, phase: projectInfo.phase })
+          .from(projectInfo),
+      ]);
+
+      const normalizeKey = (n: string) => n.replace(/_Tracker.*$/i, "").replace(/_/g, " ").toLowerCase().trim();
+
+      const phaseByNorm = new Map<string, string>();
+      for (const pi of allProjectInfoRows) {
+        if (pi.phase) {
+          phaseByNorm.set(normalizeKey(pi.projectName), pi.phase);
+        }
+      }
+
+      function lookupPhase(taskProjectName: string): string {
+        const norm = normalizeKey(taskProjectName);
+        if (phaseByNorm.has(norm)) return phaseByNorm.get(norm)!;
+        const baseName = norm.replace(/\s*(phase\s*\d+|expansion|rev\d+|\+.*$)/gi, "").trim();
+        if (baseName && phaseByNorm.has(baseName)) return phaseByNorm.get(baseName)!;
+        for (const [key, phase] of phaseByNorm) {
+          if (key.startsWith(baseName) || baseName.startsWith(key)) return phase;
+        }
+        return "P0_FIRST_ASSESSMENT";
+      }
 
       const projectMap = new Map<string, {
         projectName: string;
@@ -963,7 +965,7 @@ export function registerEngineeringRoutes(app: Express) {
       for (const t of allTasks) {
         const key = t.projectName || "Unassigned";
         if (!projectMap.has(key)) {
-          const phase = t.phase || derivePhaseFromProject(key);
+          const phase = lookupPhase(key);
           projectMap.set(key, { projectName: key, phase, tasks: [] });
         }
         projectMap.get(key)!.tasks.push(t);
@@ -983,6 +985,7 @@ export function registerEngineeringRoutes(app: Express) {
           projectName: p.projectName,
           displayName: p.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " "),
           phase: p.phase,
+          phaseLabel: PROJECT_PHASE_LABELS[p.phase as ProjectPhase] || p.phase,
           totalTasks: p.tasks.length,
           activeTasks: allActive.length,
           completedTasks: completedTasks.length,
@@ -1003,7 +1006,11 @@ export function registerEngineeringRoutes(app: Express) {
         return b.activeTasks - a.activeTasks;
       });
 
-      res.json({ projects: result, lifecyclePhases: EE_LIFECYCLE_PHASES });
+      res.json({
+        projects: result,
+        lifecyclePhases: PROJECT_PHASES,
+        phaseLabels: PROJECT_PHASE_LABELS,
+      });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
