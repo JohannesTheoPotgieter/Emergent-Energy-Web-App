@@ -20,7 +20,7 @@ import {
   type CompanyRole,
 } from "@shared/schema";
 
-const ADMIN_ROLE_LIST: CompanyRole[] = ["COO_ADMIN", "CEO_ADMIN"];
+const ADMIN_ROLE_LIST: CompanyRole[] = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO"];
 const BUSINESS_ROLE_LIST: CompanyRole[] = COMPANY_ROLES.filter(
   (r) => !ADMIN_ROLE_LIST.includes(r)
 ) as CompanyRole[];
@@ -105,7 +105,7 @@ export default function LoginPage() {
 
         <div className="space-y-6">
           <div className="space-y-3">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-1">Administration</p>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-1">Executive</p>
             <div className="grid grid-cols-2 gap-3">
               {ADMIN_ROLE_LIST.map((role) => (
                 <Card
@@ -121,10 +121,12 @@ export default function LoginPage() {
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-semibold text-sm text-gray-900">{COMPANY_ROLE_LABELS[role]}</span>
-                        <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
-                          <Shield className="w-2.5 h-2.5" />
-                          Admin
-                        </span>
+                        {isAdmin(role) && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+                            <Shield className="w-2.5 h-2.5" />
+                            Admin
+                          </span>
+                        )}
                       </div>
                     </div>
                   </CardContent>
