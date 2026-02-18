@@ -54,7 +54,7 @@ async function engFetch(url: string, options?: RequestInit) {
 
 const TASK_STATUSES = [
   "TO DO", "IN PROGRESS", "HOLD", "PROJECTS ASSISTANCE", "NEEDS APPROVAL",
-  "QC APPROVED", "PROVIDE FEEDBACK", "OPERATIONAL APPROVAL", "COMPLETE"
+  "QC APPROVED", "PROVIDE FEEDBACK", "OPERATIONAL APPROVAL", "COMPLETE", "N/A"
 ];
 
 const PRIORITIES = ["Critical", "Urgent", "High", "Medium", "Low"];
@@ -69,6 +69,7 @@ const statusColors: Record<string, string> = {
   "OPERATIONAL APPROVAL": "bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300",
   "PROJECTS ASSISTANCE": "bg-cyan-100 text-cyan-700 dark:bg-cyan-900 dark:text-cyan-300",
   "COMPLETE": "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300",
+  "N/A": "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400",
 };
 
 const statusColumnColors: Record<string, string> = {
@@ -81,6 +82,7 @@ const statusColumnColors: Record<string, string> = {
   "OPERATIONAL APPROVAL": "border-t-indigo-500",
   "PROJECTS ASSISTANCE": "border-t-cyan-500",
   "COMPLETE": "border-t-green-500",
+  "N/A": "border-t-slate-400",
 };
 
 const priorityColors: Record<string, string> = {

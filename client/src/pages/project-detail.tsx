@@ -77,8 +77,25 @@ function PhaseChangeModal({ projectId, currentPhase, open, onClose }: {
   const [toPhase, setToPhase] = useState<string>("");
   const [reason, setReason] = useState("");
   const [overrideSequence, setOverrideSequence] = useState(false);
+  const [forceAdvance, setForceAdvance] = useState(false);
   const { toast } = useToast();
   const qc = useQueryClient();
+
+  const { data: gateCheck } = useQuery<{
+    canAdvance: boolean;
+    unresolvedTasks: { id: number; title: string; status: string }[];
+    currentPhase: string;
+    totalPhaseTasks: number;
+    resolvedCount: number;
+  }>({
+    queryKey: ["phase-gate-check", projectId],
+    queryFn: async () => {
+      const res = await engFetch(`/api/projects/${projectId}/phase-gate-check`);
+      if (!res.ok) return { canAdvance: true, unresolvedTasks: [], currentPhase: "", totalPhaseTasks: 0, resolvedCount: 0 };
+      return res.json();
+    },
+    enabled: open && !!projectId,
+  });
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -89,35 +106,46 @@ function PhaseChangeModal({ projectId, currentPhase, open, onClose }: {
         method: "PATCH",
         headers,
         credentials: "include",
-        body: JSON.stringify({ toPhase, reason, overrideSequence }),
+        body: JSON.stringify({ toPhase, reason, overrideSequence, forceAdvance }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
+        if (err.error === "phase_gate_blocked") {
+          throw new Error(err.message);
+        }
         throw new Error(err.message || err.error || "Failed to update phase");
       }
       return res.json();
     },
-    onSuccess: () => {
-      toast({ title: "Phase updated successfully" });
+    onSuccess: (data) => {
+      const msg = data.tasksCreated > 0
+        ? `Phase updated. ${data.tasksCreated} task(s) created for ${data.phaseLabel}.`
+        : "Phase updated successfully";
+      toast({ title: msg });
       qc.invalidateQueries({ queryKey: ["/api/projects-summary"] });
       qc.invalidateQueries({ queryKey: ["phase-history", projectId] });
+      qc.invalidateQueries({ queryKey: ["project-eng-tasks", projectId] });
+      qc.invalidateQueries({ queryKey: ["phase-gate-check", projectId] });
       setToPhase("");
       setReason("");
       setOverrideSequence(false);
+      setForceAdvance(false);
       onClose();
     },
     onError: (err: Error) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast({ title: "Cannot advance phase", description: err.message, variant: "destructive" });
     },
   });
 
   const currentIdx = PROJECT_PHASES.indexOf(currentPhase as any);
   const toIdx = PROJECT_PHASES.indexOf(toPhase as any);
   const needsOverride = currentIdx >= 0 && toIdx >= 0 && Math.abs(toIdx - currentIdx) > 1;
+  const isAdvancing = toIdx > currentIdx;
+  const hasBlockingTasks = isAdvancing && gateCheck && !gateCheck.canAdvance;
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-md" data-testid="dialog-phase-change">
+      <DialogContent className="max-w-lg" data-testid="dialog-phase-change">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <History className="h-5 w-5" />
@@ -129,6 +157,41 @@ function PhaseChangeModal({ projectId, currentPhase, open, onClose }: {
             <Label className="text-xs text-muted-foreground">Current Phase</Label>
             <p className="text-sm font-medium mt-1">{getPhaseLabel(currentPhase)}</p>
           </div>
+
+          {gateCheck && gateCheck.totalPhaseTasks > 0 && (
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Current Phase Tasks</Label>
+              <div className="flex items-center gap-2">
+                <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${gateCheck.canAdvance ? "bg-emerald-500" : "bg-amber-500"}`}
+                    style={{ width: `${(gateCheck.resolvedCount / gateCheck.totalPhaseTasks) * 100}%` }}
+                  />
+                </div>
+                <span className="text-xs text-muted-foreground whitespace-nowrap">
+                  {gateCheck.resolvedCount}/{gateCheck.totalPhaseTasks} resolved
+                </span>
+              </div>
+              {!gateCheck.canAdvance && (
+                <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 space-y-1.5">
+                  <p className="text-xs font-medium text-amber-800 flex items-center gap-1">
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    {gateCheck.unresolvedTasks.length} task(s) must be completed or marked N/A before advancing
+                  </p>
+                  <div className="space-y-1 max-h-32 overflow-y-auto">
+                    {gateCheck.unresolvedTasks.map(t => (
+                      <div key={t.id} className="flex items-center gap-2 text-[11px] text-amber-700">
+                        <Circle className="h-2 w-2 fill-current shrink-0" />
+                        <span className="truncate flex-1">{t.title}</span>
+                        <Badge className="text-[9px] px-1 py-0 bg-amber-100 text-amber-700">{t.status}</Badge>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           <div>
             <Label htmlFor="toPhase">New Phase</Label>
             <Select value={toPhase} onValueChange={setToPhase}>
@@ -168,16 +231,34 @@ function PhaseChangeModal({ projectId, currentPhase, open, onClose }: {
               </div>
             </div>
           )}
+          {hasBlockingTasks && toPhase && isAdvancing && (
+            <div className="flex items-center gap-3 p-3 rounded-lg bg-red-50 border border-red-200">
+              <Switch
+                checked={forceAdvance}
+                onCheckedChange={setForceAdvance}
+                data-testid="switch-force-advance"
+              />
+              <div className="text-sm">
+                <p className="font-medium text-red-800">Force advance (override phase gate)</p>
+                <p className="text-xs text-red-600 mt-0.5">Some tasks are unresolved. Enable this to advance anyway.</p>
+              </div>
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose} data-testid="button-cancel-phase">Cancel</Button>
           <Button
             onClick={() => mutation.mutate()}
-            disabled={!toPhase || !reason.trim() || (needsOverride && !overrideSequence) || mutation.isPending}
+            disabled={
+              !toPhase || !reason.trim() ||
+              (needsOverride && !overrideSequence) ||
+              (hasBlockingTasks && isAdvancing && !forceAdvance) ||
+              mutation.isPending
+            }
             data-testid="button-save-phase"
           >
             {mutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
-            Update Phase
+            {isAdvancing && toIdx >= 2 ? "Advance Phase" : "Update Phase"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -232,12 +313,13 @@ const STATUS_DOT: Record<string, string> = {
   "NEEDS APPROVAL": "text-amber-500", "COMPLETE": "text-green-500",
   "QC APPROVED": "text-emerald-500", "PROVIDE FEEDBACK": "text-purple-500",
   "OPERATIONAL APPROVAL": "text-indigo-500", "PROJECTS ASSISTANCE": "text-cyan-500",
+  "N/A": "text-slate-400",
 };
 const STATUS_BADGE: Record<string, string> = {
   "TO DO": "bg-gray-100 text-gray-700", "IN PROGRESS": "bg-blue-100 text-blue-700",
   "HOLD": "bg-red-100 text-red-700", "NEEDS APPROVAL": "bg-amber-100 text-amber-700",
   "COMPLETE": "bg-green-100 text-green-700", "QC APPROVED": "bg-emerald-100 text-emerald-700",
-  "PROVIDE FEEDBACK": "bg-purple-100 text-purple-700",
+  "PROVIDE FEEDBACK": "bg-purple-100 text-purple-700", "N/A": "bg-slate-100 text-slate-500",
 };
 
 function EngTasksTab({ projectInfoId, isAdmin }: { projectInfoId: number | null; isAdmin: boolean }) {
@@ -420,13 +502,21 @@ export default function ProjectDetailPage() {
   const highlightId = searchParams.get("highlightId") ? Number(searchParams.get("highlightId")) : null;
   const highlightType = searchParams.get("highlightType");
 
-  const [activeTab, setActiveTab] = useState(urlTab || "task-grid");
+  const [activeTab, setActiveTab] = useState(urlTab || "eng-tasks");
 
   useEffect(() => {
     if (urlTab) setActiveTab(urlTab);
   }, [urlTab]);
 
   const projectInfo = projectsSummary?.find((p: any) => p.project_name === projectName);
+
+  useEffect(() => {
+    const pmTabs = ["task-grid", "board", "calendar", "project-plan"];
+    const finTabs = ["revenue-tracking", "expenditure", "finance-revenue", "finance-cos", "cashflow"];
+    const curPhaseIdx = projectInfo?.phase ? PROJECT_PHASES.indexOf(projectInfo.phase as any) : -1;
+    if (curPhaseIdx < 3 && pmTabs.includes(activeTab)) setActiveTab("eng-tasks");
+    if (curPhaseIdx < 2 && finTabs.includes(activeTab)) setActiveTab("eng-tasks");
+  }, [projectInfo?.phase, activeTab]);
 
   const handleTaskClick = (taskId: number) => {
     setSelectedTaskId(taskId);
@@ -512,6 +602,9 @@ export default function ProjectDetailPage() {
     : "—";
   const isAdmin = user?.role === "admin";
   const projectInfoId = projectInfo?.project_info_id;
+  const phaseIdx = phase ? PROJECT_PHASES.indexOf(phase as any) : -1;
+  const isExecutionPhase = phaseIdx >= 2;
+  const isPMPhase = phaseIdx >= 3;
 
   const dataHealth = [
     { name: "Project Plan", rows: (projectPlanData as any[]).length, present: (projectPlanData as any[]).length > 0 },
@@ -585,49 +678,57 @@ export default function ProjectDetailPage() {
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="flex overflow-x-auto gap-1 h-auto p-1 w-full no-scrollbar">
-          <TabsTrigger value="task-grid" className="flex items-center gap-1.5 text-xs" data-testid="tab-task-grid">
-            <ListTodo className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Tasks</span>
-          </TabsTrigger>
-          <TabsTrigger value="board" className="flex items-center gap-1.5 text-xs" data-testid="tab-board">
-            <Columns className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Board</span>
-          </TabsTrigger>
-          <TabsTrigger value="calendar" className="flex items-center gap-1.5 text-xs" data-testid="tab-calendar">
-            <CalendarDays className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Calendar</span>
-          </TabsTrigger>
-          <TabsTrigger value="project-plan" className="flex items-center gap-1.5 text-xs" data-testid="tab-project-plan">
-            <FileText className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Gantt</span>
-          </TabsTrigger>
-          <TabsTrigger value="revenue-tracking" className="flex items-center gap-1.5 text-xs" data-testid="tab-revenue">
-            <DollarSign className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Revenue</span>
-          </TabsTrigger>
-          <TabsTrigger value="expenditure" className="flex items-center gap-1.5 text-xs" data-testid="tab-expenditure">
-            <CreditCard className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Expenditure</span>
-          </TabsTrigger>
-          <TabsTrigger value="finance-revenue" className="flex items-center gap-1.5 text-xs" data-testid="tab-finance-rev">
-            <TrendingUp className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Fin-Rev</span>
-          </TabsTrigger>
-          <TabsTrigger value="finance-cos" className="flex items-center gap-1.5 text-xs" data-testid="tab-finance-cos">
-            <BarChart3 className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Fin-COS</span>
-          </TabsTrigger>
-          <TabsTrigger value="cashflow" className="flex items-center gap-1.5 text-xs" data-testid="tab-cashflow">
-            <Activity className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Cashflow</span>
-          </TabsTrigger>
-          <TabsTrigger value="quality" className="flex items-center gap-1.5 text-xs" data-testid="tab-quality">
-            <ShieldCheck className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Quality</span>
-          </TabsTrigger>
           <TabsTrigger value="eng-tasks" className="flex items-center gap-1.5 text-xs" data-testid="tab-eng-tasks">
             <Wrench className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Eng Tasks</span>
+          </TabsTrigger>
+          {isPMPhase && (
+            <>
+              <TabsTrigger value="task-grid" className="flex items-center gap-1.5 text-xs" data-testid="tab-task-grid">
+                <ListTodo className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Tasks</span>
+              </TabsTrigger>
+              <TabsTrigger value="board" className="flex items-center gap-1.5 text-xs" data-testid="tab-board">
+                <Columns className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Board</span>
+              </TabsTrigger>
+              <TabsTrigger value="calendar" className="flex items-center gap-1.5 text-xs" data-testid="tab-calendar">
+                <CalendarDays className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Calendar</span>
+              </TabsTrigger>
+              <TabsTrigger value="project-plan" className="flex items-center gap-1.5 text-xs" data-testid="tab-project-plan">
+                <FileText className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Gantt</span>
+              </TabsTrigger>
+            </>
+          )}
+          {isExecutionPhase && (
+            <>
+              <TabsTrigger value="revenue-tracking" className="flex items-center gap-1.5 text-xs" data-testid="tab-revenue">
+                <DollarSign className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Revenue</span>
+              </TabsTrigger>
+              <TabsTrigger value="expenditure" className="flex items-center gap-1.5 text-xs" data-testid="tab-expenditure">
+                <CreditCard className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Expenditure</span>
+              </TabsTrigger>
+              <TabsTrigger value="finance-revenue" className="flex items-center gap-1.5 text-xs" data-testid="tab-finance-rev">
+                <TrendingUp className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Fin-Rev</span>
+              </TabsTrigger>
+              <TabsTrigger value="finance-cos" className="flex items-center gap-1.5 text-xs" data-testid="tab-finance-cos">
+                <BarChart3 className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Fin-COS</span>
+              </TabsTrigger>
+              <TabsTrigger value="cashflow" className="flex items-center gap-1.5 text-xs" data-testid="tab-cashflow">
+                <Activity className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Cashflow</span>
+              </TabsTrigger>
+            </>
+          )}
+          <TabsTrigger value="quality" className="flex items-center gap-1.5 text-xs" data-testid="tab-quality">
+            <ShieldCheck className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Quality</span>
           </TabsTrigger>
         </TabsList>
 
