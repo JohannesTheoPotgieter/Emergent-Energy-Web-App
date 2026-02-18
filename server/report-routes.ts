@@ -1,7 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { projectInfo, type ProjectInfo } from "@shared/schema";
-import { eq } from "drizzle-orm";
 import { verifyToken } from "./jwt";
 
 function requireAuth(req: Request, res: Response, next: NextFunction) {
@@ -62,7 +61,6 @@ interface KPIPayload {
     pdPmHandovers: number;
     commissionings: number;
     clientHandoversPlanned: number;
-    rag: { green: number; amber: number; red: number; onTrack: number };
   };
 }
 
@@ -70,7 +68,7 @@ async function calculateKPIs(month: string): Promise<KPIPayload> {
   const parsed = parseMonth(month);
   if (!parsed) throw new Error("Invalid month format. Use YYYY-MM.");
 
-  const { monthStart, monthEnd, monthStartStr, monthEndStr } = parsed;
+  const { monthStartStr, monthEndStr } = parsed;
   const startTs = Date.now();
 
   const allProjects = await db.select().from(projectInfo);
@@ -101,20 +99,6 @@ async function calculateKPIs(month: string): Promise<KPIPayload> {
     }
   }
 
-  let green = 0, amber = 0, red = 0;
-  for (const p of activeProjects) {
-    const rag = (p.ragStatus || "").toUpperCase();
-    if (p.ragUpdatedAt && p.ragUpdatedAt <= monthEnd) {
-      if (rag === "GREEN") green++;
-      else if (rag === "RED") red++;
-      else amber++;
-    } else if (p.ragUpdatedAt && p.ragUpdatedAt > monthEnd) {
-      amber++;
-    } else {
-      amber++;
-    }
-  }
-
   const duration = Date.now() - startTs;
   console.log(`[Reports] KPI calculation for ${month} took ${duration}ms`);
 
@@ -127,7 +111,6 @@ async function calculateKPIs(month: string): Promise<KPIPayload> {
       pdPmHandovers: pdPmHandovers.size,
       commissionings: commissionings.size,
       clientHandoversPlanned: clientHandoversPlanned.size,
-      rag: { green, amber, red, onTrack: green },
     },
   };
 }
@@ -190,7 +173,6 @@ body{font-family:'Inter','Segoe UI',sans-serif;background:#fff}
       ${tile(data.kpis.pdPmHandovers, "PD → PM Handovers")}
       ${tile(data.kpis.commissionings, "Commissionings")}
       ${tile(data.kpis.clientHandoversPlanned, "Client Handovers (Planned)")}
-      ${tile(data.kpis.rag.onTrack, "Projects On Track", `G: ${data.kpis.rag.green} / A: ${data.kpis.rag.amber} / R: ${data.kpis.rag.red}`)}
     </div>
     <div class="footer">
       <span>Generated: ${new Date(data.generatedAt).toLocaleString("en-ZA")}</span>
@@ -212,44 +194,4 @@ body{font-family:'Inter','Segoe UI',sans-serif;background:#fff}
     }
   });
 
-  app.patch("/api/admin/projects/:id/rag", requireAuth, requireAdmin, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id as string);
-      const { ragStatus } = req.body;
-      if (!["GREEN", "AMBER", "RED"].includes(ragStatus)) {
-        return res.status(400).json({ error: "ragStatus must be GREEN, AMBER, or RED" });
-      }
-      const [updated] = await db.update(projectInfo)
-        .set({ ragStatus, ragUpdatedAt: new Date(), updatedAt: new Date() })
-        .where(eq(projectInfo.id, id))
-        .returning();
-      if (!updated) return res.status(404).json({ error: "Project not found" });
-      res.json(updated);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.get("/api/admin/projects/rag-summary", requireAuth, requireAdmin, async (req, res) => {
-    try {
-      const allProjects = await db.select({
-        id: projectInfo.id,
-        projectName: projectInfo.projectName,
-        phase: projectInfo.phase,
-        isActive: projectInfo.isActive,
-        ragStatus: projectInfo.ragStatus,
-        ragUpdatedAt: projectInfo.ragUpdatedAt,
-      }).from(projectInfo);
-
-      const active = allProjects.filter((p: typeof allProjects[number]) => {
-        if (!p.isActive) return false;
-        const phase = (p.phase || "").trim();
-        return !INACTIVE_STATUSES.some(s => s.toLowerCase() === phase.toLowerCase());
-      });
-
-      res.json({ projects: active });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
 }
