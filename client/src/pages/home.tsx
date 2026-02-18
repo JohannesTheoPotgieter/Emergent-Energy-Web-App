@@ -310,6 +310,8 @@ export default function Home() {
           </div>
         </div>
 
+        <CompanyPrioritiesSection isAdmin={false} />
+
         <div>
           <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Quality Tools</h2>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
