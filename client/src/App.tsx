@@ -39,6 +39,9 @@ import SpSnapshotDetailPage from "@/pages/sp-snapshot-detail";
 import SpFileRefreshPage from "@/pages/sp-file-refresh";
 import QmDashboardPage from "@/pages/qm-dashboard";
 import EngineeringDashboardPage from "@/pages/engineering-dashboard";
+import EngineeringTasksPage from "@/pages/engineering-tasks";
+import EngineeringDeliverablesPage from "@/pages/engineering-deliverables";
+import EngineeringTeamsPage from "@/pages/engineering-teams";
 
 import { useProgramData } from "@/hooks/use-program-data";
 import { TrackerTable } from "@/components/dashboard/TrackerTable";
@@ -188,6 +191,9 @@ function ProtectedPages() {
         <Route path="/admin/sp-file-refresh" component={SpFileRefreshPage} />
         <Route path="/quality" component={QmDashboardPage} />
         <Route path="/engineering" component={EngineeringDashboardPage} />
+        <Route path="/engineering/tasks" component={EngineeringTasksPage} />
+        <Route path="/engineering/deliverables" component={EngineeringDeliverablesPage} />
+        <Route path="/engineering/teams" component={EngineeringTeamsPage} />
 
         <Route component={NotFound} />
       </Switch>

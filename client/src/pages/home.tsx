@@ -19,6 +19,11 @@ import {
   Loader2,
   ShieldCheck,
   ClipboardCheck,
+  Wrench,
+  ListTodo,
+  Package,
+  Users,
+  FolderOpen,
 } from "lucide-react";
 
 interface QuickLink {
@@ -49,6 +54,41 @@ interface CompanyPriority {
   linkedTaskId: number | null;
   linkedTaskType: string | null;
 }
+
+const engLinks: QuickLink[] = [
+  {
+    label: "Engineering Dashboard",
+    description: "Workload, milestones at risk, pipeline, warnings",
+    icon: Wrench,
+    path: "/engineering",
+    color: "text-orange-600",
+    bg: "bg-orange-50 dark:bg-orange-950/30 border-orange-200 dark:border-orange-800 hover:border-orange-400",
+  },
+  {
+    label: "Task Board",
+    description: "Manage engineering tasks across all projects",
+    icon: ListTodo,
+    path: "/engineering/tasks",
+    color: "text-blue-600",
+    bg: "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 hover:border-blue-400",
+  },
+  {
+    label: "Deliverables Register",
+    description: "Track deliverables, versions, and approvals",
+    icon: Package,
+    path: "/engineering/deliverables",
+    color: "text-indigo-600",
+    bg: "bg-indigo-50 dark:bg-indigo-950/30 border-indigo-200 dark:border-indigo-800 hover:border-indigo-400",
+  },
+  {
+    label: "Project Teams",
+    description: "Manage team assignments and roles",
+    icon: Users,
+    path: "/engineering/teams",
+    color: "text-emerald-600",
+    bg: "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 hover:border-emerald-400",
+  },
+];
 
 const currentLinks: QuickLink[] = [
   {
@@ -117,6 +157,25 @@ const wipLinks: QuickLink[] = [
     path: "/risks-flags",
     color: "text-orange-600",
     bg: "bg-orange-50 dark:bg-orange-950/30 border-orange-200 dark:border-orange-800 hover:border-orange-400",
+  },
+];
+
+const qmLinks: QuickLink[] = [
+  {
+    label: "QM Dashboard",
+    description: "Overview of quality status, warnings, and project completion",
+    icon: ShieldCheck,
+    path: "/quality",
+    color: "text-emerald-600",
+    bg: "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 hover:border-emerald-400",
+  },
+  {
+    label: "Project Summary",
+    description: "View projects and access quality checklists",
+    icon: FileSpreadsheet,
+    path: "/projects",
+    color: "text-blue-600",
+    bg: "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 hover:border-blue-400",
   },
 ];
 
@@ -273,27 +332,9 @@ function CompanyPrioritiesSection({ isAdmin }: { isAdmin: boolean }) {
   );
 }
 
-const qmLinks: QuickLink[] = [
-  {
-    label: "QM Dashboard",
-    description: "Overview of quality status, warnings, and project completion",
-    icon: ShieldCheck,
-    path: "/quality",
-    color: "text-emerald-600",
-    bg: "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 hover:border-emerald-400",
-  },
-  {
-    label: "Project Summary",
-    description: "View projects and access quality checklists",
-    icon: FileSpreadsheet,
-    path: "/projects",
-    color: "text-blue-600",
-    bg: "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 hover:border-blue-400",
-  },
-];
-
 export default function Home() {
-  const { isAdmin, isQm } = useAuth();
+  const { user, isAdmin, isQm } = useAuth();
+  const isEpm = user?.role === "eng_program_manager";
 
   if (isQm) {
     return (
@@ -324,6 +365,53 @@ export default function Home() {
     );
   }
 
+  if (isEpm) {
+    return (
+      <div className="space-y-8" data-testid="home-page">
+        <div>
+          <div className="flex items-center gap-3 mb-1">
+            <div className="p-2.5 rounded-lg bg-orange-100 dark:bg-orange-950/40">
+              <Wrench className="h-6 w-6 text-orange-600" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold">Engineering Program Management</h1>
+              <p className="text-muted-foreground mt-0.5">Tasks, deliverables, team management, and project oversight.</p>
+            </div>
+          </div>
+        </div>
+
+        <CompanyPrioritiesSection isAdmin={false} />
+
+        <div>
+          <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Engineering Tools</h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {engLinks.map((link) => (
+              <NavTile key={link.path} link={link} />
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Quality</h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {qmLinks.map((link) => (
+              <NavTile key={link.path} link={link} />
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Project Data</h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {currentLinks.map((link) => (
+              <NavTile key={link.path} link={link} />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8" data-testid="home-page">
       <div>
@@ -332,6 +420,15 @@ export default function Home() {
       </div>
 
       <CompanyPrioritiesSection isAdmin={isAdmin} />
+
+      <div>
+        <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Engineering</h2>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {engLinks.map((link) => (
+            <NavTile key={link.path} link={link} />
+          ))}
+        </div>
+      </div>
 
       <div>
         <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Current</h2>
