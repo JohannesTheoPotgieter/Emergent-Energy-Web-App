@@ -932,23 +932,48 @@ export function registerEngineeringRoutes(app: Express) {
       const allTasks = await db.select().from(operationalTasks)
         .where(ne(operationalTasks.status, "COMPLETE"));
 
-      const workload = allUsers.map(u => {
-        const userTasks = allTasks.filter(t => t.ownerUserId === u.id);
-        const today = new Date().toISOString().split('T')[0];
-        const endOfWeek = new Date();
-        endOfWeek.setDate(endOfWeek.getDate() + 7);
-        const weekEnd = endOfWeek.toISOString().split('T')[0];
+      const today = new Date().toISOString().split('T')[0];
+      const endOfWeek = new Date();
+      endOfWeek.setDate(endOfWeek.getDate() + 7);
+      const weekEnd = endOfWeek.toISOString().split('T')[0];
 
-        return {
-          userId: u.id, userName: u.name, userEmail: u.email,
-          totalActive: userTasks.length,
-          dueThisWeek: userTasks.filter(t => t.dueDate && t.dueDate >= today && t.dueDate <= weekEnd).length,
-          overdue: userTasks.filter(t => t.dueDate && t.dueDate < today).length,
-          onHold: userTasks.filter(t => t.status === "HOLD").length,
-          needsApproval: userTasks.filter(t => t.status === "NEEDS APPROVAL").length,
-          provideFeedback: userTasks.filter(t => t.status === "PROVIDE FEEDBACK").length,
-        };
-      }).filter(w => w.totalActive > 0);
+      const assigneeSet = new Set<string>();
+      for (const t of allTasks) {
+        if (t.assignees && Array.isArray(t.assignees)) {
+          for (const a of t.assignees) if (a) assigneeSet.add(a);
+        }
+      }
+
+      const workload: any[] = [];
+      if (assigneeSet.size > 0) {
+        for (const name of assigneeSet) {
+          const userTasks = allTasks.filter(t => t.assignees && t.assignees.includes(name));
+          workload.push({
+            name,
+            activeTasks: userTasks.length,
+            dueThisWeek: userTasks.filter(t => t.dueDate && t.dueDate >= today && t.dueDate <= weekEnd).length,
+            overdue: userTasks.filter(t => t.dueDate && t.dueDate < today).length,
+            onHold: userTasks.filter(t => t.status === "HOLD").length,
+            needsApproval: userTasks.filter(t => t.status === "NEEDS APPROVAL").length,
+            provideFeedback: userTasks.filter(t => t.status === "PROVIDE FEEDBACK").length,
+          });
+        }
+      } else {
+        const userWorkload = allUsers.map(u => {
+          const userTasks = allTasks.filter(t => t.ownerUserId === u.id);
+          return {
+            name: u.name,
+            activeTasks: userTasks.length,
+            dueThisWeek: userTasks.filter(t => t.dueDate && t.dueDate >= today && t.dueDate <= weekEnd).length,
+            overdue: userTasks.filter(t => t.dueDate && t.dueDate < today).length,
+            onHold: userTasks.filter(t => t.status === "HOLD").length,
+            needsApproval: userTasks.filter(t => t.status === "NEEDS APPROVAL").length,
+            provideFeedback: userTasks.filter(t => t.status === "PROVIDE FEEDBACK").length,
+          };
+        }).filter(w => w.activeTasks > 0);
+        workload.push(...userWorkload);
+      }
+      workload.sort((a, b) => b.activeTasks - a.activeTasks);
 
       res.json(workload);
     } catch (err: any) {
@@ -958,41 +983,42 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.get("/api/eng/dashboard/milestones-at-risk", requireAuth, requireAdminOrEpm, async (req, res) => {
     try {
+      const todayStr = new Date().toISOString().split('T')[0];
       const twoWeeks = new Date();
       twoWeeks.setDate(twoWeeks.getDate() + 14);
       const twoWeeksStr = twoWeeks.toISOString().split('T')[0];
-      const todayStr = new Date().toISOString().split('T')[0];
 
-      const milestones = await db.select().from(projectPlan)
+      const atRiskTasks = await db.select().from(operationalTasks)
         .where(and(
-          sql`${projectPlan.actualEnd} IS NOT NULL`,
-          sql`${projectPlan.actualEnd} >= ${todayStr}`,
-          sql`${projectPlan.actualEnd} <= ${twoWeeksStr}`
-        ));
+          ne(operationalTasks.status, "COMPLETE"),
+          sql`(${operationalTasks.dueDate} IS NOT NULL AND ${operationalTasks.dueDate} <= ${twoWeeksStr})`
+        ))
+        .orderBy(asc(operationalTasks.dueDate));
 
-      const result = [];
-      for (const m of milestones) {
-        const linkedTasks = await db.select().from(operationalTasks)
-          .where(eq(operationalTasks.linkedPlanItemId, m.id));
-
-        const warnings = await db.select().from(qcWarning)
-          .where(and(
-            eq(qcWarning.projectName, m.projectName),
-            eq(qcWarning.severity, "HIGH" as any),
-            eq(qcWarning.status, "open")
-          ));
-
-        const linkedDelivs = await db.select().from(deliverables)
-          .where(eq(deliverables.linkedPlanItemId, m.id));
-
-        result.push({
-          milestone: m,
-          linkedTasks: linkedTasks.length,
-          incompleteTasks: linkedTasks.filter(t => t.status !== "COMPLETE").length,
-          highWarnings: warnings.length,
-          deliverables: linkedDelivs.map(d => ({ id: d.id, title: d.title, status: d.status })),
-        });
+      const grouped = new Map<string, typeof atRiskTasks>();
+      for (const t of atRiskTasks) {
+        const key = t.projectName || "Unassigned";
+        if (!grouped.has(key)) grouped.set(key, []);
+        grouped.get(key)!.push(t);
       }
+
+      const result = Array.from(grouped.entries()).map(([projectName, tasks]) => {
+        const overdue = tasks.filter(t => t.dueDate && t.dueDate < todayStr);
+        const onHold = tasks.filter(t => t.status === "HOLD");
+        return {
+          id: projectName,
+          projectName: projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " "),
+          milestoneName: `${tasks.length} task${tasks.length !== 1 ? "s" : ""} due within 14 days`,
+          dueDate: tasks[0]?.dueDate || null,
+          linkedTasks: tasks.length,
+          incompleteTasks: tasks.length,
+          highWarnings: overdue.length + onHold.length,
+          deliverableStatuses: tasks.slice(0, 4).map(t => ({
+            name: t.title.substring(0, 40),
+            status: t.status,
+          })),
+        };
+      }).sort((a, b) => b.highWarnings - a.highWarnings);
 
       res.json(result);
     } catch (err: any) {
@@ -1002,11 +1028,15 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.get("/api/eng/dashboard/deliverables-pipeline", requireAuth, requireAdminOrEpm, async (req, res) => {
     try {
+      const taskStatuses = [
+        "TO DO", "IN PROGRESS", "HOLD", "PROJECTS ASSISTANCE", "NEEDS APPROVAL",
+        "QC APPROVED", "PROVIDE FEEDBACK", "OPERATIONAL APPROVAL", "COMPLETE"
+      ];
       const pipeline: Record<string, number> = {};
-      for (const s of DELIVERABLE_STATUSES) {
+      for (const s of taskStatuses) {
         const [result] = await db.select({ count: sql<number>`count(*)::int` })
-          .from(deliverables)
-          .where(eq(deliverables.status, s));
+          .from(operationalTasks)
+          .where(eq(operationalTasks.status, s));
         pipeline[s] = result?.count || 0;
       }
       res.json(pipeline);
