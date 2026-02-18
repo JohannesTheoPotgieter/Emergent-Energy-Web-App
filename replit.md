@@ -37,7 +37,7 @@ Preferred communication style: Simple, everyday language.
 -   `projectPlan`: Project task and milestone data.
 -   `cashflowPlanningOverrides`, `planningOverrides`, `lineItemOverrides`: Stores user-defined adjustments.
 -   `scenarios`, `dateOverrides`: Scenario/what-if system tables.
--   `operationalTasks`, `taskComments`, `taskChecklists`, `taskAttachments`, `taskActivityLog`: Operational task management entities.
+-   `operationalTasks`, `taskComments`, `taskChecklists`, `taskAttachments`, `taskActivityLog`: Operational task management entities (includes ClickUp migration fields: external_source, external_task_id, assignees, tracking_rag, task_type_tag).
 -   `writebackMappings`, `writebackAuditLog`: Excel writeback configuration and audit trail.
 -   `mytool_tasks`, `mytool_timeblocks`, `mytool_daily_reviews`, `mytool_company_priorities`, `mytool_user_preferences`: My Tool entities.
 -   `mytool_dod_templates`: Definition of Done reusable templates.
@@ -63,6 +63,7 @@ Preferred communication style: Simple, everyday language.
 -   `/api/planning-board/*`: Endpoints for project overviews, PM capacity, and scenario-applied planning.
 -   `/api/dashboard/high-priority`: Severity-classified alerts.
 -   `/api/operational-tasks/*`: CRUD operations for operational tasks, comments, checklists, and activity logs.
+-   `/api/eng/tasks/*`: Engineering task board CRUD with Kanban support — single task detail, comments, activity log, subtasks endpoints.
 -   `/api/writeback/*`: Endpoints for managing writeback mappings, previewing, executing, and rolling back writebacks.
 -   `/api/mytool/*`: Endpoints for My Tool settings, tasks, time blocks, daily reviews, company priorities, and user preferences.
 -   `/api/quality/*`: Quality management endpoints — templates, checklists (CRUD + instantiation), risk answers, warnings engine, post-mortem scoring, access code challenge with rate limiting.
