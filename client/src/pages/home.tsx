@@ -392,18 +392,9 @@ export default function Home() {
         </div>
 
         <div>
-          <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Quality</h2>
+          <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Quality & Projects</h2>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {qmLinks.map((link) => (
-              <NavTile key={link.path} link={link} />
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Project Data</h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {currentLinks.map((link) => (
               <NavTile key={link.path} link={link} />
             ))}
           </div>

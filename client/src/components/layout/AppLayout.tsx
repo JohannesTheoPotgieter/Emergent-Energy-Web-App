@@ -173,16 +173,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             return group.heading === "QUALITY" || group.heading === "CURRENT";
           }
           if (role === "eng_program_manager") {
-            return group.heading === "ENGINEERING" || group.heading === "CURRENT" || group.heading === "QUALITY";
+            return group.heading === "ENGINEERING" || group.heading === "QUALITY" || group.heading === "CURRENT";
           }
-          if (group.heading === "WIP") return false;
-          if (group.heading === "PERSONAL" && role !== "admin") return false;
-          if (group.heading === "ADMIN" && role !== "admin") return false;
-          return true;
+          if (role === "admin") return true;
+          return group.heading === "CURRENT";
         }).map((group) => {
-          const visibleItems = user?.role === "quality_manager" && group.heading === "CURRENT"
-            ? group.items.filter(i => i.path === "/projects")
-            : group.items;
+          let visibleItems = group.items;
+          if (user?.role === "quality_manager" && group.heading === "CURRENT") {
+            visibleItems = group.items.filter(i => i.path === "/projects");
+          }
+          if (user?.role === "eng_program_manager" && group.heading === "CURRENT") {
+            visibleItems = group.items.filter(i => i.path === "/projects");
+          }
           if (visibleItems.length === 0) return null;
           return (
           <div key={group.heading} className="pt-4">
