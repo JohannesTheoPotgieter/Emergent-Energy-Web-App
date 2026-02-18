@@ -753,7 +753,7 @@ export type DateOverride = typeof dateOverrides.$inferSelect;
 export const TASK_STATUSES = [
   "TO DO", "IN PROGRESS", "HOLD", "PROJECTS ASSISTANCE",
   "NEEDS APPROVAL", "QC APPROVED", "PROVIDE FEEDBACK",
-  "OPERATIONAL APPROVAL", "COMPLETE", "N/A"
+  "OPERATIONAL APPROVAL", "COMPLETE"
 ] as const;
 export type TaskStatus = typeof TASK_STATUSES[number];
 
