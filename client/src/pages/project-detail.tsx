@@ -329,8 +329,8 @@ export default function ProjectDetailPage() {
   const pd = projectInfo?.pd || "—";
   const pm = projectInfo?.pm || "—";
   const sizeKwp = projectInfo?.size_kwp ? `${projectInfo.size_kwp.toFixed(0)} kWp` : "—";
-  const completion = projectInfo?.project_pct_complete !== null
-    ? `${(projectInfo!.project_pct_complete * 100).toFixed(0)}%`
+  const completion = projectInfo?.project_pct_complete != null
+    ? `${(projectInfo.project_pct_complete * 100).toFixed(0)}%`
     : "—";
   const isAdmin = user?.role === "admin";
   const projectInfoId = projectInfo?.project_info_id;
