@@ -38,6 +38,7 @@ import SpSnapshotsPage from "@/pages/sp-snapshots";
 import SpSnapshotDetailPage from "@/pages/sp-snapshot-detail";
 import SpFileRefreshPage from "@/pages/sp-file-refresh";
 import QmDashboardPage from "@/pages/qm-dashboard";
+import EngineeringDashboardPage from "@/pages/engineering-dashboard";
 
 import { useProgramData } from "@/hooks/use-program-data";
 import { TrackerTable } from "@/components/dashboard/TrackerTable";
@@ -186,6 +187,7 @@ function ProtectedPages() {
         <Route path="/admin/sp-snapshots/:id" component={SpSnapshotDetailPage} />
         <Route path="/admin/sp-file-refresh" component={SpFileRefreshPage} />
         <Route path="/quality" component={QmDashboardPage} />
+        <Route path="/engineering" component={EngineeringDashboardPage} />
 
         <Route component={NotFound} />
       </Switch>

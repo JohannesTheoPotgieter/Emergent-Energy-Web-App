@@ -1,0 +1,935 @@
+import { Express, Request, Response, NextFunction } from "express";
+import { db } from "./db";
+import { eq, and, desc, asc, sql, inArray, isNull, lt, gt, or, ne } from "drizzle-orm";
+import { verifyToken } from "./jwt";
+import {
+  operationalTasks, taskComments, taskActivityLog, taskWatchers,
+  deliverables, deliverableVersions, deliverableFiles, deliverableEvents,
+  notifications, notificationThrottle, spFilePointers,
+  projectTeamMembers, projectPlan, qcWarning, qcWarningEvent,
+  qcItemInstance, users,
+  TASK_STATUSES, TASK_WORKSTREAMS, TASK_PRIORITIES, PROJECT_PHASES,
+  DELIVERABLE_STATUSES,
+} from "@shared/schema";
+
+type AppUser = { id: number; email: string; name: string; role: string; };
+
+function getUser(req: Request): AppUser {
+  return req.user as any as AppUser;
+}
+
+function getUserRole(req: Request): string {
+  return (req.user as any)?.role || "";
+}
+
+function jwtAuth(req: Request, _res: Response, next: NextFunction) {
+  if ((req as any).user) return next();
+  if (req.isAuthenticated?.()) return next();
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.substring(7);
+    const payload = verifyToken(token);
+    if (payload) {
+      (req as any).user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role };
+    }
+  }
+  next();
+}
+
+function requireAuth(req: Request, res: Response, next: NextFunction) {
+  if (req.isAuthenticated?.() || (req as any).user) return next();
+  res.status(401).json({ error: "auth_required", message: "Authentication required" });
+}
+
+function requireAdminOrEpm(req: Request, res: Response, next: NextFunction) {
+  const role = getUserRole(req);
+  if (role === "admin" || role === "eng_program_manager") return next();
+  res.status(403).json({ error: "forbidden", message: "Admin or EPM access required" });
+}
+
+function requireEpmChallenge(req: Request, res: Response, next: NextFunction) {
+  if (getUserRole(req) === "admin") return next();
+  if ((req.session as any)?.epmChallengePassed) return next();
+  res.status(403).json({ error: "epm_challenge_required", message: "EPM access code required", code: "EPM_CHALLENGE_REQUIRED" });
+}
+
+async function createNotification(recipientUserId: number, eventType: string, title: string, body: string | null, opts: {
+  projectName?: string; linkedTaskId?: number; linkedDeliverableId?: number; linkedWarningId?: number; linkedPlanItemId?: number;
+} = {}) {
+  const throttleKey = `${eventType}:${opts.linkedTaskId || opts.linkedDeliverableId || opts.linkedWarningId || 0}`;
+  const existing = await db.select().from(notificationThrottle)
+    .where(and(
+      eq(notificationThrottle.recipientUserId, recipientUserId),
+      eq(notificationThrottle.eventType, eventType),
+      eq(notificationThrottle.entityType, throttleKey.split(':')[0] || 'generic'),
+      eq(notificationThrottle.entityId, opts.linkedTaskId || opts.linkedDeliverableId || opts.linkedWarningId || 0),
+      gt(notificationThrottle.lastSentAt, new Date(Date.now() - 24 * 60 * 60 * 1000))
+    ));
+
+  if (existing.length > 0) return null;
+
+  const [notif] = await db.insert(notifications).values({
+    recipientUserId,
+    eventType,
+    title,
+    body,
+    projectName: opts.projectName || null,
+    linkedTaskId: opts.linkedTaskId || null,
+    linkedDeliverableId: opts.linkedDeliverableId || null,
+    linkedWarningId: opts.linkedWarningId || null,
+    linkedPlanItemId: opts.linkedPlanItemId || null,
+  }).returning();
+
+  await db.insert(notificationThrottle).values({
+    recipientUserId,
+    eventType,
+    entityType: throttleKey.split(':')[0] || 'generic',
+    entityId: opts.linkedTaskId || opts.linkedDeliverableId || opts.linkedWarningId || 0,
+  }).onConflictDoNothing();
+
+  return notif;
+}
+
+export function registerEngineeringRoutes(app: Express) {
+
+  app.use("/api/eng", jwtAuth);
+  app.use("/api/deliverables", jwtAuth);
+  app.use("/api/notifications", jwtAuth);
+  app.use("/api/project-team", jwtAuth);
+
+  // ========== PROJECT TEAM MEMBERSHIP ==========
+
+  app.get("/api/project-team/:projectName", requireAuth, async (req, res) => {
+    try {
+      const members = await db.select({
+        id: projectTeamMembers.id,
+        projectName: projectTeamMembers.projectName,
+        userId: projectTeamMembers.userId,
+        roleOnProject: projectTeamMembers.roleOnProject,
+        createdAt: projectTeamMembers.createdAt,
+        userName: users.name,
+        userEmail: users.email,
+        userRole: users.role,
+      })
+      .from(projectTeamMembers)
+      .leftJoin(users, eq(projectTeamMembers.userId, users.id))
+      .where(eq(projectTeamMembers.projectName, req.params.projectName));
+      res.json(members);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/project-team", requireAuth, requireAdminOrEpm, async (req, res) => {
+    try {
+      const { projectName, userId, roleOnProject } = req.body;
+      const [member] = await db.insert(projectTeamMembers).values({ projectName, userId, roleOnProject }).returning();
+      res.json(member);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/project-team/:id", requireAuth, requireAdminOrEpm, async (req, res) => {
+    try {
+      await db.delete(projectTeamMembers).where(eq(projectTeamMembers.id, parseInt(req.params.id)));
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ========== ENHANCED TASK OPERATIONS ==========
+
+  app.get("/api/eng/tasks", requireAuth, async (req, res) => {
+    try {
+      const { projectName, status, workstream, phase, ownerUserId } = req.query;
+      let query = db.select().from(operationalTasks);
+      const conditions: any[] = [];
+
+      if (projectName) conditions.push(eq(operationalTasks.projectName, projectName as string));
+      if (status) conditions.push(eq(operationalTasks.status, status as string));
+      if (workstream) conditions.push(eq(operationalTasks.primaryWorkstream, workstream as string));
+      if (phase) conditions.push(eq(operationalTasks.phase, phase as string));
+      if (ownerUserId) conditions.push(eq(operationalTasks.ownerUserId, parseInt(ownerUserId as string)));
+
+      const tasks = conditions.length > 0
+        ? await query.where(and(...conditions)).orderBy(asc(operationalTasks.sortOrder))
+        : await query.orderBy(asc(operationalTasks.sortOrder));
+
+      res.json(tasks);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/eng/tasks", requireAuth, async (req, res) => {
+    try {
+      const data = req.body;
+      if (!TASK_STATUSES.includes(data.status)) {
+        data.status = "TO DO";
+      }
+      const [task] = await db.insert(operationalTasks).values({
+        ...data,
+        createdBy: getUser(req).id,
+      }).returning();
+
+      await db.insert(taskActivityLog).values({
+        taskId: task.id,
+        actorId: getUser(req).id,
+        actionType: "created",
+        newValue: task.title,
+      });
+
+      if (task.ownerUserId && task.ownerUserId !== getUser(req).id) {
+        await createNotification(task.ownerUserId, "task.assigned", `Task assigned: ${task.title}`, `You've been assigned task "${task.title}"`, {
+          projectName: task.projectName, linkedTaskId: task.id,
+        });
+      }
+
+      res.json(task);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/eng/tasks/:id", requireAuth, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const [existing] = await db.select().from(operationalTasks).where(eq(operationalTasks.id, id));
+      if (!existing) return res.status(404).json({ error: "Task not found" });
+
+      const updates = { ...req.body, updatedAt: new Date() };
+
+      if (updates.status === "HOLD" && !updates.holdReason && !existing.holdReason) {
+        return res.status(400).json({ error: "Hold reason required when setting status to HOLD" });
+      }
+      if (updates.status === "PROJECTS ASSISTANCE" && !updates.requesterUserId && !existing.requesterUserId) {
+        return res.status(400).json({ error: "Requester required for PROJECTS ASSISTANCE status" });
+      }
+      if (updates.status === "NEEDS APPROVAL" && !updates.approverUserId && !existing.approverUserId) {
+        return res.status(400).json({ error: "Approver required for NEEDS APPROVAL status" });
+      }
+      if (updates.status === "COMPLETE") {
+        updates.completedAt = new Date();
+      }
+
+      const [updated] = await db.update(operationalTasks).set(updates).where(eq(operationalTasks.id, id)).returning();
+
+      for (const [key, val] of Object.entries(req.body)) {
+        if (key === "updatedAt") continue;
+        const oldVal = (existing as any)[key];
+        if (String(oldVal) !== String(val)) {
+          await db.insert(taskActivityLog).values({
+            taskId: id,
+            actorId: getUser(req).id,
+            actionType: "field_changed",
+            fieldName: key,
+            oldValue: oldVal != null ? String(oldVal) : null,
+            newValue: val != null ? String(val) : null,
+          });
+        }
+      }
+
+      if (updates.status && updates.status !== existing.status) {
+        if (updated.ownerUserId) {
+          await createNotification(updated.ownerUserId, "task.status_changed",
+            `Task status: ${updated.title}`, `Status changed from "${existing.status}" to "${updates.status}"`,
+            { projectName: updated.projectName, linkedTaskId: id });
+        }
+        if (updates.status === "NEEDS APPROVAL" && updated.approverUserId) {
+          await createNotification(updated.approverUserId, "deliverable.submitted_for_approval",
+            `Approval needed: ${updated.title}`, `Task "${updated.title}" needs your approval`,
+            { projectName: updated.projectName, linkedTaskId: id });
+        }
+      }
+
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/eng/tasks/bulk-update", requireAuth, requireAdminOrEpm, async (req, res) => {
+    try {
+      const { taskIds, updates } = req.body;
+      if (!Array.isArray(taskIds) || taskIds.length === 0) {
+        return res.status(400).json({ error: "taskIds array required" });
+      }
+
+      const updatedTasks = [];
+      for (const taskId of taskIds) {
+        const [updated] = await db.update(operationalTasks)
+          .set({ ...updates, updatedAt: new Date() })
+          .where(eq(operationalTasks.id, taskId))
+          .returning();
+        if (updated) {
+          updatedTasks.push(updated);
+          await db.insert(taskActivityLog).values({
+            taskId, actorId: getUser(req).id,
+            actionType: "bulk_updated",
+            newValue: JSON.stringify(updates),
+          });
+        }
+      }
+      res.json({ updated: updatedTasks.length, tasks: updatedTasks });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/eng/tasks/:id/link", requireAuth, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { linkedPlanItemId, linkedDeliverableId, linkedQualityItemInstanceId } = req.body;
+      const updates: any = { updatedAt: new Date() };
+      if (linkedPlanItemId !== undefined) updates.linkedPlanItemId = linkedPlanItemId;
+      if (linkedDeliverableId !== undefined) updates.linkedDeliverableId = linkedDeliverableId;
+      if (linkedQualityItemInstanceId !== undefined) updates.linkedQualityItemInstanceId = linkedQualityItemInstanceId;
+
+      const [updated] = await db.update(operationalTasks).set(updates).where(eq(operationalTasks.id, id)).returning();
+      if (!updated) return res.status(404).json({ error: "Task not found" });
+
+      await db.insert(taskActivityLog).values({
+        taskId: id, actorId: getUser(req).id,
+        actionType: "linked", newValue: JSON.stringify(req.body),
+      });
+
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/eng/tasks/:id/watchers", requireAuth, async (req, res) => {
+    try {
+      const watchers = await db.select({
+        id: taskWatchers.id, userId: taskWatchers.userId,
+        userName: users.name, userEmail: users.email,
+      })
+      .from(taskWatchers)
+      .leftJoin(users, eq(taskWatchers.userId, users.id))
+      .where(eq(taskWatchers.taskId, parseInt(req.params.id)));
+      res.json(watchers);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/eng/tasks/:id/watchers", requireAuth, async (req, res) => {
+    try {
+      const [watcher] = await db.insert(taskWatchers).values({
+        taskId: parseInt(req.params.id),
+        userId: req.body.userId,
+      }).returning();
+      res.json(watcher);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/eng/tasks/:taskId/watchers/:userId", requireAuth, async (req, res) => {
+    try {
+      await db.delete(taskWatchers).where(
+        and(eq(taskWatchers.taskId, parseInt(req.params.taskId)),
+            eq(taskWatchers.userId, parseInt(req.params.userId)))
+      );
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ========== DELIVERABLES ==========
+
+  app.get("/api/deliverables", requireAuth, async (req, res) => {
+    try {
+      const { projectName, status, phase } = req.query;
+      const conditions: any[] = [];
+      if (projectName) conditions.push(eq(deliverables.projectName, projectName as string));
+      if (status) conditions.push(eq(deliverables.status, status as string));
+      if (phase) conditions.push(eq(deliverables.phase, phase as string));
+
+      const result = conditions.length > 0
+        ? await db.select().from(deliverables).where(and(...conditions)).orderBy(desc(deliverables.updatedAt))
+        : await db.select().from(deliverables).orderBy(desc(deliverables.updatedAt));
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/deliverables/:id", requireAuth, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const [del] = await db.select().from(deliverables).where(eq(deliverables.id, id));
+      if (!del) return res.status(404).json({ error: "Deliverable not found" });
+
+      const versions = await db.select().from(deliverableVersions)
+        .where(eq(deliverableVersions.deliverableId, id))
+        .orderBy(desc(deliverableVersions.versionNumber));
+
+      const files = await db.select().from(deliverableFiles)
+        .where(eq(deliverableFiles.deliverableId, id))
+        .orderBy(desc(deliverableFiles.uploadedAt));
+
+      const events = await db.select().from(deliverableEvents)
+        .where(eq(deliverableEvents.deliverableId, id))
+        .orderBy(desc(deliverableEvents.createdAt));
+
+      res.json({ ...del, versions, files, events });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/deliverables", requireAuth, async (req, res) => {
+    try {
+      const data = req.body;
+      const [del] = await db.insert(deliverables).values({
+        ...data,
+        status: "TO DO",
+        currentVersion: 1,
+      }).returning();
+
+      await db.insert(deliverableVersions).values({
+        deliverableId: del.id,
+        versionNumber: 1,
+        status: "TO DO",
+        createdByUserId: getUser(req).id,
+      });
+
+      await db.insert(deliverableEvents).values({
+        deliverableId: del.id,
+        eventType: "created",
+        toStatus: "TO DO",
+        actorUserId: getUser(req).id,
+      });
+
+      res.json(del);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/deliverables/:id", requireAuth, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const [existing] = await db.select().from(deliverables).where(eq(deliverables.id, id));
+      if (!existing) return res.status(404).json({ error: "Deliverable not found" });
+
+      const updates = { ...req.body, updatedAt: new Date() };
+      const [updated] = await db.update(deliverables).set(updates).where(eq(deliverables.id, id)).returning();
+
+      if (updates.status && updates.status !== existing.status) {
+        await db.insert(deliverableEvents).values({
+          deliverableId: id,
+          eventType: "status_changed",
+          fromStatus: existing.status,
+          toStatus: updates.status,
+          actorUserId: getUser(req).id,
+        });
+
+        if (updates.status === "NEEDS APPROVAL" && updated.reviewerUserId) {
+          await createNotification(updated.reviewerUserId, "deliverable.submitted_for_approval",
+            `Review needed: ${updated.title}`, `Deliverable "${updated.title}" v${updated.currentVersion} needs review`,
+            { projectName: updated.projectName, linkedDeliverableId: id });
+        }
+        if (updates.status === "QC APPROVED" && updated.ownerUserId) {
+          await createNotification(updated.ownerUserId, "deliverable.qc_approved",
+            `QC Approved: ${updated.title}`, `Deliverable "${updated.title}" has been QC approved`,
+            { projectName: updated.projectName, linkedDeliverableId: id });
+        }
+      }
+
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/deliverables/:id/feedback", requireAuth, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { feedbackText } = req.body;
+
+      const [updated] = await db.update(deliverables)
+        .set({ status: "PROVIDE FEEDBACK", updatedAt: new Date() })
+        .where(eq(deliverables.id, id)).returning();
+
+      await db.insert(deliverableEvents).values({
+        deliverableId: id,
+        eventType: "feedback_provided",
+        fromStatus: "NEEDS APPROVAL",
+        toStatus: "PROVIDE FEEDBACK",
+        feedbackText,
+        actorUserId: getUser(req).id,
+      });
+
+      if (updated?.ownerUserId) {
+        await createNotification(updated.ownerUserId, "deliverable.feedback_requested",
+          `Feedback on: ${updated.title}`, feedbackText,
+          { projectName: updated.projectName, linkedDeliverableId: id });
+      }
+
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/deliverables/:id/revise", requireAuth, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { changeReason, impactJson } = req.body;
+
+      const [existing] = await db.select().from(deliverables).where(eq(deliverables.id, id));
+      if (!existing) return res.status(404).json({ error: "Deliverable not found" });
+
+      const newVersion = existing.currentVersion + 1;
+
+      const [version] = await db.insert(deliverableVersions).values({
+        deliverableId: id,
+        versionNumber: newVersion,
+        changeReason: changeReason || null,
+        impactJson: impactJson || null,
+        status: "IN PROGRESS",
+        createdByUserId: getUser(req).id,
+      }).returning();
+
+      const [updated] = await db.update(deliverables)
+        .set({ currentVersion: newVersion, status: "IN PROGRESS", updatedAt: new Date() })
+        .where(eq(deliverables.id, id)).returning();
+
+      await db.insert(deliverableEvents).values({
+        deliverableId: id,
+        eventType: "revised",
+        fromStatus: existing.status,
+        toStatus: "IN PROGRESS",
+        feedbackText: changeReason,
+        actorUserId: getUser(req).id,
+      });
+
+      res.json({ deliverable: updated, version });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/deliverables/:id/files", requireAuth, async (req, res) => {
+    try {
+      const [file] = await db.insert(deliverableFiles).values({
+        ...req.body,
+        deliverableId: parseInt(req.params.id),
+        uploadedByUserId: getUser(req).id,
+      }).returning();
+      res.json(file);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/deliverables/files/:fileId/approve", requireAuth, async (req, res) => {
+    try {
+      const [file] = await db.update(deliverableFiles)
+        .set({ isApproved: true })
+        .where(eq(deliverableFiles.id, parseInt(req.params.fileId)))
+        .returning();
+      res.json(file);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ========== NOTIFICATIONS ==========
+
+  app.get("/api/notifications", requireAuth, async (req, res) => {
+    try {
+      const userId = getUser(req).id;
+      const { unreadOnly } = req.query;
+      const conditions = [eq(notifications.recipientUserId, userId)];
+      if (unreadOnly === "true") conditions.push(eq(notifications.isRead, false));
+
+      const result = await db.select().from(notifications)
+        .where(and(...conditions))
+        .orderBy(desc(notifications.createdAt))
+        .limit(100);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/notifications/unread-count", requireAuth, async (req, res) => {
+    try {
+      const userId = getUser(req).id;
+      const [result] = await db.select({ count: sql<number>`count(*)::int` })
+        .from(notifications)
+        .where(and(eq(notifications.recipientUserId, userId), eq(notifications.isRead, false)));
+      res.json({ count: result?.count || 0 });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/notifications/mark-read", requireAuth, async (req, res) => {
+    try {
+      const { notificationIds } = req.body;
+      if (Array.isArray(notificationIds) && notificationIds.length > 0) {
+        await db.update(notifications)
+          .set({ isRead: true, readAt: new Date() })
+          .where(and(
+            inArray(notifications.id, notificationIds),
+            eq(notifications.recipientUserId, getUser(req).id)
+          ));
+      }
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/notifications/mark-all-read", requireAuth, async (req, res) => {
+    try {
+      await db.update(notifications)
+        .set({ isRead: true, readAt: new Date() })
+        .where(and(
+          eq(notifications.recipientUserId, getUser(req).id),
+          eq(notifications.isRead, false)
+        ));
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ========== SHAREPOINT FILE POINTERS ==========
+
+  app.get("/api/eng/file-pointers/:entityType/:entityId", requireAuth, async (req, res) => {
+    try {
+      const result = await db.select().from(spFilePointers)
+        .where(and(
+          eq(spFilePointers.entityType, req.params.entityType),
+          eq(spFilePointers.entityId, parseInt(req.params.entityId))
+        ))
+        .orderBy(desc(spFilePointers.uploadedAt));
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/eng/file-pointers", requireAuth, async (req, res) => {
+    try {
+      const [pointer] = await db.insert(spFilePointers).values({
+        ...req.body,
+        uploadedByUserId: getUser(req).id,
+      }).returning();
+      res.json(pointer);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/eng/file-pointers/:id", requireAuth, async (req, res) => {
+    try {
+      await db.delete(spFilePointers).where(eq(spFilePointers.id, parseInt(req.params.id)));
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ========== WARNING ENGINE - ENHANCED RULES ==========
+
+  app.post("/api/eng/warnings/scan", requireAuth, requireAdminOrEpm, async (req, res) => {
+    try {
+      const { projectName } = req.body;
+      const newWarnings: any[] = [];
+      const today = new Date().toISOString().split('T')[0];
+
+      const taskConditions: any[] = [ne(operationalTasks.status, "COMPLETE")];
+      if (projectName) taskConditions.push(eq(operationalTasks.projectName, projectName));
+
+      const allTasks = await db.select().from(operationalTasks).where(and(...taskConditions));
+
+      for (const task of allTasks) {
+        if (task.dueDate && task.dueDate < today && task.status !== "COMPLETE") {
+          const isHighPhase = task.phase === "Commissioning" || task.phase === "Handover";
+          newWarnings.push({
+            projectName: task.projectName,
+            severity: isHighPhase ? "HIGH" : "MED",
+            warningType: "overdue_task",
+            title: `Overdue task: ${task.title}`,
+            description: `Due ${task.dueDate}, status: ${task.status}`,
+            relatedPlanItemId: task.linkedPlanItemId,
+          });
+        }
+
+        if (task.startDate && task.dueDate && task.dueDate < task.startDate) {
+          newWarnings.push({
+            projectName: task.projectName,
+            severity: "HIGH",
+            warningType: "invalid_dates",
+            title: `Invalid dates: ${task.title}`,
+            description: `End date ${task.dueDate} is before start date ${task.startDate}`,
+          });
+        }
+
+        if (!task.linkedPlanItemId && !task.linkedDeliverableId && !task.linkedQualityItemInstanceId) {
+          const createdMore24h = task.createdAt && (Date.now() - new Date(task.createdAt).getTime()) > 24 * 60 * 60 * 1000;
+          if (createdMore24h) {
+            newWarnings.push({
+              projectName: task.projectName,
+              severity: "MED",
+              warningType: "orphan_task",
+              title: `Orphan task: ${task.title}`,
+              description: `Task not linked to any plan item, deliverable, or quality checklist item`,
+            });
+          }
+        }
+
+        if (task.status === "NEEDS APPROVAL" && task.updatedAt) {
+          const daysSinceUpdate = (Date.now() - new Date(task.updatedAt).getTime()) / (1000 * 60 * 60 * 24);
+          if (daysSinceUpdate > 2) {
+            newWarnings.push({
+              projectName: task.projectName,
+              severity: "MED",
+              warningType: "review_stuck",
+              title: `Review stuck: ${task.title}`,
+              description: `In NEEDS APPROVAL for ${Math.floor(daysSinceUpdate)} days`,
+            });
+          }
+        }
+      }
+
+      const delConditions: any[] = [ne(deliverables.status, "COMPLETE")];
+      if (projectName) delConditions.push(eq(deliverables.projectName, projectName));
+      const allDeliverables = await db.select().from(deliverables).where(and(...delConditions));
+
+      for (const del of allDeliverables) {
+        if (del.status === "QC APPROVED" || del.status === "COMPLETE") {
+          const approvedFiles = await db.select().from(deliverableFiles)
+            .where(and(eq(deliverableFiles.deliverableId, del.id), eq(deliverableFiles.isApproved, true)));
+          if (approvedFiles.length === 0) {
+            newWarnings.push({
+              projectName: del.projectName,
+              severity: "HIGH",
+              warningType: "missing_evidence",
+              title: `Missing approved files: ${del.title}`,
+              description: `Deliverable is ${del.status} but has no approved file pointers`,
+            });
+          }
+        }
+      }
+
+      if (newWarnings.length > 0) {
+        await db.insert(qcWarning).values(newWarnings);
+      }
+
+      res.json({ scanned: allTasks.length + allDeliverables.length, warningsCreated: newWarnings.length, warnings: newWarnings });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/eng/warnings", requireAuth, async (req, res) => {
+    try {
+      const { projectName, severity, status, warningType } = req.query;
+      const conditions: any[] = [];
+      if (projectName) conditions.push(eq(qcWarning.projectName, projectName as string));
+      if (severity) conditions.push(eq(qcWarning.severity, severity as string));
+      if (status) conditions.push(eq(qcWarning.status, status as string));
+      if (warningType) conditions.push(eq(qcWarning.warningType, warningType as string));
+
+      const result = conditions.length > 0
+        ? await db.select().from(qcWarning).where(and(...conditions)).orderBy(desc(qcWarning.createdAt))
+        : await db.select().from(qcWarning).orderBy(desc(qcWarning.createdAt));
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/eng/warnings/:id", requireAuth, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const updates = { ...req.body, updatedAt: new Date() };
+      const [updated] = await db.update(qcWarning).set(updates).where(eq(qcWarning.id, id)).returning();
+
+      if (req.body.status) {
+        await db.insert(qcWarningEvent).values({
+          warningId: id,
+          eventType: `status_changed_to_${req.body.status}`,
+          note: req.body.note || null,
+          actorUserId: getUser(req).id,
+        });
+      }
+
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/eng/warnings/:id/acknowledge", requireAuth, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await db.insert(qcWarningEvent).values({
+        warningId: id,
+        eventType: "acknowledged",
+        note: req.body.reason || "Acknowledged - proceeding anyway",
+        actorUserId: getUser(req).id,
+      });
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ========== ENGINEERING DASHBOARD DATA ==========
+
+  app.get("/api/eng/dashboard/workload", requireAuth, requireAdminOrEpm, async (req, res) => {
+    try {
+      const allUsers = await db.select().from(users);
+      const allTasks = await db.select().from(operationalTasks)
+        .where(ne(operationalTasks.status, "COMPLETE"));
+
+      const workload = allUsers.map(u => {
+        const userTasks = allTasks.filter(t => t.ownerUserId === u.id);
+        const today = new Date().toISOString().split('T')[0];
+        const endOfWeek = new Date();
+        endOfWeek.setDate(endOfWeek.getDate() + 7);
+        const weekEnd = endOfWeek.toISOString().split('T')[0];
+
+        return {
+          userId: u.id, userName: u.name, userEmail: u.email,
+          totalActive: userTasks.length,
+          dueThisWeek: userTasks.filter(t => t.dueDate && t.dueDate >= today && t.dueDate <= weekEnd).length,
+          overdue: userTasks.filter(t => t.dueDate && t.dueDate < today).length,
+          onHold: userTasks.filter(t => t.status === "HOLD").length,
+          needsApproval: userTasks.filter(t => t.status === "NEEDS APPROVAL").length,
+          provideFeedback: userTasks.filter(t => t.status === "PROVIDE FEEDBACK").length,
+        };
+      }).filter(w => w.totalActive > 0);
+
+      res.json(workload);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/eng/dashboard/milestones-at-risk", requireAuth, requireAdminOrEpm, async (req, res) => {
+    try {
+      const twoWeeks = new Date();
+      twoWeeks.setDate(twoWeeks.getDate() + 14);
+      const twoWeeksStr = twoWeeks.toISOString().split('T')[0];
+      const todayStr = new Date().toISOString().split('T')[0];
+
+      const milestones = await db.select().from(projectPlan)
+        .where(and(
+          sql`${projectPlan.actualEnd} IS NOT NULL`,
+          sql`${projectPlan.actualEnd} >= ${todayStr}`,
+          sql`${projectPlan.actualEnd} <= ${twoWeeksStr}`
+        ));
+
+      const result = [];
+      for (const m of milestones) {
+        const linkedTasks = await db.select().from(operationalTasks)
+          .where(eq(operationalTasks.linkedPlanItemId, m.id));
+
+        const warnings = await db.select().from(qcWarning)
+          .where(and(
+            eq(qcWarning.projectName, m.projectName),
+            eq(qcWarning.severity, "HIGH" as any),
+            eq(qcWarning.status, "open")
+          ));
+
+        const linkedDelivs = await db.select().from(deliverables)
+          .where(eq(deliverables.linkedPlanItemId, m.id));
+
+        result.push({
+          milestone: m,
+          linkedTasks: linkedTasks.length,
+          incompleteTasks: linkedTasks.filter(t => t.status !== "COMPLETE").length,
+          highWarnings: warnings.length,
+          deliverables: linkedDelivs.map(d => ({ id: d.id, title: d.title, status: d.status })),
+        });
+      }
+
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/eng/dashboard/deliverables-pipeline", requireAuth, requireAdminOrEpm, async (req, res) => {
+    try {
+      const pipeline: Record<string, number> = {};
+      for (const s of DELIVERABLE_STATUSES) {
+        const [result] = await db.select({ count: sql<number>`count(*)::int` })
+          .from(deliverables)
+          .where(eq(deliverables.status, s));
+        pipeline[s] = result?.count || 0;
+      }
+      res.json(pipeline);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/eng/dashboard/orphan-tasks", requireAuth, requireAdminOrEpm, async (req, res) => {
+    try {
+      const orphans = await db.select().from(operationalTasks)
+        .where(and(
+          isNull(operationalTasks.linkedPlanItemId),
+          isNull(operationalTasks.linkedDeliverableId),
+          isNull(operationalTasks.linkedQualityItemInstanceId),
+          ne(operationalTasks.status, "COMPLETE")
+        ))
+        .orderBy(desc(operationalTasks.createdAt));
+      res.json(orphans);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/eng/dashboard/warning-tower", requireAuth, requireAdminOrEpm, async (req, res) => {
+    try {
+      const highWarnings = await db.select().from(qcWarning)
+        .where(and(
+          eq(qcWarning.status, "open"),
+          eq(qcWarning.severity, "HIGH" as any)
+        ))
+        .orderBy(asc(qcWarning.createdAt));
+      res.json(highWarnings);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ========== USERS LIST (for assignment dropdowns) ==========
+
+  app.get("/api/eng/users", requireAuth, async (req, res) => {
+    try {
+      const allUsers = await db.select({
+        id: users.id, name: users.name, email: users.email, role: users.role,
+      }).from(users).orderBy(asc(users.name));
+      res.json(allUsers);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ========== CONSTANTS ==========
+
+  app.get("/api/eng/constants", (req, res) => {
+    res.json({
+      taskStatuses: TASK_STATUSES,
+      taskWorkstreams: TASK_WORKSTREAMS,
+      taskPriorities: TASK_PRIORITIES,
+      projectPhases: PROJECT_PHASES,
+      deliverableStatuses: DELIVERABLE_STATUSES,
+    });
+  });
+}

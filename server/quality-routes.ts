@@ -53,10 +53,22 @@ function requireQmChallenge(req: Request, res: Response, next: NextFunction) {
   res.status(403).json({ error: "qm_challenge_required", message: "Quality Manager access code required", code: "QM_CHALLENGE_REQUIRED" });
 }
 
+function requireEpmChallenge(req: Request, res: Response, next: NextFunction) {
+  if (getUserRole(req) === "admin") return next();
+  if ((req.session as any)?.epmChallengePassed) return next();
+  res.status(403).json({ error: "epm_challenge_required", message: "Engineering Program Manager access code required", code: "EPM_CHALLENGE_REQUIRED" });
+}
+
 function requireAdminOrQm(req: Request, res: Response, next: NextFunction) {
   const role = getUserRole(req);
   if (role === "admin" || role === "quality_manager") return next();
   res.status(403).json({ error: "forbidden", message: "Admin or Quality Manager access required" });
+}
+
+function requireAdminOrEpm(req: Request, res: Response, next: NextFunction) {
+  const role = getUserRole(req);
+  if (role === "admin" || role === "eng_program_manager") return next();
+  res.status(403).json({ error: "forbidden", message: "Admin or Engineering Program Manager access required" });
 }
 
 function businessDaysBetween(startStr: string, endStr: string, holidays: string[]): number {
@@ -78,6 +90,7 @@ function businessDaysBetween(startStr: string, endStr: string, holidays: string[
 export function registerQualityRoutes(app: Express) {
 
   app.use("/api/quality", jwtAuth);
+  app.use("/api/engineering", jwtAuth);
 
   // ========== QM ACCESS CHALLENGE ==========
 
@@ -136,6 +149,69 @@ export function registerQualityRoutes(app: Express) {
       const challenged = !!(req.session as any)?.qmChallengePassed;
       const userRole = getUserRole(req);
       const needsChallenge = (userRole === "quality_manager") && !challenged;
+      res.json({ hasCode, challenged, needsChallenge, role: userRole });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ========== EPM ACCESS CHALLENGE ==========
+
+  app.post("/api/engineering/access/verify", requireAuth, requireAdminOrEpm, async (req, res) => {
+    try {
+      const { code } = req.body;
+      const userId = getUser(req).id;
+      const role = "eng_program_manager";
+      const expectedCode = process.env.EPM_ACCESS_CODE;
+
+      if (!expectedCode) {
+        return res.status(503).json({ error: "EPM_ACCESS_CODE not configured. Contact admin." });
+      }
+
+      let [challenge] = await db.select().from(qcAccessChallenge)
+        .where(and(eq(qcAccessChallenge.userId, userId), eq(qcAccessChallenge.role, role)));
+
+      if (!challenge) {
+        [challenge] = await db.insert(qcAccessChallenge).values({
+          userId, role, failedAttemptsCount: 0,
+        }).returning();
+      }
+
+      if (challenge.lockedUntil && new Date(challenge.lockedUntil) > new Date()) {
+        const remaining = Math.ceil((new Date(challenge.lockedUntil).getTime() - Date.now()) / 60000);
+        return res.status(429).json({ error: `Account locked. Try again in ${remaining} minutes.`, locked: true });
+      }
+
+      if (code === expectedCode) {
+        await db.update(qcAccessChallenge)
+          .set({ lastSuccessAt: new Date(), failedAttemptsCount: 0, lockedUntil: null, updatedAt: new Date() })
+          .where(eq(qcAccessChallenge.id, challenge.id));
+        (req.session as any).epmChallengePassed = true;
+        return res.json({ success: true });
+      }
+
+      const newCount = (challenge.failedAttemptsCount || 0) + 1;
+      const updates: any = { failedAttemptsCount: newCount, updatedAt: new Date() };
+      if (newCount >= 5) {
+        updates.lockedUntil = new Date(Date.now() + 15 * 60 * 1000);
+      }
+      await db.update(qcAccessChallenge).set(updates).where(eq(qcAccessChallenge.id, challenge.id));
+
+      if (newCount >= 5) {
+        return res.status(429).json({ error: "Too many failed attempts. Locked for 15 minutes.", locked: true });
+      }
+      return res.status(401).json({ error: "Invalid access code", attemptsRemaining: 5 - newCount });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/engineering/access/status", requireAuth, async (req, res) => {
+    try {
+      const hasCode = !!process.env.EPM_ACCESS_CODE;
+      const challenged = !!(req.session as any)?.epmChallengePassed;
+      const userRole = getUserRole(req);
+      const needsChallenge = (userRole === "eng_program_manager") && !challenged;
       res.json({ hasCode, challenged, needsChallenge, role: userRole });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
