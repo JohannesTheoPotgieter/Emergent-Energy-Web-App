@@ -252,6 +252,9 @@ async function seedUsers() {
 
   const { registerLifecycleRoutes } = await import("./lifecycle-routes");
   registerLifecycleRoutes(app);
+
+  const { seedEngineeringData } = await import("./seed-engineering");
+  await seedEngineeringData().catch(err => console.error('[Seed] Engineering data error:', err));
   
   await registerRoutes(httpServer, app);
 
