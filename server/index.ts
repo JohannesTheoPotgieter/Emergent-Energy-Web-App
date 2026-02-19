@@ -249,6 +249,9 @@ async function seedUsers() {
   const { registerRoleAuthRoutes, seedRoleCredentials } = await import("./role-auth-routes");
   registerRoleAuthRoutes(app);
   await seedRoleCredentials().catch(err => console.error('[Seed] Role credentials error:', err));
+
+  const { registerLifecycleRoutes } = await import("./lifecycle-routes");
+  registerLifecycleRoutes(app);
   
   await registerRoutes(httpServer, app);
 

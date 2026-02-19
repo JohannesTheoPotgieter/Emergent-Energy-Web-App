@@ -1,12 +1,13 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { Loader2, Search, Zap, User, Wrench, FileSpreadsheet } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { Loader2, Search, Zap, User, Wrench, FileSpreadsheet, GripVertical, CheckCircle2, ClipboardList } from "lucide-react";
 
 interface ProjectInfo {
-  id: number;
+  id: number | null;
   projectName: string;
   sizeKwp: string | null;
   pd: string | null;
@@ -14,26 +15,18 @@ interface ProjectInfo {
   contractValue: string | null;
   phase: string | null;
   isActive: boolean;
-  ragStatus: string | null;
   source: "excel" | "engineering" | "both";
-  engTaskCount?: number;
-  engStatus?: string | null;
-}
-
-interface EngTask {
-  id: number;
-  projectName: string;
-  title: string;
-  status: string;
-  priority: string | null;
-  phase: string | null;
-  trackingRag: string | null;
+  engTotal: number;
+  engDone: number;
+  planTotal: number;
+  planAvgPct: number;
 }
 
 const PHASE_GROUPS = [
   {
     key: "first_assessment",
     label: "First Assessment",
+    phaseValue: "First Assessment",
     matches: ["First Assessment", "P0_FIRST_ASSESSMENT", "P0"],
     color: "bg-slate-100 border-slate-300",
     headerBg: "bg-slate-500",
@@ -41,6 +34,7 @@ const PHASE_GROUPS = [
   {
     key: "cost_proposal",
     label: "Cost Proposal",
+    phaseValue: "Cost Proposal",
     matches: ["Cost Proposal", "P1_COST_PROPOSAL_DESIGN", "P1"],
     color: "bg-blue-50 border-blue-300",
     headerBg: "bg-blue-500",
@@ -48,6 +42,7 @@ const PHASE_GROUPS = [
   {
     key: "planning",
     label: "Planning",
+    phaseValue: "Planning",
     matches: ["Planning", "P2_PD_PM_HANDOVER", "P2", "Financial Close", "P3_FINANCIAL_CLOSE", "P3"],
     color: "bg-indigo-50 border-indigo-300",
     headerBg: "bg-indigo-500",
@@ -55,6 +50,7 @@ const PHASE_GROUPS = [
   {
     key: "construction",
     label: "Construction",
+    phaseValue: "Construction",
     matches: ["Construction", "P4_CONSTRUCTION_INSTALLATION", "P4"],
     color: "bg-orange-50 border-orange-300",
     headerBg: "bg-orange-500",
@@ -62,6 +58,7 @@ const PHASE_GROUPS = [
   {
     key: "qa",
     label: "QA",
+    phaseValue: "QA",
     matches: ["QA", "Commissioning", "P5_COMMISSIONING_QA", "P5"],
     color: "bg-violet-50 border-violet-300",
     headerBg: "bg-violet-500",
@@ -69,6 +66,7 @@ const PHASE_GROUPS = [
   {
     key: "handover",
     label: "Compliance Handover",
+    phaseValue: "Compliance Handover",
     matches: ["Compliance Handover", "Handover", "P6_HANDOVER_DLP", "P6"],
     color: "bg-teal-50 border-teal-300",
     headerBg: "bg-teal-500",
@@ -76,6 +74,7 @@ const PHASE_GROUPS = [
   {
     key: "closeout",
     label: "Closeout",
+    phaseValue: "Commercial Close Out",
     matches: ["DLP", "Commercial Close Out", "Commercial Close out", "Closeout", "P7_CLOSEOUT_POSTMORTEM", "P7"],
     color: "bg-emerald-50 border-emerald-300",
     headerBg: "bg-emerald-500",
@@ -83,6 +82,7 @@ const PHASE_GROUPS = [
   {
     key: "hold",
     label: "Hold",
+    phaseValue: "Hold",
     matches: ["Hold", "On Hold", "HOLD"],
     color: "bg-gray-100 border-gray-300",
     headerBg: "bg-gray-500",
@@ -111,10 +111,6 @@ function cleanProjectName(name: string): string {
   return name.replace(/_Tracker$/i, "").replace(/_/g, " ");
 }
 
-function normalizeNameForMatch(name: string): string {
-  return cleanProjectName(name).toLowerCase().trim().replace(/\s+/g, " ");
-}
-
 function formatZAR(value: string | number | null): string | null {
   if (value == null) return null;
   const num = typeof value === "string" ? parseFloat(value) : value;
@@ -122,13 +118,32 @@ function formatZAR(value: string | number | null): string | null {
   return `R ${num.toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 }
 
-function ragBadge(rag: string | null) {
-  if (!rag) return null;
-  const r = rag.toUpperCase();
-  if (r === "GREEN") return <Badge className="bg-green-100 text-green-800 text-[10px] px-1.5" data-testid="badge-rag-green">GREEN</Badge>;
-  if (r === "AMBER" || r === "ORANGE") return <Badge className="bg-amber-100 text-amber-800 text-[10px] px-1.5" data-testid="badge-rag-amber">AMBER</Badge>;
-  if (r === "RED") return <Badge className="bg-red-100 text-red-800 text-[10px] px-1.5" data-testid="badge-rag-red">RED</Badge>;
-  return null;
+function pctBar(label: string, done: number, total: number, color: string) {
+  if (total === 0) return null;
+  const pct = Math.round((done / total) * 100);
+  return (
+    <div className="flex items-center gap-1.5 text-[10px]" data-testid={`pct-${label}`}>
+      <span className="text-muted-foreground w-[28px] shrink-0">{label}</span>
+      <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden min-w-[40px]">
+        <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
+      </div>
+      <span className="text-muted-foreground w-[28px] text-right">{pct}%</span>
+    </div>
+  );
+}
+
+function pctBarAvg(label: string, avgPct: number, total: number, color: string) {
+  if (total === 0) return null;
+  const pct = Math.round(avgPct);
+  return (
+    <div className="flex items-center gap-1.5 text-[10px]" data-testid={`pct-${label}`}>
+      <span className="text-muted-foreground w-[28px] shrink-0">{label}</span>
+      <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden min-w-[40px]">
+        <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
+      </div>
+      <span className="text-muted-foreground w-[28px] text-right">{pct}%</span>
+    </div>
+  );
 }
 
 function sourceBadge(source: string) {
@@ -152,6 +167,7 @@ function sourceBadge(source: string) {
 function getAuthHeaders(): HeadersInit {
   const token = localStorage.getItem("auth_token");
   return {
+    "Content-Type": "application/json",
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
 }
@@ -161,97 +177,98 @@ export default function LifecycleBoardPage() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [showActiveOnly, setShowActiveOnly] = useState(false);
+  const [draggedProject, setDraggedProject] = useState<ProjectInfo | null>(null);
+  const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
+  const { toast } = useToast();
+
+  const loadData = useCallback(async () => {
+    try {
+      const res = await fetch("/api/lifecycle-board/projects", {
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setProjects(data);
+      }
+    } catch {
+      setProjects([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    async function loadData() {
-      try {
-        const [excelRes, engRes] = await Promise.all([
-          fetch("/api/project-info", { credentials: "include" }),
-          fetch("/api/eng/tasks", { credentials: "include", headers: getAuthHeaders() }),
-        ]);
-
-        const excelProjects: any[] = excelRes.ok ? await excelRes.json() : [];
-        const engTasks: EngTask[] = engRes.ok ? await engRes.json() : [];
-
-        const merged: ProjectInfo[] = [];
-        const nameMap = new Map<string, ProjectInfo>();
-
-        for (const p of excelProjects) {
-          const normalized = normalizeNameForMatch(p.projectName);
-          const proj: ProjectInfo = {
-            id: p.id,
-            projectName: p.projectName,
-            sizeKwp: p.sizeKwp,
-            pd: p.pd,
-            pm: p.pm,
-            contractValue: p.contractValue,
-            phase: p.phase,
-            isActive: p.isActive !== false,
-            ragStatus: p.ragStatus,
-            source: "excel",
-            engTaskCount: 0,
-          };
-          nameMap.set(normalized, proj);
-          merged.push(proj);
-        }
-
-        for (const t of engTasks) {
-          if (!t.projectName) continue;
-          const normalized = normalizeNameForMatch(t.projectName);
-
-          const existing = nameMap.get(normalized);
-          if (existing) {
-            existing.source = "both";
-            existing.engTaskCount = (existing.engTaskCount || 0) + 1;
-            if (!existing.ragStatus && t.trackingRag) {
-              existing.ragStatus = t.trackingRag;
-            }
-          } else {
-            let found = false;
-            const entries = Array.from(nameMap.entries());
-            for (let i = 0; i < entries.length; i++) {
-              const [key, val] = entries[i];
-              if (key.includes(normalized) || normalized.includes(key)) {
-                val.source = "both";
-                val.engTaskCount = (val.engTaskCount || 0) + 1;
-                if (!val.ragStatus && t.trackingRag) {
-                  val.ragStatus = t.trackingRag;
-                }
-                found = true;
-                break;
-              }
-            }
-
-            if (!found) {
-              const newProj: ProjectInfo = {
-                id: -t.id,
-                projectName: t.projectName,
-                sizeKwp: null,
-                pd: null,
-                pm: null,
-                contractValue: null,
-                phase: t.phase || "Cost Proposal",
-                isActive: true,
-                ragStatus: t.trackingRag,
-                source: "engineering",
-                engTaskCount: 1,
-                engStatus: t.status,
-              };
-              nameMap.set(normalized, newProj);
-              merged.push(newProj);
-            }
-          }
-        }
-
-        setProjects(merged);
-      } catch {
-        setProjects([]);
-      } finally {
-        setLoading(false);
-      }
-    }
     loadData();
-  }, []);
+  }, [loadData]);
+
+  const handleDragStart = (e: React.DragEvent, project: ProjectInfo) => {
+    if (!project.id || project.id < 0) {
+      e.preventDefault();
+      return;
+    }
+    setDraggedProject(project);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", String(project.id));
+  };
+
+  const handleDragOver = (e: React.DragEvent, columnKey: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverColumn(columnKey);
+  };
+
+  const handleDragLeave = () => {
+    setDragOverColumn(null);
+  };
+
+  const handleDrop = async (e: React.DragEvent, targetColumnKey: string) => {
+    e.preventDefault();
+    setDragOverColumn(null);
+
+    if (!draggedProject || !draggedProject.id || draggedProject.id < 0) return;
+
+    const currentGroup = mapPhaseToGroup(draggedProject.phase);
+    if (currentGroup === targetColumnKey) {
+      setDraggedProject(null);
+      return;
+    }
+
+    const targetPhase = PHASE_GROUPS.find(g => g.key === targetColumnKey);
+    if (!targetPhase) return;
+
+    setProjects(prev =>
+      prev.map(p =>
+        p.id === draggedProject.id ? { ...p, phase: targetPhase.phaseValue } : p
+      )
+    );
+
+    try {
+      const res = await fetch(`/api/lifecycle-board/projects/${draggedProject.id}/phase`, {
+        method: "PATCH",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ phase: targetPhase.phaseValue }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        toast({ title: "Error", description: err.error || "Failed to move project", variant: "destructive" });
+        loadData();
+      } else {
+        toast({ title: "Phase Updated", description: `${cleanProjectName(draggedProject.projectName)} moved to ${targetPhase.label}` });
+      }
+    } catch {
+      toast({ title: "Error", description: "Network error", variant: "destructive" });
+      loadData();
+    }
+
+    setDraggedProject(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedProject(null);
+    setDragOverColumn(null);
+  };
 
   const filtered = projects.filter((p) => {
     if (showActiveOnly && !p.isActive) return false;
@@ -292,7 +309,7 @@ export default function LifecycleBoardPage() {
       <div>
         <h1 className="text-2xl font-bold" data-testid="text-lifecycle-title">Lifecycle Board</h1>
         <p className="text-muted-foreground text-sm">
-          All projects grouped by lifecycle phase
+          Drag projects between columns to change phase
           <span className="ml-2 text-xs">
             ({trackerCount} with tracker{preTrackerCount > 0 ? `, ${preTrackerCount} pre-tracker` : ""})
           </span>
@@ -327,11 +344,15 @@ export default function LifecycleBoardPage() {
         <div className="flex gap-3 min-w-max">
           {PHASE_GROUPS.map((group) => {
             const items = grouped[group.key] || [];
+            const isOver = dragOverColumn === group.key;
             return (
               <div
                 key={group.key}
-                className={`w-[260px] shrink-0 rounded-lg border ${group.color} flex flex-col`}
+                className={`w-[260px] shrink-0 rounded-lg border ${group.color} flex flex-col transition-all ${isOver ? "ring-2 ring-[#16a34a] scale-[1.01]" : ""}`}
                 data-testid={`column-${group.key}`}
+                onDragOver={(e) => handleDragOver(e, group.key)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, group.key)}
               >
                 <div className={`${group.headerBg} text-white rounded-t-lg px-3 py-2.5 flex items-center justify-between`}>
                   <span className="font-semibold text-sm">{group.label}</span>
@@ -341,54 +362,58 @@ export default function LifecycleBoardPage() {
                 </div>
                 <div className="p-2 space-y-2 flex-1 max-h-[calc(100vh-280px)] overflow-y-auto">
                   {items.length === 0 && (
-                    <p className="text-xs text-muted-foreground text-center py-4">No projects</p>
+                    <p className="text-xs text-muted-foreground text-center py-4">
+                      {isOver ? "Drop here" : "No projects"}
+                    </p>
                   )}
-                  {items.map((p) => (
-                    <Card
-                      key={p.id}
-                      className="shadow-sm hover:shadow-md transition-shadow cursor-pointer"
-                      data-testid={`card-project-${p.id}`}
-                    >
-                      <CardContent className="p-3 space-y-1.5">
-                        <div className="flex items-start justify-between gap-1">
-                          <div className="font-medium text-sm leading-tight" data-testid={`text-project-name-${p.id}`}>
-                            {cleanProjectName(p.projectName)}
+                  {items.map((p) => {
+                    const canDrag = p.id !== null && p.id > 0;
+                    return (
+                      <Card
+                        key={p.id ?? p.projectName}
+                        className={`shadow-sm hover:shadow-md transition-all ${canDrag ? "cursor-grab active:cursor-grabbing" : ""} ${draggedProject?.id === p.id ? "opacity-40" : ""}`}
+                        draggable={canDrag}
+                        onDragStart={(e) => handleDragStart(e, p)}
+                        onDragEnd={handleDragEnd}
+                        data-testid={`card-project-${p.id}`}
+                      >
+                        <CardContent className="p-3 space-y-1.5">
+                          <div className="flex items-start justify-between gap-1">
+                            <div className="flex items-center gap-1">
+                              {canDrag && <GripVertical className="w-3 h-3 text-muted-foreground shrink-0" />}
+                              <div className="font-medium text-sm leading-tight" data-testid={`text-project-name-${p.id}`}>
+                                {cleanProjectName(p.projectName)}
+                              </div>
+                            </div>
+                            {sourceBadge(p.source)}
                           </div>
-                          {sourceBadge(p.source)}
-                        </div>
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          {p.sizeKwp && parseFloat(p.sizeKwp) > 0 && (
-                            <span className="text-[11px] text-muted-foreground flex items-center gap-0.5" data-testid={`text-size-${p.id}`}>
-                              <Zap className="w-3 h-3" />
-                              {parseFloat(p.sizeKwp).toFixed(0)} kWp
-                            </span>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {p.sizeKwp && parseFloat(p.sizeKwp) > 0 && (
+                              <span className="text-[11px] text-muted-foreground flex items-center gap-0.5" data-testid={`text-size-${p.id}`}>
+                                <Zap className="w-3 h-3" />
+                                {parseFloat(p.sizeKwp).toFixed(0)} kWp
+                              </span>
+                            )}
+                          </div>
+                          {formatZAR(p.contractValue) && (
+                            <div className="text-xs text-muted-foreground" data-testid={`text-value-${p.id}`}>
+                              {formatZAR(p.contractValue)}
+                            </div>
                           )}
-                          {ragBadge(p.ragStatus)}
-                          {p.engTaskCount && p.engTaskCount > 0 && (
-                            <span className="text-[10px] text-purple-600" data-testid={`text-eng-tasks-${p.id}`}>
-                              {p.engTaskCount} eng task{p.engTaskCount > 1 ? "s" : ""}
-                            </span>
+                          {p.pm && (
+                            <div className="text-[11px] text-muted-foreground flex items-center gap-1" data-testid={`text-pm-${p.id}`}>
+                              <User className="w-3 h-3" />
+                              {p.pm}
+                            </div>
                           )}
-                        </div>
-                        {formatZAR(p.contractValue) && (
-                          <div className="text-xs text-muted-foreground" data-testid={`text-value-${p.id}`}>
-                            {formatZAR(p.contractValue)}
+                          <div className="space-y-0.5 pt-0.5">
+                            {pctBar("Eng", p.engDone, p.engTotal, "bg-purple-500")}
+                            {pctBarAvg("Plan", p.planAvgPct, p.planTotal, "bg-blue-500")}
                           </div>
-                        )}
-                        {p.pm && (
-                          <div className="text-[11px] text-muted-foreground flex items-center gap-1" data-testid={`text-pm-${p.id}`}>
-                            <User className="w-3 h-3" />
-                            {p.pm}
-                          </div>
-                        )}
-                        {p.source === "engineering" && p.engStatus && (
-                          <div className="text-[10px] text-purple-500" data-testid={`text-eng-status-${p.id}`}>
-                            Status: {p.engStatus}
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
-                  ))}
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
                 </div>
               </div>
             );
