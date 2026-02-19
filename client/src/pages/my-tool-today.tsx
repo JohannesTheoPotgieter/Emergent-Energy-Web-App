@@ -14,6 +14,7 @@ import { format, addDays, parse } from "date-fns";
 import MyToolLayout from "@/components/mytool/MyToolLayout";
 import { TaskItem, TaskStatus } from "@/components/mytool/TaskCard";
 import TaskDetailDrawer from "@/components/mytool/TaskDetailDrawer";
+import CooLens from "@/components/mytool/CooLens";
 import {
   ChevronDown,
   ChevronRight,
@@ -40,6 +41,7 @@ import {
   ListPlus,
   Trash2,
   Edit,
+  Settings,
 } from "lucide-react";
 
 type Horizon = "today" | "week" | "month" | "quarter";
@@ -121,25 +123,65 @@ const DEPARTMENTS = [
 
 const today = format(new Date(), "yyyy-MM-dd");
 
-function parseQuickAdd(text: string): { title: string; priority?: string; project?: string; department?: string; dueAt?: string; plannedForDate?: string } {
+function parseQuickAdd(text: string): { title: string; priority?: string; project?: string; department?: string; dueAt?: string; plannedForDate?: string; owner?: string } {
   let title = text;
   let priority: string | undefined;
   let project: string | undefined;
   let department: string | undefined;
   let dueAt: string | undefined;
+  let owner: string | undefined;
   let plannedForDate = today;
+
+  const prefix = title.match(/^([tpe])\s+/i);
+  if (prefix) {
+    title = title.slice(prefix[0].length);
+  }
 
   const p1Match = title.match(/\bp1\b/i);
   const p2Match = title.match(/\bp2\b/i);
   const p3Match = title.match(/\bp3\b/i);
+  const p4Match = title.match(/\bp4\b/i);
   if (p1Match) { priority = "critical"; title = title.replace(p1Match[0], "").trim(); }
   else if (p2Match) { priority = "high"; title = title.replace(p2Match[0], "").trim(); }
   else if (p3Match) { priority = "normal"; title = title.replace(p3Match[0], "").trim(); }
+  else if (p4Match) { priority = "low"; title = title.replace(p4Match[0], "").trim(); }
 
-  const hashMatch = title.match(/#(\w+)/);
-  if (hashMatch) {
-    const dept = DEPARTMENTS.find(d => d.toLowerCase().startsWith(hashMatch[1].toLowerCase()));
-    if (dept) { department = dept; title = title.replace(hashMatch[0], "").trim(); }
+  const projectMatch = title.match(/#project:([^\s]+)/i);
+  if (projectMatch) {
+    project = projectMatch[1].replace(/_/g, " ");
+    title = title.replace(projectMatch[0], "").trim();
+  } else {
+    const hashMatch = title.match(/#(\w+)/);
+    if (hashMatch) {
+      const dept = DEPARTMENTS.find(d => d.toLowerCase().startsWith(hashMatch[1].toLowerCase()));
+      if (dept) { department = dept; title = title.replace(hashMatch[0], "").trim(); }
+    }
+  }
+
+  const dueMatch = title.match(/\bdue:(\S+)/i);
+  if (dueMatch) {
+    const val = dueMatch[1].toLowerCase();
+    title = title.replace(dueMatch[0], "").trim();
+    if (val === "today") {
+      dueAt = today;
+    } else if (val === "tomorrow") {
+      dueAt = format(addDays(new Date(), 1), "yyyy-MM-dd");
+    } else if (/^\d{4}-\d{2}-\d{2}$/.test(val)) {
+      dueAt = val;
+    }
+  }
+
+  const ownerMatch = title.match(/\bowner:(\S+)/i);
+  if (ownerMatch) {
+    owner = ownerMatch[1].replace(/_/g, " ");
+    title = title.replace(ownerMatch[0], "").trim();
+  }
+
+  const deptMatch = title.match(/\bdept:(\S+)/i);
+  if (deptMatch && !department) {
+    const dept = DEPARTMENTS.find(d => d.toLowerCase().startsWith(deptMatch[1].toLowerCase()));
+    if (dept) department = dept;
+    title = title.replace(deptMatch[0], "").trim();
   }
 
   const tomorrowMatch = title.match(/\btomorrow\b/i);
@@ -154,7 +196,7 @@ function parseQuickAdd(text: string): { title: string; priority?: string; projec
   }
 
   title = title.replace(/\s+/g, " ").trim();
-  return { title, priority, project, department, dueAt, plannedForDate };
+  return { title, priority, project, department, dueAt, plannedForDate, owner };
 }
 
 export default function MyToolTodayPage() {
@@ -198,6 +240,29 @@ export default function MyToolTodayPage() {
   const [editingBlockId, setEditingBlockId] = useState<number | null>(null);
   const [editBlockStart, setEditBlockStart] = useState("");
   const [editBlockEnd, setEditBlockEnd] = useState("");
+  const [focusMode, setFocusMode] = useState(() => localStorage.getItem("mytool_focus_mode") === "true");
+  const [contextSelection, setContextSelection] = useState<{ type: "task" | "email" | "priority"; id: string | number } | null>(null);
+  const [emailConvertForm, setEmailConvertForm] = useState<{ email: OutlookEmail; title: string; project: string; module: string; dueAt: string; priority: string } | null>(null);
+  const [bundleWizard, setBundleWizard] = useState<{ priority: CompanyPriority; tasks: Array<{ title: string; owner: string; dueAt: string }> } | null>(null);
+  const [contextDrawerOpen, setContextDrawerOpen] = useState(false);
+  const [mobileTab, setMobileTab] = useState<"tasks" | "planner" | "email">("tasks");
+  const [windowWidth, setWindowWidth] = useState(() => typeof window !== "undefined" ? window.innerWidth : 1400);
+
+  useEffect(() => {
+    const onResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  const isCompact = windowWidth < 1200;
+  const isMobile = windowWidth < 900;
+
+  useEffect(() => {
+    const handler = () => setFocusMode(localStorage.getItem("mytool_focus_mode") === "true");
+    window.addEventListener("storage", handler);
+    const interval = setInterval(handler, 500);
+    return () => { window.removeEventListener("storage", handler); clearInterval(interval); };
+  }, []);
 
   const { data: tasks = [], isLoading: tasksLoading } = useQuery<TaskItem[]>({
     queryKey: [`/api/mytool/tasks?date=${today}`],
@@ -420,15 +485,28 @@ export default function MyToolTodayPage() {
     const raw = text || quickAddText.trim();
     if (!raw) return;
     const parsed = parseQuickAdd(raw);
-    createTaskMutation.mutate({
-      title: parsed.title,
-      status: "planned",
-      plannedForDate: parsed.plannedForDate || today,
-      priority: parsed.priority || "normal",
-      department: parsed.department || null,
-    });
+    if (parsed.prefix === "p") {
+      createPriorityMutation.mutate({
+        title: parsed.title,
+        department: parsed.department || null,
+        severity: parsed.priority === "critical" ? "critical" : parsed.priority === "high" ? "important" : "normal",
+        horizon,
+        linkedProjectName: parsed.project || null,
+        status: "active",
+      });
+    } else {
+      createTaskMutation.mutate({
+        title: parsed.title,
+        status: "planned",
+        plannedForDate: parsed.plannedForDate || today,
+        priority: parsed.priority || "normal",
+        department: parsed.department || null,
+        projectName: parsed.project || null,
+        dueAt: parsed.dueAt || null,
+      });
+    }
     setQuickAddText("");
-  }, [quickAddText]);
+  }, [quickAddText, horizon]);
 
   const handleStatusChange = (taskId: number, newStatus: TaskStatus) => {
     updateTaskMutation.mutate({ id: taskId, status: newStatus });
@@ -479,6 +557,81 @@ export default function MyToolTodayPage() {
     }
   };
 
+  const handleEmailConvertOpen = (email: OutlookEmail) => {
+    setEmailConvertForm({
+      email,
+      title: email.subject || "(No subject)",
+      project: "",
+      module: "",
+      dueAt: "",
+      priority: "normal",
+    });
+  };
+
+  const handleEmailConvertSubmit = async () => {
+    if (!emailConvertForm) return;
+    const { email, title, project, module, dueAt, priority } = emailConvertForm;
+    try {
+      await apiRequest("POST", "/api/mytool/tasks", {
+        title,
+        status: "planned",
+        plannedForDate: today,
+        priority,
+        projectName: project || null,
+        department: module || null,
+        dueAt: dueAt || null,
+        notes: `Email from: ${email.sender || email.senderEmail || "unknown"}\n\n${email.snippet || ""}`,
+      });
+      await apiRequest("POST", "/api/outlook/email-to-task", {
+        outlookMessageId: email.id,
+        subject: email.subject,
+        sender: email.sender || email.senderEmail || "",
+        receivedAt: email.receivedAt,
+        snippet: email.snippet?.slice(0, 200) || "",
+        webLink: email.webLink || "",
+        targetType: "new",
+      });
+      invalidateAll();
+      setEmailConvertForm(null);
+      toast({ title: "Task created from email", description: "Open task in your list" });
+    } catch {
+      toast({ title: "Failed to create task", variant: "destructive" });
+    }
+  };
+
+  const handleBundleOpen = (p: CompanyPriority) => {
+    const suggestedTasks = [
+      { title: `Review: ${p.title}`, owner: "", dueAt: "" },
+      { title: `Plan approach for: ${p.title}`, owner: "", dueAt: "" },
+      { title: `Execute: ${p.title}`, owner: "", dueAt: "" },
+    ];
+    setBundleWizard({ priority: p, tasks: suggestedTasks });
+  };
+
+  const handleBundleSubmit = async () => {
+    if (!bundleWizard) return;
+    try {
+      for (const t of bundleWizard.tasks) {
+        if (!t.title.trim()) continue;
+        await apiRequest("POST", "/api/mytool/tasks", {
+          title: t.title.trim(),
+          status: "planned",
+          plannedForDate: today,
+          priority: bundleWizard.priority.severity === "critical" ? "critical" : bundleWizard.priority.severity === "important" ? "high" : "normal",
+          projectName: bundleWizard.priority.linkedProjectName || null,
+          department: bundleWizard.priority.department || null,
+          dueAt: t.dueAt || null,
+          notes: `From priority: ${bundleWizard.priority.title}`,
+        });
+      }
+      invalidateAll();
+      setBundleWizard(null);
+      toast({ title: `${bundleWizard.tasks.filter(t => t.title.trim()).length} tasks created from priority` });
+    } catch {
+      toast({ title: "Failed to create tasks", variant: "destructive" });
+    }
+  };
+
   const handleDropTaskOnPlanner = (taskId: number, hour: number) => {
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
@@ -515,7 +668,10 @@ export default function MyToolTodayPage() {
 
   if (tasksLoading) {
     return (
-      <MyToolLayout onQuickAdd={handleQuickAdd}>
+      <MyToolLayout onQuickAdd={handleQuickAdd} onTaskSelect={(taskId) => {
+        const t = tasks.find(tk => tk.id === taskId);
+        if (t) { setDrawerTask(t); setDrawerOpen(true); setContextSelection({ type: "task", id: taskId }); }
+      }}>
         <div className="space-y-4 max-w-3xl" data-testid="mytool-today-skeleton">
           <div className="flex gap-3">
             {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-5 w-20" />)}
@@ -528,7 +684,10 @@ export default function MyToolTodayPage() {
   }
 
   return (
-    <MyToolLayout onQuickAdd={handleQuickAdd}>
+    <MyToolLayout onQuickAdd={handleQuickAdd} onTaskSelect={(taskId) => {
+      const t = tasks.find(tk => tk.id === taskId);
+      if (t) { setDrawerTask(t); setDrawerOpen(true); setContextSelection({ type: "task", id: taskId }); }
+    }}>
       <div className="space-y-4" data-testid="mytool-today-page">
         {/* Stats strip */}
         <div className="flex flex-wrap items-center gap-3 text-sm" data-testid="stats-strip">
@@ -565,11 +724,37 @@ export default function MyToolTodayPage() {
           </div>
         </div>
 
+        {/* Mobile Tab Bar */}
+        {isMobile && (
+          <div className="flex gap-1 mb-3 bg-muted/50 rounded-lg p-1" data-testid="mobile-tab-bar">
+            {(["tasks", "planner", "email"] as const).map(tab => (
+              <button
+                key={tab}
+                onClick={() => setMobileTab(tab)}
+                className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${mobileTab === tab ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                data-testid={`mobile-tab-${tab}`}
+              >
+                {tab === "tasks" ? "Tasks" : tab === "planner" ? "Planner" : "Email"}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Context Drawer Toggle (compact mode, not mobile) */}
+        {isCompact && !isMobile && !focusMode && (
+          <div className="flex justify-end mb-2">
+            <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => setContextDrawerOpen(true)} data-testid="button-open-context-drawer">
+              <Mail className="h-3 w-3" />
+              Email & Context
+            </Button>
+          </div>
+        )}
+
         {/* Three-column layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        <div className={`grid gap-4 ${isMobile ? "grid-cols-1" : isCompact ? "grid-cols-2" : "grid-cols-1 lg:grid-cols-12"}`}>
 
           {/* LEFT COLUMN: Open Tasks & Projects */}
-          <div className="lg:col-span-3 space-y-3" data-testid="column-tasks">
+          <div className={`${isCompact ? "col-span-1" : focusMode ? "lg:col-span-4" : "lg:col-span-3"} space-y-3 ${isMobile && mobileTab !== "tasks" ? "hidden" : ""}`} data-testid="column-tasks">
             <div className="border border-border/50 rounded-lg">
               <div className="flex items-center justify-between px-3 py-2.5 border-b border-border/30">
                 <div className="flex items-center gap-2">
@@ -621,7 +806,7 @@ export default function MyToolTodayPage() {
                                   }`} />
                                   <span
                                     className="flex-1 truncate text-foreground cursor-pointer hover:text-primary"
-                                    onClick={() => { setDrawerTask(task); setDrawerOpen(true); }}
+                                    onClick={() => { setDrawerTask(task); setDrawerOpen(true); setContextSelection({ type: "task", id: task.id }); }}
                                   >
                                     {task.title}
                                   </span>
@@ -656,7 +841,7 @@ export default function MyToolTodayPage() {
                             {doneTasks.map(task => (
                               <div key={task.id} className="flex items-center gap-1.5 px-2 py-1 rounded text-[11px] text-muted-foreground" data-testid={`done-task-item-${task.id}`}>
                                 <CheckCircle2 className="h-3 w-3 text-emerald-400 shrink-0" />
-                                <span className="flex-1 truncate line-through cursor-pointer hover:text-foreground" onClick={() => { setDrawerTask(task); setDrawerOpen(true); }}>{task.title}</span>
+                                <span className="flex-1 truncate line-through cursor-pointer hover:text-foreground" onClick={() => { setDrawerTask(task); setDrawerOpen(true); setContextSelection({ type: "task", id: task.id }); }}>{task.title}</span>
                               </div>
                             ))}
                           </div>
@@ -670,7 +855,7 @@ export default function MyToolTodayPage() {
           </div>
 
           {/* CENTER COLUMN: Daily Planner */}
-          <div className="lg:col-span-5 space-y-3" data-testid="column-planner">
+          <div className={`${isCompact ? "col-span-1" : focusMode ? "lg:col-span-8" : "lg:col-span-5"} space-y-3 ${isMobile && mobileTab !== "planner" ? "hidden" : ""}`} data-testid="column-planner">
             {/* Daily Planner */}
             <section
               className="border border-border/50 rounded-lg"
@@ -964,7 +1149,12 @@ export default function MyToolTodayPage() {
           </div>
 
           {/* RIGHT COLUMN: Email & Priorities */}
-          <div className="lg:col-span-4 space-y-3" data-testid="column-context">
+          <div className={`lg:col-span-4 space-y-3 ${(isMobile && mobileTab === "email") ? "" : (focusMode || isCompact) ? "hidden" : ""}`} data-testid="column-context">
+            {/* COO Lens */}
+            <section className="border border-border/50 rounded-lg py-2" data-testid="card-coo-lens">
+              <CooLens />
+            </section>
+
             {/* Email Inbox */}
             <section className="border border-border/50 rounded-lg" data-testid="card-email-inbox">
               <div className="flex items-center justify-between px-4 py-3">
@@ -1167,7 +1357,7 @@ export default function MyToolTodayPage() {
                               draggable
                               onDragStart={(e) => { e.dataTransfer.setData("application/json", JSON.stringify(email)); e.dataTransfer.effectAllowed = "copy"; }}
                               className={`px-2.5 py-2 rounded-md border border-border/50 hover:bg-muted/30 cursor-pointer transition-colors group/email ${!email.isRead ? "bg-blue-50/30 dark:bg-blue-950/10 border-blue-200/30" : ""}`}
-                              onClick={() => { setEmailDetailId(email.id); setReplyMode(null); setReplyText(""); }}
+                              onClick={() => { setEmailDetailId(email.id); setReplyMode(null); setReplyText(""); setContextSelection({ type: "email", id: email.id }); }}
                               data-testid={`inbox-email-${email.id}`}
                             >
                               <div className="flex items-start gap-2">
@@ -1185,12 +1375,22 @@ export default function MyToolTodayPage() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  className="h-6 w-6 p-0 opacity-0 group-hover/email:opacity-100 shrink-0 text-muted-foreground hover:text-primary"
-                                  title="Add as task"
+                                  className="h-5 w-5 p-0 opacity-0 group-hover/email:opacity-100 shrink-0 text-muted-foreground hover:text-primary"
+                                  title="Quick add as task"
                                   onClick={(e) => { e.stopPropagation(); handleDropEmail(email); }}
                                   data-testid={`button-email-to-task-${email.id}`}
                                 >
-                                  <ListPlus className="h-3.5 w-3.5" />
+                                  <ListPlus className="h-3 w-3" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-5 w-5 p-0 opacity-0 group-hover/email:opacity-100 shrink-0 text-muted-foreground hover:text-blue-600"
+                                  title="Add as task with details"
+                                  onClick={(e) => { e.stopPropagation(); handleEmailConvertOpen(email); }}
+                                  data-testid={`button-email-convert-${email.id}`}
+                                >
+                                  <Settings className="h-3 w-3" />
                                 </Button>
                               </div>
                             </div>
@@ -1278,6 +1478,9 @@ export default function MyToolTodayPage() {
                         <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-primary" onClick={() => createTaskMutation.mutate({ title: p.title, status: "planned", plannedForDate: today, priority: p.severity === "critical" ? "critical" : p.severity === "important" ? "high" : "normal", projectName: p.linkedProjectName })} title="Create task" data-testid={`button-convert-task-${p.id}`}>
                           <Plus className="h-3 w-3" />
                         </Button>
+                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-blue-600" onClick={() => handleBundleOpen(p)} title="Break into tasks" data-testid={`button-bundle-priority-${p.id}`}>
+                          <ListPlus className="h-3 w-3" />
+                        </Button>
                         <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive" onClick={() => deletePriorityMutation.mutate(p.id)} data-testid={`button-delete-priority-${p.id}`}>
                           <X className="h-3 w-3" />
                         </Button>
@@ -1294,6 +1497,55 @@ export default function MyToolTodayPage() {
           </div>
         </div>
       </div>
+
+      {/* Context Drawer (compact/mobile screens) */}
+      {isCompact && contextDrawerOpen && (
+        <div className="fixed inset-0 z-40" data-testid="context-drawer-overlay">
+          <div className="absolute inset-0 bg-black/30" onClick={() => setContextDrawerOpen(false)} />
+          <div className="absolute right-0 top-0 h-full w-[380px] max-w-[90vw] bg-background border-l border-border shadow-xl overflow-y-auto">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border/50 sticky top-0 bg-background z-10">
+              <span className="text-sm font-semibold">Email & Context</span>
+              <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setContextDrawerOpen(false)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="p-3 space-y-3">
+              <section className="border border-border/50 rounded-lg py-2">
+                <CooLens />
+              </section>
+              <section className="border border-border/50 rounded-lg p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <Mail className="h-4 w-4 text-blue-600" />
+                  <span className="text-sm font-medium">Email</span>
+                </div>
+                {emailsLoading ? (
+                  <div className="flex items-center gap-2 py-4 justify-center">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span className="text-xs text-muted-foreground">Loading...</span>
+                  </div>
+                ) : emails.length === 0 ? (
+                  <p className="text-xs text-muted-foreground text-center py-3">No emails found</p>
+                ) : (
+                  <div className="space-y-1">
+                    {emails.slice(0, 10).map(email => (
+                      <div key={email.id} className="flex items-start gap-2 p-2 rounded hover:bg-muted/50 cursor-pointer group/email" onClick={() => { setEmailDetailId(email.id); setContextDrawerOpen(false); }}>
+                        <Mail className={`h-3 w-3 mt-0.5 shrink-0 ${!email.isRead ? "text-blue-600" : "text-muted-foreground/40"}`} />
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-xs truncate ${!email.isRead ? "font-semibold" : "font-medium text-foreground/80"}`}>{email.subject || "(No subject)"}</p>
+                          <p className="text-[10px] text-muted-foreground truncate">{email.sender || email.senderEmail}</p>
+                        </div>
+                        <Button variant="ghost" size="sm" className="h-5 w-5 p-0 opacity-0 group-hover/email:opacity-100 shrink-0" onClick={(e) => { e.stopPropagation(); handleEmailConvertOpen(email); }}>
+                          <ListPlus className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* DoD Prompt Modal */}
       {dodPromptTask && (
@@ -1316,6 +1568,156 @@ export default function MyToolTodayPage() {
               <Button size="sm" onClick={handleDodPromptSave} disabled={!dodPromptText.trim() || updateTaskMutation.isPending} data-testid="button-dod-prompt-save">
                 {updateTaskMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <CheckCircle2 className="h-3 w-3 mr-1" />}
                 Mark Done
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Email → Task Conversion Form */}
+      {emailConvertForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" data-testid="email-convert-overlay">
+          <div className="bg-background rounded-lg shadow-lg p-6 max-w-md w-full mx-4 space-y-4" data-testid="email-convert-modal">
+            <div className="space-y-1">
+              <h3 className="text-sm font-semibold">Create Task from Email</h3>
+              <p className="text-[11px] text-muted-foreground">From: {emailConvertForm.email.sender || emailConvertForm.email.senderEmail}</p>
+            </div>
+            <div className="space-y-3">
+              <Input
+                value={emailConvertForm.title}
+                onChange={(e) => setEmailConvertForm(f => f ? { ...f, title: e.target.value } : f)}
+                placeholder="Task title"
+                className="h-8 text-sm"
+                autoFocus
+                data-testid="input-email-convert-title"
+              />
+              <div className="flex gap-2">
+                <select
+                  value={emailConvertForm.project}
+                  onChange={(e) => setEmailConvertForm(f => f ? { ...f, project: e.target.value } : f)}
+                  className="flex-1 h-8 text-xs border border-border rounded px-2 bg-background"
+                  data-testid="select-email-convert-project"
+                >
+                  <option value="">Project (optional)</option>
+                  {allProjects.map(p => (
+                    <option key={p.project_name} value={p.project_name}>
+                      {p.project_name.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={emailConvertForm.module}
+                  onChange={(e) => setEmailConvertForm(f => f ? { ...f, module: e.target.value } : f)}
+                  className="flex-1 h-8 text-xs border border-border rounded px-2 bg-background"
+                  data-testid="select-email-convert-module"
+                >
+                  <option value="">Module</option>
+                  {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
+              <div className="flex gap-2">
+                <select
+                  value={emailConvertForm.priority}
+                  onChange={(e) => setEmailConvertForm(f => f ? { ...f, priority: e.target.value } : f)}
+                  className="flex-1 h-8 text-xs border border-border rounded px-2 bg-background"
+                  data-testid="select-email-convert-priority"
+                >
+                  <option value="normal">P3 — Normal</option>
+                  <option value="critical">P1 — Critical</option>
+                  <option value="high">P2 — High</option>
+                  <option value="low">P4 — Low</option>
+                </select>
+                <Input
+                  type="date"
+                  value={emailConvertForm.dueAt}
+                  onChange={(e) => setEmailConvertForm(f => f ? { ...f, dueAt: e.target.value } : f)}
+                  className="flex-1 h-8 text-xs"
+                  data-testid="input-email-convert-due"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setEmailConvertForm(null)}>Cancel</Button>
+              <Button size="sm" onClick={handleEmailConvertSubmit} disabled={!emailConvertForm.title.trim()} data-testid="button-email-convert-submit">
+                <Plus className="h-3 w-3 mr-1" />
+                Create Task
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Priority → Task Bundle Wizard */}
+      {bundleWizard && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" data-testid="bundle-wizard-overlay">
+          <div className="bg-background rounded-lg shadow-lg p-6 max-w-lg w-full mx-4 space-y-4" data-testid="bundle-wizard-modal">
+            <div className="space-y-1">
+              <h3 className="text-sm font-semibold">Break into Tasks</h3>
+              <p className="text-[11px] text-muted-foreground">Priority: {bundleWizard.priority.title}</p>
+            </div>
+            <div className="space-y-2">
+              {bundleWizard.tasks.map((t, i) => (
+                <div key={i} className="flex items-center gap-2" data-testid={`bundle-task-${i}`}>
+                  <span className="text-[10px] text-muted-foreground w-4 shrink-0">{i + 1}.</span>
+                  <Input
+                    value={t.title}
+                    onChange={(e) => setBundleWizard(w => {
+                      if (!w) return w;
+                      const tasks = [...w.tasks];
+                      tasks[i] = { ...tasks[i], title: e.target.value };
+                      return { ...w, tasks };
+                    })}
+                    className="flex-1 h-7 text-xs"
+                    placeholder="Task title"
+                    data-testid={`input-bundle-title-${i}`}
+                  />
+                  <Input
+                    type="date"
+                    value={t.dueAt}
+                    onChange={(e) => setBundleWizard(w => {
+                      if (!w) return w;
+                      const tasks = [...w.tasks];
+                      tasks[i] = { ...tasks[i], dueAt: e.target.value };
+                      return { ...w, tasks };
+                    })}
+                    className="w-32 h-7 text-xs"
+                    data-testid={`input-bundle-due-${i}`}
+                  />
+                  <Button
+                    variant="ghost" size="sm"
+                    className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive shrink-0"
+                    onClick={() => setBundleWizard(w => {
+                      if (!w) return w;
+                      return { ...w, tasks: w.tasks.filter((_, j) => j !== i) };
+                    })}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+              ))}
+              <Button
+                variant="outline" size="sm"
+                className="w-full h-7 text-xs"
+                onClick={() => setBundleWizard(w => {
+                  if (!w) return w;
+                  return { ...w, tasks: [...w.tasks, { title: "", owner: "", dueAt: "" }] };
+                })}
+                data-testid="button-bundle-add-task"
+              >
+                <Plus className="h-3 w-3 mr-1" />
+                Add another task
+              </Button>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setBundleWizard(null)}>Cancel</Button>
+              <Button
+                size="sm"
+                onClick={handleBundleSubmit}
+                disabled={bundleWizard.tasks.filter(t => t.title.trim()).length === 0}
+                data-testid="button-bundle-submit"
+              >
+                <Plus className="h-3 w-3 mr-1" />
+                Create {bundleWizard.tasks.filter(t => t.title.trim()).length} Tasks
               </Button>
             </div>
           </div>
