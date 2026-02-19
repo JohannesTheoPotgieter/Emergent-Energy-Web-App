@@ -183,19 +183,19 @@ async function seedUsers() {
       email: process.env.DEMO_ADMIN_EMAIL || "admin@emergent.energy",
       password: process.env.DEMO_ADMIN_PASSWORD || "admin123",
       name: "Admin User",
-      role: "admin" as const,
+      role: "COO_ADMIN" as const,
     },
     {
       email: "viewer@emergent.energy",
       password: "viewer123",
       name: "Viewer",
-      role: "member" as const,
+      role: "VIEWER" as const,
     },
     {
       email: "qm@emergent.energy",
       password: "quality123",
       name: "Quality Manager",
-      role: "quality_manager" as const,
+      role: "QUALITY_MANAGER" as const,
     },
   ];
 
@@ -255,6 +255,10 @@ async function seedUsers() {
 
   const { seedEngineeringData } = await import("./seed-engineering");
   await seedEngineeringData().catch(err => console.error('[Seed] Engineering data error:', err));
+
+  const { registerRoleManagementRoutes, seedRolePermissions } = await import("./role-management");
+  registerRoleManagementRoutes(app);
+  await seedRolePermissions().catch(err => console.error('[Seed] Role permissions error:', err));
   
   await registerRoutes(httpServer, app);
 
