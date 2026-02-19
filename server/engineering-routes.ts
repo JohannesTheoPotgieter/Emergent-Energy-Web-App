@@ -1191,7 +1191,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   function requireAdmin(req: Request, res: Response, next: NextFunction) {
     const role = getUserRole(req);
-    if (role === "admin") return next();
+    if (role === "admin" || role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
     res.status(403).json({ error: "forbidden", message: "Admin access required" });
   }
 
