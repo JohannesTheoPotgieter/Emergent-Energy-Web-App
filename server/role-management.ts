@@ -156,7 +156,8 @@ export function registerRoleManagementRoutes(app: Express) {
         email: users.email,
         role: users.role,
       }).from(users);
-      res.json(allUsers);
+      const mapped = allUsers.map(u => ({ ...u, role: mapRole(u.role) }));
+      res.json(mapped);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
