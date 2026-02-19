@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, AlertTriangle, TrendingUp, Calendar, Shield, Loader2 } from "lucide-react";
+import { ChevronDown, ChevronRight, AlertTriangle, TrendingUp, Calendar, Shield } from "lucide-react";
 import { format, addDays, isAfter, isBefore, parseISO } from "date-fns";
 
 interface LensSection {
@@ -16,12 +16,19 @@ const SECTIONS: LensSection[] = [
   { key: "milestones", label: "Milestones (7d)", icon: <Calendar className="h-3 w-3" />, color: "text-blue-600" },
 ];
 
+interface HighPriorityData {
+  overdueExpenses?: any[];
+  revenueOutstanding?: any[];
+  dataSeverity?: any[];
+  riskFlags?: any[];
+}
+
 export default function CooLens() {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const today = new Date();
   const nextWeek = addDays(today, 7);
 
-  const { data: alerts = [] } = useQuery<any[]>({
+  const { data: highPriority } = useQuery<HighPriorityData>({
     queryKey: ["/api/dashboard/high-priority"],
     staleTime: 60000,
   });
@@ -29,7 +36,7 @@ export default function CooLens() {
   const { data: projectPlans = [] } = useQuery<any[]>({
     queryKey: ["/api/project-plans"],
     staleTime: 60000,
-    select: (data: any[]) => {
+    select: (data: any) => {
       if (!Array.isArray(data)) return [];
       return data.filter((p: any) => {
         if (!p.endDate && !p.startDate) return false;
@@ -44,13 +51,28 @@ export default function CooLens() {
     },
   });
 
-  const riskAlerts = alerts.filter((a: any) =>
-    a.severity === "critical" || a.severity === "high"
-  ).slice(0, 4);
+  const riskAlerts = [
+    ...(highPriority?.riskFlags || []).slice(0, 2),
+    ...(highPriority?.dataSeverity || []).filter((d: any) => d.severity === "critical").slice(0, 2),
+  ].slice(0, 4).map((item: any, idx: number) => ({
+    id: item.id || idx,
+    title: item.message || item.flag || item.title || "Risk flag",
+    severity: item.severity || "high",
+    projectName: item.projectName || null,
+  }));
 
-  const financeAlerts = alerts.filter((a: any) =>
-    a.category === "finance" || a.category === "budget" || a.category === "cashflow"
-  ).slice(0, 4);
+  const financeAlerts = [
+    ...(highPriority?.overdueExpenses || []).slice(0, 2).map((e: any) => ({
+      id: e.id,
+      title: `Overdue: ${e.lineItem || e.invoiceNumber || "payment"} — R${Math.round(e.amount / 1000)}K`,
+      projectName: e.projectName,
+    })),
+    ...(highPriority?.revenueOutstanding || []).slice(0, 2).map((r: any) => ({
+      id: r.id,
+      title: `Revenue: ${r.milestoneName || r.invoiceNumber || "outstanding"} — R${Math.round(r.amount / 1000)}K`,
+      projectName: r.projectName,
+    })),
+  ].slice(0, 4);
 
   const toggle = (key: string) => {
     setCollapsed(prev => ({ ...prev, [key]: !prev[key] }));
