@@ -76,7 +76,10 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
     }
   }
 
-  if (user?.role !== "admin" && location.startsWith("/admin")) {
+  const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
+  const ADMIN_COMPANY_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
+  const hasAdminAccess = user?.role === "admin" || (companyRole && ADMIN_COMPANY_ROLES.includes(companyRole));
+  if (!hasAdminAccess && location.startsWith("/admin")) {
     return <Redirect to="/" />;
   }
 
