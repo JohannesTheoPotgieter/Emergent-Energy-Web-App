@@ -402,7 +402,8 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
 }
 
 function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  if (req.user?.role === "admin") {
+  const role = req.user?.role;
+  if (role === "admin" || role === "COO_ADMIN" || role === "CEO_ADMIN") {
     return next();
   }
   res.status(403).json({ error: "admin_required", message: "Admin access required", code: "ADMIN_REQUIRED" });
@@ -418,19 +419,22 @@ function requireRole(...roles: string[]) {
 }
 
 function requireQmChallenge(req: Request, res: Response, next: NextFunction) {
-  if (req.user?.role === "admin") return next();
+  const role = req.user?.role;
+  if (role === "admin" || role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
   if ((req.session as any)?.qmChallengePassed) return next();
   res.status(403).json({ error: "qm_challenge_required", message: "Quality Manager access code required", code: "QM_CHALLENGE_REQUIRED" });
 }
 
 function requireEpmChallenge(req: Request, res: Response, next: NextFunction) {
-  if (req.user?.role === "admin") return next();
+  const role = req.user?.role;
+  if (role === "admin" || role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
   if ((req.session as any)?.epmChallengePassed) return next();
   res.status(403).json({ error: "epm_challenge_required", message: "Engineering Program Manager access code required", code: "EPM_CHALLENGE_REQUIRED" });
 }
 
 function requireAdminOrEpm(req: Request, res: Response, next: NextFunction) {
-  if (req.user?.role === "admin" || req.user?.role === "eng_program_manager") return next();
+  const role = req.user?.role;
+  if (role === "admin" || role === "COO_ADMIN" || role === "CEO_ADMIN" || role === "eng_program_manager" || role === "ENGINEERING_MANAGER") return next();
   res.status(403).json({ error: "forbidden", message: "Admin or Engineering Program Manager access required", code: "ROLE_REQUIRED" });
 }
 

@@ -18,7 +18,8 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
 }
 
 function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  if ((req as any).user?.role === "admin") return next();
+  const role = (req as any).user?.role;
+  if (role === "admin" || role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
   res.status(403).json({ error: "admin_required", message: "Admin access required" });
 }
 
