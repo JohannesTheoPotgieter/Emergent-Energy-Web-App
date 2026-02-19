@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +29,7 @@ import {
   MessageSquare,
   Activity,
   ChevronRight,
+  ChevronDown,
   AlertTriangle,
   CheckCircle2,
   Clock,
@@ -36,8 +37,11 @@ import {
   Columns3,
   List,
   Send,
+  FolderKanban,
+  Circle,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { PROJECT_PHASE_LABELS, type ProjectPhase } from "@shared/schema";
 
 async function engFetch(url: string, options?: RequestInit) {
   const token = localStorage.getItem("auth_token");
@@ -603,11 +607,313 @@ function TaskDetailDrawer({
   );
 }
 
+const PHASE_COLORS: Record<string, { bg: string; text: string; accent: string }> = {
+  P0_FIRST_ASSESSMENT: { bg: "bg-slate-50 dark:bg-slate-900/30", text: "text-slate-700 dark:text-slate-300", accent: "bg-slate-500" },
+  P1_COST_PROPOSAL_DESIGN: { bg: "bg-violet-50 dark:bg-violet-900/30", text: "text-violet-700 dark:text-violet-300", accent: "bg-violet-500" },
+  P2_PD_PM_HANDOVER: { bg: "bg-indigo-50 dark:bg-indigo-900/30", text: "text-indigo-700 dark:text-indigo-300", accent: "bg-indigo-500" },
+  P3_DETAILED_DESIGN_PROC_RELEASE: { bg: "bg-blue-50 dark:bg-blue-900/30", text: "text-blue-700 dark:text-blue-300", accent: "bg-blue-500" },
+  P4_CONSTRUCTION_INSTALLATION: { bg: "bg-amber-50 dark:bg-amber-900/30", text: "text-amber-700 dark:text-amber-300", accent: "bg-amber-500" },
+  P5_COMMISSIONING_TESTING: { bg: "bg-orange-50 dark:bg-orange-900/30", text: "text-orange-700 dark:text-orange-300", accent: "bg-orange-500" },
+  P6_HANDOVER_CLIENT_MATRIARCH: { bg: "bg-teal-50 dark:bg-teal-900/30", text: "text-teal-700 dark:text-teal-300", accent: "bg-teal-500" },
+  P7_CLOSEOUT_POSTMORTEM: { bg: "bg-emerald-50 dark:bg-emerald-900/30", text: "text-emerald-700 dark:text-emerald-300", accent: "bg-emerald-500" },
+};
+
+interface ProjectGroup {
+  projectName: string;
+  displayName: string;
+  phase: string;
+  phaseLabel: string;
+  tasks: Task[];
+  totalTasks: number;
+  completedTasks: number;
+  overdueTasks: number;
+}
+
+function ProjectKanbanView({
+  tasks,
+  onCardClick,
+  onDrop,
+  searchTerm,
+}: {
+  tasks: Task[];
+  onCardClick: (task: Task) => void;
+  onDrop: (taskId: number, newStatus: string) => void;
+  searchTerm: string;
+}) {
+  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
+  const [expandedPhases, setExpandedPhases] = useState<Set<string>>(new Set(["all"]));
+
+  const { data: dashboardData } = useQuery<{
+    projects: { projectName: string; displayName: string; phase: string; phaseLabel: string }[];
+  }>({
+    queryKey: ["eng-dashboard-projects"],
+    queryFn: () => engFetch("/api/eng/dashboard/projects"),
+    staleTime: 30000,
+  });
+
+  const projectGroups: ProjectGroup[] = useMemo(() => {
+    const byProject = new Map<string, Task[]>();
+    for (const t of tasks) {
+      const key = t.projectName || "Unassigned";
+      if (!byProject.has(key)) byProject.set(key, []);
+      byProject.get(key)!.push(t);
+    }
+
+    const dashProjects = dashboardData?.projects || [];
+    const phaseMap = new Map<string, { phase: string; phaseLabel: string; displayName: string }>();
+    for (const dp of dashProjects) {
+      const norm = dp.projectName.replace(/_Tracker$/i, "").replace(/_/g, " ").toLowerCase();
+      phaseMap.set(norm, dp);
+    }
+
+    const groups: ProjectGroup[] = [];
+    for (const entry of Array.from(byProject.entries())) {
+      const projectName = entry[0];
+      const projectTasks = entry[1];
+      const norm = projectName.replace(/_Tracker$/i, "").replace(/_/g, " ").toLowerCase();
+      const dashInfo = phaseMap.get(norm);
+      const phase = dashInfo?.phase || "UNKNOWN";
+      const phaseLabel = dashInfo?.phaseLabel || PROJECT_PHASE_LABELS[phase as ProjectPhase] || "Unknown Phase";
+      const displayName = dashInfo?.displayName || projectName.replace(/_Tracker$/i, "").replace(/_/g, " ");
+
+      const completedTasks = projectTasks.filter((t: Task) => t.status === "COMPLETE" || t.status === "QC APPROVED").length;
+      const overdueTasks = projectTasks.filter((t: Task) => isOverdue(t.dueDate, t.status)).length;
+
+      groups.push({
+        projectName,
+        displayName,
+        phase,
+        phaseLabel,
+        tasks: projectTasks,
+        totalTasks: projectTasks.length,
+        completedTasks,
+        overdueTasks,
+      });
+    }
+
+    groups.sort((a, b) => {
+      const phaseOrder = (a.phase || "ZZZ").localeCompare(b.phase || "ZZZ");
+      if (phaseOrder !== 0) return phaseOrder;
+      return a.displayName.localeCompare(b.displayName);
+    });
+
+    return groups;
+  }, [tasks, dashboardData]);
+
+  const phaseGrouped = useMemo(() => {
+    const map = new Map<string, ProjectGroup[]>();
+    for (const g of projectGroups) {
+      const key = g.phase;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(g);
+    }
+    return map;
+  }, [projectGroups]);
+
+  const toggleProject = (name: string) => {
+    setExpandedProjects(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name); else next.add(name);
+      return next;
+    });
+  };
+
+  const togglePhase = (phase: string) => {
+    setExpandedPhases(prev => {
+      const next = new Set(prev);
+      if (next.has(phase)) next.delete(phase); else next.add(phase);
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (searchTerm) {
+      const matching = new Set<string>();
+      for (const g of projectGroups) {
+        const term = searchTerm.toLowerCase();
+        if (g.displayName.toLowerCase().includes(term) ||
+            g.tasks.some(t => t.title.toLowerCase().includes(term))) {
+          matching.add(g.projectName);
+        }
+      }
+      setExpandedProjects(matching);
+      setExpandedPhases(new Set(Array.from(phaseGrouped.keys())));
+    }
+  }, [searchTerm]);
+
+  const STATUS_MINI = ["TO DO", "IN PROGRESS", "HOLD", "NEEDS APPROVAL", "QC APPROVED", "COMPLETE"];
+
+  return (
+    <div className="space-y-4" data-testid="projects-view">
+      {Array.from(phaseGrouped.entries()).map(([phase, groups]) => {
+        const colors = PHASE_COLORS[phase] || PHASE_COLORS.P0_FIRST_ASSESSMENT;
+        const phaseLabel = groups[0]?.phaseLabel || phase;
+        const isPhaseExpanded = expandedPhases.has(phase) || expandedPhases.has("all");
+        const totalInPhase = groups.reduce((s, g) => s + g.totalTasks, 0);
+        const completedInPhase = groups.reduce((s, g) => s + g.completedTasks, 0);
+        const phasePct = totalInPhase > 0 ? Math.round((completedInPhase / totalInPhase) * 100) : 0;
+
+        return (
+          <div key={phase} className="border rounded-xl overflow-hidden" data-testid={`phase-group-${phase}`}>
+            <button
+              className={`w-full flex items-center gap-3 px-4 py-3 ${colors.bg} hover:opacity-90 transition-opacity`}
+              onClick={() => togglePhase(phase)}
+              data-testid={`toggle-phase-${phase}`}
+            >
+              {isPhaseExpanded
+                ? <ChevronDown className={`h-4 w-4 ${colors.text}`} />
+                : <ChevronRight className={`h-4 w-4 ${colors.text}`} />
+              }
+              <div className={`w-2 h-2 rounded-full ${colors.accent}`} />
+              <span className={`font-semibold text-sm ${colors.text}`}>{phaseLabel}</span>
+              <Badge variant="secondary" className="text-[10px]">{groups.length} project{groups.length !== 1 ? "s" : ""}</Badge>
+              <div className="flex-1" />
+              <div className="flex items-center gap-2">
+                <div className="w-24 h-1.5 bg-black/10 rounded-full overflow-hidden">
+                  <div className={`h-full rounded-full ${colors.accent}`} style={{ width: `${phasePct}%` }} />
+                </div>
+                <span className="text-[10px] font-mono text-muted-foreground">{phasePct}%</span>
+              </div>
+            </button>
+
+            {isPhaseExpanded && (
+              <div className="divide-y">
+                {groups.map(group => {
+                  const isExpanded = expandedProjects.has(group.projectName);
+                  const completion = group.totalTasks > 0
+                    ? Math.round((group.completedTasks / group.totalTasks) * 100) : 0;
+
+                  return (
+                    <div key={group.projectName} data-testid={`project-group-${group.projectName}`}>
+                      <button
+                        className="w-full flex items-center gap-3 px-5 py-2.5 hover:bg-muted/40 transition-colors text-left"
+                        onClick={() => toggleProject(group.projectName)}
+                        data-testid={`toggle-project-${group.projectName}`}
+                      >
+                        {isExpanded
+                          ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                          : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                        }
+                        <span className="font-medium text-sm flex-1 truncate">{group.displayName}</span>
+                        <div className="flex items-center gap-3 shrink-0">
+                          {group.overdueTasks > 0 && (
+                            <span className="flex items-center gap-1 text-[10px] text-red-600 font-bold">
+                              <AlertTriangle className="h-3 w-3" />
+                              {group.overdueTasks}
+                            </span>
+                          )}
+                          <span className="text-[10px] text-muted-foreground">
+                            {group.completedTasks}/{group.totalTasks}
+                          </span>
+                          <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full ${completion >= 80 ? "bg-emerald-500" : completion >= 40 ? "bg-blue-500" : "bg-slate-400"}`}
+                              style={{ width: `${completion}%` }}
+                            />
+                          </div>
+                          <span className="text-[10px] font-mono text-muted-foreground w-7 text-right">{completion}%</span>
+                        </div>
+                      </button>
+
+                      {isExpanded && (
+                        <div className="px-5 pb-3">
+                          <div className="flex gap-2 overflow-x-auto pb-2 pt-1" style={{ minHeight: "120px" }}>
+                            {STATUS_MINI.map(status => {
+                              const statusTasks = group.tasks.filter(t => {
+                                if (status === "COMPLETE") return t.status === "COMPLETE" || t.status === "QC APPROVED";
+                                return t.status === status;
+                              });
+                              if (status !== "TO DO" && status !== "IN PROGRESS" && statusTasks.length === 0) return null;
+
+                              return (
+                                <div
+                                  key={status}
+                                  className={`flex-shrink-0 w-[200px] bg-muted/20 rounded-lg border-t-2 ${statusColumnColors[status] || "border-t-gray-300"}`}
+                                  onDragOver={(e) => e.preventDefault()}
+                                  onDrop={(e) => {
+                                    e.preventDefault();
+                                    const taskId = parseInt(e.dataTransfer.getData("taskId"));
+                                    if (taskId) onDrop(taskId, status);
+                                  }}
+                                  data-testid={`mini-col-${group.projectName}-${status}`}
+                                >
+                                  <div className="px-2 py-1.5 flex items-center justify-between">
+                                    <span className="text-[10px] font-medium text-muted-foreground truncate">{status}</span>
+                                    <span className="text-[10px] text-muted-foreground">{statusTasks.length}</span>
+                                  </div>
+                                  <div className="px-1.5 pb-1.5 space-y-1 max-h-[250px] overflow-y-auto">
+                                    {statusTasks.map(task => (
+                                      <div
+                                        key={task.id}
+                                        draggable
+                                        onDragStart={(e) => {
+                                          e.dataTransfer.setData("taskId", String(task.id));
+                                          e.dataTransfer.effectAllowed = "move";
+                                        }}
+                                        onClick={() => onCardClick(task)}
+                                        className="bg-card border rounded p-2 cursor-pointer hover:shadow-sm transition-all text-xs"
+                                        data-testid={`mini-card-${task.id}`}
+                                      >
+                                        <p className="font-medium leading-tight line-clamp-2 mb-1">{task.title}</p>
+                                        <div className="flex items-center gap-1 flex-wrap">
+                                          <Badge className={`text-[8px] px-1 py-0 ${priorityColors[task.priority] || "bg-gray-100"}`}>
+                                            {task.priority}
+                                          </Badge>
+                                          {task.dueDate && (
+                                            <span className={`text-[9px] flex items-center gap-0.5 ${isOverdue(task.dueDate, task.status) ? "text-red-600 font-semibold" : "text-muted-foreground"}`}>
+                                              <Calendar className="h-2.5 w-2.5" />
+                                              {formatDate(task.dueDate)}
+                                            </span>
+                                          )}
+                                        </div>
+                                        {task.assignees?.[0] && (
+                                          <div className="mt-1 flex items-center gap-0.5 text-[9px] text-muted-foreground">
+                                            <User className="h-2.5 w-2.5" />
+                                            <span className="truncate">{task.assignees[0]}</span>
+                                          </div>
+                                        )}
+                                        {task.trackingRag && (
+                                          <div className="mt-0.5 flex items-center gap-0.5">
+                                            <Circle className={`h-2 w-2 fill-current ${task.trackingRag === "Green" ? "text-green-500" : task.trackingRag === "Amber" ? "text-amber-500" : task.trackingRag === "Red" ? "text-red-500" : "text-gray-400"}`} />
+                                          </div>
+                                        )}
+                                      </div>
+                                    ))}
+                                    {statusTasks.length === 0 && (
+                                      <div className="text-center py-4 text-[10px] text-muted-foreground/40">—</div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {projectGroups.length === 0 && (
+        <div className="text-center py-12 text-muted-foreground">
+          <FolderKanban className="h-12 w-12 mx-auto mb-3 opacity-30" />
+          <p className="text-lg font-medium">No projects found</p>
+          <p className="text-sm mt-1">Create tasks to see them grouped by project</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function EngineeringTasksPage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [viewMode, setViewMode] = useState<"board" | "list">("board");
+  const [viewMode, setViewMode] = useState<"board" | "list" | "projects">("board");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
   const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
@@ -662,7 +968,7 @@ export default function EngineeringTasksPage() {
     updateStatusMutation.mutate({ taskId, status: newStatus });
   }, [tasks, updateStatusMutation]);
 
-  const uniqueAssignees = [...new Set(tasks.flatMap(t => t.assignees || []).filter(Boolean))].sort();
+  const uniqueAssignees = Array.from(new Set(tasks.flatMap(t => t.assignees || []).filter(Boolean))).sort();
 
   const filtered = tasks.filter(t => {
     if (statusFilter !== "all" && t.status !== statusFilter) return false;
@@ -708,8 +1014,19 @@ export default function EngineeringTasksPage() {
               className="h-8 px-2"
               onClick={() => setViewMode("board")}
               data-testid="btn-view-board"
+              title="Kanban Board"
             >
               <Columns3 className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={viewMode === "projects" ? "default" : "ghost"}
+              size="sm"
+              className="h-8 px-2"
+              onClick={() => setViewMode("projects")}
+              data-testid="btn-view-projects"
+              title="Projects View"
+            >
+              <FolderKanban className="h-4 w-4" />
             </Button>
             <Button
               variant={viewMode === "list" ? "default" : "ghost"}
@@ -717,6 +1034,7 @@ export default function EngineeringTasksPage() {
               className="h-8 px-2"
               onClick={() => setViewMode("list")}
               data-testid="btn-view-list"
+              title="List View"
             >
               <List className="h-4 w-4" />
             </Button>
@@ -848,6 +1166,13 @@ export default function EngineeringTasksPage() {
             />
           ))}
         </div>
+      ) : viewMode === "projects" ? (
+        <ProjectKanbanView
+          tasks={filtered}
+          onCardClick={setSelectedTask}
+          onDrop={handleDrop}
+          searchTerm={searchTerm}
+        />
       ) : (
         <Card>
           <CardContent className="p-0">
