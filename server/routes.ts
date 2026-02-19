@@ -1495,6 +1495,8 @@ export async function registerRoutes(
         return {
           project_info_id: info?.id || null,
           project_name: projectName,
+          projectName: projectName,
+          isActive: info?.isActive ?? true,
           size_kwp: sizeKwp,
           pd: info?.pd || null,
           pm: info?.pm || null,
