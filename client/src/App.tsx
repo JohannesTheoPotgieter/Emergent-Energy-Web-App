@@ -44,6 +44,8 @@ import UnclassifiedTasksPage from "@/pages/unclassified-tasks";
 import RoleSettingsPage from "@/pages/role-settings";
 import LifecycleBoardPage from "@/pages/lifecycle-board";
 import ExecutionBoardPage from "@/pages/execution-board";
+import SmartImportPage from "@/pages/smart-import";
+import ProjectNormalizedViewPage from "@/pages/project-normalized-view";
 
 import { useAuth } from "@/hooks/use-auth";
 import { useProgramData } from "@/hooks/use-program-data";
@@ -235,6 +237,8 @@ function ProtectedPages() {
         <Route path="/my-tool/triage-inbox" component={TriageInboxPage} />
         <Route path="/my-tool/unclassified-tasks" component={UnclassifiedTasksPage} />
         <Route path="/admin/settings" component={RoleSettingsPage} />
+        <Route path="/smart-import" component={SmartImportPage} />
+        <Route path="/project-normalized/:projectName" component={ProjectNormalizedViewPage} />
 
         <Route component={NotFound} />
       </Switch>

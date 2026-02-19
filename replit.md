@@ -20,6 +20,7 @@ Preferred communication style: Simple, everyday language.
     -   **Data Quality & Scenarios**: Risks & Flags (severity-ranked data quality issues), Scenario System (reusable component for creating/managing scenarios across financial and planning modules).
     -   **Quality Management**: Quality Tab (4-phase checklist with Planning & Design, Construction, Commissioning, Handover phases; 13 groups, 46 items, 22 risk questions; non-blocking red warnings engine), QM Dashboard (stats overview, project table, warnings), Post-Mortem Panel (contractor/engineering quality scoring with 7 metrics), QM Access Code Challenge (4-digit code gate for quality_manager role editing).
     -   **Phase Templates & Portfolio**: Phase Template Admin (template CRUD with items, versioning, clone, activate, preview), Project Create (exec-only in-app project creation with auto-template application), Exec Portfolio Board (project-centric lifecycle view with phase badges, readiness %, warnings, approvals, phase change with template preview).
+    -   **Smart Excel Import**: Smart Import Wizard (5-step review flow: Upload → Section Detection → Column Mapping → Issues & Anomalies → Preview & Commit), Normalized Project Views (Plan | Revenue | Expenditure tabs from normalized tables), Template Profile Learning (mapping rules persist and improve over imports), Counterparty Master Data (canonical names + aliases, auto-matching), Turnaround Time Metrics, Anomaly Detection (duplicate invoices, date order violations, missing amounts).
     -   **Utilities & Admin**: SafeMoney Utilities (NaN-safe currency handling), My Tool (COO Execution Cockpit — Linear/Notion/Sunsama-style premium minimal interface with shared components: MyToolLayout, TaskCard, TaskDetailDrawer; DoD enforcement; natural language quick add; keyboard shortcuts ⌘K/⌘⏎; drag-drop email-to-task; time blocks; daily wrap), and Excel Writeback Manager (admin UI for configuring and executing Excel writebacks).
 
 ### Backend
@@ -58,6 +59,13 @@ Preferred communication style: Simple, everyday language.
 -   `qm_holidays`: ZA public holidays for scheduling calculations.
 -   `phase_template`, `phase_template_item`, `phase_template_item_history`: Lifecycle phase template system with versioning and audit trail.
 -   `phase_template_application`: Idempotent template application ledger keyed by projectId+phase+templateId+version.
+-   `smart_import_runs`: Smart import run tracking with preview/commit lifecycle.
+-   `import_issues`: Validation issues per import run with severity (INFO/WARNING/BLOCKER) and resolution tracking.
+-   `template_profiles`: Template fingerprint profiles for learning import patterns.
+-   `mapping_rules`: Column mapping rules per template profile with confidence scoring.
+-   `normalized_plan_tasks`, `normalized_revenue_lines`, `normalized_cost_lines`: Normalized project data from smart imports.
+-   `counterparties`: Supplier/installer canonical registry with aliases for master data matching.
+-   `normalized_execution_phases`: Project execution phase data extracted from Excel.
 
 ### New API Endpoints (Examples)
 -   `/api/cos-control/*`: Endpoints for COS KPI aggregation, breakdowns, line-item explorers, and scenario-based analysis.
@@ -76,6 +84,8 @@ Preferred communication style: Simple, everyday language.
 -   `/api/projects/:projectId/phase-preview`: POST preview of template application for phase change.
 -   `/api/projects/:projectId/apply-template`: POST to apply active template for a phase.
 -   `/api/exec/portfolio/*`: Executive portfolio board endpoints — project list with readiness/warnings, project detail with phase history/template applications.
+-   `/api/smart-import/*`: Smart import endpoints — upload/preview, mapping overrides, issue resolution, commit, rollback, import history, normalized data queries.
+-   `/api/counterparties/*`: Counterparty master data CRUD and fuzzy name matching.
 
 ## External Dependencies
 
