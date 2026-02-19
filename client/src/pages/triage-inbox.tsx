@@ -1,4 +1,5 @@
 import { useState } from "react";
+import MyToolNav from "@/components/my-tool-nav";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
@@ -291,10 +292,7 @@ export default function TriageInboxPage() {
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6" data-testid="triage-inbox-page">
-      <div className="flex items-center gap-3">
-        <Shield className="h-6 w-6 text-primary" />
-        <h1 className="text-2xl font-bold" data-testid="text-page-title">Email Triage Inbox</h1>
-      </div>
+      <MyToolNav subtitle="Email Triage" />
 
       <Tabs value={activeTab} onValueChange={setActiveTab} data-testid="triage-tabs">
         <TabsList data-testid="triage-tabs-list">

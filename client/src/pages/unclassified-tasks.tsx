@@ -1,4 +1,5 @@
 import { useState } from "react";
+import MyToolNav from "@/components/my-tool-nav";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -117,6 +118,7 @@ export default function UnclassifiedTasksPage() {
       className="p-6 max-w-[1400px] mx-auto space-y-6"
       data-testid="unclassified-tasks-page"
     >
+      <MyToolNav subtitle="Unclassified" />
       <div className="flex items-center gap-3">
         <div>
           <div className="flex items-center gap-3">

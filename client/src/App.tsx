@@ -231,8 +231,8 @@ function ProtectedPages() {
         <Route path="/project-create" component={ProjectCreatePage} />
         <Route path="/lifecycle-board" component={LifecycleBoardPage} />
         <Route path="/my-tool/cockpit" component={ExecCockpitPage} />
-        <Route path="/admin/triage-inbox" component={TriageInboxPage} />
-        <Route path="/admin/unclassified-tasks" component={UnclassifiedTasksPage} />
+        <Route path="/my-tool/triage-inbox" component={TriageInboxPage} />
+        <Route path="/my-tool/unclassified-tasks" component={UnclassifiedTasksPage} />
         <Route path="/admin/settings" component={RoleSettingsPage} />
 
         <Route component={NotFound} />
