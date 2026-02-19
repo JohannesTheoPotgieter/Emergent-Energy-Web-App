@@ -19,7 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Users, Loader2, Shield, ShieldCheck, Wrench, Eye } from "lucide-react";
+import { Users, Loader2, Shield, ShieldCheck, Wrench, Eye, Crown, Briefcase, DollarSign, HardHat, Calculator, Key, UserCog } from "lucide-react";
 
 async function adminFetch(url: string, options?: RequestInit) {
   const token = localStorage.getItem("auth_token");
@@ -40,13 +40,25 @@ interface UserInfo {
 
 const ROLE_OPTIONS = [
   { value: "admin", label: "Admin", description: "Full access to all features", icon: Shield, color: "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400" },
-  { value: "eng_program_manager", label: "Engineering PM", description: "Engineering tools + view-only QM & Projects", icon: Wrench, color: "bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-400" },
   { value: "quality_manager", label: "Quality Manager", description: "Quality dashboard + view-only Projects", icon: ShieldCheck, color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400" },
   { value: "viewer", label: "Viewer", description: "View-only access to project data", icon: Eye, color: "bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400" },
 ];
 
+const COMPANY_ROLES = [
+  { value: "COO_ADMIN", label: "COO Admin", description: "Full executive access, settings, password management", icon: Crown, color: "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400" },
+  { value: "CEO_ADMIN", label: "CEO Admin", description: "Full executive access, strategic oversight", icon: Crown, color: "bg-purple-100 text-purple-700 dark:bg-purple-950/40 dark:text-purple-400" },
+  { value: "CCO", label: "CCO", description: "Commercial operations, project oversight", icon: Briefcase, color: "bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-400" },
+  { value: "CFO", label: "CFO", description: "Financial oversight, cashflow, budgets", icon: DollarSign, color: "bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400" },
+  { value: "PROGRAM_MANAGER", label: "Program Manager", description: "Project management, engineering dashboard", icon: UserCog, color: "bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-400" },
+  { value: "PROGRAM_FINANCE_MANAGER", label: "Program Finance Manager", description: "Project finance, cost tracking", icon: Calculator, color: "bg-teal-100 text-teal-700 dark:bg-teal-950/40 dark:text-teal-400" },
+  { value: "CONSTRUCTION_MANAGER", label: "Construction Manager", description: "Construction oversight, site management", icon: HardHat, color: "bg-yellow-100 text-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-400" },
+  { value: "QUALITY_MANAGER", label: "Quality Manager", description: "Quality checklists, post-mortems, inspections", icon: ShieldCheck, color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400" },
+  { value: "ENGINEERING_MANAGER", label: "Engineering Manager", description: "Engineering tasks, deliverables, approvals", icon: Wrench, color: "bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-400" },
+  { value: "KEY_ACCOUNTS_MANAGER", label: "Key Accounts Manager", description: "Client relations, account management", icon: Key, color: "bg-pink-100 text-pink-700 dark:bg-pink-950/40 dark:text-pink-400" },
+];
+
 function getRoleInfo(role: string) {
-  return ROLE_OPTIONS.find(r => r.value === role) || ROLE_OPTIONS[3];
+  return ROLE_OPTIONS.find(r => r.value === role) || COMPANY_ROLES.find(r => r.value === role) || ROLE_OPTIONS[2];
 }
 
 export default function EngineeringTeamsPage() {
@@ -75,7 +87,7 @@ export default function EngineeringTeamsPage() {
     },
   });
 
-  const roleCounts = ROLE_OPTIONS.map(r => ({
+  const userRoleCounts = ROLE_OPTIONS.map(r => ({
     ...r,
     count: users.filter(u => u.role === r.value).length,
   }));
@@ -90,8 +102,8 @@ export default function EngineeringTeamsPage() {
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {roleCounts.map(r => (
+      <div className="grid gap-3 sm:grid-cols-3">
+        {userRoleCounts.map(r => (
           <Card key={r.value} className="border">
             <CardContent className="p-4 flex items-center gap-3">
               <div className={`p-2 rounded-lg ${r.color}`}>
@@ -203,7 +215,31 @@ export default function EngineeringTeamsPage() {
 
       <Card className="border-muted">
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">Role Permissions</CardTitle>
+          <CardTitle className="text-base">Company Roles</CardTitle>
+          <p className="text-xs text-muted-foreground">Role-based access via company login (separate from user accounts)</p>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {COMPANY_ROLES.map(r => (
+              <div key={r.value} className="flex items-start gap-3 p-3 rounded-lg bg-muted/30 border">
+                <div className={`p-1.5 rounded ${r.color} shrink-0 mt-0.5`}>
+                  <r.icon className="h-4 w-4" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold">{r.label}</p>
+                  <p className="text-[10px] font-mono text-muted-foreground">{r.value}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{r.description}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-muted">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">User Roles</CardTitle>
+          <p className="text-xs text-muted-foreground">Application user account roles</p>
         </CardHeader>
         <CardContent>
           <div className="grid gap-3 sm:grid-cols-2">
