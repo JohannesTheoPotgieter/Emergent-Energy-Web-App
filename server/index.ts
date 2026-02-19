@@ -182,20 +182,68 @@ async function seedUsers() {
     {
       email: process.env.DEMO_ADMIN_EMAIL || "admin@emergent.energy",
       password: process.env.DEMO_ADMIN_PASSWORD || "admin123",
-      name: "Admin User",
+      name: "COO Admin",
       role: "COO_ADMIN" as const,
     },
     {
-      email: "viewer@emergent.energy",
-      password: "viewer123",
-      name: "Viewer",
-      role: "VIEWER" as const,
+      email: "ceo@emergent.energy",
+      password: "ceo2026",
+      name: "CEO Admin",
+      role: "CEO_ADMIN" as const,
+    },
+    {
+      email: "cco@emergent.energy",
+      password: "emergent2026",
+      name: "CCO",
+      role: "CCO" as const,
+    },
+    {
+      email: "cfo@emergent.energy",
+      password: "emergent2026",
+      name: "CFO",
+      role: "CFO" as const,
+    },
+    {
+      email: "pm@emergent.energy",
+      password: "emergent2026",
+      name: "Program Manager",
+      role: "PROGRAM_MANAGER" as const,
+    },
+    {
+      email: "pfm@emergent.energy",
+      password: "emergent2026",
+      name: "Program Finance Manager",
+      role: "PROGRAM_FINANCE_MANAGER" as const,
+    },
+    {
+      email: "cm@emergent.energy",
+      password: "emergent2026",
+      name: "Construction Manager",
+      role: "CONSTRUCTION_MANAGER" as const,
     },
     {
       email: "qm@emergent.energy",
       password: "quality123",
       name: "Quality Manager",
       role: "QUALITY_MANAGER" as const,
+    },
+    {
+      email: "epm@emergent.energy",
+      password: "emergent2026",
+      name: "Engineering Manager",
+      role: "ENGINEERING_MANAGER" as const,
+    },
+    {
+      email: "kam@emergent.energy",
+      password: "emergent2026",
+      name: "Key Accounts Manager",
+      role: "KEY_ACCOUNTS_MANAGER" as const,
+    },
+    {
+      email: "viewer@emergent.energy",
+      password: "viewer123",
+      name: "Viewer",
+      role: "VIEWER" as const,
     },
   ];
 
