@@ -46,15 +46,15 @@ import { NotificationBell } from "@/components/NotificationBell";
 
 interface NavGroup {
   heading: string;
+  section: string;
   items: { label: string; icon: any; path: string; className?: string }[];
-  visibleTo?: string[];
 }
 
 function getNavGroups(): NavGroup[] {
   return [
     {
       heading: "EXCO",
-      visibleTo: ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "admin"],
+      section: "EXCO",
       items: [
         { label: "Lifecycle Board", icon: Layers, path: "/lifecycle-board" },
         { label: "Company Priorities", icon: Flag, path: "/company-priorities" },
@@ -63,6 +63,7 @@ function getNavGroups(): NavGroup[] {
     },
     {
       heading: "PROJECT MANAGEMENT",
+      section: "PROJECT_MANAGEMENT",
       items: [
         { label: "Execution Dashboard", icon: LayoutDashboard, path: "/dashboard" },
         { label: "Project Summary", icon: FileSpreadsheet, path: "/projects" },
@@ -72,7 +73,7 @@ function getNavGroups(): NavGroup[] {
     },
     {
       heading: "ENGINEERING",
-      visibleTo: ["COO_ADMIN", "CEO_ADMIN", "CCO", "ENGINEERING_MANAGER", "CONSTRUCTION_MANAGER", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "admin", "eng_program_manager"],
+      section: "ENGINEERING",
       items: [
         { label: "Eng Dashboard", icon: Wrench, path: "/engineering" },
         { label: "Task Board", icon: ListTodo, path: "/engineering/tasks" },
@@ -80,14 +81,14 @@ function getNavGroups(): NavGroup[] {
     },
     {
       heading: "QUALITY",
-      visibleTo: ["COO_ADMIN", "CEO_ADMIN", "QUALITY_MANAGER", "CONSTRUCTION_MANAGER", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "admin", "quality_manager"],
+      section: "QUALITY",
       items: [
         { label: "Quality Dashboard", icon: ShieldCheck, path: "/quality" },
       ],
     },
     {
       heading: "ADMIN",
-      visibleTo: ["COO_ADMIN", "admin"],
+      section: "ADMIN",
       items: [
         { label: "Settings", icon: Settings, path: "/admin/settings" },
         { label: "Phase Templates", icon: Layers, path: "/admin/phase-templates" },
@@ -135,6 +136,22 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   };
 
   const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
+  const activeRole = companyRole || user?.role || null;
+
+  const { data: permissions } = useQuery({
+    queryKey: ["auth-permissions", activeRole],
+    queryFn: async () => {
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      if (activeRole) headers["x-company-role"] = activeRole;
+      const res = await fetch("/api/auth/permissions", { headers, credentials: "include" });
+      return res.json();
+    },
+    enabled: !!activeRole,
+  });
+
+  const allowedSections: string[] = permissions?.sections || [];
   const navGroups = getNavGroups();
   const allItems = navGroups.flatMap(g => g.items);
   const currentPageLabel = location === "/" 
@@ -175,39 +192,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </Link>
 
         {navGroups.filter(group => {
-          const role = user?.role;
-          const cr = companyRole;
-          const pmRoles = ["PROGRAM_MANAGER", "CONSTRUCTION_MANAGER", "PROGRAM_FINANCE_MANAGER"];
-          if (cr) {
-            if (cr === "COO_ADMIN") return true;
-            if (pmRoles.includes(cr)) {
-              return ["PROJECT MANAGEMENT", "ENGINEERING", "QUALITY"].includes(group.heading);
-            }
-            if (group.visibleTo) return group.visibleTo.includes(cr);
-            return true;
-          }
-          if (role === "quality_manager") {
-            return group.heading === "QUALITY" || group.heading === "PROJECT MANAGEMENT";
-          }
-          if (role === "eng_program_manager") {
-            return group.heading === "ENGINEERING" || group.heading === "QUALITY" || group.heading === "PROJECT MANAGEMENT";
-          }
-          if (role === "admin") return true;
-          return group.heading === "PROJECT MANAGEMENT";
+          if (allowedSections.length === 0 && !activeRole) return group.section === "PROJECT_MANAGEMENT";
+          return allowedSections.includes(group.section);
         }).map((group) => {
           let visibleItems = group.items;
-          if (user?.role === "quality_manager" && group.heading === "PROJECT MANAGEMENT") {
-            visibleItems = group.items.filter(i => i.path === "/projects");
-          }
-          if (user?.role === "eng_program_manager" && group.heading === "PROJECT MANAGEMENT") {
-            visibleItems = group.items.filter(i => i.path === "/projects");
-          }
-          const pmCompanyRoles = ["PROGRAM_MANAGER", "CONSTRUCTION_MANAGER", "PROGRAM_FINANCE_MANAGER"];
-          if (companyRole && pmCompanyRoles.includes(companyRole)) {
-            if (group.heading === "ENGINEERING") {
-              visibleItems = group.items.filter(i => i.path === "/engineering");
-            }
-          }
           if (visibleItems.length === 0) return null;
 
           const isCollapsed = collapsedSections[group.heading] && sidebarShowLabels;
