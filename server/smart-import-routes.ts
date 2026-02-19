@@ -92,7 +92,23 @@ router.post("/api/smart-import/upload", requireAuth, upload.single("file"), asyn
 
     const buffer = fs.readFileSync(filePath);
 
+    console.log(`[SmartImport] Processing file: ${fileName} (${buffer.length} bytes)`);
+    
+    const ExcelJS = require("exceljs");
+    const debugWorkbook = new ExcelJS.Workbook();
+    await debugWorkbook.xlsx.load(buffer);
+    const sheetNames = debugWorkbook.worksheets.map((ws: any) => ws.name);
+    console.log(`[SmartImport] Sheet names found: ${JSON.stringify(sheetNames)}`);
+
     const preview = await runSmartImportPreview(buffer, fileName);
+    
+    console.log(`[SmartImport] Detection result: ${preview.detection.sections.length} sections detected, ${preview.detection.unmatched.length} unmatched`);
+    for (const s of preview.detection.sections) {
+      console.log(`[SmartImport]   Section: ${s.section} in sheet "${s.sheetName}" (confidence: ${s.confidence}, headers: ${s.detectedHeaders.length})`);
+    }
+    for (const u of preview.detection.unmatched) {
+      console.log(`[SmartImport]   Unmatched: "${u.sheetName}" - ${u.reason}`);
+    }
 
     const fileHash = crypto.createHash("sha256").update(buffer).digest("hex");
 
