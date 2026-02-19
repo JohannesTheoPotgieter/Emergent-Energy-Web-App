@@ -80,16 +80,17 @@ export function registerLifecycleRoutes(app: Express) {
         }
       }
 
-      const planByNorm = new Map<string, { total: number; sumPct: number }>();
+      const planByNorm = new Map<string, { total: number; sumPct: number; count: number }>();
       for (const p of allPlanTasks) {
         const name = p.projectName;
         if (!name) continue;
         const norm = normalizeName(name);
-        if (!planByNorm.has(norm)) planByNorm.set(norm, { total: 0, sumPct: 0 });
+        if (!planByNorm.has(norm)) planByNorm.set(norm, { total: 0, sumPct: 0, count: 0 });
         const entry = planByNorm.get(norm)!;
         entry.total++;
         if (p.actualPctComplete != null) {
           entry.sumPct += Number(p.actualPctComplete);
+          entry.count++;
         }
       }
 
@@ -101,10 +102,12 @@ export function registerLifecycleRoutes(app: Express) {
         projectNormNames.add(norm);
 
         const eng = engByNorm.get(norm) || { total: 0, done: 0, rawName: "" };
-        const plan = planByNorm.get(norm) || { total: 0, sumPct: 0 };
+        const plan = planByNorm.get(norm) || { total: 0, sumPct: 0, count: 0 };
 
         let source: "excel" | "engineering" | "both" = "excel";
         if (eng.total > 0) source = "both";
+
+        const projectPctComplete = plan.count > 0 ? plan.sumPct / plan.count : null;
 
         results.push({
           id: proj.id,
@@ -120,6 +123,7 @@ export function registerLifecycleRoutes(app: Express) {
           engDone: eng.done,
           planTotal: plan.total,
           planAvgPct: plan.total > 0 ? Math.round((plan.sumPct / plan.total) * 100) / 100 : 0,
+          projectPctComplete,
         });
       }
 
@@ -128,7 +132,8 @@ export function registerLifecycleRoutes(app: Express) {
         if (projectNormNames.has(norm)) continue;
 
         const eng = engByNorm.get(norm)!;
-        const plan = planByNorm.get(norm) || { total: 0, sumPct: 0 };
+        const plan = planByNorm.get(norm) || { total: 0, sumPct: 0, count: 0 };
+        const projectPctComplete = plan.count > 0 ? plan.sumPct / plan.count : null;
 
         results.push({
           id: null,
@@ -144,6 +149,7 @@ export function registerLifecycleRoutes(app: Express) {
           engDone: eng.done,
           planTotal: plan.total,
           planAvgPct: plan.total > 0 ? Math.round((plan.sumPct / plan.total) * 100) / 100 : 0,
+          projectPctComplete,
         });
       }
 
