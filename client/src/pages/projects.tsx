@@ -99,6 +99,7 @@ interface ProjectSummary {
   escalation_level: string | null;
   task_status_counts: Record<string, number>;
   phase_updated_at: string | null;
+  has_tracker_import: boolean;
 }
 
 type SortDir = "asc" | "desc";
@@ -671,6 +672,7 @@ export default function ProjectsSummary() {
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const { isAdmin } = useAuth();
   const [editProject, setEditProject] = useState<ProjectSummary | null>(null);
+  const [viewTab, setViewTab] = useState<"active" | "archived">("active");
   const [writebackPromptProject, setWritebackPromptProject] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
@@ -696,20 +698,24 @@ export default function ProjectsSummary() {
     staleTime: 0,
   });
 
+  const activeProjects = useMemo(() => projects.filter(p => p.has_tracker_import), [projects]);
+  const archivedProjects = useMemo(() => projects.filter(p => !p.has_tracker_import), [projects]);
+  const currentProjects = viewTab === "active" ? activeProjects : archivedProjects;
+
   const uniquePMs = useMemo(() => {
     const pms = new Set<string>();
-    projects.forEach((p) => { if (p.pm) pms.add(p.pm); });
+    currentProjects.forEach((p) => { if (p.pm) pms.add(p.pm); });
     return Array.from(pms).sort();
-  }, [projects]);
+  }, [currentProjects]);
 
   const uniquePhases = useMemo(() => {
     const phases = new Set<string>();
-    projects.forEach((p) => { if (p.phase) phases.add(p.phase); });
+    currentProjects.forEach((p) => { if (p.phase) phases.add(p.phase); });
     return Array.from(phases).sort();
-  }, [projects]);
+  }, [currentProjects]);
 
   const filtered = useMemo(() => {
-    let result = [...projects];
+    let result = [...currentProjects];
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       result = result.filter((p) => p.project_name.toLowerCase().includes(term));
@@ -721,7 +727,7 @@ export default function ProjectsSummary() {
       result = result.filter((p) => p.phase === phaseFilter);
     }
     return result;
-  }, [projects, searchTerm, pmFilter, phaseFilter]);
+  }, [currentProjects, searchTerm, pmFilter, phaseFilter]);
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
@@ -1120,7 +1126,7 @@ export default function ProjectsSummary() {
               Projects Summary
             </h2>
             <p className="text-xs sm:text-sm text-slate-500">
-              {sorted.length} of {projects.length} projects
+              {sorted.length} of {currentProjects.length} {viewTab === "active" ? "active" : "archived"} projects
               {(pmFilter !== "all" || phaseFilter !== "all" || searchTerm) && " (filtered)"}
             </p>
           </div>
@@ -1135,6 +1141,27 @@ export default function ProjectsSummary() {
           <Download className="w-4 h-4" />
           <span className="hidden sm:inline">Export</span>
         </Button>
+      </div>
+
+      <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5 w-fit">
+        <button
+          onClick={() => setViewTab("active")}
+          className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+            viewTab === "active" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+          }`}
+          data-testid="tab-active-projects"
+        >
+          Active Projects ({activeProjects.length})
+        </button>
+        <button
+          onClick={() => setViewTab("archived")}
+          className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+            viewTab === "archived" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+          }`}
+          data-testid="tab-archived-projects"
+        >
+          Archived ({archivedProjects.length})
+        </button>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
