@@ -20,6 +20,7 @@ interface ProjectInfo {
   engDone: number;
   planTotal: number;
   planAvgPct: number;
+  projectPctComplete: number | null;
 }
 
 const PHASE_GROUPS = [
@@ -97,22 +98,33 @@ const PHASE_GROUPS = [
   },
 ];
 
-function mapPhaseToGroup(phase: string | null): string {
-  if (!phase) return "first_assessment";
-  const normalized = phase.trim();
-  for (const group of PHASE_GROUPS) {
-    if (group.matches.some((m) => m.toLowerCase() === normalized.toLowerCase())) {
-      return group.key;
+function mapPhaseToGroup(phase: string | null, source?: string): string {
+  let group = "first_assessment";
+  if (phase) {
+    const normalized = phase.trim();
+    let found = false;
+    for (const g of PHASE_GROUPS) {
+      if (g.matches.some((m) => m.toLowerCase() === normalized.toLowerCase())) {
+        group = g.key;
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      if (normalized.startsWith("P0")) group = "first_assessment";
+      else if (normalized.startsWith("P1")) group = "cost_proposal";
+      else if (normalized.startsWith("P2") || normalized.startsWith("P3")) group = "planning";
+      else if (normalized.startsWith("P4")) group = "construction";
+      else if (normalized.startsWith("P5")) group = "qa";
+      else if (normalized.startsWith("P6")) group = "handover";
+      else if (normalized.startsWith("P7")) group = "closeout";
     }
   }
-  if (normalized.startsWith("P0")) return "first_assessment";
-  if (normalized.startsWith("P1")) return "cost_proposal";
-  if (normalized.startsWith("P2") || normalized.startsWith("P3")) return "planning";
-  if (normalized.startsWith("P4")) return "construction";
-  if (normalized.startsWith("P5")) return "qa";
-  if (normalized.startsWith("P6")) return "handover";
-  if (normalized.startsWith("P7")) return "closeout";
-  return "first_assessment";
+  const hasTracker = source === "excel" || source === "both";
+  if (hasTracker && (group === "first_assessment" || group === "cost_proposal")) {
+    group = "planning";
+  }
+  return group;
 }
 
 function cleanProjectName(name: string): string {
@@ -236,7 +248,7 @@ export default function LifecycleBoardPage() {
 
     if (!draggedProject || !draggedProject.id || draggedProject.id < 0) return;
 
-    const currentGroup = mapPhaseToGroup(draggedProject.phase);
+    const currentGroup = mapPhaseToGroup(draggedProject.phase, draggedProject.source);
     if (currentGroup === targetColumnKey) {
       setDraggedProject(null);
       return;
@@ -293,7 +305,7 @@ export default function LifecycleBoardPage() {
     grouped[group.key] = [];
   }
   for (const p of filtered) {
-    const key = mapPhaseToGroup(p.phase);
+    const key = mapPhaseToGroup(p.phase, p.source);
     if (grouped[key]) {
       grouped[key].push(p);
     } else {
@@ -412,6 +424,23 @@ export default function LifecycleBoardPage() {
                             <div className="text-[10px] text-muted-foreground flex items-center gap-0.5 truncate" data-testid={`text-pm-${p.id}`}>
                               <User className="w-2.5 h-2.5 shrink-0" />
                               <span className="truncate">{p.pm}</span>
+                            </div>
+                          )}
+                          {p.projectPctComplete != null && (
+                            <div className="flex items-center gap-1 mt-0.5" data-testid={`pct-complete-${p.id}`}>
+                              <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full ${
+                                    p.projectPctComplete >= 0.9 ? "bg-emerald-500" :
+                                    p.projectPctComplete >= 0.5 ? "bg-blue-500" :
+                                    p.projectPctComplete >= 0.2 ? "bg-amber-500" : "bg-slate-400"
+                                  }`}
+                                  style={{ width: `${Math.min(Math.round(p.projectPctComplete * 100), 100)}%` }}
+                                />
+                              </div>
+                              <span className="text-[10px] font-mono font-semibold text-slate-700 w-[30px] text-right">
+                                {Math.round(p.projectPctComplete * 100)}%
+                              </span>
                             </div>
                           )}
                           <div className="space-y-0.5">
