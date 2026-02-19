@@ -1,18 +1,28 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
-import { Shield, ShieldCheck, AlertTriangle, Search, ChevronRight, ClipboardCheck, BarChart3 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Shield, ShieldCheck, AlertTriangle, Search, ChevronRight, ClipboardCheck, BarChart3, CheckCircle2, Eye, X } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
-async function qFetch(url: string) {
+async function qFetch(url: string, options?: RequestInit) {
   const token = localStorage.getItem('auth_token');
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { ...(options?.headers as Record<string, string> || {}) };
   if (token) headers["Authorization"] = `Bearer ${token}`;
-  const res = await fetch(url, { headers, credentials: "include" });
+  if (options?.body) headers["Content-Type"] = "application/json";
+  const res = await fetch(url, { ...options, headers, credentials: "include" });
   if (!res.ok) throw new Error("Failed to fetch");
   return res.json();
 }
@@ -49,6 +59,11 @@ interface Warning {
 export default function QmDashboardPage() {
   const [, setLocation] = useLocation();
   const [searchTerm, setSearchTerm] = useState("");
+  const [selectedWarning, setSelectedWarning] = useState<Warning | null>(null);
+  const [actionType, setActionType] = useState<"override" | "resolve" | null>(null);
+  const [reasonText, setReasonText] = useState("");
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const { data: checklists = [], isLoading: checklistsLoading } = useQuery<Checklist[]>({
     queryKey: ["quality-checklists"],
@@ -63,6 +78,55 @@ export default function QmDashboardPage() {
     refetchOnMount: "always",
     staleTime: 0,
   });
+
+  const acknowledgeMutation = useMutation({
+    mutationFn: (data: { warningId: number; note: string }) =>
+      qFetch(`/api/quality/warning/${data.warningId}/acknowledge`, {
+        method: "POST",
+        body: JSON.stringify({ note: data.note }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["quality-warnings-all"] });
+      queryClient.invalidateQueries({ queryKey: ["quality-checklists"] });
+      toast({ title: "Warning overridden", description: "The warning has been acknowledged and overridden." });
+      closeDialog();
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to override warning.", variant: "destructive" });
+    },
+  });
+
+  const resolveMutation = useMutation({
+    mutationFn: (data: { warningId: number; note: string }) =>
+      qFetch(`/api/quality/warning/${data.warningId}/resolve`, {
+        method: "POST",
+        body: JSON.stringify({ note: data.note }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["quality-warnings-all"] });
+      queryClient.invalidateQueries({ queryKey: ["quality-checklists"] });
+      toast({ title: "Warning resolved", description: "The warning has been closed." });
+      closeDialog();
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to resolve warning.", variant: "destructive" });
+    },
+  });
+
+  const closeDialog = () => {
+    setSelectedWarning(null);
+    setActionType(null);
+    setReasonText("");
+  };
+
+  const handleAction = () => {
+    if (!selectedWarning || !actionType) return;
+    if (actionType === "override") {
+      acknowledgeMutation.mutate({ warningId: selectedWarning.id, note: reasonText });
+    } else {
+      resolveMutation.mutate({ warningId: selectedWarning.id, note: reasonText });
+    }
+  };
 
   const filtered = checklists.filter(c =>
     c.projectName.toLowerCase().includes(searchTerm.toLowerCase())
@@ -82,120 +146,68 @@ export default function QmDashboardPage() {
       )
     : 0;
 
-  if (checklistsLoading) {
-    return (
-      <div data-testid="qm-dashboard" className="space-y-6">
-        <div className="flex items-center gap-3">
-          <Shield className="h-8 w-8 text-primary" />
-          <h2 className="text-3xl font-heading font-bold text-foreground">Quality Management</h2>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map(i => (
-            <Card key={i} className="animate-pulse">
-              <CardContent className="p-6">
-                <div className="h-16 bg-muted rounded" />
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div data-testid="qm-dashboard" className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <Shield className="h-8 w-8 text-primary" />
-          <div>
-            <h2 className="text-2xl sm:text-3xl font-heading font-bold text-foreground">Quality Management</h2>
-            <p className="text-sm text-muted-foreground">Overview of all project quality checklists</p>
-          </div>
+    <div className="space-y-6" data-testid="qm-dashboard-page">
+      <div className="flex items-center gap-3">
+        <ShieldCheck className="h-8 w-8 text-emerald-500" />
+        <div>
+          <h2 className="text-2xl sm:text-3xl font-heading font-bold" data-testid="text-qm-title">Quality Management</h2>
+          <p className="text-sm text-muted-foreground">Overview of all project quality checklists</p>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="p-4 sm:p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs sm:text-sm text-muted-foreground">Total Projects</p>
-                <p className="text-2xl sm:text-3xl font-bold" data-testid="qm-stats-total">{totalProjects}</p>
-              </div>
-              <ClipboardCheck className="h-8 w-8 text-muted-foreground/30" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4 sm:p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs sm:text-sm text-muted-foreground">Completed</p>
-                <p className="text-2xl sm:text-3xl font-bold text-emerald-500">{completedChecklists}</p>
-              </div>
-              <ShieldCheck className="h-8 w-8 text-emerald-500/30" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4 sm:p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs sm:text-sm text-muted-foreground">Active Warnings</p>
-                <p className="text-2xl sm:text-3xl font-bold text-amber-500" data-testid="qm-stats-warnings">{activeWarnings}</p>
-              </div>
-              <AlertTriangle className="h-8 w-8 text-amber-500/30" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4 sm:p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs sm:text-sm text-muted-foreground">Avg Completion</p>
-                <p className="text-2xl sm:text-3xl font-bold">{avgCompletion}%</p>
-              </div>
-              <BarChart3 className="h-8 w-8 text-muted-foreground/30" />
-            </div>
-          </CardContent>
-        </Card>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Card><CardContent className="p-4 flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400"><ClipboardCheck className="h-5 w-5" /></div>
+          <div><p className="text-2xl font-bold" data-testid="stat-total-projects">{totalProjects}</p><p className="text-xs text-muted-foreground">Total Projects</p></div>
+        </CardContent></Card>
+        <Card><CardContent className="p-4 flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"><ShieldCheck className="h-5 w-5" /></div>
+          <div><p className="text-2xl font-bold" data-testid="stat-completed">{completedChecklists}</p><p className="text-xs text-muted-foreground">Completed</p></div>
+        </CardContent></Card>
+        <Card><CardContent className="p-4 flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400"><AlertTriangle className="h-5 w-5" /></div>
+          <div><p className="text-2xl font-bold" data-testid="stat-warnings">{activeWarnings}</p><p className="text-xs text-muted-foreground">Active Warnings</p></div>
+        </CardContent></Card>
+        <Card><CardContent className="p-4 flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-400"><BarChart3 className="h-5 w-5" /></div>
+          <div><p className="text-2xl font-bold" data-testid="stat-avg-completion">{avgCompletion}%</p><p className="text-xs text-muted-foreground">Avg Completion</p></div>
+        </CardContent></Card>
       </div>
 
       <Card>
-        <CardHeader className="pb-3">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <CardTitle className="text-lg">Project Checklists</CardTitle>
-            <div className="relative w-full sm:w-72">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                data-testid="qm-search-input"
-                placeholder="Search projects..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-9"
-              />
-            </div>
+        <CardHeader className="pb-3 flex flex-row items-center justify-between gap-4 flex-wrap">
+          <CardTitle className="text-lg">Project Checklists</CardTitle>
+          <div className="relative w-full max-w-xs">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search projects..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10 h-9"
+              data-testid="input-qm-search"
+            />
           </div>
         </CardHeader>
         <CardContent>
-          {filtered.length === 0 ? (
+          {checklistsLoading ? (
+            <div className="text-center py-12 text-muted-foreground">Loading checklists...</div>
+          ) : filtered.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
-              {searchTerm ? "No projects match your search" : "No checklists found"}
+              <Shield className="h-12 w-12 mx-auto mb-3 opacity-30" />
+              <p>No checklists found</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full">
                 <thead>
-                  <tr className="border-b border-border">
-                    <th className="text-left py-3 px-4 font-medium text-muted-foreground">Project Name</th>
-                    <th className="text-left py-3 px-4 font-medium text-muted-foreground">Status</th>
-                    <th className="text-left py-3 px-4 font-medium text-muted-foreground hidden md:table-cell">Phase Progress</th>
-                    <th className="text-center py-3 px-4 font-medium text-muted-foreground">Warnings</th>
-                    <th className="text-left py-3 px-4 font-medium text-muted-foreground hidden sm:table-cell">Last Updated</th>
-                    <th className="py-3 px-4"></th>
+                  <tr className="border-b text-sm text-muted-foreground">
+                    <th className="text-left py-2 px-4 font-medium">Project Name</th>
+                    <th className="text-left py-2 px-4 font-medium">Status</th>
+                    <th className="text-left py-2 px-4 font-medium hidden md:table-cell">Phase Progress</th>
+                    <th className="text-center py-2 px-4 font-medium">Warnings</th>
+                    <th className="text-left py-2 px-4 font-medium hidden sm:table-cell">Last Updated</th>
+                    <th className="w-8"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -286,7 +298,8 @@ export default function QmDashboardPage() {
                 <div
                   key={warning.id}
                   className="flex items-start gap-3 p-3 rounded-lg border border-border/50 hover:bg-muted/30 cursor-pointer transition-colors"
-                  onClick={() => setLocation(`/project/${encodeURIComponent(warning.projectName)}?tab=quality`)}
+                  onClick={() => setSelectedWarning(warning)}
+                  data-testid={`warning-row-${warning.id}`}
                 >
                   <AlertTriangle className={`h-4 w-4 mt-0.5 shrink-0 ${
                     warning.severity === "High" ? "text-red-500" : "text-amber-500"
@@ -307,6 +320,7 @@ export default function QmDashboardPage() {
                       <p className="text-xs text-muted-foreground mt-1 line-clamp-1">{warning.description}</p>
                     )}
                   </div>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground mt-1 shrink-0" />
                 </div>
               ))}
               {warnings.length > 20 && (
@@ -318,6 +332,150 @@ export default function QmDashboardPage() {
           </CardContent>
         </Card>
       )}
+
+      <Dialog open={!!selectedWarning && !actionType} onOpenChange={(open) => { if (!open) closeDialog(); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className={`h-5 w-5 ${selectedWarning?.severity === "High" ? "text-red-500" : "text-amber-500"}`} />
+              Warning Details
+            </DialogTitle>
+          </DialogHeader>
+          {selectedWarning && (
+            <div className="space-y-4">
+              <div>
+                <p className="font-semibold text-sm">{selectedWarning.title}</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <Badge variant="outline" className={
+                    selectedWarning.severity === "High"
+                      ? "bg-red-500/10 text-red-500 border-red-500/30 text-xs"
+                      : "bg-amber-500/10 text-amber-500 border-amber-500/30 text-xs"
+                  }>
+                    {selectedWarning.severity}
+                  </Badge>
+                  <Badge variant="outline" className="text-xs">
+                    {selectedWarning.warningType}
+                  </Badge>
+                </div>
+              </div>
+
+              <div className="space-y-2 text-sm">
+                <div>
+                  <span className="text-muted-foreground">Project:</span>{" "}
+                  <span className="font-medium">{selectedWarning.projectName}</span>
+                </div>
+                {selectedWarning.description && (
+                  <div>
+                    <span className="text-muted-foreground">Description:</span>
+                    <p className="mt-1 text-sm bg-muted/50 p-2 rounded">{selectedWarning.description}</p>
+                  </div>
+                )}
+                <div>
+                  <span className="text-muted-foreground">Created:</span>{" "}
+                  <span>{new Date(selectedWarning.createdAt).toLocaleDateString()}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 pt-2 border-t">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => {
+                    setLocation(`/project/${encodeURIComponent(selectedWarning.projectName)}?tab=quality`);
+                    closeDialog();
+                  }}
+                  data-testid="btn-go-to-project"
+                >
+                  <Eye className="h-4 w-4 mr-1" />
+                  View Project
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 border-amber-300 text-amber-700 hover:bg-amber-50"
+                  onClick={() => setActionType("override")}
+                  data-testid="btn-override-warning"
+                >
+                  <ShieldCheck className="h-4 w-4 mr-1" />
+                  Override
+                </Button>
+                <Button
+                  size="sm"
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+                  onClick={() => setActionType("resolve")}
+                  data-testid="btn-resolve-warning"
+                >
+                  <CheckCircle2 className="h-4 w-4 mr-1" />
+                  Close / Resolve
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!actionType} onOpenChange={(open) => { if (!open) { setActionType(null); setReasonText(""); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {actionType === "override" ? (
+                <>
+                  <ShieldCheck className="h-5 w-5 text-amber-500" />
+                  Override Warning
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+                  Close / Resolve Warning
+                </>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+          {selectedWarning && (
+            <div className="space-y-4">
+              <div className="bg-muted/50 p-3 rounded-lg text-sm">
+                <p className="font-medium">{selectedWarning.title}</p>
+                <p className="text-xs text-muted-foreground mt-1">{selectedWarning.projectName}</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium block mb-1.5">
+                  {actionType === "override" ? "Override reason" : "Resolution notes"}
+                  {actionType === "resolve" && <span className="text-muted-foreground font-normal"> (optional)</span>}
+                </label>
+                <Textarea
+                  placeholder={actionType === "override"
+                    ? "Explain why this warning is being overridden..."
+                    : "Describe how this issue was resolved..."
+                  }
+                  value={reasonText}
+                  onChange={(e) => setReasonText(e.target.value)}
+                  rows={3}
+                  data-testid="input-warning-reason"
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => { setActionType(null); setReasonText(""); }} data-testid="btn-cancel-action">
+              Cancel
+            </Button>
+            <Button
+              onClick={handleAction}
+              disabled={actionType === "override" && !reasonText.trim()}
+              className={actionType === "override"
+                ? "bg-amber-600 hover:bg-amber-700 text-white"
+                : "bg-emerald-600 hover:bg-emerald-700 text-white"
+              }
+              data-testid="btn-confirm-action"
+            >
+              {(acknowledgeMutation.isPending || resolveMutation.isPending) ? "Saving..." :
+                actionType === "override" ? "Confirm Override" : "Confirm Resolve"
+              }
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
