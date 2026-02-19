@@ -96,6 +96,14 @@ const PHASE_GROUPS = [
     headerBg: "bg-emerald-500",
   },
   {
+    key: "internal",
+    label: "Internal",
+    phaseValue: "Internal",
+    matches: ["Internal", "INTERNAL"],
+    color: "bg-purple-50 border-purple-300",
+    headerBg: "bg-purple-600",
+  },
+  {
     key: "hold",
     label: "Hold",
     phaseValue: "Hold",
@@ -106,6 +114,18 @@ const PHASE_GROUPS = [
 ];
 
 function mapPhaseToGroup(phase: string | null, source?: string): string {
+  if (source === "engineering") {
+    if (phase) {
+      const normalized = phase.trim();
+      for (const g of PHASE_GROUPS) {
+        if (g.matches.some((m) => m.toLowerCase() === normalized.toLowerCase())) {
+          return g.key;
+        }
+      }
+    }
+    return "internal";
+  }
+
   let group = "first_assessment";
   if (phase) {
     const normalized = phase.trim();
@@ -626,7 +646,7 @@ export default function LifecycleBoardPage() {
               Merge Projects
             </DialogTitle>
             <DialogDescription>
-              Merge <strong>{selectedProject ? cleanProjectName(selectedProject.projectName) : ""}</strong> into another project. All tasks and plan data will be moved to the target project, and this project will be marked inactive.
+              Merge <strong>{selectedProject ? cleanProjectName(selectedProject.projectName) : ""}</strong> into another project. All tasks and plan data will be moved to the target project, and the source project will be permanently removed.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">

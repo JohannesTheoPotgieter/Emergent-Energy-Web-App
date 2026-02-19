@@ -211,9 +211,7 @@ export function registerLifecycleRoutes(app: Express) {
           .where(eq(projectPlan.projectName, source.projectName))
           .returning();
 
-        await tx.update(projectInfo)
-          .set({ isActive: false, phase: "Merged → " + targetClean })
-          .where(eq(projectInfo.id, sourceProjectId));
+        await tx.delete(projectInfo).where(eq(projectInfo.id, sourceProjectId));
 
         return {
           merged: true,
