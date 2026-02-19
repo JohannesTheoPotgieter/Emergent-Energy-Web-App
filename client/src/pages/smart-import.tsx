@@ -223,8 +223,32 @@ function UploadStep({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
+        <input
+          ref={inputRef}
+          type="file"
+          accept=".xlsx,.xlsm"
+          multiple
+          className="hidden"
+          data-testid="input-file"
+          onChange={(e) => {
+            if (e.target.files) addFiles(e.target.files);
+            e.target.value = "";
+          }}
+        />
+        <input
+          ref={folderRef}
+          type="file"
+          accept=".xlsx,.xlsm"
+          className="hidden"
+          data-testid="input-folder"
+          {...{ webkitdirectory: "", directory: "" } as any}
+          onChange={(e) => {
+            if (e.target.files) addFiles(e.target.files);
+            e.target.value = "";
+          }}
+        />
         <div
-          className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
+          className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
             dragging ? "border-blue-500 bg-blue-50" :
             files.length > 0 ? "border-emerald-300 bg-emerald-50" :
             "border-slate-300 hover:border-blue-400 hover:bg-blue-50/50"
@@ -237,32 +261,7 @@ function UploadStep({
             setDragging(false);
             addFiles(e.dataTransfer.files);
           }}
-          onClick={() => inputRef.current?.click()}
         >
-          <input
-            ref={inputRef}
-            type="file"
-            accept=".xlsx,.xlsm"
-            multiple
-            className="hidden"
-            data-testid="input-file"
-            onChange={(e) => {
-              if (e.target.files) addFiles(e.target.files);
-              e.target.value = "";
-            }}
-          />
-          <input
-            ref={folderRef}
-            type="file"
-            accept=".xlsx,.xlsm"
-            className="hidden"
-            data-testid="input-folder"
-            {...{ webkitdirectory: "", directory: "" } as any}
-            onChange={(e) => {
-              if (e.target.files) addFiles(e.target.files);
-              e.target.value = "";
-            }}
-          />
           {files.length > 0 ? (
             <div className="flex flex-col items-center gap-2">
               <FileSpreadsheet className="w-10 h-10 text-emerald-500" />
@@ -272,20 +271,20 @@ function UploadStep({
               <p className="text-xs text-slate-500">
                 {(files.reduce((sum, f) => sum + f.file.size, 0) / 1024).toFixed(0)} KB total
               </p>
-              <div className="flex gap-2">
+              <div className="flex gap-2 mt-1">
                 <Button
-                  variant="ghost"
+                  variant="outline"
                   size="sm"
                   data-testid="btn-add-more"
-                  onClick={(e) => { e.stopPropagation(); inputRef.current?.click(); }}
+                  onClick={() => inputRef.current?.click()}
                 >
-                  + Add More
+                  + Add Files
                 </Button>
                 <Button
                   variant="ghost"
                   size="sm"
                   data-testid="btn-clear-files"
-                  onClick={(e) => { e.stopPropagation(); clearAll(); }}
+                  onClick={() => clearAll()}
                 >
                   <X className="w-3.5 h-3.5 mr-1" />
                   Clear All
@@ -293,24 +292,32 @@ function UploadStep({
               </div>
             </div>
           ) : (
-            <div className="flex flex-col items-center gap-2">
+            <div className="flex flex-col items-center gap-3">
               <Upload className="w-10 h-10 text-slate-400" />
               <p className="text-sm text-slate-600">Drag & drop Excel trackers here</p>
-              <p className="text-xs text-slate-400">Single file or multiple files (.xlsx, .xlsm)</p>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  data-testid="btn-browse-files"
+                  onClick={() => inputRef.current?.click()}
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 mr-1.5" />
+                  Browse Files
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  data-testid="btn-browse-folder"
+                  onClick={() => folderRef.current?.click()}
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 mr-1.5" />
+                  Browse Folder
+                </Button>
+              </div>
+              <p className="text-xs text-slate-400">.xlsx and .xlsm files supported</p>
             </div>
           )}
-        </div>
-
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            data-testid="btn-browse-folder"
-            onClick={() => folderRef.current?.click()}
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5 mr-1.5" />
-            Browse Folder
-          </Button>
         </div>
 
         {files.length > 0 && (
