@@ -1548,6 +1548,7 @@ export async function registerRoutes(
           task_status_counts: taskCountsByProject.get(projectName) || {},
           phase_updated_at: info?.phaseUpdatedAt || null,
           has_tracker_import: importedProjectNames.has(projectName) || importedProjectNames.has(projectName.replace(/_/g, ' ')),
+          is_active: info?.isActive !== false,
         };
       });
 

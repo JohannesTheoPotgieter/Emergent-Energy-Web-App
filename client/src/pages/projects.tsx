@@ -106,6 +106,7 @@ interface ProjectSummary {
   task_status_counts: Record<string, number>;
   phase_updated_at: string | null;
   has_tracker_import: boolean;
+  is_active: boolean;
 }
 
 type SortDir = "asc" | "desc";
@@ -779,8 +780,8 @@ export default function ProjectsSummary() {
     staleTime: 0,
   });
 
-  const activeProjects = useMemo(() => projects.filter(p => p.has_tracker_import), [projects]);
-  const archivedProjects = useMemo(() => projects.filter(p => !p.has_tracker_import), [projects]);
+  const activeProjects = useMemo(() => projects.filter(p => p.is_active), [projects]);
+  const archivedProjects = useMemo(() => projects.filter(p => !p.is_active), [projects]);
   const currentProjects = viewTab === "active" ? activeProjects : archivedProjects;
 
   const uniquePMs = useMemo(() => {
