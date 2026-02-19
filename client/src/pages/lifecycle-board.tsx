@@ -152,19 +152,6 @@ function pctBar(label: string, done: number, total: number, color: string) {
   );
 }
 
-function pctBarAvg(label: string, avgPct: number, total: number, color: string) {
-  if (total === 0) return null;
-  const pct = Math.round(avgPct);
-  return (
-    <div className="flex items-center gap-1.5 text-[10px]" data-testid={`pct-${label}`}>
-      <span className="text-muted-foreground w-[28px] shrink-0">{label}</span>
-      <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden min-w-[40px]">
-        <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
-      </div>
-      <span className="text-muted-foreground w-[28px] text-right">{pct}%</span>
-    </div>
-  );
-}
 
 function sourceBadge(source: string) {
   if (source === "both") {
@@ -445,7 +432,6 @@ export default function LifecycleBoardPage() {
                           )}
                           <div className="space-y-0.5">
                             {pctBar("Eng", p.engDone, p.engTotal, "bg-purple-500")}
-                            {pctBarAvg("Plan", p.planAvgPct, p.planTotal, "bg-blue-500")}
                           </div>
                         </CardContent>
                       </Card>
