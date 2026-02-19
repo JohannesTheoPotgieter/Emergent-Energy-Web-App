@@ -1,10 +1,17 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Search, Zap, User, Wrench, FileSpreadsheet, GripVertical, CheckCircle2, ClipboardList } from "lucide-react";
+import { Loader2, Search, Zap, User, Wrench, FileSpreadsheet, GripVertical, CheckCircle2, ClipboardList, Link2, Merge, ArrowRight } from "lucide-react";
 
 interface ProjectInfo {
   id: number | null;
@@ -186,6 +193,12 @@ export default function LifecycleBoardPage() {
   const [showActiveOnly, setShowActiveOnly] = useState(false);
   const [draggedProject, setDraggedProject] = useState<ProjectInfo | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
+  const [linkDialogOpen, setLinkDialogOpen] = useState(false);
+  const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
+  const [selectedProject, setSelectedProject] = useState<ProjectInfo | null>(null);
+  const [linkTarget, setLinkTarget] = useState<string>("");
+  const [mergeTarget, setMergeTarget] = useState<string>("");
+  const [actionLoading, setActionLoading] = useState(false);
   const { toast } = useToast();
 
   const loadData = useCallback(async () => {
@@ -210,13 +223,9 @@ export default function LifecycleBoardPage() {
   }, [loadData]);
 
   const handleDragStart = (e: React.DragEvent, project: ProjectInfo) => {
-    if (!project.id || project.id < 0) {
-      e.preventDefault();
-      return;
-    }
     setDraggedProject(project);
     e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", String(project.id));
+    e.dataTransfer.setData("text/plain", project.id ? String(project.id) : project.projectName);
   };
 
   const handleDragOver = (e: React.DragEvent, columnKey: string) => {
@@ -233,7 +242,7 @@ export default function LifecycleBoardPage() {
     e.preventDefault();
     setDragOverColumn(null);
 
-    if (!draggedProject || !draggedProject.id || draggedProject.id < 0) return;
+    if (!draggedProject) return;
 
     const currentGroup = mapPhaseToGroup(draggedProject.phase, draggedProject.source);
     if (currentGroup === targetColumnKey) {
@@ -243,6 +252,12 @@ export default function LifecycleBoardPage() {
 
     const targetPhase = PHASE_GROUPS.find(g => g.key === targetColumnKey);
     if (!targetPhase) return;
+
+    if (!draggedProject.id || draggedProject.id < 0) {
+      await handlePromoteEngineering(draggedProject, targetPhase.phaseValue);
+      setDraggedProject(null);
+      return;
+    }
 
     setProjects(prev =>
       prev.map(p =>
@@ -275,6 +290,99 @@ export default function LifecycleBoardPage() {
   const handleDragEnd = () => {
     setDraggedProject(null);
     setDragOverColumn(null);
+  };
+
+  const trackerProjects = useMemo(() =>
+    projects.filter(p => p.id !== null && p.id > 0 && (p.source === "excel" || p.source === "both")),
+    [projects]
+  );
+
+  const handleLinkEngineering = async () => {
+    if (!selectedProject || !linkTarget) return;
+    setActionLoading(true);
+    try {
+      const res = await fetch("/api/lifecycle-board/projects/link-engineering", {
+        method: "POST",
+        credentials: "include",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          engineeringProjectName: selectedProject.projectName,
+          targetProjectId: parseInt(linkTarget),
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        toast({ title: "Linked", description: `${data.linked} task(s) linked to ${cleanProjectName(data.targetProject)}` });
+        setLinkDialogOpen(false);
+        setSelectedProject(null);
+        setLinkTarget("");
+        loadData();
+      } else {
+        const err = await res.json();
+        toast({ title: "Error", description: err.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Error", description: "Failed to link project", variant: "destructive" });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleMergeProjects = async () => {
+    if (!selectedProject?.id || !mergeTarget) return;
+    setActionLoading(true);
+    try {
+      const res = await fetch("/api/lifecycle-board/projects/merge", {
+        method: "POST",
+        credentials: "include",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          sourceProjectId: selectedProject.id,
+          targetProjectId: parseInt(mergeTarget),
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        toast({ title: "Merged", description: `${data.movedTasks} task(s) and ${data.movedPlanEntries} plan entries moved to ${cleanProjectName(data.target)}` });
+        setMergeDialogOpen(false);
+        setSelectedProject(null);
+        setMergeTarget("");
+        loadData();
+      } else {
+        const err = await res.json();
+        toast({ title: "Error", description: err.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Error", description: "Failed to merge projects", variant: "destructive" });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handlePromoteEngineering = async (project: ProjectInfo, phase: string) => {
+    setActionLoading(true);
+    try {
+      const res = await fetch("/api/lifecycle-board/projects/promote-engineering", {
+        method: "POST",
+        credentials: "include",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          engineeringProjectName: project.projectName,
+          phase,
+        }),
+      });
+      if (res.ok) {
+        toast({ title: "Project Created", description: `${cleanProjectName(project.projectName)} is now a tracked project` });
+        loadData();
+      } else {
+        const err = await res.json();
+        toast({ title: "Error", description: err.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Error", description: "Failed to create project", variant: "destructive" });
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const filtered = projects.filter((p) => {
@@ -374,12 +482,13 @@ export default function LifecycleBoardPage() {
                     </p>
                   )}
                   {items.map((p) => {
-                    const canDrag = p.id !== null && p.id > 0;
+                    const isTracker = p.id !== null && p.id > 0;
+                    const isEngOnly = p.source === "engineering" && !isTracker;
                     return (
                       <Card
                         key={p.id ?? p.projectName}
-                        className={`shadow-sm hover:shadow-md transition-all ${canDrag ? "cursor-grab active:cursor-grabbing" : ""} ${draggedProject?.id === p.id ? "opacity-40" : ""}`}
-                        draggable={canDrag}
+                        className={`shadow-sm hover:shadow-md transition-all cursor-grab active:cursor-grabbing ${draggedProject?.projectName === p.projectName ? "opacity-40" : ""}`}
+                        draggable
                         onDragStart={(e) => handleDragStart(e, p)}
                         onDragEnd={handleDragEnd}
                         data-testid={`card-project-${p.id}`}
@@ -387,7 +496,7 @@ export default function LifecycleBoardPage() {
                         <CardContent className="p-2 space-y-1">
                           <div className="flex items-start justify-between gap-0.5">
                             <div className="flex items-center gap-0.5 min-w-0">
-                              {canDrag && <GripVertical className="w-2.5 h-2.5 text-muted-foreground shrink-0" />}
+                              <GripVertical className="w-2.5 h-2.5 text-muted-foreground shrink-0" />
                               <div className="font-medium text-[11px] leading-tight truncate" data-testid={`text-project-name-${p.id}`}>
                                 {cleanProjectName(p.projectName)}
                               </div>
@@ -433,6 +542,26 @@ export default function LifecycleBoardPage() {
                           <div className="space-y-0.5">
                             {pctBar("Eng", p.engDone, p.engTotal, "bg-purple-500")}
                           </div>
+                          <div className="flex gap-1 mt-1">
+                            {isEngOnly && (
+                              <button
+                                className="flex items-center gap-0.5 text-[9px] text-blue-600 hover:text-blue-800 bg-blue-50 rounded px-1 py-0.5"
+                                onClick={(e) => { e.stopPropagation(); setSelectedProject(p); setLinkTarget(""); setLinkDialogOpen(true); }}
+                                data-testid={`btn-link-${p.projectName}`}
+                              >
+                                <Link2 className="w-2.5 h-2.5" />Link
+                              </button>
+                            )}
+                            {isTracker && (
+                              <button
+                                className="flex items-center gap-0.5 text-[9px] text-orange-600 hover:text-orange-800 bg-orange-50 rounded px-1 py-0.5"
+                                onClick={(e) => { e.stopPropagation(); setSelectedProject(p); setMergeTarget(""); setMergeDialogOpen(true); }}
+                                data-testid={`btn-merge-${p.id}`}
+                              >
+                                <Merge className="w-2.5 h-2.5" />Merge
+                              </button>
+                            )}
+                          </div>
                         </CardContent>
                       </Card>
                     );
@@ -443,6 +572,98 @@ export default function LifecycleBoardPage() {
           })}
         </div>
       </div>
+
+      <Dialog open={linkDialogOpen} onOpenChange={setLinkDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Link2 className="w-5 h-5 text-blue-600" />
+              Link Engineering Tasks
+            </DialogTitle>
+            <DialogDescription>
+              Link all engineering tasks from <strong>{selectedProject ? cleanProjectName(selectedProject.projectName) : ""}</strong> to an existing tracker project. The tasks will be reassigned.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">Link to project:</label>
+              <Select value={linkTarget} onValueChange={setLinkTarget}>
+                <SelectTrigger data-testid="select-link-target">
+                  <SelectValue placeholder="Select a tracker project..." />
+                </SelectTrigger>
+                <SelectContent className="max-h-60">
+                  {trackerProjects
+                    .sort((a, b) => cleanProjectName(a.projectName).localeCompare(cleanProjectName(b.projectName)))
+                    .map(p => (
+                      <SelectItem key={p.id} value={String(p.id)} data-testid={`link-option-${p.id}`}>
+                        {cleanProjectName(p.projectName)}
+                        {p.phase && <span className="text-muted-foreground ml-1">({p.phase})</span>}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setLinkDialogOpen(false)}>Cancel</Button>
+            <Button
+              onClick={handleLinkEngineering}
+              disabled={!linkTarget || actionLoading}
+              data-testid="btn-confirm-link"
+            >
+              {actionLoading ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <ArrowRight className="w-4 h-4 mr-1" />}
+              Link Tasks
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={mergeDialogOpen} onOpenChange={setMergeDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Merge className="w-5 h-5 text-orange-600" />
+              Merge Projects
+            </DialogTitle>
+            <DialogDescription>
+              Merge <strong>{selectedProject ? cleanProjectName(selectedProject.projectName) : ""}</strong> into another project. All tasks and plan data will be moved to the target project, and this project will be marked inactive.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">Merge into:</label>
+              <Select value={mergeTarget} onValueChange={setMergeTarget}>
+                <SelectTrigger data-testid="select-merge-target">
+                  <SelectValue placeholder="Select target project..." />
+                </SelectTrigger>
+                <SelectContent className="max-h-60">
+                  {trackerProjects
+                    .filter(p => p.id !== selectedProject?.id)
+                    .sort((a, b) => cleanProjectName(a.projectName).localeCompare(cleanProjectName(b.projectName)))
+                    .map(p => (
+                      <SelectItem key={p.id} value={String(p.id)} data-testid={`merge-option-${p.id}`}>
+                        {cleanProjectName(p.projectName)}
+                        {p.phase && <span className="text-muted-foreground ml-1">({p.phase})</span>}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMergeDialogOpen(false)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={handleMergeProjects}
+              disabled={!mergeTarget || actionLoading}
+              data-testid="btn-confirm-merge"
+            >
+              {actionLoading ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Merge className="w-4 h-4 mr-1" />}
+              Merge Project
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

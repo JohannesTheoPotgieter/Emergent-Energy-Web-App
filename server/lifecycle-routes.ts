@@ -160,6 +160,119 @@ export function registerLifecycleRoutes(app: Express) {
     }
   });
 
+  app.post("/api/lifecycle-board/projects/link-engineering", requireAuth, requireExecRole, async (req: Request, res: Response) => {
+    try {
+      const { engineeringProjectName, targetProjectId } = req.body;
+      if (!engineeringProjectName || !targetProjectId) {
+        return res.status(400).json({ error: "engineeringProjectName and targetProjectId are required" });
+      }
+
+      const [target] = await db.select().from(projectInfo).where(eq(projectInfo.id, targetProjectId));
+      if (!target) return res.status(404).json({ error: "Target project not found" });
+
+      const updated = await db.update(operationalTasks)
+        .set({ projectName: target.projectName.replace(/_Tracker$/i, "").replace(/_/g, " ") })
+        .where(eq(operationalTasks.projectName, engineeringProjectName))
+        .returning();
+
+      res.json({ linked: updated.length, targetProject: target.projectName });
+    } catch (err: any) {
+      console.error("[lifecycle-board] POST link-engineering error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/lifecycle-board/projects/merge", requireAuth, requireExecRole, async (req: Request, res: Response) => {
+    try {
+      const { sourceProjectId, targetProjectId } = req.body;
+      if (!sourceProjectId || !targetProjectId) {
+        return res.status(400).json({ error: "sourceProjectId and targetProjectId are required" });
+      }
+      if (sourceProjectId === targetProjectId) {
+        return res.status(400).json({ error: "Cannot merge a project with itself" });
+      }
+
+      const result = await db.transaction(async (tx: any) => {
+        const [source] = await tx.select().from(projectInfo).where(eq(projectInfo.id, sourceProjectId));
+        const [target] = await tx.select().from(projectInfo).where(eq(projectInfo.id, targetProjectId));
+        if (!source) throw new Error("Source project not found");
+        if (!target) throw new Error("Target project not found");
+
+        const sourceClean = source.projectName.replace(/_Tracker$/i, "").replace(/_/g, " ");
+        const targetClean = target.projectName.replace(/_Tracker$/i, "").replace(/_/g, " ");
+
+        const movedTasks = await tx.update(operationalTasks)
+          .set({ projectName: targetClean })
+          .where(eq(operationalTasks.projectName, sourceClean))
+          .returning();
+
+        const movedPlan = await tx.update(projectPlan)
+          .set({ projectName: target.projectName })
+          .where(eq(projectPlan.projectName, source.projectName))
+          .returning();
+
+        await tx.update(projectInfo)
+          .set({ isActive: false, phase: "Merged → " + targetClean })
+          .where(eq(projectInfo.id, sourceProjectId));
+
+        return {
+          merged: true,
+          movedTasks: movedTasks.length,
+          movedPlanEntries: movedPlan.length,
+          source: source.projectName,
+          target: target.projectName,
+        };
+      });
+
+      res.json(result);
+    } catch (err: any) {
+      console.error("[lifecycle-board] POST merge error:", err);
+      if (err.message === "Source project not found" || err.message === "Target project not found") {
+        return res.status(404).json({ error: err.message });
+      }
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/lifecycle-board/projects/promote-engineering", requireAuth, requireExecRole, async (req: Request, res: Response) => {
+    try {
+      const { engineeringProjectName, phase } = req.body;
+      if (!engineeringProjectName) {
+        return res.status(400).json({ error: "engineeringProjectName is required" });
+      }
+
+      const cleanName = engineeringProjectName.replace(/_Tracker$/i, "").replace(/_/g, " ");
+      const userId = ((req as any).user as any)?.id || null;
+
+      const allProjects = await db.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo);
+      const normTarget = normalizeName(cleanName);
+      const existing = allProjects.find((p: any) => normalizeName(p.projectName) === normTarget);
+      if (existing) {
+        await db.update(projectInfo).set({
+          phase: phase || "First Assessment",
+          isActive: true,
+          phaseUpdatedAt: new Date(),
+          phaseUpdatedByUserId: userId,
+        }).where(eq(projectInfo.id, existing.id));
+        const [updated] = await db.select().from(projectInfo).where(eq(projectInfo.id, existing.id));
+        return res.json(updated);
+      }
+
+      const [created] = await db.insert(projectInfo).values({
+        projectName: cleanName,
+        phase: phase || "First Assessment",
+        isActive: true,
+        phaseUpdatedAt: new Date(),
+        phaseUpdatedByUserId: userId,
+      }).returning();
+
+      res.json(created);
+    } catch (err: any) {
+      console.error("[lifecycle-board] POST promote-engineering error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.patch("/api/lifecycle-board/projects/:id/phase", requireAuth, requireExecRole, async (req: Request, res: Response) => {
     try {
       const idParam = req.params.id as string;
