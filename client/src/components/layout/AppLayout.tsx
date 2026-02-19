@@ -74,7 +74,7 @@ function getNavGroups(): NavGroup[] {
     },
     {
       heading: "ENGINEERING",
-      visibleTo: ["COO_ADMIN", "CEO_ADMIN", "CCO", "ENGINEERING_MANAGER", "CONSTRUCTION_MANAGER", "PROGRAM_MANAGER", "admin", "eng_program_manager"],
+      visibleTo: ["COO_ADMIN", "CEO_ADMIN", "CCO", "ENGINEERING_MANAGER", "CONSTRUCTION_MANAGER", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "admin", "eng_program_manager"],
       items: [
         { label: "Eng Dashboard", icon: Wrench, path: "/engineering" },
         { label: "Task Board", icon: ListTodo, path: "/engineering/tasks" },
@@ -82,7 +82,7 @@ function getNavGroups(): NavGroup[] {
     },
     {
       heading: "QUALITY",
-      visibleTo: ["COO_ADMIN", "CEO_ADMIN", "QUALITY_MANAGER", "admin", "quality_manager"],
+      visibleTo: ["COO_ADMIN", "CEO_ADMIN", "QUALITY_MANAGER", "CONSTRUCTION_MANAGER", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "admin", "quality_manager"],
       items: [
         { label: "QM Dashboard", icon: ShieldCheck, path: "/quality" },
       ],
@@ -179,8 +179,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         {navGroups.filter(group => {
           const role = user?.role;
           const cr = companyRole;
+          const pmRoles = ["PROGRAM_MANAGER", "CONSTRUCTION_MANAGER", "PROGRAM_FINANCE_MANAGER"];
           if (cr) {
             if (cr === "COO_ADMIN") return true;
+            if (pmRoles.includes(cr)) {
+              return ["PROJECT MANAGEMENT", "ENGINEERING", "QUALITY"].includes(group.heading);
+            }
             if (group.visibleTo) return group.visibleTo.includes(cr);
             return true;
           }
@@ -199,6 +203,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           }
           if (user?.role === "eng_program_manager" && group.heading === "PROJECT MANAGEMENT") {
             visibleItems = group.items.filter(i => i.path === "/projects");
+          }
+          const pmCompanyRoles = ["PROGRAM_MANAGER", "CONSTRUCTION_MANAGER", "PROGRAM_FINANCE_MANAGER"];
+          if (companyRole && pmCompanyRoles.includes(companyRole)) {
+            if (group.heading === "ENGINEERING") {
+              visibleItems = group.items.filter(i => i.path === "/engineering");
+            }
           }
           if (visibleItems.length === 0) return null;
 
