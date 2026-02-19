@@ -14,12 +14,10 @@ import {
   Flag,
   Loader2,
   ShieldCheck,
-  ClipboardCheck,
   Wrench,
   ListTodo,
   Package,
   Users,
-  FolderOpen,
   Briefcase,
   FileBarChart,
   History,
@@ -326,157 +324,81 @@ function CompanyPrioritiesSection({ isAdmin }: { isAdmin: boolean }) {
   );
 }
 
+interface HomeSection {
+  heading: string;
+  links: QuickLink[];
+  visibleTo?: string[];
+  cols?: number;
+}
+
+const homeSections: HomeSection[] = [
+  {
+    heading: "EXCO",
+    visibleTo: ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "admin"],
+    links: excoLinks,
+    cols: 4,
+  },
+  {
+    heading: "PROJECT MANAGEMENT",
+    links: pmLinks,
+  },
+  {
+    heading: "ENGINEERING",
+    visibleTo: ["COO_ADMIN", "CEO_ADMIN", "CCO", "ENGINEERING_MANAGER", "CONSTRUCTION_MANAGER", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "admin", "eng_program_manager"],
+    links: engLinks,
+  },
+  {
+    heading: "QUALITY",
+    visibleTo: ["COO_ADMIN", "CEO_ADMIN", "QUALITY_MANAGER", "CONSTRUCTION_MANAGER", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "admin", "quality_manager"],
+    links: qualityLinks,
+  },
+  {
+    heading: "ADMIN",
+    visibleTo: ["COO_ADMIN", "admin"],
+    links: adminLinks,
+    cols: 4,
+  },
+];
+
 export default function Home() {
-  const { user, isAdmin, isQm } = useAuth();
-  const isEpm = user?.role === "eng_program_manager";
+  const { user, isAdmin } = useAuth();
   const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
-  const isPmRole = companyRole && ["PROGRAM_MANAGER", "CONSTRUCTION_MANAGER", "PROGRAM_FINANCE_MANAGER"].includes(companyRole);
+  const role = user?.role;
+  const pmCompanyRoles = ["PROGRAM_MANAGER", "CONSTRUCTION_MANAGER", "PROGRAM_FINANCE_MANAGER"];
 
-  if (isPmRole) {
-    const roleLabel = companyRole!.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
-    return (
-      <div className="space-y-8" data-testid="home-page">
-        <div>
-          <h1 className="text-3xl font-bold">Emergent Energy Dashboard</h1>
-          <p className="text-muted-foreground mt-1">{roleLabel} — Navigate to the section you need below.</p>
-        </div>
+  const canEdit = isAdmin || (companyRole && ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO"].includes(companyRole));
 
-        <CompanyPrioritiesSection isAdmin={false} />
-
-        <div>
-          <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Project Management</h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {pmLinks.map((link) => (
-              <NavTile key={link.path} link={link} />
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Engineering</h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {engLinks.filter(l => l.path === "/engineering").map((link) => (
-              <NavTile key={link.path} link={link} />
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Quality</h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {qualityLinks.map((link) => (
-              <NavTile key={link.path} link={link} />
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (isQm) {
-    return (
-      <div className="space-y-8" data-testid="home-page">
-        <div>
-          <div className="flex items-center gap-3 mb-1">
-            <div className="p-2.5 rounded-lg bg-emerald-100 dark:bg-emerald-950/40">
-              <ClipboardCheck className="h-6 w-6 text-emerald-600" />
-            </div>
-            <div>
-              <h1 className="text-3xl font-bold">Quality Management</h1>
-              <p className="text-muted-foreground mt-0.5">Checklists, risk assessments, warnings, and post-mortem scoring.</p>
-            </div>
-          </div>
-        </div>
-
-        <CompanyPrioritiesSection isAdmin={false} />
-
-        <div>
-          <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Quality Tools</h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {qualityLinks.map((link) => (
-              <NavTile key={link.path} link={link} />
-            ))}
-            <NavTile link={{
-              label: "Project Summary",
-              description: "View projects and access quality checklists",
-              icon: FileSpreadsheet,
-              path: "/projects",
-              color: "text-blue-600",
-              bg: "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 hover:border-blue-400",
-            }} />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (isEpm) {
-    return (
-      <div className="space-y-8" data-testid="home-page">
-        <div>
-          <div className="flex items-center gap-3 mb-1">
-            <div className="p-2.5 rounded-lg bg-orange-100 dark:bg-orange-950/40">
-              <Wrench className="h-6 w-6 text-orange-600" />
-            </div>
-            <div>
-              <h1 className="text-3xl font-bold">Engineering Program Management</h1>
-              <p className="text-muted-foreground mt-0.5">Tasks, deliverables, team management, and project oversight.</p>
-            </div>
-          </div>
-        </div>
-
-        <CompanyPrioritiesSection isAdmin={false} />
-
-        <div>
-          <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Engineering</h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {engLinks.map((link) => (
-              <NavTile key={link.path} link={link} />
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Quality & Projects</h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {qualityLinks.map((link) => (
-              <NavTile key={link.path} link={link} />
-            ))}
-            <NavTile link={{
-              label: "Project Summary",
-              description: "View projects and access quality checklists",
-              icon: FileSpreadsheet,
-              path: "/projects",
-              color: "text-blue-600",
-              bg: "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 hover:border-blue-400",
-            }} />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!isAdmin) {
-    return (
-      <div className="space-y-8" data-testid="home-page">
-        <div>
-          <h1 className="text-3xl font-bold">Emergent Energy Dashboard</h1>
-          <p className="text-muted-foreground mt-1">Navigate to the section you need below.</p>
-        </div>
-
-        <CompanyPrioritiesSection isAdmin={false} />
-
-        <div>
-          <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Project Management</h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {pmLinks.map((link) => (
-              <NavTile key={link.path} link={link} />
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const visibleSections = homeSections.filter(section => {
+    const cr = companyRole;
+    if (cr) {
+      if (cr === "COO_ADMIN") return true;
+      if (pmCompanyRoles.includes(cr)) {
+        return ["PROJECT MANAGEMENT", "ENGINEERING", "QUALITY"].includes(section.heading);
+      }
+      if (section.visibleTo) return section.visibleTo.includes(cr);
+      return true;
+    }
+    if (role === "quality_manager") {
+      return section.heading === "QUALITY" || section.heading === "PROJECT MANAGEMENT";
+    }
+    if (role === "eng_program_manager") {
+      return section.heading === "ENGINEERING" || section.heading === "QUALITY" || section.heading === "PROJECT MANAGEMENT";
+    }
+    if (role === "admin") return true;
+    return section.heading === "PROJECT MANAGEMENT";
+  }).map(section => {
+    let links = [...section.links];
+    if (role === "quality_manager" && section.heading === "PROJECT MANAGEMENT") {
+      links = links.filter(l => l.path === "/projects");
+    }
+    if (role === "eng_program_manager" && section.heading === "PROJECT MANAGEMENT") {
+      links = links.filter(l => l.path === "/projects");
+    }
+    if (companyRole && pmCompanyRoles.includes(companyRole) && section.heading === "ENGINEERING") {
+      links = links.filter(l => l.path === "/engineering");
+    }
+    return { ...section, links };
+  }).filter(section => section.links.length > 0);
 
   return (
     <div className="space-y-8" data-testid="home-page">
@@ -485,52 +407,20 @@ export default function Home() {
         <p className="text-muted-foreground mt-1">Navigate to the section you need below.</p>
       </div>
 
-      <CompanyPrioritiesSection isAdmin={isAdmin} />
+      <CompanyPrioritiesSection isAdmin={!!canEdit} />
 
-      <div>
-        <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Exco</h2>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {excoLinks.map((link) => (
-            <NavTile key={link.path} link={link} />
-          ))}
+      {visibleSections.map(section => (
+        <div key={section.heading}>
+          <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">
+            {section.heading === "EXCO" ? "Exco" : section.heading === "ADMIN" ? "Admin / Settings" : section.heading.split(" ").map(w => w[0] + w.slice(1).toLowerCase()).join(" ")}
+          </h2>
+          <div className={`grid gap-4 sm:grid-cols-2 ${section.cols === 4 ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}>
+            {section.links.map((link) => (
+              <NavTile key={link.path} link={link} />
+            ))}
+          </div>
         </div>
-      </div>
-
-      <div>
-        <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Project Management</h2>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {pmLinks.map((link) => (
-            <NavTile key={link.path} link={link} />
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Engineering</h2>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {engLinks.map((link) => (
-            <NavTile key={link.path} link={link} />
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Quality</h2>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {qualityLinks.map((link) => (
-            <NavTile key={link.path} link={link} />
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Admin / Settings</h2>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {adminLinks.map((link) => (
-            <NavTile key={link.path} link={link} />
-          ))}
-        </div>
-      </div>
+      ))}
     </div>
   );
 }
