@@ -47,27 +47,31 @@ function requireRole(...roles: string[]) {
   };
 }
 
+function isAdminRole(role: string) {
+  return role === "admin" || role === "COO_ADMIN" || role === "CEO_ADMIN";
+}
+
 function requireQmChallenge(req: Request, res: Response, next: NextFunction) {
-  if (getUserRole(req) === "admin") return next();
+  if (isAdminRole(getUserRole(req))) return next();
   if ((req.session as any)?.qmChallengePassed) return next();
   res.status(403).json({ error: "qm_challenge_required", message: "Quality Manager access code required", code: "QM_CHALLENGE_REQUIRED" });
 }
 
 function requireEpmChallenge(req: Request, res: Response, next: NextFunction) {
-  if (getUserRole(req) === "admin") return next();
+  if (isAdminRole(getUserRole(req))) return next();
   if ((req.session as any)?.epmChallengePassed) return next();
   res.status(403).json({ error: "epm_challenge_required", message: "Engineering Program Manager access code required", code: "EPM_CHALLENGE_REQUIRED" });
 }
 
 function requireAdminOrQm(req: Request, res: Response, next: NextFunction) {
   const role = getUserRole(req);
-  if (role === "admin" || role === "quality_manager") return next();
+  if (isAdminRole(role) || role === "quality_manager" || role === "QUALITY_MANAGER") return next();
   res.status(403).json({ error: "forbidden", message: "Admin or Quality Manager access required" });
 }
 
 function requireAdminOrEpm(req: Request, res: Response, next: NextFunction) {
   const role = getUserRole(req);
-  if (role === "admin" || role === "eng_program_manager") return next();
+  if (isAdminRole(role) || role === "eng_program_manager" || role === "ENGINEERING_MANAGER") return next();
   res.status(403).json({ error: "forbidden", message: "Admin or Engineering Program Manager access required" });
 }
 
@@ -898,15 +902,17 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/quality/users/:userId/role", requireAuth, requireRole("admin"), async (req, res) => {
+  app.patch("/api/quality/users/:userId/role", requireAuth, async (req, res) => {
     try {
-      const userId = parseInt(req.params.userId);
-      const { role } = req.body;
-      if (!["admin", "member", "quality_manager", "viewer"].includes(role)) {
-        return res.status(400).json({ error: "Invalid role" });
+      const role = getUserRole(req);
+      if (!isAdminRole(role)) {
+        return res.status(403).json({ error: "Admin access required" });
       }
+      const userId = parseInt(req.params.userId);
+      const { role: newRole } = req.body;
+      if (!newRole) return res.status(400).json({ error: "Role is required" });
       const { users } = await import("@shared/schema");
-      const [updated] = await db.update(users).set({ role }).where(eq(users.id, userId)).returning();
+      const [updated] = await db.update(users).set({ role: newRole }).where(eq(users.id, userId)).returning();
       res.json({ id: updated.id, email: updated.email, name: updated.name, role: updated.role });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
