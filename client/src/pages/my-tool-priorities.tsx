@@ -150,8 +150,9 @@ export default function MyToolPrioritiesPage() {
   const { data: projects = [] } = useQuery<any[]>({
     queryKey: ["/api/projects-summary"],
     select: (data: any) => {
-      const list = Array.isArray(data) ? data : (data?.projects || []);
-      return list.filter((p: any) => p.isActive !== false);
+      if (Array.isArray(data)) return data;
+      if (data?.projects) return data.projects;
+      return [];
     },
   });
 
