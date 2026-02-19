@@ -71,6 +71,7 @@ function getNavGroups(): NavGroup[] {
         { label: "Cashflow", icon: Wallet, path: "/cashflow" },
         { label: "COS Tracker", icon: TrendingUp, path: "/cos", className: "rotate-180" },
         { label: "Execution Board", icon: Zap, path: "/execution-board" },
+        { label: "Smart Import", icon: FileSpreadsheet, path: "/smart-import" },
       ],
     },
     {

@@ -19,6 +19,14 @@ export const userRoleEnum = pgEnum('user_role', [
   'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'VIEWER',
 ]);
 
+export const smartImportStatusEnum = pgEnum('smart_import_status', ['PREVIEW', 'AWAITING_REVIEW', 'COMMITTED', 'ROLLED_BACK', 'FAILED']);
+export const importIssueSeverityEnum = pgEnum('import_issue_severity', ['INFO', 'WARNING', 'BLOCKER']);
+export const importSectionEnum = pgEnum('import_section', ['PLAN', 'REVENUE', 'EXPENDITURE', 'CASHFLOW', 'GENERAL']);
+export const counterpartyTypeEnum = pgEnum('counterparty_type', ['SUPPLIER', 'INSTALLER', 'OTHER']);
+export const revenueLineStatusEnum = pgEnum('revenue_line_status', ['PLANNED', 'INVOICED', 'PAID', 'IN_BANK', 'REALISED']);
+export const costLineStatusEnum = pgEnum('cost_line_status', ['PLANNED', 'INVOICED', 'APPROVED', 'PAID']);
+export const phaseSourceEnum = pgEnum('phase_source', ['EXCEL_IMPORT', 'MANUAL']);
+
 // Users Table
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -2175,6 +2183,162 @@ export const executionGateLog = pgTable("execution_gate_log", {
   changedAt: timestamp("changed_at").notNull().defaultNow(),
 });
 export type ExecutionGateLog = typeof executionGateLog.$inferSelect;
+
+export const smartImportRuns = pgTable("smart_import_runs", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").references(() => projectInfo.id),
+  projectName: text("project_name").notNull(),
+  uploadedBy: integer("uploaded_by").references(() => users.id),
+  uploadedAt: timestamp("uploaded_at").notNull().defaultNow(),
+  sourceFileName: text("source_file_name").notNull(),
+  sourceFileHash: text("source_file_hash"),
+  status: smartImportStatusEnum("status").notNull().default('PREVIEW'),
+  templateProfileId: integer("template_profile_id"),
+  summaryJson: jsonb("summary_json"),
+  committedAt: timestamp("committed_at"),
+  committedBy: integer("committed_by").references(() => users.id),
+});
+export const insertSmartImportRunSchema = createInsertSchema(smartImportRuns).omit({ id: true, uploadedAt: true });
+export type InsertSmartImportRun = z.infer<typeof insertSmartImportRunSchema>;
+export type SmartImportRun = typeof smartImportRuns.$inferSelect;
+
+export const importIssues = pgTable("import_issues", {
+  id: serial("id").primaryKey(),
+  importRunId: integer("import_run_id").notNull().references(() => smartImportRuns.id),
+  severity: importIssueSeverityEnum("severity").notNull(),
+  section: importSectionEnum("section").notNull(),
+  message: text("message").notNull(),
+  suggestedAction: text("suggested_action"),
+  resolved: boolean("resolved").notNull().default(false),
+  resolvedBy: integer("resolved_by").references(() => users.id),
+  resolvedAt: timestamp("resolved_at"),
+  payloadJson: jsonb("payload_json"),
+});
+export const insertImportIssueSchema = createInsertSchema(importIssues).omit({ id: true });
+export type InsertImportIssue = z.infer<typeof insertImportIssueSchema>;
+export type ImportIssue = typeof importIssues.$inferSelect;
+
+export const templateProfiles = pgTable("template_profiles", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  signatureJson: jsonb("signature_json"),
+  isDefault: boolean("is_default").notNull().default(false),
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertTemplateProfileSchema = createInsertSchema(templateProfiles).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertTemplateProfile = z.infer<typeof insertTemplateProfileSchema>;
+export type TemplateProfile = typeof templateProfiles.$inferSelect;
+
+export const mappingRules = pgTable("mapping_rules", {
+  id: serial("id").primaryKey(),
+  templateProfileId: integer("template_profile_id").notNull().references(() => templateProfiles.id),
+  section: importSectionEnum("section").notNull(),
+  sourceHeader: text("source_header").notNull(),
+  canonicalField: text("canonical_field").notNull(),
+  confidenceWeight: real("confidence_weight").notNull().default(1.0),
+  examplesJson: jsonb("examples_json"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const insertMappingRuleSchema = createInsertSchema(mappingRules).omit({ id: true, createdAt: true });
+export type InsertMappingRule = z.infer<typeof insertMappingRuleSchema>;
+export type MappingRule = typeof mappingRules.$inferSelect;
+
+export const normalizedPlanTasks = pgTable("normalized_plan_tasks", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").references(() => projectInfo.id),
+  projectName: text("project_name").notNull(),
+  taskName: text("task_name").notNull(),
+  phase: text("phase"),
+  startDate: text("start_date"),
+  endDate: text("end_date"),
+  durationDays: integer("duration_days"),
+  owner: text("owner"),
+  status: text("status"),
+  pctComplete: real("pct_complete"),
+  sourceSheet: text("source_sheet"),
+  sourceRow: integer("source_row"),
+  importRunId: integer("import_run_id").notNull().references(() => smartImportRuns.id),
+});
+export const insertNormalizedPlanTaskSchema = createInsertSchema(normalizedPlanTasks).omit({ id: true });
+export type InsertNormalizedPlanTask = z.infer<typeof insertNormalizedPlanTaskSchema>;
+export type NormalizedPlanTask = typeof normalizedPlanTasks.$inferSelect;
+
+export const normalizedRevenueLines = pgTable("normalized_revenue_lines", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").references(() => projectInfo.id),
+  projectName: text("project_name").notNull(),
+  description: text("description"),
+  milestoneName: text("milestone_name"),
+  amountExVat: text("amount_ex_vat"),
+  vat: text("vat"),
+  invoiceNumber: text("invoice_number"),
+  invoiceDate: text("invoice_date"),
+  expectedPaymentDate: text("expected_payment_date"),
+  paidDate: text("paid_date"),
+  inBankDate: text("in_bank_date"),
+  status: revenueLineStatusEnum("status").notNull().default('PLANNED'),
+  sourceSheet: text("source_sheet"),
+  sourceRow: integer("source_row"),
+  importRunId: integer("import_run_id").notNull().references(() => smartImportRuns.id),
+  turnaroundDays: integer("turnaround_days"),
+});
+export const insertNormalizedRevenueLineSchema = createInsertSchema(normalizedRevenueLines).omit({ id: true });
+export type InsertNormalizedRevenueLine = z.infer<typeof insertNormalizedRevenueLineSchema>;
+export type NormalizedRevenueLine = typeof normalizedRevenueLines.$inferSelect;
+
+export const counterparties = pgTable("counterparties", {
+  id: serial("id").primaryKey(),
+  nameCanonical: text("name_canonical").notNull(),
+  nameAliases: jsonb("name_aliases").notNull().default([]),
+  typeDefault: counterpartyTypeEnum("type_default").notNull().default('OTHER'),
+  isCore: boolean("is_core").notNull().default(false),
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  lastSeenAt: timestamp("last_seen_at"),
+});
+export const insertCounterpartySchema = createInsertSchema(counterparties).omit({ id: true, createdAt: true });
+export type InsertCounterparty = z.infer<typeof insertCounterpartySchema>;
+export type Counterparty = typeof counterparties.$inferSelect;
+
+export const normalizedCostLines = pgTable("normalized_cost_lines", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").references(() => projectInfo.id),
+  projectName: text("project_name").notNull(),
+  costCategory: text("cost_category"),
+  counterpartyId: integer("counterparty_id").references(() => counterparties.id),
+  counterpartyName: text("counterparty_name"),
+  counterpartyType: counterpartyTypeEnum("counterparty_type"),
+  description: text("description"),
+  amountExVat: text("amount_ex_vat"),
+  invoiceNumber: text("invoice_number"),
+  invoiceDate: text("invoice_date"),
+  approvedDate: text("approved_date"),
+  paidDate: text("paid_date"),
+  poNumber: text("po_number"),
+  status: costLineStatusEnum("cost_line_status").notNull().default('PLANNED'),
+  sourceSheet: text("source_sheet"),
+  sourceRow: integer("source_row"),
+  importRunId: integer("import_run_id").notNull().references(() => smartImportRuns.id),
+  turnaroundDays: integer("turnaround_days"),
+});
+export const insertNormalizedCostLineSchema = createInsertSchema(normalizedCostLines).omit({ id: true });
+export type InsertNormalizedCostLine = z.infer<typeof insertNormalizedCostLineSchema>;
+export type NormalizedCostLine = typeof normalizedCostLines.$inferSelect;
+
+export const normalizedExecutionPhases = pgTable("normalized_execution_phases", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").references(() => projectInfo.id),
+  projectName: text("project_name").notNull(),
+  phaseName: text("phase_name").notNull(),
+  phaseDate: text("phase_date"),
+  source: phaseSourceEnum("source").notNull().default('EXCEL_IMPORT'),
+  importRunId: integer("import_run_id").references(() => smartImportRuns.id),
+});
+export const insertNormalizedExecutionPhaseSchema = createInsertSchema(normalizedExecutionPhases).omit({ id: true });
+export type InsertNormalizedExecutionPhase = z.infer<typeof insertNormalizedExecutionPhaseSchema>;
+export type NormalizedExecutionPhase = typeof normalizedExecutionPhases.$inferSelect;
 
 export const DEFAULT_ROLE_PERMISSIONS: InsertRolePermission[] = [
   { role: "COO_ADMIN", label: "COO Admin", description: "Full executive access, settings, user management", sections: ["EXCO", "PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "ADMIN", "MY_TOOL", "FINANCE"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
