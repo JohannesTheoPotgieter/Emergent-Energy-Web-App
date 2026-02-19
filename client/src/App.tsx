@@ -36,8 +36,6 @@ import EngineeringTasksPage from "@/pages/engineering-tasks";
 import EngineeringDeliverablesPage from "@/pages/engineering-deliverables";
 import EngineeringTeamsPage from "@/pages/engineering-teams";
 import EngineeringAuditLogPage from "@/pages/engineering-audit-log";
-import AdminReportsPage from "@/pages/admin-reports";
-import OperationalOverviewReport from "@/pages/operational-overview-report";
 import PhaseTemplatesPage from "@/pages/phase-templates";
 import ProjectCreatePage from "@/pages/project-create";
 import ExecCockpitPage from "@/pages/exec-cockpit";
@@ -78,7 +76,7 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
     }
   }
 
-  if (user?.role !== "admin" && location.startsWith("/admin") && !location.startsWith("/admin/reports")) {
+  if (user?.role !== "admin" && location.startsWith("/admin")) {
     return <Redirect to="/" />;
   }
 
@@ -225,8 +223,6 @@ function ProtectedPages() {
         <Route path="/engineering/deliverables" component={EngineeringDeliverablesPage} />
         <Route path="/admin/audit-log" component={EngineeringAuditLogPage} />
         <Route path="/admin/teams" component={EngineeringTeamsPage} />
-        <Route path="/admin/reports" component={AdminReportsPage} />
-        <Route path="/admin/reports/operational-overview" component={OperationalOverviewReport} />
         <Route path="/admin/phase-templates" component={PhaseTemplatesPage} />
         <Route path="/project-create" component={ProjectCreatePage} />
         <Route path="/lifecycle-board" component={LifecycleBoardPage} />
