@@ -1915,6 +1915,7 @@ export const roleCredentials = pgTable("role_credentials", {
   id: serial("id").primaryKey(),
   role: text("role").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
+  lastPasswordPlain: text("last_password_plain"),
   failedAttempts: integer("failed_attempts").notNull().default(0),
   lockedUntil: timestamp("locked_until"),
   updatedBy: text("updated_by"),

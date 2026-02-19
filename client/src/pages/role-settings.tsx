@@ -99,6 +99,25 @@ function RolePasswordsSection({ toast }: { toast: ReturnType<typeof useToast>["t
   const [editingRole, setEditingRole] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState("");
   const [saving, setSaving] = useState(false);
+  const [passwords, setPasswords] = useState<Record<string, { password: string | null; updatedAt: string | null }>>({});
+
+  useEffect(() => {
+    loadPasswords();
+  }, []);
+
+  const loadPasswords = async () => {
+    try {
+      const res = await fetch("/api/role-auth/passwords", { headers: getAuthHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        const map: Record<string, { password: string | null; updatedAt: string | null }> = {};
+        for (const c of data) {
+          map[c.role] = { password: c.lastPasswordPlain, updatedAt: c.updatedAt };
+        }
+        setPasswords(map);
+      }
+    } catch {}
+  };
 
   const handleChangePassword = async (targetRole: string) => {
     if (!newPassword || newPassword.length < 4) {
@@ -116,6 +135,7 @@ function RolePasswordsSection({ toast }: { toast: ReturnType<typeof useToast>["t
         toast({ title: "Password Updated", description: `Password changed for ${COMPANY_ROLE_LABELS[targetRole as CompanyRole]}.` });
         setEditingRole(null);
         setNewPassword("");
+        loadPasswords();
       } else {
         const data = await res.json();
         toast({ title: "Error", description: data.message || "Failed to change password.", variant: "destructive" });
@@ -137,66 +157,79 @@ function RolePasswordsSection({ toast }: { toast: ReturnType<typeof useToast>["t
       </CardHeader>
       <CardContent>
         <div className="space-y-2">
-          {COMPANY_ROLES.map((role) => (
-            <div
-              key={role}
-              className="flex items-center gap-3 p-3 rounded-lg border border-gray-100 hover:bg-gray-50 transition-colors"
-              data-testid={`role-password-row-${role}`}
-            >
-              <div className="flex-1 min-w-0">
-                <span className="text-sm font-medium text-gray-800" data-testid={`text-role-label-${role}`}>
-                  {COMPANY_ROLE_LABELS[role]}
-                </span>
-                <span className="text-xs text-gray-400 ml-2">{role}</span>
-              </div>
-
-              {editingRole === role ? (
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="password"
-                    placeholder="New password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    className="w-48 h-8 text-sm"
-                    data-testid={`input-password-${role}`}
-                    autoFocus
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleChangePassword(role);
-                      if (e.key === "Escape") { setEditingRole(null); setNewPassword(""); }
-                    }}
-                  />
-                  <Button
-                    size="sm"
-                    className="h-8 bg-green-600 hover:bg-green-700"
-                    onClick={() => handleChangePassword(role)}
-                    disabled={saving}
-                    data-testid={`button-confirm-password-${role}`}
-                  >
-                    {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-8"
-                    onClick={() => { setEditingRole(null); setNewPassword(""); }}
-                    data-testid={`button-cancel-password-${role}`}
-                  >
-                    <X className="h-3 w-3" />
-                  </Button>
+          {COMPANY_ROLES.map((role) => {
+            const info = passwords[role];
+            return (
+              <div
+                key={role}
+                className="flex items-center gap-3 p-3 rounded-lg border border-gray-100 hover:bg-gray-50 transition-colors"
+                data-testid={`role-password-row-${role}`}
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-gray-800" data-testid={`text-role-label-${role}`}>
+                      {COMPANY_ROLE_LABELS[role]}
+                    </span>
+                    <span className="text-xs text-gray-400">{role}</span>
+                  </div>
+                  {info?.password && (
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <span className="text-xs text-gray-500">Current:</span>
+                      <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded font-mono text-gray-700" data-testid={`text-current-password-${role}`}>
+                        {info.password}
+                      </code>
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-8 text-xs"
-                  onClick={() => { setEditingRole(role); setNewPassword(""); }}
-                  data-testid={`button-change-password-${role}`}
-                >
-                  Change Password
-                </Button>
-              )}
-            </div>
-          ))}
+
+                {editingRole === role ? (
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="text"
+                      placeholder="New password"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      className="w-48 h-8 text-sm"
+                      data-testid={`input-password-${role}`}
+                      autoFocus
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleChangePassword(role);
+                        if (e.key === "Escape") { setEditingRole(null); setNewPassword(""); }
+                      }}
+                    />
+                    <Button
+                      size="sm"
+                      className="h-8 bg-green-600 hover:bg-green-700"
+                      onClick={() => handleChangePassword(role)}
+                      disabled={saving}
+                      data-testid={`button-confirm-password-${role}`}
+                    >
+                      {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8"
+                      onClick={() => { setEditingRole(null); setNewPassword(""); }}
+                      data-testid={`button-cancel-password-${role}`}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-xs"
+                    onClick={() => { setEditingRole(role); setNewPassword(""); }}
+                    data-testid={`button-change-password-${role}`}
+                  >
+                    Change Password
+                  </Button>
+                )}
+              </div>
+            );
+          })}
         </div>
       </CardContent>
     </Card>
