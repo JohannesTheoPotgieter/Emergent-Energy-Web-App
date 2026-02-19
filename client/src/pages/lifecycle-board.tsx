@@ -134,18 +134,15 @@ function ragBadge(rag: string | null) {
 function sourceBadge(source: string) {
   if (source === "both") {
     return (
-      <span className="flex items-center gap-0.5">
-        <Badge className="bg-green-50 text-green-700 text-[9px] px-1 py-0 border-green-200" data-testid="badge-source-both">
-          <FileSpreadsheet className="w-2.5 h-2.5 mr-0.5" />
-          <Wrench className="w-2.5 h-2.5" />
-        </Badge>
-      </span>
+      <Badge className="bg-green-50 text-green-700 text-[9px] px-1 py-0 border-green-200" data-testid="badge-source-both">
+        <FileSpreadsheet className="w-2.5 h-2.5 mr-0.5" />Tracker
+      </Badge>
     );
   }
   if (source === "engineering") {
     return (
       <Badge className="bg-purple-50 text-purple-700 text-[9px] px-1 py-0 border-purple-200" data-testid="badge-source-eng">
-        <Wrench className="w-2.5 h-2.5 mr-0.5" />Eng
+        <Wrench className="w-2.5 h-2.5 mr-0.5" />Pre-tracker
       </Badge>
     );
   }
@@ -233,7 +230,7 @@ export default function LifecycleBoardPage() {
                 pd: null,
                 pm: null,
                 contractValue: null,
-                phase: t.phase,
+                phase: t.phase || "Cost Proposal",
                 isActive: true,
                 ragStatus: t.trackingRag,
                 source: "engineering",
@@ -287,8 +284,8 @@ export default function LifecycleBoardPage() {
     );
   }
 
-  const excelCount = projects.filter(p => p.source === "excel" || p.source === "both").length;
-  const engOnlyCount = projects.filter(p => p.source === "engineering").length;
+  const trackerCount = projects.filter(p => p.source === "excel" || p.source === "both").length;
+  const preTrackerCount = projects.filter(p => p.source === "engineering").length;
 
   return (
     <div className="space-y-4" data-testid="lifecycle-board-page">
@@ -297,7 +294,7 @@ export default function LifecycleBoardPage() {
         <p className="text-muted-foreground text-sm">
           All projects grouped by lifecycle phase
           <span className="ml-2 text-xs">
-            ({excelCount} from Excel{engOnlyCount > 0 ? `, ${engOnlyCount} from Engineering` : ""})
+            ({trackerCount} with tracker{preTrackerCount > 0 ? `, ${preTrackerCount} pre-tracker` : ""})
           </span>
         </p>
       </div>
