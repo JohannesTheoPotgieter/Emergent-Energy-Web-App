@@ -348,29 +348,29 @@ export default function LifecycleBoardPage() {
         </div>
       </div>
 
-      <div className="overflow-x-auto pb-4 -mx-3 px-3 sm:-mx-4 sm:px-4 md:-mx-6 md:px-6">
-        <div className="flex gap-3 min-w-max">
+      <div className="pb-4">
+        <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${PHASE_GROUPS.length}, minmax(0, 1fr))` }}>
           {PHASE_GROUPS.map((group) => {
             const items = grouped[group.key] || [];
             const isOver = dragOverColumn === group.key;
             return (
               <div
                 key={group.key}
-                className={`w-[260px] shrink-0 rounded-lg border ${group.color} flex flex-col transition-all ${isOver ? "ring-2 ring-[#16a34a] scale-[1.01]" : ""}`}
+                className={`rounded-lg border ${group.color} flex flex-col transition-all min-w-0 ${isOver ? "ring-2 ring-[#16a34a] scale-[1.01]" : ""}`}
                 data-testid={`column-${group.key}`}
                 onDragOver={(e) => handleDragOver(e, group.key)}
                 onDragLeave={handleDragLeave}
                 onDrop={(e) => handleDrop(e, group.key)}
               >
-                <div className={`${group.headerBg} text-white rounded-t-lg px-3 py-2.5 flex items-center justify-between`}>
-                  <span className="font-semibold text-sm">{group.label}</span>
-                  <Badge variant="secondary" className="bg-white/20 text-white text-xs" data-testid={`badge-count-${group.key}`}>
+                <div className={`${group.headerBg} text-white rounded-t-lg px-2 py-2 flex items-center justify-between gap-1`}>
+                  <span className="font-semibold text-[11px] leading-tight truncate">{group.label}</span>
+                  <Badge variant="secondary" className="bg-white/20 text-white text-[10px] px-1 py-0 shrink-0" data-testid={`badge-count-${group.key}`}>
                     {items.length}
                   </Badge>
                 </div>
-                <div className="p-2 space-y-2 flex-1 max-h-[calc(100vh-280px)] overflow-y-auto">
+                <div className="p-1 space-y-1 flex-1 max-h-[calc(100vh-240px)] overflow-y-auto">
                   {items.length === 0 && (
-                    <p className="text-xs text-muted-foreground text-center py-4">
+                    <p className="text-[10px] text-muted-foreground text-center py-3">
                       {isOver ? "Drop here" : "No projects"}
                     </p>
                   )}
@@ -385,36 +385,36 @@ export default function LifecycleBoardPage() {
                         onDragEnd={handleDragEnd}
                         data-testid={`card-project-${p.id}`}
                       >
-                        <CardContent className="p-3 space-y-1.5">
-                          <div className="flex items-start justify-between gap-1">
-                            <div className="flex items-center gap-1">
-                              {canDrag && <GripVertical className="w-3 h-3 text-muted-foreground shrink-0" />}
-                              <div className="font-medium text-sm leading-tight" data-testid={`text-project-name-${p.id}`}>
+                        <CardContent className="p-2 space-y-1">
+                          <div className="flex items-start justify-between gap-0.5">
+                            <div className="flex items-center gap-0.5 min-w-0">
+                              {canDrag && <GripVertical className="w-2.5 h-2.5 text-muted-foreground shrink-0" />}
+                              <div className="font-medium text-[11px] leading-tight truncate" data-testid={`text-project-name-${p.id}`}>
                                 {cleanProjectName(p.projectName)}
                               </div>
                             </div>
                             {sourceBadge(p.source)}
                           </div>
-                          <div className="flex flex-wrap items-center gap-1.5">
+                          <div className="flex flex-wrap items-center gap-1">
                             {p.sizeKwp && parseFloat(p.sizeKwp) > 0 && (
-                              <span className="text-[11px] text-muted-foreground flex items-center gap-0.5" data-testid={`text-size-${p.id}`}>
-                                <Zap className="w-3 h-3" />
+                              <span className="text-[10px] text-muted-foreground flex items-center gap-0.5" data-testid={`text-size-${p.id}`}>
+                                <Zap className="w-2.5 h-2.5" />
                                 {parseFloat(p.sizeKwp).toFixed(0)} kWp
                               </span>
                             )}
                           </div>
                           {formatZAR(p.contractValue) && (
-                            <div className="text-xs text-muted-foreground" data-testid={`text-value-${p.id}`}>
+                            <div className="text-[10px] text-muted-foreground truncate" data-testid={`text-value-${p.id}`}>
                               {formatZAR(p.contractValue)}
                             </div>
                           )}
                           {p.pm && (
-                            <div className="text-[11px] text-muted-foreground flex items-center gap-1" data-testid={`text-pm-${p.id}`}>
-                              <User className="w-3 h-3" />
-                              {p.pm}
+                            <div className="text-[10px] text-muted-foreground flex items-center gap-0.5 truncate" data-testid={`text-pm-${p.id}`}>
+                              <User className="w-2.5 h-2.5 shrink-0" />
+                              <span className="truncate">{p.pm}</span>
                             </div>
                           )}
-                          <div className="space-y-0.5 pt-0.5">
+                          <div className="space-y-0.5">
                             {pctBar("Eng", p.engDone, p.engTotal, "bg-purple-500")}
                             {pctBarAvg("Plan", p.planAvgPct, p.planTotal, "bg-blue-500")}
                           </div>
