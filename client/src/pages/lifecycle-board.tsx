@@ -65,11 +65,19 @@ const PHASE_GROUPS = [
   },
   {
     key: "handover",
-    label: "Compliance Handover",
-    phaseValue: "Compliance Handover",
-    matches: ["Compliance Handover", "Handover", "P6_HANDOVER_DLP", "P6"],
+    label: "Handover",
+    phaseValue: "Handover",
+    matches: ["Handover", "P6_HANDOVER_DLP", "P6"],
     color: "bg-teal-50 border-teal-300",
     headerBg: "bg-teal-500",
+  },
+  {
+    key: "compliance_handover",
+    label: "Compliance Handover",
+    phaseValue: "Compliance Handover",
+    matches: ["Compliance Handover"],
+    color: "bg-cyan-50 border-cyan-300",
+    headerBg: "bg-cyan-600",
   },
   {
     key: "closeout",
