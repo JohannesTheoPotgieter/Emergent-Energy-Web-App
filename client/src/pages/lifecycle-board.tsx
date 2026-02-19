@@ -3,7 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { Loader2, Search, Zap, User } from "lucide-react";
+import { Loader2, Search, Zap, User, Wrench, FileSpreadsheet } from "lucide-react";
 
 interface ProjectInfo {
   id: number;
@@ -15,6 +15,19 @@ interface ProjectInfo {
   phase: string | null;
   isActive: boolean;
   ragStatus: string | null;
+  source: "excel" | "engineering" | "both";
+  engTaskCount?: number;
+  engStatus?: string | null;
+}
+
+interface EngTask {
+  id: number;
+  projectName: string;
+  title: string;
+  status: string;
+  priority: string | null;
+  phase: string | null;
+  trackingRag: string | null;
 }
 
 const PHASE_GROUPS = [
@@ -63,7 +76,7 @@ const PHASE_GROUPS = [
   {
     key: "closeout",
     label: "Closeout",
-    matches: ["DLP", "Commercial Close Out", "Closeout", "P7_CLOSEOUT_POSTMORTEM", "P7"],
+    matches: ["DLP", "Commercial Close Out", "Commercial Close out", "Closeout", "P7_CLOSEOUT_POSTMORTEM", "P7"],
     color: "bg-emerald-50 border-emerald-300",
     headerBg: "bg-emerald-500",
   },
@@ -98,6 +111,10 @@ function cleanProjectName(name: string): string {
   return name.replace(/_Tracker$/i, "").replace(/_/g, " ");
 }
 
+function normalizeNameForMatch(name: string): string {
+  return cleanProjectName(name).toLowerCase().trim().replace(/\s+/g, " ");
+}
+
 function formatZAR(value: string | number | null): string | null {
   if (value == null) return null;
   const num = typeof value === "string" ? parseFloat(value) : value;
@@ -114,18 +131,129 @@ function ragBadge(rag: string | null) {
   return null;
 }
 
+function sourceBadge(source: string) {
+  if (source === "both") {
+    return (
+      <span className="flex items-center gap-0.5">
+        <Badge className="bg-green-50 text-green-700 text-[9px] px-1 py-0 border-green-200" data-testid="badge-source-both">
+          <FileSpreadsheet className="w-2.5 h-2.5 mr-0.5" />
+          <Wrench className="w-2.5 h-2.5" />
+        </Badge>
+      </span>
+    );
+  }
+  if (source === "engineering") {
+    return (
+      <Badge className="bg-purple-50 text-purple-700 text-[9px] px-1 py-0 border-purple-200" data-testid="badge-source-eng">
+        <Wrench className="w-2.5 h-2.5 mr-0.5" />Eng
+      </Badge>
+    );
+  }
+  return null;
+}
+
+function getAuthHeaders(): HeadersInit {
+  const token = localStorage.getItem("auth_token");
+  return {
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
+
 export default function LifecycleBoardPage() {
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-  const [showActiveOnly, setShowActiveOnly] = useState(true);
+  const [showActiveOnly, setShowActiveOnly] = useState(false);
 
   useEffect(() => {
-    fetch("/api/project-info", { credentials: "include" })
-      .then((res) => res.json())
-      .then((data) => setProjects(data))
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    async function loadData() {
+      try {
+        const [excelRes, engRes] = await Promise.all([
+          fetch("/api/project-info", { credentials: "include" }),
+          fetch("/api/eng/tasks", { credentials: "include", headers: getAuthHeaders() }),
+        ]);
+
+        const excelProjects: any[] = excelRes.ok ? await excelRes.json() : [];
+        const engTasks: EngTask[] = engRes.ok ? await engRes.json() : [];
+
+        const merged: ProjectInfo[] = [];
+        const nameMap = new Map<string, ProjectInfo>();
+
+        for (const p of excelProjects) {
+          const normalized = normalizeNameForMatch(p.projectName);
+          const proj: ProjectInfo = {
+            id: p.id,
+            projectName: p.projectName,
+            sizeKwp: p.sizeKwp,
+            pd: p.pd,
+            pm: p.pm,
+            contractValue: p.contractValue,
+            phase: p.phase,
+            isActive: p.isActive !== false,
+            ragStatus: p.ragStatus,
+            source: "excel",
+            engTaskCount: 0,
+          };
+          nameMap.set(normalized, proj);
+          merged.push(proj);
+        }
+
+        for (const t of engTasks) {
+          if (!t.projectName) continue;
+          const normalized = normalizeNameForMatch(t.projectName);
+
+          const existing = nameMap.get(normalized);
+          if (existing) {
+            existing.source = "both";
+            existing.engTaskCount = (existing.engTaskCount || 0) + 1;
+            if (!existing.ragStatus && t.trackingRag) {
+              existing.ragStatus = t.trackingRag;
+            }
+          } else {
+            let found = false;
+            const entries = Array.from(nameMap.entries());
+            for (let i = 0; i < entries.length; i++) {
+              const [key, val] = entries[i];
+              if (key.includes(normalized) || normalized.includes(key)) {
+                val.source = "both";
+                val.engTaskCount = (val.engTaskCount || 0) + 1;
+                if (!val.ragStatus && t.trackingRag) {
+                  val.ragStatus = t.trackingRag;
+                }
+                found = true;
+                break;
+              }
+            }
+
+            if (!found) {
+              const newProj: ProjectInfo = {
+                id: -t.id,
+                projectName: t.projectName,
+                sizeKwp: null,
+                pd: null,
+                pm: null,
+                contractValue: null,
+                phase: t.phase,
+                isActive: true,
+                ragStatus: t.trackingRag,
+                source: "engineering",
+                engTaskCount: 1,
+                engStatus: t.status,
+              };
+              nameMap.set(normalized, newProj);
+              merged.push(newProj);
+            }
+          }
+        }
+
+        setProjects(merged);
+      } catch {
+        setProjects([]);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadData();
   }, []);
 
   const filtered = projects.filter((p) => {
@@ -159,11 +287,19 @@ export default function LifecycleBoardPage() {
     );
   }
 
+  const excelCount = projects.filter(p => p.source === "excel" || p.source === "both").length;
+  const engOnlyCount = projects.filter(p => p.source === "engineering").length;
+
   return (
     <div className="space-y-4" data-testid="lifecycle-board-page">
       <div>
         <h1 className="text-2xl font-bold" data-testid="text-lifecycle-title">Lifecycle Board</h1>
-        <p className="text-muted-foreground text-sm">Projects grouped by lifecycle phase</p>
+        <p className="text-muted-foreground text-sm">
+          All projects grouped by lifecycle phase
+          <span className="ml-2 text-xs">
+            ({excelCount} from Excel{engOnlyCount > 0 ? `, ${engOnlyCount} from Engineering` : ""})
+          </span>
+        </p>
       </div>
 
       <div className="flex items-center gap-4 flex-wrap">
@@ -217,8 +353,11 @@ export default function LifecycleBoardPage() {
                       data-testid={`card-project-${p.id}`}
                     >
                       <CardContent className="p-3 space-y-1.5">
-                        <div className="font-medium text-sm leading-tight" data-testid={`text-project-name-${p.id}`}>
-                          {cleanProjectName(p.projectName)}
+                        <div className="flex items-start justify-between gap-1">
+                          <div className="font-medium text-sm leading-tight" data-testid={`text-project-name-${p.id}`}>
+                            {cleanProjectName(p.projectName)}
+                          </div>
+                          {sourceBadge(p.source)}
                         </div>
                         <div className="flex flex-wrap items-center gap-1.5">
                           {p.sizeKwp && parseFloat(p.sizeKwp) > 0 && (
@@ -228,6 +367,11 @@ export default function LifecycleBoardPage() {
                             </span>
                           )}
                           {ragBadge(p.ragStatus)}
+                          {p.engTaskCount && p.engTaskCount > 0 && (
+                            <span className="text-[10px] text-purple-600" data-testid={`text-eng-tasks-${p.id}`}>
+                              {p.engTaskCount} eng task{p.engTaskCount > 1 ? "s" : ""}
+                            </span>
+                          )}
                         </div>
                         {formatZAR(p.contractValue) && (
                           <div className="text-xs text-muted-foreground" data-testid={`text-value-${p.id}`}>
@@ -238,6 +382,11 @@ export default function LifecycleBoardPage() {
                           <div className="text-[11px] text-muted-foreground flex items-center gap-1" data-testid={`text-pm-${p.id}`}>
                             <User className="w-3 h-3" />
                             {p.pm}
+                          </div>
+                        )}
+                        {p.source === "engineering" && p.engStatus && (
+                          <div className="text-[10px] text-purple-500" data-testid={`text-eng-status-${p.id}`}>
+                            Status: {p.engStatus}
                           </div>
                         )}
                       </CardContent>
