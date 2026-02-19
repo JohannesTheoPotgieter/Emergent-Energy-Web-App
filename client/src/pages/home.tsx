@@ -329,6 +329,49 @@ function CompanyPrioritiesSection({ isAdmin }: { isAdmin: boolean }) {
 export default function Home() {
   const { user, isAdmin, isQm } = useAuth();
   const isEpm = user?.role === "eng_program_manager";
+  const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
+  const isPmRole = companyRole && ["PROGRAM_MANAGER", "CONSTRUCTION_MANAGER", "PROGRAM_FINANCE_MANAGER"].includes(companyRole);
+
+  if (isPmRole) {
+    const roleLabel = companyRole!.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+    return (
+      <div className="space-y-8" data-testid="home-page">
+        <div>
+          <h1 className="text-3xl font-bold">Emergent Energy Dashboard</h1>
+          <p className="text-muted-foreground mt-1">{roleLabel} — Navigate to the section you need below.</p>
+        </div>
+
+        <CompanyPrioritiesSection isAdmin={false} />
+
+        <div>
+          <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Project Management</h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {pmLinks.map((link) => (
+              <NavTile key={link.path} link={link} />
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Engineering</h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {engLinks.filter(l => l.path === "/engineering").map((link) => (
+              <NavTile key={link.path} link={link} />
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Quality</h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {qualityLinks.map((link) => (
+              <NavTile key={link.path} link={link} />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (isQm) {
     return (
