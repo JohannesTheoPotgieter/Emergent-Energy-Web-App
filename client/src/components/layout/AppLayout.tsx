@@ -61,6 +61,8 @@ function getNavGroups(): NavGroup[] {
         { label: "Reports", icon: FileBarChart, path: "/admin/reports" },
         { label: "Company Priorities", icon: Flag, path: "/my-tool/priorities" },
         { label: "My Tool", icon: Briefcase, path: "/my-tool" },
+        { label: "Triage Inbox", icon: Mail, path: "/admin/triage-inbox" },
+        { label: "Unclassified Tasks", icon: InboxIcon, path: "/admin/unclassified-tasks" },
       ],
     },
     {
@@ -94,8 +96,6 @@ function getNavGroups(): NavGroup[] {
         { label: "Settings", icon: Settings, path: "/admin/settings" },
         { label: "Phase Templates", icon: Layers, path: "/admin/phase-templates" },
         { label: "New Project", icon: FolderPlus, path: "/project-create" },
-        { label: "Triage Inbox", icon: Mail, path: "/admin/triage-inbox" },
-        { label: "Unclassified Tasks", icon: InboxIcon, path: "/admin/unclassified-tasks" },
         { label: "Audit Log", icon: History, path: "/admin/audit-log" },
         { label: "Teams & Roles", icon: Users, path: "/admin/teams" },
         { label: "Data Import", icon: Upload, path: "/admin" },
