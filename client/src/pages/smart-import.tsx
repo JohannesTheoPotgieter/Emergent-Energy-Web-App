@@ -440,9 +440,9 @@ function SectionDetectionStep({
   onContinue: () => void;
   onBack: () => void;
 }) {
-  const sections = preview?.sections || [];
-  const unmatchedSheets = preview?.unmatchedSheets || [];
-  const projectInfo = preview?.projectInfo || {};
+  const sections = preview?.detection?.sections || preview?.sections || [];
+  const unmatchedSheets = preview?.detection?.unmatched || preview?.unmatchedSheets || [];
+  const projectInfo = preview?.projectInfo || preview?.detection?.projectInfo || {};
 
   return (
     <div className="space-y-4" data-testid="section-detection-step">
