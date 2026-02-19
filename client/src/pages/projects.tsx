@@ -827,6 +827,12 @@ export default function ProjectsSummary() {
     ...(isAdmin ? [{ label: "", colSpan: 1, color: "bg-white" }] : []),
   ];
 
+  function truncateName(name: string | null, max: number): string {
+    if (!name) return "—";
+    if (name.length <= max) return name;
+    return name.slice(0, max) + "…";
+  }
+
   const columns: {
     key: string;
     header: string;
@@ -839,12 +845,12 @@ export default function ProjectsSummary() {
       key: "project_name",
       header: "Project",
       sticky: true,
-      minW: "min-w-[180px]",
       render: (p) => (
         <button
           data-testid={`link-project-${p.project_name}`}
-          className="text-left font-semibold text-blue-700 hover:text-blue-900 hover:underline truncate max-w-[180px] block text-[11px]"
+          className="text-left font-semibold text-blue-700 hover:text-blue-900 hover:underline truncate max-w-[130px] block text-[10px]"
           onClick={() => setLocation(`/project/${encodeURIComponent(p.project_name)}`)}
+          title={cleanName(p.project_name)}
         >
           {cleanName(p.project_name)}
         </button>
@@ -856,8 +862,8 @@ export default function ProjectsSummary() {
       align: "right",
       render: (p) => <span className="font-mono text-slate-700">{p.size_kwp != null ? p.size_kwp.toFixed(0) : "—"}</span>,
     },
-    { key: "pd", header: "PD", render: (p) => <span className="text-slate-600">{p.pd || "—"}</span> },
-    { key: "pm", header: "PM", render: (p) => <span className="text-slate-600">{p.pm || "—"}</span> },
+    { key: "pd", header: "PD", render: (p) => <span className="text-slate-600 truncate max-w-[80px] block" title={p.pd || ""}>{truncateName(p.pd, 12)}</span> },
+    { key: "pm", header: "PM", render: (p) => <span className="text-slate-600 truncate max-w-[80px] block" title={p.pm || ""}>{truncateName(p.pm, 12)}</span> },
     {
       key: "cost_proposal_signed",
       header: "Cost Prop.",
@@ -939,7 +945,6 @@ export default function ProjectsSummary() {
     {
       key: "task_counts",
       header: "Tasks",
-      minW: "min-w-[100px]",
       render: (p) => {
         const counts = p.task_status_counts || {};
         const total = Object.values(counts).reduce((s, c) => s + c, 0);
@@ -998,31 +1003,31 @@ export default function ProjectsSummary() {
         );
       },
     },
-    { key: "pd_handover_date", header: "PD Handover", render: (p) => (
+    { key: "pd_handover_date", header: "PD H/O", render: (p) => (
       <span className="flex items-center gap-1 text-slate-600" title={p.date_sources?.pd_handover === 'plan' ? 'From project plan' : p.date_sources?.pd_handover === 'info' ? 'From info table' : ''}>
         {formatDate(p.pd_handover_date)}
         {p.date_sources?.pd_handover === 'plan' && <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block flex-shrink-0" title="From project plan" />}
       </span>
     )},
-    { key: "construction_start_date", header: "Constr. Start", render: (p) => (
+    { key: "construction_start_date", header: "C.Start", render: (p) => (
       <span className="flex items-center gap-1 text-slate-600" title={p.date_sources?.construction_start === 'plan' ? 'From project plan' : p.date_sources?.construction_start === 'info' ? 'From info table' : ''}>
         {formatDate(p.construction_start_date)}
         {p.date_sources?.construction_start === 'plan' && <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block flex-shrink-0" title="From project plan" />}
       </span>
     )},
-    { key: "commissioning_date", header: "Commission", render: (p) => (
+    { key: "commissioning_date", header: "Comm.", render: (p) => (
       <span className="flex items-center gap-1 text-slate-600" title={p.date_sources?.commissioning === 'plan' ? 'From project plan' : p.date_sources?.commissioning === 'info' ? 'From info table' : ''}>
         {formatDate(p.commissioning_date)}
         {p.date_sources?.commissioning === 'plan' && <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block flex-shrink-0" title="From project plan" />}
       </span>
     )},
-    { key: "om_handover_date", header: "O&M Handover", render: (p) => (
+    { key: "om_handover_date", header: "O&M", render: (p) => (
       <span className="flex items-center gap-1 text-slate-600" title={p.date_sources?.om_handover === 'plan' ? 'From project plan' : p.date_sources?.om_handover === 'info' ? 'From info table' : ''}>
         {formatDate(p.om_handover_date)}
         {p.date_sources?.om_handover === 'plan' && <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block flex-shrink-0" title="From project plan" />}
       </span>
     )},
-    { key: "client_handover_date", header: "Client Handover", render: (p) => (
+    { key: "client_handover_date", header: "Client", render: (p) => (
       <span className="flex items-center gap-1 text-slate-600" title={p.date_sources?.client_handover === 'plan' ? 'From project plan' : p.date_sources?.client_handover === 'info' ? 'From info table' : ''}>
         {formatDate(p.client_handover_date)}
         {p.date_sources?.client_handover === 'plan' && <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block flex-shrink-0" title="From project plan" />}
@@ -1042,26 +1047,25 @@ export default function ProjectsSummary() {
     },
     {
       key: "project_pct_complete",
-      header: "Actual %",
-      minW: "min-w-[110px]",
+      header: "Act%",
       render: (p) => {
         const pct = p.project_pct_complete != null ? p.project_pct_complete * 100 : 0;
         return (
-          <div className="flex items-center gap-1.5 min-w-[100px]">
-            <div className="flex-1 h-2.5 bg-slate-100 rounded-full overflow-hidden">
+          <div className="flex items-center gap-1 min-w-[60px]">
+            <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
               <div
                 className={`h-full rounded-full transition-all duration-500 ${progressColor(pct)}`}
                 style={{ width: `${Math.min(pct, 100)}%` }}
               />
             </div>
-            <span className="font-mono text-[11px] w-10 text-right font-medium text-slate-700">{pct.toFixed(0)}%</span>
+            <span className="font-mono text-[10px] w-8 text-right font-medium text-slate-700">{pct.toFixed(0)}%</span>
           </div>
         );
       },
     },
     {
       key: "expected_pct_complete",
-      header: "Expected %",
+      header: "Exp%",
       align: "right",
       render: (p) => <span className="font-mono text-slate-600">{formatPct(p.expected_pct_complete)}</span>,
     },
@@ -1241,15 +1245,39 @@ export default function ProjectsSummary() {
       </div>
 
       <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm bg-white">
-        <div className="overflow-x-auto max-h-[calc(100vh-280px)] sm:max-h-[calc(100vh-340px)]">
-          <table className="w-full text-[11px] border-collapse min-w-[2200px]">
+        <div className="overflow-auto max-h-[calc(100vh-280px)] sm:max-h-[calc(100vh-340px)]">
+          <table className="w-full text-[10px] border-collapse table-fixed" style={{ minWidth: "100%" }}>
+            <colgroup>
+              <col style={{ width: "130px" }} />
+              <col style={{ width: "42px" }} />
+              <col style={{ width: "78px" }} />
+              <col style={{ width: "78px" }} />
+              <col style={{ width: "62px" }} />
+              <col style={{ width: "62px" }} />
+              <col style={{ width: "62px" }} />
+              <col style={{ width: "52px" }} />
+              <col style={{ width: "90px" }} />
+              <col style={{ width: "60px" }} />
+              <col style={{ width: "58px" }} />
+              <col style={{ width: "68px" }} />
+              <col style={{ width: "64px" }} />
+              <col style={{ width: "64px" }} />
+              <col style={{ width: "52px" }} />
+              <col style={{ width: "56px" }} />
+              <col style={{ width: "36px" }} />
+              <col style={{ width: "44px" }} />
+              <col style={{ width: "72px" }} />
+              <col style={{ width: "42px" }} />
+              <col style={{ width: "56px" }} />
+              {isAdmin && <col style={{ width: "32px" }} />}
+            </colgroup>
             <thead className="sticky top-0 z-20">
               <tr>
                 {columnGroups.map((g, i) => (
                   <th
                     key={i}
                     colSpan={g.colSpan}
-                    className={`px-2 py-1.5 text-[10px] font-bold uppercase tracking-wider border-b border-slate-200 ${g.color} ${
+                    className={`px-1 py-1 text-[9px] font-bold uppercase tracking-wider border-b border-slate-200 ${g.color} ${
                       g.stickyFirst ? "sticky left-0 z-30" : ""
                     } ${i > 0 ? "border-l border-slate-200" : ""}`}
                   >
@@ -1261,9 +1289,9 @@ export default function ProjectsSummary() {
                 {columns.map((col) => (
                   <th
                     key={col.key}
-                    className={`px-2.5 py-2 text-left font-semibold text-slate-600 whitespace-nowrap cursor-pointer hover:bg-slate-50 select-none transition-colors ${
+                    className={`px-1 py-1.5 text-left font-semibold text-slate-600 whitespace-nowrap cursor-pointer hover:bg-slate-50 select-none transition-colors text-[9px] ${
                       col.sticky ? "sticky left-0 z-30 bg-white shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]" : ""
-                    } ${col.align === "right" ? "text-right" : ""} ${col.minW || ""}`}
+                    } ${col.align === "right" ? "text-right" : ""}`}
                     onClick={() => handleSort(col.key)}
                     data-testid={`sort-${col.key}`}
                   >
@@ -1287,7 +1315,7 @@ export default function ProjectsSummary() {
                   {columns.map((col) => (
                     <td
                       key={col.key}
-                      className={`px-2.5 py-2 whitespace-nowrap ${
+                      className={`px-1 py-1.5 whitespace-nowrap overflow-hidden text-ellipsis ${
                         col.sticky ? "sticky left-0 z-10 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]" : ""
                       } ${col.sticky ? (idx % 2 === 0 ? "bg-white" : "bg-slate-50/80") : ""} ${
                         col.align === "right" ? "text-right" : ""
@@ -1304,12 +1332,12 @@ export default function ProjectsSummary() {
                 {columns.map((col) => (
                   <td
                     key={col.key}
-                    className={`px-2.5 py-2.5 whitespace-nowrap ${
+                    className={`px-1 py-1.5 whitespace-nowrap ${
                       col.sticky ? "sticky left-0 z-10 bg-slate-50 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]" : ""
                     } ${col.align === "right" ? "text-right" : ""}`}
                   >
                     {col.key === "project_name" ? (
-                      <span className="font-bold text-slate-700 text-xs">Portfolio ({sorted.length} projects)</span>
+                      <span className="font-bold text-slate-700 text-[10px]">Portfolio ({sorted.length})</span>
                     ) : col.key === "size_kwp" ? (
                       <span className="font-mono font-bold text-slate-700">{stats.totalKwp.toFixed(0)}</span>
                     ) : null}
