@@ -708,16 +708,17 @@ export class DatabaseStorage implements IStorage {
   async upsertProjectInfo(info: InsertProjectInfo): Promise<ProjectInfo> {
     const existing = await this.getProjectInfo(info.projectName);
     if (existing) {
+      const { executionEnabled, ...updateFields } = info as any;
       const [updated] = await this.dbInstance
         .update(projectInfo)
-        .set({ ...info, updatedAt: new Date() })
+        .set({ ...updateFields, updatedAt: new Date() })
         .where(eq(projectInfo.projectName, info.projectName))
         .returning();
       return updated;
     }
-    // Explicitly provide timestamp for SQLite compatibility
     const [created] = await this.dbInstance.insert(projectInfo).values({
       ...info,
+      executionEnabled: false,
       updatedAt: new Date(),
     }).returning();
     return created;

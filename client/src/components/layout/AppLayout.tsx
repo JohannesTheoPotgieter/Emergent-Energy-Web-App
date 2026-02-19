@@ -32,6 +32,7 @@ import {
   FolderPlus,
   Mail,
   InboxIcon,
+  Zap,
 } from "lucide-react";
 import { useProgramData } from "@/hooks/use-program-data";
 import { useAuth } from "@/hooks/use-auth";
@@ -69,6 +70,7 @@ function getNavGroups(): NavGroup[] {
         { label: "Project Summary", icon: FileSpreadsheet, path: "/projects" },
         { label: "Cashflow", icon: Wallet, path: "/cashflow" },
         { label: "COS Tracker", icon: TrendingUp, path: "/cos", className: "rotate-180" },
+        { label: "Execution Board", icon: Zap, path: "/execution-board" },
       ],
     },
     {

@@ -43,6 +43,7 @@ import TriageInboxPage from "@/pages/triage-inbox";
 import UnclassifiedTasksPage from "@/pages/unclassified-tasks";
 import RoleSettingsPage from "@/pages/role-settings";
 import LifecycleBoardPage from "@/pages/lifecycle-board";
+import ExecutionBoardPage from "@/pages/execution-board";
 
 import { useAuth } from "@/hooks/use-auth";
 import { useProgramData } from "@/hooks/use-program-data";
@@ -229,6 +230,7 @@ function ProtectedPages() {
         <Route path="/admin/phase-templates" component={PhaseTemplatesPage} />
         <Route path="/project-create" component={ProjectCreatePage} />
         <Route path="/lifecycle-board" component={LifecycleBoardPage} />
+        <Route path="/execution-board" component={ExecutionBoardPage} />
         <Route path="/my-tool/cockpit" component={ExecCockpitPage} />
         <Route path="/my-tool/triage-inbox" component={TriageInboxPage} />
         <Route path="/my-tool/unclassified-tasks" component={UnclassifiedTasksPage} />
