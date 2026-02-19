@@ -41,8 +41,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const response = await authApi.login(email, password);
       setUser(response.user);
-      // Store JWT token for authenticated requests
-      setAuthToken(response.token);
+      const existingRoleToken = localStorage.getItem("auth_token");
+      if (!existingRoleToken) {
+        setAuthToken(response.token);
+      }
       toast({
         title: "Welcome back!",
         description: `Logged in as ${response.user.name}`,
