@@ -464,6 +464,8 @@ export default function Home() {
           <p className="text-muted-foreground mt-1">Navigate to the section you need below.</p>
         </div>
 
+        <CompanyPrioritiesSection isAdmin={false} />
+
         <div>
           <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Project Management</h2>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
