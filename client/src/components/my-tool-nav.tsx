@@ -7,12 +7,16 @@ import {
   ListTodo,
   Settings,
   HelpCircle,
+  Mail,
+  Inbox,
 } from "lucide-react";
 
 const navTabs = [
   { label: "Today", path: "/my-tool", icon: Target },
   { label: "Week", path: "/my-tool/week", icon: CalendarDays },
   { label: "Backlog", path: "/my-tool/backlog", icon: ListTodo },
+  { label: "Triage", path: "/my-tool/triage-inbox", icon: Mail },
+  { label: "Unclassified", path: "/my-tool/unclassified-tasks", icon: Inbox },
   { label: "Settings", path: "/my-tool/settings", icon: Settings },
 ];
 
