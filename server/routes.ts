@@ -443,6 +443,14 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   
+  function safeguardImportProjectInfo(info: any): any {
+    if (info.phase && !info.executionPhase) {
+      info.executionPhase = info.phase;
+    }
+    info.executionEnabled = false;
+    return info;
+  }
+
   // ==================== HEALTH CHECK ====================
   
   app.get("/api/health", async (req, res) => {
@@ -3148,8 +3156,9 @@ export async function registerRoutes(
               }
             }
 
-            // Insert project info
+            // Insert project info (safeguard: never enable execution from import, map phase→executionPhase)
             if (parseResult.projectInfo) {
+              safeguardImportProjectInfo(parseResult.projectInfo);
               await txStorage.upsertProjectInfo(parseResult.projectInfo);
             }
 
@@ -3309,8 +3318,9 @@ export async function registerRoutes(
           await storage.deleteFinanceRevenueMonthlyByProject(parseResult.projectName);
           await storage.deleteFinanceCosMonthlyByProject(parseResult.projectName);
           
-          // Re-insert all data
+          // Re-insert all data (safeguard: never enable execution from import)
           if (parseResult.projectInfo) {
+            safeguardImportProjectInfo(parseResult.projectInfo);
             await storage.upsertProjectInfo(parseResult.projectInfo);
           }
           if (parseResult.expenses.length > 0) {
@@ -4715,7 +4725,7 @@ export async function registerRoutes(
               await txStorage.deleteCashflowPointsByProject(parseResult.projectName);
               await txStorage.deleteFinanceRevenueMonthlyByProject(parseResult.projectName);
               await txStorage.deleteFinanceCosMonthlyByProject(parseResult.projectName);
-              if (parseResult.projectInfo) await txStorage.upsertProjectInfo(parseResult.projectInfo);
+              if (parseResult.projectInfo) { safeguardImportProjectInfo(parseResult.projectInfo); await txStorage.upsertProjectInfo(parseResult.projectInfo); }
               if (parseResult.expenses.length > 0) await txStorage.createManyProgramExpenses(parseResult.expenses);
               if (parseResult.inflows.length > 0) await txStorage.createManyProgramInflows(parseResult.inflows);
               if (parseResult.planItems.length > 0) await txStorage.createManyProjectPlans(parseResult.planItems);
@@ -4784,7 +4794,7 @@ export async function registerRoutes(
             await txStorage.deleteCashflowPointsByProject(parseResult.projectName);
             await txStorage.deleteFinanceRevenueMonthlyByProject(parseResult.projectName);
             await txStorage.deleteFinanceCosMonthlyByProject(parseResult.projectName);
-            if (parseResult.projectInfo) await txStorage.upsertProjectInfo(parseResult.projectInfo);
+            if (parseResult.projectInfo) { safeguardImportProjectInfo(parseResult.projectInfo); await txStorage.upsertProjectInfo(parseResult.projectInfo); }
             if (parseResult.expenses.length > 0) await txStorage.createManyProgramExpenses(parseResult.expenses);
             if (parseResult.inflows.length > 0) await txStorage.createManyProgramInflows(parseResult.inflows);
             if (parseResult.planItems.length > 0) await txStorage.createManyProjectPlans(parseResult.planItems);
@@ -4993,6 +5003,7 @@ export async function registerRoutes(
             await txStorage.deleteFinanceCosMonthlyByProject(parseResult.projectName);
             
             if (parseResult.projectInfo) {
+              safeguardImportProjectInfo(parseResult.projectInfo);
               await txStorage.upsertProjectInfo(parseResult.projectInfo);
             }
             if (parseResult.expenses.length > 0) {

@@ -2,7 +2,7 @@ import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, sql, inArray } from "drizzle-orm";
 import { verifyToken } from "./jwt";
-import { projectInfo, operationalTasks, projectPlan } from "@shared/schema";
+import { projectInfo, operationalTasks, projectPlan, executionGateLog, mergeAuditLog } from "@shared/schema";
 
 function jwtAuth(req: Request, _res: Response, next: NextFunction) {
   if ((req as any).user) return next();
@@ -55,6 +55,13 @@ export function registerLifecycleRoutes(app: Express) {
         isActive: projectInfo.isActive,
         escalationLevel: projectInfo.escalationLevel,
         ragStatus: projectInfo.ragStatus,
+        executionEnabled: projectInfo.executionEnabled,
+        executionGateStatus: projectInfo.executionGateStatus,
+        signedStatus: projectInfo.signedStatus,
+        signedDate: projectInfo.signedDate,
+        signedDocumentLink: projectInfo.signedDocumentLink,
+        executionPhase: projectInfo.executionPhase,
+        archivedStatus: projectInfo.archivedStatus,
       }).from(projectInfo);
 
       const allEngTasks = await db.select({
@@ -122,6 +129,11 @@ export function registerLifecycleRoutes(app: Express) {
           isActive: proj.isActive,
           escalationLevel: proj.escalationLevel,
           ragStatus: proj.ragStatus,
+          executionEnabled: proj.executionEnabled,
+          executionGateStatus: proj.executionGateStatus,
+          signedStatus: proj.signedStatus,
+          executionPhase: proj.executionPhase,
+          archivedStatus: proj.archivedStatus,
           source,
           engTotal: eng.total,
           engDone: eng.done,
@@ -188,13 +200,16 @@ export function registerLifecycleRoutes(app: Express) {
 
   app.post("/api/lifecycle-board/projects/merge", requireAuth, requireExecRole, async (req: Request, res: Response) => {
     try {
-      const { sourceProjectId, targetProjectId } = req.body;
+      const { sourceProjectId, targetProjectId, reason } = req.body;
       if (!sourceProjectId || !targetProjectId) {
         return res.status(400).json({ error: "sourceProjectId and targetProjectId are required" });
       }
       if (sourceProjectId === targetProjectId) {
         return res.status(400).json({ error: "Cannot merge a project with itself" });
       }
+
+      const userId = ((req as any).user as any)?.id || null;
+      const userRole = ((req as any).user as any)?.role || null;
 
       const result = await db.transaction(async (tx: any) => {
         const [source] = await tx.select().from(projectInfo).where(eq(projectInfo.id, sourceProjectId));
@@ -215,12 +230,49 @@ export function registerLifecycleRoutes(app: Express) {
           .where(eq(projectPlan.projectName, source.projectName))
           .returning();
 
-        await tx.delete(projectInfo).where(eq(projectInfo.id, sourceProjectId));
+        const fillFields: Record<string, any> = {};
+        const conflicts: { field: string; primaryValue: any; secondaryValue: any }[] = [];
+        const mergeFields = ['sizeKwp', 'pd', 'pm', 'contractValue', 'signedStatus', 'signedDate', 'signedDocumentLink'] as const;
+        for (const field of mergeFields) {
+          const tVal = (target as any)[field];
+          const sVal = (source as any)[field];
+          if ((tVal == null || tVal === '' || tVal === 'NONE') && sVal != null && sVal !== '' && sVal !== 'NONE') {
+            fillFields[field] = sVal;
+          } else if (tVal != null && sVal != null && tVal !== sVal) {
+            conflicts.push({ field, primaryValue: tVal, secondaryValue: sVal });
+          }
+        }
+        if (Object.keys(fillFields).length > 0) {
+          fillFields.updatedAt = new Date();
+          await tx.update(projectInfo).set(fillFields).where(eq(projectInfo.id, targetProjectId));
+        }
+
+        await tx.update(projectInfo).set({
+          archivedStatus: 'ARCHIVED_MERGED',
+          canonicalProjectId: targetProjectId,
+          isActive: false,
+          updatedAt: new Date(),
+        }).where(eq(projectInfo.id, sourceProjectId));
+
+        await tx.insert(mergeAuditLog).values({
+          primaryProjectId: targetProjectId,
+          secondaryProjectId: sourceProjectId,
+          primaryProjectName: target.projectName,
+          secondaryProjectName: source.projectName,
+          mergedByUserId: userId,
+          mergedByRole: userRole,
+          reason: reason || null,
+          conflictsJson: conflicts.length > 0 ? JSON.stringify(conflicts) : null,
+          movedTaskCount: movedTasks.length,
+          movedPlanCount: movedPlan.length,
+        });
 
         return {
           merged: true,
           movedTasks: movedTasks.length,
           movedPlanEntries: movedPlan.length,
+          fieldsFilled: Object.keys(fillFields).filter(k => k !== 'updatedAt'),
+          conflicts,
           source: source.projectName,
           target: target.projectName,
         };
@@ -333,6 +385,209 @@ export function registerLifecycleRoutes(app: Express) {
       res.json(updated);
     } catch (err: any) {
       console.error("[lifecycle-board] PATCH phase error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/lifecycle-board/projects/:id/execution-gate", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id as string);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid project id" });
+
+      const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, id));
+      if (!project) return res.status(404).json({ error: "Project not found" });
+
+      const isEligible = project.signedStatus !== 'NONE' && project.signedDate != null && project.signedDocumentLink != null && project.signedDocumentLink.trim() !== '';
+      const gateStatus = project.executionEnabled ? 'ENABLED' : (isEligible ? 'ELIGIBLE' : 'NOT_ELIGIBLE');
+      const eligibilityReasons: string[] = [];
+      if (project.signedStatus === 'NONE') eligibilityReasons.push('No signed status set');
+      if (!project.signedDate) eligibilityReasons.push('No signed date');
+      if (!project.signedDocumentLink?.trim()) eligibilityReasons.push('No signed document link');
+
+      res.json({
+        id: project.id,
+        projectName: project.projectName,
+        signedStatus: project.signedStatus,
+        signedDate: project.signedDate,
+        signedDocumentLink: project.signedDocumentLink,
+        executionEnabled: project.executionEnabled,
+        executionGateStatus: gateStatus,
+        executionGateReason: project.executionGateReason,
+        executionPhase: project.executionPhase,
+        excelTrackerLink: project.excelTrackerLink,
+        eligibilityReasons,
+        isEligible,
+      });
+    } catch (err: any) {
+      console.error("[lifecycle-board] GET execution-gate error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/lifecycle-board/projects/:id/execution-gate", requireAuth, requireExecRole, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id as string);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid project id" });
+
+      const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, id));
+      if (!project) return res.status(404).json({ error: "Project not found" });
+
+      const { signedStatus, signedDate, signedDocumentLink, executionEnabled, reason } = req.body;
+
+      const updates: Record<string, any> = { updatedAt: new Date() };
+      if (signedStatus !== undefined) updates.signedStatus = signedStatus;
+      if (signedDate !== undefined) updates.signedDate = signedDate;
+      if (signedDocumentLink !== undefined) updates.signedDocumentLink = signedDocumentLink;
+
+      const effectiveSignedStatus = signedStatus !== undefined ? signedStatus : project.signedStatus;
+      const effectiveSignedDate = signedDate !== undefined ? signedDate : project.signedDate;
+      const effectiveSignedDocumentLink = signedDocumentLink !== undefined ? signedDocumentLink : project.signedDocumentLink;
+
+      const isEligible = effectiveSignedStatus !== 'NONE' && effectiveSignedDate != null && effectiveSignedDocumentLink != null && effectiveSignedDocumentLink.trim() !== '';
+
+      if (executionEnabled === true && !isEligible && !reason) {
+        const eligibilityReasons: string[] = [];
+        if (effectiveSignedStatus === 'NONE') eligibilityReasons.push('No signed status set');
+        if (!effectiveSignedDate) eligibilityReasons.push('No signed date');
+        if (!effectiveSignedDocumentLink?.trim()) eligibilityReasons.push('No signed document link');
+        return res.status(400).json({
+          error: "Project is not eligible for execution",
+          eligibilityReasons,
+          message: "Provide a reason to override eligibility requirements",
+        });
+      }
+
+      if (executionEnabled !== undefined) updates.executionEnabled = executionEnabled;
+
+      const effectiveExecutionEnabled = executionEnabled !== undefined ? executionEnabled : project.executionEnabled;
+      const newGateStatus = effectiveExecutionEnabled ? 'ENABLED' : (isEligible ? 'ELIGIBLE' : 'NOT_ELIGIBLE');
+      updates.executionGateStatus = newGateStatus;
+      if (reason !== undefined) updates.executionGateReason = reason;
+
+      const previousStatus = project.executionGateStatus;
+
+      const [updated] = await db.update(projectInfo).set(updates).where(eq(projectInfo.id, id)).returning();
+
+      const user = (req as any).user as any;
+      await db.insert(executionGateLog).values({
+        projectId: id,
+        action: executionEnabled !== undefined ? (executionEnabled ? 'ENABLE' : 'DISABLE') : 'UPDATE',
+        previousStatus,
+        newStatus: newGateStatus,
+        reason: reason || null,
+        changedByUserId: user?.id || null,
+        changedByRole: user?.role || null,
+      });
+
+      const responseEligibilityReasons: string[] = [];
+      if (effectiveSignedStatus === 'NONE') responseEligibilityReasons.push('No signed status set');
+      if (!effectiveSignedDate) responseEligibilityReasons.push('No signed date');
+      if (!effectiveSignedDocumentLink?.trim()) responseEligibilityReasons.push('No signed document link');
+
+      res.json({
+        id: updated.id,
+        projectName: updated.projectName,
+        signedStatus: updated.signedStatus,
+        signedDate: updated.signedDate,
+        signedDocumentLink: updated.signedDocumentLink,
+        executionEnabled: updated.executionEnabled,
+        executionGateStatus: newGateStatus,
+        executionGateReason: updated.executionGateReason,
+        executionPhase: updated.executionPhase,
+        excelTrackerLink: updated.excelTrackerLink,
+        eligibilityReasons: responseEligibilityReasons,
+        isEligible,
+      });
+    } catch (err: any) {
+      console.error("[lifecycle-board] PATCH execution-gate error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/lifecycle-board/projects/merge-preview", requireAuth, requireExecRole, async (req: Request, res: Response) => {
+    try {
+      const primaryId = parseInt(req.query.primaryId as string);
+      const secondaryId = parseInt(req.query.secondaryId as string);
+      if (isNaN(primaryId) || isNaN(secondaryId)) {
+        return res.status(400).json({ error: "primaryId and secondaryId query params are required" });
+      }
+
+      const [primary] = await db.select().from(projectInfo).where(eq(projectInfo.id, primaryId));
+      const [secondary] = await db.select().from(projectInfo).where(eq(projectInfo.id, secondaryId));
+      if (!primary) return res.status(404).json({ error: "Primary project not found" });
+      if (!secondary) return res.status(404).json({ error: "Secondary project not found" });
+
+      const primaryClean = primary.projectName.replace(/_Tracker$/i, "").replace(/_/g, " ");
+      const secondaryClean = secondary.projectName.replace(/_Tracker$/i, "").replace(/_/g, " ");
+
+      const allTasks = await db.select({ projectName: operationalTasks.projectName }).from(operationalTasks);
+      const allPlans = await db.select({ projectName: projectPlan.projectName }).from(projectPlan);
+
+      const primaryNorm = normalizeName(primary.projectName);
+      const secondaryNorm = normalizeName(secondary.projectName);
+
+      let primaryTaskCount = 0;
+      let secondaryTaskCount = 0;
+      for (const t of allTasks) {
+        if (!t.projectName) continue;
+        const norm = normalizeName(t.projectName);
+        if (norm === primaryNorm) primaryTaskCount++;
+        if (norm === secondaryNorm) secondaryTaskCount++;
+      }
+
+      let primaryPlanCount = 0;
+      let secondaryPlanCount = 0;
+      for (const p of allPlans) {
+        if (!p.projectName) continue;
+        if (p.projectName === primary.projectName) primaryPlanCount++;
+        if (p.projectName === secondary.projectName) secondaryPlanCount++;
+      }
+
+      const compareFields = [
+        "sizeKwp", "pd", "pm", "contractValue", "phase", "escalationLevel", "ragStatus",
+        "executionEnabled", "executionGateStatus", "signedStatus", "signedDate", "signedDocumentLink",
+      ] as const;
+
+      const conflicts: { field: string; primaryValue: any; secondaryValue: any }[] = [];
+      for (const field of compareFields) {
+        const pVal = (primary as any)[field];
+        const sVal = (secondary as any)[field];
+        if (pVal !== sVal && (pVal != null || sVal != null)) {
+          conflicts.push({ field, primaryValue: pVal, secondaryValue: sVal });
+        }
+      }
+
+      res.json({
+        primary: {
+          id: primary.id,
+          projectName: primary.projectName,
+          sizeKwp: primary.sizeKwp,
+          pd: primary.pd,
+          pm: primary.pm,
+          contractValue: primary.contractValue,
+          phase: primary.phase,
+          escalationLevel: primary.escalationLevel,
+          ragStatus: primary.ragStatus,
+        },
+        secondary: {
+          id: secondary.id,
+          projectName: secondary.projectName,
+          sizeKwp: secondary.sizeKwp,
+          pd: secondary.pd,
+          pm: secondary.pm,
+          contractValue: secondary.contractValue,
+          phase: secondary.phase,
+          escalationLevel: secondary.escalationLevel,
+          ragStatus: secondary.ragStatus,
+        },
+        conflicts,
+        primaryTaskCount,
+        secondaryTaskCount,
+        primaryPlanCount,
+        secondaryPlanCount,
+      });
+    } catch (err: any) {
+      console.error("[lifecycle-board] GET merge-preview error:", err);
       res.status(500).json({ error: err.message });
     }
   });

@@ -12,7 +12,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Search, Zap, User, Wrench, FileSpreadsheet, GripVertical, CheckCircle2, ClipboardList, Link2, Merge, ArrowRight, X, Save, AlertTriangle } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Loader2, Search, Zap, User, Wrench, FileSpreadsheet, GripVertical, CheckCircle2, ClipboardList, Link2, Merge, ArrowRight, X, Save, AlertTriangle, ShieldCheck } from "lucide-react";
 
 interface ProjectInfo {
   id: number | null;
@@ -31,6 +32,11 @@ interface ProjectInfo {
   planTotal: number;
   planAvgPct: number;
   projectPctComplete: number | null;
+  executionEnabled: boolean;
+  executionGateStatus: string;
+  signedStatus: string;
+  executionPhase: string | null;
+  archivedStatus: string;
 }
 
 const PHASE_GROUPS = [
@@ -226,7 +232,7 @@ export default function LifecycleBoardPage() {
   const [mergeTarget, setMergeTarget] = useState<string>("");
   const [actionLoading, setActionLoading] = useState(false);
   const [projectDialogOpen, setProjectDialogOpen] = useState(false);
-  const [dialogTab, setDialogTab] = useState<"edit" | "link" | "merge">("edit");
+  const [dialogTab, setDialogTab] = useState<"edit" | "link" | "merge" | "gate">("edit");
   const [editForm, setEditForm] = useState<{
     sizeKwp: string;
     pd: string;
@@ -237,7 +243,37 @@ export default function LifecycleBoardPage() {
     ragStatus: string;
   }>({ sizeKwp: "", pd: "", pm: "", contractValue: "", phase: "", escalationLevel: "", ragStatus: "" });
   const [editSaving, setEditSaving] = useState(false);
+  const [gateData, setGateData] = useState<{
+    signedStatus: string;
+    signedDate: string | null;
+    signedDocLink: string | null;
+    executionEnabled: boolean;
+    executionGateStatus: string;
+    executionPhase: string | null;
+    overrideReason: string | null;
+    eligibilityReasons: string[];
+  } | null>(null);
+  const [gateLoading, setGateLoading] = useState(false);
+  const [gateSaving, setGateSaving] = useState(false);
+  const [gateForm, setGateForm] = useState({
+    signedStatus: "NONE",
+    signedDate: "",
+    signedDocLink: "",
+    executionEnabled: false,
+    overrideReason: "",
+  });
+  const [showOverrideReason, setShowOverrideReason] = useState(false);
   const { toast } = useToast();
+
+  const role = localStorage.getItem("company_role") || "";
+  const isExec = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER"].includes(role);
+
+  function getGateAuthHeaders(): HeadersInit {
+    const token = localStorage.getItem("company_role_token");
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    return headers;
+  }
 
   const loadData = useCallback(async () => {
     try {
@@ -274,7 +310,66 @@ export default function LifecycleBoardPage() {
     setLinkTarget("");
     setMergeTarget("");
     setDialogTab("edit");
+    setGateData(null);
+    setShowOverrideReason(false);
     setProjectDialogOpen(true);
+  };
+
+  const loadGateData = async (projectId: number) => {
+    setGateLoading(true);
+    try {
+      const res = await fetch(`/api/lifecycle-board/projects/${projectId}/execution-gate`, {
+        credentials: "include",
+        headers: getGateAuthHeaders(),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setGateData(data);
+        setGateForm({
+          signedStatus: data.signedStatus || "NONE",
+          signedDate: data.signedDate || "",
+          signedDocLink: data.signedDocLink || "",
+          executionEnabled: data.executionEnabled || false,
+          overrideReason: data.overrideReason || "",
+        });
+        setShowOverrideReason(false);
+      }
+    } catch {
+      setGateData(null);
+    } finally {
+      setGateLoading(false);
+    }
+  };
+
+  const handleSaveGate = async () => {
+    if (!selectedProject?.id) return;
+    setGateSaving(true);
+    try {
+      const res = await fetch(`/api/lifecycle-board/projects/${selectedProject.id}/execution-gate`, {
+        method: "PATCH",
+        headers: getGateAuthHeaders(),
+        credentials: "include",
+        body: JSON.stringify({
+          signedStatus: gateForm.signedStatus,
+          signedDate: gateForm.signedDate || null,
+          signedDocLink: gateForm.signedDocLink || null,
+          executionEnabled: gateForm.executionEnabled,
+          overrideReason: gateForm.overrideReason || null,
+        }),
+      });
+      if (res.ok) {
+        toast({ title: "Gate Updated", description: "Execution gate settings saved" });
+        loadData();
+        loadGateData(selectedProject.id);
+      } else {
+        const err = await res.json();
+        toast({ title: "Error", description: err.error || "Failed to save gate", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Error", description: "Network error", variant: "destructive" });
+    } finally {
+      setGateSaving(false);
+    }
   };
 
   const handleSaveEdit = async () => {
@@ -477,6 +572,8 @@ export default function LifecycleBoardPage() {
   };
 
   const filtered = projects.filter((p) => {
+    if (p.archivedStatus === 'ARCHIVED_MERGED') return false;
+    if (p.archivedStatus && p.archivedStatus !== 'ACTIVE') return false;
     if (showActiveOnly && !p.isActive) return false;
     if (searchTerm) {
       const clean = cleanProjectName(p.projectName).toLowerCase();
@@ -602,6 +699,16 @@ export default function LifecycleBoardPage() {
                                 {parseFloat(p.sizeKwp).toFixed(0)} kWp
                               </span>
                             )}
+                            {p.executionEnabled && (
+                              <Badge className="bg-green-100 text-green-700 text-[9px] px-1 py-0 border-green-300" data-testid={`badge-execution-${p.id}`}>
+                                <ShieldCheck className="w-2.5 h-2.5 mr-0.5" />Execution
+                              </Badge>
+                            )}
+                            {!p.executionEnabled && p.executionGateStatus === "ELIGIBLE" && (
+                              <Badge className="bg-yellow-100 text-yellow-700 text-[9px] px-1 py-0 border-yellow-300" data-testid={`badge-eligible-${p.id}`}>
+                                Eligible
+                              </Badge>
+                            )}
                           </div>
                           {formatZAR(p.contractValue) && (
                             <div className="text-[10px] text-muted-foreground truncate" data-testid={`text-value-${p.id}`}>
@@ -688,6 +795,17 @@ export default function LifecycleBoardPage() {
                   <Merge className="w-3.5 h-3.5 inline mr-1.5" />
                   Merge
                 </button>
+                {selectedProject.id && selectedProject.id > 0 && (
+                  <button
+                    type="button"
+                    className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${dialogTab === "gate" ? "border-green-600 text-green-600" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+                    onClick={() => { setDialogTab("gate"); setLinkTarget(""); setMergeTarget(""); if (selectedProject.id) loadGateData(selectedProject.id); }}
+                    data-testid="tab-gate"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5 inline mr-1.5" />
+                    Gate
+                  </button>
+                )}
               </div>
 
               {dialogTab === "edit" && (
@@ -923,6 +1041,169 @@ export default function LifecycleBoardPage() {
                       Merge Project
                     </Button>
                   </DialogFooter>
+                </div>
+              )}
+
+              {dialogTab === "gate" && (
+                <div className="space-y-3" data-testid="gate-panel">
+                  {gateLoading ? (
+                    <div className="flex items-center justify-center py-6">
+                      <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : gateData ? (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-medium text-muted-foreground">Eligibility Status</span>
+                        {gateData.executionGateStatus === "ELIGIBLE" ? (
+                          <Badge className="bg-green-100 text-green-700 border-green-300 text-xs" data-testid="badge-eligible">
+                            <CheckCircle2 className="w-3 h-3 mr-1" />Eligible
+                          </Badge>
+                        ) : (
+                          <Badge className="bg-red-100 text-red-700 border-red-300 text-xs" data-testid="badge-not-eligible">
+                            <AlertTriangle className="w-3 h-3 mr-1" />Not Eligible
+                          </Badge>
+                        )}
+                      </div>
+                      {gateData.executionGateStatus !== "ELIGIBLE" && gateData.eligibilityReasons && gateData.eligibilityReasons.length > 0 && (
+                        <div className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2 space-y-0.5" data-testid="gate-eligibility-reasons">
+                          {gateData.eligibilityReasons.map((r, i) => (
+                            <div key={i}>• {r}</div>
+                          ))}
+                        </div>
+                      )}
+
+                      <div>
+                        <Label className="text-xs">Signed Status</Label>
+                        {isExec ? (
+                          <Select
+                            value={gateForm.signedStatus}
+                            onValueChange={(val) => setGateForm(f => ({ ...f, signedStatus: val }))}
+                          >
+                            <SelectTrigger data-testid="select-gate-signed-status">
+                              <SelectValue placeholder="Select status..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="NONE" data-testid="gate-signed-none">None</SelectItem>
+                              <SelectItem value="COST_PROPOSAL_SIGNED" data-testid="gate-signed-cost">Cost Proposal Signed</SelectItem>
+                              <SelectItem value="EPC_SIGNED" data-testid="gate-signed-epc">EPC Signed</SelectItem>
+                              <SelectItem value="DEAL_SIGNED" data-testid="gate-signed-deal">Deal Signed</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <div className="text-sm mt-1 font-medium" data-testid="text-gate-signed-status">
+                            {gateData.signedStatus === "NONE" ? "None" :
+                             gateData.signedStatus === "COST_PROPOSAL_SIGNED" ? "Cost Proposal Signed" :
+                             gateData.signedStatus === "EPC_SIGNED" ? "EPC Signed" :
+                             gateData.signedStatus === "DEAL_SIGNED" ? "Deal Signed" : gateData.signedStatus}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="grid gap-3 grid-cols-2">
+                        <div>
+                          <Label className="text-xs">Signed Date</Label>
+                          {isExec ? (
+                            <Input
+                              type="date"
+                              value={gateForm.signedDate}
+                              onChange={(e) => setGateForm(f => ({ ...f, signedDate: e.target.value }))}
+                              data-testid="input-gate-signed-date"
+                            />
+                          ) : (
+                            <div className="text-sm mt-1 font-medium" data-testid="text-gate-signed-date">
+                              {gateData.signedDate || "—"}
+                            </div>
+                          )}
+                        </div>
+                        <div>
+                          <Label className="text-xs">Signed Document Link</Label>
+                          {isExec ? (
+                            <Input
+                              value={gateForm.signedDocLink}
+                              onChange={(e) => setGateForm(f => ({ ...f, signedDocLink: e.target.value }))}
+                              placeholder="https://..."
+                              data-testid="input-gate-signed-doc-link"
+                            />
+                          ) : (
+                            <div className="text-sm mt-1 font-medium truncate" data-testid="text-gate-signed-doc-link">
+                              {gateData.signedDocLink ? (
+                                <a href={gateData.signedDocLink} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">{gateData.signedDocLink}</a>
+                              ) : "—"}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between py-2 border-t border-b">
+                        <div>
+                          <Label className="text-xs">Enable Execution</Label>
+                          <div className="text-[10px] text-muted-foreground">
+                            {gateForm.executionEnabled ? "Execution is enabled" : "Execution is disabled"}
+                          </div>
+                        </div>
+                        {isExec ? (
+                          <Switch
+                            checked={gateForm.executionEnabled}
+                            onCheckedChange={(checked) => {
+                              if (checked && gateData.executionGateStatus !== "ELIGIBLE") {
+                                setShowOverrideReason(true);
+                              } else {
+                                setShowOverrideReason(false);
+                                setGateForm(f => ({ ...f, overrideReason: "" }));
+                              }
+                              setGateForm(f => ({ ...f, executionEnabled: checked }));
+                            }}
+                            data-testid="switch-gate-execution-enabled"
+                          />
+                        ) : (
+                          <Badge className={gateForm.executionEnabled ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"} data-testid="badge-gate-execution-status">
+                            {gateForm.executionEnabled ? "Enabled" : "Disabled"}
+                          </Badge>
+                        )}
+                      </div>
+
+                      {showOverrideReason && isExec && (
+                        <div data-testid="gate-override-section">
+                          <Label className="text-xs text-amber-700">Override Reason (required)</Label>
+                          <Textarea
+                            value={gateForm.overrideReason}
+                            onChange={(e) => setGateForm(f => ({ ...f, overrideReason: e.target.value }))}
+                            placeholder="Explain why execution is being enabled without full eligibility..."
+                            className="mt-1 text-sm"
+                            rows={3}
+                            data-testid="textarea-gate-override-reason"
+                          />
+                        </div>
+                      )}
+
+                      <div>
+                        <Label className="text-xs">Execution Phase</Label>
+                        <div className="text-sm mt-1 font-medium" data-testid="text-gate-execution-phase">
+                          {gateData.executionPhase || "Not yet imported"}
+                        </div>
+                      </div>
+
+                      {isExec && (
+                        <DialogFooter>
+                          <Button variant="outline" onClick={() => setProjectDialogOpen(false)} data-testid="btn-cancel-gate">
+                            Cancel
+                          </Button>
+                          <Button
+                            onClick={handleSaveGate}
+                            disabled={gateSaving || (showOverrideReason && !gateForm.overrideReason.trim())}
+                            data-testid="btn-save-gate"
+                          >
+                            {gateSaving ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <ShieldCheck className="w-4 h-4 mr-1" />}
+                            Save Gate
+                          </Button>
+                        </DialogFooter>
+                      )}
+                    </>
+                  ) : (
+                    <div className="text-sm text-muted-foreground text-center py-4" data-testid="gate-no-data">
+                      No execution gate data available for this project.
+                    </div>
+                  )}
                 </div>
               )}
             </>

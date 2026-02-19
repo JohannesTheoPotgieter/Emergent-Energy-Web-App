@@ -1,0 +1,190 @@
+You are implementing a SMART EXCEL TRACKER IMPORT + NORMALIZATION ENGINE for the Emergent Energy web app.
+
+ABSOLUTE RULES (NON-NEGOTIABLE)
+1) DO NOT MAKE ASSUMPTIONS.
+   - If anything is unclear (field meaning, column mapping, phase names, status logic, date color logic, or source of truth), you must ask the COO/Admin (Johannes) for clarification BEFORE implementing that part.
+   - If you need answers, implement a “Questions for Admin” list on the Import Review screen that blocks final commit until resolved.
+2) DO NOT BREAK EXISTING FUNCTIONALITY.
+   - This must be additive only. Build on top of current code and current features.
+   - Do not remove, rename, or alter existing API contracts, ClickUp-linked task functionality, current boards, or current UI behavior.
+   - If changes are required for integration, use feature flags and keep legacy paths working.
+
+CONTEXT
+- Each project has an Excel tracker. Layouts vary slightly across projects, but the core intent is consistent.
+- Core sections to support (highest priority):
+  1) Project Plan
+  2) Revenue Tracking
+  3) Expenditure Breakdown
+- Cashflow exists but is secondary for this build (do not block import if cashflow is not detected).
+- The app must present a UNIFIED look and feel for all projects on the front end, regardless of Excel quirks.
+- Do not silently import ambiguous financial data. If something looks “funny”, stop and ask the user to confirm/override.
+- Execution phase is imported from Excel once an Excel exists. Execution phase is not the governance gate.
+
+GOAL
+Implement:
+A) Template/section detection (robust to layout variance)
+B) Column mapping with confidence scoring
+C) Normalized DB schema for plan/revenue/expenditure
+D) Import review UI for overrides + approvals
+E) Master data learning (suppliers/installers lists and mappings)
+F) Turnaround time calculations (invoice date -> paid date, etc.)
+G) Phase extraction (execution phases pulled in consistently from tracker)
+H) Unified project front-end views that look the same for every project
+
+SINGLE SOURCE OF TRUTH PRINCIPLE
+- Excel is an input. The database holds normalized records used by the front end.
+- If Excel layout varies, we detect + map + validate + confirm. We do not guess silently.
+
+DATA MODEL (CREATE OR EXTEND)
+1) ImportRun
+- id, project_id, uploaded_by, uploaded_at
+- source_file_name, source_file_hash
+- status (SUCCESS, SUCCESS_WITH_WARNINGS, BLOCKED_NEEDS_REVIEW, FAILED)
+- summary_json (counts per section, confidence scores)
+
+2) ImportIssue
+- id, import_run_id, severity (INFO, WARNING, BLOCKER)
+- section (PLAN, REVENUE, EXPENDITURE, CASHFLOW, GENERAL)
+- message
+- suggested_action
+- payload_json (e.g., detected headers, sheet name, row/col refs)
+
+3) TemplateProfile
+- id, name (e.g., “EE Standard vX”, “Custom - Mondi style”)
+- signature_json (sheet name patterns, anchor phrases, known header synonyms)
+- created_by, created_at
+
+4) MappingRule
+- id, template_profile_id
+- section (PLAN/REVENUE/EXPENDITURE)
+- source_header (string) -> canonical_field (string)
+- confidence_weight
+- examples_json
+
+5) Normalized tables
+A) PlanTask
+- id, project_id
+- task_name
+- phase (optional string/enum)
+- start_date, end_date
+- owner (optional), status (optional)
+- source_ref (sheet, row)
+- import_run_id
+
+B) RevenueLine
+- id, project_id
+- description / milestone_name
+- amount_ex_vat (number)
+- vat (number nullable)
+- invoice_number (nullable)
+- invoice_date (nullable)
+- expected_payment_date (nullable)
+- paid_date (nullable)
+- in_bank_date (nullable)
+- status (PLANNED, INVOICED, PAID, IN_BANK, REALISED)  // if unclear, ask admin
+- source_ref, import_run_id
+
+C) CostLine (Expenditure Breakdown)
+- id, project_id
+- cost_category (string)
+- counterparty_id (FK)
+- counterparty_type (SUPPLIER, INSTALLER, OTHER)
+- description
+- amount_ex_vat
+- invoice_number (nullable)
+- invoice_date (nullable)
+- approved_date (nullable)
+- paid_date (nullable)
+- status (PLANNED, INVOICED, APPROVED, PAID)  // if unclear, ask admin
+- source_ref, import_run_id
+
+D) Counterparty (Master data)
+- id
+- name_canonical
+- name_aliases (array/json)
+- type_default (SUPPLIER, INSTALLER, OTHER)
+- is_core (boolean)
+- created_by, created_at
+- last_seen_at
+
+E) ExecutionPhase (if not already)
+- id, project_id
+- phase_name (string/enum)
+- phase_date (nullable)
+- source (EXCEL_IMPORT/MANUAL)
+- import_run_id
+
+SECTION DETECTION (ROBUST)
+Implement detection using anchors + fuzzy matching:
+- Look across sheets for anchor phrases and header candidates.
+- Once detected, identify header row by the row with the highest density of known header words.
+- Determine table bounds by scanning contiguous non-empty rows after header until termination condition.
+
+COLUMN NORMALIZATION (CANONICAL FIELDS)
+For each section, map varying headers to canonical fields using:
+- known synonyms + prior MappingRules for this TemplateProfile
+- confidence scoring
+If canonical mapping is uncertain -> send to Import Review UI for confirmation.
+
+CONFIDENCE + REVIEW LOGIC
+- Compute confidence per section detection and per column mapping.
+- If any FINANCIAL section (REVENUE or EXPENDITURE) has low confidence OR missing required canonical fields:
+  - BLOCK auto-import and route to Import Review UI.
+- Required minimum fields:
+  REVENUE: description + amount_ex_vat
+  EXPENDITURE: amount_ex_vat + (description or cost_category) + counterparty_name (or force user confirmation)
+  PLAN: task_name + at least one date field (start/end) OR allow import with warning if admin accepts
+
+IMPORT REVIEW UI (MUST BUILD)
+Create an Import Review wizard that blocks final commit until all BLOCKERS are resolved:
+1) Section confirmation with previews and ability to select correct table
+2) Column mapping confirmation with dropdown overrides
+3) Anomalies and “looks funny” checks (duplicate invoices, missing amounts, invalid dates, date order, unknown counterparties)
+4) “Questions for Admin” panel:
+   - Any unclear logic must be listed here with required answer before final commit
+5) Commit import only after user confirmation
+
+MASTER DATA LEARNING (SUPPLIERS / INSTALLERS)
+- During EXPENDITURE import, extract counterparty names.
+- Canonicalize and match against Counterparty canonical/aliases.
+- If new: prompt user to classify (Supplier/Installer/Other) and whether core.
+- Save for next imports.
+- If conflict: prompt admin.
+
+TURNAROUND TIME METRICS
+Compute:
+- Cost turnaround: paid_date - invoice_date (days)
+- Revenue turnaround: (in_bank_date or paid_date) - invoice_date based on EE rule
+If EE rule is unclear, ask admin in “Questions for Admin” and do not guess.
+
+EXECUTION PHASE EXTRACTION
+- Extract execution phases from Excel where present.
+- Map to canonical phase names; if unclear, prompt admin.
+- Do NOT enable execution visibility here; only store phase data.
+
+FRONT-END UNIFIED PROJECT VIEW
+- Present Project Plan | Revenue | Expenditure tabs
+- These tabs must read from normalized tables, not raw Excel
+- The UI must look identical across projects regardless of Excel style
+
+AUDITABILITY
+- Every record stores import_run_id + source_ref.
+- Provide Import History per project with issues and warnings.
+- Optional rollback of last import if feasible without breaking anything.
+
+DELIVERABLE
+Implement the parser, detector, mapping system, review UI, normalized persistence, master data learning, metrics, and unified views. Add tests/checklist.
+
+TESTS / CHECKLIST
+Validate:
+1) Standard template imports cleanly.
+2) Variant layout triggers review and user can correct mapping.
+3) New supplier prompts user and is remembered.
+4) Duplicate invoice flagged.
+5) Weird date order flagged.
+6) Project view is identical for two trackers with different layouts.
+7) Existing ClickUp/task/board functionality remains unchanged.
+
+REMINDER
+- Do not assume. Ask admin when unclear.
+- Do not break existing functionality. Additive only.

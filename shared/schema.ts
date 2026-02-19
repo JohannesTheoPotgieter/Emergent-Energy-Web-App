@@ -58,6 +58,16 @@ export const projectInfo = pgTable("project_info", {
   ragStatus: text("rag_status"),
   ragUpdatedAt: timestamp("rag_updated_at"),
   isActive: boolean("is_active").notNull().default(true),
+  executionEnabled: boolean("execution_enabled").notNull().default(false),
+  executionGateStatus: text("execution_gate_status").notNull().default("NOT_ELIGIBLE"),
+  executionGateReason: text("execution_gate_reason"),
+  signedStatus: text("signed_status").notNull().default("NONE"),
+  signedDate: text("signed_date"),
+  signedDocumentLink: text("signed_document_link"),
+  executionPhase: text("execution_phase"),
+  excelTrackerLink: text("excel_tracker_link"),
+  canonicalProjectId: integer("canonical_project_id"),
+  archivedStatus: text("archived_status").notNull().default("ACTIVE"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
@@ -871,6 +881,7 @@ export const operationalTasks = pgTable("operational_tasks", {
   summaryText: text("summary_text"),
   importedCommentCount: integer("imported_comment_count"),
   taskTypeTag: text("task_type_tag"),
+  domain: text("domain").notNull().default("BOTH"),
   createdBy: integer("created_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -2135,6 +2146,35 @@ export const rolePermissions = pgTable("role_permissions", {
 export const insertRolePermissionSchema = createInsertSchema(rolePermissions).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertRolePermission = z.infer<typeof insertRolePermissionSchema>;
 export type RolePermission = typeof rolePermissions.$inferSelect;
+
+export const mergeAuditLog = pgTable("merge_audit_log", {
+  id: serial("id").primaryKey(),
+  primaryProjectId: integer("primary_project_id").notNull(),
+  secondaryProjectId: integer("secondary_project_id").notNull(),
+  primaryProjectName: text("primary_project_name").notNull(),
+  secondaryProjectName: text("secondary_project_name").notNull(),
+  mergedByUserId: integer("merged_by_user_id").references(() => users.id),
+  mergedByRole: text("merged_by_role"),
+  reason: text("reason"),
+  conflictsJson: text("conflicts_json"),
+  movedTaskCount: integer("moved_task_count").notNull().default(0),
+  movedPlanCount: integer("moved_plan_count").notNull().default(0),
+  mergedAt: timestamp("merged_at").notNull().defaultNow(),
+});
+export type MergeAuditLog = typeof mergeAuditLog.$inferSelect;
+
+export const executionGateLog = pgTable("execution_gate_log", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
+  action: text("action").notNull(),
+  previousStatus: text("previous_status"),
+  newStatus: text("new_status"),
+  reason: text("reason"),
+  changedByUserId: integer("changed_by_user_id").references(() => users.id),
+  changedByRole: text("changed_by_role"),
+  changedAt: timestamp("changed_at").notNull().defaultNow(),
+});
+export type ExecutionGateLog = typeof executionGateLog.$inferSelect;
 
 export const DEFAULT_ROLE_PERMISSIONS: InsertRolePermission[] = [
   { role: "COO_ADMIN", label: "COO Admin", description: "Full executive access, settings, user management", sections: ["EXCO", "PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "ADMIN", "MY_TOOL", "FINANCE"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
