@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -39,6 +39,10 @@ import {
   Pencil,
   Flag,
   ChevronDown,
+  Eye,
+  EyeOff,
+  Save,
+  Trash2,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { apiRequest, invalidateDashboardQueries } from "@/lib/queryClient";
@@ -51,6 +55,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
 
 interface ProjectSummary {
   project_info_id: number | null;
@@ -492,6 +498,66 @@ function FinancialCloseCell({
 
 const PHASE_OPTIONS = PROJECT_PHASES;
 
+interface SavedView {
+  name: string;
+  visibleColumns: string[];
+}
+
+const STORAGE_KEY = "project-summary-views";
+const ACTIVE_VIEW_KEY = "project-summary-active-view";
+
+const COLUMN_WIDTHS: Record<string, string> = {
+  project_name: "130px",
+  size_kwp: "42px",
+  pd: "78px",
+  pm: "78px",
+  cost_proposal_signed: "62px",
+  funding_signed: "62px",
+  epc_contract_signed: "62px",
+  financial_close: "52px",
+  phase: "90px",
+  task_counts: "60px",
+  escalation_level: "58px",
+  pd_handover_date: "68px",
+  construction_start_date: "64px",
+  commissioning_date: "64px",
+  om_handover_date: "52px",
+  client_handover_date: "56px",
+  duration: "36px",
+  kw_per_week: "44px",
+  project_pct_complete: "72px",
+  expected_pct_complete: "42px",
+  delta_vs_expected: "56px",
+  actions: "32px",
+};
+
+const COLUMN_GROUPS_META: { label: string; keys: string[]; color: string; stickyFirst?: boolean }[] = [
+  { label: "Project Info", keys: ["project_name", "size_kwp", "pd", "pm"], color: "bg-slate-50 text-slate-600", stickyFirst: true },
+  { label: "Financial Close", keys: ["cost_proposal_signed", "funding_signed", "epc_contract_signed", "financial_close"], color: "bg-emerald-50 text-emerald-700" },
+  { label: "Phase & Schedule", keys: ["phase", "task_counts", "escalation_level", "pd_handover_date", "construction_start_date", "commissioning_date", "om_handover_date", "client_handover_date", "duration", "kw_per_week"], color: "bg-blue-50 text-blue-700" },
+  { label: "Progress", keys: ["project_pct_complete", "expected_pct_complete", "delta_vs_expected"], color: "bg-violet-50 text-violet-700" },
+];
+
+function loadSavedViews(): SavedView[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+function persistViews(views: SavedView[]) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(views));
+}
+
+function loadActiveView(): string | null {
+  return localStorage.getItem(ACTIVE_VIEW_KEY);
+}
+
+function persistActiveView(name: string | null) {
+  if (name) localStorage.setItem(ACTIVE_VIEW_KEY, name);
+  else localStorage.removeItem(ACTIVE_VIEW_KEY);
+}
+
 function EditProjectInfoModal({
   project,
   open,
@@ -676,6 +742,19 @@ export default function ProjectsSummary() {
   const [writebackPromptProject, setWritebackPromptProject] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
+  const [savedViews, setSavedViews] = useState<SavedView[]>(() => loadSavedViews());
+  const [activeViewName, setActiveViewName] = useState<string | null>(() => loadActiveView());
+  const [visibleColumns, setVisibleColumns] = useState<Set<string>>(() => {
+    const viewName = loadActiveView();
+    if (viewName) {
+      const views = loadSavedViews();
+      const found = views.find(v => v.name === viewName);
+      if (found) return new Set(found.visibleColumns);
+    }
+    return new Set<string>();
+  });
+  const [newViewName, setNewViewName] = useState("");
+
   const escalationMutation = useMutation({
     mutationFn: async ({ projectInfoId, escalationLevel }: { projectInfoId: number; escalationLevel: string | null }) => {
       const res = await apiRequest("PATCH", `/api/projects-summary/${projectInfoId}/escalation`, { escalationLevel });
@@ -824,14 +903,6 @@ export default function ProjectsSummary() {
       </div>
     );
   }
-
-  const columnGroups: { label: string; colSpan: number; color: string; stickyFirst?: boolean }[] = [
-    { label: "Project Info", colSpan: 4, color: "bg-slate-50 text-slate-600", stickyFirst: true },
-    { label: "Financial Close", colSpan: 4, color: "bg-emerald-50 text-emerald-700" },
-    { label: "Phase & Schedule", colSpan: 9, color: "bg-blue-50 text-blue-700" },
-    { label: "Progress", colSpan: 3, color: "bg-violet-50 text-violet-700" },
-    ...(isAdmin ? [{ label: "", colSpan: 1, color: "bg-white" }] : []),
-  ];
 
   function truncateName(name: string | null, max: number): string {
     if (!name) return "—";
@@ -1114,6 +1185,90 @@ export default function ProjectsSummary() {
       : []),
   ];
 
+  const ALL_COLUMN_KEYS = columns.filter(c => c.key !== "actions").map(c => c.key);
+  const isDefaultView = visibleColumns.size === 0;
+  const effectiveVisible = isDefaultView
+    ? new Set(ALL_COLUMN_KEYS.concat(isAdmin ? ["actions"] : []))
+    : new Set(Array.from(visibleColumns).concat(isAdmin ? ["actions"] : []));
+
+  const toggleColumn = useCallback((key: string) => {
+    if (key === "project_name") return;
+    setVisibleColumns(prev => {
+      const currentAll = columns.filter(c => c.key !== "actions").map(c => c.key);
+      const base = prev.size === 0 ? new Set(currentAll.concat(isAdmin ? ["actions"] : [])) : new Set(prev);
+      if (base.has(key)) base.delete(key);
+      else base.add(key);
+      base.add("project_name");
+      setActiveViewName(null);
+      persistActiveView(null);
+      return base;
+    });
+  }, [columns, isAdmin]);
+
+  const selectAllColumns = useCallback(() => {
+    setVisibleColumns(new Set<string>());
+    setActiveViewName(null);
+    persistActiveView(null);
+  }, []);
+
+  const deselectAllColumns = useCallback(() => {
+    setVisibleColumns(new Set(["project_name"]));
+    setActiveViewName(null);
+    persistActiveView(null);
+  }, []);
+
+  const saveCurrentView = useCallback(() => {
+    if (!newViewName.trim()) return;
+    const cols = effectiveVisible.size === 0 ? ALL_COLUMN_KEYS : Array.from(effectiveVisible).filter(k => k !== "actions");
+    const view: SavedView = { name: newViewName.trim(), visibleColumns: cols };
+    const updated = [...savedViews.filter(v => v.name !== view.name), view];
+    setSavedViews(updated);
+    persistViews(updated);
+    setActiveViewName(view.name);
+    persistActiveView(view.name);
+    setNewViewName("");
+  }, [newViewName, effectiveVisible, ALL_COLUMN_KEYS, savedViews]);
+
+  const applyView = useCallback((name: string) => {
+    if (name === "__default__") {
+      setVisibleColumns(new Set<string>());
+      setActiveViewName(null);
+      persistActiveView(null);
+      return;
+    }
+    const found = savedViews.find(v => v.name === name);
+    if (found) {
+      setVisibleColumns(new Set(found.visibleColumns));
+      setActiveViewName(name);
+      persistActiveView(name);
+    }
+  }, [savedViews]);
+
+  const deleteView = useCallback((name: string) => {
+    const updated = savedViews.filter(v => v.name !== name);
+    setSavedViews(updated);
+    persistViews(updated);
+    if (activeViewName === name) {
+      setActiveViewName(null);
+      persistActiveView(null);
+      setVisibleColumns(new Set<string>());
+    }
+  }, [savedViews, activeViewName]);
+
+  const filteredColumns = columns.filter(c => effectiveVisible.has(c.key));
+
+  const allGroupsMeta = [
+    ...COLUMN_GROUPS_META,
+    ...(isAdmin ? [{ label: "", keys: ["actions"], color: "bg-white" }] : []),
+  ];
+
+  const dynamicColumnGroups = allGroupsMeta
+    .map(g => ({
+      ...g,
+      colSpan: g.keys.filter(k => effectiveVisible.has(k)).length,
+    }))
+    .filter(g => g.colSpan > 0);
+
   return (
     <div className="space-y-5 p-1">
       <div className="flex items-center justify-between gap-2">
@@ -1258,6 +1413,114 @@ export default function ProjectsSummary() {
           </SelectContent>
         </Select>
 
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="outline" size="sm" className="h-9 gap-1.5 text-sm border-slate-200" data-testid="btn-column-toggle">
+              {isDefaultView ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+              <span className="hidden sm:inline">Columns</span>
+              {!isDefaultView && (
+                <Badge className="ml-1 h-5 px-1.5 text-[10px] bg-blue-100 text-blue-700 hover:bg-blue-100">
+                  {effectiveVisible.size - (effectiveVisible.has("actions") ? 1 : 0)}/{ALL_COLUMN_KEYS.length}
+                </Badge>
+              )}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-72 p-0" align="start" data-testid="popover-columns">
+            <div className="p-3 border-b border-slate-100">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-semibold text-slate-700">Column Visibility</span>
+                <button
+                  onClick={isDefaultView ? deselectAllColumns : selectAllColumns}
+                  className="text-[10px] font-medium text-blue-600 hover:text-blue-800"
+                  data-testid="btn-toggle-all-columns"
+                >
+                  {isDefaultView ? "Deselect All" : "Select All"}
+                </button>
+              </div>
+            </div>
+            <div className="max-h-64 overflow-y-auto p-2 space-y-3">
+              {COLUMN_GROUPS_META.map(group => (
+                <div key={group.label}>
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-1 mb-1">{group.label}</div>
+                  {group.keys.map(key => {
+                    const col = columns.find(c => c.key === key);
+                    if (!col) return null;
+                    const isProjectName = key === "project_name";
+                    return (
+                      <label
+                        key={key}
+                        className={`flex items-center gap-2 px-1 py-1 rounded hover:bg-slate-50 cursor-pointer ${isProjectName ? "opacity-60" : ""}`}
+                        data-testid={`toggle-col-${key}`}
+                      >
+                        <Checkbox
+                          checked={effectiveVisible.has(key)}
+                          onCheckedChange={() => toggleColumn(key)}
+                          disabled={isProjectName}
+                          className="h-3.5 w-3.5"
+                        />
+                        <span className="text-xs text-slate-700">{col.header}</span>
+                        {isProjectName && <span className="text-[9px] text-slate-400 ml-auto">Required</span>}
+                      </label>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+            <div className="border-t border-slate-100 p-3 space-y-2">
+              <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Save as View</div>
+              <div className="flex items-center gap-1.5">
+                <Input
+                  placeholder="View name..."
+                  value={newViewName}
+                  onChange={(e) => setNewViewName(e.target.value)}
+                  className="h-7 text-xs flex-1"
+                  data-testid="input-view-name"
+                  onKeyDown={(e) => { if (e.key === "Enter") saveCurrentView(); }}
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 px-2"
+                  onClick={saveCurrentView}
+                  disabled={!newViewName.trim()}
+                  data-testid="btn-save-view"
+                >
+                  <Save className="w-3 h-3" />
+                </Button>
+              </div>
+            </div>
+          </PopoverContent>
+        </Popover>
+
+        {savedViews.length > 0 && (
+          <Select value={activeViewName || "__default__"} onValueChange={applyView}>
+            <SelectTrigger className="h-9 w-[calc(50%-0.25rem)] sm:w-40 text-sm border-slate-200" data-testid="select-view">
+              <SelectValue placeholder="Default (All)" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__default__">Default (All)</SelectItem>
+              {savedViews.map((v) => (
+                <SelectItem key={v.name} value={v.name}>
+                  {v.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
+        {activeViewName && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => deleteView(activeViewName)}
+            className="h-9 px-2 text-red-500 hover:text-red-700 hover:bg-red-50"
+            title="Delete current view"
+            data-testid="btn-delete-view"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </Button>
+        )}
+
         {(searchTerm || pmFilter !== "all" || phaseFilter !== "all") && (
           <Button
             variant="ghost"
@@ -1275,32 +1538,13 @@ export default function ProjectsSummary() {
         <div className="overflow-auto max-h-[calc(100vh-280px)] sm:max-h-[calc(100vh-340px)]">
           <table className="w-full text-[10px] border-collapse table-fixed" style={{ minWidth: "100%" }}>
             <colgroup>
-              <col style={{ width: "130px" }} />
-              <col style={{ width: "42px" }} />
-              <col style={{ width: "78px" }} />
-              <col style={{ width: "78px" }} />
-              <col style={{ width: "62px" }} />
-              <col style={{ width: "62px" }} />
-              <col style={{ width: "62px" }} />
-              <col style={{ width: "52px" }} />
-              <col style={{ width: "90px" }} />
-              <col style={{ width: "60px" }} />
-              <col style={{ width: "58px" }} />
-              <col style={{ width: "68px" }} />
-              <col style={{ width: "64px" }} />
-              <col style={{ width: "64px" }} />
-              <col style={{ width: "52px" }} />
-              <col style={{ width: "56px" }} />
-              <col style={{ width: "36px" }} />
-              <col style={{ width: "44px" }} />
-              <col style={{ width: "72px" }} />
-              <col style={{ width: "42px" }} />
-              <col style={{ width: "56px" }} />
-              {isAdmin && <col style={{ width: "32px" }} />}
+              {filteredColumns.map(col => (
+                <col key={col.key} style={{ width: COLUMN_WIDTHS[col.key] || "60px" }} />
+              ))}
             </colgroup>
             <thead className="sticky top-0 z-20">
               <tr>
-                {columnGroups.map((g, i) => (
+                {dynamicColumnGroups.map((g, i) => (
                   <th
                     key={i}
                     colSpan={g.colSpan}
@@ -1313,7 +1557,7 @@ export default function ProjectsSummary() {
                 ))}
               </tr>
               <tr className="bg-white border-b-2 border-slate-200">
-                {columns.map((col) => (
+                {filteredColumns.map((col) => (
                   <th
                     key={col.key}
                     className={`px-1 py-1.5 text-left font-semibold text-slate-600 whitespace-nowrap cursor-pointer hover:bg-slate-50 select-none transition-colors text-[9px] ${
@@ -1339,7 +1583,7 @@ export default function ProjectsSummary() {
                   }`}
                   data-testid={`row-project-${idx}`}
                 >
-                  {columns.map((col) => (
+                  {filteredColumns.map((col) => (
                     <td
                       key={col.key}
                       className={`px-1 py-1.5 whitespace-nowrap overflow-hidden text-ellipsis ${
@@ -1356,7 +1600,7 @@ export default function ProjectsSummary() {
             </tbody>
             <tfoot className="sticky bottom-0 z-10">
               <tr className="border-t-2 border-slate-300 bg-slate-50 font-semibold">
-                {columns.map((col) => (
+                {filteredColumns.map((col) => (
                   <td
                     key={col.key}
                     className={`px-1 py-1.5 whitespace-nowrap ${
