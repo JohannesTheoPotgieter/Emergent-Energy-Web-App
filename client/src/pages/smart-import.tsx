@@ -553,6 +553,24 @@ function SectionDetectionStep({
   );
 }
 
+const FIELD_LABELS: Record<string, string> = {
+  task_name: "Task Name", task_no: "Task #", start_date: "Start Date", end_date: "End Date",
+  duration: "Duration", pct_complete: "% Complete", expected_pct: "Expected %", owner: "Owner", phase: "Phase",
+  milestone_name: "Milestone", milestone_no: "Milestone #", percent: "Percent", amount_ex_vat: "Amount (ex VAT)",
+  vat: "VAT", invoice_number: "Invoice #", invoice_date: "Invoice Date", planned_payment_date: "Planned Payment",
+  payment_received_date: "Payment Received", in_bank_date: "In Bank Date", requirements: "Requirements", documents: "Documents",
+  cost_category: "Cost Category", description: "Description", counterparty: "Counterparty", budget_qty: "Budget Qty",
+  budget_rate: "Budget Rate", budget_total: "Budget Total", actual_total: "Actual Total", po_number: "PO #",
+  approved_date: "Approved Date", payment_date: "Payment Date", forecast_payment_date: "Forecast Payment",
+  budget_cos: "Budget COS", actual_cos: "Actual COS",
+};
+
+const DB_TABLE_MAP: Record<string, string> = {
+  PLAN: "normalized_plan_tasks",
+  REVENUE: "normalized_revenue_lines",
+  EXPENDITURE: "normalized_cost_lines",
+};
+
 function ColumnMappingStep({
   runId,
   preview,
@@ -566,11 +584,30 @@ function ColumnMappingStep({
   onBack: () => void;
   onPreviewUpdate: (p: any) => void;
 }) {
-  const sections = preview?.sections || [];
-  const sectionNames = sections.map((s: any) => s.section || s.name).filter(Boolean);
+  const detectedSections = preview?.detection?.sections || [];
+  const mappingResults = preview?.mappings || [];
+  const normalization = preview?.normalization || {};
+
+  const sectionNames = detectedSections.map((s: any) => s.section).filter(Boolean);
   const [activeTab, setActiveTab] = useState(sectionNames[0] || "PLAN");
   const [saving, setSaving] = useState<string | null>(null);
+  const [showPreview, setShowPreview] = useState<Record<string, boolean>>({});
   const { toast } = useToast();
+
+  const getMappingForSection = (sectionName: string) => {
+    return mappingResults.find((m: any) => m.section === sectionName);
+  };
+
+  const getDetectionForSection = (sectionName: string) => {
+    return detectedSections.find((s: any) => s.section === sectionName);
+  };
+
+  const getPreviewData = (sectionName: string) => {
+    if (sectionName === "PLAN") return normalization.planTasks || [];
+    if (sectionName === "REVENUE") return normalization.revenueLines || [];
+    if (sectionName === "EXPENDITURE") return normalization.costLines || [];
+    return [];
+  };
 
   const handleMappingChange = async (section: string, colIndex: number, canonicalField: string) => {
     setSaving(`${section}-${colIndex}`);
@@ -586,7 +623,7 @@ function ColumnMappingStep({
           const data = await refreshRes.json();
           if (data.preview) onPreviewUpdate(data.preview);
         }
-        toast({ title: "Mapping Updated", description: `Column mapped to ${canonicalField}` });
+        toast({ title: "Mapping Updated", description: `Column mapped to ${FIELD_LABELS[canonicalField] || canonicalField}` });
       } else {
         const err = await res.json().catch(() => ({ error: "Failed" }));
         toast({ title: "Error", description: err.error || "Failed to update mapping", variant: "destructive" });
@@ -598,43 +635,77 @@ function ColumnMappingStep({
     }
   };
 
-  const hasMissingRequired = sections.some((s: any) => {
-    const mappings = s.columnMappings || s.columns || [];
-    const requiredFields = CANONICAL_FIELDS[s.section || s.name]?.slice(0, 3) || [];
-    const mapped = mappings
-      .filter((m: any) => m.canonicalField || m.mappedTo)
-      .map((m: any) => m.canonicalField || m.mappedTo);
-    return requiredFields.some((f: string) => !mapped.includes(f));
-  });
-
   return (
     <div className="space-y-4" data-testid="column-mapping-step">
       {sectionNames.length > 0 ? (
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList data-testid="mapping-tabs">
-            {sectionNames.map((name: string) => (
-              <TabsTrigger key={name} value={name} data-testid={`tab-${name}`}>
-                {name}
-              </TabsTrigger>
-            ))}
+            {sectionNames.map((name: string) => {
+              const mapping = getMappingForSection(name);
+              const mappedCount = mapping?.mappings?.length || 0;
+              const unmappedCount = mapping?.unmappedHeaders?.length || 0;
+              return (
+                <TabsTrigger key={name} value={name} data-testid={`tab-${name}`} className="gap-1.5">
+                  {name}
+                  <Badge className="bg-emerald-50 text-emerald-700 text-[10px] px-1 py-0 ml-1">
+                    {mappedCount}
+                  </Badge>
+                  {unmappedCount > 0 && (
+                    <Badge className="bg-amber-50 text-amber-700 text-[10px] px-1 py-0">
+                      +{unmappedCount}
+                    </Badge>
+                  )}
+                </TabsTrigger>
+              );
+            })}
           </TabsList>
 
-          {sections.map((section: any) => {
-            const sectionName = section.section || section.name;
-            const mappings = section.columnMappings || section.columns || [];
+          {sectionNames.map((sectionName: string) => {
+            const mapping = getMappingForSection(sectionName);
+            const detection = getDetectionForSection(sectionName);
             const fields = CANONICAL_FIELDS[sectionName] || [];
-            const overallConfidence = section.mappingConfidence ?? section.confidence ?? null;
-            const mapped = mappings.filter((m: any) => m.canonicalField || m.mappedTo);
-            const unmapped = mappings.filter((m: any) => !(m.canonicalField || m.mappedTo));
+            const allMappings = mapping?.mappings || [];
+            const unmappedHeaders = mapping?.unmappedHeaders || [];
+            const overallConfidence = mapping?.overallConfidence ?? null;
+            const missingRequired = mapping?.missingRequired || [];
+            const previewData = getPreviewData(sectionName);
+            const dbTable = DB_TABLE_MAP[sectionName] || "—";
 
             return (
               <TabsContent key={sectionName} value={sectionName}>
                 <Card className="bg-white rounded-xl shadow-sm">
                   <CardContent className="p-4 space-y-3">
-                    {overallConfidence != null && (
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="text-xs text-slate-500">Section Confidence:</span>
-                        {confidenceBadge(overallConfidence)}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        {overallConfidence != null && (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs text-slate-500">Confidence:</span>
+                            {confidenceBadge(overallConfidence)}
+                          </div>
+                        )}
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs text-slate-500">Sheet:</span>
+                          <span className="text-xs font-medium">{detection?.sheetName || "—"}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs text-slate-500">Rows:</span>
+                          <span className="text-xs font-medium">
+                            {detection ? (detection.dataEndRowIndex - detection.dataStartRowIndex + 1) : 0}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] text-slate-400">Destination:</span>
+                        <Badge className="bg-blue-50 text-blue-700 border-blue-200 text-[10px] px-1.5 py-0 font-mono">
+                          {dbTable}
+                        </Badge>
+                      </div>
+                    </div>
+
+                    {missingRequired.length > 0 && (
+                      <div className="flex items-center gap-2 p-2 bg-amber-50 border border-amber-200 rounded-md text-xs text-amber-700">
+                        <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                        Missing required fields: {missingRequired.map((f: string) => FIELD_LABELS[f] || f).join(", ")}
                       </div>
                     )}
 
@@ -642,51 +713,53 @@ function ColumnMappingStep({
                       <table className="w-full text-xs" data-testid={`mapping-table-${sectionName}`}>
                         <thead>
                           <tr className="bg-slate-50 border-b">
-                            <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-500 uppercase">Excel Header</th>
-                            <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-500 uppercase">Mapped To</th>
+                            <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-500 uppercase">Excel Column</th>
+                            <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-500 uppercase">Maps To Field</th>
+                            <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-500 uppercase">Match</th>
                             <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-500 uppercase">Confidence</th>
-                            <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-500 uppercase">Action</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {mapped.map((col: any, idx: number) => {
-                            const colIdx = col.colIndex ?? col.index ?? idx;
+                          {allMappings.map((col: any) => {
+                            const colIdx = col.colIndex;
                             const isSaving = saving === `${sectionName}-${colIdx}`;
                             return (
                               <tr key={colIdx} className="border-b border-slate-100 hover:bg-slate-50/50">
                                 <td className="px-3 py-2 font-medium" data-testid={`text-header-${sectionName}-${colIdx}`}>
-                                  {col.excelHeader || col.header || col.rawHeader || `Column ${colIdx}`}
+                                  {col.rawHeader}
                                 </td>
                                 <td className="px-3 py-2">
                                   <Select
-                                    value={col.canonicalField || col.mappedTo || ""}
+                                    value={col.canonicalField || ""}
                                     onValueChange={(val) => handleMappingChange(sectionName, colIdx, val)}
-                                    data-testid={`select-mapping-${sectionName}-${colIdx}`}
                                   >
-                                    <SelectTrigger className="h-7 text-xs w-[160px]" data-testid={`select-trigger-mapping-${sectionName}-${colIdx}`}>
-                                      <SelectValue placeholder="Select field..." />
+                                    <SelectTrigger className="h-7 text-xs w-[180px]" data-testid={`select-mapping-${sectionName}-${colIdx}`}>
+                                      <SelectValue placeholder="Select field...">
+                                        {col.canonicalField ? (FIELD_LABELS[col.canonicalField] || col.canonicalField) : "Select field..."}
+                                      </SelectValue>
                                     </SelectTrigger>
                                     <SelectContent>
                                       {fields.map((f) => (
-                                        <SelectItem key={f} value={f} data-testid={`select-item-${sectionName}-${f}`}>
-                                          {f}
+                                        <SelectItem key={f} value={f}>
+                                          {FIELD_LABELS[f] || f}
                                         </SelectItem>
                                       ))}
                                     </SelectContent>
                                   </Select>
+                                  {isSaving && <Loader2 className="w-3 h-3 animate-spin text-blue-500 inline ml-1" />}
+                                </td>
+                                <td className="px-3 py-2">
+                                  <Badge className={`text-[10px] px-1.5 py-0 ${
+                                    col.matchType === "exact" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                                    col.matchType === "synonym" ? "bg-blue-50 text-blue-700 border-blue-200" :
+                                    col.matchType === "learned" ? "bg-purple-50 text-purple-700 border-purple-200" :
+                                    "bg-amber-50 text-amber-700 border-amber-200"
+                                  }`}>
+                                    {col.matchType}
+                                  </Badge>
                                 </td>
                                 <td className="px-3 py-2">
                                   {col.confidence != null && confidenceBadge(col.confidence)}
-                                </td>
-                                <td className="px-3 py-2">
-                                  {isSaving ? (
-                                    <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" />
-                                  ) : (
-                                    <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] px-1.5 py-0">
-                                      <Check className="w-3 h-3 mr-0.5" />
-                                      Mapped
-                                    </Badge>
-                                  )}
                                 </td>
                               </tr>
                             );
@@ -695,21 +768,23 @@ function ColumnMappingStep({
                       </table>
                     </div>
 
-                    {unmapped.length > 0 && (
+                    {unmappedHeaders.length > 0 && (
                       <div className="mt-3">
-                        <h4 className="text-xs font-semibold text-slate-500 mb-2">Unmapped Columns</h4>
-                        <div className="space-y-2">
-                          {unmapped.map((col: any, idx: number) => {
-                            const colIdx = col.colIndex ?? col.index ?? (mapped.length + idx);
+                        <h4 className="text-xs font-semibold text-slate-500 mb-2">
+                          Unmapped Columns ({unmappedHeaders.length})
+                        </h4>
+                        <div className="space-y-1.5">
+                          {unmappedHeaders.map((col: any) => {
+                            const colIdx = col.colIndex;
                             const isSaving = saving === `${sectionName}-${colIdx}`;
                             return (
                               <div
                                 key={colIdx}
-                                className="flex items-center gap-3 p-2 bg-amber-50 border border-amber-200 rounded-md"
+                                className="flex items-center gap-3 p-2 bg-slate-50 border border-slate-200 rounded-md"
                                 data-testid={`unmapped-col-${sectionName}-${colIdx}`}
                               >
-                                <span className="text-xs font-medium flex-1">
-                                  {col.excelHeader || col.header || col.rawHeader || `Column ${colIdx}`}
+                                <span className="text-xs font-medium flex-1 text-slate-600">
+                                  {col.rawHeader}
                                 </span>
                                 <Select
                                   value=""
@@ -718,16 +793,16 @@ function ColumnMappingStep({
                                     handleMappingChange(sectionName, colIdx, val);
                                   }}
                                 >
-                                  <SelectTrigger className="h-7 text-xs w-[160px]" data-testid={`select-trigger-unmapped-${sectionName}-${colIdx}`}>
+                                  <SelectTrigger className="h-7 text-xs w-[180px]" data-testid={`select-unmapped-${sectionName}-${colIdx}`}>
                                     <SelectValue placeholder="Map to..." />
                                   </SelectTrigger>
                                   <SelectContent>
-                                    <SelectItem value="__ignore__" data-testid={`select-item-ignore-${sectionName}-${colIdx}`}>
-                                      Ignore
+                                    <SelectItem value="__ignore__">
+                                      — Ignore —
                                     </SelectItem>
                                     {fields.map((f) => (
                                       <SelectItem key={f} value={f}>
-                                        {f}
+                                        {FIELD_LABELS[f] || f}
                                       </SelectItem>
                                     ))}
                                   </SelectContent>
@@ -739,6 +814,57 @@ function ColumnMappingStep({
                         </div>
                       </div>
                     )}
+
+                    <div className="mt-4 border-t pt-3">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-xs"
+                        onClick={() => setShowPreview(p => ({ ...p, [sectionName]: !p[sectionName] }))}
+                        data-testid={`btn-toggle-preview-${sectionName}`}
+                      >
+                        {showPreview[sectionName] ? <ChevronUp className="w-3.5 h-3.5 mr-1.5" /> : <ChevronDown className="w-3.5 h-3.5 mr-1.5" />}
+                        {showPreview[sectionName] ? "Hide" : "Show"} Data Preview ({previewData.length} rows)
+                      </Button>
+
+                      {showPreview[sectionName] && previewData.length > 0 && (
+                        <div className="mt-2 overflow-x-auto border rounded-lg">
+                          <table className="w-full text-[11px]" data-testid={`preview-table-${sectionName}`}>
+                            <thead>
+                              <tr className="bg-blue-50 border-b">
+                                <th className="text-left px-2 py-1.5 text-[10px] font-semibold text-blue-600 uppercase">Row</th>
+                                {Object.keys(previewData[0] || {}).filter(k => !["sourceSheet", "sourceRow"].includes(k)).slice(0, 8).map(key => (
+                                  <th key={key} className="text-left px-2 py-1.5 text-[10px] font-semibold text-blue-600 uppercase whitespace-nowrap">
+                                    {FIELD_LABELS[key] || key.replace(/([A-Z])/g, " $1").trim()}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {previewData.slice(0, 8).map((row: any, idx: number) => (
+                                <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50/50">
+                                  <td className="px-2 py-1 text-slate-400">{row.sourceRow || idx + 1}</td>
+                                  {Object.entries(row).filter(([k]) => !["sourceSheet", "sourceRow"].includes(k)).slice(0, 8).map(([key, val]) => (
+                                    <td key={key} className="px-2 py-1 max-w-[120px] truncate" title={String(val ?? "")}>
+                                      {val != null ? String(val) : <span className="text-slate-300">—</span>}
+                                    </td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          {previewData.length > 8 && (
+                            <div className="text-center py-1.5 text-[10px] text-slate-400 bg-slate-50">
+                              ... and {previewData.length - 8} more rows
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {showPreview[sectionName] && previewData.length === 0 && (
+                        <p className="mt-2 text-xs text-slate-400">No data rows extracted for this section.</p>
+                      )}
+                    </div>
                   </CardContent>
                 </Card>
               </TabsContent>
@@ -1033,16 +1159,18 @@ function PreviewCommitStep({
   const [, navigate] = useLocation();
   const { toast } = useToast();
 
-  const sections = preview?.sections || [];
-  const planSection = sections.find((s: any) => (s.section || s.name) === "PLAN");
-  const revenueSection = sections.find((s: any) => (s.section || s.name) === "REVENUE");
-  const expenditureSection = sections.find((s: any) => (s.section || s.name) === "EXPENDITURE");
+  const normalization = preview?.normalization || {};
+  const detectedSections = preview?.detection?.sections || [];
 
-  const planRows = planSection?.sampleRows || planSection?.previewRows || planSection?.rows || [];
-  const revenueRows = revenueSection?.sampleRows || revenueSection?.previewRows || revenueSection?.rows || [];
-  const costRows = expenditureSection?.sampleRows || expenditureSection?.previewRows || expenditureSection?.rows || [];
+  const planRows = normalization.planTasks || [];
+  const revenueRows = normalization.revenueLines || [];
+  const costRows = normalization.costLines || [];
+  const executionPhases = normalization.executionPhases || [];
+  const counterpartyNames = normalization.counterpartyNames || [];
 
-  const summary = preview?.summary || {};
+  const planDetection = detectedSections.find((s: any) => s.section === "PLAN");
+  const revenueDetection = detectedSections.find((s: any) => s.section === "REVENUE");
+  const expenditureDetection = detectedSections.find((s: any) => s.section === "EXPENDITURE");
 
   const handleCommit = async () => {
     setCommitting(true);
@@ -1072,7 +1200,7 @@ function PreviewCommitStep({
   };
 
   if (committed) {
-    const projectName = preview?.projectInfo?.name || preview?.projectInfo?.projectName || "";
+    const projectName = preview?.detection?.projectInfo?.name || preview?.detection?.projectInfo?.projectName || preview?.projectInfo?.name || "";
     return (
       <Card className="bg-white rounded-xl shadow-sm" data-testid="commit-success">
         <CardContent className="flex flex-col items-center justify-center py-12 gap-4">
@@ -1113,31 +1241,31 @@ function PreviewCommitStep({
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <div className="bg-slate-50 rounded-lg p-3 text-center">
               <div className="text-lg font-bold" data-testid="text-plan-count">
-                {summary.planTasks ?? planSection?.dataRows ?? planRows.length ?? 0}
+                {planRows.length}
               </div>
               <div className="text-[10px] text-slate-500">Plan Tasks</div>
             </div>
             <div className="bg-slate-50 rounded-lg p-3 text-center">
               <div className="text-lg font-bold" data-testid="text-revenue-count">
-                {summary.revenueLines ?? revenueSection?.dataRows ?? revenueRows.length ?? 0}
+                {revenueRows.length}
               </div>
               <div className="text-[10px] text-slate-500">Revenue Lines</div>
             </div>
             <div className="bg-slate-50 rounded-lg p-3 text-center">
               <div className="text-lg font-bold" data-testid="text-cost-count">
-                {summary.costLines ?? expenditureSection?.dataRows ?? costRows.length ?? 0}
+                {costRows.length}
               </div>
               <div className="text-[10px] text-slate-500">Cost Lines</div>
             </div>
             <div className="bg-slate-50 rounded-lg p-3 text-center">
               <div className="text-lg font-bold" data-testid="text-phase-count">
-                {summary.executionPhases ?? 0}
+                {executionPhases.length}
               </div>
               <div className="text-[10px] text-slate-500">Execution Phases</div>
             </div>
             <div className="bg-slate-50 rounded-lg p-3 text-center">
               <div className="text-lg font-bold" data-testid="text-cp-count">
-                {summary.counterparties ?? 0}
+                {counterpartyNames.length}
               </div>
               <div className="text-[10px] text-slate-500">New Counterparties</div>
             </div>
@@ -1170,10 +1298,10 @@ function PreviewCommitStep({
                   <tbody>
                     {planRows.slice(0, 10).map((row: any, idx: number) => (
                       <tr key={idx} className="border-b border-slate-100">
-                        <td className="px-3 py-1.5">{row.task_name || row.taskName || row[0] || "—"}</td>
-                        <td className="px-3 py-1.5">{row.start_date || row.startDate || row[1] || "—"}</td>
-                        <td className="px-3 py-1.5">{row.end_date || row.endDate || row[2] || "—"}</td>
-                        <td className="px-3 py-1.5">{row.status || row[3] || "—"}</td>
+                        <td className="px-3 py-1.5">{row.taskName || row.task_name || "—"}</td>
+                        <td className="px-3 py-1.5">{row.startDate || row.start_date || "—"}</td>
+                        <td className="px-3 py-1.5">{row.endDate || row.end_date || "—"}</td>
+                        <td className="px-3 py-1.5">{row.status || "—"}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1208,9 +1336,9 @@ function PreviewCommitStep({
                   <tbody>
                     {revenueRows.slice(0, 10).map((row: any, idx: number) => (
                       <tr key={idx} className="border-b border-slate-100">
-                        <td className="px-3 py-1.5">{row.milestone_name || row.milestoneName || row[0] || "—"}</td>
-                        <td className="px-3 py-1.5">{row.amount || row[1] || "—"}</td>
-                        <td className="px-3 py-1.5">{row.status || row[2] || "—"}</td>
+                        <td className="px-3 py-1.5">{row.milestoneName || row.description || "—"}</td>
+                        <td className="px-3 py-1.5">{row.amountExVat || "—"}</td>
+                        <td className="px-3 py-1.5">{row.status || "—"}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1246,10 +1374,10 @@ function PreviewCommitStep({
                   <tbody>
                     {costRows.slice(0, 10).map((row: any, idx: number) => (
                       <tr key={idx} className="border-b border-slate-100">
-                        <td className="px-3 py-1.5">{row.category || row[0] || "—"}</td>
-                        <td className="px-3 py-1.5">{row.counterparty || row[1] || "—"}</td>
-                        <td className="px-3 py-1.5">{row.amount || row[2] || "—"}</td>
-                        <td className="px-3 py-1.5">{row.status || row[3] || "—"}</td>
+                        <td className="px-3 py-1.5">{row.costCategory || "—"}</td>
+                        <td className="px-3 py-1.5">{row.counterpartyName || "—"}</td>
+                        <td className="px-3 py-1.5">{row.amountExVat || "—"}</td>
+                        <td className="px-3 py-1.5">{row.status || "—"}</td>
                       </tr>
                     ))}
                   </tbody>
