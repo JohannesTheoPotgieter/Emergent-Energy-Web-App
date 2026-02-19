@@ -2,7 +2,7 @@ import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, sql, inArray } from "drizzle-orm";
 import { verifyToken } from "./jwt";
-import { projectInfo, operationalTasks, projectPlan, programExpense, programInflows } from "@shared/schema";
+import { projectInfo, operationalTasks, projectPlan } from "@shared/schema";
 
 function jwtAuth(req: Request, _res: Response, next: NextFunction) {
   if ((req as any).user) return next();
@@ -215,24 +215,12 @@ export function registerLifecycleRoutes(app: Express) {
           .where(eq(projectPlan.projectName, source.projectName))
           .returning();
 
-        const movedExpenses = await tx.update(programExpense)
-          .set({ projectName: target.projectName })
-          .where(eq(programExpense.projectName, source.projectName))
-          .returning();
-
-        const movedInflows = await tx.update(programInflows)
-          .set({ projectName: target.projectName })
-          .where(eq(programInflows.projectName, source.projectName))
-          .returning();
-
         await tx.delete(projectInfo).where(eq(projectInfo.id, sourceProjectId));
 
         return {
           merged: true,
           movedTasks: movedTasks.length,
           movedPlanEntries: movedPlan.length,
-          movedExpenses: movedExpenses.length,
-          movedInflows: movedInflows.length,
           source: source.projectName,
           target: target.projectName,
         };
