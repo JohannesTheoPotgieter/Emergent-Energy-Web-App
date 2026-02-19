@@ -1317,7 +1317,7 @@ export async function registerRoutes(
 
   app.get("/api/projects-summary", async (req, res) => {
     try {
-      const [allProjectInfo, allExpenses, rawInflows, allPlans, allEditableFields, allTaskLinks, allOpTasks] = await Promise.all([
+      const [allProjectInfo, allExpenses, rawInflows, allPlans, allEditableFields, allTaskLinks, allOpTasks, uploadMetaRows] = await Promise.all([
         storage.getAllProjectInfo(),
         storage.getAllProgramExpenses(),
         storage.getAllProgramInflows(),
@@ -1325,8 +1325,18 @@ export async function registerRoutes(
         storage.getAllProjectEditableFields(),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
+        db.execute(sql`SELECT DISTINCT file_name FROM upload_metadata`),
       ]);
       const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
+
+      const importedProjectNames = new Set<string>();
+      for (const row of uploadMetaRows.rows) {
+        const fileName = (row as any).file_name as string;
+        if (!fileName) continue;
+        const stripped = fileName.replace(/\.(xlsx|xlsm|xls)$/i, '');
+        importedProjectNames.add(stripped);
+        importedProjectNames.add(stripped.replace(/ /g, '_'));
+      }
 
       const today = new Date().toISOString().split("T")[0];
 
@@ -1537,6 +1547,7 @@ export async function registerRoutes(
           escalation_level: info?.escalationLevel || null,
           task_status_counts: taskCountsByProject.get(projectName) || {},
           phase_updated_at: info?.phaseUpdatedAt || null,
+          has_tracker_import: importedProjectNames.has(projectName) || importedProjectNames.has(projectName.replace(/_/g, ' ')),
         };
       });
 
