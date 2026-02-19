@@ -3,7 +3,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
-import MyToolLayout from "@/components/mytool/MyToolLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -111,7 +110,10 @@ const emptyForm = {
 };
 
 export default function MyToolPrioritiesPage() {
-  const { isAdmin } = useAuth();
+  const { user, isAdmin } = useAuth();
+  const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
+  const excoRoles = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO"];
+  const canEdit = isAdmin || (companyRole ? excoRoles.includes(companyRole) : false);
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [showDialog, setShowDialog] = useState(false);
@@ -150,7 +152,7 @@ export default function MyToolPrioritiesPage() {
       }
       return results;
     },
-    enabled: projects.length > 0 && isAdmin,
+    enabled: projects.length > 0 && canEdit,
   });
 
   const filteredPriorities = useMemo(() => {
@@ -292,8 +294,8 @@ export default function MyToolPrioritiesPage() {
   };
 
   return (
-    <MyToolLayout>
-      <div className="space-y-4 max-w-[1400px]" data-testid="mytool-priorities-page">
+    <div className="p-6">
+      <div className="space-y-4 max-w-[1400px] mx-auto" data-testid="company-priorities-page">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-xl font-semibold flex items-center gap-2">
@@ -318,7 +320,7 @@ export default function MyToolPrioritiesPage() {
                 <SelectItem value="all">All</SelectItem>
               </SelectContent>
             </Select>
-            {isAdmin && (
+            {canEdit && (
               <Button size="sm" onClick={() => openCreate()} data-testid="button-create-priority">
                 <Plus className="h-4 w-4 mr-1" />
                 New Priority
@@ -336,7 +338,7 @@ export default function MyToolPrioritiesPage() {
             <CardContent className="flex flex-col items-center justify-center py-16">
               <Flag className="h-10 w-10 text-muted-foreground/30 mb-3" />
               <p className="text-muted-foreground text-sm">No priorities found.</p>
-              {isAdmin && (
+              {canEdit && (
                 <Button variant="outline" size="sm" className="mt-3" onClick={() => openCreate()}>
                   <Plus className="h-4 w-4 mr-1" />
                   Create First Priority
@@ -395,7 +397,7 @@ export default function MyToolPrioritiesPage() {
                               <ExternalLink className="h-3 w-3 text-muted-foreground shrink-0" />
                             </span>
                           )}
-                          {isAdmin && (
+                          {canEdit && (
                             <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 shrink-0 ml-1">
                               <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => openEdit(p)} data-testid={`button-edit-priority-${p.id}`}>
                                 <Pencil className="h-3 w-3" />
@@ -643,6 +645,6 @@ export default function MyToolPrioritiesPage() {
           </DialogContent>
         </Dialog>
       </div>
-    </MyToolLayout>
+    </div>
   );
 }
