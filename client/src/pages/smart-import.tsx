@@ -99,68 +99,134 @@ function StepIndicator({ currentStep }: { currentStep: number }) {
   );
 }
 
+interface FileUploadResult {
+  file: File;
+  status: "pending" | "uploading" | "success" | "error";
+  runId?: number;
+  preview?: any;
+  error?: string;
+  sectionsFound?: number;
+}
+
 function UploadStep({
   onUploaded,
+  onBatchUploaded,
 }: {
   onUploaded: (runId: number, preview: any) => void;
+  onBatchUploaded?: (results: FileUploadResult[]) => void;
 }) {
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<FileUploadResult[]>([]);
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
   const inputRef = useRef<HTMLInputElement>(null);
+  const folderRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
-  const handleFile = (f: File) => {
-    const ext = f.name.split(".").pop()?.toLowerCase();
-    if (ext !== "xlsx" && ext !== "xlsm") {
-      setError("Only .xlsx and .xlsm files are supported");
+  const addFiles = (fileList: FileList | File[]) => {
+    const newFiles: FileUploadResult[] = [];
+    const arr = Array.from(fileList);
+    for (const f of arr) {
+      const ext = f.name.split(".").pop()?.toLowerCase();
+      if (ext !== "xlsx" && ext !== "xlsm") continue;
+      if (files.some(existing => existing.file.name === f.name && existing.file.size === f.size)) continue;
+      newFiles.push({ file: f, status: "pending" });
+    }
+    if (newFiles.length === 0 && arr.length > 0) {
+      setError("No valid Excel files found (.xlsx or .xlsm)");
       return;
     }
-    setFile(f);
+    setFiles(prev => [...prev, ...newFiles]);
+    setError(null);
+  };
+
+  const removeFile = (idx: number) => {
+    setFiles(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const clearAll = () => {
+    setFiles([]);
     setError(null);
   };
 
   const handleUpload = async () => {
-    if (!file) return;
+    if (files.length === 0) return;
     setUploading(true);
     setError(null);
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const res = await fetch("/api/smart-import/upload", {
-        method: "POST",
-        headers: getAuthHeaders(),
-        body: formData,
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: "Upload failed" }));
-        throw new Error(err.error || `Upload failed (${res.status})`);
+
+    const isBatch = files.length > 1;
+    const updatedFiles = [...files];
+    setBatchProgress({ current: 0, total: files.length });
+
+    for (let i = 0; i < updatedFiles.length; i++) {
+      const entry = updatedFiles[i];
+      if (entry.status === "success") continue;
+      entry.status = "uploading";
+      setFiles([...updatedFiles]);
+      setBatchProgress({ current: i + 1, total: files.length });
+
+      try {
+        const formData = new FormData();
+        formData.append("file", entry.file);
+        const res = await fetch("/api/smart-import/upload", {
+          method: "POST",
+          headers: getAuthHeaders(),
+          body: formData,
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ error: "Upload failed" }));
+          throw new Error(err.error || `Upload failed (${res.status})`);
+        }
+        const data = await res.json();
+        entry.status = "success";
+        entry.runId = data.runId;
+        entry.preview = data.preview;
+        entry.sectionsFound = data.preview?.detection?.sections?.length || 0;
+        setFiles([...updatedFiles]);
+      } catch (err: any) {
+        entry.status = "error";
+        entry.error = err.message || "Upload failed";
+        setFiles([...updatedFiles]);
       }
-      const data = await res.json();
+    }
+
+    setUploading(false);
+
+    const successful = updatedFiles.filter(f => f.status === "success");
+    const failed = updatedFiles.filter(f => f.status === "error");
+
+    if (isBatch) {
+      toast({
+        title: "Batch Upload Complete",
+        description: `${successful.length} of ${updatedFiles.length} files processed${failed.length > 0 ? `, ${failed.length} failed` : ""}`,
+        variant: failed.length > 0 ? "destructive" : "default",
+      });
+      if (onBatchUploaded) {
+        onBatchUploaded(updatedFiles);
+      }
+    } else if (successful.length === 1) {
       toast({ title: "Upload Complete", description: "File analyzed successfully" });
-      onUploaded(data.runId, data.preview);
-    } catch (err: any) {
-      setError(err.message || "Upload failed");
-      toast({ title: "Error", description: err.message || "Upload failed", variant: "destructive" });
-    } finally {
-      setUploading(false);
+      onUploaded(successful[0].runId!, successful[0].preview);
     }
   };
+
+  const singleMode = files.length <= 1;
+  const hasSuccessful = files.some(f => f.status === "success");
 
   return (
     <Card className="bg-white rounded-xl shadow-sm" data-testid="upload-step">
       <CardHeader>
         <CardTitle className="text-lg flex items-center gap-2">
           <Upload className="w-5 h-5 text-blue-600" />
-          Upload Excel Tracker
+          Upload Excel Trackers
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         <div
           className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
             dragging ? "border-blue-500 bg-blue-50" :
-            file ? "border-emerald-300 bg-emerald-50" :
+            files.length > 0 ? "border-emerald-300 bg-emerald-50" :
             "border-slate-300 hover:border-blue-400 hover:bg-blue-50/50"
           }`}
           data-testid="dropzone"
@@ -169,8 +235,7 @@ function UploadStep({
           onDrop={(e) => {
             e.preventDefault();
             setDragging(false);
-            const f = e.dataTransfer.files[0];
-            if (f) handleFile(f);
+            addFiles(e.dataTransfer.files);
           }}
           onClick={() => inputRef.current?.click()}
         >
@@ -178,36 +243,128 @@ function UploadStep({
             ref={inputRef}
             type="file"
             accept=".xlsx,.xlsm"
+            multiple
             className="hidden"
             data-testid="input-file"
             onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) handleFile(f);
+              if (e.target.files) addFiles(e.target.files);
+              e.target.value = "";
             }}
           />
-          {file ? (
+          <input
+            ref={folderRef}
+            type="file"
+            accept=".xlsx,.xlsm"
+            className="hidden"
+            data-testid="input-folder"
+            {...{ webkitdirectory: "", directory: "" } as any}
+            onChange={(e) => {
+              if (e.target.files) addFiles(e.target.files);
+              e.target.value = "";
+            }}
+          />
+          {files.length > 0 ? (
             <div className="flex flex-col items-center gap-2">
               <FileSpreadsheet className="w-10 h-10 text-emerald-500" />
-              <p className="text-sm font-medium text-emerald-700">{file.name}</p>
-              <p className="text-xs text-slate-500">{(file.size / 1024).toFixed(0)} KB</p>
-              <Button
-                variant="ghost"
-                size="sm"
-                data-testid="btn-clear-file"
-                onClick={(e) => { e.stopPropagation(); setFile(null); }}
-              >
-                <X className="w-3.5 h-3.5 mr-1" />
-                Clear
-              </Button>
+              <p className="text-sm font-medium text-emerald-700">
+                {files.length} file{files.length > 1 ? "s" : ""} selected
+              </p>
+              <p className="text-xs text-slate-500">
+                {(files.reduce((sum, f) => sum + f.file.size, 0) / 1024).toFixed(0)} KB total
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  data-testid="btn-add-more"
+                  onClick={(e) => { e.stopPropagation(); inputRef.current?.click(); }}
+                >
+                  + Add More
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  data-testid="btn-clear-files"
+                  onClick={(e) => { e.stopPropagation(); clearAll(); }}
+                >
+                  <X className="w-3.5 h-3.5 mr-1" />
+                  Clear All
+                </Button>
+              </div>
             </div>
           ) : (
             <div className="flex flex-col items-center gap-2">
               <Upload className="w-10 h-10 text-slate-400" />
-              <p className="text-sm text-slate-600">Drag & drop your Excel tracker here</p>
-              <p className="text-xs text-slate-400">or click to browse (.xlsx, .xlsm)</p>
+              <p className="text-sm text-slate-600">Drag & drop Excel trackers here</p>
+              <p className="text-xs text-slate-400">Single file or multiple files (.xlsx, .xlsm)</p>
             </div>
           )}
         </div>
+
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            data-testid="btn-browse-folder"
+            onClick={() => folderRef.current?.click()}
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 mr-1.5" />
+            Browse Folder
+          </Button>
+        </div>
+
+        {files.length > 0 && (
+          <div className="border rounded-lg divide-y max-h-48 overflow-y-auto" data-testid="file-list">
+            {files.map((entry, idx) => (
+              <div key={idx} className="flex items-center gap-2 px-3 py-2 text-sm" data-testid={`file-row-${idx}`}>
+                <FileSpreadsheet className={`w-4 h-4 flex-shrink-0 ${
+                  entry.status === "success" ? "text-emerald-500" :
+                  entry.status === "error" ? "text-red-500" :
+                  entry.status === "uploading" ? "text-blue-500" :
+                  "text-slate-400"
+                }`} />
+                <span className="flex-1 truncate">{entry.file.name}</span>
+                <span className="text-xs text-slate-400 flex-shrink-0">
+                  {(entry.file.size / 1024).toFixed(0)} KB
+                </span>
+                {entry.status === "success" && (
+                  <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] px-1.5 py-0">
+                    {entry.sectionsFound} sections
+                  </Badge>
+                )}
+                {entry.status === "error" && (
+                  <Badge className="bg-red-50 text-red-700 border-red-200 text-[10px] px-1.5 py-0">
+                    Failed
+                  </Badge>
+                )}
+                {entry.status === "uploading" && (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" />
+                )}
+                {entry.status === "pending" && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 w-6 p-0"
+                    onClick={() => removeFile(idx)}
+                    data-testid={`btn-remove-file-${idx}`}
+                  >
+                    <X className="w-3 h-3" />
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {uploading && batchProgress.total > 1 && (
+          <div className="space-y-1">
+            <div className="flex justify-between text-xs text-slate-500">
+              <span>Processing file {batchProgress.current} of {batchProgress.total}</span>
+              <span>{Math.round((batchProgress.current / batchProgress.total) * 100)}%</span>
+            </div>
+            <Progress value={(batchProgress.current / batchProgress.total) * 100} className="h-1.5" />
+          </div>
+        )}
 
         {error && (
           <div className="flex items-center gap-2 text-red-600 text-sm" data-testid="text-upload-error">
@@ -216,24 +373,52 @@ function UploadStep({
           </div>
         )}
 
-        <Button
-          className="w-full"
-          disabled={!file || uploading}
-          onClick={handleUpload}
-          data-testid="btn-upload"
-        >
-          {uploading ? (
-            <>
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Uploading & Analyzing...
-            </>
-          ) : (
-            <>
-              <Upload className="w-4 h-4 mr-2" />
-              Upload & Analyze
-            </>
-          )}
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            className="flex-1"
+            disabled={files.length === 0 || uploading}
+            onClick={handleUpload}
+            data-testid="btn-upload"
+          >
+            {uploading ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                {files.length > 1 ? `Processing ${batchProgress.current}/${batchProgress.total}...` : "Uploading & Analyzing..."}
+              </>
+            ) : (
+              <>
+                <Upload className="w-4 h-4 mr-2" />
+                {files.length > 1 ? `Upload & Analyze ${files.length} Files` : "Upload & Analyze"}
+              </>
+            )}
+          </Button>
+        </div>
+
+        {hasSuccessful && files.length > 1 && !uploading && (
+          <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 space-y-2" data-testid="batch-results">
+            <p className="text-sm font-medium text-emerald-700">
+              Batch complete: {files.filter(f => f.status === "success").length} files ready
+            </p>
+            <p className="text-xs text-emerald-600">
+              Select a file below to review its import, or continue to review each one:
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {files.filter(f => f.status === "success").map((entry, idx) => (
+                <Button
+                  key={idx}
+                  variant="outline"
+                  size="sm"
+                  className="text-xs border-emerald-300 hover:bg-emerald-100"
+                  data-testid={`btn-review-file-${idx}`}
+                  onClick={() => onUploaded(entry.runId!, entry.preview)}
+                >
+                  <FileSpreadsheet className="w-3 h-3 mr-1" />
+                  {entry.file.name.replace(/\.(xlsx|xlsm)$/i, "")}
+                </Button>
+              ))}
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -1102,6 +1287,9 @@ export default function SmartImportPage() {
   const [preview, setPreview] = useState<any>(null);
   const [issues, setIssues] = useState<any[]>([]);
   const [loadingRun, setLoadingRun] = useState(false);
+  const [batchResults, setBatchResults] = useState<FileUploadResult[]>([]);
+  const [batchMode, setBatchMode] = useState(false);
+  const [batchIndex, setBatchIndex] = useState(0);
 
   const loadRunData = useCallback(async (id: number) => {
     setLoadingRun(true);
@@ -1121,8 +1309,36 @@ export default function SmartImportPage() {
   const handleUploaded = (newRunId: number, newPreview: any) => {
     setRunId(newRunId);
     setPreview(newPreview);
+    setBatchMode(false);
     setStep(2);
     loadRunData(newRunId);
+  };
+
+  const handleBatchUploaded = (results: FileUploadResult[]) => {
+    const successful = results.filter(r => r.status === "success");
+    setBatchResults(successful);
+    if (successful.length === 1) {
+      handleUploaded(successful[0].runId!, successful[0].preview);
+    } else if (successful.length > 1) {
+      setBatchMode(true);
+      setBatchIndex(0);
+      setRunId(successful[0].runId!);
+      setPreview(successful[0].preview);
+      setStep(2);
+      loadRunData(successful[0].runId!);
+    }
+  };
+
+  const handleBatchNav = (idx: number) => {
+    const entry = batchResults[idx];
+    if (entry) {
+      setBatchIndex(idx);
+      setRunId(entry.runId!);
+      setPreview(entry.preview);
+      setStep(2);
+      setIssues([]);
+      loadRunData(entry.runId!);
+    }
   };
 
   return (
@@ -1134,6 +1350,31 @@ export default function SmartImportPage() {
 
       <StepIndicator currentStep={step} />
 
+      {batchMode && step >= 2 && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3" data-testid="batch-nav">
+          <div className="flex items-center gap-2 mb-2">
+            <FileSpreadsheet className="w-4 h-4 text-blue-600" />
+            <span className="text-sm font-medium text-blue-700">
+              Reviewing file {batchIndex + 1} of {batchResults.length}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {batchResults.map((entry, idx) => (
+              <Button
+                key={idx}
+                variant={idx === batchIndex ? "default" : "outline"}
+                size="sm"
+                className={`text-xs ${idx === batchIndex ? "" : "border-blue-300 hover:bg-blue-100"}`}
+                data-testid={`btn-batch-file-${idx}`}
+                onClick={() => handleBatchNav(idx)}
+              >
+                {entry.file.name.replace(/\.(xlsx|xlsm)$/i, "")}
+              </Button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {loadingRun && step > 1 && (
         <div className="flex items-center justify-center py-4">
           <Loader2 className="w-5 h-5 animate-spin text-blue-500 mr-2" />
@@ -1142,7 +1383,7 @@ export default function SmartImportPage() {
       )}
 
       {step === 1 && (
-        <UploadStep onUploaded={handleUploaded} />
+        <UploadStep onUploaded={handleUploaded} onBatchUploaded={handleBatchUploaded} />
       )}
 
       {step === 2 && preview && (

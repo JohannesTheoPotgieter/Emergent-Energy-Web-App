@@ -46,23 +46,23 @@ export const EXPENDITURE_SYNONYMS: Record<string, string[]> = {
 
 export const SECTION_ANCHORS: Record<string, { sheetNames: string[]; anchorPhrases: string[]; requiredFields: string[] }> = {
   PLAN: {
-    sheetNames: ["project plan", "plan", "programme", "schedule", "project programme"],
-    anchorPhrases: ["high level programme", "actual start", "actual end", "programme", "milestone"],
+    sheetNames: ["project plan", "plan", "programme", "schedule", "project programme", "project schedule"],
+    anchorPhrases: ["high level programme", "actual start", "actual end", "programme", "milestone", "planned start", "planned end", "status"],
     requiredFields: ["task_name"],
   },
   REVENUE: {
-    sheetNames: ["revenue tracking", "revenue", "inflows", "income", "billing"],
-    anchorPhrases: ["payment milestone", "invoice number", "invoice raised", "payment received", "value"],
-    requiredFields: ["milestone_name", "amount_ex_vat"],
+    sheetNames: ["revenue tracking", "revenue", "inflows", "income", "billing", "sheet1"],
+    anchorPhrases: ["payment milestone", "invoice number", "invoice raised", "payment received", "value", "milestone", "planned payment", "excl vat", "ex vat", "project milestone"],
+    requiredFields: ["milestone_name"],
   },
   EXPENDITURE: {
-    sheetNames: ["expenditure breakdown", "expenditure", "costs", "expenses", "cost breakdown"],
-    anchorPhrases: ["product/ service", "description of work", "actual total", "po number", "invoice number", "finance payment"],
-    requiredFields: ["amount_ex_vat"],
+    sheetNames: ["expenditure breakdown", "expenditure", "costs", "expenses", "cost breakdown", "expenditure tracking"],
+    anchorPhrases: ["product/service", "description of work", "actual total", "po number", "invoice number", "finance payment", "budget total", "rate/unit", "supplier", "counterparty", "qty", "cost category"],
+    requiredFields: [],
   },
   CASHFLOW: {
     sheetNames: ["cashflow", "cash flow", "cash-flow"],
-    anchorPhrases: ["week", "inflow", "outflow", "balance", "cumulative"],
+    anchorPhrases: ["week", "inflow", "outflow", "balance", "cumulative", "planned revenue", "planned expenditure"],
     requiredFields: [],
   },
 };

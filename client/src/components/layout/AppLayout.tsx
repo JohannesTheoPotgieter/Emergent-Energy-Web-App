@@ -18,7 +18,6 @@ import {
   AlertTriangle,
   X,
   Briefcase,
-  Upload,
   ShieldCheck,
   Wrench,
   Users,
@@ -71,7 +70,6 @@ function getNavGroups(): NavGroup[] {
         { label: "Cashflow", icon: Wallet, path: "/cashflow" },
         { label: "COS Tracker", icon: TrendingUp, path: "/cos", className: "rotate-180" },
         { label: "Execution Board", icon: Zap, path: "/execution-board" },
-        { label: "Smart Import", icon: FileSpreadsheet, path: "/smart-import" },
       ],
     },
     {
@@ -98,7 +96,7 @@ function getNavGroups(): NavGroup[] {
         { label: "New Project", icon: FolderPlus, path: "/project-create" },
         { label: "Audit Log", icon: History, path: "/admin/audit-log" },
         { label: "Teams & Roles", icon: Users, path: "/admin/teams" },
-        { label: "Data Import", icon: Upload, path: "/admin" },
+        { label: "Smart Import", icon: FileSpreadsheet, path: "/smart-import" },
       ],
     },
   ];

@@ -56,7 +56,7 @@ function scoreRowAsHeader(row: any[], anchorPhrases: string[], allSynonymPhrases
   const normalizedCells = row.map(cell => normalizeHeader(cell));
 
   for (const phrase of anchorPhrases) {
-    const normPhrase = phrase.toLowerCase().trim();
+    const normPhrase = normalizeHeader(phrase);
     for (const cell of normalizedCells) {
       if (cell && cell.includes(normPhrase)) {
         anchorHits++;
@@ -66,7 +66,7 @@ function scoreRowAsHeader(row: any[], anchorPhrases: string[], allSynonymPhrases
   }
 
   for (const phrase of allSynonymPhrases) {
-    const normPhrase = phrase.toLowerCase().trim();
+    const normPhrase = normalizeHeader(phrase);
     for (const cell of normalizedCells) {
       if (cell && cell.includes(normPhrase)) {
         synonymHits++;
@@ -105,7 +105,7 @@ function findHeaderRow(
     }
   }
 
-  if (bestRowIndex < 0 || bestScore < 2) return null;
+  if (bestRowIndex < 0 || bestScore < 1) return null;
 
   const headerRow = data[bestRowIndex];
   const headers: { colIndex: number; rawHeader: string; normalizedHeader: string }[] = [];
@@ -173,7 +173,7 @@ function computeConfidence(
 
   let anchorHits = 0;
   for (const phrase of anchor.anchorPhrases) {
-    const normPhrase = phrase.toLowerCase().trim();
+    const normPhrase = normalizeHeader(phrase);
     if (normalizedHeaders.some(h => h.includes(normPhrase))) {
       anchorHits++;
     }
@@ -279,6 +279,9 @@ export function detectSections(workbook: ExcelJS.Workbook): DetectionResult {
 
   const claimedSheets = new Set<string>();
 
+  console.log(`[Detector] Workbook has ${workbook.worksheets.length} sheets: ${workbook.worksheets.map(ws => ws.name).join(", ")}`);
+
+  // Pass 1: Match sections by sheet name AND content
   for (const sectionKey of Object.keys(SECTION_ANCHORS)) {
     const anchor = SECTION_ANCHORS[sectionKey];
 
@@ -288,25 +291,33 @@ export function detectSections(workbook: ExcelJS.Workbook): DetectionResult {
       confidence: number;
       dataStartRow: number;
       dataEndRow: number;
+      nameMatched: boolean;
     } | null = null;
 
     for (const ws of workbook.worksheets) {
       if (claimedSheets.has(ws.name)) continue;
 
       const nameMatched = fuzzySheetMatch(ws.name, anchor.sheetNames);
-      if (!nameMatched) continue;
 
       const data = worksheetToArray(ws);
-      const headerResult = findHeaderRow(data, sectionKey);
+      if (data.length === 0) continue;
+
+      const headerResult = findHeaderRow(data, sectionKey, nameMatched ? 50 : 30);
 
       if (headerResult) {
         const dataStartRow = headerResult.rowIndex + 1;
         const dataEndRow = findDataEndRow(data, dataStartRow, data[0]?.length || 0);
-        const confidence = computeConfidence(sectionKey, headerResult.headers, true);
+        const confidence = computeConfidence(sectionKey, headerResult.headers, nameMatched);
 
-        if (!bestCandidate || confidence > bestCandidate.confidence) {
-          bestCandidate = { ws, headerResult, confidence, dataStartRow, dataEndRow };
+        console.log(`[Detector] ${sectionKey}: sheet "${ws.name}" nameMatch=${nameMatched}, headerRow=${headerResult.rowIndex}, headers=${headerResult.headers.length}, confidence=${confidence.toFixed(2)}`);
+
+        const effectiveConfidence = nameMatched ? confidence + 0.2 : confidence;
+
+        if (!bestCandidate || effectiveConfidence > (bestCandidate.nameMatched ? bestCandidate.confidence + 0.2 : bestCandidate.confidence)) {
+          bestCandidate = { ws, headerResult, confidence, dataStartRow, dataEndRow, nameMatched };
         }
+      } else if (nameMatched) {
+        console.log(`[Detector] ${sectionKey}: sheet "${ws.name}" nameMatch=true but no header row found (data rows: ${data.length})`);
       }
     }
 
@@ -326,13 +337,21 @@ export function detectSections(workbook: ExcelJS.Workbook): DetectionResult {
       if (sectionKey === "PLAN") {
         projectInfo = extractProjectInfo(bestCandidate.ws);
       }
+    } else {
+      console.log(`[Detector] ${sectionKey}: no candidate found in any sheet`);
     }
   }
 
+  // Pass 2: Any unclaimed sheets — try to match by content only
   for (const ws of workbook.worksheets) {
     if (claimedSheets.has(ws.name)) continue;
 
     const data = worksheetToArray(ws);
+    if (data.length === 0) {
+      unmatched.push({ sheetName: ws.name, reason: "Empty sheet" });
+      continue;
+    }
+
     let bestSection: string | null = null;
     let bestScore = 0;
     let bestHeader: ReturnType<typeof findHeaderRow> = null;
@@ -355,7 +374,7 @@ export function detectSections(workbook: ExcelJS.Workbook): DetectionResult {
       }
     }
 
-    if (bestSection && bestHeader && bestScore >= 3) {
+    if (bestSection && bestHeader && bestScore >= 2) {
       const dataStartRow = bestHeader.rowIndex + 1;
       const dataEndRow = findDataEndRow(data, dataStartRow, data[0]?.length || 0);
       const confidence = computeConfidence(bestSection, bestHeader.headers, false);
@@ -385,5 +404,6 @@ export function detectSections(workbook: ExcelJS.Workbook): DetectionResult {
     }
   }
 
+  console.log(`[Detector] Final: ${sections.length} sections detected, ${unmatched.length} unmatched`);
   return { sections, unmatched, projectInfo };
 }

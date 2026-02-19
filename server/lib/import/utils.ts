@@ -113,7 +113,15 @@ export function worksheetToArray(ws: ExcelJS.Worksheet): any[][] {
 }
 
 export function normalizeHeader(header: any): string {
-  return String(header || "").toLowerCase().trim().replace(/\s+/g, " ");
+  return String(header || "")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/\s*\/\s*/g, "/")
+    .replace(/\s*-\s*/g, " ")
+    .replace(/[()]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 export function levenshteinDistance(a: string, b: string): number {
