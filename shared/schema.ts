@@ -12,7 +12,12 @@ export const revenueTypeEnum = pgEnum('revenue_type', ['PPA', 'Merchant', 'LGC',
 export const revenueStatusEnum = pgEnum('revenue_status', ['Realised', 'Forecast']);
 export const taskStatusEnum = pgEnum('task_status', ['Not Started', 'In Progress', 'Complete', 'Delayed']);
 export const budgetCategoryEnum = pgEnum('budget_category', ['REV', 'COS', 'OPS']);
-export const userRoleEnum = pgEnum('user_role', ['admin', 'member', 'quality_manager', 'viewer', 'eng_program_manager']);
+export const userRoleEnum = pgEnum('user_role', [
+  'admin', 'member', 'quality_manager', 'viewer', 'eng_program_manager',
+  'COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO',
+  'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER',
+  'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'VIEWER',
+]);
 
 // Users Table
 export const users = pgTable("users", {
@@ -2075,3 +2080,58 @@ export const importDiffEvents = pgTable("import_diff_events", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 export type ImportDiffEvent = typeof importDiffEvents.$inferSelect;
+
+// ===================== UNIFIED ROLE PERMISSIONS =====================
+
+export const APP_SECTIONS = [
+  'EXCO',
+  'PROJECT_MANAGEMENT',
+  'ENGINEERING',
+  'QUALITY',
+  'ADMIN',
+  'MY_TOOL',
+  'FINANCE',
+] as const;
+export type AppSection = typeof APP_SECTIONS[number];
+
+export const APP_SECTION_LABELS: Record<AppSection, string> = {
+  EXCO: "Executive (Lifecycle, Priorities)",
+  PROJECT_MANAGEMENT: "Project Management",
+  ENGINEERING: "Engineering Dashboard & Tasks",
+  QUALITY: "Quality Management",
+  ADMIN: "Admin (Settings, Templates, Import)",
+  MY_TOOL: "My Tool (Daily Planner)",
+  FINANCE: "Finance (Cashflow, COS, Budgets)",
+};
+
+export const rolePermissions = pgTable("role_permissions", {
+  id: serial("id").primaryKey(),
+  role: text("role").notNull().unique(),
+  label: text("label").notNull(),
+  description: text("description"),
+  sections: text("sections").array().notNull().default([]),
+  canManageUsers: boolean("can_manage_users").notNull().default(false),
+  canManageRoles: boolean("can_manage_roles").notNull().default(false),
+  canEditData: boolean("can_edit_data").notNull().default(true),
+  isSystem: boolean("is_system").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertRolePermissionSchema = createInsertSchema(rolePermissions).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertRolePermission = z.infer<typeof insertRolePermissionSchema>;
+export type RolePermission = typeof rolePermissions.$inferSelect;
+
+export const DEFAULT_ROLE_PERMISSIONS: InsertRolePermission[] = [
+  { role: "COO_ADMIN", label: "COO Admin", description: "Full executive access, settings, user management", sections: ["EXCO", "PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "ADMIN", "MY_TOOL", "FINANCE"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
+  { role: "CEO_ADMIN", label: "CEO Admin", description: "Full executive access, strategic oversight", sections: ["EXCO", "PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "ADMIN", "MY_TOOL", "FINANCE"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
+  { role: "CCO", label: "CCO", description: "Commercial operations, project oversight", sections: ["EXCO", "PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "FINANCE"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "CFO", label: "CFO", description: "Financial oversight, cashflow, budgets", sections: ["EXCO", "PROJECT_MANAGEMENT", "FINANCE"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "PROGRAM_MANAGER", label: "Program Manager", description: "Project management, engineering dashboard", sections: ["PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "PROGRAM_FINANCE_MANAGER", label: "Program Finance Manager", description: "Project finance, cost tracking", sections: ["PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "FINANCE"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "CONSTRUCTION_MANAGER", label: "Construction Manager", description: "Construction oversight, site management", sections: ["PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "QUALITY_MANAGER", label: "Quality Manager", description: "Quality checklists, post-mortems, inspections", sections: ["PROJECT_MANAGEMENT", "QUALITY"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "ENGINEERING_MANAGER", label: "Engineering Manager", description: "Engineering tasks, deliverables, approvals", sections: ["ENGINEERING", "QUALITY"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "KEY_ACCOUNTS_MANAGER", label: "Key Accounts Manager", description: "Client relations, account management", sections: ["PROJECT_MANAGEMENT"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "VIEWER", label: "Viewer", description: "View-only access to project data", sections: ["PROJECT_MANAGEMENT"], canManageUsers: false, canManageRoles: false, canEditData: false, isSystem: true },
+];
