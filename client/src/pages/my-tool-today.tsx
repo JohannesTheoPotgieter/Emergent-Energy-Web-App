@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
@@ -240,6 +240,9 @@ export default function MyToolTodayPage() {
   const [editingBlockId, setEditingBlockId] = useState<number | null>(null);
   const [editBlockStart, setEditBlockStart] = useState("");
   const [editBlockEnd, setEditBlockEnd] = useState("");
+  const [resizingBlock, setResizingBlock] = useState<{ id: number; edge: "top" | "bottom"; startY: number; origStartMins: number; origEndMins: number } | null>(null);
+  const [resizePreview, setResizePreview] = useState<{ id: number; startMins: number; endMins: number } | null>(null);
+  const plannerContainerRef = useRef<HTMLDivElement | null>(null);
   const [focusMode, setFocusMode] = useState(() => localStorage.getItem("mytool_focus_mode") === "true");
   const [contextSelection, setContextSelection] = useState<{ type: "task" | "email" | "priority"; id: string | number } | null>(null);
   const [emailConvertForm, setEmailConvertForm] = useState<{ email: OutlookEmail; title: string; project: string; module: string; dueAt: string; priority: string } | null>(null);
@@ -645,6 +648,51 @@ export default function MyToolTodayPage() {
       taskId: task.id,
     });
   };
+
+  const SLOT_HEIGHT_CONST = 48;
+  const handleResizeStart = useCallback((e: React.MouseEvent, blockId: number, edge: "top" | "bottom", startMins: number, endMins: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setResizingBlock({ id: blockId, edge, startY: e.clientY, origStartMins: startMins, origEndMins: endMins });
+    setResizePreview({ id: blockId, startMins, endMins });
+  }, []);
+
+  useEffect(() => {
+    if (!resizingBlock) return;
+    const handleMouseMove = (e: MouseEvent) => {
+      const deltaY = e.clientY - resizingBlock.startY;
+      const deltaMins = Math.round((deltaY / SLOT_HEIGHT_CONST) * 60 / 15) * 15;
+      let newStart = resizingBlock.origStartMins;
+      let newEnd = resizingBlock.origEndMins;
+      if (resizingBlock.edge === "bottom") {
+        newEnd = Math.max(resizingBlock.origStartMins + 15, resizingBlock.origEndMins + deltaMins);
+        newEnd = Math.min(newEnd, plannerEndHour * 60);
+      } else {
+        newStart = Math.min(resizingBlock.origEndMins - 15, resizingBlock.origStartMins + deltaMins);
+        newStart = Math.max(newStart, plannerStartHour * 60);
+      }
+      setResizePreview({ id: resizingBlock.id, startMins: newStart, endMins: newEnd });
+    };
+    const handleMouseUp = () => {
+      if (resizePreview && resizingBlock) {
+        const startH = Math.floor(resizePreview.startMins / 60);
+        const startM = resizePreview.startMins % 60;
+        const endH = Math.floor(resizePreview.endMins / 60);
+        const endM = resizePreview.endMins % 60;
+        const newStartTime = `${String(startH).padStart(2, "0")}:${String(startM).padStart(2, "0")}`;
+        const newEndTime = `${String(endH).padStart(2, "0")}:${String(endM).padStart(2, "0")}`;
+        updateBlockMutation.mutate({ id: resizingBlock.id, startTime: newStartTime, endTime: newEndTime });
+      }
+      setResizingBlock(null);
+      setResizePreview(null);
+    };
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [resizingBlock, resizePreview, plannerEndHour, plannerStartHour, updateBlockMutation]);
 
   const pinnedTasks = tasks.filter(t => t.pinnedToday && t.status !== "done" && t.status !== "cancelled");
   const inProgressTasks = tasks.filter(t => t.status === "in_progress" && !t.pinnedToday);
@@ -1077,14 +1125,29 @@ export default function MyToolTodayPage() {
                             const block = item.data;
                             const linkedTask = block.taskId ? tasks.find(t => t.id === block.taskId) : null;
                             const isEditing = editingBlockId === block.id;
+                            const isResizing = resizePreview?.id === block.id;
+                            const displayTop = isResizing ? minToTop(resizePreview!.startMins) : top;
+                            const displayHeight = isResizing ? minToHeight(resizePreview!.startMins, resizePreview!.endMins) : height;
+                            const displayStartFmt = isResizing ? `${String(Math.floor(resizePreview!.startMins / 60)).padStart(2, "0")}:${String(resizePreview!.startMins % 60).padStart(2, "0")}` : block.startTime;
+                            const displayEndFmt = isResizing ? `${String(Math.floor(resizePreview!.endMins / 60)).padStart(2, "0")}:${String(resizePreview!.endMins % 60).padStart(2, "0")}` : block.endTime;
                             return (
                               <div
                                 key={`blk-${block.id}`}
-                                className="absolute z-20 rounded-md bg-violet-100/80 dark:bg-violet-900/30 border border-violet-300/60 dark:border-violet-700/40 px-2 py-1 overflow-hidden group/block"
-                                style={{ top, height: Math.max(height, 20), left: colLeft, width: colWidth, right: isSingle ? "4px" : undefined }}
-                                title={`${block.label}\n${block.startTime} – ${block.endTime}`}
+                                className={`absolute z-20 rounded-md bg-violet-100/80 dark:bg-violet-900/30 border border-violet-300/60 dark:border-violet-700/40 px-2 py-1 overflow-hidden group/block ${isResizing ? "ring-2 ring-violet-400/60 shadow-lg" : ""}`}
+                                style={{ top: displayTop, height: Math.max(displayHeight, 20), left: colLeft, width: colWidth, right: isSingle ? "4px" : undefined, userSelect: isResizing ? "none" : undefined }}
+                                title={`${block.label}\n${displayStartFmt} – ${displayEndFmt}`}
                                 data-testid={`timeblock-${block.id}`}
                               >
+                                {/* Top resize handle */}
+                                {!isEditing && (
+                                  <div
+                                    className="absolute top-0 left-0 right-0 h-2 cursor-n-resize z-30 hover:bg-violet-400/20 transition-colors"
+                                    onMouseDown={(e) => handleResizeStart(e, block.id, "top", item.startMins, item.endMins)}
+                                    data-testid={`resize-top-${block.id}`}
+                                  >
+                                    <div className="absolute top-0.5 left-1/2 -translate-x-1/2 w-6 h-[2px] rounded bg-violet-400/0 group-hover/block:bg-violet-400/60 transition-colors" />
+                                  </div>
+                                )}
                                 {isEditing ? (
                                   <div className="flex flex-col gap-1" onClick={e => e.stopPropagation()}>
                                     <div className="flex gap-1">
@@ -1102,8 +1165,8 @@ export default function MyToolTodayPage() {
                                     <Clock className="h-3 w-3 text-violet-600 dark:text-violet-400 mt-0.5 shrink-0" />
                                     <div className="min-w-0 flex-1">
                                       <p className="text-[11px] font-medium text-violet-800 dark:text-violet-200 truncate leading-tight">{block.label}</p>
-                                      <p className="text-[9px] text-violet-600 dark:text-violet-400">{block.startTime} – {block.endTime}</p>
-                                      {linkedTask && height > 35 && (
+                                      <p className="text-[9px] text-violet-600 dark:text-violet-400">{displayStartFmt} – {displayEndFmt}</p>
+                                      {linkedTask && displayHeight > 35 && (
                                         <p className="text-[9px] text-violet-500 truncate mt-0.5">
                                           <span className={`inline-block w-1 h-1 rounded-full mr-0.5 ${linkedTask.status === "done" ? "bg-emerald-500" : linkedTask.status === "in_progress" ? "bg-amber-500" : "bg-blue-500"}`} />
                                           {linkedTask.title}
@@ -1118,6 +1181,16 @@ export default function MyToolTodayPage() {
                                         <Trash2 className="h-2.5 w-2.5" />
                                       </Button>
                                     </div>
+                                  </div>
+                                )}
+                                {/* Bottom resize handle */}
+                                {!isEditing && (
+                                  <div
+                                    className="absolute bottom-0 left-0 right-0 h-2 cursor-s-resize z-30 hover:bg-violet-400/20 transition-colors"
+                                    onMouseDown={(e) => handleResizeStart(e, block.id, "bottom", item.startMins, item.endMins)}
+                                    data-testid={`resize-bottom-${block.id}`}
+                                  >
+                                    <div className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-6 h-[2px] rounded bg-violet-400/0 group-hover/block:bg-violet-400/60 transition-colors" />
                                   </div>
                                 )}
                               </div>
