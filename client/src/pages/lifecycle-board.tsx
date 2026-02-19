@@ -12,7 +12,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Search, Zap, User, Wrench, FileSpreadsheet, GripVertical, CheckCircle2, ClipboardList, Link2, Merge, ArrowRight, X, Save, AlertTriangle } from "lucide-react";
+import { Loader2, Search, Zap, User, Wrench, FileSpreadsheet, GripVertical, CheckCircle2, ClipboardList, Link2, Merge, ArrowRight, X, Save, AlertTriangle, Archive, ChevronDown, ChevronRight } from "lucide-react";
 
 interface ProjectInfo {
   id: number | null;
@@ -219,6 +219,7 @@ export default function LifecycleBoardPage() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [showActiveOnly, setShowActiveOnly] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
   const [draggedProject, setDraggedProject] = useState<ProjectInfo | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
   const [selectedProject, setSelectedProject] = useState<ProjectInfo | null>(null);
@@ -434,7 +435,7 @@ export default function LifecycleBoardPage() {
       });
       if (res.ok) {
         const data = await res.json();
-        toast({ title: "Merged", description: `${data.movedTasks} task(s) and ${data.movedPlanEntries} plan entries moved to ${cleanProjectName(data.target)}` });
+        toast({ title: "Merged", description: `${data.movedTasks} task(s), ${data.movedPlanEntries} plan entries, ${data.movedExpenses || 0} expenses, ${data.movedInflows || 0} inflows moved to ${cleanProjectName(data.target)}` });
         setProjectDialogOpen(false);
         setSelectedProject(null);
         setMergeTarget("");
@@ -476,21 +477,23 @@ export default function LifecycleBoardPage() {
     }
   };
 
-  const filtered = projects.filter((p) => {
-    if (showActiveOnly && !p.isActive) return false;
-    if (searchTerm) {
-      const clean = cleanProjectName(p.projectName).toLowerCase();
-      const term = searchTerm.toLowerCase();
-      if (!clean.includes(term) && !(p.pm || "").toLowerCase().includes(term)) return false;
-    }
-    return true;
-  });
+  const matchesSearch = (p: ProjectInfo) => {
+    if (!searchTerm) return true;
+    const clean = cleanProjectName(p.projectName).toLowerCase();
+    const term = searchTerm.toLowerCase();
+    return clean.includes(term) || (p.pm || "").toLowerCase().includes(term);
+  };
+
+  const activeProjects = projects.filter((p) => p.isActive && matchesSearch(p));
+  const archivedProjects = projects.filter((p) => !p.isActive && matchesSearch(p));
+
+  const filtered = showActiveOnly ? activeProjects : [...activeProjects, ...archivedProjects];
 
   const grouped: Record<string, ProjectInfo[]> = {};
   for (const group of PHASE_GROUPS) {
     grouped[group.key] = [];
   }
-  for (const p of filtered) {
+  for (const p of activeProjects) {
     const key = mapPhaseToGroup(p.phase, p.source);
     if (grouped[key]) {
       grouped[key].push(p);
@@ -542,7 +545,7 @@ export default function LifecycleBoardPage() {
           <span className="text-sm text-muted-foreground">Active only</span>
         </div>
         <div className="ml-auto text-sm text-muted-foreground" data-testid="text-project-count">
-          {filtered.length} project{filtered.length !== 1 ? "s" : ""}
+          {activeProjects.length} active{archivedProjects.length > 0 ? `, ${archivedProjects.length} archived` : ""}
         </div>
       </div>
 
@@ -644,6 +647,56 @@ export default function LifecycleBoardPage() {
           })}
         </div>
       </div>
+
+      {archivedProjects.length > 0 && (
+        <div className="border rounded-lg" data-testid="archived-section">
+          <button
+            type="button"
+            className="w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-muted/50 transition-colors"
+            onClick={() => setShowArchived(!showArchived)}
+            data-testid="btn-toggle-archived"
+          >
+            <Archive className="w-4 h-4 text-muted-foreground" />
+            <span className="font-semibold text-sm">Archived Projects</span>
+            <Badge variant="secondary" className="text-xs" data-testid="badge-archived-count">
+              {archivedProjects.length}
+            </Badge>
+            <span className="text-xs text-muted-foreground ml-1">
+              (data still included in COS & Cashflow)
+            </span>
+            <span className="ml-auto">
+              {showArchived ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+            </span>
+          </button>
+          {showArchived && (
+            <div className="border-t px-4 py-3">
+              <div className="grid gap-2 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {archivedProjects.map((p) => (
+                  <div
+                    key={p.id ?? p.projectName}
+                    className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-muted/40 border border-dashed"
+                    data-testid={`archived-project-${p.id}`}
+                  >
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium truncate">{cleanProjectName(p.projectName)}</div>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        {p.phase && <span>{p.phase}</span>}
+                        {p.pm && <span className="flex items-center gap-0.5"><User className="w-3 h-3" />{p.pm}</span>}
+                        {p.sizeKwp && parseFloat(p.sizeKwp) > 0 && (
+                          <span className="flex items-center gap-0.5"><Zap className="w-3 h-3" />{parseFloat(p.sizeKwp).toFixed(0)} kWp</span>
+                        )}
+                      </div>
+                    </div>
+                    {formatZAR(p.contractValue) && (
+                      <span className="text-xs text-muted-foreground shrink-0">{formatZAR(p.contractValue)}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <Dialog open={projectDialogOpen} onOpenChange={setProjectDialogOpen}>
         <DialogContent className="max-w-lg">
