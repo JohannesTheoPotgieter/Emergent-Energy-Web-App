@@ -1146,6 +1146,20 @@ export const insertMytoolCompanyPrioritySchema = createInsertSchema(mytoolCompan
 export type InsertMytoolCompanyPriority = z.infer<typeof insertMytoolCompanyPrioritySchema>;
 export type MytoolCompanyPriority = typeof mytoolCompanyPriorities.$inferSelect;
 
+export const priorityLinks = pgTable("priority_links", {
+  id: serial("id").primaryKey(),
+  priorityId: integer("priority_id").notNull().references(() => mytoolCompanyPriorities.id, { onDelete: "cascade" }),
+  linkType: text("link_type").notNull(),
+  projectName: text("project_name"),
+  taskId: integer("task_id"),
+  taskType: text("task_type"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertPriorityLinkSchema = createInsertSchema(priorityLinks).omit({ id: true, createdAt: true });
+export type InsertPriorityLink = z.infer<typeof insertPriorityLinkSchema>;
+export type PriorityLink = typeof priorityLinks.$inferSelect;
+
 export const mytoolUserPreferences = pgTable("mytool_user_preferences", {
   ownerUserId: integer("owner_user_id").primaryKey().references(() => users.id),
   todayLayout: text("today_layout"),

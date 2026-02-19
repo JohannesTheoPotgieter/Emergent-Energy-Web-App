@@ -50,6 +50,15 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 
+interface PriorityLink {
+  id: number;
+  priorityId: number;
+  linkType: string;
+  projectName: string | null;
+  taskId: number | null;
+  taskType: string | null;
+}
+
 interface CompanyPriority {
   id: number;
   title: string;
@@ -68,6 +77,7 @@ interface CompanyPriority {
   dueDate: string | null;
   linkedTaskId: number | null;
   linkedTaskType: string | null;
+  links: PriorityLink[];
   createdAt: string;
   updatedAt: string;
 }
@@ -91,6 +101,13 @@ const departmentColors: Record<string, string> = {
 };
 
 const defaultDeptColor = "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300";
+
+interface PendingLink {
+  linkType: string;
+  projectName: string;
+  taskId: string;
+  taskType: string;
+}
 
 const emptyForm = {
   title: "",
@@ -121,6 +138,10 @@ export default function MyToolPrioritiesPage() {
   const [form, setForm] = useState(emptyForm);
   const [statusFilter, setStatusFilter] = useState<string>("all_active");
   const [collapsedDepts, setCollapsedDepts] = useState<Set<string>>(new Set());
+  const [pendingLinks, setPendingLinks] = useState<PendingLink[]>([]);
+  const [existingLinks, setExistingLinks] = useState<PriorityLink[]>([]);
+  const [linkProjectPicker, setLinkProjectPicker] = useState("");
+  const [linkTaskPicker, setLinkTaskPicker] = useState("");
 
   const { data: priorities = [], isLoading } = useQuery<CompanyPriority[]>({
     queryKey: ["/api/mytool/company-priorities"],
@@ -181,26 +202,6 @@ export default function MyToolPrioritiesPage() {
     return sortedKeys.map(dept => ({ department: dept, items: groups[dept] }));
   }, [filteredPriorities]);
 
-  const createMutation = useMutation({
-    mutationFn: (data: any) => apiRequest("POST", "/api/mytool/company-priorities", data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
-      closeDialog();
-      toast({ title: "Priority Created" });
-    },
-    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: any }) => apiRequest("PATCH", `/api/mytool/company-priorities/${id}`, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
-      closeDialog();
-      toast({ title: "Priority Updated" });
-    },
-    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
-  });
-
   const deleteMutation = useMutation({
     mutationFn: (id: number) => apiRequest("DELETE", `/api/mytool/company-priorities/${id}`),
     onSuccess: () => {
@@ -213,11 +214,17 @@ export default function MyToolPrioritiesPage() {
     setShowDialog(false);
     setEditingPriority(null);
     setForm(emptyForm);
+    setPendingLinks([]);
+    setExistingLinks([]);
+    setLinkProjectPicker("");
+    setLinkTaskPicker("");
   };
 
   const openCreate = (dept?: string) => {
     setEditingPriority(null);
     setForm({ ...emptyForm, department: dept || "" });
+    setPendingLinks([]);
+    setExistingLinks([]);
     setShowDialog(true);
   };
 
@@ -239,11 +246,68 @@ export default function MyToolPrioritiesPage() {
       status: p.status,
       priorityRank: p.priorityRank?.toString() || "",
     });
+    setExistingLinks(p.links || []);
+    setPendingLinks([]);
+    setLinkProjectPicker("");
+    setLinkTaskPicker("");
     setShowDialog(true);
   };
 
-  const handleSave = () => {
+  const savePendingLinks = async (priorityId: number) => {
+    const token = localStorage.getItem("auth_token");
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    for (const pl of pendingLinks) {
+      await fetch(`/api/mytool/company-priorities/${priorityId}/links`, {
+        method: "POST",
+        headers,
+        credentials: "include",
+        body: JSON.stringify(pl),
+      });
+    }
+  };
+
+  const removeExistingLink = async (linkId: number) => {
+    const token = localStorage.getItem("auth_token");
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    await fetch(`/api/mytool/priority-links/${linkId}`, {
+      method: "DELETE",
+      headers,
+      credentials: "include",
+    });
+    setExistingLinks(prev => prev.filter(l => l.id !== linkId));
+    queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
+  };
+
+  const addPendingProjectLink = () => {
+    if (!linkProjectPicker) return;
+    const alreadyExists = existingLinks.some(l => l.linkType === "project" && l.projectName === linkProjectPicker)
+      || pendingLinks.some(l => l.linkType === "project" && l.projectName === linkProjectPicker);
+    if (alreadyExists) {
+      toast({ title: "Already linked", description: "This project is already linked.", variant: "destructive" });
+      return;
+    }
+    setPendingLinks(prev => [...prev, { linkType: "project", projectName: linkProjectPicker, taskId: "", taskType: "" }]);
+  };
+
+  const addPendingTaskLink = () => {
+    if (!linkTaskPicker || !linkProjectPicker) return;
+    const alreadyExists = existingLinks.some(l => l.linkType === "task" && l.taskId === parseInt(linkTaskPicker))
+      || pendingLinks.some(l => l.linkType === "task" && l.taskId === linkTaskPicker);
+    if (alreadyExists) {
+      toast({ title: "Already linked", description: "This task is already linked.", variant: "destructive" });
+      return;
+    }
+    setPendingLinks(prev => [...prev, { linkType: "task", projectName: linkProjectPicker, taskId: linkTaskPicker, taskType: "operational" }]);
+    setLinkTaskPicker("");
+  };
+
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleSave = async () => {
     if (!form.title.trim()) return;
+    setIsSaving(true);
     const supportArr = form.supportText.split(",").map(s => s.trim()).filter(Boolean);
     const payload: any = {
       title: form.title.trim(),
@@ -261,10 +325,27 @@ export default function MyToolPrioritiesPage() {
       status: form.status,
       priorityRank: form.priorityRank ? parseInt(form.priorityRank) : null,
     };
-    if (editingPriority) {
-      updateMutation.mutate({ id: editingPriority.id, data: payload });
-    } else {
-      createMutation.mutate(payload);
+    try {
+      if (editingPriority) {
+        await apiRequest("PATCH", `/api/mytool/company-priorities/${editingPriority.id}`, payload);
+        if (pendingLinks.length > 0) {
+          await savePendingLinks(editingPriority.id);
+        }
+        toast({ title: "Priority Updated" });
+      } else {
+        const res = await apiRequest("POST", "/api/mytool/company-priorities", payload);
+        const created = await res.json();
+        if (created?.id && pendingLinks.length > 0) {
+          await savePendingLinks(created.id);
+        }
+        toast({ title: "Priority Created" });
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
+      closeDialog();
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -280,9 +361,9 @@ export default function MyToolPrioritiesPage() {
   const projectNames = projects.map((p: any) => p.projectName || p.project_name).filter(Boolean);
 
   const tasksForProject = useMemo(() => {
-    if (!form.linkedProjectName) return [];
-    return allOperationalTasks.filter((t: any) => t._projectName === form.linkedProjectName);
-  }, [form.linkedProjectName, allOperationalTasks]);
+    if (!linkProjectPicker) return [];
+    return allOperationalTasks.filter((t: any) => t._projectName === linkProjectPicker);
+  }, [linkProjectPicker, allOperationalTasks]);
 
   const formatDisplayDate = (d: string | null) => {
     if (!d) return "";
@@ -392,9 +473,15 @@ export default function MyToolPrioritiesPage() {
                         </div>
                         <div className="pr-2 flex items-center gap-1.5 min-w-0">
                           <span className="font-medium truncate" data-testid={`text-priority-${p.id}`}>{p.title}</span>
-                          {p.linkedProjectName && (
-                            <span title={`Linked to ${p.linkedProjectName}`}>
+                          {(p.links?.length > 0 || p.linkedProjectName) && (
+                            <span title={p.links?.length > 0
+                              ? `${p.links.length} linked item(s): ${p.links.map(l => l.linkType === 'project' ? (l.projectName || '').replace(/_Tracker.*$/i, '').replace(/_/g, ' ') : `Task #${l.taskId}`).join(', ')}`
+                              : `Linked to ${p.linkedProjectName}`
+                            } className="flex items-center gap-0.5">
                               <ExternalLink className="h-3 w-3 text-muted-foreground shrink-0" />
+                              {p.links?.length > 1 && (
+                                <span className="text-[10px] text-muted-foreground font-medium">{p.links.length}</span>
+                              )}
                             </span>
                           )}
                           {canEdit && (
@@ -582,52 +669,97 @@ export default function MyToolPrioritiesPage() {
               </div>
 
               <div className="border-t pt-4">
-                <Label className="text-xs font-medium text-muted-foreground">Link to Project / Task</Label>
-                <div className="grid grid-cols-2 gap-3 mt-2">
-                  <div>
-                    <Label className="text-[10px] text-muted-foreground">Linked Project</Label>
-                    <Select
-                      value={form.linkedProjectName || "_none"}
-                      onValueChange={(v) => setForm({ ...form, linkedProjectName: v === "_none" ? "" : v, linkedTaskId: "", linkedTaskType: "" })}
-                    >
-                      <SelectTrigger className="mt-1 text-xs" data-testid="select-dialog-project">
-                        <SelectValue placeholder="None" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="_none">None</SelectItem>
-                        {projectNames.map((name: string) => (
-                          <SelectItem key={name} value={name}>
-                            {name.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                <Label className="text-xs font-medium text-muted-foreground">Linked Projects & Tasks</Label>
+
+                {(existingLinks.length > 0 || pendingLinks.length > 0) && (
+                  <div className="mt-2 space-y-1">
+                    {existingLinks.map((l) => (
+                      <div key={`existing-${l.id}`} className="flex items-center gap-2 text-xs bg-muted/40 rounded px-2 py-1.5" data-testid={`link-existing-${l.id}`}>
+                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                          {l.linkType === "project" ? "Project" : "Task"}
+                        </Badge>
+                        <span className="flex-1 truncate">
+                          {l.linkType === "project"
+                            ? (l.projectName || "").replace(/_Tracker.*$/i, "").replace(/_/g, " ")
+                            : `Task #${l.taskId} in ${(l.projectName || "").replace(/_Tracker.*$/i, "").replace(/_/g, " ")}`}
+                        </span>
+                        {canEdit && (
+                          <Button variant="ghost" size="sm" className="h-5 w-5 p-0 text-muted-foreground hover:text-destructive" onClick={() => removeExistingLink(l.id)} data-testid={`btn-remove-link-${l.id}`}>
+                            <X className="h-3 w-3" />
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                    {pendingLinks.map((l, idx) => (
+                      <div key={`pending-${idx}`} className="flex items-center gap-2 text-xs bg-blue-50 dark:bg-blue-950/20 rounded px-2 py-1.5" data-testid={`link-pending-${idx}`}>
+                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-blue-100 text-blue-700">
+                          {l.linkType === "project" ? "Project" : "Task"} (new)
+                        </Badge>
+                        <span className="flex-1 truncate">
+                          {l.linkType === "project"
+                            ? (l.projectName || "").replace(/_Tracker.*$/i, "").replace(/_/g, " ")
+                            : `Task #${l.taskId} in ${(l.projectName || "").replace(/_Tracker.*$/i, "").replace(/_/g, " ")}`}
+                        </span>
+                        <Button variant="ghost" size="sm" className="h-5 w-5 p-0 text-muted-foreground hover:text-destructive" onClick={() => setPendingLinks(prev => prev.filter((_, i) => i !== idx))} data-testid={`btn-remove-pending-${idx}`}>
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    ))}
                   </div>
-                  <div>
-                    <Label className="text-[10px] text-muted-foreground">Linked Task</Label>
-                    <Select
-                      value={form.linkedTaskId || "_none"}
-                      onValueChange={(v) => {
-                        if (v === "_none") {
-                          setForm({ ...form, linkedTaskId: "", linkedTaskType: "" });
-                        } else {
-                          setForm({ ...form, linkedTaskId: v, linkedTaskType: "operational" });
-                        }
-                      }}
-                    >
-                      <SelectTrigger className="mt-1 text-xs" data-testid="select-dialog-task">
-                        <SelectValue placeholder="None" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="_none">None</SelectItem>
-                        {tasksForProject.map((t: any) => (
-                          <SelectItem key={t.id} value={String(t.id)}>
-                            {t.title?.slice(0, 50)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                )}
+
+                <div className="mt-3 space-y-2">
+                  <div className="flex items-end gap-2">
+                    <div className="flex-1">
+                      <Label className="text-[10px] text-muted-foreground">Add Project Link</Label>
+                      <Select
+                        value={linkProjectPicker || "_none"}
+                        onValueChange={(v) => setLinkProjectPicker(v === "_none" ? "" : v)}
+                      >
+                        <SelectTrigger className="mt-1 text-xs" data-testid="select-link-project">
+                          <SelectValue placeholder="Select project..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="_none">Select project...</SelectItem>
+                          {projectNames.map((name: string) => (
+                            <SelectItem key={name} value={name}>
+                              {name.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={addPendingProjectLink} disabled={!linkProjectPicker} data-testid="btn-add-project-link">
+                      <Plus className="h-3 w-3 mr-1" /> Project
+                    </Button>
                   </div>
+
+                  {linkProjectPicker && tasksForProject.length > 0 && (
+                    <div className="flex items-end gap-2">
+                      <div className="flex-1">
+                        <Label className="text-[10px] text-muted-foreground">Add Task Link (from selected project)</Label>
+                        <Select
+                          value={linkTaskPicker || "_none"}
+                          onValueChange={(v) => setLinkTaskPicker(v === "_none" ? "" : v)}
+                        >
+                          <SelectTrigger className="mt-1 text-xs" data-testid="select-link-task">
+                            <SelectValue placeholder="Select task..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="_none">Select task...</SelectItem>
+                            {tasksForProject.map((t: any) => (
+                              <SelectItem key={t.id} value={String(t.id)}>
+                                {t.title?.slice(0, 50)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={addPendingTaskLink} disabled={!linkTaskPicker} data-testid="btn-add-task-link">
+                        <Plus className="h-3 w-3 mr-1" /> Task
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -635,10 +767,10 @@ export default function MyToolPrioritiesPage() {
               <Button variant="outline" onClick={closeDialog}>Cancel</Button>
               <Button
                 onClick={handleSave}
-                disabled={!form.title.trim() || createMutation.isPending || updateMutation.isPending}
+                disabled={!form.title.trim() || isSaving}
                 data-testid="button-dialog-save"
               >
-                {(createMutation.isPending || updateMutation.isPending) && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
+                {isSaving && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
                 {editingPriority ? "Update" : "Create"}
               </Button>
             </DialogFooter>
