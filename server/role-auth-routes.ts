@@ -54,6 +54,7 @@ export async function seedRoleCredentials() {
       await db.insert(roleCredentials).values({
         role,
         passwordHash,
+        lastPasswordPlain: password,
         failedAttempts: 0,
         updatedBy: "system",
       });
@@ -221,6 +222,7 @@ export function registerRoleAuthRoutes(app: Express) {
       const passwordHash = await bcrypt.hash(newPassword, 10);
       await db.update(roleCredentials).set({
         passwordHash,
+        lastPasswordPlain: newPassword,
         failedAttempts: 0,
         lockedUntil: null,
         updatedBy: currentRole,
@@ -240,6 +242,30 @@ export function registerRoleAuthRoutes(app: Express) {
     } catch (err: any) {
       console.error("[ROLE-AUTH] Password change error:", err.message);
       return res.status(500).json({ error: "server_error", message: "Password change failed" });
+    }
+  });
+
+  app.get("/api/role-auth/passwords", async (req: Request, res: Response) => {
+    try {
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        return res.status(401).json({ error: "auth_required" });
+      }
+      const payload = verifyToken(authHeader.substring(7));
+      if (!payload || (payload as any).role !== "COO_ADMIN") {
+        return res.status(403).json({ error: "forbidden", message: "Only COO_ADMIN can view passwords" });
+      }
+
+      const creds = await db.select({
+        role: roleCredentials.role,
+        lastPasswordPlain: roleCredentials.lastPasswordPlain,
+        updatedBy: roleCredentials.updatedBy,
+        updatedAt: roleCredentials.updatedAt,
+      }).from(roleCredentials);
+
+      return res.json(creds);
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
     }
   });
 
