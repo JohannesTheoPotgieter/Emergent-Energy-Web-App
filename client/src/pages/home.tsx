@@ -257,7 +257,7 @@ function CompanyPrioritiesSection({ isAdmin }: { isAdmin: boolean }) {
             </div>
           </div>
           {isAdmin && (
-            <Link href="/my-tool/priorities">
+            <Link href="/company-priorities">
               <Button variant="outline" size="sm" className="h-8 text-xs" data-testid="button-manage-priorities">
                 Manage
                 <ArrowRight className="h-3.5 w-3.5 ml-1" />

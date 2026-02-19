@@ -57,7 +57,7 @@ function getNavGroups(): NavGroup[] {
       visibleTo: ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "admin"],
       items: [
         { label: "Lifecycle Board", icon: Layers, path: "/lifecycle-board" },
-        { label: "Company Priorities", icon: Flag, path: "/my-tool/priorities" },
+        { label: "Company Priorities", icon: Flag, path: "/company-priorities" },
         { label: "My Tool", icon: Briefcase, path: "/my-tool" },
       ],
     },

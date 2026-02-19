@@ -25,7 +25,7 @@ const navTabs = [
   { label: "Today", path: "/my-tool", icon: Target },
   { label: "Week", path: "/my-tool/week", icon: CalendarDays },
   { label: "Backlog", path: "/my-tool/backlog", icon: ListTodo },
-  { label: "Priorities", path: "/my-tool/priorities", icon: Flag },
+  { label: "Priorities", path: "/company-priorities", icon: Flag },
   { label: "Cockpit", path: "/my-tool/cockpit", icon: Gauge },
   { label: "Settings", path: "/my-tool/settings", icon: Settings },
   { label: "Help", path: "/my-tool/help", icon: HelpCircle },
