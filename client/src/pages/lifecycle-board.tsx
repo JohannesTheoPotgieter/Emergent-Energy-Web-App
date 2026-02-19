@@ -221,13 +221,12 @@ export default function LifecycleBoardPage() {
   const [showActiveOnly, setShowActiveOnly] = useState(false);
   const [draggedProject, setDraggedProject] = useState<ProjectInfo | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
-  const [linkDialogOpen, setLinkDialogOpen] = useState(false);
-  const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
   const [selectedProject, setSelectedProject] = useState<ProjectInfo | null>(null);
   const [linkTarget, setLinkTarget] = useState<string>("");
   const [mergeTarget, setMergeTarget] = useState<string>("");
   const [actionLoading, setActionLoading] = useState(false);
-  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [projectDialogOpen, setProjectDialogOpen] = useState(false);
+  const [dialogTab, setDialogTab] = useState<"edit" | "link" | "merge">("edit");
   const [editForm, setEditForm] = useState<{
     sizeKwp: string;
     pd: string;
@@ -261,7 +260,7 @@ export default function LifecycleBoardPage() {
     loadData();
   }, [loadData]);
 
-  const openEditDialog = (p: ProjectInfo) => {
+  const openProjectDialog = (p: ProjectInfo) => {
     setSelectedProject(p);
     setEditForm({
       sizeKwp: p.sizeKwp || "",
@@ -272,7 +271,10 @@ export default function LifecycleBoardPage() {
       escalationLevel: p.escalationLevel || "",
       ragStatus: p.ragStatus || "",
     });
-    setEditDialogOpen(true);
+    setLinkTarget("");
+    setMergeTarget("");
+    setDialogTab("edit");
+    setProjectDialogOpen(true);
   };
 
   const handleSaveEdit = async () => {
@@ -297,7 +299,7 @@ export default function LifecycleBoardPage() {
 
       if (res.ok) {
         toast({ title: "Saved", description: `${cleanProjectName(selectedProject.projectName)} updated` });
-        setEditDialogOpen(false);
+        setProjectDialogOpen(false);
         setSelectedProject(null);
         loadData();
       } else {
@@ -402,7 +404,7 @@ export default function LifecycleBoardPage() {
       if (res.ok) {
         const data = await res.json();
         toast({ title: "Linked", description: `${data.linked} task(s) linked to ${cleanProjectName(data.targetProject)}` });
-        setLinkDialogOpen(false);
+        setProjectDialogOpen(false);
         setSelectedProject(null);
         setLinkTarget("");
         loadData();
@@ -433,7 +435,7 @@ export default function LifecycleBoardPage() {
       if (res.ok) {
         const data = await res.json();
         toast({ title: "Merged", description: `${data.movedTasks} task(s) and ${data.movedPlanEntries} plan entries moved to ${cleanProjectName(data.target)}` });
-        setMergeDialogOpen(false);
+        setProjectDialogOpen(false);
         setSelectedProject(null);
         setMergeTarget("");
         loadData();
@@ -580,7 +582,7 @@ export default function LifecycleBoardPage() {
                         draggable
                         onDragStart={(e) => handleDragStart(e, p)}
                         onDragEnd={handleDragEnd}
-                        onClick={() => openEditDialog(p)}
+                        onClick={() => openProjectDialog(p)}
                         data-testid={`card-project-${p.id}`}
                       >
                         <CardContent className="p-2 space-y-1">
@@ -632,26 +634,6 @@ export default function LifecycleBoardPage() {
                           <div className="space-y-0.5">
                             {pctBar("Eng", p.engDone, p.engTotal, "bg-purple-500")}
                           </div>
-                          <div className="flex gap-1 mt-1">
-                            {isEngOnly && (
-                              <button
-                                className="flex items-center gap-0.5 text-[9px] text-blue-600 hover:text-blue-800 bg-blue-50 rounded px-1 py-0.5"
-                                onClick={(e) => { e.stopPropagation(); setSelectedProject(p); setLinkTarget(""); setLinkDialogOpen(true); }}
-                                data-testid={`btn-link-${p.projectName}`}
-                              >
-                                <Link2 className="w-2.5 h-2.5" />Link
-                              </button>
-                            )}
-                            {isTracker && (
-                              <button
-                                className="flex items-center gap-0.5 text-[9px] text-orange-600 hover:text-orange-800 bg-orange-50 rounded px-1 py-0.5"
-                                onClick={(e) => { e.stopPropagation(); setSelectedProject(p); setMergeTarget(""); setMergeDialogOpen(true); }}
-                                data-testid={`btn-merge-${p.id}`}
-                              >
-                                <Merge className="w-2.5 h-2.5" />Merge
-                              </button>
-                            )}
-                          </div>
                         </CardContent>
                       </Card>
                     );
@@ -663,255 +645,288 @@ export default function LifecycleBoardPage() {
         </div>
       </div>
 
-      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+      <Dialog open={projectDialogOpen} onOpenChange={setProjectDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2" data-testid="text-edit-project-title">
               <FileSpreadsheet className="w-5 h-5 text-blue-600" />
-              {selectedProject ? cleanProjectName(selectedProject.projectName) : "Edit Project"}
+              {selectedProject ? cleanProjectName(selectedProject.projectName) : "Project"}
             </DialogTitle>
             <DialogDescription>
-              Edit project details. Changes are saved when you click Save.
+              {selectedProject?.source === "engineering" ? "Pre-tracker project" : selectedProject?.source === "both" ? "Tracker + Engineering" : "Tracker project"}
+              {selectedProject?.phase && ` \u2022 ${selectedProject.phase}`}
             </DialogDescription>
           </DialogHeader>
+
           {selectedProject && (
-            <div className="space-y-3">
-              {(!selectedProject.id || selectedProject.id <= 0) && (
-                <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
-                  <AlertTriangle className="w-4 h-4 shrink-0" />
-                  This is a pre-tracker project. Editing is available once it is promoted to a tracked project.
-                </div>
-              )}
-              <div className="grid gap-3 grid-cols-2">
-                <div>
-                  <Label className="text-xs">Size (kWp)</Label>
-                  <Input
-                    value={editForm.sizeKwp}
-                    onChange={(e) => setEditForm(f => ({ ...f, sizeKwp: e.target.value }))}
-                    placeholder="e.g. 500"
-                    disabled={!selectedProject.id || selectedProject.id <= 0}
-                    data-testid="input-edit-size"
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs">Contract Value</Label>
-                  <Input
-                    value={editForm.contractValue}
-                    onChange={(e) => setEditForm(f => ({ ...f, contractValue: e.target.value }))}
-                    placeholder="e.g. 5000000"
-                    disabled={!selectedProject.id || selectedProject.id <= 0}
-                    data-testid="input-edit-contract"
-                  />
-                </div>
-              </div>
-              <div className="grid gap-3 grid-cols-2">
-                <div>
-                  <Label className="text-xs">Project Developer (PD)</Label>
-                  <Input
-                    value={editForm.pd}
-                    onChange={(e) => setEditForm(f => ({ ...f, pd: e.target.value }))}
-                    placeholder="PD name"
-                    disabled={!selectedProject.id || selectedProject.id <= 0}
-                    data-testid="input-edit-pd"
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs">Project Manager (PM)</Label>
-                  <Input
-                    value={editForm.pm}
-                    onChange={(e) => setEditForm(f => ({ ...f, pm: e.target.value }))}
-                    placeholder="PM name"
-                    disabled={!selectedProject.id || selectedProject.id <= 0}
-                    data-testid="input-edit-pm"
-                  />
-                </div>
-              </div>
-              <div>
-                <Label className="text-xs">Phase</Label>
-                <Select
-                  value={editForm.phase}
-                  onValueChange={(val) => setEditForm(f => ({ ...f, phase: val }))}
-                  disabled={!selectedProject.id || selectedProject.id <= 0}
+            <>
+              <div className="flex border-b">
+                <button
+                  type="button"
+                  className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${dialogTab === "edit" ? "border-blue-600 text-blue-600" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+                  onClick={() => { setDialogTab("edit"); setLinkTarget(""); setMergeTarget(""); }}
+                  data-testid="tab-edit"
                 >
-                  <SelectTrigger data-testid="select-edit-phase">
-                    <SelectValue placeholder="Select phase..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PHASE_GROUPS.map(g => (
-                      <SelectItem key={g.key} value={g.phaseValue} data-testid={`edit-phase-option-${g.key}`}>
-                        {g.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  <Save className="w-3.5 h-3.5 inline mr-1.5" />
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${dialogTab === "link" ? "border-blue-600 text-blue-600" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+                  onClick={() => { setDialogTab("link"); setMergeTarget(""); }}
+                  data-testid="tab-link"
+                >
+                  <Link2 className="w-3.5 h-3.5 inline mr-1.5" />
+                  Link
+                </button>
+                <button
+                  type="button"
+                  className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${dialogTab === "merge" ? "border-orange-600 text-orange-600" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+                  onClick={() => { setDialogTab("merge"); setLinkTarget(""); }}
+                  data-testid="tab-merge"
+                >
+                  <Merge className="w-3.5 h-3.5 inline mr-1.5" />
+                  Merge
+                </button>
               </div>
-              <div className="grid gap-3 grid-cols-2">
-                <div>
-                  <Label className="text-xs">Escalation Level</Label>
-                  <Select
-                    value={editForm.escalationLevel}
-                    onValueChange={(val) => setEditForm(f => ({ ...f, escalationLevel: val }))}
-                    disabled={!selectedProject.id || selectedProject.id <= 0}
-                  >
-                    <SelectTrigger data-testid="select-edit-escalation">
-                      <SelectValue placeholder="None" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {ESCALATION_LEVELS.map(level => (
-                        <SelectItem key={level || "none"} value={level || "none"} data-testid={`edit-esc-${level || "none"}`}>
-                          {level || "None"}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label className="text-xs">RAG Status</Label>
-                  <Select
-                    value={editForm.ragStatus}
-                    onValueChange={(val) => setEditForm(f => ({ ...f, ragStatus: val }))}
-                    disabled={!selectedProject.id || selectedProject.id <= 0}
-                  >
-                    <SelectTrigger data-testid="select-edit-rag">
-                      <SelectValue placeholder="None" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {RAG_STATUSES.map(rag => (
-                        <SelectItem key={rag || "none"} value={rag || "none"} data-testid={`edit-rag-${rag || "none"}`}>
-                          {rag || "None"}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              {selectedProject.source !== "engineering" && (
-                <div className="text-xs text-muted-foreground bg-muted/50 rounded-lg p-3 space-y-1">
-                  <div className="flex justify-between">
-                    <span>Source</span>
-                    <span className="font-medium">{selectedProject.source === "both" ? "Tracker + Engineering" : "Tracker"}</span>
+
+              {dialogTab === "edit" && (
+                <div className="space-y-3">
+                  {(!selectedProject.id || selectedProject.id <= 0) && (
+                    <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
+                      <AlertTriangle className="w-4 h-4 shrink-0" />
+                      This is a pre-tracker project. Editing is available once it is promoted to a tracked project.
+                    </div>
+                  )}
+                  <div>
+                    <Label className="text-xs">Phase</Label>
+                    <Select
+                      value={editForm.phase}
+                      onValueChange={(val) => setEditForm(f => ({ ...f, phase: val }))}
+                      disabled={!selectedProject.id || selectedProject.id <= 0}
+                    >
+                      <SelectTrigger data-testid="select-edit-phase">
+                        <SelectValue placeholder="Select phase..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PHASE_GROUPS.map(g => (
+                          <SelectItem key={g.key} value={g.phaseValue} data-testid={`edit-phase-option-${g.key}`}>
+                            {g.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
-                  {selectedProject.engTotal > 0 && (
-                    <div className="flex justify-between">
-                      <span>Engineering Tasks</span>
-                      <span className="font-medium">{selectedProject.engDone}/{selectedProject.engTotal} done</span>
+                  <div className="grid gap-3 grid-cols-2">
+                    <div>
+                      <Label className="text-xs">Size (kWp)</Label>
+                      <Input
+                        value={editForm.sizeKwp}
+                        onChange={(e) => setEditForm(f => ({ ...f, sizeKwp: e.target.value }))}
+                        placeholder="e.g. 500"
+                        disabled={!selectedProject.id || selectedProject.id <= 0}
+                        data-testid="input-edit-size"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Contract Value</Label>
+                      <Input
+                        value={editForm.contractValue}
+                        onChange={(e) => setEditForm(f => ({ ...f, contractValue: e.target.value }))}
+                        placeholder="e.g. 5000000"
+                        disabled={!selectedProject.id || selectedProject.id <= 0}
+                        data-testid="input-edit-contract"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid gap-3 grid-cols-2">
+                    <div>
+                      <Label className="text-xs">Project Developer (PD)</Label>
+                      <Input
+                        value={editForm.pd}
+                        onChange={(e) => setEditForm(f => ({ ...f, pd: e.target.value }))}
+                        placeholder="PD name"
+                        disabled={!selectedProject.id || selectedProject.id <= 0}
+                        data-testid="input-edit-pd"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Project Manager (PM)</Label>
+                      <Input
+                        value={editForm.pm}
+                        onChange={(e) => setEditForm(f => ({ ...f, pm: e.target.value }))}
+                        placeholder="PM name"
+                        disabled={!selectedProject.id || selectedProject.id <= 0}
+                        data-testid="input-edit-pm"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid gap-3 grid-cols-2">
+                    <div>
+                      <Label className="text-xs">Escalation Level</Label>
+                      <Select
+                        value={editForm.escalationLevel}
+                        onValueChange={(val) => setEditForm(f => ({ ...f, escalationLevel: val }))}
+                        disabled={!selectedProject.id || selectedProject.id <= 0}
+                      >
+                        <SelectTrigger data-testid="select-edit-escalation">
+                          <SelectValue placeholder="None" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {ESCALATION_LEVELS.map(level => (
+                            <SelectItem key={level || "none"} value={level || "none"} data-testid={`edit-esc-${level || "none"}`}>
+                              {level || "None"}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-xs">RAG Status</Label>
+                      <Select
+                        value={editForm.ragStatus}
+                        onValueChange={(val) => setEditForm(f => ({ ...f, ragStatus: val }))}
+                        disabled={!selectedProject.id || selectedProject.id <= 0}
+                      >
+                        <SelectTrigger data-testid="select-edit-rag">
+                          <SelectValue placeholder="None" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {RAG_STATUSES.map(rag => (
+                            <SelectItem key={rag || "none"} value={rag || "none"} data-testid={`edit-rag-${rag || "none"}`}>
+                              {rag || "None"}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  {selectedProject.source !== "engineering" && (
+                    <div className="text-xs text-muted-foreground bg-muted/50 rounded-lg p-3 space-y-1">
+                      <div className="flex justify-between">
+                        <span>Source</span>
+                        <span className="font-medium">{selectedProject.source === "both" ? "Tracker + Engineering" : "Tracker"}</span>
+                      </div>
+                      {selectedProject.engTotal > 0 && (
+                        <div className="flex justify-between">
+                          <span>Engineering Tasks</span>
+                          <span className="font-medium">{selectedProject.engDone}/{selectedProject.engTotal} done</span>
+                        </div>
+                      )}
+                      {selectedProject.projectPctComplete != null && (
+                        <div className="flex justify-between">
+                          <span>Completion</span>
+                          <span className="font-medium">{Math.round(selectedProject.projectPctComplete * 100)}%</span>
+                        </div>
+                      )}
                     </div>
                   )}
-                  {selectedProject.projectPctComplete != null && (
-                    <div className="flex justify-between">
-                      <span>Completion</span>
-                      <span className="font-medium">{Math.round(selectedProject.projectPctComplete * 100)}%</span>
-                    </div>
-                  )}
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setProjectDialogOpen(false)} data-testid="btn-cancel-edit-project">
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={handleSaveEdit}
+                      disabled={editSaving || !selectedProject?.id || selectedProject.id <= 0}
+                      data-testid="btn-save-edit-project"
+                    >
+                      {editSaving ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Save className="w-4 h-4 mr-1" />}
+                      Save
+                    </Button>
+                  </DialogFooter>
                 </div>
               )}
-            </div>
+
+              {dialogTab === "link" && (
+                <div className="space-y-3">
+                  <div className="text-sm text-muted-foreground">
+                    Link engineering tasks from <strong>{cleanProjectName(selectedProject.projectName)}</strong> to an existing tracker project. All tasks will be reassigned to the selected project.
+                  </div>
+                  {selectedProject.source !== "engineering" && (
+                    <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
+                      <AlertTriangle className="w-4 h-4 shrink-0" />
+                      This project already has a tracker. Linking is typically used for pre-tracker (engineering-only) projects.
+                    </div>
+                  )}
+                  <div>
+                    <Label className="text-xs">Link to project</Label>
+                    <Select value={linkTarget} onValueChange={setLinkTarget}>
+                      <SelectTrigger data-testid="select-link-target">
+                        <SelectValue placeholder="Select a tracker project..." />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-60">
+                        {trackerProjects
+                          .filter(p => p.id !== selectedProject?.id)
+                          .sort((a, b) => cleanProjectName(a.projectName).localeCompare(cleanProjectName(b.projectName)))
+                          .map(p => (
+                            <SelectItem key={p.id} value={String(p.id)} data-testid={`link-option-${p.id}`}>
+                              {cleanProjectName(p.projectName)}
+                              {p.phase && <span className="text-muted-foreground ml-1">({p.phase})</span>}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setProjectDialogOpen(false)}>Cancel</Button>
+                    <Button
+                      onClick={handleLinkEngineering}
+                      disabled={!linkTarget || actionLoading}
+                      data-testid="btn-confirm-link"
+                    >
+                      {actionLoading ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Link2 className="w-4 h-4 mr-1" />}
+                      Link Tasks
+                    </Button>
+                  </DialogFooter>
+                </div>
+              )}
+
+              {dialogTab === "merge" && (
+                <div className="space-y-3">
+                  <div className="text-sm text-muted-foreground">
+                    Merge <strong>{cleanProjectName(selectedProject.projectName)}</strong> into another project. All tasks and plan data will be moved, and this project will be permanently removed.
+                  </div>
+                  {(!selectedProject.id || selectedProject.id <= 0) && (
+                    <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
+                      <AlertTriangle className="w-4 h-4 shrink-0" />
+                      Pre-tracker projects cannot be merged. Use Link to associate engineering tasks with a tracker project instead.
+                    </div>
+                  )}
+                  <div>
+                    <Label className="text-xs">Merge into</Label>
+                    <Select value={mergeTarget} onValueChange={setMergeTarget} disabled={!selectedProject.id || selectedProject.id <= 0}>
+                      <SelectTrigger data-testid="select-merge-target">
+                        <SelectValue placeholder="Select target project..." />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-60">
+                        {trackerProjects
+                          .filter(p => p.id !== selectedProject?.id)
+                          .sort((a, b) => cleanProjectName(a.projectName).localeCompare(cleanProjectName(b.projectName)))
+                          .map(p => (
+                            <SelectItem key={p.id} value={String(p.id)} data-testid={`merge-option-${p.id}`}>
+                              {cleanProjectName(p.projectName)}
+                              {p.phase && <span className="text-muted-foreground ml-1">({p.phase})</span>}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setProjectDialogOpen(false)}>Cancel</Button>
+                    <Button
+                      variant="destructive"
+                      onClick={handleMergeProjects}
+                      disabled={!mergeTarget || actionLoading || !selectedProject.id || selectedProject.id <= 0}
+                      data-testid="btn-confirm-merge"
+                    >
+                      {actionLoading ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Merge className="w-4 h-4 mr-1" />}
+                      Merge Project
+                    </Button>
+                  </DialogFooter>
+                </div>
+              )}
+            </>
           )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditDialogOpen(false)} data-testid="btn-cancel-edit-project">
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSaveEdit}
-              disabled={editSaving || !selectedProject?.id || selectedProject.id <= 0}
-              data-testid="btn-save-edit-project"
-            >
-              {editSaving ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Save className="w-4 h-4 mr-1" />}
-              Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={linkDialogOpen} onOpenChange={setLinkDialogOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Link2 className="w-5 h-5 text-blue-600" />
-              Link Engineering Tasks
-            </DialogTitle>
-            <DialogDescription>
-              Link all engineering tasks from <strong>{selectedProject ? cleanProjectName(selectedProject.projectName) : ""}</strong> to an existing tracker project. The tasks will be reassigned.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <label className="text-sm font-medium mb-1.5 block">Link to project:</label>
-              <Select value={linkTarget} onValueChange={setLinkTarget}>
-                <SelectTrigger data-testid="select-link-target">
-                  <SelectValue placeholder="Select a tracker project..." />
-                </SelectTrigger>
-                <SelectContent className="max-h-60">
-                  {trackerProjects
-                    .sort((a, b) => cleanProjectName(a.projectName).localeCompare(cleanProjectName(b.projectName)))
-                    .map(p => (
-                      <SelectItem key={p.id} value={String(p.id)} data-testid={`link-option-${p.id}`}>
-                        {cleanProjectName(p.projectName)}
-                        {p.phase && <span className="text-muted-foreground ml-1">({p.phase})</span>}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setLinkDialogOpen(false)}>Cancel</Button>
-            <Button
-              onClick={handleLinkEngineering}
-              disabled={!linkTarget || actionLoading}
-              data-testid="btn-confirm-link"
-            >
-              {actionLoading ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <ArrowRight className="w-4 h-4 mr-1" />}
-              Link Tasks
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={mergeDialogOpen} onOpenChange={setMergeDialogOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Merge className="w-5 h-5 text-orange-600" />
-              Merge Projects
-            </DialogTitle>
-            <DialogDescription>
-              Merge <strong>{selectedProject ? cleanProjectName(selectedProject.projectName) : ""}</strong> into another project. All tasks and plan data will be moved to the target project, and the source project will be permanently removed.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <label className="text-sm font-medium mb-1.5 block">Merge into:</label>
-              <Select value={mergeTarget} onValueChange={setMergeTarget}>
-                <SelectTrigger data-testid="select-merge-target">
-                  <SelectValue placeholder="Select target project..." />
-                </SelectTrigger>
-                <SelectContent className="max-h-60">
-                  {trackerProjects
-                    .filter(p => p.id !== selectedProject?.id)
-                    .sort((a, b) => cleanProjectName(a.projectName).localeCompare(cleanProjectName(b.projectName)))
-                    .map(p => (
-                      <SelectItem key={p.id} value={String(p.id)} data-testid={`merge-option-${p.id}`}>
-                        {cleanProjectName(p.projectName)}
-                        {p.phase && <span className="text-muted-foreground ml-1">({p.phase})</span>}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setMergeDialogOpen(false)}>Cancel</Button>
-            <Button
-              variant="destructive"
-              onClick={handleMergeProjects}
-              disabled={!mergeTarget || actionLoading}
-              data-testid="btn-confirm-merge"
-            >
-              {actionLoading ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Merge className="w-4 h-4 mr-1" />}
-              Merge Project
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
