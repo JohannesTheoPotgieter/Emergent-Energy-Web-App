@@ -1195,7 +1195,7 @@ export default function ProjectsSummary() {
     if (key === "project_name") return;
     setVisibleColumns(prev => {
       const currentAll = columns.filter(c => c.key !== "actions").map(c => c.key);
-      const base = prev.size === 0 ? new Set(currentAll.concat(isAdmin ? ["actions"] : [])) : new Set(prev);
+      const base = prev.size === 0 ? new Set(currentAll.concat(isAdmin ? ["actions"] : [])) : new Set(Array.from(prev));
       if (base.has(key)) base.delete(key);
       else base.add(key);
       base.add("project_name");
