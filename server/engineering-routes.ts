@@ -47,7 +47,13 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
 
 function requireAdminOrEpm(req: Request, res: Response, next: NextFunction) {
   const role = getUserRole(req);
-  if (role === "admin" || role === "eng_program_manager") return next();
+  const allowed = [
+    "admin", "eng_program_manager",
+    "COO_ADMIN", "CEO_ADMIN", "CCO", "CFO",
+    "PROGRAM_MANAGER", "CONSTRUCTION_MANAGER", "PROGRAM_FINANCE_MANAGER",
+    "ENGINEERING_PROGRAM_MANAGER", "QUALITY_MANAGER", "HEAD_OF_DESIGN",
+  ];
+  if (allowed.includes(role)) return next();
   res.status(403).json({ error: "forbidden", message: "Admin or EPM access required" });
 }
 
