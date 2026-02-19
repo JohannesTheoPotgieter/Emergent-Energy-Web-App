@@ -538,6 +538,8 @@ const COLUMN_GROUPS_META: { label: string; keys: string[]; color: string; sticky
   { label: "Progress", keys: ["project_pct_complete", "expected_pct_complete", "delta_vs_expected"], color: "bg-violet-50 text-violet-700" },
 ];
 
+const ALL_COLUMN_KEYS_STATIC = COLUMN_GROUPS_META.flatMap(g => g.keys);
+
 function loadSavedViews(): SavedView[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -852,6 +854,74 @@ export default function ProjectsSummary() {
     const finCloseCount = sorted.filter(p => p.financial_close_achieved).length;
     return { total, totalKwp, avgCompletion, behindSchedule, finCloseCount };
   }, [sorted]);
+
+  const isDefaultView = visibleColumns.size === 0;
+  const effectiveVisible = isDefaultView
+    ? new Set(ALL_COLUMN_KEYS_STATIC.concat(isAdmin ? ["actions"] : []))
+    : new Set(Array.from(visibleColumns).concat(isAdmin ? ["actions"] : []));
+
+  const toggleColumn = useCallback((key: string) => {
+    if (key === "project_name") return;
+    setVisibleColumns(prev => {
+      const base = prev.size === 0 ? new Set(ALL_COLUMN_KEYS_STATIC.concat(isAdmin ? ["actions"] : [])) : new Set(Array.from(prev));
+      if (base.has(key)) base.delete(key);
+      else base.add(key);
+      base.add("project_name");
+      setActiveViewName(null);
+      persistActiveView(null);
+      return base;
+    });
+  }, [isAdmin]);
+
+  const selectAllColumns = useCallback(() => {
+    setVisibleColumns(new Set<string>());
+    setActiveViewName(null);
+    persistActiveView(null);
+  }, []);
+
+  const deselectAllColumns = useCallback(() => {
+    setVisibleColumns(new Set(["project_name"]));
+    setActiveViewName(null);
+    persistActiveView(null);
+  }, []);
+
+  const saveCurrentView = useCallback(() => {
+    if (!newViewName.trim()) return;
+    const cols = effectiveVisible.size === 0 ? ALL_COLUMN_KEYS_STATIC : Array.from(effectiveVisible).filter(k => k !== "actions");
+    const view: SavedView = { name: newViewName.trim(), visibleColumns: cols };
+    const updated = [...savedViews.filter(v => v.name !== view.name), view];
+    setSavedViews(updated);
+    persistViews(updated);
+    setActiveViewName(view.name);
+    persistActiveView(view.name);
+    setNewViewName("");
+  }, [newViewName, effectiveVisible, savedViews]);
+
+  const applyView = useCallback((name: string) => {
+    if (name === "__default__") {
+      setVisibleColumns(new Set<string>());
+      setActiveViewName(null);
+      persistActiveView(null);
+      return;
+    }
+    const found = savedViews.find(v => v.name === name);
+    if (found) {
+      setVisibleColumns(new Set(found.visibleColumns));
+      setActiveViewName(name);
+      persistActiveView(name);
+    }
+  }, [savedViews]);
+
+  const deleteView = useCallback((name: string) => {
+    const updated = savedViews.filter(v => v.name !== name);
+    setSavedViews(updated);
+    persistViews(updated);
+    if (activeViewName === name) {
+      setActiveViewName(null);
+      persistActiveView(null);
+      setVisibleColumns(new Set<string>());
+    }
+  }, [savedViews, activeViewName]);
 
   const handleExport = () => {
     window.location.href = "/api/export/projects-summary";
@@ -1185,76 +1255,6 @@ export default function ProjectsSummary() {
       : []),
   ];
 
-  const ALL_COLUMN_KEYS = columns.filter(c => c.key !== "actions").map(c => c.key);
-  const isDefaultView = visibleColumns.size === 0;
-  const effectiveVisible = isDefaultView
-    ? new Set(ALL_COLUMN_KEYS.concat(isAdmin ? ["actions"] : []))
-    : new Set(Array.from(visibleColumns).concat(isAdmin ? ["actions"] : []));
-
-  const toggleColumn = useCallback((key: string) => {
-    if (key === "project_name") return;
-    setVisibleColumns(prev => {
-      const currentAll = columns.filter(c => c.key !== "actions").map(c => c.key);
-      const base = prev.size === 0 ? new Set(currentAll.concat(isAdmin ? ["actions"] : [])) : new Set(Array.from(prev));
-      if (base.has(key)) base.delete(key);
-      else base.add(key);
-      base.add("project_name");
-      setActiveViewName(null);
-      persistActiveView(null);
-      return base;
-    });
-  }, [columns, isAdmin]);
-
-  const selectAllColumns = useCallback(() => {
-    setVisibleColumns(new Set<string>());
-    setActiveViewName(null);
-    persistActiveView(null);
-  }, []);
-
-  const deselectAllColumns = useCallback(() => {
-    setVisibleColumns(new Set(["project_name"]));
-    setActiveViewName(null);
-    persistActiveView(null);
-  }, []);
-
-  const saveCurrentView = useCallback(() => {
-    if (!newViewName.trim()) return;
-    const cols = effectiveVisible.size === 0 ? ALL_COLUMN_KEYS : Array.from(effectiveVisible).filter(k => k !== "actions");
-    const view: SavedView = { name: newViewName.trim(), visibleColumns: cols };
-    const updated = [...savedViews.filter(v => v.name !== view.name), view];
-    setSavedViews(updated);
-    persistViews(updated);
-    setActiveViewName(view.name);
-    persistActiveView(view.name);
-    setNewViewName("");
-  }, [newViewName, effectiveVisible, ALL_COLUMN_KEYS, savedViews]);
-
-  const applyView = useCallback((name: string) => {
-    if (name === "__default__") {
-      setVisibleColumns(new Set<string>());
-      setActiveViewName(null);
-      persistActiveView(null);
-      return;
-    }
-    const found = savedViews.find(v => v.name === name);
-    if (found) {
-      setVisibleColumns(new Set(found.visibleColumns));
-      setActiveViewName(name);
-      persistActiveView(name);
-    }
-  }, [savedViews]);
-
-  const deleteView = useCallback((name: string) => {
-    const updated = savedViews.filter(v => v.name !== name);
-    setSavedViews(updated);
-    persistViews(updated);
-    if (activeViewName === name) {
-      setActiveViewName(null);
-      persistActiveView(null);
-      setVisibleColumns(new Set<string>());
-    }
-  }, [savedViews, activeViewName]);
-
   const filteredColumns = columns.filter(c => effectiveVisible.has(c.key));
 
   const allGroupsMeta = [
@@ -1420,7 +1420,7 @@ export default function ProjectsSummary() {
               <span className="hidden sm:inline">Columns</span>
               {!isDefaultView && (
                 <Badge className="ml-1 h-5 px-1.5 text-[10px] bg-blue-100 text-blue-700 hover:bg-blue-100">
-                  {effectiveVisible.size - (effectiveVisible.has("actions") ? 1 : 0)}/{ALL_COLUMN_KEYS.length}
+                  {effectiveVisible.size - (effectiveVisible.has("actions") ? 1 : 0)}/{ALL_COLUMN_KEYS_STATIC.length}
                 </Badge>
               )}
             </Button>
