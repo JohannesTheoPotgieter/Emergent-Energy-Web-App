@@ -84,7 +84,7 @@ function getNavGroups(): NavGroup[] {
       heading: "QUALITY",
       visibleTo: ["COO_ADMIN", "CEO_ADMIN", "QUALITY_MANAGER", "CONSTRUCTION_MANAGER", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "admin", "quality_manager"],
       items: [
-        { label: "QM Dashboard", icon: ShieldCheck, path: "/quality" },
+        { label: "Quality Dashboard", icon: ShieldCheck, path: "/quality" },
       ],
     },
     {

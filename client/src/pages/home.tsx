@@ -130,7 +130,7 @@ const engLinks: QuickLink[] = [
 
 const qualityLinks: QuickLink[] = [
   {
-    label: "QM Dashboard",
+    label: "Quality Dashboard",
     description: "Overview of quality status, warnings, and project completion",
     icon: ShieldCheck,
     path: "/quality",
