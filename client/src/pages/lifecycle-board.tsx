@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
@@ -11,7 +12,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Search, Zap, User, Wrench, FileSpreadsheet, GripVertical, CheckCircle2, ClipboardList, Link2, Merge, ArrowRight } from "lucide-react";
+import { Loader2, Search, Zap, User, Wrench, FileSpreadsheet, GripVertical, CheckCircle2, ClipboardList, Link2, Merge, ArrowRight, X, Save, AlertTriangle } from "lucide-react";
 
 interface ProjectInfo {
   id: number | null;
@@ -22,6 +23,8 @@ interface ProjectInfo {
   contractValue: string | null;
   phase: string | null;
   isActive: boolean;
+  escalationLevel: string | null;
+  ragStatus: string | null;
   source: "excel" | "engineering" | "both";
   engTotal: number;
   engDone: number;
@@ -114,13 +117,15 @@ const PHASE_GROUPS = [
 ];
 
 function mapPhaseToGroup(phase: string | null, source?: string): string {
-  if (source === "engineering") {
-    if (phase) {
-      const normalized = phase.trim();
-      for (const g of PHASE_GROUPS) {
-        if (g.matches.some((m) => m.toLowerCase() === normalized.toLowerCase())) {
-          return g.key;
-        }
+  if (source === "engineering" && !phase) {
+    return "internal";
+  }
+
+  if (source === "engineering" && phase) {
+    const normalized = phase.trim();
+    for (const g of PHASE_GROUPS) {
+      if (g.matches.some((m) => m.toLowerCase() === normalized.toLowerCase())) {
+        return g.key;
       }
     }
     return "internal";
@@ -206,6 +211,9 @@ function getAuthHeaders(): HeadersInit {
   };
 }
 
+const ESCALATION_LEVELS = ["", "Low", "Medium", "High", "Highest"];
+const RAG_STATUSES = ["", "Green", "Amber", "Red"];
+
 export default function LifecycleBoardPage() {
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -219,6 +227,17 @@ export default function LifecycleBoardPage() {
   const [linkTarget, setLinkTarget] = useState<string>("");
   const [mergeTarget, setMergeTarget] = useState<string>("");
   const [actionLoading, setActionLoading] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editForm, setEditForm] = useState<{
+    sizeKwp: string;
+    pd: string;
+    pm: string;
+    contractValue: string;
+    phase: string;
+    escalationLevel: string;
+    ragStatus: string;
+  }>({ sizeKwp: "", pd: "", pm: "", contractValue: "", phase: "", escalationLevel: "", ragStatus: "" });
+  const [editSaving, setEditSaving] = useState(false);
   const { toast } = useToast();
 
   const loadData = useCallback(async () => {
@@ -241,6 +260,56 @@ export default function LifecycleBoardPage() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  const openEditDialog = (p: ProjectInfo) => {
+    setSelectedProject(p);
+    setEditForm({
+      sizeKwp: p.sizeKwp || "",
+      pd: p.pd || "",
+      pm: p.pm || "",
+      contractValue: p.contractValue || "",
+      phase: p.phase || "",
+      escalationLevel: p.escalationLevel || "",
+      ragStatus: p.ragStatus || "",
+    });
+    setEditDialogOpen(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selectedProject?.id) return;
+    setEditSaving(true);
+    try {
+      const body: Record<string, any> = {};
+      if (editForm.sizeKwp !== (selectedProject.sizeKwp || "")) body.sizeKwp = editForm.sizeKwp;
+      if (editForm.pd !== (selectedProject.pd || "")) body.pd = editForm.pd;
+      if (editForm.pm !== (selectedProject.pm || "")) body.pm = editForm.pm;
+      if (editForm.contractValue !== (selectedProject.contractValue || "")) body.contractValue = editForm.contractValue;
+      if (editForm.phase !== (selectedProject.phase || "")) body.phase = editForm.phase;
+      if (editForm.escalationLevel !== (selectedProject.escalationLevel || "")) body.escalationLevel = editForm.escalationLevel || "none";
+      if (editForm.ragStatus !== (selectedProject.ragStatus || "")) body.ragStatus = editForm.ragStatus || "none";
+
+      const res = await fetch(`/api/lifecycle-board/projects/${selectedProject.id}`, {
+        method: "PATCH",
+        headers: getAuthHeaders(),
+        credentials: "include",
+        body: JSON.stringify(body),
+      });
+
+      if (res.ok) {
+        toast({ title: "Saved", description: `${cleanProjectName(selectedProject.projectName)} updated` });
+        setEditDialogOpen(false);
+        setSelectedProject(null);
+        loadData();
+      } else {
+        const err = await res.json();
+        toast({ title: "Error", description: err.error || "Failed to save", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Error", description: "Network error", variant: "destructive" });
+    } finally {
+      setEditSaving(false);
+    }
+  };
 
   const handleDragStart = (e: React.DragEvent, project: ProjectInfo) => {
     setDraggedProject(project);
@@ -281,7 +350,7 @@ export default function LifecycleBoardPage() {
 
     setProjects(prev =>
       prev.map(p =>
-        p.id === draggedProject.id ? { ...p, phase: targetPhase.phaseValue } : p
+        p.id === draggedProject.id ? { ...p, phase: targetPhase.phaseValue, source: p.source === "engineering" ? "both" : p.source } : p
       )
     );
 
@@ -511,6 +580,7 @@ export default function LifecycleBoardPage() {
                         draggable
                         onDragStart={(e) => handleDragStart(e, p)}
                         onDragEnd={handleDragEnd}
+                        onClick={() => openEditDialog(p)}
                         data-testid={`card-project-${p.id}`}
                       >
                         <CardContent className="p-2 space-y-1">
@@ -592,6 +662,166 @@ export default function LifecycleBoardPage() {
           })}
         </div>
       </div>
+
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2" data-testid="text-edit-project-title">
+              <FileSpreadsheet className="w-5 h-5 text-blue-600" />
+              {selectedProject ? cleanProjectName(selectedProject.projectName) : "Edit Project"}
+            </DialogTitle>
+            <DialogDescription>
+              Edit project details. Changes are saved when you click Save.
+            </DialogDescription>
+          </DialogHeader>
+          {selectedProject && (
+            <div className="space-y-3">
+              {(!selectedProject.id || selectedProject.id <= 0) && (
+                <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  This is a pre-tracker project. Editing is available once it is promoted to a tracked project.
+                </div>
+              )}
+              <div className="grid gap-3 grid-cols-2">
+                <div>
+                  <Label className="text-xs">Size (kWp)</Label>
+                  <Input
+                    value={editForm.sizeKwp}
+                    onChange={(e) => setEditForm(f => ({ ...f, sizeKwp: e.target.value }))}
+                    placeholder="e.g. 500"
+                    disabled={!selectedProject.id || selectedProject.id <= 0}
+                    data-testid="input-edit-size"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Contract Value</Label>
+                  <Input
+                    value={editForm.contractValue}
+                    onChange={(e) => setEditForm(f => ({ ...f, contractValue: e.target.value }))}
+                    placeholder="e.g. 5000000"
+                    disabled={!selectedProject.id || selectedProject.id <= 0}
+                    data-testid="input-edit-contract"
+                  />
+                </div>
+              </div>
+              <div className="grid gap-3 grid-cols-2">
+                <div>
+                  <Label className="text-xs">Project Developer (PD)</Label>
+                  <Input
+                    value={editForm.pd}
+                    onChange={(e) => setEditForm(f => ({ ...f, pd: e.target.value }))}
+                    placeholder="PD name"
+                    disabled={!selectedProject.id || selectedProject.id <= 0}
+                    data-testid="input-edit-pd"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Project Manager (PM)</Label>
+                  <Input
+                    value={editForm.pm}
+                    onChange={(e) => setEditForm(f => ({ ...f, pm: e.target.value }))}
+                    placeholder="PM name"
+                    disabled={!selectedProject.id || selectedProject.id <= 0}
+                    data-testid="input-edit-pm"
+                  />
+                </div>
+              </div>
+              <div>
+                <Label className="text-xs">Phase</Label>
+                <Select
+                  value={editForm.phase}
+                  onValueChange={(val) => setEditForm(f => ({ ...f, phase: val }))}
+                  disabled={!selectedProject.id || selectedProject.id <= 0}
+                >
+                  <SelectTrigger data-testid="select-edit-phase">
+                    <SelectValue placeholder="Select phase..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PHASE_GROUPS.map(g => (
+                      <SelectItem key={g.key} value={g.phaseValue} data-testid={`edit-phase-option-${g.key}`}>
+                        {g.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-3 grid-cols-2">
+                <div>
+                  <Label className="text-xs">Escalation Level</Label>
+                  <Select
+                    value={editForm.escalationLevel}
+                    onValueChange={(val) => setEditForm(f => ({ ...f, escalationLevel: val }))}
+                    disabled={!selectedProject.id || selectedProject.id <= 0}
+                  >
+                    <SelectTrigger data-testid="select-edit-escalation">
+                      <SelectValue placeholder="None" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ESCALATION_LEVELS.map(level => (
+                        <SelectItem key={level || "none"} value={level || "none"} data-testid={`edit-esc-${level || "none"}`}>
+                          {level || "None"}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs">RAG Status</Label>
+                  <Select
+                    value={editForm.ragStatus}
+                    onValueChange={(val) => setEditForm(f => ({ ...f, ragStatus: val }))}
+                    disabled={!selectedProject.id || selectedProject.id <= 0}
+                  >
+                    <SelectTrigger data-testid="select-edit-rag">
+                      <SelectValue placeholder="None" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {RAG_STATUSES.map(rag => (
+                        <SelectItem key={rag || "none"} value={rag || "none"} data-testid={`edit-rag-${rag || "none"}`}>
+                          {rag || "None"}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              {selectedProject.source !== "engineering" && (
+                <div className="text-xs text-muted-foreground bg-muted/50 rounded-lg p-3 space-y-1">
+                  <div className="flex justify-between">
+                    <span>Source</span>
+                    <span className="font-medium">{selectedProject.source === "both" ? "Tracker + Engineering" : "Tracker"}</span>
+                  </div>
+                  {selectedProject.engTotal > 0 && (
+                    <div className="flex justify-between">
+                      <span>Engineering Tasks</span>
+                      <span className="font-medium">{selectedProject.engDone}/{selectedProject.engTotal} done</span>
+                    </div>
+                  )}
+                  {selectedProject.projectPctComplete != null && (
+                    <div className="flex justify-between">
+                      <span>Completion</span>
+                      <span className="font-medium">{Math.round(selectedProject.projectPctComplete * 100)}%</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditDialogOpen(false)} data-testid="btn-cancel-edit-project">
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveEdit}
+              disabled={editSaving || !selectedProject?.id || selectedProject.id <= 0}
+              data-testid="btn-save-edit-project"
+            >
+              {editSaving ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Save className="w-4 h-4 mr-1" />}
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={linkDialogOpen} onOpenChange={setLinkDialogOpen}>
         <DialogContent className="max-w-md">

@@ -53,6 +53,8 @@ export function registerLifecycleRoutes(app: Express) {
         contractValue: projectInfo.contractValue,
         phase: projectInfo.phase,
         isActive: projectInfo.isActive,
+        escalationLevel: projectInfo.escalationLevel,
+        ragStatus: projectInfo.ragStatus,
       }).from(projectInfo);
 
       const allEngTasks = await db.select({
@@ -118,6 +120,8 @@ export function registerLifecycleRoutes(app: Express) {
           contractValue: proj.contractValue,
           phase: proj.phase,
           isActive: proj.isActive,
+          escalationLevel: proj.escalationLevel,
+          ragStatus: proj.ragStatus,
           source,
           engTotal: eng.total,
           engDone: eng.done,
@@ -267,6 +271,38 @@ export function registerLifecycleRoutes(app: Express) {
       res.json(created);
     } catch (err: any) {
       console.error("[lifecycle-board] POST promote-engineering error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/lifecycle-board/projects/:id", requireAuth, requireExecRole, async (req: Request, res: Response) => {
+    try {
+      const idParam = req.params.id as string;
+      const id = parseInt(idParam);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid project id" });
+
+      const [existing] = await db.select().from(projectInfo).where(eq(projectInfo.id, id));
+      if (!existing) return res.status(404).json({ error: "Project not found" });
+
+      const { sizeKwp, pd, pm, contractValue, escalationLevel, phase, ragStatus } = req.body;
+      const updates: Record<string, any> = { updatedAt: new Date() };
+
+      if (sizeKwp !== undefined) updates.sizeKwp = sizeKwp || null;
+      if (pd !== undefined) updates.pd = pd || null;
+      if (pm !== undefined) updates.pm = pm || null;
+      if (contractValue !== undefined) updates.contractValue = contractValue || null;
+      if (escalationLevel !== undefined) updates.escalationLevel = (escalationLevel && escalationLevel !== "none") ? escalationLevel : null;
+      if (ragStatus !== undefined) updates.ragStatus = (ragStatus && ragStatus !== "none") ? ragStatus : null;
+      if (phase !== undefined && phase !== existing.phase) {
+        updates.phase = phase;
+        updates.phaseUpdatedAt = new Date();
+        updates.phaseUpdatedByUserId = ((req as any).user as any)?.id || null;
+      }
+
+      const [updated] = await db.update(projectInfo).set(updates).where(eq(projectInfo.id, id)).returning();
+      res.json(updated);
+    } catch (err: any) {
+      console.error("[lifecycle-board] PATCH project error:", err);
       res.status(500).json({ error: err.message });
     }
   });
