@@ -8412,7 +8412,15 @@ export async function registerRoutes(
           p.priorityRank = nextRank;
         }
       }
-      res.json(priorities);
+      const { priorityLinks: plTable } = await import("@shared/schema");
+      const allLinks = await db.select().from(plTable);
+      const linksByPriority: Record<number, any[]> = {};
+      allLinks.forEach(l => {
+        if (!linksByPriority[l.priorityId]) linksByPriority[l.priorityId] = [];
+        linksByPriority[l.priorityId].push(l);
+      });
+      const enriched = priorities.map(p => ({ ...p, links: linksByPriority[p.id] || [] }));
+      res.json(enriched);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -8439,6 +8447,57 @@ export async function registerRoutes(
   app.delete("/api/mytool/company-priorities/:id", requireAuth, requireAdmin, async (req, res) => {
     try {
       await storage.deleteMytoolCompanyPriority(parseInt(req.params.id));
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ==================== PRIORITY LINKS (many-to-many) ====================
+
+  app.get("/api/mytool/company-priorities/:id/links", requireAuth, async (req, res) => {
+    try {
+      const { priorityLinks: plTable } = await import("@shared/schema");
+      const links = await db.select().from(plTable).where(eq(plTable.priorityId, parseInt(req.params.id)));
+      res.json(links);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/mytool/priority-links", requireAuth, async (_req, res) => {
+    try {
+      const { priorityLinks: plTable } = await import("@shared/schema");
+      const links = await db.select().from(plTable);
+      res.json(links);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/mytool/company-priorities/:id/links", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { priorityLinks: plTable } = await import("@shared/schema");
+      const priorityId = parseInt(req.params.id);
+      const { linkType, projectName, taskId, taskType } = req.body;
+      if (!linkType) return res.status(400).json({ error: "linkType is required" });
+      const [link] = await db.insert(plTable).values({
+        priorityId,
+        linkType,
+        projectName: projectName || null,
+        taskId: taskId ? parseInt(taskId) : null,
+        taskType: taskType || null,
+      }).returning();
+      res.json(link);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/mytool/priority-links/:linkId", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { priorityLinks: plTable } = await import("@shared/schema");
+      await db.delete(plTable).where(eq(plTable.id, parseInt(req.params.linkId)));
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
