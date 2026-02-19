@@ -1,8 +1,46 @@
-import { Express, Request, Response } from "express";
+import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
 import { rolePermissions, users, DEFAULT_ROLE_PERMISSIONS } from "@shared/schema";
 import type { InsertRolePermission, RolePermission } from "@shared/schema";
+import { verifyToken } from "./jwt";
+
+const LEGACY_ROLE_MAP: Record<string, string> = {
+  admin: "COO_ADMIN",
+  quality_manager: "QUALITY_MANAGER",
+  eng_program_manager: "ENGINEERING_MANAGER",
+  member: "VIEWER",
+  viewer: "VIEWER",
+};
+
+function mapRole(raw: string): string {
+  return LEGACY_ROLE_MAP[raw] || raw;
+}
+
+function jwtAuth(req: Request, _res: Response, next: NextFunction) {
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith("Bearer ")) {
+    const payload = verifyToken(authHeader.substring(7));
+    if (payload) {
+      (req as any).user = payload;
+    }
+  }
+  next();
+}
+
+function requireAuth(req: Request, res: Response, next: NextFunction) {
+  if ((req as any).user) return next();
+  res.status(401).json({ error: "Authentication required" });
+}
+
+function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  const user = (req as any).user;
+  if (!user) return res.status(401).json({ error: "Authentication required" });
+  const role = mapRole(user.role);
+  const adminRoles = ["COO_ADMIN", "CEO_ADMIN"];
+  if (adminRoles.includes(role)) return next();
+  res.status(403).json({ error: "Admin access required" });
+}
 
 export async function seedRolePermissions() {
   try {
@@ -25,7 +63,7 @@ export async function seedRolePermissions() {
 }
 
 export function registerRoleManagementRoutes(app: Express) {
-  app.get("/api/roles", async (_req: Request, res: Response) => {
+  app.get("/api/roles", jwtAuth, requireAuth, async (_req: Request, res: Response) => {
     try {
       const roles = await db.select().from(rolePermissions);
       res.json(roles);
@@ -34,7 +72,7 @@ export function registerRoleManagementRoutes(app: Express) {
     }
   });
 
-  app.get("/api/roles/:role", async (req: Request, res: Response) => {
+  app.get("/api/roles/:role", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
       const [role] = await db.select().from(rolePermissions).where(eq(rolePermissions.role, req.params.role));
       if (!role) return res.status(404).json({ error: "Role not found" });
@@ -44,7 +82,7 @@ export function registerRoleManagementRoutes(app: Express) {
     }
   });
 
-  app.put("/api/roles/:role", async (req: Request, res: Response) => {
+  app.put("/api/roles/:role", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const { label, description, sections, canManageUsers, canManageRoles, canEditData } = req.body;
       const [existing] = await db.select().from(rolePermissions).where(eq(rolePermissions.role, req.params.role));
@@ -68,7 +106,7 @@ export function registerRoleManagementRoutes(app: Express) {
     }
   });
 
-  app.post("/api/roles", async (req: Request, res: Response) => {
+  app.post("/api/roles", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const { role, label, description, sections, canManageUsers, canManageRoles, canEditData } = req.body;
       if (!role || !label) return res.status(400).json({ error: "Role key and label are required" });
@@ -92,7 +130,7 @@ export function registerRoleManagementRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/roles/:role", async (req: Request, res: Response) => {
+  app.delete("/api/roles/:role", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const [existing] = await db.select().from(rolePermissions).where(eq(rolePermissions.role, req.params.role));
       if (!existing) return res.status(404).json({ error: "Role not found" });
@@ -110,7 +148,7 @@ export function registerRoleManagementRoutes(app: Express) {
     }
   });
 
-  app.get("/api/admin/users", async (_req: Request, res: Response) => {
+  app.get("/api/admin/users", jwtAuth, requireAuth, requireAdmin, async (_req: Request, res: Response) => {
     try {
       const allUsers = await db.select({
         id: users.id,
@@ -124,7 +162,7 @@ export function registerRoleManagementRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/admin/users/:userId/role", async (req: Request, res: Response) => {
+  app.patch("/api/admin/users/:userId/role", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const userId = parseInt(req.params.userId);
       const { role } = req.body;
@@ -145,19 +183,21 @@ export function registerRoleManagementRoutes(app: Express) {
     }
   });
 
-  app.get("/api/auth/permissions", async (req: Request, res: Response) => {
+  app.get("/api/auth/permissions", jwtAuth, async (req: Request, res: Response) => {
     try {
       const companyRole = req.headers["x-company-role"] as string;
       const userRole = (req as any).user?.role;
-      const activeRole = companyRole || userRole;
+      const raw = companyRole || userRole;
 
-      if (!activeRole) {
-        return res.json({ sections: [], canManageUsers: false, canManageRoles: false, canEditData: false });
+      if (!raw) {
+        return res.json({ sections: ["PROJECT_MANAGEMENT"], canManageUsers: false, canManageRoles: false, canEditData: false });
       }
+
+      const activeRole = mapRole(raw);
 
       const [perm] = await db.select().from(rolePermissions).where(eq(rolePermissions.role, activeRole));
       if (!perm) {
-        return res.json({ sections: [], canManageUsers: false, canManageRoles: false, canEditData: false });
+        return res.json({ sections: ["PROJECT_MANAGEMENT"], canManageUsers: false, canManageRoles: false, canEditData: false });
       }
 
       res.json({
