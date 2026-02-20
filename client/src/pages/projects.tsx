@@ -780,8 +780,8 @@ export default function ProjectsSummary() {
     staleTime: 0,
   });
 
-  const activeProjects = useMemo(() => projects.filter(p => p.is_active), [projects]);
-  const archivedProjects = useMemo(() => projects.filter(p => !p.is_active), [projects]);
+  const activeProjects = useMemo(() => projects.filter(p => p.is_active && p.has_tracker_import), [projects]);
+  const archivedProjects = useMemo(() => projects.filter(p => !p.is_active && p.has_tracker_import), [projects]);
   const currentProjects = viewTab === "active" ? activeProjects : archivedProjects;
 
   const uniquePMs = useMemo(() => {
