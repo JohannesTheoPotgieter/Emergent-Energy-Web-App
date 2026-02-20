@@ -13,7 +13,7 @@ import { Progress } from "@/components/ui/progress";
 import {
   Upload, FileSpreadsheet, CheckCircle2, AlertCircle, AlertTriangle,
   Info, ArrowRight, ArrowLeft, Loader2, X, Check, ChevronDown, ChevronUp,
-  Pencil,
+  Pencil, History,
 } from "lucide-react";
 import { useLocation } from "wouter";
 
@@ -1198,7 +1198,11 @@ function IssuesStep({
   const [cpName, setCpName] = useState("");
   const [cpType, setCpType] = useState("subcontractor");
   const [creatingCp, setCreatingCp] = useState<number | null>(null);
+  const [applyingPrior, setApplyingPrior] = useState(false);
   const { toast } = useToast();
+
+  const issuesWithPriorRules = issues.filter((i: any) => i.matchedRuleId && !i.resolved && !i.autoResolved);
+  const autoResolvedCount = issues.filter((i: any) => i.autoResolved).length;
 
   const blockers = issues.filter((i) => i.severity === "BLOCKER" || i.severity === "blocker" || i.severity === "error");
   const warnings = issues.filter((i) => i.severity === "WARNING" || i.severity === "warning" || i.severity === "warn");
@@ -1221,10 +1225,11 @@ function IssuesStep({
       const res = await fetch(`/api/smart-import/${runId}/issue/${issueId}/resolve`, {
         method: "PATCH",
         headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ resolved, resolution }),
+        body: JSON.stringify({ resolved, resolution, rememberDecision: resolved ? true : false }),
       });
       if (res.ok) {
-        onIssuesUpdate(issues.map((i) => (i.id === issueId ? { ...i, resolved, resolution } : i)));
+        const updated = await res.json();
+        onIssuesUpdate(issues.map((i) => (i.id === issueId ? updated : i)));
         toast({ title: resolved ? "Resolved" : "Reopened" });
       } else {
         toast({ title: "Error", description: "Failed to update issue", variant: "destructive" });
@@ -1233,6 +1238,27 @@ function IssuesStep({
       toast({ title: "Error", description: "Network error", variant: "destructive" });
     } finally {
       setResolving(null);
+    }
+  };
+
+  const handleApplyPriorResolutions = async () => {
+    setApplyingPrior(true);
+    try {
+      const res = await fetch(`/api/smart-import/${runId}/apply-prior-resolutions`, {
+        method: "POST",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        onIssuesUpdate(data.issues);
+        toast({ title: "Applied", description: `${data.applied} issue(s) resolved from prior decisions` });
+      } else {
+        toast({ title: "Error", description: "Failed to apply resolutions", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Error", description: "Network error", variant: "destructive" });
+    } finally {
+      setApplyingPrior(false);
     }
   };
 
@@ -1298,7 +1324,17 @@ function IssuesStep({
                       <p className="text-xs font-medium" data-testid={`text-issue-msg-${issue.id}`}>
                         {issue.message}
                       </p>
-                      {issue.suggestedAction && (
+                      {issue.autoResolved && (
+                        <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded mt-0.5">
+                          <CheckCircle2 className="w-2.5 h-2.5" /> Auto-resolved from prior decision
+                        </span>
+                      )}
+                      {issue.matchedRuleId && !issue.resolved && !issue.autoResolved && (
+                        <span className="inline-flex items-center gap-1 text-[10px] text-violet-600 bg-violet-100 px-1.5 py-0.5 rounded mt-0.5">
+                          <History className="w-2.5 h-2.5" /> Previously resolved — click Accept to apply
+                        </span>
+                      )}
+                      {issue.suggestedAction && !issue.autoResolved && (
                         <p className="text-[10px] text-slate-500 mt-0.5" data-testid={`text-issue-action-${issue.id}`}>
                           Suggested: {issue.suggestedAction}
                         </p>
@@ -1388,6 +1424,40 @@ function IssuesStep({
 
   return (
     <div className="space-y-4" data-testid="issues-step">
+      {autoResolvedCount > 0 && (
+        <Card className="bg-emerald-50 border border-emerald-200 rounded-xl shadow-sm" data-testid="auto-resolved-banner">
+          <CardContent className="p-3 flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <p className="text-xs text-emerald-700 flex-1">
+              <span className="font-semibold">{autoResolvedCount}</span> issue(s) auto-resolved based on your prior decisions
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {issuesWithPriorRules.length > 0 && (
+        <Card className="bg-violet-50 border border-violet-200 rounded-xl shadow-sm" data-testid="prior-resolutions-banner">
+          <CardContent className="p-3 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <History className="w-4 h-4 text-violet-600 shrink-0" />
+              <p className="text-xs text-violet-700">
+                <span className="font-semibold">{issuesWithPriorRules.length}</span> issue(s) match prior resolution patterns
+              </p>
+            </div>
+            <Button
+              size="sm"
+              className="h-7 text-xs bg-violet-600 hover:bg-violet-700 text-white"
+              disabled={applyingPrior}
+              onClick={handleApplyPriorResolutions}
+              data-testid="btn-apply-prior-resolutions"
+            >
+              {applyingPrior ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
+              Apply All Suggestions
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       {issues.length === 0 ? (
         <Card className="bg-white rounded-xl shadow-sm">
           <CardContent className="flex flex-col items-center justify-center py-12 gap-2">

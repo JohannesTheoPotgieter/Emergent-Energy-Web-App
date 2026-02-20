@@ -60,12 +60,18 @@ export interface NormalizationResult {
     section: "PLAN" | "REVENUE" | "EXPENDITURE" | "GENERAL";
     message: string;
     suggestedAction: string | null;
+    issueType: string;
+    issueFingerprint: string;
     payloadJson: any;
   }>;
 }
 
 type SectionType = "PLAN" | "REVENUE" | "EXPENDITURE";
 type IssueEntry = NormalizationResult["issues"][number];
+
+function makeFingerprint(issueType: string, section: string, key: string): string {
+  return `${issueType}::${section}::${key}`;
+}
 
 function getColIndex(mappings: MappingResult, canonicalField: string): number {
   const mapping = mappings.mappings.find(m => m.canonicalField === canonicalField);
@@ -247,6 +253,8 @@ function extractRevenueLines(
           section: "REVENUE",
           message: `Duplicate invoice number "${invoiceNumber}" in revenue section`,
           suggestedAction: "Verify whether these are distinct invoices or duplicates",
+          issueType: "DUPLICATE_INVOICE",
+          issueFingerprint: makeFingerprint("DUPLICATE_INVOICE", "REVENUE", invoiceNumber),
           payloadJson: { invoiceNumber, row: i + 1 },
         });
       }
@@ -261,6 +269,8 @@ function extractRevenueLines(
           section: "REVENUE",
           message: `Invoice date (${invoiceDate}) is after paid date (${paidDate}) on row ${i + 1}`,
           suggestedAction: "Check if dates are swapped",
+          issueType: "DATE_ORDER_VIOLATION",
+          issueFingerprint: makeFingerprint("DATE_ORDER_VIOLATION", "REVENUE", invoiceNumber || `${invoiceDate}_${paidDate}`),
           payloadJson: { invoiceDate, paidDate, row: i + 1 },
         });
       }
@@ -272,6 +282,8 @@ function extractRevenueLines(
         section: "REVENUE",
         message: `Missing amount on revenue line "${milestoneName}" (row ${i + 1})`,
         suggestedAction: "Add the financial amount for this milestone",
+        issueType: "MISSING_AMOUNT",
+        issueFingerprint: makeFingerprint("MISSING_AMOUNT", "REVENUE", milestoneName || `row_${i + 1}`),
         payloadJson: { milestoneName, row: i + 1 },
       });
     }
@@ -360,6 +372,8 @@ function extractCostLines(
           section: "EXPENDITURE",
           message: `Duplicate invoice number "${invoiceNumber}" in expenditure section`,
           suggestedAction: "Verify whether these are distinct invoices or duplicates",
+          issueType: "DUPLICATE_INVOICE",
+          issueFingerprint: makeFingerprint("DUPLICATE_INVOICE", "EXPENDITURE", invoiceNumber),
           payloadJson: { invoiceNumber, row: i + 1 },
         });
       }
@@ -374,6 +388,8 @@ function extractCostLines(
           section: "EXPENDITURE",
           message: `Invoice date (${invoiceDate}) is after paid date (${paidDate}) on row ${i + 1}`,
           suggestedAction: "Check if dates are swapped",
+          issueType: "DATE_ORDER_VIOLATION",
+          issueFingerprint: makeFingerprint("DATE_ORDER_VIOLATION", "EXPENDITURE", invoiceNumber || `${invoiceDate}_${paidDate}`),
           payloadJson: { invoiceDate, paidDate, row: i + 1 },
         });
       }
@@ -385,6 +401,8 @@ function extractCostLines(
         section: "EXPENDITURE",
         message: `Missing amount on cost line row ${i + 1} with invoice/payment data`,
         suggestedAction: "Add the financial amount for this cost line",
+        issueType: "MISSING_AMOUNT",
+        issueFingerprint: makeFingerprint("MISSING_AMOUNT", "EXPENDITURE", description || `row_${i + 1}`),
         payloadJson: { category, description, row: i + 1 },
       });
     }
@@ -395,6 +413,8 @@ function extractCostLines(
         section: "EXPENDITURE",
         message: `Counterparty "${counterparty}" found on row ${i + 1}`,
         suggestedAction: null,
+        issueType: "COUNTERPARTY_DETECTED",
+        issueFingerprint: makeFingerprint("COUNTERPARTY_DETECTED", "EXPENDITURE", counterparty),
         payloadJson: { counterparty, row: i + 1 },
       });
     }
