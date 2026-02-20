@@ -9,8 +9,7 @@ const LEGACY_ROLE_MAP: Record<string, string> = {
   admin: "COO_ADMIN",
   quality_manager: "QUALITY_MANAGER",
   eng_program_manager: "ENGINEERING_MANAGER",
-  member: "VIEWER",
-  viewer: "VIEWER",
+  member: "PROGRAM_MANAGER",
 };
 
 function mapRole(raw: string): string {

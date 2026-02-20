@@ -16,7 +16,7 @@ export const userRoleEnum = pgEnum('user_role', [
   'admin', 'member', 'quality_manager', 'viewer', 'eng_program_manager',
   'COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO',
   'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER',
-  'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'VIEWER',
+  'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER',
 ]);
 
 export const smartImportStatusEnum = pgEnum('smart_import_status', ['PREVIEW', 'AWAITING_REVIEW', 'COMMITTED', 'ROLLED_BACK', 'FAILED']);
@@ -2382,5 +2382,4 @@ export const DEFAULT_ROLE_PERMISSIONS: InsertRolePermission[] = [
   { role: "QUALITY_MANAGER", label: "Quality Manager", description: "Quality checklists, post-mortems, inspections", sections: ["PROJECT_MANAGEMENT", "QUALITY"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
   { role: "ENGINEERING_MANAGER", label: "Engineering Manager", description: "Engineering tasks, deliverables, approvals", sections: ["ENGINEERING", "QUALITY"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
   { role: "KEY_ACCOUNTS_MANAGER", label: "Key Accounts Manager", description: "Client relations, account management", sections: ["PROJECT_MANAGEMENT"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "VIEWER", label: "Viewer", description: "View-only access to project data", sections: ["PROJECT_MANAGEMENT"], canManageUsers: false, canManageRoles: false, canEditData: false, isSystem: true },
 ];
