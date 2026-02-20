@@ -222,17 +222,21 @@ function extractProjectInfo(
         const afterLabel = String(cellVal).trim();
         const labelIdx = afterLabel.toLowerCase().indexOf(matchedLabel.toLowerCase());
         if (labelIdx >= 0) {
-          let inlineVal = afterLabel.substring(labelIdx + matchedLabel.length).replace(/^[\s:;\-–]+/, "").trim();
-          if (inlineVal.length > 0 && mode === "text") {
-            return inlineVal;
-          }
-          if (inlineVal.length > 0 && mode === "number") {
-            const n = parseNumber(inlineVal);
-            if (n) return n;
-          }
-          if (inlineVal.length > 0 && mode === "date") {
-            const d = parseDate(inlineVal);
-            if (d) return d;
+          const rawAfter = afterLabel.substring(labelIdx + matchedLabel.length);
+          const firstChar = rawAfter.charAt(0);
+          if (!firstChar || !/[a-zA-Z0-9]/.test(firstChar)) {
+            let inlineVal = rawAfter.replace(/^[\s:;\-–]+/, "").trim();
+            if (inlineVal.length > 0 && mode === "text") {
+              return inlineVal;
+            }
+            if (inlineVal.length > 0 && mode === "number") {
+              const n = parseNumber(inlineVal);
+              if (n) return n;
+            }
+            if (inlineVal.length > 0 && mode === "date") {
+              const d = parseDate(inlineVal);
+              if (d) return d;
+            }
           }
         }
 
@@ -269,10 +273,10 @@ function extractProjectInfo(
     return null;
   }
 
-  const name = findLabeledValue(["project name", "project:", "site name", "project title"]);
+  const name = findLabeledValue(["project name", "project plan", "project:", "site name", "project title"]);
   const sizeKwp = findLabeledValue(["size", "kwp", "capacity", "system size"], "number");
-  const pd = findLabeledValue(["project director", "pd:", "pd name"]);
-  const pm = findLabeledValue(["project manager", "pm:", "pm name"]);
+  const pd = findLabeledValue(["project director", "project developer", "pd:", "pd name"]);
+  const pm = findLabeledValue(["project managers", "project manager", "pm:", "pm name"]);
   const contractValue = findLabeledValue(["contract value", "contract amount", "total contract", "project value"], "number");
   const phase = findLabeledValue(["phase", "execution phase", "current phase", "project phase"]);
 
@@ -295,6 +299,61 @@ function extractProjectInfo(
     omHandoverDate,
     clientHandoverDate,
   };
+}
+
+function deriveKeyDatesFromPlan(
+  ws: ExcelJS.Worksheet,
+  dataStartRow: number,
+  dataEndRow: number,
+  headers: { colIndex: number; normalizedHeader: string }[]
+): Partial<Record<"constructionStartDate" | "commissioningDate" | "omHandoverDate" | "clientHandoverDate" | "pdHandoverDate", string>> {
+  const result: Record<string, string | null> = {};
+
+  const taskCol = headers.find(h =>
+    ["task", "description", "activity", "high level programme", "programme", "milestone", "item"].includes(h.normalizedHeader)
+  );
+
+  const dateColCandidates = headers.filter(h =>
+    ["planned start", "planned_start", "start date", "start", "actual start", "actual_start",
+     "planned end", "planned_end", "end date", "end", "actual end", "actual_end"].includes(h.normalizedHeader)
+  );
+  const startCol = dateColCandidates.find(h => h.normalizedHeader.includes("actual") && h.normalizedHeader.includes("start"))
+    || dateColCandidates.find(h => h.normalizedHeader.includes("start"));
+  const endCol = dateColCandidates.find(h => h.normalizedHeader.includes("actual") && h.normalizedHeader.includes("end"))
+    || dateColCandidates.find(h => h.normalizedHeader.includes("end"));
+
+  if (!taskCol || (!startCol && !endCol)) return result;
+
+  const milestonePatterns: { key: string; patterns: string[]; useEnd: boolean }[] = [
+    { key: "constructionStartDate", patterns: ["site establishment", "construction start", "construction commencement"], useEnd: false },
+    { key: "commissioningDate", patterns: ["commissioning"], useEnd: false },
+    { key: "omHandoverDate", patterns: ["o&m handover", "om handover", "o & m handover", "handover to matriarch", "handover to o&m"], useEnd: false },
+    { key: "clientHandoverDate", patterns: ["handover to client", "client handover", "practical completion", "final handover"], useEnd: false },
+    { key: "pdHandoverDate", patterns: ["project charter handover", "pd handover", "design handover", "handover documentation"], useEnd: false },
+  ];
+
+  for (let r = dataStartRow; r <= Math.min(dataEndRow, ws.rowCount); r++) {
+    const row = ws.getRow(r);
+    const taskVal = getCellRawValue(row.getCell(taskCol.colIndex + 1));
+    if (!taskVal) continue;
+    const taskText = String(taskVal).toLowerCase().trim();
+
+    for (const milestone of milestonePatterns) {
+      if (result[milestone.key]) continue;
+      const matched = milestone.patterns.some(p => taskText === p || taskText.includes(p));
+      if (!matched) continue;
+
+      const col = milestone.useEnd ? (endCol || startCol) : (startCol || endCol);
+      if (!col) continue;
+      const dateVal = getCellRawValue(row.getCell(col.colIndex + 1));
+      if (dateVal) {
+        const d = parseDate(dateVal);
+        if (d) result[milestone.key] = d;
+      }
+    }
+  }
+
+  return result;
 }
 
 export function detectSections(workbook: ExcelJS.Workbook): DetectionResult {
@@ -361,6 +420,19 @@ export function detectSections(workbook: ExcelJS.Workbook): DetectionResult {
 
       if (sectionKey === "PLAN") {
         projectInfo = extractProjectInfo(bestCandidate.ws, bestCandidate.headerResult.rowIndex);
+        const derivedDates = deriveKeyDatesFromPlan(
+          bestCandidate.ws,
+          bestCandidate.dataStartRow,
+          bestCandidate.dataEndRow,
+          bestCandidate.headerResult.headers
+        );
+        if (projectInfo) {
+          for (const [key, val] of Object.entries(derivedDates)) {
+            if (val && !(projectInfo as any)[key]) {
+              (projectInfo as any)[key] = val;
+            }
+          }
+        }
       }
     } else {
       console.log(`[Detector] ${sectionKey}: no candidate found in any sheet`);
