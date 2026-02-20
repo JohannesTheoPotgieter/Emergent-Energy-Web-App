@@ -53,14 +53,14 @@ export interface NormalizationResult {
   counterpartyNames: string[];
   issues: Array<{
     severity: "INFO" | "WARNING" | "BLOCKER";
-    section: "PLAN" | "REVENUE" | "EXPENDITURE" | "CASHFLOW" | "GENERAL";
+    section: "PLAN" | "REVENUE" | "EXPENDITURE" | "GENERAL";
     message: string;
     suggestedAction: string | null;
     payloadJson: any;
   }>;
 }
 
-type SectionType = "PLAN" | "REVENUE" | "EXPENDITURE" | "CASHFLOW";
+type SectionType = "PLAN" | "REVENUE" | "EXPENDITURE";
 type IssueEntry = NormalizationResult["issues"][number];
 
 function getColIndex(mappings: MappingResult, canonicalField: string): number {

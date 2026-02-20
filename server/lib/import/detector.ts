@@ -3,7 +3,7 @@ import { SECTION_ANCHORS, getSynonymsForSection } from "./synonyms";
 import { normalizeHeader, getCellRawValue, worksheetToArray, parseDate, parseNumber } from "./utils";
 
 export interface DetectedSection {
-  section: "PLAN" | "REVENUE" | "EXPENDITURE" | "CASHFLOW";
+  section: "PLAN" | "REVENUE" | "EXPENDITURE";
   sheetName: string;
   headerRowIndex: number;
   dataStartRowIndex: number;

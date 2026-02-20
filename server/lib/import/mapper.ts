@@ -15,7 +15,7 @@ export interface ColumnMapping {
 }
 
 export interface MappingResult {
-  section: "PLAN" | "REVENUE" | "EXPENDITURE" | "CASHFLOW";
+  section: "PLAN" | "REVENUE" | "EXPENDITURE";
   mappings: ColumnMapping[];
   unmappedHeaders: { colIndex: number; rawHeader: string }[];
   missingRequired: string[];

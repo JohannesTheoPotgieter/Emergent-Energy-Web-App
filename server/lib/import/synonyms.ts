@@ -60,11 +60,6 @@ export const SECTION_ANCHORS: Record<string, { sheetNames: string[]; anchorPhras
     anchorPhrases: ["product/service", "description of work", "actual total", "po number", "invoice number", "finance payment", "budget total", "rate/unit", "supplier", "counterparty", "qty", "cost category"],
     requiredFields: [],
   },
-  CASHFLOW: {
-    sheetNames: ["cashflow", "cash flow", "cash-flow"],
-    anchorPhrases: ["week", "inflow", "outflow", "balance", "cumulative", "planned revenue", "planned expenditure"],
-    requiredFields: [],
-  },
 };
 
 export function getSynonymsForSection(section: string): Record<string, string[]> {
