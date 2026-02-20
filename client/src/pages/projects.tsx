@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useCallback } from "react";
+import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -102,6 +102,9 @@ interface ProjectSummary {
   expenses_due: number | null;
   current_vo_total: number | null;
   comments: string | null;
+  latest_update: string | null;
+  latest_update_at: string | null;
+  latest_update_by: string | null;
   escalation_level: string | null;
   task_status_counts: Record<string, number>;
   phase_updated_at: string | null;
@@ -150,6 +153,17 @@ function phaseConfig(phase: string | null): { bg: string; text: string; border: 
     P5_COMMISSIONING_TESTING: { bg: "bg-orange-50", text: "text-orange-700", border: "border-orange-200", dot: "bg-orange-500" },
     P6_HANDOVER_CLIENT_MATRIARCH: { bg: "bg-teal-50", text: "text-teal-700", border: "border-teal-200", dot: "bg-teal-500" },
     P7_CLOSEOUT_POSTMORTEM: { bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200", dot: "bg-emerald-500" },
+    "First Assessment": { bg: "bg-slate-50", text: "text-slate-700", border: "border-slate-200", dot: "bg-slate-500" },
+    "Cost Proposal": { bg: "bg-violet-50", text: "text-violet-700", border: "border-violet-200", dot: "bg-violet-500" },
+    "DLP": { bg: "bg-indigo-50", text: "text-indigo-700", border: "border-indigo-200", dot: "bg-indigo-500" },
+    "Financial Close": { bg: "bg-purple-50", text: "text-purple-700", border: "border-purple-200", dot: "bg-purple-500" },
+    "Planning": { bg: "bg-blue-50", text: "text-blue-700", border: "border-blue-200", dot: "bg-blue-500" },
+    "Construction": { bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-200", dot: "bg-amber-500" },
+    "QA": { bg: "bg-orange-50", text: "text-orange-700", border: "border-orange-200", dot: "bg-orange-500" },
+    "Handover": { bg: "bg-teal-50", text: "text-teal-700", border: "border-teal-200", dot: "bg-teal-500" },
+    "Commercial Close Out": { bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200", dot: "bg-emerald-500" },
+    "Compliance Handover": { bg: "bg-cyan-50", text: "text-cyan-700", border: "border-cyan-200", dot: "bg-cyan-500" },
+    "Hold": { bg: "bg-rose-50", text: "text-rose-700", border: "border-rose-200", dot: "bg-rose-500" },
   };
   return (phase && map[phase]) || { bg: "bg-slate-50", text: "text-slate-600", border: "border-slate-200", dot: "bg-slate-400" };
 }
@@ -497,7 +511,19 @@ function FinancialCloseCell({
   );
 }
 
-const PHASE_OPTIONS = PROJECT_PHASES;
+const EXECUTION_PHASES = [
+  "First Assessment",
+  "Cost Proposal",
+  "DLP",
+  "Financial Close",
+  "Planning",
+  "Construction",
+  "QA",
+  "Handover",
+  "Commercial Close Out",
+  "Compliance Handover",
+  "Hold",
+];
 
 interface SavedView {
   name: string;
@@ -529,6 +555,7 @@ const COLUMN_WIDTHS: Record<string, string> = {
   project_pct_complete: "72px",
   expected_pct_complete: "42px",
   delta_vs_expected: "56px",
+  latest_update: "140px",
   actions: "32px",
 };
 
@@ -537,6 +564,7 @@ const COLUMN_GROUPS_META: { label: string; keys: string[]; color: string; sticky
   { label: "Financial Close", keys: ["cost_proposal_signed", "funding_signed", "epc_contract_signed", "financial_close"], color: "bg-emerald-50 text-emerald-700" },
   { label: "Phase & Schedule", keys: ["phase", "task_counts", "escalation_level", "pd_handover_date", "construction_start_date", "commissioning_date", "om_handover_date", "client_handover_date", "duration", "kw_per_week"], color: "bg-blue-50 text-blue-700" },
   { label: "Progress", keys: ["project_pct_complete", "expected_pct_complete", "delta_vs_expected"], color: "bg-violet-50 text-violet-700" },
+  { label: "Updates", keys: ["latest_update"], color: "bg-amber-50 text-amber-700" },
 ];
 
 const ALL_COLUMN_KEYS_STATIC = COLUMN_GROUPS_META.flatMap(g => g.keys);
@@ -559,6 +587,79 @@ function loadActiveView(): string | null {
 function persistActiveView(name: string | null) {
   if (name) localStorage.setItem(ACTIVE_VIEW_KEY, name);
   else localStorage.removeItem(ACTIVE_VIEW_KEY);
+}
+
+function LatestUpdateCell({ project }: { project: ProjectSummary }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(project.latest_update || "");
+  const qc = useQueryClient();
+  const { authFetch } = useAuth();
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (!editing) setValue(project.latest_update || "");
+  }, [project.latest_update, editing]);
+
+  const save = async () => {
+    try {
+      await authFetch(`/api/projects-summary/${encodeURIComponent(project.project_name)}/latest-update`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ latestUpdate: value.trim() || null }),
+      });
+      qc.invalidateQueries({ queryKey: ["/api/projects-summary"] });
+      setEditing(false);
+    } catch {}
+  };
+
+  if (editing) {
+    return (
+      <div className="flex flex-col gap-1" onClick={(e) => e.stopPropagation()}>
+        <textarea
+          ref={inputRef}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); save(); } if (e.key === "Escape") setEditing(false); }}
+          className="w-full text-[10px] border rounded px-1 py-0.5 resize-none focus:outline-none focus:ring-1 focus:ring-blue-400"
+          rows={2}
+          autoFocus
+          data-testid={`textarea-update-${project.project_name}`}
+        />
+        <div className="flex gap-1">
+          <button onClick={save} className="text-[9px] px-1.5 py-0.5 bg-blue-500 text-white rounded hover:bg-blue-600" data-testid={`btn-save-update-${project.project_name}`}>Save</button>
+          <button onClick={() => { setEditing(false); setValue(project.latest_update || ""); }} className="text-[9px] px-1.5 py-0.5 bg-gray-100 rounded hover:bg-gray-200">Cancel</button>
+        </div>
+      </div>
+    );
+  }
+
+  const timeAgo = project.latest_update_at ? (() => {
+    const diff = Date.now() - new Date(project.latest_update_at).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    return `${days}d ago`;
+  })() : null;
+
+  return (
+    <div
+      className="cursor-pointer group min-w-[100px]"
+      onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+      title={project.latest_update ? `${project.latest_update}\n\nBy: ${project.latest_update_by || "Unknown"}\n${timeAgo || ""}` : "Click to add update"}
+      data-testid={`cell-update-${project.project_name}`}
+    >
+      {project.latest_update ? (
+        <div className="text-[10px] leading-tight">
+          <span className="text-slate-700 line-clamp-2">{project.latest_update}</span>
+          {timeAgo && <span className="text-[9px] text-slate-400 block">{project.latest_update_by?.split(" ")[0]} · {timeAgo}</span>}
+        </div>
+      ) : (
+        <span className="text-[10px] text-slate-300 group-hover:text-slate-400 italic">+ Add update</span>
+      )}
+    </div>
+  );
 }
 
 function EditProjectInfoModal({
@@ -601,9 +702,10 @@ function EditProjectInfoModal({
   });
 
   const handleSave = () => {
+    const phaseVal = formData.phase && formData.phase !== "__blank" ? formData.phase : null;
     const body: Record<string, unknown> = {
       projectName: formData.projectName.replace(/ /g, "_") + "_Tracker",
-      phase: formData.phase && formData.phase !== "__blank" ? formData.phase : null,
+      executionPhase: phaseVal,
       pd: formData.pd || null,
       pm: formData.pm || null,
       sizeKwp: formData.sizeKwp ? Number(formData.sizeKwp) : null,
@@ -635,16 +737,16 @@ function EditProjectInfoModal({
             />
           </div>
           <div>
-            <Label className="text-xs font-medium text-slate-600 mb-1 block">Phase</Label>
+            <Label className="text-xs font-medium text-slate-600 mb-1 block">Execution Phase</Label>
             <Select value={formData.phase} onValueChange={(v) => updateField("phase", v)}>
               <SelectTrigger data-testid="select-edit-phase">
-                <SelectValue placeholder="Select phase" />
+                <SelectValue placeholder="Select execution phase" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="__blank">(blank)</SelectItem>
-                {PHASE_OPTIONS.map((p) => (
+                {EXECUTION_PHASES.map((p) => (
                   <SelectItem key={p} value={p}>
-                    {PROJECT_PHASE_LABELS[p]}
+                    {p}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -743,6 +845,8 @@ export default function ProjectsSummary() {
   const [editProject, setEditProject] = useState<ProjectSummary | null>(null);
   const [viewTab, setViewTab] = useState<"active" | "archived">("active");
   const [writebackPromptProject, setWritebackPromptProject] = useState<string | null>(null);
+  const [colWidths, setColWidths] = useState<Record<string, number>>({});
+  const resizingRef = useRef<{ key: string; startX: number; startWidth: number } | null>(null);
   const queryClient = useQueryClient();
 
   const [savedViews, setSavedViews] = useState<SavedView[]>(() => loadSavedViews());
@@ -858,6 +962,39 @@ export default function ProjectsSummary() {
       setSortDir("asc");
     }
   };
+
+  const getColWidth = (key: string): number => {
+    if (colWidths[key]) return colWidths[key];
+    const w = COLUMN_WIDTHS[key] || "60px";
+    return parseInt(w, 10) || 60;
+  };
+
+  const onResizeStart = (e: React.MouseEvent, key: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startWidth = getColWidth(key);
+    resizingRef.current = { key, startX, startWidth };
+    const onMove = (ev: MouseEvent) => {
+      if (!resizingRef.current) return;
+      const diff = ev.clientX - resizingRef.current.startX;
+      const newW = Math.max(30, resizingRef.current.startWidth + diff);
+      setColWidths(prev => ({ ...prev, [resizingRef.current!.key]: newW }));
+    };
+    const onUp = () => {
+      resizingRef.current = null;
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  };
+
+  useEffect(() => {
+    return () => {
+      resizingRef.current = null;
+    };
+  }, []);
 
   const SortIcon = ({ col }: { col: string }) => {
     if (sortKey !== col) return <ArrowUpDown className="w-3 h-3 ml-1 opacity-20" />;
@@ -1257,6 +1394,13 @@ export default function ProjectsSummary() {
         );
       },
     },
+    {
+      key: "latest_update",
+      header: "Latest Update",
+      render: (p: ProjectSummary) => (
+        <LatestUpdateCell project={p} />
+      ),
+    },
     ...(isAdmin
       ? [
           {
@@ -1562,7 +1706,7 @@ export default function ProjectsSummary() {
           <table className="w-full text-[10px] border-collapse table-fixed" style={{ minWidth: "100%" }}>
             <colgroup>
               {filteredColumns.map(col => (
-                <col key={col.key} style={{ width: COLUMN_WIDTHS[col.key] || "60px" }} />
+                <col key={col.key} style={{ width: `${getColWidth(col.key)}px` }} />
               ))}
             </colgroup>
             <thead className="sticky top-0 z-20">
@@ -1583,7 +1727,7 @@ export default function ProjectsSummary() {
                 {filteredColumns.map((col) => (
                   <th
                     key={col.key}
-                    className={`px-1 py-1.5 text-left font-semibold text-slate-600 whitespace-nowrap cursor-pointer hover:bg-slate-50 select-none transition-colors text-[9px] ${
+                    className={`px-1 py-1.5 text-left font-semibold text-slate-600 whitespace-nowrap cursor-pointer hover:bg-slate-50 select-none transition-colors text-[9px] relative ${
                       col.sticky ? "sticky left-0 z-30 bg-white shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]" : ""
                     } ${col.align === "right" ? "text-right" : ""}`}
                     onClick={() => handleSort(col.key)}
@@ -1593,6 +1737,11 @@ export default function ProjectsSummary() {
                       {col.header}
                       <SortIcon col={col.key} />
                     </div>
+                    <div
+                      className="absolute right-0 top-0 bottom-0 w-[4px] cursor-col-resize hover:bg-blue-400/50 z-40"
+                      onMouseDown={(e) => onResizeStart(e, col.key)}
+                      data-testid={`resize-${col.key}`}
+                    />
                   </th>
                 ))}
               </tr>

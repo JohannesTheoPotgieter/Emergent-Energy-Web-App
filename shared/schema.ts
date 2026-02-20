@@ -611,6 +611,9 @@ export const projectEditableFields = pgTable("project_editable_fields", {
   epcContractNaReason: text("epc_contract_na_reason"),
   currentVoTotal: decimal("current_vo_total", { precision: 15, scale: 2 }),
   comments: text("comments"),
+  latestUpdate: text("latest_update"),
+  latestUpdateAt: timestamp("latest_update_at"),
+  latestUpdateBy: text("latest_update_by"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
