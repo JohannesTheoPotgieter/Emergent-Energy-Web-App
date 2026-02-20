@@ -737,7 +737,7 @@ export default function ProjectsSummary() {
   const [searchTerm, setSearchTerm] = useState("");
   const [pmFilter, setPmFilter] = useState("all");
   const [phaseFilter, setPhaseFilter] = useState("all");
-  const [sortKey, setSortKey] = useState<SortKey>("project_name");
+  const [sortKey, setSortKey] = useState<SortKey>("phase");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const { isAdmin } = useAuth();
   const [editProject, setEditProject] = useState<ProjectSummary | null>(null);
@@ -825,12 +825,22 @@ export default function ProjectsSummary() {
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
+    const phaseNorm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
     arr.sort((a, b) => {
       const aVal = (a as any)[sortKey];
       const bVal = (b as any)[sortKey];
       if (aVal == null && bVal == null) return 0;
       if (aVal == null) return 1;
       if (bVal == null) return -1;
+      if (sortKey === "phase") {
+        const ai = PHASE_ORDER.findIndex(p => phaseNorm(p) === phaseNorm(String(aVal)));
+        const bi = PHASE_ORDER.findIndex(p => phaseNorm(p) === phaseNorm(String(bVal)));
+        const aIdx = ai !== -1 ? ai : PHASE_ORDER.length;
+        const bIdx = bi !== -1 ? bi : PHASE_ORDER.length;
+        const diff = aIdx - bIdx;
+        if (diff !== 0) return sortDir === "asc" ? diff : -diff;
+        return String(aVal).localeCompare(String(bVal));
+      }
       if (typeof aVal === "string" && typeof bVal === "string") {
         return sortDir === "asc" ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
       }
