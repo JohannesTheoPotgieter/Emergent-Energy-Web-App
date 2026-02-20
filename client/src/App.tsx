@@ -30,6 +30,7 @@ import MyToolSettingsPage from "@/pages/my-tool-settings";
 import MyToolAdminSettingsPage from "@/pages/my-tool-admin-settings";
 import MyToolHelpPage from "@/pages/my-tool-help";
 import MyToolPrioritiesPage from "@/pages/my-tool-priorities";
+import MyToolMeetingsPage from "@/pages/my-tool-meetings";
 import QmDashboardPage from "@/pages/qm-dashboard";
 import EngineeringDashboardPage from "@/pages/engineering-dashboard";
 import EngineeringTasksPage from "@/pages/engineering-tasks";
@@ -236,6 +237,7 @@ function ProtectedPages() {
         <Route path="/my-tool/cockpit" component={ExecCockpitPage} />
         <Route path="/my-tool/triage-inbox" component={TriageInboxPage} />
         <Route path="/my-tool/unclassified-tasks" component={UnclassifiedTasksPage} />
+        <Route path="/my-tool/meetings" component={MyToolMeetingsPage} />
         <Route path="/admin/settings" component={RoleSettingsPage} />
         <Route path="/smart-import" component={SmartImportPage} />
         <Route path="/project-normalized/:projectName" component={ProjectNormalizedViewPage} />

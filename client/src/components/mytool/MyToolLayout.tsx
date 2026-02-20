@@ -17,6 +17,7 @@ import {
   Focus,
   Keyboard,
   Command,
+  Video,
 } from "lucide-react";
 import CommandStrip from "./CommandStrip";
 import CommandPalette from "./CommandPalette";
@@ -26,6 +27,7 @@ const navTabs = [
   { label: "Week", path: "/my-tool/week", icon: CalendarDays },
   { label: "Backlog", path: "/my-tool/backlog", icon: ListTodo },
   { label: "Priorities", path: "/company-priorities", icon: Flag },
+  { label: "Meetings", path: "/my-tool/meetings", icon: Video },
   { label: "Cockpit", path: "/my-tool/cockpit", icon: Gauge },
   { label: "Settings", path: "/my-tool/settings", icon: Settings },
   { label: "Help", path: "/my-tool/help", icon: HelpCircle },
