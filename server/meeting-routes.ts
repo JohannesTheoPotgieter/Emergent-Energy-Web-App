@@ -127,10 +127,27 @@ export function registerMeetingRoutes(app: Express) {
           .where(sql`${meetingActionItems.meetingId} = ANY(${meetingIds})`);
       }
 
-      const result = meetings.map((m) => ({
-        ...m,
-        actionItems: allItems.filter((ai) => ai.meetingId === m.id),
-      }));
+      const result = meetings.map((m) => {
+        let keyTopics: string[] = [];
+        let highlights: string[] = [];
+        if (m.rawPayload) {
+          try {
+            const payload = JSON.parse(m.rawPayload);
+            if (Array.isArray(payload.key_topics)) keyTopics = payload.key_topics;
+            else if (Array.isArray(payload.topics)) keyTopics = payload.topics.map((t: any) => typeof t === 'string' ? t : t?.name || t?.topic || '');
+            if (Array.isArray(payload.highlights)) highlights = payload.highlights.map((h: any) => typeof h === 'string' ? h : h?.text || '');
+            else if (Array.isArray(payload.key_points)) highlights = payload.key_points;
+            else if (Array.isArray(payload.important_points)) highlights = payload.important_points;
+          } catch {}
+        }
+        return {
+          ...m,
+          rawPayload: undefined,
+          keyTopics: keyTopics.filter(Boolean),
+          highlights: highlights.filter(Boolean),
+          actionItems: allItems.filter((ai) => ai.meetingId === m.id),
+        };
+      });
 
       res.json(result);
     } catch (err: any) {
@@ -145,7 +162,27 @@ export function registerMeetingRoutes(app: Express) {
       if (!meeting) return res.status(404).json({ error: "Meeting not found" });
 
       const items = await db.select().from(meetingActionItems).where(eq(meetingActionItems.meetingId, id));
-      res.json({ ...meeting, actionItems: items });
+
+      let keyTopics: string[] = [];
+      let highlights: string[] = [];
+      if (meeting.rawPayload) {
+        try {
+          const payload = JSON.parse(meeting.rawPayload);
+          if (Array.isArray(payload.key_topics)) keyTopics = payload.key_topics;
+          else if (Array.isArray(payload.topics)) keyTopics = payload.topics.map((t: any) => typeof t === 'string' ? t : t?.name || t?.topic || '');
+          if (Array.isArray(payload.highlights)) highlights = payload.highlights.map((h: any) => typeof h === 'string' ? h : h?.text || '');
+          else if (Array.isArray(payload.key_points)) highlights = payload.key_points;
+          else if (Array.isArray(payload.important_points)) highlights = payload.important_points;
+        } catch {}
+      }
+
+      res.json({
+        ...meeting,
+        rawPayload: undefined,
+        keyTopics: keyTopics.filter(Boolean),
+        highlights: highlights.filter(Boolean),
+        actionItems: items,
+      });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -336,7 +373,78 @@ export function registerMeetingRoutes(app: Express) {
     }
   });
 
-  // ==================== WEBHOOK INFO ====================
+  // ==================== WEBHOOK STATUS ====================
+  app.get("/api/meetings/webhook-status", requireAuth, requireAdmin, async (_req: Request, res: Response) => {
+    try {
+      const [stats] = await db
+        .select({
+          totalMeetings: sql<number>`count(*)::int`,
+          webhookMeetings: sql<number>`count(*) filter (where ${meetingSummaries.source} = 'read_ai')::int`,
+          lastWebhookAt: sql<string>`max(${meetingSummaries.createdAt}) filter (where ${meetingSummaries.source} = 'read_ai')`,
+          totalActionItems: sql<number>`(select count(*)::int from ${meetingActionItems})`,
+          pendingItems: sql<number>`(select count(*)::int from ${meetingActionItems} where ${meetingActionItems.status} = 'pending')`,
+          convertedItems: sql<number>`(select count(*)::int from ${meetingActionItems} where ${meetingActionItems.status} = 'converted')`,
+        })
+        .from(meetingSummaries);
+
+      const connected = (stats?.webhookMeetings ?? 0) > 0;
+      res.json({
+        connected,
+        totalMeetings: stats?.totalMeetings ?? 0,
+        webhookMeetings: stats?.webhookMeetings ?? 0,
+        lastWebhookAt: stats?.lastWebhookAt ?? null,
+        totalActionItems: stats?.totalActionItems ?? 0,
+        pendingItems: stats?.pendingItems ?? 0,
+        convertedItems: stats?.convertedItems ?? 0,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ==================== TEST WEBHOOK ====================
+  app.post("/api/meetings/test-webhook", requireAuth, requireAdmin, async (_req: Request, res: Response) => {
+    try {
+      const testPayload = {
+        meeting_id: `test_${Date.now()}`,
+        title: "Test Meeting - Connection Verification",
+        start_time: new Date().toISOString(),
+        end_time: new Date(Date.now() + 3600000).toISOString(),
+        participants: [{ name: "System Test" }],
+        summary: "This is an automated test to verify the webhook connection is working correctly. You can safely delete this meeting.",
+        report_url: null,
+        action_items: [
+          { text: "Webhook test action item - verify this appears", owner: "System", due_date: null },
+        ],
+      };
+
+      const [meeting] = await db
+        .insert(meetingSummaries)
+        .values({
+          externalMeetingId: testPayload.meeting_id,
+          title: testPayload.title,
+          startTime: new Date(testPayload.start_time),
+          endTime: new Date(testPayload.end_time),
+          participants: ["System Test"],
+          summary: testPayload.summary,
+          source: "test",
+          rawPayload: JSON.stringify(testPayload),
+        })
+        .returning();
+
+      await db.insert(meetingActionItems).values({
+        meetingId: meeting.id,
+        text: testPayload.action_items[0].text,
+        owner: testPayload.action_items[0].owner,
+      });
+
+      res.json({ ok: true, meetingId: meeting.id, message: "Test meeting created successfully" });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ==================== WEBHOOK INFO (legacy) ====================
   app.get("/api/meetings/webhook-info", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const host = req.headers.host || req.hostname;
