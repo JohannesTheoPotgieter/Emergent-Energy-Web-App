@@ -158,10 +158,6 @@ function mapPhaseToGroup(phase: string | null, source?: string): string {
       else if (normalized.startsWith("P7")) group = "closeout";
     }
   }
-  const hasTracker = source === "excel" || source === "both";
-  if (hasTracker && (group === "first_assessment" || group === "cost_proposal")) {
-    group = "planning";
-  }
   return group;
 }
 
