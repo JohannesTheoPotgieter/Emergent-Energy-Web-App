@@ -31,6 +31,7 @@ import {
   FolderPlus,
   Mail,
   InboxIcon,
+  RefreshCw,
 } from "lucide-react";
 import { useProgramData } from "@/hooks/use-program-data";
 import { useAuth } from "@/hooks/use-auth";
@@ -76,6 +77,8 @@ function getNavGroups(): NavGroup[] {
       items: [
         { label: "Eng Dashboard", icon: Wrench, path: "/engineering" },
         { label: "Task Board", icon: ListTodo, path: "/engineering/tasks" },
+        { label: "Pipeline Inbox", icon: InboxIcon, path: "/engineering/inbox" },
+        { label: "SP Sync", icon: RefreshCw, path: "/engineering/sync" },
       ],
     },
     {
@@ -194,7 +197,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           if (allowedSections.length === 0 && !activeRole) return group.section === "PROJECT_MANAGEMENT";
           return allowedSections.includes(group.section);
         }).map((group) => {
-          let visibleItems = group.items;
+          let visibleItems = group.items.filter(item => {
+            if (item.path === "/engineering/sync" && companyRole !== "COO_ADMIN") return false;
+            return true;
+          });
           if (visibleItems.length === 0) return null;
 
           const isCollapsed = collapsedSections[group.heading] && sidebarShowLabels;

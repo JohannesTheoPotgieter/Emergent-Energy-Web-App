@@ -2449,6 +2449,171 @@ export const insertNormalizedExecutionPhaseSchema = createInsertSchema(normalize
 export type InsertNormalizedExecutionPhase = z.infer<typeof insertNormalizedExecutionPhaseSchema>;
 export type NormalizedExecutionPhase = typeof normalizedExecutionPhases.$inferSelect;
 
+// ===================== SHAREPOINT PROPOSALS PIPELINE =====================
+
+export const INTAKE_REQUEST_TYPES = [
+  "First Assessment",
+  "Cost Proposal",
+  "Site Visit Report",
+  "Meter Installation",
+  "Data Analysis Request",
+  "Sizing Rational Request",
+] as const;
+export type IntakeRequestType = typeof INTAKE_REQUEST_TYPES[number];
+
+export const INTAKE_STATUSES = [
+  "NOT STARTED", "IN PROGRESS", "COMPLETED", "ON HOLD", "CANCELLED",
+] as const;
+
+export const FIELD_OWNERSHIP = ["SP_OWNED", "APP_OWNED", "SHARED"] as const;
+export type FieldOwnership = typeof FIELD_OWNERSHIP[number];
+
+export const spListConfig = pgTable("sp_list_config", {
+  id: serial("id").primaryKey(),
+  siteId: text("site_id").notNull(),
+  listId: text("list_id").notNull(),
+  siteName: text("site_name"),
+  listName: text("list_name"),
+  siteUrl: text("site_url"),
+  columnMappingJson: jsonb("column_mapping_json"),
+  fieldOwnershipJson: jsonb("field_ownership_json"),
+  lastPulledAt: timestamp("last_pulled_at"),
+  lastPushedAt: timestamp("last_pushed_at"),
+  lastDeltaToken: text("last_delta_token"),
+  syncViewFilter: text("sync_view_filter").default("IN PROGRESS"),
+  configuredByRole: text("configured_by_role"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertSpListConfigSchema = createInsertSchema(spListConfig).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertSpListConfig = z.infer<typeof insertSpListConfigSchema>;
+export type SpListConfig = typeof spListConfig.$inferSelect;
+
+export const intakeRequests = pgTable("intake_requests", {
+  id: serial("id").primaryKey(),
+  spItemId: text("sp_item_id").notNull().unique(),
+  projectId: integer("project_id").references(() => projectInfo.id),
+  clientKey: text("client_key").notNull(),
+  clientName: text("client_name").notNull(),
+  requestType: text("request_type"),
+  status: text("status"),
+  priority: text("priority"),
+  dueDate: text("due_date"),
+  daysInProgress: integer("days_in_progress"),
+  projectDeveloper: text("project_developer"),
+  designer: text("designer"),
+  sizeKwp: text("size_kwp"),
+  province: text("province"),
+  gpsCoordinates: text("gps_coordinates"),
+  fundingType: text("funding_type"),
+  billsTariffData: text("bills_tariff_data"),
+  meteringData: text("metering_data"),
+  siteInspectionForm: text("site_inspection_form"),
+  comments: text("comments"),
+  workingSchedule: text("working_schedule"),
+  batteriesNeeded: text("batteries_needed"),
+  batterySize: text("battery_size"),
+  dieselGenNeeded: text("diesel_gen_needed"),
+  roofReplacementNeeded: text("roof_replacement_needed"),
+  hseDiscussed: text("hse_discussed"),
+  numberOfReworks: integer("number_of_reworks"),
+  clickUpSynced: text("clickup_synced"),
+  itemType: text("item_type"),
+  spPath: text("sp_path"),
+  spEtag: text("sp_etag"),
+  spRawJson: jsonb("sp_raw_json"),
+  appNotes: text("app_notes"),
+  appInternalBlockers: text("app_internal_blockers"),
+  cpSigned: boolean("cp_signed").notNull().default(false),
+  cpSignedDate: text("cp_signed_date"),
+  cpSignedBy: text("cp_signed_by"),
+  cpEvidenceType: text("cp_evidence_type"),
+  cpEvidenceRef: text("cp_evidence_ref"),
+  pmCreated: boolean("pm_created").notNull().default(false),
+  tasksGenerated: boolean("tasks_generated").notNull().default(false),
+  lastPulledAt: timestamp("last_pulled_at"),
+  lastPushedAt: timestamp("last_pushed_at"),
+  lastPulledHash: text("last_pulled_hash"),
+  lastAppEditAt: timestamp("last_app_edit_at"),
+  syncConflict: boolean("sync_conflict").notNull().default(false),
+  conflictFieldsJson: jsonb("conflict_fields_json"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertIntakeRequestSchema = createInsertSchema(intakeRequests).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertIntakeRequest = z.infer<typeof insertIntakeRequestSchema>;
+export type IntakeRequest = typeof intakeRequests.$inferSelect;
+
+export const intakeTaskTemplates = pgTable("intake_task_templates", {
+  id: serial("id").primaryKey(),
+  requestType: text("request_type").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  dodItems: jsonb("dod_items"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const insertIntakeTaskTemplateSchema = createInsertSchema(intakeTaskTemplates).omit({ id: true, createdAt: true });
+export type InsertIntakeTaskTemplate = z.infer<typeof insertIntakeTaskTemplateSchema>;
+export type IntakeTaskTemplate = typeof intakeTaskTemplates.$inferSelect;
+
+export const intakeTasks = pgTable("intake_tasks", {
+  id: serial("id").primaryKey(),
+  intakeRequestId: integer("intake_request_id").notNull().references(() => intakeRequests.id, { onDelete: 'cascade' }),
+  templateItemId: integer("template_item_id").references(() => intakeTaskTemplates.id),
+  title: text("title").notNull(),
+  description: text("description"),
+  status: text("status").notNull().default("NOT_STARTED"),
+  dodItems: jsonb("dod_items"),
+  dodCompletedJson: jsonb("dod_completed_json"),
+  assignedTo: text("assigned_to"),
+  dueDate: text("due_date"),
+  completedAt: timestamp("completed_at"),
+  completedBy: text("completed_by"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertIntakeTaskSchema = createInsertSchema(intakeTasks).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertIntakeTask = z.infer<typeof insertIntakeTaskSchema>;
+export type IntakeTask = typeof intakeTasks.$inferSelect;
+
+export const syncAuditLog = pgTable("sync_audit_log", {
+  id: serial("id").primaryKey(),
+  action: text("action").notNull(),
+  actorRole: text("actor_role").notNull(),
+  direction: text("direction").notNull(),
+  summary: jsonb("summary"),
+  errorsJson: jsonb("errors_json"),
+  conflictsJson: jsonb("conflicts_json"),
+  itemCount: integer("item_count").notNull().default(0),
+  newProjectsCount: integer("new_projects_count").notNull().default(0),
+  newRequestsCount: integer("new_requests_count").notNull().default(0),
+  updatedRequestsCount: integer("updated_requests_count").notNull().default(0),
+  conflictsCount: integer("conflicts_count").notNull().default(0),
+  errorsCount: integer("errors_count").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const insertSyncAuditLogSchema = createInsertSchema(syncAuditLog).omit({ id: true, createdAt: true });
+export type InsertSyncAuditLog = z.infer<typeof insertSyncAuditLogSchema>;
+export type SyncAuditLog = typeof syncAuditLog.$inferSelect;
+
+export const SP_OWNED_FIELDS = [
+  "clientName", "dueDate", "requestType", "projectDeveloper", "designer",
+  "fundingType", "sizeKwp", "province", "workingSchedule", "gpsCoordinates",
+  "billsTariffData", "meteringData", "siteInspectionForm",
+  "batteriesNeeded", "batterySize", "dieselGenNeeded", "roofReplacementNeeded",
+  "hseDiscussed", "numberOfReworks", "daysInProgress",
+] as const;
+
+export const APP_OWNED_FIELDS = [
+  "appNotes", "appInternalBlockers", "cpSigned", "cpSignedDate", "cpSignedBy",
+  "cpEvidenceType", "cpEvidenceRef", "pmCreated", "tasksGenerated",
+] as const;
+
+export const SHARED_FIELDS = ["status", "comments", "priority"] as const;
+
 export const DEFAULT_ROLE_PERMISSIONS: InsertRolePermission[] = [
   { role: "COO_ADMIN", label: "COO Admin", description: "Full executive access, settings, user management", sections: ["EXCO", "PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "ADMIN", "MY_TOOL", "FINANCE"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
   { role: "CEO_ADMIN", label: "CEO Admin", description: "Full executive access, strategic oversight", sections: ["EXCO", "PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "ADMIN", "MY_TOOL", "FINANCE"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
