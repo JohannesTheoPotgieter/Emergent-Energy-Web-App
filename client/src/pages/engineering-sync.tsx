@@ -75,6 +75,37 @@ function formatDateTime(d: string | null) {
   } catch { return d; }
 }
 
+function ListLookupButton({ siteId, listName, onFound }: { siteId: string; listName: string; onFound: (id: string, name?: string) => void }) {
+  const [loading, setLoading] = useState(false);
+  const { toast } = useToast();
+  const handleLookup = async () => {
+    if (!siteId.trim() || !listName.trim()) {
+      toast({ title: "Enter a list name first", description: "Type the list name in the field below, then click lookup", variant: "destructive" });
+      return;
+    }
+    setLoading(true);
+    try {
+      const data = await spFetch(`/api/sp-sync/discover/list-by-name/${encodeURIComponent(siteId)}/${encodeURIComponent(listName.trim())}`);
+      if (data.list?.id) {
+        onFound(data.list.id, data.list.displayName);
+        toast({ title: "Found it!", description: `List "${data.list.displayName}" ID: ${data.list.id.slice(0, 8)}...` });
+      } else {
+        toast({ title: "List not found", description: data.error || `No list named "${listName}" on this site`, variant: "destructive" });
+      }
+    } catch (err: any) {
+      toast({ title: "Lookup failed", description: err.message, variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+  return (
+    <Button type="button" variant="outline" size="sm" onClick={handleLookup} disabled={loading} className="h-9 px-2.5 gap-1 text-xs whitespace-nowrap" data-testid="btn-lookup-list">
+      {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
+      Lookup
+    </Button>
+  );
+}
+
 interface SyncStatus {
   configured: boolean;
   connectorAvailable: boolean;
@@ -151,7 +182,7 @@ function SetupFlow({ onComplete }: { onComplete: () => void }) {
   const [discoveredSite, setDiscoveredSite] = useState<{ id: string; displayName: string; webUrl: string } | null>(null);
   const [discoveredLists, setDiscoveredLists] = useState<SPList[]>([]);
 
-  const [manualSiteId, setManualSiteId] = useState("");
+  const [manualSiteId, setManualSiteId] = useState("emergy.sharepoint.com,7413e721-9ee5-49f1-9396-a2da73697d21,ce878166-ee49-4369-a18c-c71e6cd8f433");
   const [manualListId, setManualListId] = useState("");
   const [manualSiteName, setManualSiteName] = useState("Engineering Support");
   const [manualListName, setManualListName] = useState("Proposals Pipeline");
@@ -352,9 +383,16 @@ function SetupFlow({ onComplete }: { onComplete: () => void }) {
               </div>
             )}
             <div className="flex gap-2">
-              <Button size="sm" variant="outline" onClick={() => { setMode("manual"); setAutoStep("idle"); }} className="gap-1.5">
+              <Button size="sm" variant="outline" onClick={() => {
+                setMode("manual");
+                setAutoStep("idle");
+                if (discoveredSite) {
+                  setManualSiteId(discoveredSite.id);
+                  setManualSiteName(discoveredSite.displayName || "Engineering Support");
+                }
+              }} className="gap-1.5">
                 <Settings className="h-3.5 w-3.5" />
-                Enter IDs Manually
+                Enter List ID Manually
               </Button>
               <Button size="sm" variant="ghost" onClick={() => { setMode(null); setAutoStep("idle"); }}>
                 Back
@@ -372,56 +410,70 @@ function SetupFlow({ onComplete }: { onComplete: () => void }) {
 
             <div className="p-3 bg-muted/50 rounded-lg flex gap-2 items-start">
               <Info className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                Find these IDs in SharePoint: go to Site Settings → Site Information for the Site ID,
-                and List Settings → URL bar for the List ID. Or ask your SharePoint admin.
-              </p>
+              <div className="text-xs text-muted-foreground leading-relaxed space-y-1.5">
+                <p className="font-medium text-foreground">How to find the List ID:</p>
+                <ol className="list-decimal list-inside space-y-0.5">
+                  <li>Open the list in SharePoint</li>
+                  <li>Click the gear icon → <strong>List settings</strong></li>
+                  <li>In the URL bar, copy the value after <code className="bg-muted px-1 rounded">List=%7B</code> and before <code className="bg-muted px-1 rounded">%7D</code></li>
+                  <li>That GUID is the list ID (e.g. <code className="bg-muted px-1 rounded">12345678-abcd-...</code>)</li>
+                </ol>
+                <p>The Site ID is pre-filled from your Engineering Support site.</p>
+              </div>
             </div>
 
             <div className="grid gap-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs">List Name</Label>
+                <div className="flex gap-1.5">
+                  <Input
+                    placeholder="e.g. Proposals Pipeline"
+                    value={manualListName}
+                    onChange={e => setManualListName(e.target.value)}
+                    className="text-sm h-9 flex-1"
+                    data-testid="input-list-name"
+                  />
+                  <ListLookupButton
+                    siteId={manualSiteId}
+                    listName={manualListName}
+                    onFound={(id, name) => { setManualListId(id); if (name) setManualListName(name); }}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Type the SharePoint list name and click <strong>Lookup</strong> to auto-fill the List ID
+                </p>
+              </div>
               <div className="grid sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Site ID</Label>
+                  <Label className="text-xs text-muted-foreground">Site ID (pre-filled)</Label>
                   <Input
                     placeholder="e.g. emergy.sharepoint.com,abc123..."
                     value={manualSiteId}
                     onChange={e => setManualSiteId(e.target.value)}
-                    className="text-sm h-9"
+                    className="text-sm h-9 font-mono text-xs"
                     data-testid="input-site-id"
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">List ID</Label>
+                  <Label className="text-xs text-muted-foreground">List ID {manualListId && <span className="text-emerald-600">(found)</span>}</Label>
                   <Input
-                    placeholder="e.g. 12345678-abcd-efgh..."
+                    placeholder="Auto-filled by lookup, or paste manually"
                     value={manualListId}
                     onChange={e => setManualListId(e.target.value)}
-                    className="text-sm h-9"
+                    className="text-sm h-9 font-mono text-xs"
                     data-testid="input-list-id"
                   />
                 </div>
               </div>
-              <div className="grid sm:grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">Site Name (optional)</Label>
-                  <Input
-                    placeholder="Engineering Support"
-                    value={manualSiteName}
-                    onChange={e => setManualSiteName(e.target.value)}
-                    className="text-sm h-9"
-                    data-testid="input-site-name"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">List Name (optional)</Label>
-                  <Input
-                    placeholder="Proposals Pipeline"
-                    value={manualListName}
-                    onChange={e => setManualListName(e.target.value)}
-                    className="text-sm h-9"
-                    data-testid="input-list-name"
-                  />
-                </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Site Name</Label>
+                <Input
+                  placeholder="Engineering Support"
+                  value={manualSiteName}
+                  onChange={e => setManualSiteName(e.target.value)}
+                  className="text-sm h-9"
+                  data-testid="input-site-name"
+                />
               </div>
             </div>
 

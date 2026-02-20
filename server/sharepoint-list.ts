@@ -38,7 +38,7 @@ async function getAccessToken(): Promise<string> {
   return accessToken;
 }
 
-async function graphGet(url: string): Promise<any> {
+export async function graphGet(url: string): Promise<any> {
   const token = await getAccessToken();
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
@@ -104,7 +104,35 @@ export async function discoverLists(siteId: string): Promise<{ id: string; displ
   const result = await graphGet(
     `https://graph.microsoft.com/v1.0/sites/${siteId}/lists?$select=id,displayName,list&$top=50`
   );
-  return (result.value || [])
+  const allLists = result.value || [];
+  console.log(`[SP] discoverLists raw count: ${allLists.length}`);
+
+  if (allLists.length === 0) {
+    console.log(`[SP] No lists returned. Trying direct list name probes...`);
+    const probeNames = [
+      "Engineering Pipeline",
+      "Proposals Pipeline",
+      "Engineering Proposals",
+      "Pipeline",
+      "Tasks",
+    ];
+    const found: { id: string; displayName: string; itemCount: number }[] = [];
+    for (const name of probeNames) {
+      try {
+        const probe = await graphGet(
+          `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${encodeURIComponent(name)}?$select=id,displayName,list`
+        );
+        if (probe?.id) {
+          console.log(`[SP]   probe hit: "${probe.displayName}" id=${probe.id}`);
+          found.push({ id: probe.id, displayName: probe.displayName, itemCount: -1 });
+        }
+      } catch {
+      }
+    }
+    return found;
+  }
+
+  return allLists
     .filter((l: any) => !l.list?.hidden)
     .map((l: any) => ({
       id: l.id,

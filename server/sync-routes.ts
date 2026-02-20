@@ -77,6 +77,23 @@ export function registerSyncRoutes(app: Express) {
     }
   });
 
+  app.get("/api/sp-sync/discover/list-by-name/:siteId/:listName", jwtAuth, requireAuth, requireCOO, async (req, res) => {
+    try {
+      const { siteId, listName } = req.params;
+      const { graphGet } = await import("./sharepoint-list");
+      const result = await graphGet(
+        `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${encodeURIComponent(listName)}?$select=id,displayName,list`
+      );
+      if (result?.id) {
+        res.json({ list: { id: result.id, displayName: result.displayName } });
+      } else {
+        res.json({ list: null, error: "List not found" });
+      }
+    } catch (err: any) {
+      res.json({ list: null, error: err.message || "List not found with that name" });
+    }
+  });
+
   app.get("/api/sp-sync/discover/columns/:siteId/:listId", jwtAuth, requireAuth, requireCOO, async (req, res) => {
     try {
       const columns = await getListColumns(req.params.siteId, req.params.listId);
