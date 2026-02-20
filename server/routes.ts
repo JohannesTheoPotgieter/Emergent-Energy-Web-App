@@ -1552,6 +1552,9 @@ export async function registerRoutes(
           expenses_due: expensesDue,
           current_vo_total: editable?.currentVoTotal ? parseFloat(editable.currentVoTotal) : 0,
           comments: editable?.comments || null,
+          latest_update: editable?.latestUpdate || null,
+          latest_update_at: editable?.latestUpdateAt || null,
+          latest_update_by: editable?.latestUpdateBy || null,
           escalation_level: info?.escalationLevel || null,
           task_status_counts: taskCountsByProject.get(projectName) || {},
           phase_updated_at: info?.phaseUpdatedAt || null,
@@ -1637,6 +1640,28 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Project edit error:", error);
       res.status(500).json({ error: "Failed to save project fields", message: "Failed to save project fields" });
+    }
+  });
+
+  app.patch("/api/projects-summary/:projectName/latest-update", requireAuth, async (req, res) => {
+    try {
+      const projectName = decodeURIComponent(req.params.projectName as string);
+      const schema = z.object({
+        latestUpdate: z.string().nullable(),
+      });
+      const { latestUpdate } = schema.parse(req.body);
+      const roleName = (req as any).user?.name || (req as any).user?.role || "Unknown";
+      const data: Record<string, any> = {
+        projectName,
+        latestUpdate: latestUpdate || null,
+        latestUpdateAt: latestUpdate ? new Date() : null,
+        latestUpdateBy: latestUpdate ? roleName : null,
+      };
+      const result = await storage.upsertProjectEditableFields(data as any);
+      res.json(result);
+    } catch (error) {
+      console.error("Latest update error:", error);
+      res.status(500).json({ error: "Failed to save latest update" });
     }
   });
 
@@ -3554,6 +3579,7 @@ export async function registerRoutes(
       const editSchema = z.object({
         projectName: z.string().min(1).optional(),
         phase: z.string().nullable().optional(),
+        executionPhase: z.string().nullable().optional(),
         pd: z.string().nullable().optional(),
         pm: z.string().nullable().optional(),
         sizeKwp: z.string().nullable().optional(),
