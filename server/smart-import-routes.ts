@@ -22,6 +22,17 @@ import {
 } from "@shared/schema";
 import { eq, desc, and } from "drizzle-orm";
 
+function extractProjectNameFromFilename(fileName: string): string {
+  let name = fileName.replace(/\.(xlsx|xlsm|xls)$/i, "");
+  const trackerIdx = name.toLowerCase().indexOf("tracker");
+  if (trackerIdx > 0) {
+    name = name.substring(0, trackerIdx);
+  }
+  name = name.replace(/[_\-]+/g, " ").replace(/[^a-zA-Z\s]/g, "").trim();
+  name = name.replace(/\s+/g, " ");
+  return name || "Untitled Project";
+}
+
 const router = Router();
 
 const uploadDir = path.join(process.cwd(), "uploads");
@@ -100,8 +111,20 @@ router.post("/api/smart-import/upload", requireAuth, upload.single("file"), asyn
 
     const fileHash = crypto.createHash("sha256").update(buffer).digest("hex");
 
-    const projectName =
-      fileName.replace(/\.(xlsx|xlsm|xls)$/i, "").replace(/_Tracker$/i, "").replace(/_/g, " ");
+    const projectName = extractProjectNameFromFilename(fileName);
+
+    if (preview.detection.projectInfo) {
+      if (!preview.detection.projectInfo.name) {
+        preview.detection.projectInfo.name = projectName;
+      }
+    } else {
+      preview.detection.projectInfo = {
+        name: projectName,
+        sizeKwp: null, pd: null, pm: null, contractValue: null, phase: null,
+        pdHandoverDate: null, constructionStartDate: null, commissioningDate: null,
+        omHandoverDate: null, clientHandoverDate: null,
+      };
+    }
 
     const userId = (req as any).user?.id || null;
 
@@ -173,6 +196,46 @@ router.get("/api/smart-import/:runId", requireAuth, async (req: Request, res: Re
     });
   } catch (err: any) {
     console.error("[smart-import] GET run error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/smart-import/:runId/project-info
+router.patch("/api/smart-import/:runId/project-info", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const runId = parseInt(req.params.runId as string);
+    if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
+
+    const [run] = await db.select().from(smartImportRuns).where(eq(smartImportRuns.id, runId));
+    if (!run) return res.status(404).json({ error: "Import run not found" });
+
+    const summary = run.summaryJson as any;
+    const updates = req.body as Record<string, string | null>;
+
+    if (!summary.detection) summary.detection = {};
+    if (!summary.detection.projectInfo) {
+      summary.detection.projectInfo = {
+        name: null, sizeKwp: null, pd: null, pm: null, contractValue: null, phase: null,
+        pdHandoverDate: null, constructionStartDate: null, commissioningDate: null,
+        omHandoverDate: null, clientHandoverDate: null,
+      };
+    }
+
+    for (const [key, value] of Object.entries(updates)) {
+      if (key in summary.detection.projectInfo) {
+        (summary.detection.projectInfo as any)[key] = value;
+      }
+    }
+
+    const updateFields: any = { summaryJson: summary };
+    if ("name" in updates) {
+      updateFields.projectName = updates.name || run.sourceFileName?.replace(/\.(xlsx|xlsm|xls)$/i, "") || "Untitled";
+    }
+    await db.update(smartImportRuns).set(updateFields).where(eq(smartImportRuns.id, runId));
+
+    res.json({ success: true, projectInfo: summary.detection.projectInfo });
+  } catch (err: any) {
+    console.error("[smart-import] PATCH project-info error:", err);
     res.status(500).json({ error: err.message });
   }
 });
