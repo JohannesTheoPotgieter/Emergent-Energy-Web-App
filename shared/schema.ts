@@ -2218,6 +2218,7 @@ export const importIssues = pgTable("import_issues", {
   resolvedAt: timestamp("resolved_at"),
   autoResolved: boolean("auto_resolved").notNull().default(false),
   matchedRuleId: integer("matched_rule_id"),
+  overrideData: jsonb("override_data"),
   payloadJson: jsonb("payload_json"),
 });
 export const insertImportIssueSchema = createInsertSchema(importIssues).omit({ id: true });
@@ -2232,6 +2233,7 @@ export const issueResolutionRules = pgTable("issue_resolution_rules", {
   section: importSectionEnum("section").notNull(),
   resolution: text("resolution").notNull(),
   resolutionNote: text("resolution_note"),
+  overrideData: jsonb("override_data"),
   applyAlways: boolean("apply_always").notNull().default(false),
   timesApplied: integer("times_applied").notNull().default(0),
   createdBy: integer("created_by").references(() => users.id),
