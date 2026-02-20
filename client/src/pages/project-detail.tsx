@@ -510,7 +510,7 @@ export default function ProjectDetailPage() {
   const completion = projectInfo?.project_pct_complete != null
     ? `${(projectInfo.project_pct_complete * 100).toFixed(0)}%`
     : "—";
-  const isAdmin = user?.role === "admin";
+  const isAdmin = ['admin', 'COO_ADMIN', 'CEO_ADMIN'].includes(user?.role || '');
   const projectInfoId = projectInfo?.project_info_id;
 
   const dataHealth = [

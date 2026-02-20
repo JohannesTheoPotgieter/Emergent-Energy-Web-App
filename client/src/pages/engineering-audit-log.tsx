@@ -143,7 +143,7 @@ export default function EngineeringAuditLog() {
     return () => clearTimeout(debounceRef.current);
   }, [searchInput]);
 
-  if (user?.role !== "admin") {
+  if (!['admin', 'COO_ADMIN', 'CEO_ADMIN'].includes(user?.role || '')) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-muted-foreground" data-testid="audit-log-forbidden">
         <Shield className="h-16 w-16 mb-4 opacity-30" />

@@ -384,7 +384,7 @@ export default function Home() {
     if (role === "eng_program_manager") {
       return section.heading === "ENGINEERING" || section.heading === "QUALITY" || section.heading === "PROJECT MANAGEMENT";
     }
-    if (role === "admin") return true;
+    if (role === "admin" || role === "COO_ADMIN" || role === "CEO_ADMIN") return true;
     return section.heading === "PROJECT MANAGEMENT";
   }).map(section => {
     let links = [...section.links];
