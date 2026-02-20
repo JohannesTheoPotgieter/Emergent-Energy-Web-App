@@ -10,9 +10,13 @@ export interface NormalizationResult {
     startDate: string | null;
     endDate: string | null;
     durationDays: number | null;
+    actualStartDate: string | null;
+    actualEndDate: string | null;
+    actualDurationDays: number | null;
     owner: string | null;
     status: string | null;
     pctComplete: number | null;
+    comment: string | null;
     sourceSheet: string;
     sourceRow: number;
   }>;
@@ -115,10 +119,14 @@ function extractPlanTasks(
   const startDateCol = getColIndex(mapping, "start_date");
   const endDateCol = getColIndex(mapping, "end_date");
   const durationCol = getColIndex(mapping, "duration");
+  const actualStartCol = getColIndex(mapping, "actual_start");
+  const actualEndCol = getColIndex(mapping, "actual_end");
+  const actualDurationCol = getColIndex(mapping, "actual_duration");
   const pctCompleteCol = getColIndex(mapping, "pct_complete");
   const expectedPctCol = getColIndex(mapping, "expected_pct");
   const ownerCol = getColIndex(mapping, "owner");
   const phaseCol = getColIndex(mapping, "phase");
+  const commentCol = getColIndex(mapping, "comment");
 
   let currentPhase: string | null = null;
 
@@ -138,11 +146,19 @@ function extractPlanTasks(
 
     const startDate = startDateCol >= 0 ? parseDate(row[startDateCol]) : null;
     const endDate = endDateCol >= 0 ? parseDate(row[endDateCol]) : null;
+    const actualStartDate = actualStartCol >= 0 ? parseDate(row[actualStartCol]) : null;
+    const actualEndDate = actualEndCol >= 0 ? parseDate(row[actualEndCol]) : null;
 
     let durationDays: number | null = null;
     if (durationCol >= 0 && row[durationCol] != null) {
       const parsed = parseInt(String(row[durationCol]));
       if (!isNaN(parsed)) durationDays = parsed;
+    }
+
+    let actualDurationDays: number | null = null;
+    if (actualDurationCol >= 0 && row[actualDurationCol] != null) {
+      const parsed = parseInt(String(row[actualDurationCol]));
+      if (!isNaN(parsed)) actualDurationDays = parsed;
     }
 
     const pctRaw = pctCompleteCol >= 0 ? parseStatus(row[pctCompleteCol]) : null;
@@ -160,9 +176,13 @@ function extractPlanTasks(
       startDate,
       endDate,
       durationDays,
+      actualStartDate,
+      actualEndDate,
+      actualDurationDays,
       owner: ownerCol >= 0 ? cellStr(row, ownerCol) : null,
       status: statusStr,
       pctComplete: pctRaw,
+      comment: commentCol >= 0 ? cellStr(row, commentCol) : null,
       sourceSheet: sheetName,
       sourceRow: i + 1,
     });

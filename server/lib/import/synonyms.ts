@@ -1,13 +1,17 @@
 export const PLAN_SYNONYMS: Record<string, string[]> = {
   task_name: ["high level programme", "programme", "task", "activity", "work item", "description", "milestone"],
   task_no: ["no.", "no", "item", "#", "ref", "task no"],
-  start_date: ["actual start", "start date", "start", "planned start"],
-  end_date: ["actual end", "end date", "end", "planned end", "finish date"],
+  start_date: ["planned start", "start date", "start", "baseline start"],
+  end_date: ["planned end", "end date", "end", "finish date", "baseline end"],
   duration: ["duration", "days", "duration (days)"],
+  actual_start: ["actual start", "actual start date"],
+  actual_end: ["actual end", "actual end date", "actual finish"],
+  actual_duration: ["actual duration", "actual days"],
   pct_complete: ["status", "% complete", "progress", "completion", "actual %", "actual status"],
   expected_pct: ["expected", "expected %", "planned %", "expected status", "baseline %"],
   owner: ["owner", "responsible", "assigned to", "resource", "person"],
   phase: ["phase", "stage", "section"],
+  comment: ["comment", "comments", "notes", "remarks"],
 };
 
 export const REVENUE_SYNONYMS: Record<string, string[]> = {
