@@ -16,6 +16,7 @@ export interface DetectionResult {
   sections: DetectedSection[];
   unmatched: { sheetName: string; reason: string }[];
   projectInfo: {
+    name: string | null;
     sizeKwp: string | null;
     pd: string | null;
     pm: string | null;
@@ -202,42 +203,47 @@ function computeConfidence(
 }
 
 function extractProjectInfo(
-  ws: ExcelJS.Worksheet
+  ws: ExcelJS.Worksheet,
+  headerRowIndex: number = 50
 ): DetectionResult["projectInfo"] {
-  function getCellValue(col: string, row: number): any {
-    const cell = ws.getCell(`${col}${row}`);
-    return getCellRawValue(cell);
-  }
+  const maxRow = Math.min(headerRowIndex, ws.rowCount);
+  const maxCol = Math.min(ws.columnCount, 15);
 
-  function findLabeledDateValue(labels: string[]): string | null {
-    const maxRow = Math.min(ws.rowCount, 50);
-    const maxCol = Math.min(ws.columnCount, 11);
-
+  function findLabeledValue(labels: string[], mode: "text" | "number" | "date" = "text"): string | null {
     for (let r = 1; r <= maxRow; r++) {
       const wsRow = ws.getRow(r);
       for (let c = 1; c <= maxCol; c++) {
         const cellVal = getCellRawValue(wsRow.getCell(c));
-        if (cellVal) {
-          const cellText = String(cellVal).toLowerCase().trim();
-          for (const label of labels) {
-            if (cellText.includes(label.toLowerCase())) {
-              for (let dc = 1; dc <= 4; dc++) {
-                if (c + dc <= ws.columnCount) {
-                  const valueCell = getCellRawValue(wsRow.getCell(c + dc));
-                  if (valueCell) {
-                    const dateVal = parseDate(valueCell);
-                    if (dateVal) return dateVal;
-                  }
-                }
-              }
-              if (r + 1 <= maxRow) {
-                const belowRow = ws.getRow(r + 1);
-                const belowVal = getCellRawValue(belowRow.getCell(c));
-                if (belowVal) {
-                  const dateVal = parseDate(belowVal);
-                  if (dateVal) return dateVal;
-                }
-              }
+        if (!cellVal) continue;
+        const cellText = String(cellVal).toLowerCase().trim();
+        const matched = labels.some(label => cellText.includes(label.toLowerCase()));
+        if (!matched) continue;
+
+        for (let dc = 1; dc <= 4; dc++) {
+          if (c + dc > maxCol) break;
+          const valueCell = getCellRawValue(wsRow.getCell(c + dc));
+          if (valueCell == null || String(valueCell).trim() === "") continue;
+          if (mode === "date") {
+            const d = parseDate(valueCell);
+            if (d) return d;
+          } else if (mode === "number") {
+            const n = parseNumber(valueCell);
+            if (n) return n;
+          } else {
+            return String(valueCell).trim();
+          }
+        }
+        if (r + 1 <= maxRow) {
+          const belowVal = getCellRawValue(ws.getRow(r + 1).getCell(c));
+          if (belowVal != null && String(belowVal).trim() !== "") {
+            if (mode === "date") {
+              const d = parseDate(belowVal);
+              if (d) return d;
+            } else if (mode === "number") {
+              const n = parseNumber(belowVal);
+              if (n) return n;
+            } else {
+              return String(belowVal).trim();
             }
           }
         }
@@ -246,24 +252,26 @@ function extractProjectInfo(
     return null;
   }
 
-  const sizeKwp = parseNumber(getCellValue("E", 3));
-  const pd = getCellValue("E", 4);
-  const pm = getCellValue("E", 5);
-  const contractValue = parseNumber(getCellValue("E", 6));
-  const phase = getCellValue("E", 7);
+  const name = findLabeledValue(["project name", "project:", "site name", "project title"]);
+  const sizeKwp = findLabeledValue(["size", "kwp", "capacity", "system size"], "number");
+  const pd = findLabeledValue(["project director", "pd:", "pd name"]);
+  const pm = findLabeledValue(["project manager", "pm:", "pm name"]);
+  const contractValue = findLabeledValue(["contract value", "contract amount", "total contract", "project value"], "number");
+  const phase = findLabeledValue(["phase", "execution phase", "current phase", "project phase"]);
 
-  const pdHandoverDate = parseDate(getCellValue("E", 8)) || findLabeledDateValue(["pd handover", "handover date"]);
-  const constructionStartDate = parseDate(getCellValue("E", 9)) || findLabeledDateValue(["construction start", "start date"]);
-  const commissioningDate = parseDate(getCellValue("E", 10)) || findLabeledDateValue(["commissioning"]);
-  const omHandoverDate = parseDate(getCellValue("E", 11)) || findLabeledDateValue(["o&m handover", "om handover"]);
-  const clientHandoverDate = parseDate(getCellValue("E", 12)) || findLabeledDateValue(["client handover"]);
+  const pdHandoverDate = findLabeledValue(["pd handover", "handover date", "design handover"], "date");
+  const constructionStartDate = findLabeledValue(["construction start", "construction commencement", "site start"], "date");
+  const commissioningDate = findLabeledValue(["commissioning", "commissioning date"], "date");
+  const omHandoverDate = findLabeledValue(["o&m handover", "om handover", "o & m handover"], "date");
+  const clientHandoverDate = findLabeledValue(["client handover", "final handover", "practical completion"], "date");
 
   return {
+    name,
     sizeKwp,
-    pd: pd ? String(pd) : null,
-    pm: pm ? String(pm) : null,
+    pd,
+    pm,
     contractValue,
-    phase: phase ? String(phase) : null,
+    phase,
     pdHandoverDate,
     constructionStartDate,
     commissioningDate,
@@ -335,7 +343,7 @@ export function detectSections(workbook: ExcelJS.Workbook): DetectionResult {
       claimedSheets.add(bestCandidate.ws.name);
 
       if (sectionKey === "PLAN") {
-        projectInfo = extractProjectInfo(bestCandidate.ws);
+        projectInfo = extractProjectInfo(bestCandidate.ws, bestCandidate.headerResult.rowIndex);
       }
     } else {
       console.log(`[Detector] ${sectionKey}: no candidate found in any sheet`);
@@ -392,7 +400,7 @@ export function detectSections(workbook: ExcelJS.Workbook): DetectionResult {
       claimedSheets.add(ws.name);
 
       if (bestSection === "PLAN" && !projectInfo) {
-        projectInfo = extractProjectInfo(ws);
+        projectInfo = extractProjectInfo(ws, bestHeader.rowIndex);
       }
     } else {
       unmatched.push({

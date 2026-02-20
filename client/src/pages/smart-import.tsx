@@ -442,38 +442,76 @@ function SectionDetectionStep({
 }) {
   const sections = preview?.detection?.sections || preview?.sections || [];
   const unmatchedSheets = preview?.detection?.unmatched || preview?.unmatchedSheets || [];
-  const projectInfo = preview?.projectInfo || preview?.detection?.projectInfo || {};
+  const projectInfo = preview?.detection?.projectInfo || preview?.projectInfo || {};
+  const hasProjectInfo = projectInfo && Object.values(projectInfo).some((v: any) => v != null && v !== "");
+
+  const keyDates = [
+    { label: "PD Handover", value: projectInfo.pdHandoverDate, testId: "text-pd-handover" },
+    { label: "Construction Start", value: projectInfo.constructionStartDate, testId: "text-construction-start" },
+    { label: "Commissioning", value: projectInfo.commissioningDate, testId: "text-commissioning" },
+    { label: "O&M Handover", value: projectInfo.omHandoverDate, testId: "text-om-handover" },
+    { label: "Client Handover", value: projectInfo.clientHandoverDate, testId: "text-client-handover" },
+  ];
+  const populatedDates = keyDates.filter(d => d.value);
+
+  function formatDate(val: string | null) {
+    if (!val) return "—";
+    try {
+      const d = new Date(val);
+      return d.toLocaleDateString("en-ZA", { day: "2-digit", month: "short", year: "numeric" });
+    } catch { return val; }
+  }
 
   return (
     <div className="space-y-4" data-testid="section-detection-step">
-      {projectInfo && (projectInfo.name || projectInfo.projectName) && (
+      {hasProjectInfo && (
         <Card className="bg-white rounded-xl shadow-sm">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Project Info</CardTitle>
+            <CardTitle className="text-sm">Project Info (from sheet header)</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 text-xs">
               <div>
-                <span className="text-slate-500">Name</span>
-                <p className="font-medium" data-testid="text-project-name">{projectInfo.name || projectInfo.projectName || "—"}</p>
+                <span className="text-slate-500">Project Name</span>
+                <p className="font-medium" data-testid="text-project-name">{projectInfo.name || "—"}</p>
               </div>
               <div>
-                <span className="text-slate-500">Size</span>
-                <p className="font-medium" data-testid="text-project-size">{projectInfo.sizeKwp || projectInfo.size || "—"}</p>
+                <span className="text-slate-500">Size (kWp)</span>
+                <p className="font-medium" data-testid="text-project-size">{projectInfo.sizeKwp || "—"}</p>
               </div>
               <div>
-                <span className="text-slate-500">PD</span>
+                <span className="text-slate-500">Project Director</span>
                 <p className="font-medium" data-testid="text-project-pd">{projectInfo.pd || "—"}</p>
               </div>
               <div>
-                <span className="text-slate-500">PM</span>
+                <span className="text-slate-500">Project Manager</span>
                 <p className="font-medium" data-testid="text-project-pm">{projectInfo.pm || "—"}</p>
               </div>
               <div>
-                <span className="text-slate-500">Phase</span>
+                <span className="text-slate-500">Contract Value</span>
+                <p className="font-medium" data-testid="text-contract-value">
+                  {projectInfo.contractValue ? `R ${Number(projectInfo.contractValue).toLocaleString("en-ZA", { maximumFractionDigits: 0 })}` : "—"}
+                </p>
+              </div>
+              <div>
+                <span className="text-slate-500">Execution Phase</span>
                 <p className="font-medium" data-testid="text-project-phase">{projectInfo.phase || "—"}</p>
               </div>
             </div>
+
+            {populatedDates.length > 0 && (
+              <div>
+                <p className="text-[11px] text-slate-400 font-medium uppercase tracking-wide mb-1.5">Key Dates</p>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 text-xs">
+                  {keyDates.map(d => (
+                    <div key={d.testId}>
+                      <span className="text-slate-500">{d.label}</span>
+                      <p className="font-medium" data-testid={d.testId}>{formatDate(d.value)}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
