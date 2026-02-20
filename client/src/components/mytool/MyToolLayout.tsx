@@ -13,7 +13,6 @@ import {
   Search,
   Flag,
   HelpCircle,
-  Gauge,
   Focus,
   Keyboard,
   Command,
@@ -28,7 +27,6 @@ const navTabs = [
   { label: "Backlog", path: "/my-tool/backlog", icon: ListTodo },
   { label: "Priorities", path: "/company-priorities", icon: Flag },
   { label: "Meetings", path: "/my-tool/meetings", icon: Video },
-  { label: "Cockpit", path: "/my-tool/cockpit", icon: Gauge },
   { label: "Settings", path: "/my-tool/settings", icon: Settings },
   { label: "Help", path: "/my-tool/help", icon: HelpCircle },
 ];
