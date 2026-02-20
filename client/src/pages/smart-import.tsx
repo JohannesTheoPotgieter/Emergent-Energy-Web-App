@@ -556,7 +556,7 @@ function SectionDetectionStep({
   const metaFields = [
     { label: "Project Name", key: "name", testId: "text-project-name", type: "text" as const },
     { label: "Size (kWp)", key: "sizeKwp", testId: "text-project-size", type: "text" as const },
-    { label: "Project Director", key: "pd", testId: "text-project-pd", type: "text" as const },
+    { label: "Project Developer", key: "pd", testId: "text-project-pd", type: "text" as const },
     { label: "Project Manager", key: "pm", testId: "text-project-pm", type: "text" as const },
     { label: "Contract Value", key: "contractValue", testId: "text-contract-value", type: "currency" as const },
     { label: "Execution Phase", key: "phase", testId: "text-project-phase", type: "text" as const },
