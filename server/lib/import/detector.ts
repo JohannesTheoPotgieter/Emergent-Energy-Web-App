@@ -283,7 +283,7 @@ function extractProjectInfo(
   const pdHandoverDate = findLabeledValue(["pd handover", "handover date", "design handover"], "date");
   const constructionStartDate = findLabeledValue(["construction start", "construction commencement", "site start"], "date");
   const commissioningDate = findLabeledValue(["commissioning", "commissioning date"], "date");
-  const omHandoverDate = findLabeledValue(["o&m handover", "om handover", "o & m handover"], "date");
+  const omHandoverDate = findLabeledValue(["o&m handover", "om handover", "o & m handover", "handover to mam", "mam handover"], "date");
   const clientHandoverDate = findLabeledValue(["client handover", "final handover", "practical completion"], "date");
 
   return {
@@ -327,7 +327,7 @@ function deriveKeyDatesFromPlan(
   const milestonePatterns: { key: string; patterns: string[]; useEnd: boolean }[] = [
     { key: "constructionStartDate", patterns: ["site establishment", "construction start", "construction commencement"], useEnd: false },
     { key: "commissioningDate", patterns: ["commissioning"], useEnd: false },
-    { key: "omHandoverDate", patterns: ["o&m handover", "om handover", "o & m handover", "handover to matriarch", "handover to o&m"], useEnd: false },
+    { key: "omHandoverDate", patterns: ["o&m handover", "om handover", "o & m handover", "handover to matriarch", "handover to o&m", "handover to mam", "mam handover"], useEnd: false },
     { key: "clientHandoverDate", patterns: ["handover to client", "client handover", "practical completion", "final handover"], useEnd: false },
     { key: "pdHandoverDate", patterns: ["project charter handover", "pd handover", "design handover", "handover documentation"], useEnd: false },
   ];
