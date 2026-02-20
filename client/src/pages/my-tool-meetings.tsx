@@ -39,8 +39,14 @@ import {
   ChevronRight,
   Copy,
   Link2,
+  Wifi,
+  WifiOff,
+  Zap,
+  MessageSquare,
+  Lightbulb,
+  Play,
 } from "lucide-react";
-import { format } from "date-fns";
+import { format, formatDistanceToNow } from "date-fns";
 
 interface ActionItem {
   id: number;
@@ -65,7 +71,19 @@ interface Meeting {
   reportUrl: string | null;
   source: string;
   createdAt: string;
+  keyTopics: string[];
+  highlights: string[];
   actionItems: ActionItem[];
+}
+
+interface WebhookStatus {
+  connected: boolean;
+  totalMeetings: number;
+  webhookMeetings: number;
+  lastWebhookAt: string | null;
+  totalActionItems: number;
+  pendingItems: number;
+  convertedItems: number;
 }
 
 type ConvertType = "task" | "priority" | "project";
@@ -90,12 +108,18 @@ export default function MyToolMeetingsPage() {
     refetchInterval: 30_000,
   });
 
+  const { data: webhookStatus } = useQuery<WebhookStatus>({
+    queryKey: ["/api/meetings/webhook-status"],
+    refetchInterval: 60_000,
+  });
+
   const webhookUrl = `${window.location.origin}/api/webhooks/read-ai`;
 
   const dismissMutation = useMutation({
     mutationFn: (id: number) => apiRequest("PATCH", `/api/meetings/action-items/${id}/dismiss`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/meetings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/meetings/webhook-status"] });
       toast({ title: "Dismissed" });
     },
   });
@@ -104,8 +128,19 @@ export default function MyToolMeetingsPage() {
     mutationFn: (id: number) => apiRequest("DELETE", `/api/meetings/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/meetings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/meetings/webhook-status"] });
       toast({ title: "Meeting deleted" });
     },
+  });
+
+  const testWebhookMutation = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/meetings/test-webhook"),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/meetings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/meetings/webhook-status"] });
+      toast({ title: "Test meeting created", description: "A test meeting has been added to verify webhook connectivity." });
+    },
+    onError: (err: any) => toast({ title: "Test failed", description: err.message, variant: "destructive" }),
   });
 
   const convertMutation = useMutation({
@@ -115,6 +150,7 @@ export default function MyToolMeetingsPage() {
     },
     onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: ["/api/meetings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/meetings/webhook-status"] });
       if (vars.type === "task") queryClient.invalidateQueries({ queryKey: ["/api/mytool/tasks"] });
       if (vars.type === "priority") queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
       setConvertDialog(null);
@@ -129,6 +165,7 @@ export default function MyToolMeetingsPage() {
     mutationFn: (body: any) => apiRequest("POST", "/api/meetings/manual", body),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/meetings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/meetings/webhook-status"] });
       setManualDialog(false);
       setManualForm({ title: "", summary: "", actionItems: [{ text: "", owner: "", dueDate: "" }] });
       toast({ title: "Meeting added" });
@@ -175,7 +212,11 @@ export default function MyToolMeetingsPage() {
           </div>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={() => setWebhookDialog(true)} data-testid="button-webhook-setup">
-              <Link2 className="w-4 h-4 mr-1" />
+              {webhookStatus?.connected ? (
+                <Wifi className="w-4 h-4 mr-1 text-green-600" />
+              ) : (
+                <WifiOff className="w-4 h-4 mr-1 text-gray-400" />
+              )}
               Webhook Setup
             </Button>
             <Button variant="outline" size="sm" onClick={() => setManualDialog(true)} data-testid="button-add-meeting">
@@ -184,6 +225,60 @@ export default function MyToolMeetingsPage() {
             </Button>
           </div>
         </div>
+
+        {/* Connection Status Banner */}
+        {webhookStatus && (
+          <Card className={`border ${webhookStatus.connected ? 'border-green-200 bg-green-50/50' : 'border-amber-200 bg-amber-50/50'}`} data-testid="card-webhook-status">
+            <CardContent className="py-3 px-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  {webhookStatus.connected ? (
+                    <>
+                      <div className="flex items-center gap-1.5">
+                        <span className="relative flex h-2.5 w-2.5">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
+                        </span>
+                        <span className="text-sm font-medium text-green-700" data-testid="text-webhook-connected">Webhook Connected</span>
+                      </div>
+                      {webhookStatus.lastWebhookAt && (
+                        <span className="text-xs text-green-600">
+                          Last received: {formatDistanceToNow(new Date(webhookStatus.lastWebhookAt), { addSuffix: true })}
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-1.5">
+                        <span className="relative flex h-2.5 w-2.5">
+                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-400"></span>
+                        </span>
+                        <span className="text-sm font-medium text-amber-700" data-testid="text-webhook-disconnected">Webhook Not Connected</span>
+                      </div>
+                      <span className="text-xs text-amber-600">
+                        Set up Read.ai webhook or send a test to get started
+                      </span>
+                    </>
+                  )}
+                </div>
+                <div className="flex items-center gap-4 text-xs">
+                  {webhookStatus.totalMeetings > 0 && (
+                    <div className="flex gap-3">
+                      <span className="text-gray-500"><strong className="text-gray-700">{webhookStatus.totalMeetings}</strong> meetings</span>
+                      <span className="text-gray-500"><strong className="text-gray-700">{webhookStatus.totalActionItems}</strong> action items</span>
+                      {webhookStatus.pendingItems > 0 && (
+                        <span className="text-amber-600"><strong>{webhookStatus.pendingItems}</strong> pending</span>
+                      )}
+                      {webhookStatus.convertedItems > 0 && (
+                        <span className="text-green-600"><strong>{webhookStatus.convertedItems}</strong> converted</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {isLoading ? (
           <div className="space-y-4">
@@ -215,7 +310,6 @@ export default function MyToolMeetingsPage() {
               const isExpanded = expandedMeetings.has(meeting.id);
               const pendingItems = meeting.actionItems.filter((ai) => ai.status === "pending");
               const convertedItems = meeting.actionItems.filter((ai) => ai.status === "converted");
-              const dismissedItems = meeting.actionItems.filter((ai) => ai.status === "dismissed");
 
               return (
                 <Card key={meeting.id} data-testid={`card-meeting-${meeting.id}`}>
@@ -231,8 +325,8 @@ export default function MyToolMeetingsPage() {
                             <CardTitle className="text-sm font-medium truncate" data-testid={`text-meeting-title-${meeting.id}`}>
                               {meeting.title}
                             </CardTitle>
-                            <Badge variant="outline" className="text-[10px] shrink-0" data-testid={`badge-source-${meeting.id}`}>
-                              {meeting.source === "read_ai" ? "Read.ai" : "Manual"}
+                            <Badge variant="outline" className={`text-[10px] shrink-0 ${meeting.source === 'read_ai' ? 'bg-blue-50 text-blue-700 border-blue-200' : meeting.source === 'test' ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-gray-50 text-gray-600'}`} data-testid={`badge-source-${meeting.id}`}>
+                              {meeting.source === "read_ai" ? "Read.ai" : meeting.source === "test" ? "Test" : "Manual"}
                             </Badge>
                           </div>
                           <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground">
@@ -246,6 +340,12 @@ export default function MyToolMeetingsPage() {
                               <span className="flex items-center gap-1">
                                 <Users className="w-3 h-3" />
                                 {meeting.participants.length} participants
+                              </span>
+                            )}
+                            {meeting.actionItems.length > 0 && (
+                              <span className="flex items-center gap-1">
+                                <ListTodo className="w-3 h-3" />
+                                {meeting.actionItems.length} items
                               </span>
                             )}
                           </div>
@@ -277,10 +377,49 @@ export default function MyToolMeetingsPage() {
 
                   {isExpanded && (
                     <CardContent className="pt-0 px-4 pb-4">
+                      {/* Summary */}
                       {meeting.summary && (
                         <div className="mb-4 p-3 bg-gray-50 rounded-md text-sm text-gray-600" data-testid={`text-summary-${meeting.id}`}>
-                          <p className="font-medium text-gray-700 mb-1 text-xs uppercase tracking-wide">Summary</p>
-                          {meeting.summary}
+                          <p className="font-medium text-gray-700 mb-1 text-xs uppercase tracking-wide flex items-center gap-1">
+                            <MessageSquare className="w-3 h-3" />
+                            Summary
+                          </p>
+                          <p className="whitespace-pre-line">{meeting.summary}</p>
+                        </div>
+                      )}
+
+                      {/* Key Topics */}
+                      {meeting.keyTopics && meeting.keyTopics.length > 0 && (
+                        <div className="mb-4" data-testid={`topics-${meeting.id}`}>
+                          <p className="text-xs font-medium text-gray-500 mb-1.5 uppercase tracking-wide flex items-center gap-1">
+                            <Lightbulb className="w-3 h-3" />
+                            Key Topics
+                          </p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {meeting.keyTopics.map((topic, i) => (
+                              <Badge key={i} variant="secondary" className="bg-purple-50 text-purple-700 border-purple-200 text-xs">
+                                {topic}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Highlights / Important Points */}
+                      {meeting.highlights && meeting.highlights.length > 0 && (
+                        <div className="mb-4 p-3 bg-yellow-50 rounded-md border border-yellow-100" data-testid={`highlights-${meeting.id}`}>
+                          <p className="text-xs font-medium text-yellow-700 mb-1.5 uppercase tracking-wide flex items-center gap-1">
+                            <Zap className="w-3 h-3" />
+                            Important Points
+                          </p>
+                          <ul className="space-y-1">
+                            {meeting.highlights.map((h, i) => (
+                              <li key={i} className="text-sm text-yellow-800 flex items-start gap-2">
+                                <span className="text-yellow-500 mt-0.5 shrink-0">•</span>
+                                <span>{h}</span>
+                              </li>
+                            ))}
+                          </ul>
                         </div>
                       )}
 
@@ -312,7 +451,7 @@ export default function MyToolMeetingsPage() {
                         <p className="text-sm text-gray-400 italic">No action items recorded</p>
                       ) : (
                         <div className="space-y-2">
-                          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Action Items</p>
+                          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Action Items ({meeting.actionItems.length})</p>
                           {meeting.actionItems.map((item) => (
                             <div
                               key={item.id}
@@ -642,9 +781,40 @@ export default function MyToolMeetingsPage() {
         <Dialog open={webhookDialog} onOpenChange={setWebhookDialog}>
           <DialogContent className="sm:max-w-lg" data-testid="dialog-webhook">
             <DialogHeader>
-              <DialogTitle>Read.ai Webhook Setup</DialogTitle>
+              <DialogTitle className="flex items-center gap-2">
+                Read.ai Webhook Setup
+                {webhookStatus?.connected ? (
+                  <Badge className="bg-green-100 text-green-700 border-green-200 text-[10px]">
+                    <Wifi className="w-3 h-3 mr-0.5" />
+                    Connected
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="text-[10px] text-gray-500">
+                    <WifiOff className="w-3 h-3 mr-0.5" />
+                    Not Connected
+                  </Badge>
+                )}
+              </DialogTitle>
             </DialogHeader>
             <div className="space-y-4 py-2">
+              {/* Connection Stats */}
+              {webhookStatus && webhookStatus.connected && (
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="p-2 bg-green-50 rounded-lg text-center border border-green-100">
+                    <p className="text-lg font-bold text-green-700">{webhookStatus.webhookMeetings}</p>
+                    <p className="text-[10px] text-green-600">Meetings Received</p>
+                  </div>
+                  <div className="p-2 bg-blue-50 rounded-lg text-center border border-blue-100">
+                    <p className="text-lg font-bold text-blue-700">{webhookStatus.totalActionItems}</p>
+                    <p className="text-[10px] text-blue-600">Action Items</p>
+                  </div>
+                  <div className="p-2 bg-amber-50 rounded-lg text-center border border-amber-100">
+                    <p className="text-lg font-bold text-amber-700">{webhookStatus.pendingItems}</p>
+                    <p className="text-[10px] text-amber-600">Pending</p>
+                  </div>
+                </div>
+              )}
+
               <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
                 <p className="text-sm font-medium text-blue-800 mb-2">Your Webhook URL</p>
                 <div className="flex gap-2">
@@ -681,6 +851,21 @@ export default function MyToolMeetingsPage() {
                 <div className="p-3 bg-amber-50 rounded border border-amber-200 text-xs text-amber-700">
                   <strong>Note:</strong> Webhooks require a Read.ai Pro or Enterprise plan. After setup, action items from your meetings will appear here automatically.
                 </div>
+              </div>
+
+              <div className="border-t pt-3">
+                <p className="text-xs text-gray-500 mb-2">Verify your connection by sending a test meeting:</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => testWebhookMutation.mutate()}
+                  disabled={testWebhookMutation.isPending}
+                  className="w-full"
+                  data-testid="button-test-webhook"
+                >
+                  <Play className="w-4 h-4 mr-1" />
+                  {testWebhookMutation.isPending ? "Sending test..." : "Send Test Meeting"}
+                </Button>
               </div>
             </div>
             <DialogFooter>
