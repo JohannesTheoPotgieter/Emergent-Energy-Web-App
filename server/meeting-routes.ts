@@ -1,6 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, desc, sql, inArray } from "drizzle-orm";
 import { verifyToken } from "./jwt";
 import {
   meetingSummaries,
@@ -124,7 +124,7 @@ export function registerMeetingRoutes(app: Express) {
         allItems = await db
           .select()
           .from(meetingActionItems)
-          .where(sql`${meetingActionItems.meetingId} = ANY(${meetingIds})`);
+          .where(inArray(meetingActionItems.meetingId, meetingIds));
       }
 
       const result = meetings.map((m) => {
@@ -150,6 +150,46 @@ export function registerMeetingRoutes(app: Express) {
       });
 
       res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ==================== WEBHOOK STATUS (must be before /:id) ====================
+  app.get("/api/meetings/webhook-status", requireAuth, requireAdmin, async (_req: Request, res: Response) => {
+    try {
+      const allMeetings = await db.select({ id: meetingSummaries.id, source: meetingSummaries.source, createdAt: meetingSummaries.createdAt }).from(meetingSummaries);
+      const allItems = await db.select({ id: meetingActionItems.id, status: meetingActionItems.status }).from(meetingActionItems);
+
+      const totalMeetings = allMeetings.length;
+      const webhookMeetings = allMeetings.filter(m => m.source === 'read_ai').length;
+      const webhookDates = allMeetings.filter(m => m.source === 'read_ai').map(m => m.createdAt);
+      const lastWebhookAt = webhookDates.length > 0 ? webhookDates.sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] : null;
+      const totalActionItems = allItems.length;
+      const pendingItems = allItems.filter(i => i.status === 'pending').length;
+      const convertedItems = allItems.filter(i => i.status === 'converted').length;
+
+      res.json({
+        connected: webhookMeetings > 0,
+        totalMeetings,
+        webhookMeetings,
+        lastWebhookAt,
+        totalActionItems,
+        pendingItems,
+        convertedItems,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ==================== WEBHOOK INFO (must be before /:id) ====================
+  app.get("/api/meetings/webhook-info", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const host = req.headers.host || req.hostname;
+      const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
+      const webhookUrl = `${protocol}://${host}/api/webhooks/read-ai`;
+      res.json({ webhookUrl });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -373,35 +413,6 @@ export function registerMeetingRoutes(app: Express) {
     }
   });
 
-  // ==================== WEBHOOK STATUS ====================
-  app.get("/api/meetings/webhook-status", requireAuth, requireAdmin, async (_req: Request, res: Response) => {
-    try {
-      const [stats] = await db
-        .select({
-          totalMeetings: sql<number>`count(*)::int`,
-          webhookMeetings: sql<number>`count(*) filter (where ${meetingSummaries.source} = 'read_ai')::int`,
-          lastWebhookAt: sql<string>`max(${meetingSummaries.createdAt}) filter (where ${meetingSummaries.source} = 'read_ai')`,
-          totalActionItems: sql<number>`(select count(*)::int from ${meetingActionItems})`,
-          pendingItems: sql<number>`(select count(*)::int from ${meetingActionItems} where ${meetingActionItems.status} = 'pending')`,
-          convertedItems: sql<number>`(select count(*)::int from ${meetingActionItems} where ${meetingActionItems.status} = 'converted')`,
-        })
-        .from(meetingSummaries);
-
-      const connected = (stats?.webhookMeetings ?? 0) > 0;
-      res.json({
-        connected,
-        totalMeetings: stats?.totalMeetings ?? 0,
-        webhookMeetings: stats?.webhookMeetings ?? 0,
-        lastWebhookAt: stats?.lastWebhookAt ?? null,
-        totalActionItems: stats?.totalActionItems ?? 0,
-        pendingItems: stats?.pendingItems ?? 0,
-        convertedItems: stats?.convertedItems ?? 0,
-      });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
   // ==================== TEST WEBHOOK ====================
   app.post("/api/meetings/test-webhook", requireAuth, requireAdmin, async (_req: Request, res: Response) => {
     try {
@@ -444,15 +455,4 @@ export function registerMeetingRoutes(app: Express) {
     }
   });
 
-  // ==================== WEBHOOK INFO (legacy) ====================
-  app.get("/api/meetings/webhook-info", requireAuth, requireAdmin, async (req: Request, res: Response) => {
-    try {
-      const host = req.headers.host || req.hostname;
-      const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
-      const webhookUrl = `${protocol}://${host}/api/webhooks/read-ai`;
-      res.json({ webhookUrl });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
 }

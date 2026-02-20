@@ -308,6 +308,19 @@ export default function MyToolTodayPage() {
     },
   });
 
+  const { data: meetingImportStatus } = useQuery<{
+    connected: boolean;
+    totalMeetings: number;
+    webhookMeetings: number;
+    lastWebhookAt: string | null;
+    totalActionItems: number;
+    pendingItems: number;
+    convertedItems: number;
+  }>({
+    queryKey: ["/api/meetings/webhook-status"],
+    refetchInterval: 120_000,
+  });
+
   const { data: priorities = [] } = useQuery<CompanyPriority[]>({
     queryKey: [`/api/mytool/company-priorities?horizon=${horizon}`],
   });
@@ -1203,20 +1216,46 @@ export default function MyToolTodayPage() {
                 })()}
               </div>
 
-              {/* Legend */}
-              <div className="flex items-center gap-4 px-4 pb-3 border-t border-border/30 pt-2">
-                <div className="flex items-center gap-1">
-                  <span className="w-2.5 h-2.5 rounded bg-violet-200 dark:bg-violet-800 border border-violet-300" />
-                  <span className="text-[10px] text-muted-foreground">Tasks</span>
+              {/* Legend + Meeting Import Status */}
+              <div className="flex items-center justify-between px-4 pb-3 border-t border-border/30 pt-2">
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-1">
+                    <span className="w-2.5 h-2.5 rounded bg-violet-200 dark:bg-violet-800 border border-violet-300" />
+                    <span className="text-[10px] text-muted-foreground">Tasks</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="w-2.5 h-2.5 rounded bg-blue-200 dark:bg-blue-800 border border-blue-300" />
+                    <span className="text-[10px] text-muted-foreground">Meetings</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="w-2.5 h-[2px] bg-red-500" />
+                    <span className="text-[10px] text-muted-foreground">Now</span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1">
-                  <span className="w-2.5 h-2.5 rounded bg-blue-200 dark:bg-blue-800 border border-blue-300" />
-                  <span className="text-[10px] text-muted-foreground">Meetings</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <span className="w-2.5 h-[2px] bg-red-500" />
-                  <span className="text-[10px] text-muted-foreground">Now</span>
-                </div>
+                {meetingImportStatus && (
+                  <Link href="/my-tool/meetings" data-testid="link-meeting-import-status">
+                    <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] cursor-pointer transition-colors ${
+                      meetingImportStatus.connected 
+                        ? 'bg-green-50 text-green-700 hover:bg-green-100 border border-green-200' 
+                        : 'bg-gray-50 text-gray-500 hover:bg-gray-100 border border-gray-200'
+                    }`}>
+                      {meetingImportStatus.connected ? (
+                        <>
+                          <span className="relative flex h-1.5 w-1.5">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-green-500"></span>
+                          </span>
+                          Read.ai {meetingImportStatus.pendingItems > 0 ? `· ${meetingImportStatus.pendingItems} pending` : '· synced'}
+                        </>
+                      ) : (
+                        <>
+                          <span className="w-1.5 h-1.5 rounded-full bg-gray-300"></span>
+                          Read.ai · not connected
+                        </>
+                      )}
+                    </div>
+                  </Link>
+                )}
               </div>
             </section>
           </div>
