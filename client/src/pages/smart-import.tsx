@@ -1032,20 +1032,169 @@ function ColumnMappingStep({
   );
 }
 
+function IssueRowDetail({ issue, normalization }: { issue: any; normalization: any }) {
+  const payload = issue.payloadJson || {};
+  const section = (issue.section || "").toUpperCase();
+  const row = payload.row;
+
+  const getRowData = () => {
+    if (!row) return null;
+    if (section === "REVENUE") {
+      return (normalization?.revenueLines || []).find((r: any) => r.sourceRow === row);
+    }
+    if (section === "EXPENDITURE") {
+      return (normalization?.costLines || []).find((r: any) => r.sourceRow === row);
+    }
+    if (section === "PLAN") {
+      return (normalization?.planTasks || []).find((r: any) => r.sourceRow === row);
+    }
+    return null;
+  };
+
+  const getDuplicateRows = () => {
+    if (!payload.invoiceNumber) return [];
+    const data = section === "REVENUE"
+      ? (normalization?.revenueLines || [])
+      : section === "EXPENDITURE"
+        ? (normalization?.costLines || [])
+        : [];
+    return data.filter((r: any) => r.invoiceNumber === payload.invoiceNumber);
+  };
+
+  const isDuplicate = (issue.message || "").toLowerCase().includes("duplicate");
+  const isDateSwap = (issue.message || "").toLowerCase().includes("after paid date") || (issue.message || "").toLowerCase().includes("dates are swapped");
+
+  if (isDuplicate) {
+    const rows = getDuplicateRows();
+    if (rows.length === 0) return <p className="text-[10px] text-slate-500 italic">No matching rows found in preview data.</p>;
+
+    const fields = section === "REVENUE"
+      ? [
+          { key: "milestoneName", label: "Milestone" },
+          { key: "invoiceNumber", label: "Invoice #" },
+          { key: "amountExVat", label: "Amount" },
+          { key: "invoiceDate", label: "Invoice Date" },
+          { key: "paidDate", label: "Paid Date" },
+          { key: "status", label: "Status" },
+        ]
+      : [
+          { key: "description", label: "Description" },
+          { key: "counterpartyName", label: "Counterparty" },
+          { key: "invoiceNumber", label: "Invoice #" },
+          { key: "amountExVat", label: "Amount" },
+          { key: "invoiceDate", label: "Invoice Date" },
+          { key: "paidDate", label: "Paid Date" },
+          { key: "status", label: "Status" },
+        ];
+
+    return (
+      <div className="mt-2 space-y-1">
+        <p className="text-[10px] font-medium text-slate-600 mb-1">Matching rows with invoice "{payload.invoiceNumber}":</p>
+        <div className="overflow-x-auto">
+          <table className="w-full text-[10px] border-collapse">
+            <thead>
+              <tr className="bg-slate-100">
+                <th className="px-2 py-1 text-left border border-slate-200 font-medium text-slate-600">Row</th>
+                {fields.map(f => (
+                  <th key={f.key} className="px-2 py-1 text-left border border-slate-200 font-medium text-slate-600">{f.label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r: any, idx: number) => (
+                <tr key={idx} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50"}>
+                  <td className="px-2 py-1 border border-slate-200 font-mono">{r.sourceRow}</td>
+                  {fields.map(f => (
+                    <td key={f.key} className={`px-2 py-1 border border-slate-200 ${f.key === "invoiceNumber" ? "font-semibold text-amber-700 bg-amber-50" : ""}`}>
+                      {r[f.key] ?? "—"}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
+  if (isDateSwap) {
+    const rowData = getRowData();
+    if (!rowData) return <p className="text-[10px] text-slate-500 italic">Row {row}: No matching data in preview.</p>;
+
+    const fields = section === "REVENUE"
+      ? [
+          { key: "milestoneName", label: "Milestone" },
+          { key: "invoiceNumber", label: "Invoice #" },
+          { key: "amountExVat", label: "Amount" },
+          { key: "invoiceDate", label: "Invoice Date", highlight: true },
+          { key: "paidDate", label: "Paid Date", highlight: true },
+        ]
+      : [
+          { key: "description", label: "Description" },
+          { key: "counterpartyName", label: "Counterparty" },
+          { key: "invoiceNumber", label: "Invoice #" },
+          { key: "amountExVat", label: "Amount" },
+          { key: "invoiceDate", label: "Invoice Date", highlight: true },
+          { key: "paidDate", label: "Paid Date", highlight: true },
+        ];
+
+    return (
+      <div className="mt-2">
+        <p className="text-[10px] font-medium text-slate-600 mb-1">Row {row} details:</p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 bg-white rounded border border-slate-200 p-2">
+          {fields.map(f => (
+            <div key={f.key}>
+              <span className="text-[9px] text-slate-400 uppercase">{f.label}</span>
+              <p className={`text-[11px] ${(f as any).highlight ? "font-semibold text-red-600 bg-red-50 px-1 rounded" : "text-slate-700"}`}>
+                {rowData[f.key] ?? "—"}
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  const rowData = getRowData();
+  if (!rowData) {
+    if (row) return <p className="text-[10px] text-slate-500 italic">Row {row}: No matching data in preview.</p>;
+    return null;
+  }
+
+  const allFields = Object.entries(rowData).filter(([k]) => !["sourceSheet", "sourceRow"].includes(k));
+  return (
+    <div className="mt-2">
+      <p className="text-[10px] font-medium text-slate-600 mb-1">Row {row} details:</p>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 bg-white rounded border border-slate-200 p-2">
+        {allFields.map(([key, val]) => (
+          <div key={key}>
+            <span className="text-[9px] text-slate-400 uppercase">{key.replace(/([A-Z])/g, " $1").trim()}</span>
+            <p className="text-[11px] text-slate-700">{val != null ? String(val) : "—"}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function IssuesStep({
   runId,
   issues,
+  normalization,
   onContinue,
   onBack,
   onIssuesUpdate,
 }: {
   runId: number;
   issues: any[];
+  normalization: any;
   onContinue: () => void;
   onBack: () => void;
   onIssuesUpdate: (issues: any[]) => void;
 }) {
   const [resolving, setResolving] = useState<number | null>(null);
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [cpName, setCpName] = useState("");
   const [cpType, setCpType] = useState("subcontractor");
   const [creatingCp, setCreatingCp] = useState<number | null>(null);
@@ -1057,16 +1206,25 @@ function IssuesStep({
 
   const unresolvedBlockers = blockers.filter((i) => !i.resolved);
 
-  const handleResolve = async (issueId: number, resolved: boolean) => {
+  const toggleExpand = (id: number) => {
+    setExpanded(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleResolve = async (issueId: number, resolved: boolean, resolution?: string) => {
     setResolving(issueId);
     try {
       const res = await fetch(`/api/smart-import/${runId}/issue/${issueId}/resolve`, {
         method: "PATCH",
         headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ resolved }),
+        body: JSON.stringify({ resolved, resolution }),
       });
       if (res.ok) {
-        onIssuesUpdate(issues.map((i) => (i.id === issueId ? { ...i, resolved } : i)));
+        onIssuesUpdate(issues.map((i) => (i.id === issueId ? { ...i, resolved, resolution } : i)));
         toast({ title: resolved ? "Resolved" : "Reopened" });
       } else {
         toast({ title: "Error", description: "Failed to update issue", variant: "destructive" });
@@ -1090,7 +1248,7 @@ function IssuesStep({
       if (res.ok) {
         toast({ title: "Counterparty Created", description: `${cpName} added` });
         setCpName("");
-        await handleResolve(issueId, true);
+        await handleResolve(issueId, true, "counterparty_created");
       } else {
         const err = await res.json().catch(() => ({ error: "Failed" }));
         toast({ title: "Error", description: err.error || "Failed to create counterparty", variant: "destructive" });
@@ -1117,83 +1275,107 @@ function IssuesStep({
           {title} ({items.length})
         </h3>
         {items.map((issue: any) => {
+          const isExpanded = expanded.has(issue.id);
           const isCounterpartyIssue = issue.type === "counterparty" ||
             (issue.message || "").toLowerCase().includes("counterparty");
+          const isDuplicate = (issue.message || "").toLowerCase().includes("duplicate");
+          const isDateSwap = (issue.message || "").toLowerCase().includes("after paid date");
           return (
             <Card
               key={issue.id}
               className={`${bgClass} border ${borderClass} rounded-lg`}
               data-testid={`issue-card-${issue.id}`}
             >
-              <CardContent className="p-3 space-y-2">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1">
-                    <p className="text-xs font-medium" data-testid={`text-issue-msg-${issue.id}`}>
-                      {issue.message}
-                    </p>
-                    {issue.suggestedAction && (
-                      <p className="text-[10px] text-slate-500 mt-0.5" data-testid={`text-issue-action-${issue.id}`}>
-                        Suggested: {issue.suggestedAction}
+              <CardContent className="p-3 space-y-0">
+                <div
+                  className="flex items-start justify-between gap-2 cursor-pointer"
+                  onClick={() => toggleExpand(issue.id)}
+                  data-testid={`issue-toggle-${issue.id}`}
+                >
+                  <div className="flex items-start gap-2 flex-1">
+                    <ChevronDown className={`w-3.5 h-3.5 mt-0.5 text-slate-400 shrink-0 transition-transform ${isExpanded ? "" : "-rotate-90"}`} />
+                    <div className="flex-1">
+                      <p className="text-xs font-medium" data-testid={`text-issue-msg-${issue.id}`}>
+                        {issue.message}
                       </p>
+                      {issue.suggestedAction && (
+                        <p className="text-[10px] text-slate-500 mt-0.5" data-testid={`text-issue-action-${issue.id}`}>
+                          Suggested: {issue.suggestedAction}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                    {issue.resolved ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs"
+                        disabled={resolving === issue.id}
+                        onClick={() => handleResolve(issue.id, false)}
+                        data-testid={`btn-reopen-${issue.id}`}
+                      >
+                        {resolving === issue.id ? <Loader2 className="w-3 h-3 animate-spin" /> : (
+                          <><CheckCircle2 className="w-3 h-3 mr-1 text-emerald-500" />{issue.resolution === "accepted" ? "Accepted" : "Resolved"}</>
+                        )}
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                        disabled={resolving === issue.id}
+                        onClick={() => handleResolve(issue.id, true, "accepted")}
+                        data-testid={`btn-accept-${issue.id}`}
+                      >
+                        {resolving === issue.id ? <Loader2 className="w-3 h-3 animate-spin" /> : "Accept as-is"}
+                      </Button>
                     )}
                   </div>
-                  <Button
-                    size="sm"
-                    variant={issue.resolved ? "outline" : "default"}
-                    className="h-7 text-xs"
-                    disabled={resolving === issue.id}
-                    onClick={() => handleResolve(issue.id, !issue.resolved)}
-                    data-testid={`btn-resolve-${issue.id}`}
-                  >
-                    {resolving === issue.id ? (
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                    ) : issue.resolved ? (
-                      <>
-                        <CheckCircle2 className="w-3 h-3 mr-1 text-emerald-500" />
-                        Resolved
-                      </>
-                    ) : (
-                      "Resolve"
-                    )}
-                  </Button>
                 </div>
 
-                {isCounterpartyIssue && !issue.resolved && (
-                  <div className="flex items-end gap-2 pt-1 border-t border-slate-200">
-                    <div className="flex-1">
-                      <Label className="text-[10px]">Name</Label>
-                      <Input
-                        className="h-7 text-xs"
-                        value={cpName}
-                        onChange={(e) => setCpName(e.target.value)}
-                        placeholder="Counterparty name..."
-                        data-testid={`input-cp-name-${issue.id}`}
-                      />
-                    </div>
-                    <div className="w-[140px]">
-                      <Label className="text-[10px]">Type</Label>
-                      <Select value={cpType} onValueChange={setCpType}>
-                        <SelectTrigger className="h-7 text-xs" data-testid={`select-trigger-cp-type-${issue.id}`}>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="subcontractor">Subcontractor</SelectItem>
-                          <SelectItem value="supplier">Supplier</SelectItem>
-                          <SelectItem value="consultant">Consultant</SelectItem>
-                          <SelectItem value="client">Client</SelectItem>
-                          <SelectItem value="other">Other</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <Button
-                      size="sm"
-                      className="h-7 text-xs"
-                      disabled={!cpName.trim() || creatingCp === issue.id}
-                      onClick={() => handleCreateCounterparty(issue.id)}
-                      data-testid={`btn-create-cp-${issue.id}`}
-                    >
-                      {creatingCp === issue.id ? <Loader2 className="w-3 h-3 animate-spin" /> : "Create"}
-                    </Button>
+                {isExpanded && (
+                  <div className="mt-2 pt-2 border-t border-slate-200">
+                    <IssueRowDetail issue={issue} normalization={normalization} />
+
+                    {isCounterpartyIssue && !issue.resolved && (
+                      <div className="flex items-end gap-2 pt-2 mt-2 border-t border-slate-200">
+                        <div className="flex-1">
+                          <Label className="text-[10px]">Name</Label>
+                          <Input
+                            className="h-7 text-xs"
+                            value={cpName}
+                            onChange={(e) => setCpName(e.target.value)}
+                            placeholder="Counterparty name..."
+                            data-testid={`input-cp-name-${issue.id}`}
+                          />
+                        </div>
+                        <div className="w-[140px]">
+                          <Label className="text-[10px]">Type</Label>
+                          <Select value={cpType} onValueChange={setCpType}>
+                            <SelectTrigger className="h-7 text-xs" data-testid={`select-trigger-cp-type-${issue.id}`}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="subcontractor">Subcontractor</SelectItem>
+                              <SelectItem value="supplier">Supplier</SelectItem>
+                              <SelectItem value="consultant">Consultant</SelectItem>
+                              <SelectItem value="client">Client</SelectItem>
+                              <SelectItem value="other">Other</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <Button
+                          size="sm"
+                          className="h-7 text-xs"
+                          disabled={!cpName.trim() || creatingCp === issue.id}
+                          onClick={() => handleCreateCounterparty(issue.id)}
+                          data-testid={`btn-create-cp-${issue.id}`}
+                        >
+                          {creatingCp === issue.id ? <Loader2 className="w-3 h-3 animate-spin" /> : "Create"}
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 )}
               </CardContent>
@@ -1687,6 +1869,7 @@ export default function SmartImportPage() {
         <IssuesStep
           runId={runId}
           issues={issues}
+          normalization={preview?.normalization}
           onContinue={() => setStep(5)}
           onBack={() => setStep(3)}
           onIssuesUpdate={setIssues}
