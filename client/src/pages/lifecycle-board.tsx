@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -224,8 +225,19 @@ const ESCALATION_LEVELS = ["", "Low", "Medium", "High", "Highest"];
 const RAG_STATUSES = ["", "Green", "Amber", "Red"];
 
 export default function LifecycleBoardPage() {
-  const [projects, setProjects] = useState<ProjectInfo[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const { data: projects = [], isLoading: loading } = useQuery<ProjectInfo[]>({
+    queryKey: ["/api/lifecycle-board/projects"],
+    queryFn: async () => {
+      const res = await fetch("/api/lifecycle-board/projects", {
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    refetchInterval: 30_000,
+  });
   const [searchTerm, setSearchTerm] = useState("");
   const [showActiveOnly, setShowActiveOnly] = useState(false);
   const [draggedProject, setDraggedProject] = useState<ProjectInfo | null>(null);
@@ -279,26 +291,9 @@ export default function LifecycleBoardPage() {
     return headers;
   }
 
-  const loadData = useCallback(async () => {
-    try {
-      const res = await fetch("/api/lifecycle-board/projects", {
-        credentials: "include",
-        headers: getAuthHeaders(),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setProjects(data);
-      }
-    } catch {
-      setProjects([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+  const invalidateProjects = () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/lifecycle-board/projects"] });
+  };
 
   const openProjectDialog = (p: ProjectInfo) => {
     setSelectedProject(p);
@@ -364,7 +359,7 @@ export default function LifecycleBoardPage() {
       });
       if (res.ok) {
         toast({ title: "Gate Updated", description: "Execution gate settings saved" });
-        loadData();
+        invalidateProjects();
         loadGateData(selectedProject.id);
       } else {
         const err = await res.json();
@@ -402,7 +397,7 @@ export default function LifecycleBoardPage() {
         toast({ title: "Saved", description: `${cleanProjectName(selectedProject.projectName)} updated` });
         setProjectDialogOpen(false);
         setSelectedProject(null);
-        loadData();
+        invalidateProjects();
       } else {
         const err = await res.json();
         toast({ title: "Error", description: err.error || "Failed to save", variant: "destructive" });
@@ -451,8 +446,8 @@ export default function LifecycleBoardPage() {
       return;
     }
 
-    setProjects(prev =>
-      prev.map(p =>
+    queryClient.setQueryData<ProjectInfo[]>(["/api/lifecycle-board/projects"], (prev) =>
+      (prev || []).map(p =>
         p.id === draggedProject.id ? { ...p, phase: targetPhase.phaseValue, source: p.source === "engineering" ? "both" : p.source } : p
       )
     );
@@ -467,13 +462,14 @@ export default function LifecycleBoardPage() {
       if (!res.ok) {
         const err = await res.json();
         toast({ title: "Error", description: err.error || "Failed to move project", variant: "destructive" });
-        loadData();
+        invalidateProjects();
       } else {
         toast({ title: "Phase Updated", description: `${cleanProjectName(draggedProject.projectName)} moved to ${targetPhase.label}` });
+        invalidateProjects();
       }
     } catch {
       toast({ title: "Error", description: "Network error", variant: "destructive" });
-      loadData();
+      invalidateProjects();
     }
 
     setDraggedProject(null);
@@ -508,7 +504,7 @@ export default function LifecycleBoardPage() {
         setProjectDialogOpen(false);
         setSelectedProject(null);
         setLinkTarget("");
-        loadData();
+        invalidateProjects();
       } else {
         const err = await res.json();
         toast({ title: "Error", description: err.error, variant: "destructive" });
@@ -539,7 +535,7 @@ export default function LifecycleBoardPage() {
         setProjectDialogOpen(false);
         setSelectedProject(null);
         setMergeTarget("");
-        loadData();
+        invalidateProjects();
       } else {
         const err = await res.json();
         toast({ title: "Error", description: err.error, variant: "destructive" });
@@ -565,7 +561,7 @@ export default function LifecycleBoardPage() {
       });
       if (res.ok) {
         toast({ title: "Project Created", description: `${cleanProjectName(project.projectName)} is now a tracked project` });
-        loadData();
+        invalidateProjects();
       } else {
         const err = await res.json();
         toast({ title: "Error", description: err.error, variant: "destructive" });
@@ -727,24 +723,23 @@ export default function LifecycleBoardPage() {
                               <span className="truncate">{p.pm}</span>
                             </div>
                           )}
-                          {p.projectPctComplete != null && (
-                            <div className="flex items-center gap-1 mt-0.5" data-testid={`pct-complete-${p.id}`}>
-                              <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
-                                <div
-                                  className={`h-full rounded-full ${
-                                    p.projectPctComplete >= 0.9 ? "bg-emerald-500" :
-                                    p.projectPctComplete >= 0.5 ? "bg-blue-500" :
-                                    p.projectPctComplete >= 0.2 ? "bg-amber-500" : "bg-slate-400"
-                                  }`}
-                                  style={{ width: `${Math.min(Math.round(p.projectPctComplete * 100), 100)}%` }}
-                                />
+                          <div className="space-y-0.5 mt-0.5">
+                            {p.projectPctComplete != null && (
+                              <div className="flex items-center gap-1.5 text-[10px]" data-testid={`pct-complete-${p.id}`}>
+                                <span className="text-muted-foreground w-[28px] shrink-0">Trk</span>
+                                <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden min-w-[40px]">
+                                  <div
+                                    className={`h-full rounded-full ${
+                                      p.projectPctComplete >= 0.9 ? "bg-emerald-500" :
+                                      p.projectPctComplete >= 0.5 ? "bg-blue-500" :
+                                      p.projectPctComplete >= 0.2 ? "bg-amber-500" : "bg-slate-400"
+                                    }`}
+                                    style={{ width: `${Math.min(Math.round(p.projectPctComplete * 100), 100)}%` }}
+                                  />
+                                </div>
+                                <span className="text-muted-foreground w-[28px] text-right">{Math.round(p.projectPctComplete * 100)}%</span>
                               </div>
-                              <span className="text-[10px] font-mono font-semibold text-slate-700 w-[30px] text-right">
-                                {Math.round(p.projectPctComplete * 100)}%
-                              </span>
-                            </div>
-                          )}
-                          <div className="space-y-0.5">
+                            )}
                             {pctBar("Eng", p.engDone, p.engTotal, "bg-purple-500")}
                           </div>
                         </CardContent>
