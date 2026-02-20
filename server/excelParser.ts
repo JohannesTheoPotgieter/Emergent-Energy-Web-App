@@ -40,6 +40,7 @@ function parseDate(value: any): string | null {
   if (!value) return null;
   
   if (value instanceof Date) {
+    if (isNaN(value.getTime())) return null;
     return value.toISOString().split("T")[0];
   }
   
