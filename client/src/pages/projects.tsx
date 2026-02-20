@@ -790,10 +790,22 @@ export default function ProjectsSummary() {
     return Array.from(pms).sort();
   }, [currentProjects]);
 
+  const PHASE_ORDER = [
+    "DLP", "Financial Close", "Planning", "Construction", "QA",
+    "Handover", "Commercial Close Out", "Compliance Handover", "Hold"
+  ];
   const uniquePhases = useMemo(() => {
     const phases = new Set<string>();
     currentProjects.forEach((p) => { if (p.phase) phases.add(p.phase); });
-    return Array.from(phases).sort();
+    return Array.from(phases).sort((a, b) => {
+      const normalize = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
+      const ai = PHASE_ORDER.findIndex(p => normalize(p) === normalize(a));
+      const bi = PHASE_ORDER.findIndex(p => normalize(p) === normalize(b));
+      if (ai !== -1 && bi !== -1) return ai - bi;
+      if (ai !== -1) return -1;
+      if (bi !== -1) return 1;
+      return a.localeCompare(b);
+    });
   }, [currentProjects]);
 
   const filtered = useMemo(() => {
