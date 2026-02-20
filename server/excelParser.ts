@@ -253,7 +253,14 @@ export async function parseTrackerFile(buffer: Buffer, fileName: string): Promis
     const pd = getCellValue(sheet, "E", 4);
     const pm = getCellValue(sheet, "E", 5);
     const contractValue = parseNumber(getCellValue(sheet, "E", 6));
-    const phase = getCellValue(sheet, "E", 7);
+    const rawPhase = getCellValue(sheet, "E", 7);
+    const VALID_PHASES = [
+      "DLP", "Financial Close", "Planning", "Construction", "QA",
+      "Handover", "Commercial Close Out", "Commercial Close out",
+      "Compliance Handover", "Hold", "TBC"
+    ];
+    const phaseStr = rawPhase ? String(rawPhase).trim() : null;
+    const phase = phaseStr && VALID_PHASES.some(vp => vp.toLowerCase() === phaseStr.toLowerCase()) ? phaseStr : null;
     
     const pdHandoverDate = parseDate(getCellValue(sheet, "E", 8)) || findLabeledDateValue(sheet, ["pd handover", "handover date"]);
     const constructionStartDate = parseDate(getCellValue(sheet, "E", 9)) || findLabeledDateValue(sheet, ["construction start", "start date"]);
