@@ -235,9 +235,20 @@ export default function PhaseTemplatesPage() {
   if (!isAdmin) return <div className="p-8 text-center text-muted-foreground">Admin access required</div>;
 
   const phaseLabels = constants?.projectPhaseLabels || {};
+  const legacyToLifecycle: Record<string, string> = {
+    P0_FIRST_ASSESSMENT: "First Assessment",
+    P1_COST_PROPOSAL_DESIGN: "Cost Proposal",
+    P2_PD_PM_HANDOVER: "Planning",
+    P3_DETAILED_DESIGN_PROC_RELEASE: "Planning",
+    P4_CONSTRUCTION_INSTALLATION: "Construction",
+    P5_COMMISSIONING_TESTING: "QA",
+    P6_HANDOVER_CLIENT_MATRIARCH: "Handover",
+    P7_CLOSEOUT_POSTMORTEM: "Commercial Close Out",
+  };
   const groupedByPhase = templates.reduce<Record<string, PhaseTemplateData[]>>((acc, t) => {
-    if (!acc[t.phase]) acc[t.phase] = [];
-    acc[t.phase].push(t);
+    const groupPhase = legacyToLifecycle[t.phase] || t.phase;
+    if (!acc[groupPhase]) acc[groupPhase] = [];
+    acc[groupPhase].push(t);
     return acc;
   }, {});
 
@@ -277,7 +288,6 @@ export default function PhaseTemplatesPage() {
             <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide mb-3">Templates by Phase</h3>
             {(constants?.projectPhases || []).map((phase) => {
               const phaseTemplates = groupedByPhase[phase] || [];
-              if (phaseTemplates.length === 0 && !expandedPhases.has(phase)) return null;
               const expanded = expandedPhases.has(phase) || phaseTemplates.length > 0;
               return (
                 <div key={phase} className="border rounded-lg overflow-hidden">
@@ -288,21 +298,31 @@ export default function PhaseTemplatesPage() {
                   >
                     <span className="truncate">{phaseLabels[phase] || phase}</span>
                     <span className="flex items-center gap-2">
-                      {phaseTemplates.length > 0 && <Badge variant="secondary">{phaseTemplates.length}</Badge>}
+                      <Badge variant="secondary">{phaseTemplates.length}</Badge>
                       {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                     </span>
                   </button>
-                  {expanded && phaseTemplates.map((t) => (
-                    <button
-                      key={t.id}
-                      className={`w-full text-left px-3 py-2 border-t text-sm hover:bg-accent/50 flex items-center justify-between ${selectedTemplate?.id === t.id ? "bg-accent" : ""}`}
-                      onClick={() => loadTemplateDetail(t.id)}
-                      data-testid={`button-template-${t.id}`}
-                    >
-                      <span className="truncate">{t.name} <span className="text-muted-foreground">v{t.version}</span></span>
-                      {t.isActive && <Badge className="bg-green-100 text-green-800 ml-2">Active</Badge>}
-                    </button>
-                  ))}
+                  {expanded && (
+                    <>
+                      {phaseTemplates.map((t) => (
+                        <button
+                          key={t.id}
+                          className={`w-full text-left px-3 py-2 border-t text-sm hover:bg-accent/50 flex items-center justify-between ${selectedTemplate?.id === t.id ? "bg-accent" : ""}`}
+                          onClick={() => loadTemplateDetail(t.id)}
+                          data-testid={`button-template-${t.id}`}
+                        >
+                          <span className="truncate">
+                            {t.name} <span className="text-muted-foreground">v{t.version}</span>
+                            {legacyToLifecycle[t.phase] && <Badge variant="outline" className="ml-1 text-[10px] px-1">legacy</Badge>}
+                          </span>
+                          {t.isActive && <Badge className="bg-green-100 text-green-800 ml-2">Active</Badge>}
+                        </button>
+                      ))}
+                      {phaseTemplates.length === 0 && (
+                        <div className="px-3 py-2 border-t text-xs text-muted-foreground italic">No templates yet</div>
+                      )}
+                    </>
+                  )}
                 </div>
               );
             })}
@@ -338,9 +358,18 @@ export default function PhaseTemplatesPage() {
                 <CardContent className="space-y-4">
                   <div className="flex items-center justify-between">
                     <h4 className="font-semibold text-sm">Items ({selectedTemplate.items?.length || 0})</h4>
-                    <Button size="sm" variant="outline" onClick={() => openItemDialog()} data-testid="button-add-item">
-                      <Plus className="w-4 h-4 mr-1" /> Add Item
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" onClick={() => {
+                        resetItemForm();
+                        setItemForm(f => ({ ...f, itemType: "TASK", primaryWorkstream: "Engineering" }));
+                        setShowItemDialog(true);
+                      }} data-testid="button-add-eng-task" className="text-blue-600 border-blue-200 hover:bg-blue-50">
+                        <Plus className="w-4 h-4 mr-1" /> Engineering Task
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => openItemDialog()} data-testid="button-add-item">
+                        <Plus className="w-4 h-4 mr-1" /> Add Item
+                      </Button>
+                    </div>
                   </div>
                   {(!selectedTemplate.items || selectedTemplate.items.length === 0) ? (
                     <p className="text-center text-muted-foreground py-8">No items yet. Add items to define what gets generated when this template is applied.</p>
