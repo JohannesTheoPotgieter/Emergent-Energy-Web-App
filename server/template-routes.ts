@@ -6,7 +6,7 @@ import {
   users, projectInfo, projectPhaseHistory, operationalTasks,
   deliverables, taskActivityLog,
   phaseTemplate, phaseTemplateItem, phaseTemplateItemHistory, phaseTemplateApplication,
-  PROJECT_PHASES, PROJECT_PHASE_LABELS,
+  PROJECT_PHASES, PROJECT_PHASE_LABELS, LIFECYCLE_PHASES,
   type ProjectPhase,
   TEMPLATE_ITEM_TYPES, TEMPLATE_WORKSTREAMS, TEMPLATE_LINK_TARGET_TYPES,
   qcWarning,
@@ -858,12 +858,14 @@ export function registerTemplateRoutes(app: Express) {
   // ========== CONSTANTS ==========
 
   app.get("/api/template-constants", jwtAuth, requireAuth, async (_req, res) => {
+    const lifecycleLabels: Record<string, string> = {};
+    for (const p of LIFECYCLE_PHASES) lifecycleLabels[p] = p;
     res.json({
       itemTypes: TEMPLATE_ITEM_TYPES,
       workstreams: TEMPLATE_WORKSTREAMS,
       linkTargetTypes: TEMPLATE_LINK_TARGET_TYPES,
-      projectPhases: PROJECT_PHASES,
-      projectPhaseLabels: PROJECT_PHASE_LABELS,
+      projectPhases: LIFECYCLE_PHASES,
+      projectPhaseLabels: lifecycleLabels,
     });
   });
 }
