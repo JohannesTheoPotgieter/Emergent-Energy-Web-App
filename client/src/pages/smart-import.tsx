@@ -13,6 +13,7 @@ import { Progress } from "@/components/ui/progress";
 import {
   Upload, FileSpreadsheet, CheckCircle2, AlertCircle, AlertTriangle,
   Info, ArrowRight, ArrowLeft, Loader2, X, Check, ChevronDown, ChevronUp,
+  Pencil,
 } from "lucide-react";
 import { useLocation } from "wouter";
 
@@ -431,87 +432,185 @@ function UploadStep({
   );
 }
 
+function EditableField({
+  label,
+  value,
+  fieldKey,
+  testId,
+  type = "text",
+  onSave,
+}: {
+  label: string;
+  value: string | null;
+  fieldKey: string;
+  testId: string;
+  type?: "text" | "date" | "currency";
+  onSave: (key: string, value: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value || "");
+
+  function formatDisplay() {
+    if (!value) return "—";
+    if (type === "date") {
+      try {
+        const d = new Date(value);
+        return d.toLocaleDateString("en-ZA", { day: "2-digit", month: "short", year: "numeric" });
+      } catch { return value; }
+    }
+    if (type === "currency") {
+      const n = Number(value);
+      return isNaN(n) ? value : `R ${n.toLocaleString("en-ZA", { maximumFractionDigits: 0 })}`;
+    }
+    return value;
+  }
+
+  function handleSave() {
+    onSave(fieldKey, draft);
+    setEditing(false);
+  }
+
+  if (editing) {
+    return (
+      <div>
+        <span className="text-slate-500 text-xs">{label}</span>
+        <div className="flex items-center gap-1 mt-0.5">
+          <Input
+            className="h-7 text-xs px-2"
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") handleSave(); if (e.key === "Escape") setEditing(false); }}
+            autoFocus
+            type={type === "date" ? "date" : "text"}
+            data-testid={`input-${testId}`}
+          />
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={handleSave} data-testid={`btn-save-${testId}`}>
+            <Check className="w-3.5 h-3.5 text-emerald-600" />
+          </Button>
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setEditing(false)} data-testid={`btn-cancel-${testId}`}>
+            <X className="w-3.5 h-3.5 text-slate-400" />
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="group">
+      <span className="text-slate-500 text-xs">{label}</span>
+      <div className="flex items-center gap-1">
+        <p className="font-medium text-xs" data-testid={testId}>{formatDisplay()}</p>
+        <button
+          className="opacity-0 group-hover:opacity-100 transition-opacity"
+          onClick={() => { setDraft(value || ""); setEditing(true); }}
+          data-testid={`btn-edit-${testId}`}
+        >
+          <Pencil className="w-3 h-3 text-slate-400 hover:text-blue-500" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function SectionDetectionStep({
   preview,
+  runId,
   onContinue,
   onBack,
+  onProjectInfoUpdated,
 }: {
   preview: any;
+  runId: number | null;
   onContinue: () => void;
   onBack: () => void;
+  onProjectInfoUpdated?: (updatedInfo: any) => void;
 }) {
   const sections = preview?.detection?.sections || preview?.sections || [];
   const unmatchedSheets = preview?.detection?.unmatched || preview?.unmatchedSheets || [];
   const projectInfo = preview?.detection?.projectInfo || preview?.projectInfo || {};
-  const hasProjectInfo = projectInfo && Object.values(projectInfo).some((v: any) => v != null && v !== "");
+  const hasProjectInfo = true;
+  const { toast } = useToast();
 
-  const keyDates = [
-    { label: "PD Handover", value: projectInfo.pdHandoverDate, testId: "text-pd-handover" },
-    { label: "Construction Start", value: projectInfo.constructionStartDate, testId: "text-construction-start" },
-    { label: "Commissioning", value: projectInfo.commissioningDate, testId: "text-commissioning" },
-    { label: "O&M Handover", value: projectInfo.omHandoverDate, testId: "text-om-handover" },
-    { label: "Client Handover", value: projectInfo.clientHandoverDate, testId: "text-client-handover" },
+  const handleFieldSave = async (key: string, value: string) => {
+    if (preview?.detection?.projectInfo) {
+      preview.detection.projectInfo[key] = value || null;
+    }
+
+    if (runId) {
+      try {
+        const res = await fetch(`/api/smart-import/${runId}/project-info`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+          body: JSON.stringify({ [key]: value || null }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          onProjectInfoUpdated?.(data.projectInfo);
+          toast({ title: "Saved", description: `Updated ${key}` });
+        }
+      } catch {}
+    }
+    onProjectInfoUpdated?.(preview?.detection?.projectInfo);
+  };
+
+  const metaFields = [
+    { label: "Project Name", key: "name", testId: "text-project-name", type: "text" as const },
+    { label: "Size (kWp)", key: "sizeKwp", testId: "text-project-size", type: "text" as const },
+    { label: "Project Director", key: "pd", testId: "text-project-pd", type: "text" as const },
+    { label: "Project Manager", key: "pm", testId: "text-project-pm", type: "text" as const },
+    { label: "Contract Value", key: "contractValue", testId: "text-contract-value", type: "currency" as const },
+    { label: "Execution Phase", key: "phase", testId: "text-project-phase", type: "text" as const },
   ];
-  const populatedDates = keyDates.filter(d => d.value);
 
-  function formatDate(val: string | null) {
-    if (!val) return "—";
-    try {
-      const d = new Date(val);
-      return d.toLocaleDateString("en-ZA", { day: "2-digit", month: "short", year: "numeric" });
-    } catch { return val; }
-  }
+  const dateFields = [
+    { label: "PD Handover", key: "pdHandoverDate", testId: "text-pd-handover" },
+    { label: "Construction Start", key: "constructionStartDate", testId: "text-construction-start" },
+    { label: "Commissioning", key: "commissioningDate", testId: "text-commissioning" },
+    { label: "O&M Handover", key: "omHandoverDate", testId: "text-om-handover" },
+    { label: "Client Handover", key: "clientHandoverDate", testId: "text-client-handover" },
+  ];
 
   return (
     <div className="space-y-4" data-testid="section-detection-step">
       {hasProjectInfo && (
         <Card className="bg-white rounded-xl shadow-sm">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Project Info (from sheet header)</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm">Project Info (from sheet header)</CardTitle>
+              <span className="text-[10px] text-slate-400">Hover to edit</span>
+            </div>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 text-xs">
-              <div>
-                <span className="text-slate-500">Project Name</span>
-                <p className="font-medium" data-testid="text-project-name">{projectInfo.name || "—"}</p>
-              </div>
-              <div>
-                <span className="text-slate-500">Size (kWp)</span>
-                <p className="font-medium" data-testid="text-project-size">{projectInfo.sizeKwp || "—"}</p>
-              </div>
-              <div>
-                <span className="text-slate-500">Project Director</span>
-                <p className="font-medium" data-testid="text-project-pd">{projectInfo.pd || "—"}</p>
-              </div>
-              <div>
-                <span className="text-slate-500">Project Manager</span>
-                <p className="font-medium" data-testid="text-project-pm">{projectInfo.pm || "—"}</p>
-              </div>
-              <div>
-                <span className="text-slate-500">Contract Value</span>
-                <p className="font-medium" data-testid="text-contract-value">
-                  {projectInfo.contractValue ? `R ${Number(projectInfo.contractValue).toLocaleString("en-ZA", { maximumFractionDigits: 0 })}` : "—"}
-                </p>
-              </div>
-              <div>
-                <span className="text-slate-500">Execution Phase</span>
-                <p className="font-medium" data-testid="text-project-phase">{projectInfo.phase || "—"}</p>
-              </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+              {metaFields.map(f => (
+                <EditableField
+                  key={f.key}
+                  label={f.label}
+                  value={projectInfo[f.key]}
+                  fieldKey={f.key}
+                  testId={f.testId}
+                  type={f.type}
+                  onSave={handleFieldSave}
+                />
+              ))}
             </div>
 
-            {populatedDates.length > 0 && (
-              <div>
-                <p className="text-[11px] text-slate-400 font-medium uppercase tracking-wide mb-1.5">Key Dates</p>
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 text-xs">
-                  {keyDates.map(d => (
-                    <div key={d.testId}>
-                      <span className="text-slate-500">{d.label}</span>
-                      <p className="font-medium" data-testid={d.testId}>{formatDate(d.value)}</p>
-                    </div>
-                  ))}
-                </div>
+            <div>
+              <p className="text-[11px] text-slate-400 font-medium uppercase tracking-wide mb-1.5">Key Dates</p>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                {dateFields.map(d => (
+                  <EditableField
+                    key={d.key}
+                    label={d.label}
+                    value={projectInfo[d.key]}
+                    fieldKey={d.key}
+                    testId={d.testId}
+                    type="date"
+                    onSave={handleFieldSave}
+                  />
+                ))}
               </div>
-            )}
+            </div>
           </CardContent>
         </Card>
       )}
@@ -1562,8 +1661,14 @@ export default function SmartImportPage() {
       {step === 2 && preview && (
         <SectionDetectionStep
           preview={preview}
+          runId={runId}
           onContinue={() => setStep(3)}
           onBack={() => setStep(1)}
+          onProjectInfoUpdated={(updatedInfo) => {
+            if (preview?.detection) {
+              setPreview({ ...preview, detection: { ...preview.detection, projectInfo: updatedInfo } });
+            }
+          }}
         />
       )}
 
