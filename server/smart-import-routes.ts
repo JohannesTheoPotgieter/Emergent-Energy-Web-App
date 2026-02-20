@@ -173,14 +173,15 @@ router.post("/api/smart-import/upload", requireAuth, upload.single("file"), asyn
           resolutionNote: matchedRule?.applyAlways ? matchedRule.resolutionNote : null,
           autoResolved: matchedRule?.applyAlways ? true : false,
           matchedRuleId: matchedRule?.id || null,
+          overrideData: matchedRule?.applyAlways && matchedRule.overrideData ? matchedRule.overrideData : null,
           payloadJson: issue.payloadJson || null,
         };
       });
       await db.insert(importIssues).values(issueValues);
 
-      const autoAppliedRuleIds = new Set(
+      const autoAppliedRuleIds = Array.from(new Set(
         issueValues.filter(v => v.autoResolved && v.matchedRuleId).map(v => v.matchedRuleId!)
-      );
+      ));
       for (const ruleId of autoAppliedRuleIds) {
         await db.update(issueResolutionRules)
           .set({
@@ -417,19 +418,21 @@ router.patch("/api/smart-import/:runId/issue/:issueId/resolve", requireAuth, asy
     const issueId = parseInt(req.params.issueId as string);
     if (isNaN(runId) || isNaN(issueId)) return res.status(400).json({ error: "Invalid runId or issueId" });
 
-    const { resolved, resolution, resolutionNote, rememberDecision } = req.body;
+    const { resolved, resolution, resolutionNote, rememberDecision, overrideData } = req.body;
     if (resolved === undefined) return res.status(400).json({ error: "resolved field is required" });
 
     const userId = (req as any).user?.id || null;
+    const resType = resolved ? (resolution || "ACCEPTED") : null;
 
     const [updated] = await db
       .update(importIssues)
       .set({
         resolved: !!resolved,
-        resolution: resolved ? (resolution || "ACCEPTED") : null,
+        resolution: resType,
         resolutionNote: resolved ? (resolutionNote || null) : null,
         resolvedBy: resolved ? userId : null,
         resolvedAt: resolved ? new Date() : null,
+        overrideData: resType === "OVERRIDE" && overrideData ? overrideData : null,
       })
       .where(and(eq(importIssues.id, issueId), eq(importIssues.importRunId, runId)))
       .returning();
@@ -448,14 +451,17 @@ router.patch("/api/smart-import/:runId/issue/:issueId/resolve", requireAuth, asy
           eq(issueResolutionRules.active, true),
         ));
 
+      const resValue = resolution || "ACCEPTED";
+      const ovData = resValue === "OVERRIDE" && overrideData ? overrideData : null;
       if (existing.length === 0) {
         await db.insert(issueResolutionRules).values({
           projectName,
           issueType: updated.issueType,
           fingerprint: updated.issueFingerprint,
           section: updated.section,
-          resolution: resolution || "ACCEPTED",
+          resolution: resValue,
           resolutionNote: resolutionNote || null,
+          overrideData: ovData,
           applyAlways: !!rememberDecision,
           timesApplied: 1,
           createdBy: userId,
@@ -465,8 +471,9 @@ router.patch("/api/smart-import/:runId/issue/:issueId/resolve", requireAuth, asy
           .set({
             timesApplied: sql`${issueResolutionRules.timesApplied} + 1`,
             lastAppliedAt: new Date(),
-            resolution: resolution || "ACCEPTED",
+            resolution: resValue,
             resolutionNote: resolutionNote || null,
+            overrideData: ovData,
           })
           .where(eq(issueResolutionRules.id, existing[0].id));
       }
@@ -579,6 +586,24 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
     const projectId = run.projectId;
     const userId = (req as any).user?.id || null;
 
+    const ignoredRows = new Map<string, Set<number>>();
+    const overrideRows = new Map<string, Map<number, any>>();
+    for (const issue of issues) {
+      if (!issue.resolved) continue;
+      const payload = issue.payloadJson as any;
+      const row = payload?.row || payload?.sourceRow;
+      if (row == null) continue;
+      const section = issue.section;
+
+      if (issue.resolution === "IGNORED") {
+        if (!ignoredRows.has(section)) ignoredRows.set(section, new Set());
+        ignoredRows.get(section)!.add(row);
+      } else if (issue.resolution === "OVERRIDE" && issue.overrideData) {
+        if (!overrideRows.has(section)) overrideRows.set(section, new Map());
+        overrideRows.get(section)!.set(row, issue.overrideData as any);
+      }
+    }
+
     const counts = { planTasks: 0, revenueLines: 0, costLines: 0, executionPhases: 0, counterparties: 0 };
 
     await db.transaction(async (tx: any) => {
@@ -595,49 +620,69 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
       }
 
       if (norm.planTasks && norm.planTasks.length > 0) {
-        const planValues = norm.planTasks.map((t: any) => ({
-          projectId,
-          projectName,
-          taskName: t.taskName,
-          phase: t.phase,
-          startDate: t.startDate,
-          endDate: t.endDate,
-          durationDays: t.durationDays,
-          actualStartDate: t.actualStartDate,
-          actualEndDate: t.actualEndDate,
-          actualDurationDays: t.actualDurationDays,
-          owner: t.owner,
-          status: t.status,
-          pctComplete: t.pctComplete,
-          comment: t.comment,
-          sourceSheet: t.sourceSheet,
-          sourceRow: t.sourceRow,
-          importRunId: runId,
-        }));
-        await tx.insert(normalizedPlanTasks).values(planValues);
+        const planIgnored = ignoredRows.get("PLAN") || new Set();
+        const planOverrides = overrideRows.get("PLAN") || new Map();
+        const planValues = norm.planTasks
+          .filter((t: any) => !planIgnored.has(t.sourceRow))
+          .map((t: any) => {
+            const ov = planOverrides.get(t.sourceRow);
+            const merged = ov ? { ...t, ...ov } : t;
+            return {
+              projectId,
+              projectName,
+              taskName: merged.taskName,
+              phase: merged.phase,
+              startDate: merged.startDate,
+              endDate: merged.endDate,
+              durationDays: merged.durationDays,
+              actualStartDate: merged.actualStartDate,
+              actualEndDate: merged.actualEndDate,
+              actualDurationDays: merged.actualDurationDays,
+              owner: merged.owner,
+              status: merged.status,
+              pctComplete: merged.pctComplete,
+              comment: merged.comment,
+              sourceSheet: t.sourceSheet,
+              sourceRow: t.sourceRow,
+              importRunId: runId,
+            };
+          });
+        if (planValues.length > 0) {
+          await tx.insert(normalizedPlanTasks).values(planValues);
+        }
         counts.planTasks = planValues.length;
       }
 
       if (norm.revenueLines && norm.revenueLines.length > 0) {
-        const revValues = norm.revenueLines.map((r: any) => ({
-          projectId,
-          projectName,
-          description: r.description,
-          milestoneName: r.milestoneName,
-          amountExVat: r.amountExVat,
-          vat: r.vat,
-          invoiceNumber: r.invoiceNumber,
-          invoiceDate: r.invoiceDate,
-          expectedPaymentDate: r.expectedPaymentDate,
-          paidDate: r.paidDate,
-          inBankDate: r.inBankDate,
-          status: r.status,
-          sourceSheet: r.sourceSheet,
-          sourceRow: r.sourceRow,
-          importRunId: runId,
-          turnaroundDays: r.turnaroundDays,
-        }));
-        await tx.insert(normalizedRevenueLines).values(revValues);
+        const revIgnored = ignoredRows.get("REVENUE") || new Set();
+        const revOverrides = overrideRows.get("REVENUE") || new Map();
+        const revValues = norm.revenueLines
+          .filter((r: any) => !revIgnored.has(r.sourceRow))
+          .map((r: any) => {
+            const ov = revOverrides.get(r.sourceRow);
+            const merged = ov ? { ...r, ...ov } : r;
+            return {
+              projectId,
+              projectName,
+              description: merged.description,
+              milestoneName: merged.milestoneName,
+              amountExVat: merged.amountExVat,
+              vat: merged.vat,
+              invoiceNumber: merged.invoiceNumber,
+              invoiceDate: merged.invoiceDate,
+              expectedPaymentDate: merged.expectedPaymentDate,
+              paidDate: merged.paidDate,
+              inBankDate: merged.inBankDate,
+              status: merged.status,
+              sourceSheet: r.sourceSheet,
+              sourceRow: r.sourceRow,
+              importRunId: runId,
+              turnaroundDays: merged.turnaroundDays,
+            };
+          });
+        if (revValues.length > 0) {
+          await tx.insert(normalizedRevenueLines).values(revValues);
+        }
         counts.revenueLines = revValues.length;
       }
 
@@ -675,31 +720,39 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
       }
 
       if (norm.costLines && norm.costLines.length > 0) {
-        const costValues = norm.costLines.map((c: any) => {
-          const cpName = c.counterpartyName?.trim();
-          const cpId = cpName ? counterpartyMap.get(cpName.toLowerCase()) || null : null;
-          return {
-            projectId,
-            projectName,
-            costCategory: c.costCategory,
-            counterpartyId: cpId,
-            counterpartyName: c.counterpartyName,
-            counterpartyType: null,
-            description: c.description,
-            amountExVat: c.amountExVat,
-            invoiceNumber: c.invoiceNumber,
-            invoiceDate: c.invoiceDate,
-            approvedDate: c.approvedDate,
-            paidDate: c.paidDate,
-            poNumber: c.poNumber,
-            status: c.status,
-            sourceSheet: c.sourceSheet,
-            sourceRow: c.sourceRow,
-            importRunId: runId,
-            turnaroundDays: c.turnaroundDays,
-          };
-        });
-        await tx.insert(normalizedCostLines).values(costValues);
+        const costIgnored = ignoredRows.get("EXPENDITURE") || new Set();
+        const costOverrides = overrideRows.get("EXPENDITURE") || new Map();
+        const costValues = norm.costLines
+          .filter((c: any) => !costIgnored.has(c.sourceRow))
+          .map((c: any) => {
+            const ov = costOverrides.get(c.sourceRow);
+            const merged = ov ? { ...c, ...ov } : c;
+            const cpName = merged.counterpartyName?.trim();
+            const cpId = cpName ? counterpartyMap.get(cpName.toLowerCase()) || null : null;
+            return {
+              projectId,
+              projectName,
+              costCategory: merged.costCategory,
+              counterpartyId: cpId,
+              counterpartyName: merged.counterpartyName,
+              counterpartyType: null,
+              description: merged.description,
+              amountExVat: merged.amountExVat,
+              invoiceNumber: merged.invoiceNumber,
+              invoiceDate: merged.invoiceDate,
+              approvedDate: merged.approvedDate,
+              paidDate: merged.paidDate,
+              poNumber: merged.poNumber,
+              status: merged.status,
+              sourceSheet: c.sourceSheet,
+              sourceRow: c.sourceRow,
+              importRunId: runId,
+              turnaroundDays: merged.turnaroundDays,
+            };
+          });
+        if (costValues.length > 0) {
+          await tx.insert(normalizedCostLines).values(costValues);
+        }
         counts.costLines = costValues.length;
       }
 

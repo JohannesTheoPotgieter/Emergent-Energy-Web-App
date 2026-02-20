@@ -1199,6 +1199,8 @@ function IssuesStep({
   const [cpType, setCpType] = useState("subcontractor");
   const [creatingCp, setCreatingCp] = useState<number | null>(null);
   const [applyingPrior, setApplyingPrior] = useState(false);
+  const [editingOverride, setEditingOverride] = useState<number | null>(null);
+  const [overrideFields, setOverrideFields] = useState<Record<string, string>>({});
   const { toast } = useToast();
 
   const issuesWithPriorRules = issues.filter((i: any) => i.matchedRuleId && !i.resolved && !i.autoResolved);
@@ -1274,7 +1276,7 @@ function IssuesStep({
       if (res.ok) {
         toast({ title: "Counterparty Created", description: `${cpName} added` });
         setCpName("");
-        await handleResolve(issueId, true, "counterparty_created");
+        await handleResolve(issueId, true, "ACCEPTED");
       } else {
         const err = await res.json().catch(() => ({ error: "Failed" }));
         toast({ title: "Error", description: err.error || "Failed to create counterparty", variant: "destructive" });
@@ -1343,29 +1345,80 @@ function IssuesStep({
                   </div>
                   <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
                     {issue.resolved ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 text-xs"
-                        disabled={resolving === issue.id}
-                        onClick={() => handleResolve(issue.id, false)}
-                        data-testid={`btn-reopen-${issue.id}`}
-                      >
-                        {resolving === issue.id ? <Loader2 className="w-3 h-3 animate-spin" /> : (
-                          <><CheckCircle2 className="w-3 h-3 mr-1 text-emerald-500" />{issue.resolution === "accepted" ? "Accepted" : "Resolved"}</>
-                        )}
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Badge variant="outline" className={`text-[10px] h-5 ${
+                          issue.resolution === "IGNORED" ? "border-slate-300 text-slate-600 bg-slate-50" :
+                          issue.resolution === "OVERRIDE" ? "border-blue-300 text-blue-600 bg-blue-50" :
+                          "border-emerald-300 text-emerald-600 bg-emerald-50"
+                        }`}>
+                          {issue.resolution === "IGNORED" ? "Ignored" : issue.resolution === "OVERRIDE" ? "Overridden" : "Accepted"}
+                        </Badge>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 w-6 p-0 text-slate-400 hover:text-slate-600"
+                          disabled={resolving === issue.id}
+                          onClick={() => handleResolve(issue.id, false)}
+                          data-testid={`btn-reopen-${issue.id}`}
+                        >
+                          {resolving === issue.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}
+                        </Button>
+                      </div>
                     ) : (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 text-xs border-emerald-300 text-emerald-700 hover:bg-emerald-50"
-                        disabled={resolving === issue.id}
-                        onClick={() => handleResolve(issue.id, true, "accepted")}
-                        data-testid={`btn-accept-${issue.id}`}
-                      >
-                        {resolving === issue.id ? <Loader2 className="w-3 h-3 animate-spin" /> : "Accept as-is"}
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-6 text-[10px] px-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                          disabled={resolving === issue.id}
+                          onClick={() => handleResolve(issue.id, true, "ACCEPTED")}
+                          data-testid={`btn-accept-${issue.id}`}
+                        >
+                          Accept
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-6 text-[10px] px-2 border-blue-300 text-blue-700 hover:bg-blue-50"
+                          disabled={resolving === issue.id}
+                          onClick={() => {
+                            setEditingOverride(issue.id);
+                            setExpanded(prev => { const next = new Set(prev); next.add(issue.id); return next; });
+                            const payload = issue.payloadJson as any || {};
+                            const row = payload?.row;
+                            const section = issue.section;
+                            let normRow: any = null;
+                            if (row != null && normalization) {
+                              if (section === "PLAN") normRow = normalization.planTasks?.find((t: any) => t.sourceRow === row);
+                              else if (section === "REVENUE") normRow = normalization.revenueLines?.find((r: any) => r.sourceRow === row);
+                              else if (section === "EXPENDITURE") normRow = normalization.costLines?.find((c: any) => c.sourceRow === row);
+                            }
+                            if (normRow) {
+                              const editable: Record<string, string> = {};
+                              for (const [k, v] of Object.entries(normRow)) {
+                                if (k === "sourceSheet" || k === "sourceRow") continue;
+                                editable[k] = v != null ? String(v) : "";
+                              }
+                              setOverrideFields(editable);
+                            } else {
+                              setOverrideFields({ ...payload });
+                            }
+                          }}
+                          data-testid={`btn-override-${issue.id}`}
+                        >
+                          Override
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-6 text-[10px] px-2 border-slate-300 text-slate-600 hover:bg-slate-50"
+                          disabled={resolving === issue.id}
+                          onClick={() => handleResolve(issue.id, true, "IGNORED")}
+                          data-testid={`btn-ignore-${issue.id}`}
+                        >
+                          Ignore
+                        </Button>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -1374,7 +1427,71 @@ function IssuesStep({
                   <div className="mt-2 pt-2 border-t border-slate-200">
                     <IssueRowDetail issue={issue} normalization={normalization} />
 
-                    {isCounterpartyIssue && !issue.resolved && (
+                    {editingOverride === issue.id && !issue.resolved && (
+                      <div className="pt-2 mt-2 border-t border-blue-200 bg-blue-50/50 rounded p-2 space-y-2" data-testid={`override-form-${issue.id}`}>
+                        <p className="text-[10px] font-semibold text-blue-700">Edit fields to override this data line:</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {Object.entries(overrideFields)
+                            .filter(([key]) => key !== "row")
+                            .map(([key, val]) => (
+                              <div key={key}>
+                                <Label className="text-[10px] text-blue-600 capitalize">{key.replace(/([A-Z])/g, " $1")}</Label>
+                                <Input
+                                  className="h-7 text-xs"
+                                  value={val || ""}
+                                  onChange={(e) => setOverrideFields(prev => ({ ...prev, [key]: e.target.value }))}
+                                  data-testid={`input-override-${key}-${issue.id}`}
+                                />
+                              </div>
+                            ))}
+                        </div>
+                        <div className="flex justify-end gap-2 pt-1">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-6 text-[10px] px-2"
+                            onClick={() => setEditingOverride(null)}
+                            data-testid={`btn-cancel-override-${issue.id}`}
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            size="sm"
+                            className="h-6 text-[10px] px-2 bg-blue-600 hover:bg-blue-700 text-white"
+                            disabled={resolving === issue.id}
+                            onClick={async () => {
+                              const cleanOverride: Record<string, any> = {};
+                              for (const [k, v] of Object.entries(overrideFields)) {
+                                if (k !== "row") cleanOverride[k] = v;
+                              }
+                              setResolving(issue.id);
+                              try {
+                                const res = await fetch(`/api/smart-import/${runId}/issue/${issue.id}/resolve`, {
+                                  method: "PATCH",
+                                  headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+                                  body: JSON.stringify({ resolved: true, resolution: "OVERRIDE", overrideData: cleanOverride, rememberDecision: true }),
+                                });
+                                if (res.ok) {
+                                  const updated = await res.json();
+                                  onIssuesUpdate(issues.map((i) => (i.id === issue.id ? updated : i)));
+                                  setEditingOverride(null);
+                                  toast({ title: "Override saved" });
+                                }
+                              } catch {
+                                toast({ title: "Error", variant: "destructive" });
+                              } finally {
+                                setResolving(null);
+                              }
+                            }}
+                            data-testid={`btn-save-override-${issue.id}`}
+                          >
+                            {resolving === issue.id ? <Loader2 className="w-3 h-3 animate-spin" /> : "Save Override"}
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+
+                    {isCounterpartyIssue && !issue.resolved && editingOverride !== issue.id && (
                       <div className="flex items-end gap-2 pt-2 mt-2 border-t border-slate-200">
                         <div className="flex-1">
                           <Label className="text-[10px]">Name</Label>
