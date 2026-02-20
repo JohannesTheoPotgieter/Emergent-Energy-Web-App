@@ -593,7 +593,6 @@ function LatestUpdateCell({ project }: { project: ProjectSummary }) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(project.latest_update || "");
   const qc = useQueryClient();
-  const { authFetch } = useAuth();
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -602,14 +601,12 @@ function LatestUpdateCell({ project }: { project: ProjectSummary }) {
 
   const save = async () => {
     try {
-      await authFetch(`/api/projects-summary/${encodeURIComponent(project.project_name)}/latest-update`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ latestUpdate: value.trim() || null }),
-      });
+      await apiRequest("PATCH", `/api/projects-summary/${encodeURIComponent(project.project_name)}/latest-update`, { latestUpdate: value.trim() || null });
       qc.invalidateQueries({ queryKey: ["/api/projects-summary"] });
       setEditing(false);
-    } catch {}
+    } catch (e) {
+      console.error("Failed to save update:", e);
+    }
   };
 
   if (editing) {
