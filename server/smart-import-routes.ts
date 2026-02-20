@@ -28,7 +28,7 @@ function extractProjectNameFromFilename(fileName: string): string {
   if (trackerIdx > 0) {
     name = name.substring(0, trackerIdx);
   }
-  name = name.replace(/[_\-]+/g, " ").replace(/[^a-zA-Z\s]/g, "").trim();
+  name = name.replace(/[_\-]+/g, " ").replace(/[^a-zA-Z0-9\s]/g, "").trim();
   name = name.replace(/\s+/g, " ");
   return name || "Untitled Project";
 }
