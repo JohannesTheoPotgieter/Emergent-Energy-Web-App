@@ -21,7 +21,7 @@ Preferred communication style: Simple, everyday language.
     -   **Quality Management**: Quality Tab (4-phase checklist with Planning & Design, Construction, Commissioning, Handover phases; 13 groups, 46 items, 22 risk questions; non-blocking red warnings engine), QM Dashboard (stats overview, project table, warnings), Post-Mortem Panel (contractor/engineering quality scoring with 7 metrics), QM Access Code Challenge (4-digit code gate for quality_manager role editing).
     -   **Phase Templates & Portfolio**: Phase Template Admin (template CRUD with items, versioning, clone, activate, preview), Project Create (exec-only in-app project creation with auto-template application), Exec Portfolio Board (project-centric lifecycle view with phase badges, readiness %, warnings, approvals, phase change with template preview).
     -   **Smart Excel Import**: Smart Import Wizard (5-step review flow: Upload → Section Detection → Column Mapping → Issues & Anomalies → Preview & Commit), Normalized Project Views (Plan | Revenue | Expenditure tabs from normalized tables), Template Profile Learning (mapping rules persist and improve over imports), Counterparty Master Data (canonical names + aliases, auto-matching), Turnaround Time Metrics, Anomaly Detection (duplicate invoices, date order violations, missing amounts).
-    -   **Utilities & Admin**: SafeMoney Utilities (NaN-safe currency handling), My Tool (COO Execution Cockpit — Linear/Notion/Sunsama-style premium minimal interface with shared components: MyToolLayout, TaskCard, TaskDetailDrawer; DoD enforcement; natural language quick add; keyboard shortcuts ⌘K/⌘⏎; drag-drop email-to-task; time blocks; daily wrap), and Excel Writeback Manager (admin UI for configuring and executing Excel writebacks).
+    -   **Utilities & Admin**: SafeMoney Utilities (NaN-safe currency handling), My Tool (COO Execution Cockpit — Linear/Notion/Sunsama-style premium minimal interface with shared components: MyToolLayout, TaskCard, TaskDetailDrawer; DoD enforcement; natural language quick add; keyboard shortcuts ⌘K/⌘⏎; drag-drop email-to-task; time blocks; daily wrap; Read.ai Meeting Actions integration with webhook ingestion and action item conversion to tasks/priorities/projects), and Excel Writeback Manager (admin UI for configuring and executing Excel writebacks).
 
 ### Backend
 - **Framework**: Express.js with TypeScript
@@ -43,6 +43,8 @@ Preferred communication style: Simple, everyday language.
 -   `writebackMappings`, `writebackAuditLog`: Excel writeback configuration and audit trail.
 -   `mytool_tasks`, `mytool_timeblocks`, `mytool_daily_reviews`, `mytool_company_priorities`, `mytool_user_preferences`: My Tool entities.
 -   `mytool_dod_templates`: Definition of Done reusable templates.
+-   `meeting_summaries`: Read.ai webhook meeting data (title, participants, summary, report URL, raw payload).
+-   `meeting_action_items`: Action items from meetings with conversion status (pending/converted/dismissed) and link to converted entity.
 -   `uploadMetadata`, `refreshLogs`: Audit trails for data ingestion.
 -   `sp_settings`: SharePoint connection configuration (siteId, driveId, folder, schedule).
 -   `sp_files`: Tracked SharePoint files with etag/ctag for change detection.
@@ -86,6 +88,8 @@ Preferred communication style: Simple, everyday language.
 -   `/api/exec/portfolio/*`: Executive portfolio board endpoints — project list with readiness/warnings, project detail with phase history/template applications.
 -   `/api/smart-import/*`: Smart import endpoints — upload/preview, mapping overrides, issue resolution, commit, rollback, import history, normalized data queries.
 -   `/api/counterparties/*`: Counterparty master data CRUD and fuzzy name matching.
+-   `/api/webhooks/read-ai`: POST webhook endpoint for Read.ai meeting data ingestion.
+-   `/api/meetings/*`: Meeting management — list, detail, delete, manual entry, webhook info, action item dismiss, convert-to-task/priority/project.
 
 ## External Dependencies
 

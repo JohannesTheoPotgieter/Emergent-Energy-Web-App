@@ -1225,6 +1225,42 @@ export const insertMytoolDodTemplateSchema = createInsertSchema(mytoolDodTemplat
 export type InsertMytoolDodTemplate = z.infer<typeof insertMytoolDodTemplateSchema>;
 export type MytoolDodTemplate = typeof mytoolDodTemplates.$inferSelect;
 
+export const meetingActionItemStatusEnum = pgEnum('meeting_action_item_status', ['pending', 'converted', 'dismissed']);
+
+export const meetingSummaries = pgTable("meeting_summaries", {
+  id: serial("id").primaryKey(),
+  externalMeetingId: text("external_meeting_id"),
+  title: text("title").notNull(),
+  startTime: timestamp("start_time"),
+  endTime: timestamp("end_time"),
+  participants: text("participants").array(),
+  summary: text("summary"),
+  reportUrl: text("report_url"),
+  source: text("source").notNull().default("read_ai"),
+  rawPayload: text("raw_payload"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertMeetingSummarySchema = createInsertSchema(meetingSummaries).omit({ id: true, createdAt: true });
+export type InsertMeetingSummary = z.infer<typeof insertMeetingSummarySchema>;
+export type MeetingSummary = typeof meetingSummaries.$inferSelect;
+
+export const meetingActionItems = pgTable("meeting_action_items", {
+  id: serial("id").primaryKey(),
+  meetingId: integer("meeting_id").notNull().references(() => meetingSummaries.id, { onDelete: "cascade" }),
+  text: text("text").notNull(),
+  owner: text("owner"),
+  dueDate: text("due_date"),
+  status: meetingActionItemStatusEnum("status").notNull().default("pending"),
+  convertedToType: text("converted_to_type"),
+  convertedToId: integer("converted_to_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertMeetingActionItemSchema = createInsertSchema(meetingActionItems).omit({ id: true, createdAt: true });
+export type InsertMeetingActionItem = z.infer<typeof insertMeetingActionItemSchema>;
+export type MeetingActionItem = typeof meetingActionItems.$inferSelect;
+
 export const mytoolSettings = pgTable("mytool_settings", {
   id: serial("id").primaryKey(),
   enabled: boolean("enabled").notNull().default(true),

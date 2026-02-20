@@ -298,6 +298,9 @@ async function seedUsers() {
   const { registerSmartImportRoutes } = await import("./smart-import-routes");
   registerSmartImportRoutes(app);
 
+  const { registerMeetingRoutes } = await import("./meeting-routes");
+  registerMeetingRoutes(app);
+
   const { seedEngineeringData } = await import("./seed-engineering");
   await seedEngineeringData().catch(err => console.error('[Seed] Engineering data error:', err));
 
