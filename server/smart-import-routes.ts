@@ -19,8 +19,9 @@ import {
   counterparties,
   mappingRules,
   templateProfiles,
+  issueResolutionRules,
 } from "@shared/schema";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, sql } from "drizzle-orm";
 
 function extractProjectNameFromFilename(fileName: string): string {
   let name = fileName.replace(/\.(xlsx|xlsm|xls)$/i, "");
@@ -142,16 +143,49 @@ router.post("/api/smart-import/upload", requireAuth, upload.single("file"), asyn
       .returning();
 
     if (preview.normalization.issues.length > 0) {
-      const issueValues = preview.normalization.issues.map((issue) => ({
-        importRunId: run.id,
-        severity: issue.severity as any,
-        section: issue.section as any,
-        message: issue.message,
-        suggestedAction: issue.suggestedAction,
-        resolved: false,
-        payloadJson: issue.payloadJson || null,
-      }));
+      const activeRules = await db.select().from(issueResolutionRules)
+        .where(eq(issueResolutionRules.active, true));
+
+      const ruleMap = new Map<string, typeof activeRules[0]>();
+      for (const rule of activeRules) {
+        ruleMap.set(`${rule.issueType}::${rule.fingerprint}::${rule.section}`, rule);
+      }
+
+      const issueValues = preview.normalization.issues.map((issue: any) => {
+        const fingerprint = issue.issueFingerprint || null;
+        const issueType = issue.issueType || null;
+        const lookupKey = `${issueType}::${fingerprint}::${issue.section}`;
+        const matchedRule = fingerprint ? ruleMap.get(lookupKey) : undefined;
+
+        return {
+          importRunId: run.id,
+          severity: issue.severity as any,
+          section: issue.section as any,
+          message: issue.message,
+          suggestedAction: issue.suggestedAction,
+          issueType,
+          issueFingerprint: fingerprint,
+          resolved: matchedRule?.applyAlways ? true : false,
+          resolution: matchedRule?.applyAlways ? matchedRule.resolution : null,
+          resolutionNote: matchedRule?.applyAlways ? matchedRule.resolutionNote : null,
+          autoResolved: matchedRule?.applyAlways ? true : false,
+          matchedRuleId: matchedRule?.id || null,
+          payloadJson: issue.payloadJson || null,
+        };
+      });
       await db.insert(importIssues).values(issueValues);
+
+      const autoAppliedRuleIds = new Set(
+        issueValues.filter(v => v.autoResolved && v.matchedRuleId).map(v => v.matchedRuleId!)
+      );
+      for (const ruleId of autoAppliedRuleIds) {
+        await db.update(issueResolutionRules)
+          .set({
+            timesApplied: sql`${issueResolutionRules.timesApplied} + 1`,
+            lastAppliedAt: new Date(),
+          })
+          .where(eq(issueResolutionRules.id, ruleId));
+      }
     }
 
     res.json({ runId: run.id, preview });
@@ -380,7 +414,7 @@ router.patch("/api/smart-import/:runId/issue/:issueId/resolve", requireAuth, asy
     const issueId = parseInt(req.params.issueId as string);
     if (isNaN(runId) || isNaN(issueId)) return res.status(400).json({ error: "Invalid runId or issueId" });
 
-    const { resolved } = req.body;
+    const { resolved, resolution, resolutionNote, rememberDecision } = req.body;
     if (resolved === undefined) return res.status(400).json({ error: "resolved field is required" });
 
     const userId = (req as any).user?.id || null;
@@ -389,6 +423,8 @@ router.patch("/api/smart-import/:runId/issue/:issueId/resolve", requireAuth, asy
       .update(importIssues)
       .set({
         resolved: !!resolved,
+        resolution: resolved ? (resolution || "ACCEPTED") : null,
+        resolutionNote: resolved ? (resolutionNote || null) : null,
         resolvedBy: resolved ? userId : null,
         resolvedAt: resolved ? new Date() : null,
       })
@@ -397,9 +433,103 @@ router.patch("/api/smart-import/:runId/issue/:issueId/resolve", requireAuth, asy
 
     if (!updated) return res.status(404).json({ error: "Issue not found" });
 
+    if (resolved && rememberDecision !== false && updated.issueType && updated.issueFingerprint) {
+      const [run] = await db.select().from(smartImportRuns).where(eq(smartImportRuns.id, runId));
+      const projectName = run?.projectName || null;
+
+      const existing = await db.select().from(issueResolutionRules)
+        .where(and(
+          eq(issueResolutionRules.issueType, updated.issueType),
+          eq(issueResolutionRules.fingerprint, updated.issueFingerprint),
+          eq(issueResolutionRules.section, updated.section),
+          eq(issueResolutionRules.active, true),
+        ));
+
+      if (existing.length === 0) {
+        await db.insert(issueResolutionRules).values({
+          projectName,
+          issueType: updated.issueType,
+          fingerprint: updated.issueFingerprint,
+          section: updated.section,
+          resolution: resolution || "ACCEPTED",
+          resolutionNote: resolutionNote || null,
+          applyAlways: !!rememberDecision,
+          timesApplied: 1,
+          createdBy: userId,
+        });
+      } else {
+        await db.update(issueResolutionRules)
+          .set({
+            timesApplied: sql`${issueResolutionRules.timesApplied} + 1`,
+            lastAppliedAt: new Date(),
+            resolution: resolution || "ACCEPTED",
+            resolutionNote: resolutionNote || null,
+          })
+          .where(eq(issueResolutionRules.id, existing[0].id));
+      }
+    }
+
     res.json(updated);
   } catch (err: any) {
     console.error("[smart-import] PATCH resolve error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/smart-import/:runId/apply-prior-resolutions
+router.post("/api/smart-import/:runId/apply-prior-resolutions", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const runId = parseInt(req.params.runId as string);
+    if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
+
+    const userId = (req as any).user?.id || null;
+
+    const issues = await db.select().from(importIssues)
+      .where(and(eq(importIssues.importRunId, runId), eq(importIssues.resolved, false)));
+
+    const activeRules = await db.select().from(issueResolutionRules)
+      .where(eq(issueResolutionRules.active, true));
+
+    const ruleMap = new Map<string, typeof activeRules[0]>();
+    for (const rule of activeRules) {
+      ruleMap.set(`${rule.issueType}::${rule.fingerprint}::${rule.section}`, rule);
+    }
+
+    let applied = 0;
+    for (const issue of issues) {
+      if (!issue.issueType || !issue.issueFingerprint) continue;
+      const lookupKey = `${issue.issueType}::${issue.issueFingerprint}::${issue.section}`;
+      const rule = ruleMap.get(lookupKey);
+      if (!rule) continue;
+
+      await db.update(importIssues)
+        .set({
+          resolved: true,
+          resolution: rule.resolution,
+          resolutionNote: rule.resolutionNote,
+          resolvedBy: userId,
+          resolvedAt: new Date(),
+          autoResolved: true,
+          matchedRuleId: rule.id,
+        })
+        .where(eq(importIssues.id, issue.id));
+
+      await db.update(issueResolutionRules)
+        .set({
+          timesApplied: sql`${issueResolutionRules.timesApplied} + 1`,
+          lastAppliedAt: new Date(),
+        })
+        .where(eq(issueResolutionRules.id, rule.id));
+
+      applied++;
+    }
+
+    const updatedIssues = await db.select().from(importIssues)
+      .where(eq(importIssues.importRunId, runId));
+
+    res.json({ applied, issues: updatedIssues });
+  } catch (err: any) {
+    console.error("[smart-import] POST apply-prior-resolutions error:", err);
     res.status(500).json({ error: err.message });
   }
 });
