@@ -413,7 +413,6 @@ export default function ProjectDetailPage() {
   const { user } = useAuth();
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [phaseModalOpen, setPhaseModalOpen] = useState(false);
 
   const searchParams = useMemo(() => new URLSearchParams(searchString), [searchString]);
   const urlTab = searchParams.get("tab");
@@ -537,12 +536,6 @@ export default function ProjectDetailPage() {
           <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
             <h2 className="text-xl sm:text-3xl font-heading font-bold text-foreground" data-testid="text-project-name">{displayName}</h2>
             <PhaseBadge phase={phase} />
-            {isAdmin && projectInfoId && (
-              <Button variant="outline" size="sm" onClick={() => setPhaseModalOpen(true)} className="h-7 text-xs gap-1" data-testid="button-change-phase">
-                <History className="h-3.5 w-3.5" />
-                Change Phase
-              </Button>
-            )}
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs sm:text-sm text-muted-foreground">
             <span className="flex items-center gap-1"><User className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> PD: {pd}</span>
@@ -687,14 +680,6 @@ export default function ProjectDetailPage() {
         projectName={projectName}
       />
 
-      {isAdmin && projectInfoId && (
-        <PhaseChangeModal
-          projectId={projectInfoId}
-          currentPhase={phase}
-          open={phaseModalOpen}
-          onClose={() => setPhaseModalOpen(false)}
-        />
-      )}
     </div>
   );
 }
