@@ -2,7 +2,7 @@ import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, sql, inArray } from "drizzle-orm";
 import { verifyToken } from "./jwt";
-import { projectInfo, operationalTasks, projectPlan, executionGateLog, mergeAuditLog } from "@shared/schema";
+import { projectInfo, operationalTasks, projectPlan, executionGateLog, mergeAuditLog, programExpense, programInflows } from "@shared/schema";
 
 function jwtAuth(req: Request, _res: Response, next: NextFunction) {
   if ((req as any).user) return next();
@@ -74,6 +74,20 @@ export function registerLifecycleRoutes(app: Express) {
         actualPctComplete: projectPlan.actualPctComplete,
       }).from(projectPlan);
 
+      const trackerProjectNames = new Set<string>();
+      const expenseNames = await db.selectDistinct({ projectName: programExpense.projectName }).from(programExpense);
+      for (const e of expenseNames) {
+        if (e.projectName) trackerProjectNames.add(normalizeName(e.projectName));
+      }
+      const inflowNames = await db.selectDistinct({ projectName: programInflows.projectName }).from(programInflows);
+      for (const i of inflowNames) {
+        if (i.projectName) trackerProjectNames.add(normalizeName(i.projectName));
+      }
+      const planNames = await db.selectDistinct({ projectName: projectPlan.projectName }).from(projectPlan);
+      for (const p of planNames) {
+        if (p.projectName) trackerProjectNames.add(normalizeName(p.projectName));
+      }
+
       const DONE_STATUSES = ["DONE", "QC APPROVED", "COMPLETED"];
 
       const engByNorm = new Map<string, { total: number; done: number; rawName: string }>();
@@ -113,8 +127,11 @@ export function registerLifecycleRoutes(app: Express) {
         const eng = engByNorm.get(norm) || { total: 0, done: 0, rawName: "" };
         const plan = planByNorm.get(norm) || { total: 0, sumPct: 0, count: 0 };
 
-        let source: "excel" | "engineering" | "both" = "excel";
-        if (eng.total > 0) source = "both";
+        const hasTracker = trackerProjectNames.has(norm);
+        let source: "excel" | "engineering" | "both" = hasTracker ? "excel" : "none" as any;
+        if (eng.total > 0 && hasTracker) source = "both";
+        else if (eng.total > 0) source = "engineering";
+        else if (hasTracker) source = "excel";
 
         const projectPctComplete = plan.count > 0 ? plan.sumPct / plan.count : null;
 
@@ -336,9 +353,12 @@ export function registerLifecycleRoutes(app: Express) {
       const [existing] = await db.select().from(projectInfo).where(eq(projectInfo.id, id));
       if (!existing) return res.status(404).json({ error: "Project not found" });
 
-      const { sizeKwp, pd, pm, contractValue, escalationLevel, phase, ragStatus } = req.body;
+      const { sizeKwp, pd, pm, contractValue, escalationLevel, phase, ragStatus, projectName: newName } = req.body;
       const updates: Record<string, any> = { updatedAt: new Date() };
 
+      if (newName !== undefined && newName.trim() && newName.trim() !== existing.projectName) {
+        updates.projectName = newName.trim();
+      }
       if (sizeKwp !== undefined) updates.sizeKwp = sizeKwp || null;
       if (pd !== undefined) updates.pd = pd || null;
       if (pm !== undefined) updates.pm = pm || null;
