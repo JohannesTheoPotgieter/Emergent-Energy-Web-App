@@ -692,7 +692,8 @@ function SectionDetectionStep({
 
 const FIELD_LABELS: Record<string, string> = {
   task_name: "Task Name", task_no: "Task #", start_date: "Start Date", end_date: "End Date",
-  duration: "Duration", pct_complete: "% Complete", expected_pct: "Expected %", owner: "Owner", phase: "Phase",
+  duration: "Duration", actual_start: "Actual Start", actual_end: "Actual End", actual_duration: "Actual Duration",
+  pct_complete: "% Complete", expected_pct: "Expected %", owner: "Owner", phase: "Phase", comment: "Comment",
   milestone_name: "Milestone", milestone_no: "Milestone #", percent: "Percent", amount_ex_vat: "Amount (ex VAT)",
   vat: "VAT", invoice_number: "Invoice #", invoice_date: "Invoice Date", planned_payment_date: "Planned Payment",
   payment_received_date: "Payment Received", in_bank_date: "In Bank Date", requirements: "Requirements", documents: "Documents",

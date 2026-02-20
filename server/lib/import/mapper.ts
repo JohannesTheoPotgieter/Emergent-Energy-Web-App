@@ -133,8 +133,26 @@ export function mapColumns(
 
   headerMatches.sort((a, b) => b.confidence - a.confidence);
 
+  const contextualFallbacks: Record<string, string> = {
+    "duration": "actual_duration",
+    "start_date": "actual_start",
+    "end_date": "actual_end",
+  };
+
   for (const match of headerMatches) {
     if (claimedFields.has(match.canonicalField)) {
+      const fallbackField = contextualFallbacks[match.canonicalField];
+      if (fallbackField && !claimedFields.has(fallbackField) && synonymMap[fallbackField]) {
+        claimedFields.add(fallbackField);
+        mappings.push({
+          colIndex: match.colIndex,
+          rawHeader: match.rawHeader,
+          canonicalField: fallbackField,
+          confidence: match.confidence * 0.9,
+          matchType: match.matchType,
+        });
+        continue;
+      }
       unmappedHeaders.push({ colIndex: match.colIndex, rawHeader: match.rawHeader });
       continue;
     }
