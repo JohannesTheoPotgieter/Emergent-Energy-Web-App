@@ -21,6 +21,7 @@ Preferred communication style: Simple, everyday language.
     -   **Quality Management**: Quality Tab (4-phase checklist with Planning & Design, Construction, Commissioning, Handover phases; 13 groups, 46 items, 22 risk questions; non-blocking red warnings engine), QM Dashboard (stats overview, project table, warnings), Post-Mortem Panel (contractor/engineering quality scoring with 7 metrics), QM Access Code Challenge (4-digit code gate for quality_manager role editing).
     -   **Phase Templates & Portfolio**: Phase Template Admin (template CRUD with items, versioning, clone, activate, preview), Project Create (exec-only in-app project creation with auto-template application), Exec Portfolio Board (project-centric lifecycle view with phase badges, readiness %, warnings, approvals, phase change with template preview).
     -   **Smart Excel Import**: Smart Import Wizard (5-step review flow: Upload → Section Detection → Column Mapping → Issues & Anomalies → Preview & Commit), Normalized Project Views (Plan | Revenue | Expenditure tabs from normalized tables), Template Profile Learning (mapping rules persist and improve over imports), Counterparty Master Data (canonical names + aliases, auto-matching), Turnaround Time Metrics, Anomaly Detection (duplicate invoices, date order violations, missing amounts).
+    -   **SharePoint Proposals Pipeline**: Engineering Pipeline Inbox (intake requests from SharePoint with grouped-by-status view, KPI cards, filters, detail drawer with notes/tasks), SP Sync Dashboard (COO-only auto-discovery, pull/push controls, conflict resolution modal, column mapping config, audit log), CP Signed gate workflow (COO marks CP signed with evidence, triggers task pack generation from templates), 6 request-type DoD task templates (First Assessment, Cost Proposal, Site Visit, Meter Install, Data Analysis, Sizing Rational).
     -   **Utilities & Admin**: SafeMoney Utilities (NaN-safe currency handling), My Tool (COO Execution Cockpit — Linear/Notion/Sunsama-style premium minimal interface with shared components: MyToolLayout, TaskCard, TaskDetailDrawer; DoD enforcement; natural language quick add; keyboard shortcuts ⌘K/⌘⏎; drag-drop email-to-task; time blocks; daily wrap; Read.ai Meeting Actions integration with webhook ingestion and action item conversion to tasks/priorities/projects), and Excel Writeback Manager (admin UI for configuring and executing Excel writebacks).
 
 ### Backend
@@ -68,6 +69,11 @@ Preferred communication style: Simple, everyday language.
 -   `normalized_plan_tasks`, `normalized_revenue_lines`, `normalized_cost_lines`: Normalized project data from smart imports.
 -   `counterparties`: Supplier/installer canonical registry with aliases for master data matching.
 -   `normalized_execution_phases`: Project execution phase data extracted from Excel.
+-   `sp_list_config`: SharePoint list sync configuration (siteId, listId, column mapping, sync schedule).
+-   `intake_requests`: Engineering intake requests synced from SharePoint with field ownership model (SP_OWNED/APP_OWNED/SHARED).
+-   `intake_tasks`: Generated task packs per intake request with DoD items.
+-   `intake_task_templates`: Reusable task templates per request type (First Assessment, Cost Proposal, etc.).
+-   `sync_audit_log`: SharePoint sync operation audit trail.
 
 ### New API Endpoints (Examples)
 -   `/api/cos-control/*`: Endpoints for COS KPI aggregation, breakdowns, line-item explorers, and scenario-based analysis.
@@ -90,6 +96,7 @@ Preferred communication style: Simple, everyday language.
 -   `/api/counterparties/*`: Counterparty master data CRUD and fuzzy name matching.
 -   `/api/webhooks/read-ai`: POST webhook endpoint for Read.ai meeting data ingestion.
 -   `/api/meetings/*`: Meeting management — list, detail, delete, manual entry, webhook info, action item dismiss, convert-to-task/priority/project.
+-   `/api/sp-sync/*`: SharePoint Proposals Pipeline — sync config, auto-discovery, pull/push sync, conflict resolution, intake requests CRUD, task generation, CP signed gate, audit log.
 
 ## External Dependencies
 

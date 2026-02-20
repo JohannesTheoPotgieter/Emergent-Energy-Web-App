@@ -47,6 +47,8 @@ import LifecycleBoardPage from "@/pages/lifecycle-board";
 import ExecutionBoardPage from "@/pages/execution-board";
 import SmartImportPage from "@/pages/smart-import";
 import ProjectNormalizedViewPage from "@/pages/project-normalized-view";
+import EngineeringSyncPage from "@/pages/engineering-sync";
+import EngineeringInboxPage from "@/pages/engineering-inbox";
 
 import { useAuth } from "@/hooks/use-auth";
 import { useProgramData } from "@/hooks/use-program-data";
@@ -55,7 +57,7 @@ import { format } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 
-const EPM_ALLOWED_PATHS = ["/", "/engineering", "/engineering/tasks", "/engineering/deliverables", "/quality", "/projects"];
+const EPM_ALLOWED_PATHS = ["/", "/engineering", "/engineering/tasks", "/engineering/deliverables", "/engineering/inbox", "/quality", "/projects"];
 
 function RoleGuard({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -241,6 +243,8 @@ function ProtectedPages() {
         <Route path="/admin/settings" component={RoleSettingsPage} />
         <Route path="/smart-import" component={SmartImportPage} />
         <Route path="/project-normalized/:projectName" component={ProjectNormalizedViewPage} />
+        <Route path="/engineering/sync" component={EngineeringSyncPage} />
+        <Route path="/engineering/inbox" component={EngineeringInboxPage} />
 
         <Route component={NotFound} />
       </Switch>

@@ -295,6 +295,9 @@ async function seedUsers() {
   const { registerLifecycleRoutes } = await import("./lifecycle-routes");
   registerLifecycleRoutes(app);
 
+  const { registerSyncRoutes } = await import("./sync-routes");
+  registerSyncRoutes(app);
+
   const { registerSmartImportRoutes } = await import("./smart-import-routes");
   registerSmartImportRoutes(app);
 
@@ -303,6 +306,9 @@ async function seedUsers() {
 
   const { seedEngineeringData } = await import("./seed-engineering");
   await seedEngineeringData().catch(err => console.error('[Seed] Engineering data error:', err));
+
+  const { seedIntakeTaskTemplates } = await import("./seed-intake-templates");
+  await seedIntakeTaskTemplates().catch(err => console.error('[Seed] Intake templates error:', err));
 
   const { registerRoleManagementRoutes, seedRolePermissions } = await import("./role-management");
   registerRoleManagementRoutes(app);
