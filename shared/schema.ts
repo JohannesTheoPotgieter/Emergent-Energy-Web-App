@@ -2209,14 +2209,39 @@ export const importIssues = pgTable("import_issues", {
   section: importSectionEnum("section").notNull(),
   message: text("message").notNull(),
   suggestedAction: text("suggested_action"),
+  issueType: text("issue_type"),
+  issueFingerprint: text("issue_fingerprint"),
   resolved: boolean("resolved").notNull().default(false),
+  resolution: text("resolution"),
+  resolutionNote: text("resolution_note"),
   resolvedBy: integer("resolved_by").references(() => users.id),
   resolvedAt: timestamp("resolved_at"),
+  autoResolved: boolean("auto_resolved").notNull().default(false),
+  matchedRuleId: integer("matched_rule_id"),
   payloadJson: jsonb("payload_json"),
 });
 export const insertImportIssueSchema = createInsertSchema(importIssues).omit({ id: true });
 export type InsertImportIssue = z.infer<typeof insertImportIssueSchema>;
 export type ImportIssue = typeof importIssues.$inferSelect;
+
+export const issueResolutionRules = pgTable("issue_resolution_rules", {
+  id: serial("id").primaryKey(),
+  projectName: text("project_name"),
+  issueType: text("issue_type").notNull(),
+  fingerprint: text("fingerprint").notNull(),
+  section: importSectionEnum("section").notNull(),
+  resolution: text("resolution").notNull(),
+  resolutionNote: text("resolution_note"),
+  applyAlways: boolean("apply_always").notNull().default(false),
+  timesApplied: integer("times_applied").notNull().default(0),
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  lastAppliedAt: timestamp("last_applied_at"),
+  active: boolean("active").notNull().default(true),
+});
+export const insertIssueResolutionRuleSchema = createInsertSchema(issueResolutionRules).omit({ id: true, createdAt: true });
+export type InsertIssueResolutionRule = z.infer<typeof insertIssueResolutionRuleSchema>;
+export type IssueResolutionRule = typeof issueResolutionRules.$inferSelect;
 
 export const templateProfiles = pgTable("template_profiles", {
   id: serial("id").primaryKey(),
