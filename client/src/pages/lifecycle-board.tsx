@@ -26,7 +26,7 @@ interface ProjectInfo {
   isActive: boolean;
   escalationLevel: string | null;
   ragStatus: string | null;
-  source: "excel" | "engineering" | "both";
+  source: "excel" | "engineering" | "both" | "none";
   engTotal: number;
   engDone: number;
   planTotal: number;
@@ -195,6 +195,13 @@ function sourceBadge(source: string) {
       </Badge>
     );
   }
+  if (source === "excel") {
+    return (
+      <Badge className="bg-green-50 text-green-700 text-[9px] px-1 py-0 border-green-200" data-testid="badge-source-excel">
+        <FileSpreadsheet className="w-2.5 h-2.5 mr-0.5" />Tracker
+      </Badge>
+    );
+  }
   if (source === "engineering") {
     return (
       <Badge className="bg-purple-50 text-purple-700 text-[9px] px-1 py-0 border-purple-200" data-testid="badge-source-eng">
@@ -230,6 +237,7 @@ export default function LifecycleBoardPage() {
   const [projectDialogOpen, setProjectDialogOpen] = useState(false);
   const [dialogTab, setDialogTab] = useState<"edit" | "link" | "merge" | "gate">("edit");
   const [editForm, setEditForm] = useState<{
+    projectName: string;
     sizeKwp: string;
     pd: string;
     pm: string;
@@ -237,7 +245,7 @@ export default function LifecycleBoardPage() {
     phase: string;
     escalationLevel: string;
     ragStatus: string;
-  }>({ sizeKwp: "", pd: "", pm: "", contractValue: "", phase: "", escalationLevel: "", ragStatus: "" });
+  }>({ projectName: "", sizeKwp: "", pd: "", pm: "", contractValue: "", phase: "", escalationLevel: "", ragStatus: "" });
   const [editSaving, setEditSaving] = useState(false);
   const [gateData, setGateData] = useState<{
     signedStatus: string;
@@ -295,6 +303,7 @@ export default function LifecycleBoardPage() {
   const openProjectDialog = (p: ProjectInfo) => {
     setSelectedProject(p);
     setEditForm({
+      projectName: p.projectName || "",
       sizeKwp: p.sizeKwp || "",
       pd: p.pd || "",
       pm: p.pm || "",
@@ -373,6 +382,7 @@ export default function LifecycleBoardPage() {
     setEditSaving(true);
     try {
       const body: Record<string, any> = {};
+      if (editForm.projectName.trim() !== (selectedProject.projectName || "")) body.projectName = editForm.projectName.trim();
       if (editForm.sizeKwp !== (selectedProject.sizeKwp || "")) body.sizeKwp = editForm.sizeKwp;
       if (editForm.pd !== (selectedProject.pd || "")) body.pd = editForm.pd;
       if (editForm.pm !== (selectedProject.pm || "")) body.pm = editForm.pm;
@@ -812,6 +822,16 @@ export default function LifecycleBoardPage() {
                       This is a pre-tracker project. Editing is available once it is promoted to a tracked project.
                     </div>
                   )}
+                  <div>
+                    <Label className="text-xs">Project Name</Label>
+                    <Input
+                      value={editForm.projectName}
+                      onChange={(e) => setEditForm(f => ({ ...f, projectName: e.target.value }))}
+                      placeholder="Project name"
+                      disabled={!selectedProject.id || selectedProject.id <= 0}
+                      data-testid="input-edit-project-name"
+                    />
+                  </div>
                   <div>
                     <Label className="text-xs">Phase</Label>
                     <Select
