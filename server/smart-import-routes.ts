@@ -21,6 +21,7 @@ import {
   templateProfiles,
   issueResolutionRules,
 } from "@shared/schema";
+import { projectInfo } from "@shared/schema";
 import { eq, desc, and, sql } from "drizzle-orm";
 
 function extractProjectNameFromFilename(fileName: string): string {
@@ -767,6 +768,34 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
         }));
         await tx.insert(normalizedExecutionPhases).values(phaseValues);
         counts.executionPhases = phaseValues.length;
+      }
+
+      const detectedInfo = summary.detection?.projectInfo;
+      if (detectedInfo && projectId) {
+        const VALID_PHASES = [
+          "dlp", "financial close", "planning", "construction", "qa",
+          "handover", "commercial close out", "commercial close out",
+          "compliance handover", "hold"
+        ];
+        const updates: Record<string, any> = {};
+        if (detectedInfo.sizeKwp) updates.sizeKwp = String(detectedInfo.sizeKwp);
+        if (detectedInfo.pd) updates.pd = String(detectedInfo.pd);
+        if (detectedInfo.pm) updates.pm = String(detectedInfo.pm);
+        if (detectedInfo.contractValue) updates.contractValue = String(detectedInfo.contractValue);
+        const rawPhase = detectedInfo.phase ? String(detectedInfo.phase).trim() : null;
+        if (rawPhase && VALID_PHASES.includes(rawPhase.toLowerCase())) {
+          updates.phase = rawPhase;
+          updates.executionPhase = rawPhase;
+        }
+        if (detectedInfo.pdHandoverDate) updates.pdHandoverDate = detectedInfo.pdHandoverDate;
+        if (detectedInfo.constructionStartDate) updates.constructionStartDate = detectedInfo.constructionStartDate;
+        if (detectedInfo.commissioningDate) updates.commissioningDate = detectedInfo.commissioningDate;
+        if (detectedInfo.omHandoverDate) updates.omHandoverDate = detectedInfo.omHandoverDate;
+        if (detectedInfo.clientHandoverDate) updates.clientHandoverDate = detectedInfo.clientHandoverDate;
+        if (Object.keys(updates).length > 0) {
+          updates.updatedAt = new Date();
+          await tx.update(projectInfo).set(updates).where(eq(projectInfo.id, projectId));
+        }
       }
 
       await tx
