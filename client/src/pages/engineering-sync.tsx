@@ -1,8 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -27,14 +29,19 @@ import {
   AlertTriangle,
   History,
   Plug,
-  ArrowRight,
   Zap,
   GitCompareArrows,
   Check,
-  X,
   ChevronDown,
   ChevronUp,
-  Circle,
+  Search,
+  Globe,
+  List,
+  Settings,
+  ExternalLink,
+  Info,
+  WifiOff,
+  ArrowRight,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -112,6 +119,12 @@ interface AuditLogEntry {
   createdAt: string;
 }
 
+interface SPList {
+  id: string;
+  displayName: string;
+  itemCount?: number;
+}
+
 export default function EngineeringSyncPage() {
   const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
   const isCoo = companyRole === "COO_ADMIN";
@@ -129,6 +142,308 @@ export default function EngineeringSyncPage() {
   return <SyncDashboard />;
 }
 
+function SetupFlow({ onComplete }: { onComplete: () => void }) {
+  const { toast } = useToast();
+  const [mode, setMode] = useState<"auto" | "manual" | null>(null);
+  const [autoStep, setAutoStep] = useState<"idle" | "running" | "pick-list" | "done" | "error">("idle");
+  const [autoStatus, setAutoStatus] = useState("");
+  const [autoError, setAutoError] = useState("");
+  const [discoveredSite, setDiscoveredSite] = useState<{ id: string; displayName: string; webUrl: string } | null>(null);
+  const [discoveredLists, setDiscoveredLists] = useState<SPList[]>([]);
+
+  const [manualSiteId, setManualSiteId] = useState("");
+  const [manualListId, setManualListId] = useState("");
+  const [manualSiteName, setManualSiteName] = useState("Engineering Support");
+  const [manualListName, setManualListName] = useState("Proposals Pipeline");
+  const [manualSaving, setManualSaving] = useState(false);
+
+  const runAutoSetup = async () => {
+    setAutoStep("running");
+    setAutoError("");
+    try {
+      setAutoStatus("Discovering site...");
+      const siteData = await spFetch("/api/sp-sync/discover/site-by-url?hostAndPath=emergy.sharepoint.com:/sites/EngineeringSupport");
+      const site = siteData.site || siteData;
+      if (!site?.id) throw new Error("Site not found");
+      setDiscoveredSite(site);
+
+      setAutoStatus("Finding lists...");
+      const listsData = await spFetch(`/api/sp-sync/discover/lists/${site.id}`);
+      const lists: SPList[] = listsData.lists || [];
+
+      if (lists.length === 0) {
+        setAutoStep("error");
+        setAutoError("No lists found on this site. The Outlook connector may not have SharePoint permissions. You can enter the IDs manually instead.");
+        return;
+      }
+
+      if (lists.length === 1) {
+        await connectToList(site, lists[0]);
+        return;
+      }
+
+      const autoMatch = lists.find((l) =>
+        l.displayName?.toLowerCase().includes("proposal") ||
+        l.displayName?.toLowerCase().includes("pipeline") ||
+        l.displayName?.toLowerCase().includes("engineering")
+      );
+
+      if (autoMatch) {
+        await connectToList(site, autoMatch);
+        return;
+      }
+
+      setDiscoveredLists(lists);
+      setAutoStep("pick-list");
+      setAutoStatus("");
+    } catch (err: any) {
+      setAutoStep("error");
+      setAutoError(err.message || "Discovery failed");
+    }
+  };
+
+  const connectToList = async (site: { id: string; displayName: string; webUrl: string }, list: SPList) => {
+    setAutoStatus(`Connecting to "${list.displayName}"...`);
+    await spFetch("/api/sp-sync/config", {
+      method: "POST",
+      body: JSON.stringify({
+        siteId: site.id,
+        listId: list.id,
+        siteName: site.displayName,
+        listName: list.displayName,
+        siteUrl: site.webUrl,
+      }),
+    });
+
+    setAutoStatus("Auto-mapping columns...");
+    try {
+      await spFetch("/api/sp-sync/config/auto-detect", { method: "POST" });
+    } catch {
+    }
+
+    setAutoStep("done");
+    toast({ title: "Connected", description: `Linked to ${list.displayName}` });
+    onComplete();
+  };
+
+  const handleManualSave = async () => {
+    if (!manualSiteId.trim() || !manualListId.trim()) {
+      toast({ title: "Missing IDs", description: "Please enter both site and list IDs", variant: "destructive" });
+      return;
+    }
+    setManualSaving(true);
+    try {
+      await spFetch("/api/sp-sync/config", {
+        method: "POST",
+        body: JSON.stringify({
+          siteId: manualSiteId.trim(),
+          listId: manualListId.trim(),
+          siteName: manualSiteName.trim() || "SharePoint Site",
+          listName: manualListName.trim() || "List",
+          siteUrl: "",
+        }),
+      });
+
+      try {
+        await spFetch("/api/sp-sync/config/auto-detect", { method: "POST" });
+      } catch {
+      }
+
+      toast({ title: "Connected", description: "SharePoint configured with manual IDs" });
+      onComplete();
+    } catch (err: any) {
+      toast({ title: "Failed", description: err.message, variant: "destructive" });
+    } finally {
+      setManualSaving(false);
+    }
+  };
+
+  return (
+    <Card className="border-dashed border-2 max-w-2xl mx-auto">
+      <CardContent className="py-8 px-6">
+        {!mode && (
+          <div className="text-center space-y-6">
+            <div className="w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center mx-auto">
+              <Plug className="h-7 w-7 text-blue-500" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-lg">Connect SharePoint</h3>
+              <p className="text-sm text-muted-foreground mt-1.5 max-w-md mx-auto">
+                Link the Engineering Proposals Pipeline to sync intake requests automatically.
+              </p>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <Button
+                size="lg"
+                onClick={() => { setMode("auto"); runAutoSetup(); }}
+                className="gap-2 min-w-52"
+                data-testid="btn-auto-setup"
+              >
+                <Zap className="h-4 w-4" />
+                Auto-Discover & Connect
+              </Button>
+              <Button
+                size="lg"
+                variant="outline"
+                onClick={() => setMode("manual")}
+                className="gap-2 min-w-52"
+                data-testid="btn-manual-setup"
+              >
+                <Settings className="h-4 w-4" />
+                Enter IDs Manually
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {mode === "auto" && autoStep === "running" && (
+          <div className="flex flex-col items-center gap-4 py-4">
+            <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+            <p className="text-sm font-medium">{autoStatus}</p>
+          </div>
+        )}
+
+        {mode === "auto" && autoStep === "pick-list" && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 text-sm">
+              <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+              <span>Site found: <strong>{discoveredSite?.displayName}</strong></span>
+            </div>
+            <div>
+              <p className="text-sm font-medium mb-2">Which list is the proposals pipeline?</p>
+              <div className="grid gap-2">
+                {discoveredLists.map(list => (
+                  <button
+                    key={list.id}
+                    onClick={() => discoveredSite && connectToList(discoveredSite, list)}
+                    className="flex items-center justify-between p-3 rounded-lg border hover:border-blue-300 hover:bg-blue-50/50 transition-all text-left group"
+                    data-testid={`btn-pick-list-${list.id}`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <List className="h-4 w-4 text-muted-foreground group-hover:text-blue-500" />
+                      <span className="text-sm font-medium">{list.displayName}</span>
+                    </div>
+                    <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </button>
+                ))}
+              </div>
+            </div>
+            <Button variant="ghost" size="sm" onClick={() => { setMode(null); setAutoStep("idle"); }} className="text-xs">
+              Back
+            </Button>
+          </div>
+        )}
+
+        {mode === "auto" && autoStep === "error" && (
+          <div className="space-y-4">
+            <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+              <div className="flex gap-2">
+                <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-amber-800">Auto-discovery hit a snag</p>
+                  <p className="text-sm text-amber-700 mt-1">{autoError}</p>
+                </div>
+              </div>
+            </div>
+            {discoveredSite && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                Site found: {discoveredSite.displayName} ({discoveredSite.id})
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={() => { setMode("manual"); setAutoStep("idle"); }} className="gap-1.5">
+                <Settings className="h-3.5 w-3.5" />
+                Enter IDs Manually
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => { setMode(null); setAutoStep("idle"); }}>
+                Back
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {mode === "manual" && (
+          <div className="space-y-5">
+            <div className="flex items-center gap-2 mb-1">
+              <Settings className="h-5 w-5 text-muted-foreground" />
+              <h3 className="font-semibold">Manual Configuration</h3>
+            </div>
+
+            <div className="p-3 bg-muted/50 rounded-lg flex gap-2 items-start">
+              <Info className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Find these IDs in SharePoint: go to Site Settings → Site Information for the Site ID,
+                and List Settings → URL bar for the List ID. Or ask your SharePoint admin.
+              </p>
+            </div>
+
+            <div className="grid gap-4">
+              <div className="grid sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Site ID</Label>
+                  <Input
+                    placeholder="e.g. emergy.sharepoint.com,abc123..."
+                    value={manualSiteId}
+                    onChange={e => setManualSiteId(e.target.value)}
+                    className="text-sm h-9"
+                    data-testid="input-site-id"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">List ID</Label>
+                  <Input
+                    placeholder="e.g. 12345678-abcd-efgh..."
+                    value={manualListId}
+                    onChange={e => setManualListId(e.target.value)}
+                    className="text-sm h-9"
+                    data-testid="input-list-id"
+                  />
+                </div>
+              </div>
+              <div className="grid sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Site Name (optional)</Label>
+                  <Input
+                    placeholder="Engineering Support"
+                    value={manualSiteName}
+                    onChange={e => setManualSiteName(e.target.value)}
+                    className="text-sm h-9"
+                    data-testid="input-site-name"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">List Name (optional)</Label>
+                  <Input
+                    placeholder="Proposals Pipeline"
+                    value={manualListName}
+                    onChange={e => setManualListName(e.target.value)}
+                    className="text-sm h-9"
+                    data-testid="input-list-name"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <Button
+                onClick={handleManualSave}
+                disabled={manualSaving || !manualSiteId.trim() || !manualListId.trim()}
+                className="gap-1.5"
+                data-testid="btn-manual-save"
+              >
+                {manualSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                Connect
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setMode(null)}>Back</Button>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function SyncDashboard() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -137,18 +452,12 @@ function SyncDashboard() {
   const [showAuditLog, setShowAuditLog] = useState(false);
   const [conflictDialog, setConflictDialog] = useState<IntakeRequest | null>(null);
   const [resolutions, setResolutions] = useState<Record<string, string>>({});
-  const [setupRunning, setSetupRunning] = useState(false);
-  const [setupStep, setSetupStep] = useState("");
+  const [showSettings, setShowSettings] = useState(false);
 
   const { data: status, isLoading } = useQuery<SyncStatus>({
     queryKey: ["sp-sync-status"],
     queryFn: () => spFetch("/api/sp-sync/status"),
     refetchInterval: 15000,
-  });
-
-  const { data: configData } = useQuery<{ config: any; isConfigured: boolean }>({
-    queryKey: ["sp-sync-config"],
-    queryFn: () => spFetch("/api/sp-sync/config"),
   });
 
   const { data: requestsData } = useQuery<{ requests: IntakeRequest[] }>({
@@ -171,50 +480,6 @@ function SyncDashboard() {
     queryClient.invalidateQueries({ queryKey: ["sp-sync-intake-requests"] });
     queryClient.invalidateQueries({ queryKey: ["sp-sync-audit-log"] });
     queryClient.invalidateQueries({ queryKey: ["sp-sync-config"] });
-  };
-
-  const runOneClickSetup = async () => {
-    setSetupRunning(true);
-    try {
-      setSetupStep("Finding SharePoint site...");
-      const siteData = await spFetch("/api/sp-sync/discover/site-by-url?hostAndPath=emergy.sharepoint.com:/sites/EngineeringSupport");
-      const site = siteData.site || siteData;
-      if (!site?.id) throw new Error("Could not find SharePoint site");
-
-      setSetupStep("Loading lists...");
-      const listsData = await spFetch(`/api/sp-sync/discover/lists/${site.id}`);
-      const lists = listsData.lists || [];
-      const targetList = lists.find((l: any) =>
-        l.displayName?.toLowerCase().includes("proposal") ||
-        l.displayName?.toLowerCase().includes("pipeline") ||
-        l.displayName?.toLowerCase().includes("engineering")
-      ) || lists[0];
-
-      if (!targetList) throw new Error("No lists found on site");
-
-      setSetupStep(`Connecting to "${targetList.displayName}"...`);
-      await spFetch("/api/sp-sync/config", {
-        method: "POST",
-        body: JSON.stringify({
-          siteId: site.id,
-          listId: targetList.id,
-          siteName: site.displayName,
-          listName: targetList.displayName,
-          siteUrl: site.webUrl,
-        }),
-      });
-
-      setSetupStep("Auto-detecting columns...");
-      await spFetch("/api/sp-sync/config/auto-detect", { method: "POST" });
-
-      invalidateAll();
-      toast({ title: "Setup complete", description: `Connected to ${targetList.displayName}` });
-    } catch (err: any) {
-      toast({ title: "Setup failed", description: err.message, variant: "destructive" });
-    } finally {
-      setSetupRunning(false);
-      setSetupStep("");
-    }
   };
 
   const pullMutation = useMutation({
@@ -294,59 +559,51 @@ function SyncDashboard() {
             <h2 className="text-xl font-bold" data-testid="text-sync-title">SharePoint Sync</h2>
             <p className="text-xs text-muted-foreground">
               {isConfigured
-                ? `${syncStatus.siteName} → ${syncStatus.listName}`
+                ? `${syncStatus.siteName || "Site"} → ${syncStatus.listName || "List"}`
                 : "Not connected"}
             </p>
           </div>
         </div>
         {isConfigured && (
-          <div className="flex items-center gap-1.5">
-            <div className={`w-2 h-2 rounded-full ${syncStatus.connectorAvailable ? "bg-emerald-500" : "bg-red-400"}`} />
-            <span className="text-[11px] text-muted-foreground">
-              {syncStatus.connectorAvailable ? "Connected" : "Offline"}
-            </span>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <div className={`w-2 h-2 rounded-full ${syncStatus.connectorAvailable ? "bg-emerald-500" : "bg-red-400"}`} />
+              <span className="text-[11px] text-muted-foreground">
+                {syncStatus.connectorAvailable ? "Connected" : "Offline"}
+              </span>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => setShowSettings(!showSettings)}
+              data-testid="btn-toggle-settings"
+            >
+              <Settings className="h-3.5 w-3.5" />
+            </Button>
           </div>
         )}
       </div>
 
-      {!isConfigured && (
-        <Card className="border-dashed border-2">
-          <CardContent className="flex flex-col items-center justify-center py-10 gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center">
-              <Plug className="h-7 w-7 text-blue-500" />
+      {!isConfigured && !showSettings && (
+        <SetupFlow onComplete={invalidateAll} />
+      )}
+
+      {isConfigured && showSettings && (
+        <Card className="border-dashed">
+          <CardContent className="py-4 px-5">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-sm font-semibold">Reconfigure Connection</h4>
+              <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => setShowSettings(false)}>Close</Button>
             </div>
-            <div className="text-center">
-              <h3 className="font-semibold text-base">Connect SharePoint</h3>
-              <p className="text-sm text-muted-foreground mt-1 max-w-sm">
-                One click to discover your Engineering Support site, select the proposals list, and auto-map columns.
-              </p>
-            </div>
-            <Button
-              size="lg"
-              onClick={runOneClickSetup}
-              disabled={setupRunning}
-              className="gap-2 min-w-48"
-              data-testid="btn-one-click-setup"
-            >
-              {setupRunning ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  {setupStep}
-                </>
-              ) : (
-                <>
-                  <Zap className="h-4 w-4" />
-                  Connect & Auto-Configure
-                </>
-              )}
-            </Button>
+            <SetupFlow onComplete={() => { invalidateAll(); setShowSettings(false); }} />
           </CardContent>
         </Card>
       )}
 
-      {isConfigured && (
+      {isConfigured && !showSettings && (
         <>
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <Card>
               <CardContent className="p-3 text-center">
                 <p className="text-2xl font-bold" data-testid="text-total-requests">{syncStatus.totalRequests}</p>
@@ -397,51 +654,28 @@ function SyncDashboard() {
                   {pushMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CloudUpload className="h-4 w-4" />}
                   Push to SharePoint
                 </Button>
-                <div className="ml-auto flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-xs gap-1.5 text-muted-foreground"
-                    onClick={runOneClickSetup}
-                    disabled={setupRunning}
-                    data-testid="btn-reconfigure"
-                  >
-                    {setupRunning ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plug className="h-3 w-3" />}
-                    Reconfigure
-                  </Button>
-                </div>
               </div>
 
               {pullResult && (
                 <div className="mt-3 p-3 bg-muted/40 rounded-lg">
-                  <div className="flex items-center gap-6 text-sm flex-wrap">
+                  <div className="flex items-center gap-4 text-sm flex-wrap">
                     <span className="text-muted-foreground">
                       <span className="font-semibold text-foreground">{pullResult.totalItems}</span> processed
                     </span>
                     {pullResult.newProjects > 0 && (
-                      <span className="text-emerald-600">
-                        +{pullResult.newProjects} projects
-                      </span>
+                      <span className="text-emerald-600">+{pullResult.newProjects} projects</span>
                     )}
                     {pullResult.newRequests > 0 && (
-                      <span className="text-blue-600">
-                        +{pullResult.newRequests} new
-                      </span>
+                      <span className="text-blue-600">+{pullResult.newRequests} new</span>
                     )}
                     {pullResult.updatedRequests > 0 && (
-                      <span className="text-muted-foreground">
-                        {pullResult.updatedRequests} updated
-                      </span>
+                      <span className="text-muted-foreground">{pullResult.updatedRequests} updated</span>
                     )}
                     {pullResult.conflicts > 0 && (
-                      <span className="text-amber-600 font-medium">
-                        {pullResult.conflicts} conflicts
-                      </span>
+                      <span className="text-amber-600 font-medium">{pullResult.conflicts} conflicts</span>
                     )}
                     {pullResult.errors > 0 && (
-                      <span className="text-red-600 font-medium">
-                        {pullResult.errors} errors
-                      </span>
+                      <span className="text-red-600 font-medium">{pullResult.errors} errors</span>
                     )}
                   </div>
                 </div>
@@ -449,14 +683,10 @@ function SyncDashboard() {
 
               {pushResult && (
                 <div className="mt-3 p-3 bg-muted/40 rounded-lg">
-                  <div className="flex items-center gap-6 text-sm">
-                    <span className="text-emerald-600 font-medium">
-                      {pushResult.pushed} pushed
-                    </span>
+                  <div className="flex items-center gap-4 text-sm">
+                    <span className="text-emerald-600 font-medium">{pushResult.pushed} pushed</span>
                     {pushResult.errors > 0 && (
-                      <span className="text-red-600 font-medium">
-                        {pushResult.errors} errors
-                      </span>
+                      <span className="text-red-600 font-medium">{pushResult.errors} errors</span>
                     )}
                   </div>
                 </div>
@@ -484,7 +714,7 @@ function SyncDashboard() {
                         <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
                         <div className="min-w-0">
                           <p className="text-sm font-medium truncate">{req.clientName || `Request #${req.id}`}</p>
-                          <div className="flex gap-1 mt-0.5">
+                          <div className="flex gap-1 mt-0.5 flex-wrap">
                             {Object.keys(req.conflictFieldsJson || {}).map(f => (
                               <Badge key={f} variant="outline" className="text-[9px] border-amber-200 text-amber-700">{f}</Badge>
                             ))}
