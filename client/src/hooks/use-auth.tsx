@@ -83,8 +83,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user, 
       isLoading, 
       isAuthenticated: !!user,
-      isAdmin: user?.role === 'admin',
-      isQm: user?.role === 'quality_manager',
+      isAdmin: ['admin', 'COO_ADMIN', 'CEO_ADMIN'].includes(user?.role || ''),
+      isQm: ['quality_manager', 'QUALITY_MANAGER'].includes(user?.role || ''),
       login, 
       logout 
     }}>
