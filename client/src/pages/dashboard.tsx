@@ -66,6 +66,14 @@ interface HighPriority {
     date: string;
     pm: string | null;
   }>;
+  overdueTasks: Array<{
+    id: number;
+    projectName: string;
+    taskName: string;
+    endDate: string;
+    percentComplete: number;
+    expectedProgress: number | null;
+  }>;
 }
 
 const severityConfig: Record<string, { bg: string; text: string; border: string }> = {
@@ -673,7 +681,7 @@ export default function Dashboard() {
             <div>
               <CardTitle className="text-lg font-bold text-gray-900 dark:text-gray-50">High Priority Actions</CardTitle>
               <p className="text-xs text-gray-400 mt-0.5">
-                Overdue expenses · Revenue outstanding · Projects behind plan · Upcoming milestones
+                Overdue expenses · Revenue outstanding · Projects behind plan · Upcoming milestones · Overdue tasks
               </p>
             </div>
           </div>
@@ -746,7 +754,7 @@ export default function Dashboard() {
                 expanded={!!expanded.behind}
                 onToggle={() => toggle("behind")}
                 renderItem={(item, i) => (
-                  <Link key={i} href={`/project/${encodeURIComponent(item.projectName)}`}>
+                  <Link key={i} href={`/project/${encodeURIComponent(item.projectName)}?tab=plan`}>
                     <div className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-orange-50/60 dark:hover:bg-orange-900/10 cursor-pointer group transition-colors" data-testid={`item-behind-${i}`}>
                       <SeverityBadge severity={item.severity} />
                       <span className="text-sm truncate flex-1 text-gray-700 dark:text-gray-300 group-hover:text-orange-700 dark:group-hover:text-orange-400 transition-colors font-medium">
@@ -768,7 +776,7 @@ export default function Dashboard() {
                 expanded={!!expanded.milestones}
                 onToggle={() => toggle("milestones")}
                 renderItem={(item, i) => (
-                  <Link key={i} href={`/project/${encodeURIComponent(item.projectName)}`}>
+                  <Link key={i} href={`/project/${encodeURIComponent(item.projectName)}?tab=plan`}>
                     <div className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-blue-50/60 dark:hover:bg-blue-900/10 cursor-pointer group transition-colors" data-testid={`item-milestone-${i}`}>
                       <Badge className="bg-blue-50 text-blue-700 border-blue-200 text-[10px] font-bold px-1.5" variant="outline">{item.milestoneType}</Badge>
                       <span className="text-sm truncate flex-1 text-gray-700 dark:text-gray-300 group-hover:text-blue-700 dark:group-hover:text-blue-400 transition-colors font-medium">
@@ -780,6 +788,34 @@ export default function Dashboard() {
                   </Link>
                 )}
               />
+
+              {highPriority.overdueTasks && highPriority.overdueTasks.length > 0 && (
+                <PrioritySection
+                  title="Overdue Plan Tasks"
+                  icon={AlertTriangle}
+                  iconColor="text-orange-600"
+                  accentBorder="border-l-orange-400"
+                  items={highPriority.overdueTasks}
+                  expanded={!!expanded.overdueTasks}
+                  onToggle={() => toggle("overdueTasks")}
+                  renderItem={(item, i) => (
+                    <Link key={i} href={`/project/${encodeURIComponent(item.projectName)}?tab=plan&highlightId=${item.id}&highlightType=task`}>
+                      <div className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-orange-50/60 dark:hover:bg-orange-900/10 cursor-pointer group transition-colors" data-testid={`item-overdue-task-${i}`}>
+                        <Badge className={`text-[9px] px-1 py-0 font-mono font-bold ${item.percentComplete === 0 ? 'bg-red-100 text-red-700 border-red-200' : 'bg-amber-100 text-amber-700 border-amber-200'}`} variant="outline">
+                          {item.percentComplete}%
+                        </Badge>
+                        <span className="text-sm truncate flex-1 text-gray-700 dark:text-gray-300 group-hover:text-orange-700 dark:group-hover:text-orange-400 transition-colors font-medium">
+                          {item.taskName}
+                        </span>
+                        <span className="text-[10px] text-gray-400 truncate max-w-[100px]">
+                          {item.projectName.replace(/_Tracker.*/, "")}
+                        </span>
+                        <span className="text-[11px] font-mono text-red-500 whitespace-nowrap">due {item.endDate}</span>
+                      </div>
+                    </Link>
+                  )}
+                />
+              )}
             </div>
           ) : null}
         </CardContent>

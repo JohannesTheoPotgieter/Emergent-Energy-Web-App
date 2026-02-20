@@ -90,9 +90,7 @@ export default function MyToolMeetingsPage() {
     refetchInterval: 30_000,
   });
 
-  const { data: webhookInfo } = useQuery<{ webhookUrl: string }>({
-    queryKey: ["/api/meetings/webhook-info"],
-  });
+  const webhookUrl = `${window.location.origin}/api/webhooks/read-ai`;
 
   const dismissMutation = useMutation({
     mutationFn: (id: number) => apiRequest("PATCH", `/api/meetings/action-items/${id}/dismiss`),
@@ -652,7 +650,7 @@ export default function MyToolMeetingsPage() {
                 <div className="flex gap-2">
                   <Input
                     readOnly
-                    value={webhookInfo?.webhookUrl || "Loading..."}
+                    value={webhookUrl}
                     className="font-mono text-xs bg-white"
                     data-testid="input-webhook-url"
                   />
@@ -660,7 +658,7 @@ export default function MyToolMeetingsPage() {
                     variant="outline"
                     size="sm"
                     onClick={() => {
-                      navigator.clipboard.writeText(webhookInfo?.webhookUrl || "");
+                      navigator.clipboard.writeText(webhookUrl);
                       toast({ title: "Copied to clipboard" });
                     }}
                     data-testid="button-copy-webhook"
