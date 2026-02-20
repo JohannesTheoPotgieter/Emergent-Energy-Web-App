@@ -144,7 +144,10 @@ router.post("/api/smart-import/upload", requireAuth, upload.single("file"), asyn
 
     if (preview.normalization.issues.length > 0) {
       const activeRules = await db.select().from(issueResolutionRules)
-        .where(eq(issueResolutionRules.active, true));
+        .where(and(
+          eq(issueResolutionRules.active, true),
+          eq(issueResolutionRules.projectName, projectName),
+        ));
 
       const ruleMap = new Map<string, typeof activeRules[0]>();
       for (const rule of activeRules) {
@@ -484,11 +487,17 @@ router.post("/api/smart-import/:runId/apply-prior-resolutions", requireAuth, asy
 
     const userId = (req as any).user?.id || null;
 
+    const [run] = await db.select().from(smartImportRuns).where(eq(smartImportRuns.id, runId));
+    if (!run) return res.status(404).json({ error: "Import run not found" });
+
     const issues = await db.select().from(importIssues)
       .where(and(eq(importIssues.importRunId, runId), eq(importIssues.resolved, false)));
 
     const activeRules = await db.select().from(issueResolutionRules)
-      .where(eq(issueResolutionRules.active, true));
+      .where(and(
+        eq(issueResolutionRules.active, true),
+        eq(issueResolutionRules.projectName, run.projectName),
+      ));
 
     const ruleMap = new Map<string, typeof activeRules[0]>();
     for (const rule of activeRules) {
