@@ -110,6 +110,16 @@ export async function backfillInflowComputedFields(): Promise<{ updated: number 
   return { updated };
 }
 
+async function backfillExecutionPhase(): Promise<{ updated: number }> {
+  const result = await db.execute(sql`
+    UPDATE project_info 
+    SET execution_phase = phase 
+    WHERE phase IS NOT NULL 
+    AND (execution_phase IS NULL OR execution_phase = '')
+  `);
+  return { updated: (result as any).rowCount || 0 };
+}
+
 export async function runBackfill(): Promise<void> {
   try {
     console.log('[Backfill] Starting computed field backfill...');
@@ -117,6 +127,10 @@ export async function runBackfill(): Promise<void> {
     console.log(`[Backfill] Updated ${expResult.updated} expense rows`);
     const infResult = await backfillInflowComputedFields();
     console.log(`[Backfill] Updated ${infResult.updated} inflow rows`);
+    const phaseResult = await backfillExecutionPhase();
+    if (phaseResult.updated > 0) {
+      console.log(`[Backfill] Synced ${phaseResult.updated} execution_phase rows from phase`);
+    }
     console.log('[Backfill] Complete');
   } catch (err) {
     console.error('[Backfill] Error:', err);

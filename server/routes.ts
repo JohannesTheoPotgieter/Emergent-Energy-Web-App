@@ -1533,7 +1533,7 @@ export async function registerRoutes(
             (editable?.fundingType === 'link' || editable?.fundingType === 'na') &&
             (editable?.epcContractType === 'link' || editable?.epcContractType === 'na')
           ),
-          phase: info?.phase || null,
+          phase: info?.executionPhase || info?.phase || null,
           pd_handover_date: pdHandoverDate,
           construction_start_date: constructionStartDate,
           duration,
