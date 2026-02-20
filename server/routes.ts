@@ -2895,11 +2895,41 @@ export async function registerRoutes(
       }
       upcomingMilestones.sort((a, b) => a.date.localeCompare(b.date));
 
+      const overdueTasks: Array<{
+        id: number;
+        projectName: string;
+        taskName: string;
+        endDate: string;
+        percentComplete: number;
+        expectedProgress: number | null;
+      }> = [];
+
+      for (const plan of allPlans) {
+        if (plan.actualEnd && /^\d{4}-\d{2}-\d{2}/.test(plan.actualEnd)) {
+          const endDate = plan.actualEnd.substring(0, 10);
+          if (endDate < today) {
+            const pctComplete = plan.actualPctComplete != null ? Number(plan.actualPctComplete) : 0;
+            if (pctComplete < 1.0) {
+              overdueTasks.push({
+                id: plan.id,
+                projectName: plan.projectName,
+                taskName: plan.highLevelProgramme || plan.taskNo || `Task #${plan.id}`,
+                endDate,
+                percentComplete: Math.round(pctComplete * 100),
+                expectedProgress: plan.expectedPctComplete != null ? Math.round(Number(plan.expectedPctComplete) * 100) : null,
+              });
+            }
+          }
+        }
+      }
+      overdueTasks.sort((a, b) => b.endDate > a.endDate ? -1 : 1);
+
       res.json({
         overdueExpenses: overdueExpenses.slice(0, 15),
         revenueOutstanding: revenueOutstanding.slice(0, 15),
         projectsBehindPlan: projectsBehindPlan.slice(0, 10),
         upcomingMilestones,
+        overdueTasks: overdueTasks.slice(0, 20),
       });
     } catch (error) {
       console.error("High priority API error:", error);
