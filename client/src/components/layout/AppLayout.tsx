@@ -254,17 +254,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 <p className="text-sm font-medium truncate">{user?.name}</p>
                 <span className={cn(
                   "text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full shrink-0",
-                  user?.role === "admin" 
+                  ['admin', 'COO_ADMIN', 'CEO_ADMIN'].includes(user?.role || '')
                     ? "bg-amber-500/20 text-amber-300" 
-                    : user?.role === "quality_manager"
+                    : ['quality_manager', 'QUALITY_MANAGER'].includes(user?.role || '')
                     ? "bg-emerald-500/20 text-emerald-300"
-                    : user?.role === "eng_program_manager"
+                    : ['eng_program_manager', 'ENGINEERING_MANAGER'].includes(user?.role || '')
                     ? "bg-orange-500/20 text-orange-300"
                     : "bg-blue-500/20 text-blue-300"
                 )}>
                   {companyRole
                     ? (companyRole === "COO_ADMIN" ? "COO" : companyRole === "CEO_ADMIN" ? "CEO" : companyRole.replace(/_/g, " ").split(" ").map(w => w[0]).join(""))
-                    : user?.role === "admin" ? "Admin" : user?.role === "quality_manager" ? "QM" : user?.role === "eng_program_manager" ? "EPM" : "Viewer"}
+                    : ['admin', 'COO_ADMIN'].includes(user?.role || '') ? "COO" : user?.role === "CEO_ADMIN" ? "CEO" : ['quality_manager', 'QUALITY_MANAGER'].includes(user?.role || '') ? "QM" : ['eng_program_manager', 'ENGINEERING_MANAGER'].includes(user?.role || '') ? "EPM" : user?.role?.replace(/_/g, " ").split(" ").map((w: string) => w[0]).join("") || ""}
                 </span>
               </div>
               <p className="text-xs text-sidebar-foreground/50 truncate">{companyRole ? companyRole.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, c => c.toUpperCase()) : user?.email}</p>

@@ -68,7 +68,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
   const [itemEdits, setItemEdits] = useState<Record<string, any>>({});
   const [linkingPhaseId, setLinkingPhaseId] = useState<number | null>(null);
   const [linkingItemId, setLinkingItemId] = useState<number | null>(null);
-  const isQmOrAdmin = user?.role === "admin" || user?.role === "quality_manager";
+  const isQmOrAdmin = ['admin', 'COO_ADMIN', 'CEO_ADMIN'].includes(user?.role || '') || ['quality_manager', 'QUALITY_MANAGER'].includes(user?.role || '');
   const canEdit = isQmOrAdmin;
 
   const { data: checklistData, isLoading, error } = useQuery({
