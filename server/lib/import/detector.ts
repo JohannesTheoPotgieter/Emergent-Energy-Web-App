@@ -216,8 +216,25 @@ function extractProjectInfo(
         const cellVal = getCellRawValue(wsRow.getCell(c));
         if (!cellVal) continue;
         const cellText = String(cellVal).toLowerCase().trim();
-        const matched = labels.some(label => cellText.includes(label.toLowerCase()));
-        if (!matched) continue;
+        const matchedLabel = labels.find(label => cellText.includes(label.toLowerCase()));
+        if (!matchedLabel) continue;
+
+        const afterLabel = String(cellVal).trim();
+        const labelIdx = afterLabel.toLowerCase().indexOf(matchedLabel.toLowerCase());
+        if (labelIdx >= 0) {
+          let inlineVal = afterLabel.substring(labelIdx + matchedLabel.length).replace(/^[\s:;\-–]+/, "").trim();
+          if (inlineVal.length > 0 && mode === "text") {
+            return inlineVal;
+          }
+          if (inlineVal.length > 0 && mode === "number") {
+            const n = parseNumber(inlineVal);
+            if (n) return n;
+          }
+          if (inlineVal.length > 0 && mode === "date") {
+            const d = parseDate(inlineVal);
+            if (d) return d;
+          }
+        }
 
         for (let dc = 1; dc <= 4; dc++) {
           if (c + dc > maxCol) break;
