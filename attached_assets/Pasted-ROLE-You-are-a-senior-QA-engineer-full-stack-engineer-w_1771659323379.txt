@@ -1,0 +1,151 @@
+ROLE: You are a senior QA engineer + full-stack engineer working in Replit on the existing Emergent Energy (EE) web application.
+
+GOAL:
+Create a COMPLETE test plan + in-app test harness to validate the rewritten Engineering functionality WITHOUT any SharePoint integration (SharePoint approval still pending). The rest of the app must remain unchanged.
+
+SCOPE (INCLUDED):
+- Engineering module rewrite (UI, data model, permissions, workflows, CP Signed gate, PM tab creation trigger, task template generation, conflict handling logic using local data).
+- Manual “Sync” buttons must exist but run against a LOCAL MOCK CONNECTOR (no external calls).
+- COO-only access controls for Pull/Push/Mark CP Signed and conflict resolution.
+- Audit logging.
+
+SCOPE (EXCLUDED):
+- No real SharePoint API calls.
+- No Microsoft Graph auth.
+- No external secrets.
+
+HARD RULES:
+1) Do NOT assume. Inspect the repo and ask Johannes only if something is unclear.
+2) Do NOT change other modules (PM, dashboards, admin, finance, etc).
+3) No placeholder UI. Everything must work end-to-end with mock data.
+4) Preserve existing theme, routing patterns, and auth model.
+5) Tests must be repeatable and automated.
+
+WHAT TO BUILD:
+A) MOCK CONNECTOR (SharePoint Simulator)
+Implement a module/interface named something like `EngineeringIntakeConnector` with two implementations:
+1) `MockConnector` (USED NOW)
+- Reads/writes from a local JSON file or DB table (e.g., `mock_sharepoint_items`)
+- Mimics SharePoint list items using the known column display names:
+  Client, Due Date, Request Type, Priority, Status, Number of Reworks,
+  Project Developer, Designer, Size in kWp, Province,
+  Funding Type, Comments, Working schedule,
+  Tariff data, Metering data, Site inspection form,
+  Batteries needed + Battery Size, Diesel integration, Roof replacement,
+  HSE Discussed, ClickUpSynced
+- Supports:
+  - fetchItems()
+  - updateItem(id, patch)
+  - getItem(id)
+
+2) `SharePointConnector` (STUB ONLY)
+- Exists as a placeholder class/interface implementation, but must NOT be wired in.
+- Must clearly throw “Integration pending approval” if invoked.
+
+B) DATA MODEL + LOGIC TESTS
+Ensure Engineering data model works without SharePoint:
+- Project keyed by normalized Client string (client_key)
+- Intake Request keyed by mock item ID (simulating SharePoint item ID)
+- Engineering Tasks generated from templates by Request Type
+- Audit Log records all privileged actions
+
+C) MANUAL SYNC (COO-ONLY) AGAINST MOCK CONNECTOR
+Implement COO-only Sync page/modal:
+- Pull from Mock:
+  - Upsert Projects and Intake Requests
+  - Attach multiple requests under same client
+  - Detect conflicts for shared fields (Status, Comments)
+  - Show sync summary
+- Push to Mock:
+  - Push app-owned fields + resolved shared fields to mock store
+  - Write AppLink + sync metadata fields into mock store
+
+D) CONFLICT TESTING (OPTION B)
+Simulate two-way edits using mock data:
+- Make it possible (in a test-only admin screen or test helper) to:
+  - modify mock item Status/Comments “externally” (simulating PD changes)
+  - modify app Status/Comments internally
+- On Pull, force conflict UI:
+  - Keep App
+  - Keep External (mock)
+  - Merge comments
+- Ensure decision is stored and future pulls do not re-trigger conflict for that item unless changed again.
+
+E) CP SIGNED GATE TESTING (COO-ONLY)
+At Project level:
+- Button “Mark CP Signed”
+- Require evidence:
+  - upload a file OR capture email subject + date
+- On CP signed:
+  1) Create/enable PM tabs/modules for that project using existing PM structures
+  2) Create PM default task pack
+  3) Create Engineering post-CP task pack
+  4) Ensure idempotency: repeating CP signed does not duplicate PM tabs/tasks
+
+F) TASK TEMPLATE TESTING
+Using mock items with these Request Types, verify tasks are generated correctly:
+1) First Assessment – PowerPoint
+2) Cost Proposal – Word
+3) Site Visit Report
+4) Meter Installation
+5) Data Analysis Request
+6) Sizing Rational Request
+
+Each generated task must include:
+- Task title
+- Owner default (role-based if supported)
+- Due date rule (based on request Due Date or a default offset)
+- Definition of Done checklist (DoD)
+
+G) PERMISSIONS TESTS
+Use existing auth/roles.
+Validate:
+- COO can Pull/Push/Resolve conflicts/Mark CP Signed
+- Non-COO cannot see Sync controls and cannot mark CP signed
+- Non-COO can view intake requests and work tasks (as per current permission model)
+
+H) AUTOMATED TESTS (MUST ADD)
+1) Unit tests (or equivalent for the stack) for:
+- client_key normalization
+- upsert logic (project + request)
+- template generation
+- conflict detection + resolution outcomes
+- idempotent CP signed trigger
+
+2) Integration tests for:
+- Pull from mock populates UI and DB
+- Push updates mock store fields
+- Conflict flow works end-to-end
+- CP signed creates PM tabs/tasks once
+
+3) UI smoke tests (lightweight) if the stack allows.
+
+I) TEST DATA SEED (MUST INCLUDE)
+Seed at least 10 mock items including edge cases:
+- Same Client, multiple Request Types
+- Missing GPS
+- Funding Type multi-value
+- Person fields represented as display name + id
+- One item Blocked
+- Conflicting Status/Comments edits
+- CP-related request
+
+J) TEST RUNNER / HOW TO USE
+Provide a “QA Mode” toggle (COO-only) that:
+- Resets mock store to seed state
+- Clears Engineering tables (projects/requests/tasks/audit logs) safely
+- Runs the automated test suite and shows pass/fail summary
+
+DELIVERABLES:
+1) Engineering module fully testable without SharePoint.
+2) Mock connector + seeded dataset.
+3) Automated test suite with clear commands to run in Replit.
+4) QA Mode page for COO to simulate external edits and conflicts.
+5) Zero changes to other modules.
+
+START NOW:
+1) Inspect repo, identify existing test framework (or add minimal one compatible with stack).
+2) Implement the connector interface + MockConnector.
+3) Implement QA Mode + seed data.
+4) Write automated tests and verify they pass.
+5) Only then wire the Engineering UI to the MockConnector for Pull/Push and conflict simulation.

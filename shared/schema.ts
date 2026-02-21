@@ -2614,6 +2614,18 @@ export const APP_OWNED_FIELDS = [
 
 export const SHARED_FIELDS = ["status", "comments", "priority"] as const;
 
+export const mockSpItems = pgTable("mock_sp_items", {
+  id: serial("id").primaryKey(),
+  mockItemId: text("mock_item_id").notNull().unique(),
+  fields: jsonb("fields").notNull(),
+  etag: text("etag"),
+  createdDateTime: text("created_date_time"),
+  lastModifiedDateTime: text("last_modified_date_time"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export type MockSpItem = typeof mockSpItems.$inferSelect;
+
 export const DEFAULT_ROLE_PERMISSIONS: InsertRolePermission[] = [
   { role: "COO_ADMIN", label: "COO Admin", description: "Full executive access, settings, user management", sections: ["EXCO", "PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "ADMIN", "MY_TOOL", "FINANCE"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
   { role: "CEO_ADMIN", label: "CEO Admin", description: "Full executive access, strategic oversight", sections: ["EXCO", "PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "ADMIN", "MY_TOOL", "FINANCE"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
