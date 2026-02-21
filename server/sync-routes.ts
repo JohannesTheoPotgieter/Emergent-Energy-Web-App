@@ -15,6 +15,7 @@ import {
   DEFAULT_COLUMN_MAP, getConfig, saveConfig,
   isSharePointListConfigured,
 } from "./sharepoint-list";
+import { getConnector } from "./intake-connector";
 
 function jwtAuth(req: Request, _res: Response, next: NextFunction) {
   if ((req as any).user) return next();
@@ -39,6 +40,14 @@ function requireCOO(req: Request, res: Response, next: NextFunction) {
   const role = (req as any).user?.role || "";
   if (role === "COO_ADMIN") return next();
   res.status(403).json({ error: "forbidden", message: "COO access required" });
+}
+
+function requireRole(...roles: string[]) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const role = (req as any).user?.role || "";
+    if (roles.includes(role)) return next();
+    res.status(403).json({ error: "forbidden", message: `Required role: ${roles.join(" or ")}` });
+  };
 }
 
 function getUserRole(req: Request): string {
@@ -134,7 +143,8 @@ export function registerSyncRoutes(app: Express) {
       const config = await getConfig();
       if (!config) return res.status(400).json({ error: "Configure site and list first" });
 
-      const columns = await getListColumns(config.siteId, config.listId);
+      const connector = getConnector();
+      const columns = await connector.getColumns(config.siteId, config.listId);
       const mapping: Record<string, string> = {};
       const columnTypes: Record<string, string> = {};
 
@@ -194,15 +204,16 @@ export function registerSyncRoutes(app: Express) {
 
       const statusFieldName = Object.entries(columnMapping).find(([, v]) => v === "status")?.[0] || "Status";
 
+      const connector = getConnector();
       let items;
       if (config.syncViewFilter && config.syncViewFilter !== "ALL") {
-        items = await getListItems(
+        items = await connector.fetchItems(
           config.siteId,
           config.listId,
           `${statusFieldName} eq '${config.syncViewFilter}'`
         );
       } else {
-        items = await getListItems(config.siteId, config.listId);
+        items = await connector.fetchItems(config.siteId, config.listId);
       }
 
       let newProjects = 0, newRequests = 0, updatedRequests = 0, conflicts = 0, errors = 0;
@@ -457,7 +468,8 @@ export function registerSyncRoutes(app: Express) {
             if (reverseMap["comments"] && request.comments) pushFields[reverseMap["comments"]] = request.comments;
           }
 
-          await updateListItemFields(config.siteId, config.listId, request.spItemId, pushFields);
+          const connector = getConnector();
+          await connector.updateItem(config.siteId, config.listId, request.spItemId, pushFields);
 
           await db.update(intakeRequests)
             .set({ lastPushedAt: new Date(), updatedAt: new Date() })
@@ -778,15 +790,149 @@ export function registerSyncRoutes(app: Express) {
       const conflictRequests = await db.select({ count: sql<number>`count(*)` }).from(intakeRequests)
         .where(eq(intakeRequests.syncConflict, true));
 
+      const connector = getConnector();
       res.json({
         configured: !!config,
-        connectorAvailable: isSharePointListConfigured(),
+        connectorAvailable: connector.isAvailable(),
+        connectorName: connector.name,
         lastPulledAt: config?.lastPulledAt,
         lastPushedAt: config?.lastPushedAt,
         totalRequests: totalRequests[0]?.count || 0,
         conflictsCount: conflictRequests[0]?.count || 0,
         siteName: config?.siteName,
         listName: config?.listName,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/sp-sync/qa/reset", jwtAuth, requireRole("COO_ADMIN"), async (_req: Request, res: Response) => {
+    try {
+      const { resetMockSpItems } = await import("./seed-mock-sp");
+      const count = await resetMockSpItems();
+
+      await db.delete(intakeTasks);
+      await db.delete(intakeRequests);
+
+      const { setConnector, MockConnector } = await import("./intake-connector");
+      setConnector(new MockConnector());
+
+      await saveConfig({
+        siteId: "mock-site",
+        listId: "mock-list",
+        siteName: "Mock SharePoint Site",
+        listName: "Project Summaries (Mock)",
+        columnMappingJson: { mapping: DEFAULT_COLUMN_MAP, columnTypes: {} },
+        syncViewFilter: "ALL",
+        configuredByRole: "COO_ADMIN",
+      });
+
+      await db.insert(syncAuditLog).values({
+        action: "QA_RESET",
+        actorRole: "COO_ADMIN",
+        direction: "internal",
+        summary: { message: `Reset ${count} mock items, cleared intake requests, activated MockConnector` },
+        itemCount: count,
+      });
+
+      res.json({ success: true, itemsSeeded: count, message: "QA mode activated: mock data seeded, connector switched to Mock" });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/sp-sync/qa/simulate-edit", jwtAuth, requireRole("COO_ADMIN"), async (req: Request, res: Response) => {
+    try {
+      const { mockItemId, fieldEdits } = req.body;
+      if (!mockItemId || !fieldEdits) {
+        return res.status(400).json({ error: "mockItemId and fieldEdits required" });
+      }
+
+      const { simulateExternalEdit } = await import("./seed-mock-sp");
+      await simulateExternalEdit(mockItemId, fieldEdits);
+
+      await db.insert(syncAuditLog).values({
+        action: "QA_SIMULATE_EDIT",
+        actorRole: "COO_ADMIN",
+        direction: "internal",
+        summary: { message: `Simulated external edit on ${mockItemId}`, fieldEdits },
+      });
+
+      res.json({ success: true, message: `Simulated external edit on ${mockItemId}` });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/sp-sync/qa/simulate-conflict", jwtAuth, requireRole("COO_ADMIN"), async (req: Request, res: Response) => {
+    try {
+      const { mockItemId } = req.body;
+      if (!mockItemId) {
+        return res.status(400).json({ error: "mockItemId required" });
+      }
+
+      const { simulateExternalEdit } = await import("./seed-mock-sp");
+      await simulateExternalEdit(mockItemId, {
+        Status: "Design Complete",
+        Comments: `[SP External] Status changed externally at ${new Date().toISOString()}`,
+        Priority: "Critical",
+      });
+
+      const [request] = await db.select().from(intakeRequests)
+        .where(eq(intakeRequests.spItemId, mockItemId));
+
+      if (request) {
+        await db.update(intakeRequests)
+          .set({
+            comments: `[App] Local comment modified at ${new Date().toISOString()}`,
+            updatedAt: new Date(),
+          })
+          .where(eq(intakeRequests.id, request.id));
+      }
+
+      res.json({ success: true, message: `Conflict scenario created for ${mockItemId}` });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/sp-sync/qa/simulate-cp-signed", jwtAuth, requireRole("COO_ADMIN"), async (req: Request, res: Response) => {
+    try {
+      const { mockItemId } = req.body;
+      if (!mockItemId) {
+        return res.status(400).json({ error: "mockItemId required" });
+      }
+
+      const { simulateExternalEdit } = await import("./seed-mock-sp");
+      await simulateExternalEdit(mockItemId, {
+        Status: "CP Signed",
+        Comments: `CP signed by client on ${new Date().toISOString().split("T")[0]}`,
+      });
+
+      res.json({ success: true, message: `CP Signed scenario created for ${mockItemId}. Run a Pull Sync to process it.` });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/sp-sync/qa/mock-items", jwtAuth, requireRole("COO_ADMIN"), async (_req: Request, res: Response) => {
+    try {
+      const { mockSpItems } = await import("@shared/schema");
+      const items = await db.select().from(mockSpItems);
+      res.json(items);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/sp-sync/qa/connector-info", jwtAuth, requireRole("COO_ADMIN"), async (_req: Request, res: Response) => {
+    try {
+      const connector = getConnector();
+      res.json({
+        name: connector.name,
+        available: connector.isAvailable(),
+        isQaMode: connector.name === "Mock",
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
