@@ -833,7 +833,10 @@ function EditProjectInfoModal({
 
 export default function ProjectsSummary() {
   const [, setLocation] = useLocation();
-  const [searchTerm, setSearchTerm] = useState("");
+  const [searchTerm, setSearchTerm] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("project") || "";
+  });
   const [pmFilter, setPmFilter] = useState("all");
   const [phaseFilter, setPhaseFilter] = useState("all");
   const [sortKey, setSortKey] = useState<SortKey>("phase");
