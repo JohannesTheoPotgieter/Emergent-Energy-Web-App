@@ -79,8 +79,8 @@ export default function ProjectCreatePage() {
               <Button onClick={() => { setResult(null); setForm({ projectName: "", clientName: "", projectCode: "", location: "", initialPhase: "P0_FIRST_ASSESSMENT" }); }} data-testid="button-create-another">
                 <Plus className="w-4 h-4 mr-2" /> Create Another
               </Button>
-              <Button variant="outline" onClick={() => setLocation("/exec-portfolio")} data-testid="button-go-portfolio">
-                View Portfolio
+              <Button variant="outline" onClick={() => setLocation("/lifecycle-board")} data-testid="button-go-portfolio">
+                View Lifecycle Board
               </Button>
             </div>
           </CardContent>

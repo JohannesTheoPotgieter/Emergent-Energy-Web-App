@@ -25,7 +25,6 @@ const NAV_ROUTES: SearchResult[] = [
   { type: "route", id: "/my-tool/week", title: "My Tool — Week", icon: Navigation },
   { type: "route", id: "/my-tool/backlog", title: "My Tool — Backlog", icon: Navigation },
   { type: "route", id: "/company-priorities", title: "Company Priorities", icon: Navigation },
-  { type: "route", id: "/my-tool/cockpit", title: "My Tool — Cockpit", icon: Navigation },
   { type: "route", id: "/my-tool/settings", title: "My Tool — Settings", icon: Navigation },
   { type: "route", id: "/projects", title: "Projects Summary", icon: Navigation },
   { type: "route", id: "/lifecycle-board", title: "Lifecycle Board", icon: Navigation },

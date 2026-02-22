@@ -20,9 +20,6 @@ import ProjectDetailPage from "@/pages/project-detail";
 import AdminPage from "@/pages/admin";
 import CosControlPage from "@/pages/cos-control";
 import CashflowForecastPage from "@/pages/cashflow-forecast";
-import PlanningBoardPage from "@/pages/planning-board";
-import RisksFlagsPage from "@/pages/risks-flags";
-import WritebackAdminPage from "@/pages/writeback-admin";
 import MyToolTodayPage from "@/pages/my-tool-today";
 import MyToolWeekPage from "@/pages/my-tool-week";
 import MyToolBacklogPage from "@/pages/my-tool-backlog";
@@ -34,12 +31,8 @@ import MyToolMeetingsPage from "@/pages/my-tool-meetings";
 import QmDashboardPage from "@/pages/qm-dashboard";
 import EngineeringDashboardPage from "@/pages/engineering-dashboard";
 import EngineeringTasksPage from "@/pages/engineering-tasks";
-import EngineeringDeliverablesPage from "@/pages/engineering-deliverables";
-import EngineeringTeamsPage from "@/pages/engineering-teams";
-import EngineeringAuditLogPage from "@/pages/engineering-audit-log";
 import PhaseTemplatesPage from "@/pages/phase-templates";
 import ProjectCreatePage from "@/pages/project-create";
-import ExecCockpitPage from "@/pages/exec-cockpit";
 import TriageInboxPage from "@/pages/triage-inbox";
 import UnclassifiedTasksPage from "@/pages/unclassified-tasks";
 import RoleSettingsPage from "@/pages/role-settings";
@@ -57,7 +50,7 @@ import { format } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 
-const EPM_ALLOWED_PATHS = ["/", "/engineering", "/engineering/tasks", "/engineering/deliverables", "/engineering/inbox", "/quality", "/projects"];
+const EPM_ALLOWED_PATHS = ["/", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/projects"];
 
 function RoleGuard({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -214,9 +207,6 @@ function ProtectedPages() {
         <Route path="/cos" component={CostTracker} />
         <Route path="/cos-control" component={CosControlPage} />
         <Route path="/cashflow-forecast" component={CashflowForecastPage} />
-        <Route path="/planning" component={PlanningBoardPage} />
-        <Route path="/risks-flags" component={RisksFlagsPage} />
-        <Route path="/writeback-admin" component={WritebackAdminPage} />
         <Route path="/my-tool" component={MyToolTodayPage} />
         <Route path="/my-tool/week" component={MyToolWeekPage} />
         <Route path="/my-tool/backlog" component={MyToolBacklogPage} />
@@ -229,14 +219,10 @@ function ProtectedPages() {
         <Route path="/quality" component={QmDashboardPage} />
         <Route path="/engineering" component={EngineeringDashboardPage} />
         <Route path="/engineering/tasks" component={EngineeringTasksPage} />
-        <Route path="/engineering/deliverables" component={EngineeringDeliverablesPage} />
-        <Route path="/admin/audit-log" component={EngineeringAuditLogPage} />
-        <Route path="/admin/teams" component={EngineeringTeamsPage} />
         <Route path="/admin/phase-templates" component={PhaseTemplatesPage} />
         <Route path="/project-create" component={ProjectCreatePage} />
         <Route path="/lifecycle-board" component={LifecycleBoardPage} />
         <Route path="/execution-board" component={ExecutionBoardPage} />
-        <Route path="/my-tool/cockpit" component={ExecCockpitPage} />
         <Route path="/my-tool/triage-inbox" component={TriageInboxPage} />
         <Route path="/my-tool/unclassified-tasks" component={UnclassifiedTasksPage} />
         <Route path="/my-tool/meetings" component={MyToolMeetingsPage} />
@@ -245,7 +231,6 @@ function ProtectedPages() {
         <Route path="/project-normalized/:projectName" component={ProjectNormalizedViewPage} />
         <Route path="/engineering/sync" component={EngineeringSyncPage} />
         <Route path="/engineering/inbox" component={EngineeringInboxPage} />
-
 
         <Route component={NotFound} />
       </Switch>
