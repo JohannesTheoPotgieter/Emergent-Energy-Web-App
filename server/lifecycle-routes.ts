@@ -2,7 +2,7 @@ import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, sql, inArray } from "drizzle-orm";
 import { verifyToken } from "./jwt";
-import { projectInfo, operationalTasks, projectPlan, executionGateLog, mergeAuditLog, programExpense, programInflows } from "@shared/schema";
+import { projectInfo, operationalTasks, projectPlan, executionGateLog, mergeAuditLog, programExpense, programInflows, qcChecklist, qcItemInstance } from "@shared/schema";
 
 function jwtAuth(req: Request, _res: Response, next: NextFunction) {
   if ((req as any).user) return next();
@@ -74,6 +74,13 @@ export function registerLifecycleRoutes(app: Express) {
         actualPctComplete: projectPlan.actualPctComplete,
       }).from(projectPlan);
 
+      const allQmData = await db.select({
+        projectName: qcChecklist.projectName,
+        isApplicable: qcItemInstance.isApplicable,
+        approved: qcItemInstance.approved,
+      }).from(qcChecklist)
+        .innerJoin(qcItemInstance, eq(qcItemInstance.checklistId, qcChecklist.id));
+
       const trackerProjectNames = new Set<string>();
       const expenseNames = await db.selectDistinct({ projectName: programExpense.projectName }).from(programExpense);
       for (const e of expenseNames) {
@@ -117,6 +124,19 @@ export function registerLifecycleRoutes(app: Express) {
         }
       }
 
+      const qmByNorm = new Map<string, { total: number; approved: number }>();
+      for (const q of allQmData) {
+        const name = q.projectName;
+        if (!name) continue;
+        const norm = normalizeName(name);
+        if (!qmByNorm.has(norm)) qmByNorm.set(norm, { total: 0, approved: 0 });
+        const entry = qmByNorm.get(norm)!;
+        if (q.isApplicable) {
+          entry.total++;
+          if (q.approved) entry.approved++;
+        }
+      }
+
       const projectNormNames = new Set<string>();
       const results: any[] = [];
 
@@ -126,6 +146,7 @@ export function registerLifecycleRoutes(app: Express) {
 
         const eng = engByNorm.get(norm) || { total: 0, done: 0, rawName: "" };
         const plan = planByNorm.get(norm) || { total: 0, sumPct: 0, count: 0 };
+        const qm = qmByNorm.get(norm) || { total: 0, approved: 0 };
 
         const hasTracker = trackerProjectNames.has(norm);
         let source: "excel" | "engineering" | "both" = hasTracker ? "excel" : "none" as any;
@@ -157,6 +178,8 @@ export function registerLifecycleRoutes(app: Express) {
           planTotal: plan.total,
           planAvgPct: plan.total > 0 ? Math.round((plan.sumPct / plan.total) * 100) / 100 : 0,
           projectPctComplete,
+          qmTotal: qm.total,
+          qmApproved: qm.approved,
         });
       }
 
@@ -166,6 +189,7 @@ export function registerLifecycleRoutes(app: Express) {
 
         const eng = engByNorm.get(norm)!;
         const plan = planByNorm.get(norm) || { total: 0, sumPct: 0, count: 0 };
+        const qm = qmByNorm.get(norm) || { total: 0, approved: 0 };
         const projectPctComplete = plan.count > 0 ? plan.sumPct / plan.count : null;
 
         results.push({
@@ -183,6 +207,8 @@ export function registerLifecycleRoutes(app: Express) {
           planTotal: plan.total,
           planAvgPct: plan.total > 0 ? Math.round((plan.sumPct / plan.total) * 100) / 100 : 0,
           projectPctComplete,
+          qmTotal: qm.total,
+          qmApproved: qm.approved,
         });
       }
 

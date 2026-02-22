@@ -238,7 +238,7 @@ function KpiStrip({ summary }: { summary: StandupData["summary"] }) {
   ];
 
   return (
-    <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-2" data-testid="standup-kpi-strip">
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2" data-testid="standup-kpi-strip">
       {stats.map(s => (
         <Card key={s.label} className="overflow-hidden">
           <CardContent className="p-3 flex items-center gap-2.5">
@@ -264,7 +264,7 @@ function ProjectHealthGrid({ projects }: { projects: ProjectHealth[] }) {
   const ragText = { RED: "text-red-700", AMBER: "text-amber-700", GREEN: "text-emerald-700" };
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2" data-testid="project-health-grid">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2" data-testid="project-health-grid">
       {projects.map(p => {
         const colors = PHASE_COLORS[p.phase] || PHASE_COLORS.P0_FIRST_ASSESSMENT;
         return (
@@ -365,13 +365,13 @@ export default function EngineeringDashboard() {
             <Wrench className="h-5 w-5 text-white" />
           </div>
           <div>
-            <h2 className="text-2xl font-heading font-bold">Engineering Standup</h2>
+            <h2 className="text-xl sm:text-2xl font-heading font-bold">Engineering Standup</h2>
             <p className="text-xs text-muted-foreground flex items-center gap-1">
               <Loader2 className="h-3 w-3 animate-spin" /> Loading standup data...
             </p>
           </div>
         </div>
-        <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2">
           {[1,2,3,4,5,6,7].map(i => <div key={i} className="h-[72px] bg-muted animate-pulse rounded-xl" />)}
         </div>
         <div className="space-y-3">
@@ -408,7 +408,7 @@ export default function EngineeringDashboard() {
             <Wrench className="h-5 w-5 text-white" />
           </div>
           <div>
-            <h2 className="text-2xl font-heading font-bold" data-testid="text-standup-title">
+            <h2 className="text-xl sm:text-2xl font-heading font-bold" data-testid="text-standup-title">
               Engineering Standup
             </h2>
             <p className="text-xs text-muted-foreground flex items-center gap-1.5">
@@ -540,7 +540,7 @@ export default function EngineeringDashboard() {
                   const pct = Math.round((count / total) * 100);
                   return (
                     <div key={status} className="flex items-center gap-2 text-xs">
-                      <span className="w-[130px] truncate text-muted-foreground">{status}</span>
+                      <span className="w-[90px] sm:w-[130px] truncate text-muted-foreground">{status}</span>
                       <div className="flex-1 h-3 bg-muted rounded-full overflow-hidden">
                         <div
                           className={`h-full rounded-full transition-all ${

@@ -272,11 +272,11 @@ export default function EngineeringTeamsPage() {
 
   return (
     <div data-testid="admin-teams-page" className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex items-center gap-3">
           <Users className="h-8 w-8 text-blue-500" />
           <div>
-            <h2 className="text-2xl sm:text-3xl font-heading font-bold" data-testid="text-teams-title">Teams & Roles</h2>
+            <h2 className="text-lg sm:text-xl md:text-2xl font-heading font-bold" data-testid="text-teams-title">Teams & Roles</h2>
             <p className="text-sm text-muted-foreground">Manage users, permissions, and screen access</p>
           </div>
         </div>
@@ -344,14 +344,14 @@ export default function EngineeringTeamsPage() {
                 {isExpanded && (
                   <div className="border-t bg-muted/10">
                     <div className="p-4 space-y-4">
-                      <div className="flex items-center justify-between">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                         <div className="flex items-center gap-2">
                           <h4 className="text-sm font-semibold">Access & Permissions</h4>
                           {rolePerm?.description && (
                             <span className="text-xs text-muted-foreground">— {rolePerm.description}</span>
                           )}
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 flex-wrap">
                           {isEditing ? (
                             <Select
                               defaultValue={user.role}

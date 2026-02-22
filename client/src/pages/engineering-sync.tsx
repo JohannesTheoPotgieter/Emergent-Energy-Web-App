@@ -602,13 +602,13 @@ function SyncDashboard() {
 
   return (
     <div className="space-y-4 max-w-4xl" data-testid="sync-page">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-sm">
             <RefreshCw className="h-4 w-4 text-white" />
           </div>
           <div>
-            <h2 className="text-xl font-bold" data-testid="text-sync-title">SharePoint Sync</h2>
+            <h2 className="text-lg sm:text-xl md:text-2xl font-bold" data-testid="text-sync-title">SharePoint Sync</h2>
             <p className="text-xs text-muted-foreground">
               {isConfigured
                 ? `${syncStatus.siteName || "Site"} → ${syncStatus.listName || "List"}`
