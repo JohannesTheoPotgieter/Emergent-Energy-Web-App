@@ -1632,6 +1632,8 @@ function IssuesStep({
         </Card>
       )}
 
+      <InvoiceClassificationPanel runId={runId} normalization={normalization} />
+
       <div className="flex justify-between">
         <Button variant="outline" onClick={onBack} data-testid="btn-back-issues">
           <ArrowLeft className="w-4 h-4 mr-2" />
@@ -1647,6 +1649,208 @@ function IssuesStep({
         </Button>
       </div>
     </div>
+  );
+}
+
+function InvoiceClassificationPanel({ runId, normalization }: { runId: number; normalization: any }) {
+  const [classifications, setClassifications] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [classified, setClassified] = useState(false);
+  const [reviewing, setReviewing] = useState<number | null>(null);
+  const [rowOverrides, setRowOverrides] = useState<Record<number, { type: string; reason: string }>>({});
+  const [applyToSimilar, setApplyToSimilar] = useState(false);
+  const { toast } = useToast();
+
+  const getRowOverride = (row: number) => rowOverrides[row] || { type: "OTHER", reason: "" };
+  const setRowOverride = (row: number, field: "type" | "reason", value: string) => {
+    setRowOverrides(prev => ({ ...prev, [row]: { ...getRowOverride(row), [field]: value } }));
+  };
+
+  const costLines = normalization?.costLines || [];
+  const hasExpenditure = costLines.length > 0;
+
+  const runClassification = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/smart-import/${runId}/classify`, {
+        method: "POST",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setClassifications(data.classifications || []);
+        setClassified(true);
+      } else {
+        toast({ title: "Classification failed", description: data.error, variant: "destructive" });
+      }
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+    setLoading(false);
+  };
+
+  const handleReview = async (sourceRow: number, action: string) => {
+    setReviewing(sourceRow);
+    try {
+      const rowOv = getRowOverride(sourceRow);
+      const body: any = { sourceRow, action, applyToSimilar };
+      if (action === "override") {
+        body.selectedType = rowOv.type;
+        body.overrideReason = rowOv.reason;
+      }
+      const res = await fetch(`/api/smart-import/${runId}/classify-review`, {
+        method: "POST",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setClassifications(data.classifications || classifications);
+        setRowOverrides(prev => { const next = { ...prev }; delete next[sourceRow]; return next; });
+        toast({ title: action === "confirm" ? "Confirmed" : "Overridden", description: "Classification updated" });
+      }
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+    setReviewing(null);
+  };
+
+  if (!hasExpenditure) return null;
+
+  const needsReview = classifications.filter(c => c.outcome === "UNRESOLVED" && c.confidenceScore >= 50);
+  const unresolved = classifications.filter(c => c.outcome === "UNRESOLVED" && c.confidenceScore < 50);
+  const autoApplied = classifications.filter(c => c.outcome === "AUTO_APPLIED" || c.outcome === "USER_CONFIRMED");
+
+  return (
+    <Card className="bg-white rounded-xl shadow-sm mt-4" data-testid="invoice-classification-panel">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm flex items-center gap-2">
+          <FileSpreadsheet className="w-4 h-4 text-purple-600" />
+          Invoice Pattern Classification
+          {classified && (
+            <span className="text-[10px] font-normal text-slate-500 ml-2">
+              {autoApplied.length} auto-classified, {needsReview.length} need review, {unresolved.length} unresolved
+            </span>
+          )}
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {!classified ? (
+          <div className="text-center py-4">
+            <p className="text-sm text-slate-600 mb-3">
+              Classify {costLines.length} expenditure lines by invoice number pattern to determine
+              counterparty type (Installer / Supplier / Other).
+            </p>
+            <Button onClick={runClassification} disabled={loading} data-testid="btn-run-classify">
+              {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />}
+              Run Classification
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {autoApplied.length > 0 && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-2">
+                <p className="text-xs text-green-700 font-medium">
+                  <CheckCircle2 className="w-3 h-3 inline mr-1" />
+                  {autoApplied.length} lines auto-classified (confidence {"\u2265"} 85%)
+                </p>
+              </div>
+            )}
+
+            {(needsReview.length > 0 || unresolved.length > 0) && (
+              <div className="border border-slate-200 rounded-lg overflow-hidden">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200">
+                      <th className="text-left px-3 py-2 font-medium text-slate-600">Row</th>
+                      <th className="text-left px-3 py-2 font-medium text-slate-600">Invoice #</th>
+                      <th className="text-left px-3 py-2 font-medium text-slate-600">Suggested Type</th>
+                      <th className="text-left px-3 py-2 font-medium text-slate-600">Confidence</th>
+                      <th className="text-left px-3 py-2 font-medium text-slate-600">Pattern</th>
+                      <th className="text-left px-3 py-2 font-medium text-slate-600">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...needsReview, ...unresolved].map((cl) => (
+                      <tr key={cl.sourceRow} className="border-b border-slate-100 hover:bg-slate-50" data-testid={`classify-row-${cl.sourceRow}`}>
+                        <td className="px-3 py-2 font-mono text-slate-500">{cl.sourceRow}</td>
+                        <td className="px-3 py-2 font-mono">{cl.invoiceNumberRaw || "—"}</td>
+                        <td className="px-3 py-2">
+                          <Badge variant={cl.inferredType === "INSTALLER" ? "default" : cl.inferredType === "SUPPLIER" ? "secondary" : "outline"}
+                            className="text-[10px]">
+                            {cl.inferredType}
+                          </Badge>
+                        </td>
+                        <td className="px-3 py-2">
+                          <span className={`font-medium ${cl.confidenceScore >= 70 ? "text-amber-600" : "text-red-500"}`}>
+                            {cl.confidenceScore}%
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-slate-500 text-[10px]">{cl.patternInfo || "—"}</td>
+                        <td className="px-3 py-2">
+                          {reviewing === cl.sourceRow ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : cl.outcome === "UNRESOLVED" ? (
+                            <div className="flex gap-1 items-center">
+                              {cl.confidenceScore >= 50 && (
+                                <Button size="sm" variant="outline" className="h-6 text-[10px] px-2"
+                                  onClick={() => handleReview(cl.sourceRow, "confirm")}
+                                  data-testid={`btn-confirm-${cl.sourceRow}`}>
+                                  Confirm
+                                </Button>
+                              )}
+                              <Select value={getRowOverride(cl.sourceRow).type} onValueChange={(v) => setRowOverride(cl.sourceRow, "type", v)}>
+                                <SelectTrigger className="h-6 text-[10px] w-24" data-testid={`select-type-${cl.sourceRow}`}>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="INSTALLER">Installer</SelectItem>
+                                  <SelectItem value="SUPPLIER">Supplier</SelectItem>
+                                  <SelectItem value="OTHER">Other</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <Input
+                                placeholder="Reason..."
+                                className="h-6 text-[10px] w-28"
+                                value={getRowOverride(cl.sourceRow).reason}
+                                onChange={(e) => setRowOverride(cl.sourceRow, "reason", e.target.value)}
+                                data-testid={`input-reason-${cl.sourceRow}`}
+                              />
+                              <Button size="sm" variant="default" className="h-6 text-[10px] px-2"
+                                onClick={() => handleReview(cl.sourceRow, "override")}
+                                disabled={!getRowOverride(cl.sourceRow).reason.trim()}
+                                data-testid={`btn-override-${cl.sourceRow}`}>
+                                Override
+                              </Button>
+                            </div>
+                          ) : (
+                            <Badge className="text-[10px] bg-green-50 text-green-700">{cl.outcome}</Badge>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {(needsReview.length > 0 || unresolved.length > 0) && (
+              <label className="flex items-center gap-2 text-xs text-slate-600">
+                <input type="checkbox" checked={applyToSimilar} onChange={e => setApplyToSimilar(e.target.checked)}
+                  data-testid="checkbox-apply-similar" />
+                Apply to all similar invoices (same prefix pattern)
+              </label>
+            )}
+
+            <Button variant="outline" size="sm" onClick={runClassification} disabled={loading}
+              data-testid="btn-reclassify">
+              {loading ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : null}
+              Re-run Classification
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

@@ -28,6 +28,7 @@ import {
   FolderPlus,
   InboxIcon,
   RefreshCw,
+  Users,
 } from "lucide-react";
 import { useProgramData } from "@/hooks/use-program-data";
 import { useAuth } from "@/hooks/use-auth";
@@ -92,6 +93,8 @@ function getNavGroups(): NavGroup[] {
         { label: "Phase Templates", icon: Layers, path: "/admin/phase-templates" },
         { label: "New Project", icon: FolderPlus, path: "/project-create" },
         { label: "Smart Import", icon: FileSpreadsheet, path: "/smart-import" },
+        { label: "Invoice Patterns", icon: FileSpreadsheet, path: "/invoice-patterns" },
+        { label: "Subcontractors", icon: Users, path: "/subcontractor-dashboard" },
       ],
     },
   ];
