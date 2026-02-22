@@ -30,6 +30,7 @@ import CalendarView from "@/components/CalendarView";
 import TaskGridView from "@/components/TaskGridView";
 import KeyDatesPanel from "@/components/KeyDatesPanel";
 import { QualityTab } from "@/components/tabs/QualityTab";
+import { ProjectHistoryTab } from "@/components/tabs/ProjectHistoryTab";
 import { useProgramData } from "@/hooks/use-program-data";
 import { useAuth } from "@/hooks/use-auth";
 import { PROJECT_PHASES, PROJECT_PHASE_LABELS, type ProjectPhase } from "@shared/schema";
@@ -622,6 +623,10 @@ export default function ProjectDetailPage() {
             <Wrench className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Eng Tasks</span>
           </TabsTrigger>
+          <TabsTrigger value="history" className="flex items-center gap-1.5 text-xs" data-testid="tab-history">
+            <History className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">History</span>
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="task-grid" className="space-y-4">
@@ -670,6 +675,10 @@ export default function ProjectDetailPage() {
 
         <TabsContent value="eng-tasks" className="space-y-4">
           <EngTasksTab projectInfoId={projectInfoId ?? null} isAdmin={isAdmin} />
+        </TabsContent>
+
+        <TabsContent value="history" className="space-y-4">
+          <ProjectHistoryTab projectName={projectName} />
         </TabsContent>
       </Tabs>
 

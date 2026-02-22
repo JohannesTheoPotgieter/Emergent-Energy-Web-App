@@ -44,6 +44,7 @@ import EngineeringSyncPage from "@/pages/engineering-sync";
 import EngineeringInboxPage from "@/pages/engineering-inbox";
 import InvoicePatternsPage from "@/pages/invoice-patterns";
 import SubcontractorDashboardPage from "@/pages/subcontractor-dashboard";
+import SystemActivityLogPage from "@/pages/system-activity-log";
 
 import { useAuth } from "@/hooks/use-auth";
 import { useProgramData } from "@/hooks/use-program-data";
@@ -235,6 +236,7 @@ function ProtectedPages() {
         <Route path="/engineering/inbox" component={EngineeringInboxPage} />
         <Route path="/invoice-patterns" component={InvoicePatternsPage} />
         <Route path="/subcontractor-dashboard" component={SubcontractorDashboardPage} />
+        <Route path="/admin/activity-log" component={SystemActivityLogPage} />
 
         <Route component={NotFound} />
       </Switch>

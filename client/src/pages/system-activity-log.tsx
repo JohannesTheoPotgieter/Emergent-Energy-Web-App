@@ -1,0 +1,295 @@
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Activity, FileUp, Edit, Shield, GitMerge, Cpu, Users, Settings,
+  ChevronLeft, ChevronRight, Loader2, Search, ArrowRight, Filter,
+} from "lucide-react";
+
+const SOURCE_ICONS: Record<string, any> = {
+  IMPORT: FileUp, MANUAL_EDIT: Edit, OVERRIDE: Shield,
+  CONFLICT_RESOLUTION: GitMerge, PATTERN_LEARNING: Cpu,
+  COUNTERPARTY_UPDATE: Users, SYSTEM: Settings,
+};
+
+const SOURCE_COLORS: Record<string, string> = {
+  IMPORT: "bg-blue-100 text-blue-700", MANUAL_EDIT: "bg-green-100 text-green-700",
+  OVERRIDE: "bg-amber-100 text-amber-700", CONFLICT_RESOLUTION: "bg-purple-100 text-purple-700",
+  PATTERN_LEARNING: "bg-cyan-100 text-cyan-700", COUNTERPARTY_UPDATE: "bg-pink-100 text-pink-700",
+  SYSTEM: "bg-gray-100 text-gray-700",
+};
+
+function authFetch(url: string) {
+  const token = localStorage.getItem("auth_token");
+  const headers: Record<string, string> = {};
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  return fetch(url, { headers, credentials: "include" });
+}
+
+function formatDate(dateStr: string) {
+  return new Date(dateStr).toLocaleString("en-ZA", {
+    year: "numeric", month: "short", day: "numeric",
+    hour: "2-digit", minute: "2-digit",
+  });
+}
+
+export default function SystemActivityLogPage() {
+  const [page, setPage] = useState(1);
+  const [sourceFilter, setSourceFilter] = useState<string>("all");
+  const [entityTypeFilter, setEntityTypeFilter] = useState<string>("all");
+  const [projectNameFilter, setProjectNameFilter] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedChangeSetId, setSelectedChangeSetId] = useState<number | null>(null);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["activity-log", page, sourceFilter, entityTypeFilter, projectNameFilter, searchQuery],
+    queryFn: async () => {
+      const params = new URLSearchParams({ page: String(page), limit: "50" });
+      if (sourceFilter !== "all") params.set("source", sourceFilter);
+      if (entityTypeFilter !== "all") params.set("entityType", entityTypeFilter);
+      if (projectNameFilter !== "all") params.set("projectName", projectNameFilter);
+      if (searchQuery) params.set("q", searchQuery);
+      const res = await authFetch(`/api/audit/activity-log?${params}`);
+      if (!res.ok) throw new Error("Failed to load activity log");
+      return res.json();
+    },
+  });
+
+  const { data: detail, isLoading: detailLoading } = useQuery({
+    queryKey: ["changeset-detail", selectedChangeSetId],
+    queryFn: async () => {
+      if (!selectedChangeSetId) return null;
+      const res = await authFetch(`/api/audit/changeset/${selectedChangeSetId}`);
+      if (!res.ok) throw new Error("Failed to load detail");
+      return res.json();
+    },
+    enabled: !!selectedChangeSetId,
+  });
+
+  const items = data?.items || [];
+  const pagination = data?.pagination || { page: 1, totalPages: 1, total: 0 };
+  const filters = data?.filters || { sources: [], entityTypes: [], actions: [], projectNames: [] };
+
+  return (
+    <div className="container mx-auto p-6 max-w-7xl space-y-6">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Activity className="h-6 w-6 text-primary" />
+          <div>
+            <h1 className="text-2xl font-bold" data-testid="text-activity-log-title">System Activity Log</h1>
+            <p className="text-sm text-muted-foreground">All data mutations, imports, overrides, and system events</p>
+          </div>
+        </div>
+        <Badge variant="secondary" className="text-sm" data-testid="text-activity-total">
+          {pagination.total} events
+        </Badge>
+      </div>
+
+      <Card>
+        <CardContent className="py-4">
+          <div className="flex flex-wrap gap-3 items-center">
+            <Filter className="h-4 w-4 text-muted-foreground" />
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search events..."
+                className="pl-8 w-[200px]"
+                value={searchQuery}
+                onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
+                data-testid="input-activity-search"
+              />
+            </div>
+            <Select value={sourceFilter} onValueChange={(v) => { setSourceFilter(v); setPage(1); }}>
+              <SelectTrigger className="w-[160px]" data-testid="select-activity-source">
+                <SelectValue placeholder="Source" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Sources</SelectItem>
+                {filters.sources.map((s: string) => (
+                  <SelectItem key={s} value={s}>{s}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={entityTypeFilter} onValueChange={(v) => { setEntityTypeFilter(v); setPage(1); }}>
+              <SelectTrigger className="w-[180px]" data-testid="select-activity-entity">
+                <SelectValue placeholder="Entity Type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Entities</SelectItem>
+                {filters.entityTypes.map((e: string) => (
+                  <SelectItem key={e} value={e}>{e}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={projectNameFilter} onValueChange={(v) => { setProjectNameFilter(v); setPage(1); }}>
+              <SelectTrigger className="w-[200px]" data-testid="select-activity-project">
+                <SelectValue placeholder="Project" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Projects</SelectItem>
+                {filters.projectNames.map((p: string) => (
+                  <SelectItem key={p} value={p}>{p}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
+
+      {isLoading ? (
+        <div className="flex items-center justify-center py-12" data-testid="activity-loading">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          <span className="ml-2 text-muted-foreground">Loading activity log...</span>
+        </div>
+      ) : items.length === 0 ? (
+        <Card>
+          <CardContent className="py-12 text-center text-muted-foreground">
+            No activity events found matching your filters.
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="border rounded-lg overflow-hidden">
+          <table className="w-full text-sm" data-testid="activity-log-table">
+            <thead className="bg-muted">
+              <tr>
+                <th className="text-left p-3 font-medium">Time</th>
+                <th className="text-left p-3 font-medium">Source</th>
+                <th className="text-left p-3 font-medium">Action</th>
+                <th className="text-left p-3 font-medium">Entity</th>
+                <th className="text-left p-3 font-medium">Project</th>
+                <th className="text-left p-3 font-medium">Summary</th>
+                <th className="text-left p-3 font-medium">Detail</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((cs: any) => {
+                const colorClass = SOURCE_COLORS[cs.source] || SOURCE_COLORS.SYSTEM;
+                return (
+                  <tr key={cs.id} className="border-t hover:bg-muted/30" data-testid={`activity-row-${cs.id}`}>
+                    <td className="p-3 whitespace-nowrap text-xs text-muted-foreground">
+                      {formatDate(cs.createdAt)}
+                    </td>
+                    <td className="p-3">
+                      <Badge variant="outline" className={`text-xs ${colorClass}`}>{cs.source}</Badge>
+                    </td>
+                    <td className="p-3 font-mono text-xs">{cs.action}</td>
+                    <td className="p-3 text-xs">{cs.entityType}</td>
+                    <td className="p-3 text-xs truncate max-w-[150px]">{cs.projectName || "—"}</td>
+                    <td className="p-3 text-xs truncate max-w-[250px]">{cs.summary || "—"}</td>
+                    <td className="p-3">
+                      <Button
+                        variant="ghost" size="sm"
+                        onClick={() => setSelectedChangeSetId(cs.id)}
+                        data-testid={`button-detail-${cs.id}`}
+                      >
+                        View
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {pagination.totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2">
+          <Button
+            variant="outline" size="sm"
+            onClick={() => setPage(p => Math.max(1, p - 1))}
+            disabled={page <= 1}
+            data-testid="button-activity-prev"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <span className="text-sm text-muted-foreground">
+            Page {page} of {pagination.totalPages}
+          </span>
+          <Button
+            variant="outline" size="sm"
+            onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))}
+            disabled={page >= pagination.totalPages}
+            data-testid="button-activity-next"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
+
+      <Dialog open={!!selectedChangeSetId} onOpenChange={() => setSelectedChangeSetId(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Activity className="h-5 w-5" />
+              Change Detail
+            </DialogTitle>
+          </DialogHeader>
+          {detailLoading ? (
+            <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin" /></div>
+          ) : detail ? (
+            <div className="space-y-4" data-testid="activity-detail">
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div><span className="text-muted-foreground">Source:</span> <Badge variant="outline">{detail.source}</Badge></div>
+                <div><span className="text-muted-foreground">Action:</span> {detail.action}</div>
+                <div><span className="text-muted-foreground">Entity:</span> {detail.entityType}</div>
+                <div><span className="text-muted-foreground">Time:</span> {formatDate(detail.createdAt)}</div>
+                {detail.actorRole && (
+                  <div><span className="text-muted-foreground">Role:</span> {detail.actorRole}</div>
+                )}
+                {detail.projectName && (
+                  <div><span className="text-muted-foreground">Project:</span> {detail.projectName}</div>
+                )}
+              </div>
+              {detail.summary && (
+                <p className="text-sm bg-muted p-2 rounded">{detail.summary}</p>
+              )}
+              {detail.overrideCategory && (
+                <div className="text-sm">
+                  <span className="text-muted-foreground">Category:</span>{" "}
+                  <Badge variant="secondary">{detail.overrideCategory}</Badge>
+                  {detail.overrideComment && (
+                    <p className="mt-1 italic text-muted-foreground">"{detail.overrideComment}"</p>
+                  )}
+                </div>
+              )}
+              {detail.fieldChanges && detail.fieldChanges.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold mb-2">Field Changes</h4>
+                  <div className="border rounded overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead className="bg-muted">
+                        <tr>
+                          <th className="text-left p-2 font-medium">Field</th>
+                          <th className="text-left p-2 font-medium">Old</th>
+                          <th className="text-left p-2 font-medium">New</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {detail.fieldChanges.map((fc: any) => (
+                          <tr key={fc.id} className="border-t">
+                            <td className="p-2 font-mono text-xs">{fc.fieldName}</td>
+                            <td className="p-2 text-red-600">{fc.oldValue ?? "—"}</td>
+                            <td className="p-2 text-green-600 flex items-center gap-1">
+                              <ArrowRight className="h-3 w-3 text-muted-foreground" />
+                              {fc.newValue ?? "—"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

@@ -19,6 +19,8 @@ import { aggregateCOS, aggregateCOSByProject } from "./lib/calculations/cosAggre
 import { computeWeeklyCashflow, getLinesForWeek, type CashflowLineItem } from "./lib/calculations/cashflow";
 import { runDataQualityChecks } from "./lib/calculations/dataQuality";
 import { buildOverrideMap, applyOverridesToCashflowLines, applyOverridesToCOSLines, computeMonthlyBuckets, getEffectiveDate } from "./lib/calculations/scenarioResolver";
+import { recordOverride } from "./lib/audit/diff-engine";
+import { OVERRIDE_CATEGORIES } from "@shared/schema";
 
 // Ensure uploads directory exists
 const uploadDir = path.join(process.cwd(), 'uploads');
@@ -3790,28 +3792,53 @@ export async function registerRoutes(
 
   app.post("/api/cashflow/planning-overrides", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const { overrides } = req.body;
+      const { overrides, overrideCategory, overrideComment } = req.body;
       
       if (!Array.isArray(overrides)) {
         return res.status(400).json({ error: "Overrides must be an array", message: "Overrides must be an array" });
       }
 
-      // Add createdBy from authenticated user and validate override values
+      if (!overrideCategory || !OVERRIDE_CATEGORIES.includes(overrideCategory)) {
+        return res.status(400).json({ error: "Override category is required. Must be one of: " + OVERRIDE_CATEGORIES.join(", ") });
+      }
+      if (!overrideComment || typeof overrideComment !== "string" || overrideComment.trim().length < 3) {
+        return res.status(400).json({ error: "Override comment is required (min 3 characters)" });
+      }
+
       const userId = req.user?.id;
-      const overridesWithUser = overrides.map(o => {
-        // Ensure overrideValue is a valid number
+      const overridesWithUser = overrides.map((o: any) => {
         const numValue = typeof o.overrideValue === 'string' ? parseFloat(o.overrideValue) : o.overrideValue;
         if (isNaN(numValue)) {
           throw new Error(`Invalid override value: ${o.overrideValue}`);
         }
         return { 
           ...o, 
-          overrideValue: numValue.toString(), // Store as string in DB but validate it's numeric
+          overrideValue: numValue.toString(),
           createdBy: userId 
         };
       });
 
       const saved = await storage.upsertManyPlanningOverrides(overridesWithUser);
+
+      try {
+        for (const o of overrides) {
+          await recordOverride({
+            actorUserId: userId,
+            actorRole: (req as any).user?.role,
+            entityType: "planning_override",
+            entityId: `${o.projectName}|${o.weekStartDate}|${o.seriesName}`,
+            projectName: o.projectName,
+            action: "PLANNING_OVERRIDE",
+            overrideCategory,
+            overrideComment: overrideComment.trim(),
+            oldRecord: {},
+            newRecord: { overrideValue: o.overrideValue },
+          });
+        }
+      } catch (auditErr: any) {
+        console.warn("[audit] Planning override audit failed (non-blocking):", auditErr.message);
+      }
+
       res.json({ message: "Planning overrides saved", count: saved.length, overrides: saved });
     } catch (error) {
       res.status(500).json({ 
@@ -3850,13 +3877,39 @@ export async function registerRoutes(
 
   app.post("/api/project-plan/overrides", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const { overrides } = req.body;
+      const { overrides, overrideCategory, overrideComment } = req.body;
       if (!Array.isArray(overrides)) {
         return res.status(400).json({ error: "Overrides must be an array", message: "Overrides must be an array" });
       }
+      if (!overrideCategory || !OVERRIDE_CATEGORIES.includes(overrideCategory)) {
+        return res.status(400).json({ error: "Override category is required. Must be one of: " + OVERRIDE_CATEGORIES.join(", ") });
+      }
+      if (!overrideComment || typeof overrideComment !== "string" || overrideComment.trim().length < 3) {
+        return res.status(400).json({ error: "Override comment is required (min 3 characters)" });
+      }
       const userId = req.user?.id;
-      const overridesWithUser = overrides.map(o => ({ ...o, createdBy: userId }));
+      const overridesWithUser = overrides.map((o: any) => ({ ...o, createdBy: userId }));
       const saved = await storage.upsertManyProjectPlanOverrides(overridesWithUser);
+
+      try {
+        for (const o of overrides) {
+          await recordOverride({
+            actorUserId: userId,
+            actorRole: (req as any).user?.role,
+            entityType: "project_plan_override",
+            entityId: `${o.projectName}|row${o.rowNumber}|${o.fieldName}`,
+            projectName: o.projectName,
+            action: "PROJECT_PLAN_OVERRIDE",
+            overrideCategory,
+            overrideComment: overrideComment.trim(),
+            oldRecord: {},
+            newRecord: { [o.fieldName]: o.overrideValue },
+          });
+        }
+      } catch (auditErr: any) {
+        console.warn("[audit] Project plan override audit failed:", auditErr.message);
+      }
+
       res.json({ message: "Project plan overrides saved", count: saved.length, overrides: saved });
     } catch (error) {
       res.status(500).json({ error: "Failed to save project plan overrides", message: error instanceof Error ? error.message : "Failed to save project plan overrides" });
@@ -3892,13 +3945,39 @@ export async function registerRoutes(
 
   app.post("/api/revenue-tracking/overrides", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const { overrides } = req.body;
+      const { overrides, overrideCategory, overrideComment } = req.body;
       if (!Array.isArray(overrides)) {
         return res.status(400).json({ error: "Overrides must be an array", message: "Overrides must be an array" });
       }
+      if (!overrideCategory || !OVERRIDE_CATEGORIES.includes(overrideCategory)) {
+        return res.status(400).json({ error: "Override category is required. Must be one of: " + OVERRIDE_CATEGORIES.join(", ") });
+      }
+      if (!overrideComment || typeof overrideComment !== "string" || overrideComment.trim().length < 3) {
+        return res.status(400).json({ error: "Override comment is required (min 3 characters)" });
+      }
       const userId = req.user?.id;
-      const overridesWithUser = overrides.map(o => ({ ...o, createdBy: userId }));
+      const overridesWithUser = overrides.map((o: any) => ({ ...o, createdBy: userId }));
       const saved = await storage.upsertManyRevenueTrackingOverrides(overridesWithUser);
+
+      try {
+        for (const o of overrides) {
+          await recordOverride({
+            actorUserId: userId,
+            actorRole: (req as any).user?.role,
+            entityType: "revenue_tracking_override",
+            entityId: `${o.projectName}|row${o.rowNumber}|${o.fieldName}`,
+            projectName: o.projectName,
+            action: "REVENUE_OVERRIDE",
+            overrideCategory,
+            overrideComment: overrideComment.trim(),
+            oldRecord: {},
+            newRecord: { [o.fieldName]: o.overrideValue },
+          });
+        }
+      } catch (auditErr: any) {
+        console.warn("[audit] Revenue override audit failed:", auditErr.message);
+      }
+
       res.json({ message: "Revenue tracking overrides saved", count: saved.length, overrides: saved });
     } catch (error) {
       res.status(500).json({ error: "Failed to save revenue tracking overrides", message: error instanceof Error ? error.message : "Failed to save revenue tracking overrides" });
@@ -4237,9 +4316,15 @@ export async function registerRoutes(
 
   app.post("/api/expenditure/overrides", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const { overrides } = req.body;
+      const { overrides, overrideCategory, overrideComment } = req.body;
       if (!Array.isArray(overrides)) {
         return res.status(400).json({ error: "Overrides must be an array", message: "Overrides must be an array" });
+      }
+      if (!overrideCategory || !OVERRIDE_CATEGORIES.includes(overrideCategory)) {
+        return res.status(400).json({ error: "Override category is required. Must be one of: " + OVERRIDE_CATEGORIES.join(", ") });
+      }
+      if (!overrideComment || typeof overrideComment !== "string" || overrideComment.trim().length < 3) {
+        return res.status(400).json({ error: "Override comment is required (min 3 characters)" });
       }
       const userId = req.user?.id;
       const overridesWithUser = overrides.map((o: any) => ({ ...o, createdBy: userId }));
@@ -4302,6 +4387,25 @@ export async function registerRoutes(
             computedForecastPaymentDate: newForecast ?? null,
           });
         }
+      }
+
+      try {
+        for (const o of overrides) {
+          await recordOverride({
+            actorUserId: userId,
+            actorRole: (req as any).user?.role,
+            entityType: "expenditure_override",
+            entityId: `${o.projectName}|row${o.rowNumber}|${o.fieldName}`,
+            projectName: o.projectName,
+            action: "EXPENDITURE_OVERRIDE",
+            overrideCategory,
+            overrideComment: overrideComment.trim(),
+            oldRecord: {},
+            newRecord: { [o.fieldName]: o.overrideValue },
+          });
+        }
+      } catch (auditErr: any) {
+        console.warn("[audit] Expenditure override audit failed:", auditErr.message);
       }
 
       res.json({ message: "Expenditure overrides saved and applied", count: saved.length, overrides: saved });
@@ -4580,13 +4684,32 @@ export async function registerRoutes(
 
   app.post("/api/finance/revenue/overrides", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const { overrides } = req.body;
+      const { overrides, overrideCategory, overrideComment } = req.body;
       if (!Array.isArray(overrides)) {
         return res.status(400).json({ error: "Overrides must be an array", message: "Overrides must be an array" });
       }
+      if (!overrideCategory || !OVERRIDE_CATEGORIES.includes(overrideCategory)) {
+        return res.status(400).json({ error: "Override category is required. Must be one of: " + OVERRIDE_CATEGORIES.join(", ") });
+      }
+      if (!overrideComment || typeof overrideComment !== "string" || overrideComment.trim().length < 3) {
+        return res.status(400).json({ error: "Override comment is required (min 3 characters)" });
+      }
       const userId = req.user?.id;
-      const overridesWithUser = overrides.map(o => ({ ...o, createdBy: userId }));
+      const overridesWithUser = overrides.map((o: any) => ({ ...o, createdBy: userId }));
       const saved = await storage.upsertManyFinanceRevenueOverrides(overridesWithUser);
+
+      try {
+        for (const o of overrides) {
+          await recordOverride({
+            actorUserId: userId, actorRole: (req as any).user?.role,
+            entityType: "finance_revenue_override", entityId: `${o.projectName}|row${o.rowNumber}|${o.fieldName}`,
+            projectName: o.projectName, action: "FINANCE_REVENUE_OVERRIDE",
+            overrideCategory, overrideComment: overrideComment.trim(),
+            oldRecord: {}, newRecord: { [o.fieldName]: o.overrideValue },
+          });
+        }
+      } catch (auditErr: any) { console.warn("[audit] Finance revenue override audit failed:", auditErr.message); }
+
       res.json({ message: "Finance revenue overrides saved", count: saved.length, overrides: saved });
     } catch (error) {
       res.status(500).json({ error: "Failed to save finance revenue overrides", message: error instanceof Error ? error.message : "Failed to save finance revenue overrides" });
@@ -4622,13 +4745,32 @@ export async function registerRoutes(
 
   app.post("/api/finance/cos/overrides", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const { overrides } = req.body;
+      const { overrides, overrideCategory, overrideComment } = req.body;
       if (!Array.isArray(overrides)) {
         return res.status(400).json({ error: "Overrides must be an array", message: "Overrides must be an array" });
       }
+      if (!overrideCategory || !OVERRIDE_CATEGORIES.includes(overrideCategory)) {
+        return res.status(400).json({ error: "Override category is required. Must be one of: " + OVERRIDE_CATEGORIES.join(", ") });
+      }
+      if (!overrideComment || typeof overrideComment !== "string" || overrideComment.trim().length < 3) {
+        return res.status(400).json({ error: "Override comment is required (min 3 characters)" });
+      }
       const userId = req.user?.id;
-      const overridesWithUser = overrides.map(o => ({ ...o, createdBy: userId }));
+      const overridesWithUser = overrides.map((o: any) => ({ ...o, createdBy: userId }));
       const saved = await storage.upsertManyFinanceCosOverrides(overridesWithUser);
+
+      try {
+        for (const o of overrides) {
+          await recordOverride({
+            actorUserId: userId, actorRole: (req as any).user?.role,
+            entityType: "finance_cos_override", entityId: `${o.projectName}|row${o.rowNumber}|${o.fieldName}`,
+            projectName: o.projectName, action: "FINANCE_COS_OVERRIDE",
+            overrideCategory, overrideComment: overrideComment.trim(),
+            oldRecord: {}, newRecord: { [o.fieldName]: o.overrideValue },
+          });
+        }
+      } catch (auditErr: any) { console.warn("[audit] Finance COS override audit failed:", auditErr.message); }
+
       res.json({ message: "Finance COS overrides saved", count: saved.length, overrides: saved });
     } catch (error) {
       res.status(500).json({ error: "Failed to save finance COS overrides", message: error instanceof Error ? error.message : "Failed to save finance COS overrides" });
