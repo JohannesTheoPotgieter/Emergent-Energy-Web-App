@@ -66,6 +66,7 @@ function getNavGroups(): NavGroup[] {
         { label: "Project Summary", icon: FileSpreadsheet, path: "/projects" },
         { label: "Cashflow", icon: Wallet, path: "/cashflow" },
         { label: "COS Tracker", icon: TrendingUp, path: "/cos", className: "rotate-180" },
+        { label: "Procurement", icon: Users, path: "/subcontractor-dashboard" },
       ],
     },
     {
@@ -94,7 +95,6 @@ function getNavGroups(): NavGroup[] {
         { label: "New Project", icon: FolderPlus, path: "/project-create" },
         { label: "Smart Import", icon: FileSpreadsheet, path: "/smart-import" },
         { label: "Invoice Patterns", icon: FileSpreadsheet, path: "/invoice-patterns" },
-        { label: "Subcontractors", icon: Users, path: "/subcontractor-dashboard" },
       ],
     },
   ];
