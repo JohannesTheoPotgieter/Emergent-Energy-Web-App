@@ -2671,6 +2671,57 @@ export const insertInvoicePatternMatchSchema = createInsertSchema(invoicePattern
 export type InsertInvoicePatternMatch = z.infer<typeof insertInvoicePatternMatchSchema>;
 export type InvoicePatternMatch = typeof invoicePatternMatches.$inferSelect;
 
+// ===================== IMMUTABLE AUDIT SYSTEM =====================
+
+export const changeSetSourceEnum = pgEnum('change_set_source', ['IMPORT', 'MANUAL_EDIT', 'OVERRIDE', 'CONFLICT_RESOLUTION', 'PATTERN_LEARNING', 'COUNTERPARTY_UPDATE', 'SYSTEM']);
+
+export const changeSets = pgTable("change_sets", {
+  id: serial("id").primaryKey(),
+  actorRole: text("actor_role"),
+  actorUserId: integer("actor_user_id"),
+  source: changeSetSourceEnum("source").notNull(),
+  entityType: text("entity_type").notNull(),
+  entityId: text("entity_id"),
+  projectId: integer("project_id"),
+  projectName: text("project_name"),
+  importRunId: integer("import_run_id"),
+  smartImportRunId: integer("smart_import_run_id"),
+  action: text("action").notNull(),
+  summary: text("summary"),
+  overrideCategory: text("override_category"),
+  overrideComment: text("override_comment"),
+  correlationId: text("correlation_id"),
+  fileMetadata: jsonb("file_metadata"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const insertChangeSetSchema = createInsertSchema(changeSets).omit({ id: true, createdAt: true });
+export type InsertChangeSet = z.infer<typeof insertChangeSetSchema>;
+export type ChangeSet = typeof changeSets.$inferSelect;
+
+export const fieldChanges = pgTable("field_changes", {
+  id: serial("id").primaryKey(),
+  changeSetId: integer("change_set_id").notNull().references(() => changeSets.id),
+  fieldName: text("field_name").notNull(),
+  oldValue: text("old_value"),
+  newValue: text("new_value"),
+  dataType: text("data_type").default("text"),
+});
+export const insertFieldChangeSchema = createInsertSchema(fieldChanges).omit({ id: true });
+export type InsertFieldChange = z.infer<typeof insertFieldChangeSchema>;
+export type FieldChange = typeof fieldChanges.$inferSelect;
+
+// Override governance categories
+export const OVERRIDE_CATEGORIES = [
+  'DATA_CORRECTION',
+  'BUSINESS_DECISION',
+  'TIMING_ADJUSTMENT',
+  'SCOPE_CHANGE',
+  'RECONCILIATION',
+  'SYSTEM_ERROR_FIX',
+  'OTHER',
+] as const;
+export type OverrideCategory = typeof OVERRIDE_CATEGORIES[number];
+
 export const DEFAULT_ROLE_PERMISSIONS: InsertRolePermission[] = [
   { role: "COO_ADMIN", label: "COO Admin", description: "Full executive access, settings, user management", sections: ["EXCO", "PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "ADMIN", "MY_TOOL", "FINANCE"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
   { role: "CEO_ADMIN", label: "CEO Admin", description: "Full executive access, strategic oversight", sections: ["EXCO", "PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "ADMIN", "MY_TOOL", "FINANCE"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },

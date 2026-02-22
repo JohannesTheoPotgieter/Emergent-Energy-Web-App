@@ -22,8 +22,9 @@ import {
   issueResolutionRules,
   invoicePatternRules,
   invoicePatternMatches,
+  projectInfo,
 } from "@shared/schema";
-import { projectInfo } from "@shared/schema";
+import { recordImportChange, recordSystemEvent } from "./lib/audit/diff-engine";
 import { eq, desc, and, sql } from "drizzle-orm";
 
 function extractProjectNameFromFilename(fileName: string): string {
@@ -566,6 +567,49 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
       return res.status(400).json({ error: "This import has already been committed" });
     }
 
+    // Import recency enforcement
+    const lastCommitted = await db
+      .select()
+      .from(smartImportRuns)
+      .where(and(
+        eq(smartImportRuns.projectName, run.projectName),
+        eq(smartImportRuns.status, "COMMITTED")
+      ))
+      .orderBy(desc(smartImportRuns.committedAt))
+      .limit(1);
+
+    if (lastCommitted.length > 0) {
+      const lastDate = lastCommitted[0].committedAt;
+      const currentDate = run.uploadedAt;
+      if (lastDate && currentDate) {
+        const lastTs = new Date(lastDate).getTime();
+        const currentTs = new Date(currentDate).getTime();
+        const forceCommit = req.body?.forceCommit === true;
+        const ackEqualDate = req.body?.acknowledgeEqualDate === true;
+
+        if (currentTs < lastTs && !forceCommit) {
+          return res.status(409).json({
+            error: "import_older_than_existing",
+            message: "This import file is older than the last committed import. Newer imports take precedence.",
+            lastCommittedAt: lastDate,
+            currentUploadedAt: currentDate,
+            hint: "Upload a newer file or set forceCommit=true to override.",
+          });
+        }
+
+        if (Math.abs(currentTs - lastTs) < 60000 && !ackEqualDate) {
+          return res.status(409).json({
+            error: "import_equal_date",
+            message: "This import has a similar timestamp to the last committed import. Please review for conflicts.",
+            lastCommittedAt: lastDate,
+            currentUploadedAt: currentDate,
+            requiresReview: true,
+            hint: "Set acknowledgeEqualDate=true after reviewing conflicts.",
+          });
+        }
+      }
+    }
+
     const issues = await db
       .select()
       .from(importIssues)
@@ -866,6 +910,31 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
         })
         .where(eq(smartImportRuns.id, runId));
     });
+
+    // Record audit ChangeSet for the import commit
+    try {
+      const importFields: Array<{ fieldName: string; oldValue: string | null; newValue: string | null; dataType?: string }> = [];
+      if (counts.planTasks > 0) importFields.push({ fieldName: "planTasks", oldValue: null, newValue: String(counts.planTasks), dataType: "number" });
+      if (counts.revenueLines > 0) importFields.push({ fieldName: "revenueLines", oldValue: null, newValue: String(counts.revenueLines), dataType: "number" });
+      if (counts.costLines > 0) importFields.push({ fieldName: "costLines", oldValue: null, newValue: String(counts.costLines), dataType: "number" });
+      if (counts.executionPhases > 0) importFields.push({ fieldName: "executionPhases", oldValue: null, newValue: String(counts.executionPhases), dataType: "number" });
+      if (counts.counterparties > 0) importFields.push({ fieldName: "counterparties", oldValue: null, newValue: String(counts.counterparties), dataType: "number" });
+
+      await recordImportChange({
+        actorUserId: userId,
+        smartImportRunId: runId,
+        entityType: "smart_import",
+        entityId: String(runId),
+        projectName: projectName || undefined,
+        projectId: projectId || undefined,
+        action: "IMPORT_COMMIT",
+        summary: `Import committed: ${counts.planTasks} tasks, ${counts.revenueLines} revenue, ${counts.costLines} cost, ${counts.executionPhases} phases`,
+        fileMetadata: { fileName: run.originalFileName, fileHash: run.fileHash },
+        fields: importFields,
+      });
+    } catch (auditErr: any) {
+      console.warn("[smart-import] Audit logging failed (non-blocking):", auditErr.message);
+    }
 
     res.json({ success: true, runId, counts });
   } catch (err: any) {
