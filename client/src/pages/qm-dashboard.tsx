@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,6 +16,9 @@ import {
 } from "@/components/ui/dialog";
 import { Shield, ShieldCheck, AlertTriangle, Search, ChevronRight, ClipboardCheck, BarChart3, CheckCircle2, Eye, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { ActionBar } from "@/components/guidance/ActionBar";
+import { MicroWalkthrough, ReplayWalkthrough } from "@/components/guidance/MicroWalkthrough";
+import type { NextAction, BlockerInfo } from "@/hooks/use-guidance";
 
 async function qFetch(url: string, options?: RequestInit) {
   const token = localStorage.getItem('auth_token');
@@ -149,6 +152,25 @@ export default function QmDashboardPage() {
       )
     : 0;
 
+  const qmNextAction = useMemo((): NextAction | null => {
+    if (activeWarnings > 0) return { label: `${activeWarnings} quality warning${activeWarnings !== 1 ? "s" : ""} to review`, severity: "warning" };
+    const incomplete = checklists.filter(c => c.status !== "completed").length;
+    if (incomplete > 0) return { label: `${incomplete} checklist${incomplete !== 1 ? "s" : ""} still in progress`, severity: "info" };
+    return { label: "All quality checklists complete", severity: "info" };
+  }, [activeWarnings, checklists]);
+
+  const qmBlockers = useMemo((): BlockerInfo[] => {
+    const b: BlockerInfo[] = [];
+    if (activeWarnings > 0) b.push({ label: "Active quality warnings", count: activeWarnings, severity: "warning" });
+    return b;
+  }, [activeWarnings]);
+
+  const qmWalkthroughSteps = useMemo(() => [
+    { title: "Quality overview", description: "KPI cards at the top show total projects, completions, warnings, and average progress." },
+    { title: "Project checklists", description: "Click any row to open the full quality checklist for that project." },
+    { title: "Warnings", description: "Active warnings are shown below. Override or resolve them with a reason." },
+  ], []);
+
   return (
     <div className="space-y-6" data-testid="qm-dashboard-page">
       <div className="flex items-center gap-3">
@@ -157,7 +179,11 @@ export default function QmDashboardPage() {
           <h2 className="text-lg sm:text-xl md:text-2xl font-heading font-bold" data-testid="text-qm-title">Quality Management</h2>
           <p className="text-sm text-muted-foreground">Overview of all project quality checklists</p>
         </div>
+        <ReplayWalkthrough screenId="qm-dashboard" />
       </div>
+
+      <MicroWalkthrough screenId="qm-dashboard" steps={qmWalkthroughSteps} />
+      <ActionBar nextAction={qmNextAction} blockers={qmBlockers} />
 
       <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <Card><CardContent className="p-4 flex items-center gap-3">

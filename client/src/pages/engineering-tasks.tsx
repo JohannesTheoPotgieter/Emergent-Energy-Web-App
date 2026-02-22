@@ -47,6 +47,10 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { PROJECT_PHASE_LABELS, type ProjectPhase } from "@shared/schema";
+import { ActionBar } from "@/components/guidance/ActionBar";
+import { InlineTip } from "@/components/guidance/InlineTip";
+import { MicroWalkthrough, ReplayWalkthrough } from "@/components/guidance/MicroWalkthrough";
+import type { NextAction, BlockerInfo } from "@/hooks/use-guidance";
 
 async function engFetch(url: string, options?: RequestInit) {
   const token = localStorage.getItem("auth_token");
@@ -1321,6 +1325,29 @@ export default function EngineeringTasksPage() {
   }, {} as Record<string, Task[]>);
 
   const overdueTasks = filtered.filter(t => isOverdue(t.dueDate, t.status));
+  const needsApprovalTasks = filtered.filter(t => t.status === "NEEDS APPROVAL");
+  const holdTasks = filtered.filter(t => t.status === "HOLD");
+
+  const engNextAction = useMemo((): NextAction | null => {
+    if (overdueTasks.length > 0) return { label: `${overdueTasks.length} overdue task${overdueTasks.length !== 1 ? "s" : ""} — review and update`, severity: "urgent" };
+    if (needsApprovalTasks.length > 0) return { label: `${needsApprovalTasks.length} task${needsApprovalTasks.length !== 1 ? "s" : ""} awaiting approval`, severity: "warning" };
+    if (holdTasks.length > 0) return { label: `${holdTasks.length} task${holdTasks.length !== 1 ? "s" : ""} on hold — check if blockers resolved`, severity: "warning" };
+    return { label: "All tasks on track — review board for next priorities", severity: "info" };
+  }, [overdueTasks, needsApprovalTasks, holdTasks]);
+
+  const engBlockers = useMemo((): BlockerInfo[] => {
+    const b: BlockerInfo[] = [];
+    if (overdueTasks.length > 0) b.push({ label: "Overdue tasks", count: overdueTasks.length, severity: "urgent" });
+    if (holdTasks.length > 0) b.push({ label: "Tasks on hold", count: holdTasks.length, severity: "warning" });
+    if (needsApprovalTasks.length > 0) b.push({ label: "Pending approval", count: needsApprovalTasks.length, severity: "warning" });
+    return b;
+  }, [overdueTasks, holdTasks, needsApprovalTasks]);
+
+  const engWalkthroughSteps = useMemo(() => [
+    { title: "Board or List view", description: "Switch between Kanban board and list view using the toggle buttons in the top bar." },
+    { title: "Filter & search", description: "Use filters for status, priority, or assignee. Type in the search box to find tasks by name or project." },
+    { title: "Drag to update", description: "In board view, drag task cards between columns to change their status instantly." },
+  ], []);
 
   // Check for taskId in URL query params
   useEffect(() => {
@@ -1345,6 +1372,7 @@ export default function EngineeringTasksPage() {
               {myTasksOnly ? `${myTasks.length} of your tasks` : `${tasks.length} tasks`} · {overdueTasks.length} overdue
             </p>
           </div>
+          <ReplayWalkthrough screenId="eng-tasks" />
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <div className="relative">
@@ -1534,6 +1562,9 @@ export default function EngineeringTasksPage() {
           </Select>
         )}
       </div>
+
+      <MicroWalkthrough screenId="eng-tasks" steps={engWalkthroughSteps} />
+      <ActionBar nextAction={engNextAction} blockers={engBlockers} />
 
       <div className="flex flex-wrap gap-1.5">
         {SAVED_FILTERS.map(f => (

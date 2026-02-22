@@ -28,6 +28,9 @@ import {
   Filter,
   X,
 } from "lucide-react";
+import { ActionBar } from "@/components/guidance/ActionBar";
+import { MicroWalkthrough, ReplayWalkthrough } from "@/components/guidance/MicroWalkthrough";
+import type { NextAction, BlockerInfo } from "@/hooks/use-guidance";
 
 async function spFetch(url: string, options?: RequestInit) {
   const token = localStorage.getItem("auth_token");
@@ -504,6 +507,27 @@ export default function EngineeringInbox() {
 
   const hasFilters = Object.values(filters).some(Boolean);
 
+  const newRequests = requests.filter(r => r.status === "New");
+  const inboxNextAction = useMemo((): NextAction | null => {
+    if (conflicts > 0) return { label: `${conflicts} sync conflict${conflicts !== 1 ? "s" : ""} need resolution`, severity: "urgent" };
+    if (newRequests.length > 0) return { label: `${newRequests.length} new request${newRequests.length !== 1 ? "s" : ""} to triage`, severity: "warning" };
+    if (awaitingCp > 0) return { label: `${awaitingCp} request${awaitingCp !== 1 ? "s" : ""} awaiting Cost Proposal sign-off`, severity: "info" };
+    return { label: "Pipeline clear — all requests in progress", severity: "info" };
+  }, [conflicts, newRequests, awaitingCp]);
+
+  const inboxBlockers = useMemo((): BlockerInfo[] => {
+    const b: BlockerInfo[] = [];
+    if (conflicts > 0) b.push({ label: "Sync conflicts", count: conflicts, severity: "urgent" });
+    if (newRequests.length > 0) b.push({ label: "Untriaged requests", count: newRequests.length, severity: "warning" });
+    return b;
+  }, [conflicts, newRequests]);
+
+  const inboxWalkthroughSteps = useMemo(() => [
+    { title: "Request pipeline", description: "All engineering requests come in here from SharePoint. They're grouped by status." },
+    { title: "Click to review", description: "Click any row to open a detail drawer. You can add notes, generate task packs, or mark CP signed." },
+    { title: "Filters", description: "Use the filter row to narrow by status, priority, type, or designer." },
+  ], []);
+
   if (isLoading) {
     return (
       <div data-testid="engineering-inbox" className="space-y-5">
@@ -537,8 +561,12 @@ export default function EngineeringInbox() {
               Last sync: {formatTimestamp(syncStatus?.lastPulledAt)}
             </p>
           </div>
+          <ReplayWalkthrough screenId="eng-inbox" />
         </div>
       </div>
+
+      <MicroWalkthrough screenId="eng-inbox" steps={inboxWalkthroughSteps} />
+      <ActionBar nextAction={inboxNextAction} blockers={inboxBlockers} />
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Card>
