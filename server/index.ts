@@ -301,6 +301,12 @@ async function seedUsers() {
   const { registerSmartImportRoutes } = await import("./smart-import-routes");
   registerSmartImportRoutes(app);
 
+  const { registerInvoicePatternRoutes } = await import("./invoice-pattern-routes");
+  registerInvoicePatternRoutes(app);
+
+  const { registerSubcontractorRoutes } = await import("./subcontractor-routes");
+  registerSubcontractorRoutes(app);
+
   const { registerMeetingRoutes } = await import("./meeting-routes");
   registerMeetingRoutes(app);
 

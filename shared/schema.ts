@@ -2626,6 +2626,51 @@ export const mockSpItems = pgTable("mock_sp_items", {
 });
 export type MockSpItem = typeof mockSpItems.$inferSelect;
 
+// ===================== INVOICE PATTERN CLASSIFICATION =====================
+
+export const patternTypeEnum = pgEnum('pattern_type', ['PREFIX', 'REGEX', 'TOKEN_SHAPE']);
+export const patternMatchOutcomeEnum = pgEnum('pattern_match_outcome', ['AUTO_APPLIED', 'USER_CONFIRMED', 'USER_OVERRIDDEN', 'UNRESOLVED']);
+
+export const invoicePatternRules = pgTable("invoice_pattern_rules", {
+  id: serial("id").primaryKey(),
+  patternType: patternTypeEnum("pattern_type").notNull(),
+  patternValue: text("pattern_value").notNull(),
+  normalizedExample: text("normalized_example"),
+  counterpartyId: integer("counterparty_id").references(() => counterparties.id),
+  counterpartyName: text("counterparty_name"),
+  inferredType: counterpartyTypeEnum("inferred_type").notNull(),
+  confidenceWeight: integer("confidence_weight").notNull().default(50),
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  lastConfirmedAt: timestamp("last_confirmed_at"),
+  timesMatched: integer("times_matched").notNull().default(0),
+  timesConfirmed: integer("times_confirmed").notNull().default(0),
+  timesOverridden: integer("times_overridden").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+});
+export const insertInvoicePatternRuleSchema = createInsertSchema(invoicePatternRules).omit({ id: true, createdAt: true, timesMatched: true, timesConfirmed: true, timesOverridden: true });
+export type InsertInvoicePatternRule = z.infer<typeof insertInvoicePatternRuleSchema>;
+export type InvoicePatternRule = typeof invoicePatternRules.$inferSelect;
+
+export const invoicePatternMatches = pgTable("invoice_pattern_matches", {
+  id: serial("id").primaryKey(),
+  importRunId: integer("import_run_id").references(() => smartImportRuns.id),
+  projectId: integer("project_id").references(() => projectInfo.id),
+  invoiceNumberRaw: text("invoice_number_raw"),
+  invoiceNumberNorm: text("invoice_number_norm"),
+  matchedRuleId: integer("matched_rule_id").references(() => invoicePatternRules.id),
+  inferredType: counterpartyTypeEnum("inferred_type").notNull().default('OTHER'),
+  inferredCounterpartyId: integer("inferred_counterparty_id").references(() => counterparties.id),
+  confidenceScore: integer("confidence_score").notNull().default(0),
+  outcome: patternMatchOutcomeEnum("outcome").notNull().default('UNRESOLVED'),
+  sourceRow: integer("source_row"),
+  overrideReason: text("override_reason"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const insertInvoicePatternMatchSchema = createInsertSchema(invoicePatternMatches).omit({ id: true, createdAt: true });
+export type InsertInvoicePatternMatch = z.infer<typeof insertInvoicePatternMatchSchema>;
+export type InvoicePatternMatch = typeof invoicePatternMatches.$inferSelect;
+
 export const DEFAULT_ROLE_PERMISSIONS: InsertRolePermission[] = [
   { role: "COO_ADMIN", label: "COO Admin", description: "Full executive access, settings, user management", sections: ["EXCO", "PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "ADMIN", "MY_TOOL", "FINANCE"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
   { role: "CEO_ADMIN", label: "CEO Admin", description: "Full executive access, strategic oversight", sections: ["EXCO", "PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "ADMIN", "MY_TOOL", "FINANCE"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },

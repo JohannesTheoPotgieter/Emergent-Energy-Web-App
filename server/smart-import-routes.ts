@@ -20,6 +20,8 @@ import {
   mappingRules,
   templateProfiles,
   issueResolutionRules,
+  invoicePatternRules,
+  invoicePatternMatches,
 } from "@shared/schema";
 import { projectInfo } from "@shared/schema";
 import { eq, desc, and, sql } from "drizzle-orm";
@@ -723,6 +725,15 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
       if (norm.costLines && norm.costLines.length > 0) {
         const costIgnored = ignoredRows.get("EXPENDITURE") || new Set();
         const costOverrides = overrideRows.get("EXPENDITURE") || new Map();
+
+        const classificationMap = new Map<number, any>();
+        const classifications: any[] = summary.invoiceClassifications || [];
+        for (const cl of classifications) {
+          if (cl.outcome === "AUTO_APPLIED" || cl.outcome === "USER_CONFIRMED" || cl.outcome === "USER_OVERRIDDEN") {
+            classificationMap.set(cl.sourceRow, cl);
+          }
+        }
+
         const costValues = norm.costLines
           .filter((c: any) => !costIgnored.has(c.sourceRow))
           .map((c: any) => {
@@ -730,13 +741,18 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
             const merged = ov ? { ...c, ...ov } : c;
             const cpName = merged.counterpartyName?.trim();
             const cpId = cpName ? counterpartyMap.get(cpName.toLowerCase()) || null : null;
+
+            const classification = classificationMap.get(c.sourceRow);
+            const counterpartyType = classification?.inferredType || null;
+            const classifiedCpId = classification?.inferredCounterpartyId || cpId;
+
             return {
               projectId,
               projectName,
               costCategory: merged.costCategory,
-              counterpartyId: cpId,
+              counterpartyId: classifiedCpId,
               counterpartyName: merged.counterpartyName,
-              counterpartyType: null,
+              counterpartyType,
               description: merged.description,
               amountExVat: merged.amountExVat,
               invoiceNumber: merged.invoiceNumber,
@@ -755,6 +771,34 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
           await tx.insert(normalizedCostLines).values(costValues);
         }
         counts.costLines = costValues.length;
+
+        if (classifications.length > 0) {
+          const matchValues = classifications.map((cl: any) => ({
+            importRunId: runId,
+            projectId,
+            invoiceNumberRaw: cl.invoiceNumberRaw,
+            invoiceNumberNorm: cl.invoiceNumberNorm,
+            matchedRuleId: cl.matchedRuleId || null,
+            inferredType: cl.inferredType || "OTHER",
+            inferredCounterpartyId: cl.inferredCounterpartyId || null,
+            confidenceScore: cl.confidenceScore || 0,
+            outcome: cl.outcome || "UNRESOLVED",
+            sourceRow: cl.sourceRow,
+            overrideReason: cl.overrideReason || null,
+          }));
+          for (const mv of matchValues) {
+            await tx.insert(invoicePatternMatches).values(mv);
+          }
+
+          for (const cl of classifications) {
+            if (cl.matchedRuleId && (cl.outcome === "AUTO_APPLIED" || cl.outcome === "USER_CONFIRMED")) {
+              await tx
+                .update(invoicePatternRules)
+                .set({ timesMatched: sql`${invoicePatternRules.timesMatched} + 1` })
+                .where(eq(invoicePatternRules.id, cl.matchedRuleId));
+            }
+          }
+        }
       }
 
       if (norm.executionPhases && norm.executionPhases.length > 0) {
