@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +17,7 @@ import {
 import {
   DollarSign, Users, Clock, TrendingUp, Search, Filter,
   Loader2, ArrowUpDown, ChevronRight, AlertCircle, Calendar,
-  CheckCircle2, CircleDot, ExternalLink, FileText,
+  CheckCircle2, CircleDot, ExternalLink, FileText, Pencil, Check, X,
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
@@ -44,6 +44,7 @@ type SortField = "totalSpendExVat" | "invoiceCount" | "projectCount" | "lastInvo
 
 export default function SubcontractorDashboardPage() {
   const [, navigate] = useLocation();
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [projectFilter, setProjectFilter] = useState("all");
@@ -52,6 +53,45 @@ export default function SubcontractorDashboardPage() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [selectedCp, setSelectedCp] = useState<string | null>(null);
   const [invoiceStatusFilter, setInvoiceStatusFilter] = useState("all");
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState("");
+  const [renameError, setRenameError] = useState("");
+  const [renameLoading, setRenameLoading] = useState(false);
+
+  const handleStartRename = () => {
+    setRenameValue(selectedCp || "");
+    setRenameError("");
+    setIsRenaming(true);
+  };
+
+  const handleCancelRename = () => {
+    setIsRenaming(false);
+    setRenameError("");
+  };
+
+  const handleConfirmRename = async () => {
+    if (!selectedCp || !renameValue.trim()) return;
+    if (renameValue.trim() === selectedCp) { setIsRenaming(false); return; }
+    setRenameLoading(true);
+    setRenameError("");
+    try {
+      const res = await fetch("/api/subcontractor-dashboard/rename", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ oldName: selectedCp, newName: renameValue.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setRenameError(data.error || "Rename failed"); return; }
+      setSelectedCp(data.newName);
+      setIsRenaming(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/subcontractor-dashboard/summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/subcontractor-dashboard/detail"] });
+    } catch (err: any) {
+      setRenameError(err.message || "Rename failed");
+    } finally {
+      setRenameLoading(false);
+    }
+  };
 
   const { data, isLoading } = useQuery({
     queryKey: ["/api/subcontractor-dashboard/summary", typeFilter, projectFilter, coreOnly],
@@ -249,10 +289,40 @@ export default function SubcontractorDashboardPage() {
         </div>
       )}
 
-      <Sheet open={!!selectedCp} onOpenChange={(open) => { if (!open) { setSelectedCp(null); setInvoiceStatusFilter("all"); } }}>
+      <Sheet open={!!selectedCp} onOpenChange={(open) => { if (!open) { setSelectedCp(null); setInvoiceStatusFilter("all"); setIsRenaming(false); } }}>
         <SheetContent className="w-[540px] sm:w-[680px] overflow-y-auto" data-testid="cp-detail-drawer">
           <SheetHeader>
-            <SheetTitle className="text-lg">{selectedCp}</SheetTitle>
+            {isRenaming ? (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={renameValue}
+                    onChange={e => setRenameValue(e.target.value)}
+                    className="text-lg font-semibold h-9"
+                    data-testid="input-rename-counterparty"
+                    autoFocus
+                    onKeyDown={e => { if (e.key === "Enter") handleConfirmRename(); if (e.key === "Escape") handleCancelRename(); }}
+                  />
+                  <Button size="icon" variant="ghost" className="h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-50"
+                    onClick={handleConfirmRename} disabled={renameLoading} data-testid="btn-confirm-rename">
+                    {renameLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  </Button>
+                  <Button size="icon" variant="ghost" className="h-8 w-8 text-slate-400 hover:text-slate-600"
+                    onClick={handleCancelRename} data-testid="btn-cancel-rename">
+                    <X className="w-4 h-4" />
+                  </Button>
+                </div>
+                {renameError && <p className="text-xs text-red-600" data-testid="text-rename-error">{renameError}</p>}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <SheetTitle className="text-lg">{selectedCp}</SheetTitle>
+                <Button size="icon" variant="ghost" className="h-7 w-7 text-slate-400 hover:text-blue-600"
+                  onClick={handleStartRename} title="Rename subcontractor" data-testid="btn-rename-counterparty">
+                  <Pencil className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+            )}
           </SheetHeader>
           {detailLoading ? (
             <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin" /></div>
