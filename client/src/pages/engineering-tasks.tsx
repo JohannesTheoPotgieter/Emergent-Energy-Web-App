@@ -39,6 +39,11 @@ import {
   Send,
   FolderKanban,
   Circle,
+  UserCircle,
+  Timer,
+  ArrowRight,
+  PauseCircle,
+  MoreVertical,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { PROJECT_PHASE_LABELS, type ProjectPhase } from "@shared/schema";
@@ -155,10 +160,25 @@ const SAVED_FILTERS: { label: string; filter: Record<string, string> }[] = [
   { label: "QC Approved", filter: { status: "QC APPROVED" } },
 ];
 
+function getSavedMyName(): string {
+  return localStorage.getItem("eng_my_name") || "";
+}
+
+function setSavedMyName(name: string) {
+  localStorage.setItem("eng_my_name", name);
+}
+
 function formatDate(d: string | null) {
   if (!d) return "—";
   try {
     return new Date(d).toLocaleDateString("en-ZA", { day: "2-digit", month: "short", year: "numeric" });
+  } catch { return d; }
+}
+
+function formatDateShort(d: string | null) {
+  if (!d) return "—";
+  try {
+    return new Date(d).toLocaleDateString("en-ZA", { day: "2-digit", month: "short" });
   } catch { return d; }
 }
 
@@ -167,7 +187,50 @@ function isOverdue(dueDate: string | null, status: string) {
   return new Date(dueDate) < new Date();
 }
 
-function TaskCard({ task, onClick }: { task: Task; onClick: () => void }) {
+function isDueThisWeek(dueDate: string | null, status: string) {
+  if (!dueDate || status === "COMPLETE") return false;
+  const due = new Date(dueDate);
+  const now = new Date();
+  const weekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  return due >= now && due <= weekFromNow;
+}
+
+function daysLabel(d: string | null) {
+  if (!d) return null;
+  const diff = Math.round((new Date(d).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+  if (diff < 0) return `${Math.abs(diff)}d late`;
+  if (diff === 0) return "Today";
+  if (diff === 1) return "Tomorrow";
+  return `${diff}d`;
+}
+
+function QuickStatusSelect({ task, onStatusChange }: { task: Task; onStatusChange: (id: number, status: string) => void }) {
+  return (
+    <Select
+      value={task.status}
+      onValueChange={(v) => {
+        if (v !== task.status) onStatusChange(task.id, v);
+      }}
+    >
+      <SelectTrigger
+        className="h-6 text-[9px] px-1.5 w-auto min-w-0 border-none shadow-none bg-transparent hover:bg-muted/40"
+        onClick={(e) => e.stopPropagation()}
+        data-testid={`quick-status-${task.id}`}
+      >
+        <Badge className={`text-[9px] px-1.5 py-0 ${statusColors[task.status] || "bg-gray-100"}`}>
+          {task.status}
+        </Badge>
+      </SelectTrigger>
+      <SelectContent>
+        {TASK_STATUSES.map(s => (
+          <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+function TaskCard({ task, onClick, onStatusChange }: { task: Task; onClick: () => void; onStatusChange: (id: number, status: string) => void }) {
   const overdue = isOverdue(task.dueDate, task.status);
   const projectDisplay = task.projectName?.replace(/_Tracker.*$/i, "").replace(/_/g, " ");
 
@@ -179,16 +242,16 @@ function TaskCard({ task, onClick }: { task: Task; onClick: () => void }) {
         e.dataTransfer.effectAllowed = "move";
       }}
       onClick={onClick}
-      className="bg-card border rounded-lg p-3 cursor-pointer hover:shadow-md transition-all duration-200 group"
+      className={`bg-card border rounded-lg p-3 cursor-pointer hover:shadow-md transition-all duration-200 group ${overdue ? "border-red-200 dark:border-red-800" : ""}`}
       data-testid={`kanban-card-${task.id}`}
     >
-      <div className="flex items-start justify-between gap-2 mb-2">
+      <div className="flex items-start justify-between gap-2 mb-1.5">
         <h4 className="text-sm font-medium leading-tight line-clamp-2 flex-1" data-testid={`text-card-title-${task.id}`}>
           {task.title}
         </h4>
         <GripVertical className="h-4 w-4 text-muted-foreground/30 group-hover:text-muted-foreground/60 shrink-0" />
       </div>
-      <p className="text-xs text-muted-foreground mb-2 truncate">{projectDisplay}</p>
+      <p className="text-[10px] text-muted-foreground mb-2 truncate">{projectDisplay}</p>
       <div className="flex items-center justify-between gap-1 flex-wrap">
         <Badge className={`text-[9px] px-1.5 py-0 ${priorityColors[task.priority] || "bg-gray-100"}`}>
           {task.priority}
@@ -196,19 +259,29 @@ function TaskCard({ task, onClick }: { task: Task; onClick: () => void }) {
         {task.dueDate && (
           <span className={`text-[10px] flex items-center gap-0.5 ${overdue ? "text-red-600 font-semibold" : "text-muted-foreground"}`}>
             <Calendar className="h-3 w-3" />
-            {formatDate(task.dueDate)}
+            {daysLabel(task.dueDate) || formatDateShort(task.dueDate)}
             {overdue && <AlertTriangle className="h-3 w-3" />}
           </span>
         )}
       </div>
-      {task.assignees && task.assignees.length > 0 && (
-        <div className="mt-2 flex items-center gap-1 text-[10px] text-muted-foreground">
-          <User className="h-3 w-3" />
-          <span className="truncate">{task.assignees[0]}</span>
+      <div className="flex items-center justify-between mt-2">
+        {task.assignees && task.assignees.length > 0 ? (
+          <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+            <User className="h-3 w-3" />
+            <span className="truncate max-w-[80px]">{task.assignees[0]}</span>
+          </div>
+        ) : <div />}
+        <div onClick={(e) => e.stopPropagation()}>
+          <QuickStatusSelect task={task} onStatusChange={onStatusChange} />
         </div>
+      </div>
+      {task.holdReason && (
+        <p className="text-[10px] text-red-500 mt-1 truncate flex items-center gap-0.5">
+          <PauseCircle className="h-3 w-3 shrink-0" /> {task.holdReason}
+        </p>
       )}
       {task.trackingRag && (
-        <div className="mt-1.5 flex items-center gap-1">
+        <div className="mt-1 flex items-center gap-1">
           <div className={`w-2 h-2 rounded-full ${task.trackingRag === "Green" ? "bg-green-500" : task.trackingRag === "Amber" ? "bg-amber-500" : task.trackingRag === "Red" ? "bg-red-500" : "bg-gray-400"}`} />
           <span className="text-[10px] text-muted-foreground">{task.trackingRag}</span>
         </div>
@@ -218,9 +291,9 @@ function TaskCard({ task, onClick }: { task: Task; onClick: () => void }) {
 }
 
 function KanbanColumn({
-  status, tasks, onDrop, onCardClick
+  status, tasks, onDrop, onCardClick, onStatusChange
 }: {
-  status: string; tasks: Task[]; onDrop: (taskId: number, newStatus: string) => void; onCardClick: (task: Task) => void;
+  status: string; tasks: Task[]; onDrop: (taskId: number, newStatus: string) => void; onCardClick: (task: Task) => void; onStatusChange: (id: number, status: string) => void;
 }) {
   const [dragOver, setDragOver] = useState(false);
 
@@ -243,16 +316,94 @@ function KanbanColumn({
           <span className="text-xs text-muted-foreground font-medium">{tasks.length}</span>
         </div>
       </div>
-      <ScrollArea className="flex-1 px-2 pb-2" style={{ maxHeight: "calc(100vh - 280px)" }}>
+      <ScrollArea className="flex-1 px-2 pb-2" style={{ maxHeight: "calc(100vh - 320px)" }}>
         <div className="space-y-2">
           {tasks.map(task => (
-            <TaskCard key={task.id} task={task} onClick={() => onCardClick(task)} />
+            <TaskCard key={task.id} task={task} onClick={() => onCardClick(task)} onStatusChange={onStatusChange} />
           ))}
           {tasks.length === 0 && (
             <div className="text-center py-8 text-xs text-muted-foreground/50">No tasks</div>
           )}
         </div>
       </ScrollArea>
+    </div>
+  );
+}
+
+function PostUpdateForm({ taskId, currentStatus, onDone }: { taskId: number; currentStatus: string; onDone: () => void }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [updateText, setUpdateText] = useState("");
+  const [newStatus, setNewStatus] = useState(currentStatus);
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!updateText.trim() && newStatus === currentStatus) return;
+    setSubmitting(true);
+    try {
+      if (updateText.trim()) {
+        await engFetch(`/api/eng/tasks/${taskId}/comments`, {
+          method: "POST",
+          body: JSON.stringify({ body: updateText.trim() }),
+        });
+      }
+      if (newStatus !== currentStatus) {
+        await engFetch(`/api/eng/tasks/${taskId}`, {
+          method: "PATCH",
+          body: JSON.stringify({ status: newStatus }),
+        });
+      }
+      queryClient.invalidateQueries({ queryKey: ["eng-tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["task-comments", taskId] });
+      queryClient.invalidateQueries({ queryKey: ["task-activity", taskId] });
+      setUpdateText("");
+      toast({ title: "Update posted" });
+      onDone();
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="p-3 bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg space-y-2" data-testid="post-update-form">
+      <div className="flex items-center gap-2">
+        <ArrowRight className="h-3.5 w-3.5 text-blue-600" />
+        <span className="text-xs font-semibold text-blue-700 dark:text-blue-400">Post Update</span>
+      </div>
+      <Textarea
+        value={updateText}
+        onChange={(e) => setUpdateText(e.target.value)}
+        placeholder="What's the latest on this task?"
+        className="min-h-[60px] text-sm resize-none"
+        data-testid="input-post-update"
+      />
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-muted-foreground">Move to:</span>
+          <Select value={newStatus} onValueChange={setNewStatus}>
+            <SelectTrigger className="h-7 text-[10px] w-[140px]" data-testid="select-post-update-status">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {TASK_STATUSES.map(s => (
+                <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <Button
+          size="sm"
+          className="h-7 text-xs bg-blue-600 hover:bg-blue-700"
+          disabled={submitting || (!updateText.trim() && newStatus === currentStatus)}
+          onClick={handleSubmit}
+          data-testid="btn-post-update"
+        >
+          {submitting ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Send className="h-3 w-3 mr-1" />}
+          Post Update
+        </Button>
+      </div>
     </div>
   );
 }
@@ -266,7 +417,7 @@ function TaskDetailDrawer({
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [commentText, setCommentText] = useState("");
-  const [activeTab, setActiveTab] = useState<"comments" | "activity" | "subtasks">("comments");
+  const [activeTab, setActiveTab] = useState<"updates" | "activity" | "subtasks">("updates");
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<Record<string, string>>({});
 
@@ -326,6 +477,7 @@ function TaskDetailDrawer({
   };
 
   const projectDisplay = task.projectName?.replace(/_Tracker.*$/i, "").replace(/_/g, " ");
+  const overdue = isOverdue(task.dueDate, task.status);
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end" data-testid="task-detail-drawer">
@@ -350,6 +502,15 @@ function TaskDetailDrawer({
                 <p className="text-[10px] text-muted-foreground mt-1">ClickUp: {task.externalTaskId}</p>
               )}
             </div>
+
+            <PostUpdateForm
+              taskId={task.id}
+              currentStatus={task.status}
+              onDone={() => {
+                queryClient.invalidateQueries({ queryKey: ["eng-tasks"] });
+                onUpdate();
+              }}
+            />
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
@@ -384,7 +545,7 @@ function TaskDetailDrawer({
                 <Label className="text-[10px] text-muted-foreground uppercase tracking-wider">Due Date</Label>
                 <Input
                   type="date"
-                  className="h-8 text-xs"
+                  className={`h-8 text-xs ${overdue ? "border-red-300 text-red-600" : ""}`}
                   value={task.dueDate || ""}
                   onChange={(e) => updateMutation.mutate({ dueDate: e.target.value || null })}
                   data-testid="input-drawer-due-date"
@@ -469,30 +630,30 @@ function TaskDetailDrawer({
             <Separator />
 
             <div className="flex border-b">
-              {(["comments", "activity", "subtasks"] as const).map(tab => (
+              {(["updates", "activity", "subtasks"] as const).map(tab => (
                 <button
                   key={tab}
                   className={`px-3 py-2 text-xs font-medium border-b-2 transition-colors ${activeTab === tab ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
                   onClick={() => setActiveTab(tab)}
                   data-testid={`tab-${tab}`}
                 >
-                  {tab === "comments" && <MessageSquare className="h-3.5 w-3.5 inline mr-1" />}
+                  {tab === "updates" && <MessageSquare className="h-3.5 w-3.5 inline mr-1" />}
                   {tab === "activity" && <Activity className="h-3.5 w-3.5 inline mr-1" />}
                   {tab === "subtasks" && <ListTodo className="h-3.5 w-3.5 inline mr-1" />}
-                  {tab.charAt(0).toUpperCase() + tab.slice(1)}
-                  {tab === "comments" && comments.length > 0 && <span className="ml-1 text-muted-foreground">({comments.length})</span>}
+                  {tab === "updates" ? "Updates" : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                  {tab === "updates" && comments.length > 0 && <span className="ml-1 text-muted-foreground">({comments.length})</span>}
                   {tab === "subtasks" && subtasks.length > 0 && <span className="ml-1 text-muted-foreground">({subtasks.length})</span>}
                 </button>
               ))}
             </div>
 
-            {activeTab === "comments" && (
+            {activeTab === "updates" && (
               <div className="space-y-3">
                 <div className="flex gap-2">
                   <Input
                     value={commentText}
                     onChange={(e) => setCommentText(e.target.value)}
-                    placeholder="Add a comment..."
+                    placeholder="Add a quick comment..."
                     className="text-sm"
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && !e.shiftKey && commentText.trim()) {
@@ -512,13 +673,16 @@ function TaskDetailDrawer({
                   </Button>
                 </div>
                 {comments.length === 0 ? (
-                  <p className="text-xs text-muted-foreground text-center py-4">No comments yet</p>
+                  <p className="text-xs text-muted-foreground text-center py-4">No updates yet - post the first one above!</p>
                 ) : (
                   <div className="space-y-2">
                     {comments.map(c => (
                       <div key={c.id} className="p-2.5 bg-muted/30 rounded-lg" data-testid={`comment-${c.id}`}>
                         <div className="flex items-center justify-between mb-1">
-                          <span className="text-xs font-medium">{c.authorName || "System"}</span>
+                          <span className="text-xs font-medium flex items-center gap-1">
+                            <UserCircle className="h-3.5 w-3.5 text-muted-foreground" />
+                            {c.authorName || "Team"}
+                          </span>
                           <span className="text-[10px] text-muted-foreground">{formatDate(c.createdAt)}</span>
                         </div>
                         <p className="text-sm whitespace-pre-wrap">{c.body}</p>
@@ -545,8 +709,7 @@ function TaskDetailDrawer({
                           <span>changed <span className="font-medium">{a.fieldName}</span> from "{a.oldValue}" to "{a.newValue}"</span>
                         )}
                         {a.actionType === "comment_added" && <span>added a comment</span>}
-                        {a.actionType === "bulk_updated" && <span>updated task</span>}
-                        {!["created", "field_changed", "comment_added", "bulk_updated"].includes(a.actionType) && (
+                        {!["created", "field_changed", "comment_added"].includes(a.actionType) && (
                           <span>{a.actionType}: {a.newValue}</span>
                         )}
                         <span className="text-muted-foreground ml-1">{formatDate(a.createdAt)}</span>
@@ -633,11 +796,13 @@ function ProjectKanbanView({
   tasks,
   onCardClick,
   onDrop,
+  onStatusChange,
   searchTerm,
 }: {
   tasks: Task[];
   onCardClick: (task: Task) => void;
   onDrop: (taskId: number, newStatus: string) => void;
+  onStatusChange: (id: number, status: string) => void;
   searchTerm: string;
 }) {
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
@@ -862,7 +1027,7 @@ function ProjectKanbanView({
                                           {task.dueDate && (
                                             <span className={`text-[9px] flex items-center gap-0.5 ${isOverdue(task.dueDate, task.status) ? "text-red-600 font-semibold" : "text-muted-foreground"}`}>
                                               <Calendar className="h-2.5 w-2.5" />
-                                              {formatDate(task.dueDate)}
+                                              {formatDateShort(task.dueDate)}
                                             </span>
                                           )}
                                         </div>
@@ -909,11 +1074,137 @@ function ProjectKanbanView({
   );
 }
 
+function PersonalKpiStrip({ tasks, myTasks }: { tasks: Task[]; myTasks: Task[] }) {
+  const myActive = myTasks.filter(t => t.status !== "COMPLETE").length;
+  const myOverdue = myTasks.filter(t => isOverdue(t.dueDate, t.status)).length;
+  const myDueThisWeek = myTasks.filter(t => isDueThisWeek(t.dueDate, t.status)).length;
+  const myHold = myTasks.filter(t => t.status === "HOLD").length;
+  const myInProgress = myTasks.filter(t => t.status === "IN PROGRESS").length;
+
+  const stats = [
+    { label: "My Active", value: myActive, icon: <ListTodo className="w-3.5 h-3.5" />, color: "text-blue-600", bg: "bg-blue-50" },
+    { label: "In Progress", value: myInProgress, icon: <ArrowRight className="w-3.5 h-3.5" />, color: "text-blue-600", bg: "bg-blue-50" },
+    { label: "Due This Week", value: myDueThisWeek, icon: <Timer className="w-3.5 h-3.5" />, color: "text-indigo-600", bg: "bg-indigo-50" },
+    { label: "Overdue", value: myOverdue, icon: <AlertTriangle className="w-3.5 h-3.5" />, color: myOverdue > 0 ? "text-red-600" : "text-muted-foreground", bg: myOverdue > 0 ? "bg-red-50" : "bg-muted" },
+    { label: "On Hold", value: myHold, icon: <PauseCircle className="w-3.5 h-3.5" />, color: myHold > 0 ? "text-amber-600" : "text-muted-foreground", bg: myHold > 0 ? "bg-amber-50" : "bg-muted" },
+  ];
+
+  return (
+    <div className="flex gap-2 overflow-x-auto" data-testid="personal-kpi-strip">
+      {stats.map(s => (
+        <div key={s.label} className="flex items-center gap-2 px-3 py-2 rounded-lg border bg-card shrink-0">
+          <div className={`w-7 h-7 rounded-md ${s.bg} flex items-center justify-center`}>
+            <span className={s.color}>{s.icon}</span>
+          </div>
+          <div>
+            <p className={`text-base font-bold leading-none ${s.color}`} data-testid={`my-kpi-${s.label.toLowerCase().replace(/\s+/g, "-")}`}>{s.value}</p>
+            <p className="text-[9px] text-muted-foreground mt-0.5">{s.label}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function InlineListView({ tasks, onCardClick, onStatusChange, onPriorityChange }: {
+  tasks: Task[];
+  onCardClick: (task: Task) => void;
+  onStatusChange: (id: number, status: string) => void;
+  onPriorityChange: (id: number, priority: string) => void;
+}) {
+  return (
+    <Card>
+      <CardContent className="p-0">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b bg-muted/30 text-[11px] text-muted-foreground">
+                <th className="text-left p-2 pl-3">Title</th>
+                <th className="text-left p-2">Project</th>
+                <th className="text-left p-2">Status</th>
+                <th className="text-left p-2">Priority</th>
+                <th className="text-left p-2">Assignee</th>
+                <th className="text-left p-2">Due Date</th>
+                <th className="text-center p-2">RAG</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tasks.map(task => (
+                <tr
+                  key={task.id}
+                  className="border-b hover:bg-muted/10 transition-colors"
+                  data-testid={`row-task-${task.id}`}
+                >
+                  <td
+                    className="p-2 pl-3 font-medium max-w-[250px] truncate cursor-pointer hover:text-blue-600"
+                    onClick={() => onCardClick(task)}
+                    data-testid={`text-task-title-${task.id}`}
+                  >
+                    {task.title}
+                    {task.holdReason && <p className="text-[10px] text-red-500 truncate">{task.holdReason}</p>}
+                  </td>
+                  <td className="p-2 text-muted-foreground text-xs">
+                    {task.projectName?.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
+                  </td>
+                  <td className="p-2" onClick={(e) => e.stopPropagation()}>
+                    <Select value={task.status} onValueChange={(v) => onStatusChange(task.id, v)}>
+                      <SelectTrigger className="h-7 text-[10px] w-[130px] border-none shadow-none p-0" data-testid={`inline-status-${task.id}`}>
+                        <Badge className={`text-[10px] ${statusColors[task.status] || "bg-gray-100"}`}>{task.status}</Badge>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {TASK_STATUSES.map(s => <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </td>
+                  <td className="p-2" onClick={(e) => e.stopPropagation()}>
+                    <Select value={task.priority} onValueChange={(v) => onPriorityChange(task.id, v)}>
+                      <SelectTrigger className="h-7 text-[10px] w-[90px] border-none shadow-none p-0" data-testid={`inline-priority-${task.id}`}>
+                        <Badge className={`text-[10px] ${priorityColors[task.priority] || "bg-gray-100"}`}>{task.priority}</Badge>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PRIORITIES.map(p => <SelectItem key={p} value={p} className="text-xs">{p}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </td>
+                  <td className="p-2 text-xs text-muted-foreground truncate max-w-[120px]">
+                    {task.assignees?.[0] || "—"}
+                  </td>
+                  <td className={`p-2 text-xs ${isOverdue(task.dueDate, task.status) ? "text-red-600 font-semibold" : "text-muted-foreground"}`}>
+                    <div className="flex items-center gap-1">
+                      {formatDateShort(task.dueDate)}
+                      {isOverdue(task.dueDate, task.status) && <AlertTriangle className="h-3 w-3" />}
+                    </div>
+                  </td>
+                  <td className="p-2 text-center">
+                    {task.trackingRag && (
+                      <div className={`w-3 h-3 rounded-full mx-auto ${task.trackingRag === "Green" ? "bg-green-500" : task.trackingRag === "Amber" ? "bg-amber-500" : task.trackingRag === "Red" ? "bg-red-500" : "bg-gray-400"}`} />
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {tasks.length === 0 && (
+            <div className="text-center py-12 text-muted-foreground">
+              <ListTodo className="h-12 w-12 mx-auto mb-3 opacity-30" />
+              <p className="text-lg font-medium">No tasks found</p>
+              <p className="text-sm mt-1">Create a new task or adjust your filters</p>
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function EngineeringTasksPage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [viewMode, setViewMode] = useState<"board" | "list" | "projects">("board");
+  const [myTasksOnly, setMyTasksOnly] = useState(false);
+  const [myName, setMyName] = useState(getSavedMyName());
+  const [showNamePicker, setShowNamePicker] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
   const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
@@ -937,6 +1228,13 @@ export default function EngineeringTasksPage() {
     refetchOnMount: "always",
     staleTime: 0,
   });
+
+  const myTasks = useMemo(() => {
+    if (!myName) return [];
+    return tasks.filter(t =>
+      (t.assignees || []).some(a => a === myName)
+    );
+  }, [tasks, myName]);
 
   const createMutation = useMutation({
     mutationFn: (task: typeof newTask) => engFetch("/api/eng/tasks", {
@@ -962,15 +1260,40 @@ export default function EngineeringTasksPage() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  const updatePriorityMutation = useMutation({
+    mutationFn: ({ taskId, priority }: { taskId: number; priority: string }) =>
+      engFetch(`/api/eng/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify({ priority }) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["eng-tasks"] });
+      toast({ title: "Priority updated" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
   const handleDrop = useCallback((taskId: number, newStatus: string) => {
     const task = tasks.find(t => t.id === taskId);
     if (!task || task.status === newStatus) return;
     updateStatusMutation.mutate({ taskId, status: newStatus });
   }, [tasks, updateStatusMutation]);
 
+  const handleStatusChange = useCallback((taskId: number, newStatus: string) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task || task.status === newStatus) return;
+    if (newStatus === "COMPLETE" && (task.trackingRag === "Red" || task.priority === "Critical")) {
+      if (!window.confirm("This task has high-severity warnings. Proceed with completion?")) return;
+    }
+    updateStatusMutation.mutate({ taskId, status: newStatus });
+  }, [tasks, updateStatusMutation]);
+
+  const handlePriorityChange = useCallback((taskId: number, newPriority: string) => {
+    updatePriorityMutation.mutate({ taskId, priority: newPriority });
+  }, [updatePriorityMutation]);
+
   const uniqueAssignees = Array.from(new Set(tasks.flatMap(t => t.assignees || []).filter(Boolean))).sort();
 
-  const filtered = tasks.filter(t => {
+  const basePool = myTasksOnly ? myTasks : tasks;
+
+  const filtered = basePool.filter(t => {
     if (statusFilter !== "all" && t.status !== statusFilter) return false;
     if (priorityFilter !== "all" && t.priority !== priorityFilter) return false;
     if (assigneeFilter !== "all" && !(t.assignees || []).includes(assigneeFilter)) return false;
@@ -996,17 +1319,90 @@ export default function EngineeringTasksPage() {
 
   const overdueTasks = filtered.filter(t => isOverdue(t.dueDate, t.status));
 
+  // Check for taskId in URL query params
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const taskId = params.get("taskId");
+    if (taskId && tasks.length > 0) {
+      const task = tasks.find(t => t.id === parseInt(taskId));
+      if (task) setSelectedTask(task);
+    }
+  }, [tasks]);
+
   return (
     <div data-testid="eng-tasks-page" className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex items-center gap-3">
-          <ListTodo className="h-7 w-7 text-blue-500" />
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-sm">
+            <ListTodo className="h-5 w-5 text-white" />
+          </div>
           <div>
             <h2 className="text-2xl font-heading font-bold" data-testid="text-tasks-title">Task Board</h2>
-            <p className="text-xs text-muted-foreground">{tasks.length} tasks · {overdueTasks.length} overdue</p>
+            <p className="text-xs text-muted-foreground">
+              {myTasksOnly ? `${myTasks.length} of your tasks` : `${tasks.length} tasks`} · {overdueTasks.length} overdue
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <div className="relative">
+            <Button
+              variant={myTasksOnly ? "default" : "outline"}
+              size="sm"
+              className={`h-8 text-xs gap-1.5 ${myTasksOnly ? "bg-blue-600 hover:bg-blue-700" : ""}`}
+              onClick={() => {
+                if (!myName) {
+                  setShowNamePicker(true);
+                } else {
+                  setMyTasksOnly(!myTasksOnly);
+                }
+              }}
+              data-testid="btn-my-tasks"
+            >
+              <UserCircle className="h-4 w-4" />
+              {myName ? `${myName.split(" ")[0]}'s Tasks` : "My Tasks"}
+              {myTasks.length > 0 && (
+                <span className={`px-1.5 py-0 rounded-full text-[10px] font-bold ${myTasksOnly ? "bg-white/20" : "bg-blue-100 text-blue-700"}`}>
+                  {myTasks.length}
+                </span>
+              )}
+            </Button>
+            {myName && (
+              <button
+                className="absolute -top-1 -right-1 w-4 h-4 bg-muted hover:bg-red-100 rounded-full flex items-center justify-center text-muted-foreground hover:text-red-600 text-[8px] border"
+                onClick={(e) => { e.stopPropagation(); setShowNamePicker(true); }}
+                title="Change name"
+                data-testid="btn-change-name"
+              >
+                ×
+              </button>
+            )}
+          </div>
+          <Dialog open={showNamePicker} onOpenChange={setShowNamePicker}>
+            <DialogContent className="sm:max-w-[340px]">
+              <DialogHeader>
+                <DialogTitle className="text-base">Who are you?</DialogTitle>
+              </DialogHeader>
+              <p className="text-sm text-muted-foreground">Select your name to see your personal tasks.</p>
+              <div className="space-y-1 max-h-[300px] overflow-y-auto">
+                {uniqueAssignees.map(name => (
+                  <button
+                    key={name}
+                    className={`w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-muted transition-colors flex items-center gap-2 ${myName === name ? "bg-blue-50 text-blue-700 font-medium" : ""}`}
+                    onClick={() => {
+                      setMyName(name);
+                      setSavedMyName(name);
+                      setMyTasksOnly(true);
+                      setShowNamePicker(false);
+                    }}
+                    data-testid={`pick-name-${name}`}
+                  >
+                    <UserCircle className="h-4 w-4 text-muted-foreground" />
+                    {name}
+                  </button>
+                ))}
+              </div>
+            </DialogContent>
+          </Dialog>
           <div className="flex border rounded-md">
             <Button
               variant={viewMode === "board" ? "default" : "ghost"}
@@ -1090,6 +1486,10 @@ export default function EngineeringTasksPage() {
         </div>
       </div>
 
+      {myTasksOnly && (
+        <PersonalKpiStrip tasks={tasks} myTasks={myTasks} />
+      )}
+
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[200px] max-w-xs">
           <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
@@ -1163,6 +1563,7 @@ export default function EngineeringTasksPage() {
               tasks={tasksByStatus[status] || []}
               onDrop={handleDrop}
               onCardClick={setSelectedTask}
+              onStatusChange={handleStatusChange}
             />
           ))}
         </div>
@@ -1171,70 +1572,16 @@ export default function EngineeringTasksPage() {
           tasks={filtered}
           onCardClick={setSelectedTask}
           onDrop={handleDrop}
+          onStatusChange={handleStatusChange}
           searchTerm={searchTerm}
         />
       ) : (
-        <Card>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/30 text-[11px] text-muted-foreground">
-                    <th className="text-left p-2 pl-3">Title</th>
-                    <th className="text-left p-2">Project</th>
-                    <th className="text-left p-2">Status</th>
-                    <th className="text-left p-2">Priority</th>
-                    <th className="text-left p-2">Assignee</th>
-                    <th className="text-left p-2">Due Date</th>
-                    <th className="text-center p-2">RAG</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map(task => (
-                    <tr
-                      key={task.id}
-                      className="border-b hover:bg-muted/10 cursor-pointer transition-colors"
-                      onClick={() => setSelectedTask(task)}
-                      data-testid={`row-task-${task.id}`}
-                    >
-                      <td className="p-2 pl-3 font-medium max-w-[250px] truncate" data-testid={`text-task-title-${task.id}`}>
-                        {task.title}
-                        {task.holdReason && <p className="text-[10px] text-red-500 truncate">{task.holdReason}</p>}
-                      </td>
-                      <td className="p-2 text-muted-foreground text-xs">
-                        {task.projectName?.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
-                      </td>
-                      <td className="p-2">
-                        <Badge className={`text-[10px] ${statusColors[task.status] || "bg-gray-100"}`}>{task.status}</Badge>
-                      </td>
-                      <td className="p-2">
-                        <Badge className={`text-[10px] ${priorityColors[task.priority] || "bg-gray-100"}`}>{task.priority}</Badge>
-                      </td>
-                      <td className="p-2 text-xs text-muted-foreground truncate max-w-[120px]">
-                        {task.assignees?.[0] || "—"}
-                      </td>
-                      <td className={`p-2 text-xs ${isOverdue(task.dueDate, task.status) ? "text-red-600 font-semibold" : "text-muted-foreground"}`}>
-                        {formatDate(task.dueDate)}
-                      </td>
-                      <td className="p-2 text-center">
-                        {task.trackingRag && (
-                          <div className={`w-3 h-3 rounded-full mx-auto ${task.trackingRag === "Green" ? "bg-green-500" : task.trackingRag === "Amber" ? "bg-amber-500" : task.trackingRag === "Red" ? "bg-red-500" : "bg-gray-400"}`} />
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {filtered.length === 0 && (
-                <div className="text-center py-12 text-muted-foreground">
-                  <ListTodo className="h-12 w-12 mx-auto mb-3 opacity-30" />
-                  <p className="text-lg font-medium">No tasks found</p>
-                  <p className="text-sm mt-1">Create a new task or adjust your filters</p>
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+        <InlineListView
+          tasks={filtered}
+          onCardClick={setSelectedTask}
+          onStatusChange={handleStatusChange}
+          onPriorityChange={handlePriorityChange}
+        />
       )}
 
       {selectedTask && (
