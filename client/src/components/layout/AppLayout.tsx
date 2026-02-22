@@ -75,11 +75,10 @@ function getNavGroups(): NavGroup[] {
       heading: "ENGINEERING",
       section: "ENGINEERING",
       items: [
-        { label: "Eng Dashboard", icon: Wrench, path: "/engineering" },
+        { label: "Eng Standup", icon: Wrench, path: "/engineering" },
         { label: "Task Board", icon: ListTodo, path: "/engineering/tasks" },
         { label: "Pipeline Inbox", icon: InboxIcon, path: "/engineering/inbox" },
         { label: "SP Sync", icon: RefreshCw, path: "/engineering/sync" },
-        { label: "QA Harness", icon: Wrench, path: "/engineering/qa" },
       ],
     },
     {
@@ -200,7 +199,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         }).map((group) => {
           let visibleItems = group.items.filter(item => {
             if (item.path === "/engineering/sync" && companyRole !== "COO_ADMIN") return false;
-            if (item.path === "/engineering/qa" && companyRole !== "COO_ADMIN") return false;
             return true;
           });
           if (visibleItems.length === 0) return null;

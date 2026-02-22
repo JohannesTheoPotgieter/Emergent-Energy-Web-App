@@ -934,6 +934,162 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
+  // ========== ENGINEERING STANDUP DASHBOARD ==========
+
+  app.get("/api/eng/dashboard/standup", requireAuth, requireAdminOrEpm, async (req, res) => {
+    try {
+      const todayStr = new Date().toISOString().split('T')[0];
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().split('T')[0];
+      const sevenDaysOut = new Date();
+      sevenDaysOut.setDate(sevenDaysOut.getDate() + 7);
+      const weekEndStr = sevenDaysOut.toISOString().split('T')[0];
+
+      const [allTasks, allProjectInfoRows] = await Promise.all([
+        db.select().from(operationalTasks)
+          .orderBy(asc(operationalTasks.projectName), asc(operationalTasks.sortOrder)),
+        db.select({ projectName: projectInfo.projectName, phase: projectInfo.phase })
+          .from(projectInfo),
+      ]);
+
+      const normalizeKey = (n: string) => n.replace(/_Tracker.*$/i, "").replace(/_/g, " ").toLowerCase().trim();
+      const phaseByNorm = new Map<string, string>();
+      for (const pi of allProjectInfoRows) {
+        if (pi.phase) phaseByNorm.set(normalizeKey(pi.projectName), pi.phase);
+      }
+      function lookupPhase(taskProjectName: string): string {
+        const norm = normalizeKey(taskProjectName);
+        if (phaseByNorm.has(norm)) return phaseByNorm.get(norm)!;
+        const baseName = norm.replace(/\s*(phase\s*\d+|expansion|rev\d+|\+.*$)/gi, "").trim();
+        if (baseName && phaseByNorm.has(baseName)) return phaseByNorm.get(baseName)!;
+        for (const [key, phase] of phaseByNorm) {
+          if (key.startsWith(baseName) || baseName.startsWith(key)) return phase;
+        }
+        return "P0_FIRST_ASSESSMENT";
+      }
+
+      const openStatuses = new Set(["TO DO", "IN PROGRESS", "NEEDS APPROVAL", "PROVIDE FEEDBACK", "PROJECTS ASSISTANCE"]);
+
+      const recentlyCompleted = allTasks.filter(t =>
+        t.status === "COMPLETE" && t.completedAt &&
+        new Date(t.completedAt).toISOString().split('T')[0] >= yesterdayStr
+      );
+
+      const blockers = allTasks.filter(t =>
+        t.status === "HOLD" || (t.status !== "COMPLETE" && t.dueDate && t.dueDate < todayStr)
+      );
+
+      const holdItems = blockers.filter(t => t.status === "HOLD");
+      const overdueItems = blockers.filter(t => t.status !== "HOLD" && t.dueDate && t.dueDate < todayStr);
+
+      const upcomingThisWeek = allTasks.filter(t =>
+        openStatuses.has(t.status) && t.dueDate && t.dueDate >= todayStr && t.dueDate <= weekEndStr
+      ).sort((a, b) => (a.dueDate || "").localeCompare(b.dueDate || ""));
+
+      const inProgress = allTasks.filter(t => t.status === "IN PROGRESS");
+      const needsApproval = allTasks.filter(t => t.status === "NEEDS APPROVAL" || t.status === "PROVIDE FEEDBACK");
+
+      const assigneeMap = new Map<string, { active: number; overdue: number; hold: number; dueThisWeek: number }>();
+      for (const t of allTasks) {
+        if (t.status === "COMPLETE") continue;
+        const names = t.assignees && Array.isArray(t.assignees) ? t.assignees.filter(Boolean) : [];
+        if (names.length === 0) names.push("Unassigned");
+        for (const name of names) {
+          if (!assigneeMap.has(name)) assigneeMap.set(name, { active: 0, overdue: 0, hold: 0, dueThisWeek: 0 });
+          const w = assigneeMap.get(name)!;
+          w.active++;
+          if (t.dueDate && t.dueDate < todayStr) w.overdue++;
+          if (t.status === "HOLD") w.hold++;
+          if (t.dueDate && t.dueDate >= todayStr && t.dueDate <= weekEndStr) w.dueThisWeek++;
+        }
+      }
+      const workload = Array.from(assigneeMap.entries()).map(([name, w]) => ({ name, ...w }))
+        .sort((a, b) => b.overdue - a.overdue || b.active - a.active);
+
+      const projectMap = new Map<string, typeof allTasks>();
+      for (const t of allTasks) {
+        const key = t.projectName || "Unassigned";
+        if (!projectMap.has(key)) projectMap.set(key, []);
+        projectMap.get(key)!.push(t);
+      }
+
+      const projectHealth = Array.from(projectMap.entries()).map(([projectName, tasks]) => {
+        const phase = lookupPhase(projectName);
+        const total = tasks.length;
+        const completed = tasks.filter(t => t.status === "COMPLETE").length;
+        const active = tasks.filter(t => openStatuses.has(t.status)).length;
+        const hold = tasks.filter(t => t.status === "HOLD").length;
+        const overdue = tasks.filter(t => t.status !== "COMPLETE" && t.dueDate && t.dueDate < todayStr).length;
+        const dueThisWeek = tasks.filter(t => openStatuses.has(t.status) && t.dueDate && t.dueDate >= todayStr && t.dueDate <= weekEndStr).length;
+        const completion = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+        let rag: "GREEN" | "AMBER" | "RED" = "GREEN";
+        if (overdue > 0 || hold > 2) rag = "RED";
+        else if (hold > 0 || dueThisWeek > 3) rag = "AMBER";
+
+        return {
+          projectName,
+          displayName: projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " "),
+          phase,
+          phaseLabel: PROJECT_PHASE_LABELS[phase as ProjectPhase] || phase,
+          total, completed, active, hold, overdue, dueThisWeek, completion, rag,
+        };
+      }).sort((a, b) => {
+        const ragOrder = { RED: 0, AMBER: 1, GREEN: 2 };
+        return (ragOrder[a.rag] - ragOrder[b.rag]) || (b.overdue - a.overdue);
+      });
+
+      const statusPipeline: Record<string, number> = {};
+      for (const t of allTasks) {
+        statusPipeline[t.status] = (statusPipeline[t.status] || 0) + 1;
+      }
+
+      const mapTask = (t: typeof allTasks[0]) => ({
+        id: t.id,
+        title: t.title,
+        status: t.status,
+        priority: t.priority,
+        dueDate: t.dueDate,
+        assignees: t.assignees,
+        trackingRag: t.trackingRag,
+        projectName: t.projectName,
+        holdReason: t.holdReason,
+        blockerReason: t.blockerReason,
+        completedAt: t.completedAt,
+        taskTypeTag: t.taskTypeTag,
+      });
+
+      res.json({
+        date: todayStr,
+        summary: {
+          totalProjects: projectMap.size,
+          totalTasks: allTasks.length,
+          activeTasks: allTasks.filter(t => openStatuses.has(t.status)).length,
+          completedTasks: allTasks.filter(t => t.status === "COMPLETE").length,
+          overdueTasks: overdueItems.length,
+          holdTasks: holdItems.length,
+          recentlyCompletedCount: recentlyCompleted.length,
+          upcomingThisWeekCount: upcomingThisWeek.length,
+          needsApprovalCount: needsApproval.length,
+        },
+        recentlyCompleted: recentlyCompleted.slice(0, 20).map(mapTask),
+        blockers: {
+          hold: holdItems.slice(0, 20).map(mapTask),
+          overdue: overdueItems.slice(0, 20).map(mapTask),
+        },
+        upcomingThisWeek: upcomingThisWeek.slice(0, 30).map(mapTask),
+        needsApproval: needsApproval.slice(0, 15).map(mapTask),
+        inProgressHighlights: inProgress.slice(0, 15).map(mapTask),
+        workload,
+        projectHealth,
+        statusPipeline,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // ========== ENGINEERING DASHBOARD DATA ==========
 
   app.get("/api/eng/dashboard/projects", requireAuth, requireAdminOrEpm, async (req, res) => {

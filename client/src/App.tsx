@@ -49,7 +49,6 @@ import SmartImportPage from "@/pages/smart-import";
 import ProjectNormalizedViewPage from "@/pages/project-normalized-view";
 import EngineeringSyncPage from "@/pages/engineering-sync";
 import EngineeringInboxPage from "@/pages/engineering-inbox";
-import EngineeringQAPage from "@/pages/engineering-qa";
 
 import { useAuth } from "@/hooks/use-auth";
 import { useProgramData } from "@/hooks/use-program-data";
@@ -246,7 +245,7 @@ function ProtectedPages() {
         <Route path="/project-normalized/:projectName" component={ProjectNormalizedViewPage} />
         <Route path="/engineering/sync" component={EngineeringSyncPage} />
         <Route path="/engineering/inbox" component={EngineeringInboxPage} />
-        <Route path="/engineering/qa" component={EngineeringQAPage} />
+
 
         <Route component={NotFound} />
       </Switch>
