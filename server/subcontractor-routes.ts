@@ -197,17 +197,45 @@ router.get("/api/subcontractor-dashboard/detail/:name", requireAuth, async (req:
         status: l.status,
       }));
 
-    const projectMap = new Map<string, { totalSpend: number; lineCount: number }>();
+    const projectMap = new Map<string, { totalSpend: number; lineCount: number; paidAmount: number; openAmount: number; paidCount: number; openCount: number }>();
     for (const l of lines) {
       const key = l.projectName;
-      if (!projectMap.has(key)) projectMap.set(key, { totalSpend: 0, lineCount: 0 });
+      if (!projectMap.has(key)) projectMap.set(key, { totalSpend: 0, lineCount: 0, paidAmount: 0, openAmount: 0, paidCount: 0, openCount: 0 });
       const p = projectMap.get(key)!;
-      p.totalSpend += parseFloat(l.amountExVat || "0") || 0;
+      const amt = parseFloat(l.amountExVat || "0") || 0;
+      p.totalSpend += amt;
       p.lineCount++;
+      if (l.status === "PAID") { p.paidAmount += amt; p.paidCount++; }
+      else { p.openAmount += amt; p.openCount++; }
     }
     const projectBreakdown = Array.from(projectMap.entries()).map(([name, v]) => ({
       projectName: name, ...v,
     }));
+
+    const invoiceSummary = {
+      totalInvoices: lines.length,
+      totalAmount: lines.reduce((s, l) => s + (parseFloat(l.amountExVat || "0") || 0), 0),
+      settled: {
+        count: lines.filter(l => l.status === "PAID").length,
+        amount: lines.filter(l => l.status === "PAID").reduce((s, l) => s + (parseFloat(l.amountExVat || "0") || 0), 0),
+      },
+      outstanding: {
+        count: lines.filter(l => l.status !== "PAID").length,
+        amount: lines.filter(l => l.status !== "PAID").reduce((s, l) => s + (parseFloat(l.amountExVat || "0") || 0), 0),
+      },
+      invoiced: {
+        count: lines.filter(l => l.status === "INVOICED").length,
+        amount: lines.filter(l => l.status === "INVOICED").reduce((s, l) => s + (parseFloat(l.amountExVat || "0") || 0), 0),
+      },
+      planned: {
+        count: lines.filter(l => l.status === "PLANNED").length,
+        amount: lines.filter(l => l.status === "PLANNED").reduce((s, l) => s + (parseFloat(l.amountExVat || "0") || 0), 0),
+      },
+      approved: {
+        count: lines.filter(l => l.status === "APPROVED").length,
+        amount: lines.filter(l => l.status === "APPROVED").reduce((s, l) => s + (parseFloat(l.amountExVat || "0") || 0), 0),
+      },
+    };
 
     const monthMap = new Map<string, number>();
     for (const l of lines) {
@@ -241,6 +269,7 @@ router.get("/api/subcontractor-dashboard/detail/:name", requireAuth, async (req:
       : null;
 
     res.json({
+      invoiceSummary,
       lines: lines.map(l => ({
         id: l.id,
         projectName: l.projectName,
@@ -250,6 +279,7 @@ router.get("/api/subcontractor-dashboard/detail/:name", requireAuth, async (req:
         invoiceDate: l.invoiceDate,
         paidDate: l.paidDate,
         status: l.status,
+        costCategory: l.costCategory,
         turnaroundDays: l.turnaroundDays,
       })),
       upcoming,

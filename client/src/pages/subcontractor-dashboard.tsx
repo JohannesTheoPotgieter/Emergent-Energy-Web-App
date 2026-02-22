@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,8 +12,12 @@ import {
   Sheet, SheetContent, SheetHeader, SheetTitle,
 } from "@/components/ui/sheet";
 import {
+  Tabs, TabsContent, TabsList, TabsTrigger,
+} from "@/components/ui/tabs";
+import {
   DollarSign, Users, Clock, TrendingUp, Search, Filter,
   Loader2, ArrowUpDown, ChevronRight, AlertCircle, Calendar,
+  CheckCircle2, CircleDot, ExternalLink, FileText,
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
@@ -38,6 +43,7 @@ function formatDate(val: string | null): string {
 type SortField = "totalSpendExVat" | "invoiceCount" | "projectCount" | "lastInvoiceDate" | "avgTurnaroundDays" | "openAmount" | "upcomingAmount30d" | "counterpartyName";
 
 export default function SubcontractorDashboardPage() {
+  const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [projectFilter, setProjectFilter] = useState("all");
@@ -45,6 +51,7 @@ export default function SubcontractorDashboardPage() {
   const [sortField, setSortField] = useState<SortField>("totalSpendExVat");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [selectedCp, setSelectedCp] = useState<string | null>(null);
+  const [invoiceStatusFilter, setInvoiceStatusFilter] = useState("all");
 
   const { data, isLoading } = useQuery({
     queryKey: ["/api/subcontractor-dashboard/summary", typeFilter, projectFilter, coreOnly],
@@ -242,8 +249,8 @@ export default function SubcontractorDashboardPage() {
         </div>
       )}
 
-      <Sheet open={!!selectedCp} onOpenChange={(open) => { if (!open) setSelectedCp(null); }}>
-        <SheetContent className="w-[500px] sm:w-[600px] overflow-y-auto" data-testid="cp-detail-drawer">
+      <Sheet open={!!selectedCp} onOpenChange={(open) => { if (!open) { setSelectedCp(null); setInvoiceStatusFilter("all"); } }}>
+        <SheetContent className="w-[540px] sm:w-[680px] overflow-y-auto" data-testid="cp-detail-drawer">
           <SheetHeader>
             <SheetTitle className="text-lg">{selectedCp}</SheetTitle>
           </SheetHeader>
@@ -251,6 +258,51 @@ export default function SubcontractorDashboardPage() {
             <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin" /></div>
           ) : detailData ? (
             <div className="space-y-4 mt-4">
+              {detailData.invoiceSummary && (
+                <div data-testid="invoice-summary-section">
+                  <p className="text-xs font-semibold text-slate-700 mb-2 flex items-center gap-1.5">
+                    <FileText className="w-3.5 h-3.5" /> Invoice Summary
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
+                      <p className="text-[10px] text-slate-500 uppercase">Total Invoices</p>
+                      <p className="text-lg font-bold">{detailData.invoiceSummary.totalInvoices}</p>
+                      <p className="text-xs text-slate-400 font-mono">{formatCurrency(detailData.invoiceSummary.totalAmount)}</p>
+                    </div>
+                    <div className="bg-green-50 rounded-lg p-3 border border-green-100">
+                      <p className="text-[10px] text-green-700 uppercase flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3" /> Settled / Paid
+                      </p>
+                      <p className="text-lg font-bold text-green-700">{detailData.invoiceSummary.settled.count}</p>
+                      <p className="text-xs text-green-600 font-mono">{formatCurrency(detailData.invoiceSummary.settled.amount)}</p>
+                    </div>
+                    <div className="bg-amber-50 rounded-lg p-3 border border-amber-100">
+                      <p className="text-[10px] text-amber-700 uppercase flex items-center gap-1">
+                        <CircleDot className="w-3 h-3" /> Outstanding
+                      </p>
+                      <p className="text-lg font-bold text-amber-700">{detailData.invoiceSummary.outstanding.count}</p>
+                      <p className="text-xs text-amber-600 font-mono">{formatCurrency(detailData.invoiceSummary.outstanding.amount)}</p>
+                    </div>
+                    <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
+                      <div className="flex gap-3 text-[10px]">
+                        <div>
+                          <span className="text-slate-500">Invoiced:</span>{" "}
+                          <span className="font-medium">{detailData.invoiceSummary.invoiced.count}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500">Approved:</span>{" "}
+                          <span className="font-medium">{detailData.invoiceSummary.approved.count}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500">Planned:</span>{" "}
+                          <span className="font-medium">{detailData.invoiceSummary.planned.count}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-3 gap-3">
                 <div className="bg-slate-50 rounded-lg p-3">
                   <p className="text-[10px] text-slate-500 uppercase">Last Activity</p>
@@ -291,9 +343,23 @@ export default function SubcontractorDashboardPage() {
                   <p className="text-xs font-medium text-slate-600 mb-2">Project Breakdown</p>
                   <div className="space-y-1">
                     {detailData.projectBreakdown.map((p: any) => (
-                      <div key={p.projectName} className="flex justify-between items-center bg-slate-50 rounded px-3 py-2">
-                        <span className="text-xs font-medium">{p.projectName}</span>
-                        <span className="text-xs text-slate-500">{formatCurrency(p.totalSpend)} ({p.lineCount} lines)</span>
+                      <div key={p.projectName} className="flex justify-between items-center bg-slate-50 rounded px-3 py-2 group hover:bg-blue-50 transition-colors"
+                        data-testid={`project-breakdown-${p.projectName}`}>
+                        <button
+                          className="text-xs font-medium text-blue-700 hover:underline flex items-center gap-1"
+                          onClick={() => { setSelectedCp(null); navigate(`/project/${encodeURIComponent(p.projectName)}`); }}
+                          data-testid={`link-project-${p.projectName}`}
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                          {p.projectName}
+                        </button>
+                        <div className="text-right text-[11px]">
+                          <span className="font-mono">{formatCurrency(p.totalSpend)}</span>
+                          <span className="text-slate-400 ml-1.5">({p.lineCount} lines)</span>
+                          {p.openCount > 0 && (
+                            <span className="ml-2 text-amber-600">{p.openCount} open</span>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -309,7 +375,10 @@ export default function SubcontractorDashboardPage() {
                     {detailData.upcoming.map((u: any, i: number) => (
                       <div key={i} className="flex justify-between items-center bg-purple-50 rounded px-3 py-2">
                         <div>
-                          <span className="text-xs font-medium">{u.projectName}</span>
+                          <button className="text-xs font-medium text-blue-700 hover:underline"
+                            onClick={() => { setSelectedCp(null); navigate(`/project/${encodeURIComponent(u.projectName)}`); }}>
+                            {u.projectName}
+                          </button>
                           <span className="text-[10px] text-slate-500 ml-2">{u.description || ""}</span>
                         </div>
                         <div className="text-right">
@@ -322,30 +391,65 @@ export default function SubcontractorDashboardPage() {
                 </div>
               )}
 
-              <div>
-                <p className="text-xs font-medium text-slate-600 mb-2">All Cost Lines ({detailData.lines?.length || 0})</p>
-                <div className="border border-slate-200 rounded-lg overflow-hidden max-h-[300px] overflow-y-auto">
-                  <table className="w-full text-[11px]">
+              <div data-testid="invoice-lines-section">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-medium text-slate-600">
+                    All Invoices ({(() => {
+                      const lines = detailData.lines || [];
+                      if (invoiceStatusFilter === "all") return lines.length;
+                      return lines.filter((l: any) => invoiceStatusFilter === "outstanding" ? l.status !== "PAID" : l.status === invoiceStatusFilter).length;
+                    })()})
+                  </p>
+                </div>
+                <Tabs value={invoiceStatusFilter} onValueChange={setInvoiceStatusFilter} className="mb-2">
+                  <TabsList className="h-7">
+                    <TabsTrigger value="all" className="text-[10px] px-2 h-6" data-testid="tab-all-invoices">All</TabsTrigger>
+                    <TabsTrigger value="PAID" className="text-[10px] px-2 h-6" data-testid="tab-paid-invoices">Settled</TabsTrigger>
+                    <TabsTrigger value="outstanding" className="text-[10px] px-2 h-6" data-testid="tab-outstanding-invoices">Outstanding</TabsTrigger>
+                    <TabsTrigger value="INVOICED" className="text-[10px] px-2 h-6" data-testid="tab-invoiced">Invoiced</TabsTrigger>
+                    <TabsTrigger value="PLANNED" className="text-[10px] px-2 h-6" data-testid="tab-planned">Planned</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+                <div className="border border-slate-200 rounded-lg overflow-hidden max-h-[350px] overflow-y-auto">
+                  <table className="w-full text-[11px]" data-testid="invoice-detail-table">
                     <thead className="sticky top-0 bg-slate-50">
                       <tr className="border-b border-slate-200">
-                        <th className="text-left px-2 py-1 font-medium text-slate-600">Project</th>
-                        <th className="text-left px-2 py-1 font-medium text-slate-600">Invoice #</th>
-                        <th className="text-left px-2 py-1 font-medium text-slate-600">Amount</th>
-                        <th className="text-left px-2 py-1 font-medium text-slate-600">Date</th>
-                        <th className="text-left px-2 py-1 font-medium text-slate-600">Paid</th>
-                        <th className="text-left px-2 py-1 font-medium text-slate-600">Status</th>
+                        <th className="text-left px-2 py-1.5 font-medium text-slate-600">Project</th>
+                        <th className="text-left px-2 py-1.5 font-medium text-slate-600">Category</th>
+                        <th className="text-left px-2 py-1.5 font-medium text-slate-600">Invoice #</th>
+                        <th className="text-left px-2 py-1.5 font-medium text-slate-600">Amount</th>
+                        <th className="text-left px-2 py-1.5 font-medium text-slate-600">Date</th>
+                        <th className="text-left px-2 py-1.5 font-medium text-slate-600">Paid</th>
+                        <th className="text-left px-2 py-1.5 font-medium text-slate-600">Status</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {(detailData.lines || []).map((l: any) => (
-                        <tr key={l.id} className="border-b border-slate-100 hover:bg-slate-50">
-                          <td className="px-2 py-1">{l.projectName}</td>
-                          <td className="px-2 py-1 font-mono">{l.invoiceNumber || "\u2014"}</td>
-                          <td className="px-2 py-1 font-mono">{formatCurrency(parseFloat(l.amountExVat || "0"))}</td>
-                          <td className="px-2 py-1 text-slate-500">{formatDate(l.invoiceDate)}</td>
-                          <td className="px-2 py-1 text-slate-500">{formatDate(l.paidDate)}</td>
-                          <td className="px-2 py-1">
-                            <Badge variant={l.status === "PAID" ? "default" : "outline"} className="text-[9px]">
+                      {(detailData.lines || [])
+                        .filter((l: any) => {
+                          if (invoiceStatusFilter === "all") return true;
+                          if (invoiceStatusFilter === "outstanding") return l.status !== "PAID";
+                          return l.status === invoiceStatusFilter;
+                        })
+                        .map((l: any) => (
+                        <tr key={l.id} className="border-b border-slate-100 hover:bg-blue-50/30 group" data-testid={`invoice-row-${l.id}`}>
+                          <td className="px-2 py-1.5">
+                            <button
+                              className="text-blue-700 hover:underline flex items-center gap-0.5"
+                              onClick={() => { setSelectedCp(null); navigate(`/project/${encodeURIComponent(l.projectName)}`); }}
+                              data-testid={`nav-project-${l.id}`}
+                            >
+                              {l.projectName}
+                              <ExternalLink className="w-2.5 h-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                            </button>
+                          </td>
+                          <td className="px-2 py-1.5 text-slate-500">{l.costCategory || "\u2014"}</td>
+                          <td className="px-2 py-1.5 font-mono">{l.invoiceNumber || "\u2014"}</td>
+                          <td className="px-2 py-1.5 font-mono">{formatCurrency(parseFloat(l.amountExVat || "0"))}</td>
+                          <td className="px-2 py-1.5 text-slate-500">{formatDate(l.invoiceDate)}</td>
+                          <td className="px-2 py-1.5 text-slate-500">{formatDate(l.paidDate)}</td>
+                          <td className="px-2 py-1.5">
+                            <Badge variant={l.status === "PAID" ? "default" : l.status === "INVOICED" ? "secondary" : "outline"}
+                              className={`text-[9px] ${l.status === "PAID" ? "bg-green-100 text-green-700 border-green-200" : l.status !== "PLANNED" ? "" : "text-slate-500"}`}>
                               {l.status}
                             </Badge>
                           </td>
