@@ -482,7 +482,7 @@ function TaskDetailDrawer({
   return (
     <div className="fixed inset-0 z-50 flex justify-end" data-testid="task-detail-drawer">
       <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-2xl bg-background border-l shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
+      <div className="relative w-full max-w-full sm:max-w-2xl bg-background border-l shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
         <div className="flex items-center justify-between p-4 border-b">
           <div className="flex items-center gap-2 min-w-0">
             <Badge className={`text-[10px] shrink-0 ${statusColors[task.status] || "bg-gray-100"}`}>{task.status}</Badge>
@@ -1090,9 +1090,9 @@ function PersonalKpiStrip({ tasks, myTasks }: { tasks: Task[]; myTasks: Task[] }
   ];
 
   return (
-    <div className="flex gap-2 overflow-x-auto" data-testid="personal-kpi-strip">
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2" data-testid="personal-kpi-strip">
       {stats.map(s => (
-        <div key={s.label} className="flex items-center gap-2 px-3 py-2 rounded-lg border bg-card shrink-0">
+        <div key={s.label} className="flex items-center gap-2 px-3 py-2 rounded-lg border bg-card">
           <div className={`w-7 h-7 rounded-md ${s.bg} flex items-center justify-center`}>
             <span className={s.color}>{s.icon}</span>
           </div>
@@ -1116,7 +1116,7 @@ function InlineListView({ tasks, onCardClick, onStatusChange, onPriorityChange }
     <Card>
       <CardContent className="p-0">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm min-w-[700px]">
             <thead>
               <tr className="border-b bg-muted/30 text-[11px] text-muted-foreground">
                 <th className="text-left p-2 pl-3">Title</th>
@@ -1343,7 +1343,7 @@ export default function EngineeringTasksPage() {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <div className="relative">
             <Button
               variant={myTasksOnly ? "default" : "outline"}
@@ -1491,7 +1491,7 @@ export default function EngineeringTasksPage() {
       )}
 
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative flex-1 min-w-[200px] max-w-xs">
+        <div className="relative flex-1 min-w-[150px] sm:min-w-[200px] max-w-xs">
           <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
           <Input
             data-testid="input-task-search"
@@ -1502,7 +1502,7 @@ export default function EngineeringTasksPage() {
           />
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[150px] h-8 text-xs" data-testid="filter-task-status">
+          <SelectTrigger className="w-[130px] sm:w-[150px] h-8 text-xs" data-testid="filter-task-status">
             <Filter className="h-3 w-3 mr-1" /><SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>
@@ -1511,7 +1511,7 @@ export default function EngineeringTasksPage() {
           </SelectContent>
         </Select>
         <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-          <SelectTrigger className="w-[130px] h-8 text-xs" data-testid="filter-task-priority">
+          <SelectTrigger className="w-[110px] sm:w-[130px] h-8 text-xs" data-testid="filter-task-priority">
             <SelectValue placeholder="Priority" />
           </SelectTrigger>
           <SelectContent>
@@ -1521,7 +1521,7 @@ export default function EngineeringTasksPage() {
         </Select>
         {uniqueAssignees.length > 0 && (
           <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
-            <SelectTrigger className="w-[140px] h-8 text-xs" data-testid="filter-task-assignee">
+            <SelectTrigger className="w-[120px] sm:w-[140px] h-8 text-xs" data-testid="filter-task-assignee">
               <User className="h-3 w-3 mr-1" /><SelectValue placeholder="Assignee" />
             </SelectTrigger>
             <SelectContent>

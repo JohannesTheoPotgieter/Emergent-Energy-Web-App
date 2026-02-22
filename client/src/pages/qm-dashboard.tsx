@@ -151,12 +151,12 @@ export default function QmDashboardPage() {
       <div className="flex items-center gap-3">
         <ShieldCheck className="h-8 w-8 text-emerald-500" />
         <div>
-          <h2 className="text-2xl sm:text-3xl font-heading font-bold" data-testid="text-qm-title">Quality Management</h2>
+          <h2 className="text-lg sm:text-xl md:text-2xl font-heading font-bold" data-testid="text-qm-title">Quality Management</h2>
           <p className="text-sm text-muted-foreground">Overview of all project quality checklists</p>
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <Card><CardContent className="p-4 flex items-center gap-3">
           <div className="p-2 rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400"><ClipboardCheck className="h-5 w-5" /></div>
           <div><p className="text-2xl font-bold" data-testid="stat-total-projects">{totalProjects}</p><p className="text-xs text-muted-foreground">Total Projects</p></div>

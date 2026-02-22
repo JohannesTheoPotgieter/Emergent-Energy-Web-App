@@ -437,10 +437,10 @@ export default function PlanningBoardPage() {
     <div className="space-y-4" data-testid="planning-board-page">
       <div className="flex flex-col md:flex-row gap-3 items-start md:items-center justify-between">
         <div>
-          <h2 className="text-2xl font-heading font-bold">Planning Board</h2>
+          <h2 className="text-lg sm:text-xl md:text-2xl font-heading font-bold">Planning Board</h2>
           <p className="text-sm text-muted-foreground">Project timeline, key dates, and resource capacity</p>
         </div>
-        <div className="flex gap-3 items-center">
+        <div className="flex gap-3 items-center flex-wrap">
           <ScenarioSelector selectedScenarioId={scenarioId} onScenarioChange={setScenarioId} />
           <div className="relative">
             <Search className="absolute left-2 top-2 h-4 w-4 text-muted-foreground" />
@@ -461,7 +461,7 @@ export default function PlanningBoardPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Card>
           <CardContent className="p-3">
             <p className="text-xs text-muted-foreground">Active Projects</p>
@@ -566,7 +566,7 @@ export default function PlanningBoardPage() {
         </TabsContent>
 
         <TabsContent value="capacity" className="mt-4">
-          <div className="flex gap-2 mb-4">
+          <div className="flex gap-2 mb-4 flex-wrap">
             {['PM', 'Installer'].map(rt => (
               <Button
                 key={rt}

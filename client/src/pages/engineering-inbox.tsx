@@ -510,11 +510,11 @@ export default function EngineeringInbox() {
         <div className="flex items-center gap-3">
           <Inbox className="h-7 w-7 text-blue-500" />
           <div>
-            <h2 className="text-2xl font-heading font-bold">Engineering Pipeline</h2>
+            <h2 className="text-lg sm:text-xl md:text-2xl font-heading font-bold">Engineering Pipeline</h2>
             <p className="text-xs text-muted-foreground">Loading...</p>
           </div>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[1, 2, 3, 4].map((i) => <div key={i} className="h-24 bg-muted animate-pulse rounded-xl" />)}
         </div>
       </div>
@@ -529,7 +529,7 @@ export default function EngineeringInbox() {
             <Inbox className="h-5 w-5 text-white" />
           </div>
           <div>
-            <h2 className="text-2xl font-heading font-bold" data-testid="text-pipeline-title">
+            <h2 className="text-lg sm:text-xl md:text-2xl font-heading font-bold" data-testid="text-pipeline-title">
               Engineering Pipeline
             </h2>
             <p className="text-xs text-muted-foreground flex items-center gap-1" data-testid="text-last-sync">

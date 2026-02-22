@@ -33,6 +33,8 @@ interface ProjectInfo {
   planTotal: number;
   planAvgPct: number;
   projectPctComplete: number | null;
+  qmTotal: number;
+  qmApproved: number;
   executionEnabled: boolean;
   executionGateStatus: string;
   signedStatus: string;
@@ -645,8 +647,8 @@ export default function LifecycleBoardPage() {
         </div>
       </div>
 
-      <div className="pb-4">
-        <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${PHASE_GROUPS.length}, minmax(0, 1fr))` }}>
+      <div className="pb-4 overflow-x-auto -mx-3 sm:-mx-4 md:-mx-6 px-3 sm:px-4 md:px-6">
+        <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${PHASE_GROUPS.length}, minmax(140px, 1fr))`, minWidth: `${PHASE_GROUPS.length * 140}px` }}>
           {PHASE_GROUPS.map((group) => {
             const items = grouped[group.key] || [];
             const isOver = dragOverColumn === group.key;
@@ -726,7 +728,7 @@ export default function LifecycleBoardPage() {
                           <div className="space-y-0.5 mt-0.5">
                             {p.projectPctComplete != null && (
                               <div className="flex items-center gap-1.5 text-[10px]" data-testid={`pct-complete-${p.id}`}>
-                                <span className="text-muted-foreground w-[28px] shrink-0">Trk</span>
+                                <span className="text-muted-foreground w-[28px] shrink-0">PM</span>
                                 <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden min-w-[40px]">
                                   <div
                                     className={`h-full rounded-full ${
@@ -741,6 +743,7 @@ export default function LifecycleBoardPage() {
                               </div>
                             )}
                             {pctBar("Eng", p.engDone, p.engTotal, "bg-purple-500")}
+                            {pctBar("QM", p.qmApproved, p.qmTotal, "bg-teal-500")}
                           </div>
                         </CardContent>
                       </Card>
@@ -942,9 +945,15 @@ export default function LifecycleBoardPage() {
                           <span className="font-medium">{selectedProject.engDone}/{selectedProject.engTotal} done</span>
                         </div>
                       )}
+                      {selectedProject.qmTotal > 0 && (
+                        <div className="flex justify-between">
+                          <span>Quality Items</span>
+                          <span className="font-medium">{selectedProject.qmApproved}/{selectedProject.qmTotal} approved</span>
+                        </div>
+                      )}
                       {selectedProject.projectPctComplete != null && (
                         <div className="flex justify-between">
-                          <span>Completion</span>
+                          <span>PM Completion</span>
                           <span className="font-medium">{Math.round(selectedProject.projectPctComplete * 100)}%</span>
                         </div>
                       )}

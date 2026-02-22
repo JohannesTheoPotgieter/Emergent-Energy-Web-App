@@ -187,7 +187,7 @@ export default function EngineeringAuditLog() {
             <History className="h-5 w-5 text-white" />
           </div>
           <div>
-            <h2 className="text-2xl font-heading font-bold" data-testid="text-audit-title">
+            <h2 className="text-lg sm:text-xl md:text-2xl font-heading font-bold" data-testid="text-audit-title">
               Audit Log
             </h2>
             <p className="text-xs text-muted-foreground">
@@ -230,7 +230,7 @@ export default function EngineeringAuditLog() {
 
       <Card>
         <CardContent className="p-4">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Filter className="h-4 w-4 text-muted-foreground" />
             <div className="relative flex-1 max-w-sm">
               <Input
@@ -264,7 +264,7 @@ export default function EngineeringAuditLog() {
         </div>
       ) : (
         <>
-          <Card>
+          <Card className="overflow-x-auto">
             <div className="divide-y">
               {entries.map(entry => (
                 <div key={entry.id} className="flex items-start gap-3 p-4 hover:bg-muted/20 transition-colors" data-testid={`audit-entry-${entry.id}`}>
@@ -305,7 +305,7 @@ export default function EngineeringAuditLog() {
           </Card>
 
           {totalPages > 1 && (
-            <div className="flex items-center justify-between px-2">
+            <div className="flex items-center justify-between px-2 flex-wrap gap-2">
               <span className="text-xs text-muted-foreground">
                 Showing {currentPage * pageSize + 1}–{Math.min((currentPage + 1) * pageSize, total)} of {total}
               </span>
