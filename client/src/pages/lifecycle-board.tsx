@@ -16,6 +16,10 @@ import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
 import { useLocation } from "wouter";
 import { Loader2, Search, Zap, User, Wrench, FileSpreadsheet, GripVertical, CheckCircle2, ClipboardList, Link2, Merge, ArrowRight, X, Save, AlertTriangle, ShieldCheck, ExternalLink, Calendar, Clock, AlertCircle, Users } from "lucide-react";
+import { ActionBar } from "@/components/guidance/ActionBar";
+import { InlineTip } from "@/components/guidance/InlineTip";
+import { MicroWalkthrough, ReplayWalkthrough } from "@/components/guidance/MicroWalkthrough";
+import type { NextAction, BlockerInfo, OwnerInfo } from "@/hooks/use-guidance";
 
 interface ProjectInfo {
   id: number | null;
@@ -624,6 +628,37 @@ export default function LifecycleBoardPage() {
     }
   }
 
+  const trackerCount = projects.filter(p => p.source === "excel" || p.source === "both").length;
+  const preTrackerCount = projects.filter(p => p.source === "engineering").length;
+
+  const totalOverdue = useMemo(() => filtered.reduce((sum, p) => sum + (p.engOverdue || 0), 0), [filtered]);
+  const totalHighPri = useMemo(() => filtered.reduce((sum, p) => sum + (p.engHighPriority || 0), 0), [filtered]);
+  const missingPmProjects = useMemo(() => filtered.filter(p => {
+    const key = mapPhaseToGroup(p.phase, p.source);
+    return phaseShowsPM(key) && !p.pm;
+  }), [filtered]);
+
+  const lifecycleNextAction = useMemo((): NextAction | null => {
+    if (totalOverdue > 0) return { label: `${totalOverdue} overdue task${totalOverdue !== 1 ? "s" : ""} need attention`, severity: "urgent" };
+    if (totalHighPri > 0) return { label: `${totalHighPri} high-priority task${totalHighPri !== 1 ? "s" : ""} to review`, severity: "warning" };
+    if (missingPmProjects.length > 0) return { label: `${missingPmProjects.length} project${missingPmProjects.length !== 1 ? "s" : ""} missing a Project Manager`, severity: "warning" };
+    if (preTrackerCount > 0) return { label: `${preTrackerCount} pre-tracker project${preTrackerCount !== 1 ? "s" : ""} ready for promotion`, severity: "info" };
+    return { label: "All projects on track — review phase progress below", severity: "info" };
+  }, [totalOverdue, totalHighPri, missingPmProjects, preTrackerCount]);
+
+  const lifecycleBlockers = useMemo((): BlockerInfo[] => {
+    const b: BlockerInfo[] = [];
+    if (totalOverdue > 0) b.push({ label: "Overdue engineering tasks", count: totalOverdue, severity: "urgent" });
+    if (missingPmProjects.length > 0) b.push({ label: "Projects without PM assigned", count: missingPmProjects.length, severity: "warning" });
+    return b;
+  }, [totalOverdue, missingPmProjects]);
+
+  const lifecycleWalkthroughSteps = useMemo(() => [
+    { title: "Phase columns", description: "Projects are organized by lifecycle phase. Each column shows projects in that stage." },
+    { title: "Drag to move", description: "Drag any project card to another column to change its phase. Changes save automatically." },
+    { title: "Click for details", description: "Click a project card to see its summary, edit details, link records, or manage gate status." },
+  ], []);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20" data-testid="lifecycle-board-loading">
@@ -632,20 +667,23 @@ export default function LifecycleBoardPage() {
     );
   }
 
-  const trackerCount = projects.filter(p => p.source === "excel" || p.source === "both").length;
-  const preTrackerCount = projects.filter(p => p.source === "engineering").length;
-
   return (
     <div className="space-y-4" data-testid="lifecycle-board-page">
-      <div>
-        <h1 className="text-2xl font-bold" data-testid="text-lifecycle-title">Lifecycle Board</h1>
-        <p className="text-muted-foreground text-sm">
-          Drag projects between columns to change phase
-          <span className="ml-2 text-xs">
-            ({trackerCount} with tracker{preTrackerCount > 0 ? `, ${preTrackerCount} pre-tracker` : ""})
-          </span>
-        </p>
+      <div className="flex items-start justify-between flex-wrap gap-2">
+        <div>
+          <h1 className="text-2xl font-bold" data-testid="text-lifecycle-title">Lifecycle Board</h1>
+          <p className="text-muted-foreground text-sm">
+            Drag projects between columns to change phase
+            <span className="ml-2 text-xs">
+              ({trackerCount} with tracker{preTrackerCount > 0 ? `, ${preTrackerCount} pre-tracker` : ""})
+            </span>
+          </p>
+        </div>
+        <ReplayWalkthrough screenId="lifecycle-board" label="Replay guide" />
       </div>
+
+      <MicroWalkthrough screenId="lifecycle-board" steps={lifecycleWalkthroughSteps} />
+      <ActionBar nextAction={lifecycleNextAction} blockers={lifecycleBlockers} />
 
       <div className="flex items-center gap-4 flex-wrap">
         <div className="relative flex-1 min-w-[200px] max-w-xs">
@@ -797,7 +835,7 @@ export default function LifecycleBoardPage() {
       </div>
 
       <Dialog open={projectDialogOpen} onOpenChange={setProjectDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto w-[95vw] sm:w-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2" data-testid="text-edit-project-title">
               <FileSpreadsheet className="w-5 h-5 text-blue-600" />
@@ -871,7 +909,7 @@ export default function LifecycleBoardPage() {
 
                     return (
                       <>
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <div className="bg-muted/50 rounded-lg p-3 space-y-2">
                             <div className="text-xs font-medium text-muted-foreground flex items-center gap-1">
                               <Calendar className="w-3.5 h-3.5" />
