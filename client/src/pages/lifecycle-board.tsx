@@ -14,7 +14,8 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, Search, Zap, User, Wrench, FileSpreadsheet, GripVertical, CheckCircle2, ClipboardList, Link2, Merge, ArrowRight, X, Save, AlertTriangle, ShieldCheck } from "lucide-react";
+import { useLocation } from "wouter";
+import { Loader2, Search, Zap, User, Wrench, FileSpreadsheet, GripVertical, CheckCircle2, ClipboardList, Link2, Merge, ArrowRight, X, Save, AlertTriangle, ShieldCheck, ExternalLink, Calendar, Clock, AlertCircle, Users } from "lucide-react";
 
 interface ProjectInfo {
   id: number | null;
@@ -30,6 +31,9 @@ interface ProjectInfo {
   source: "excel" | "engineering" | "both" | "none";
   engTotal: number;
   engDone: number;
+  engOverdue: number;
+  engHighPriority: number;
+  engAssignees: string[];
   planTotal: number;
   planAvgPct: number;
   projectPctComplete: number | null;
@@ -40,6 +44,25 @@ interface ProjectInfo {
   signedStatus: string;
   executionPhase: string | null;
   archivedStatus: string;
+  phaseUpdatedAt: string | null;
+  updatedAt: string | null;
+  constructionStartDate: string | null;
+  commissioningDate: string | null;
+  clientHandoverDate: string | null;
+}
+
+const PRE_PM_PHASES = ["first_assessment", "cost_proposal"];
+
+function phaseShowsPM(phaseKey: string): boolean {
+  return !PRE_PM_PHASES.includes(phaseKey);
+}
+
+function phaseShowsEng(_phaseKey: string): boolean {
+  return true;
+}
+
+function phaseShowsQM(_phaseKey: string): boolean {
+  return true;
 }
 
 const PHASE_GROUPS = [
@@ -227,6 +250,7 @@ const ESCALATION_LEVELS = ["", "Low", "Medium", "High", "Highest"];
 const RAG_STATUSES = ["", "Green", "Amber", "Red"];
 
 export default function LifecycleBoardPage() {
+  const [, navigate] = useLocation();
   const queryClient = useQueryClient();
   const { data: projects = [], isLoading: loading } = useQuery<ProjectInfo[]>({
     queryKey: ["/api/lifecycle-board/projects"],
@@ -249,7 +273,7 @@ export default function LifecycleBoardPage() {
   const [mergeTarget, setMergeTarget] = useState<string>("");
   const [actionLoading, setActionLoading] = useState(false);
   const [projectDialogOpen, setProjectDialogOpen] = useState(false);
-  const [dialogTab, setDialogTab] = useState<"edit" | "link" | "merge" | "gate">("edit");
+  const [dialogTab, setDialogTab] = useState<"summary" | "edit" | "link" | "merge" | "gate">("summary");
   const [editForm, setEditForm] = useState<{
     projectName: string;
     sizeKwp: string;
@@ -311,7 +335,7 @@ export default function LifecycleBoardPage() {
     });
     setLinkTarget("");
     setMergeTarget("");
-    setDialogTab("edit");
+    setDialogTab("summary");
     setGateData(null);
     setShowOverrideReason(false);
     setProjectDialogOpen(true);
@@ -725,26 +749,42 @@ export default function LifecycleBoardPage() {
                               <span className="truncate">{p.pm}</span>
                             </div>
                           )}
-                          <div className="space-y-0.5 mt-0.5">
-                            {p.projectPctComplete != null && (
-                              <div className="flex items-center gap-1.5 text-[10px]" data-testid={`pct-complete-${p.id}`}>
-                                <span className="text-muted-foreground w-[28px] shrink-0">PM</span>
-                                <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden min-w-[40px]">
-                                  <div
-                                    className={`h-full rounded-full ${
-                                      p.projectPctComplete >= 0.9 ? "bg-emerald-500" :
-                                      p.projectPctComplete >= 0.5 ? "bg-blue-500" :
-                                      p.projectPctComplete >= 0.2 ? "bg-amber-500" : "bg-slate-400"
-                                    }`}
-                                    style={{ width: `${Math.min(Math.round(p.projectPctComplete * 100), 100)}%` }}
-                                  />
-                                </div>
-                                <span className="text-muted-foreground w-[28px] text-right">{Math.round(p.projectPctComplete * 100)}%</span>
+                          {(() => {
+                            const phaseKey = mapPhaseToGroup(p.phase, p.source);
+                            const showPM = phaseShowsPM(phaseKey);
+                            const showEng = phaseShowsEng(phaseKey);
+                            const showQM = phaseShowsQM(phaseKey);
+                            const hasAnyBar = (showPM && p.projectPctComplete != null) || (showEng && p.engTotal > 0) || (showQM && p.qmTotal > 0);
+                            if (!hasAnyBar) return null;
+                            return (
+                              <div className="space-y-0.5 mt-0.5">
+                                {showEng && pctBar("Eng", p.engDone, p.engTotal, "bg-purple-500")}
+                                {showQM && pctBar("QM", p.qmApproved, p.qmTotal, "bg-teal-500")}
+                                {showPM && p.projectPctComplete != null && (
+                                  <div className="flex items-center gap-1.5 text-[10px]" data-testid={`pct-complete-${p.id}`}>
+                                    <span className="text-muted-foreground w-[28px] shrink-0">PM</span>
+                                    <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden min-w-[40px]">
+                                      <div
+                                        className={`h-full rounded-full ${
+                                          p.projectPctComplete >= 0.9 ? "bg-emerald-500" :
+                                          p.projectPctComplete >= 0.5 ? "bg-blue-500" :
+                                          p.projectPctComplete >= 0.2 ? "bg-amber-500" : "bg-slate-400"
+                                        }`}
+                                        style={{ width: `${Math.min(Math.round(p.projectPctComplete * 100), 100)}%` }}
+                                      />
+                                    </div>
+                                    <span className="text-muted-foreground w-[28px] text-right">{Math.round(p.projectPctComplete * 100)}%</span>
+                                  </div>
+                                )}
+                                {p.engOverdue > 0 && (
+                                  <div className="flex items-center gap-1 text-[9px] text-red-600">
+                                    <AlertCircle className="w-2.5 h-2.5" />
+                                    {p.engOverdue} overdue
+                                  </div>
+                                )}
                               </div>
-                            )}
-                            {pctBar("Eng", p.engDone, p.engTotal, "bg-purple-500")}
-                            {pctBar("QM", p.qmApproved, p.qmTotal, "bg-teal-500")}
-                          </div>
+                            );
+                          })()}
                         </CardContent>
                       </Card>
                     );
@@ -757,7 +797,7 @@ export default function LifecycleBoardPage() {
       </div>
 
       <Dialog open={projectDialogOpen} onOpenChange={setProjectDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2" data-testid="text-edit-project-title">
               <FileSpreadsheet className="w-5 h-5 text-blue-600" />
@@ -771,46 +811,282 @@ export default function LifecycleBoardPage() {
 
           {selectedProject && (
             <>
-              <div className="flex border-b">
+              <div className="flex border-b overflow-x-auto">
                 <button
                   type="button"
-                  className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${dialogTab === "edit" ? "border-blue-600 text-blue-600" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+                  className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${dialogTab === "summary" ? "border-blue-600 text-blue-600" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+                  onClick={() => setDialogTab("summary")}
+                  data-testid="tab-summary"
+                >
+                  <ClipboardList className="w-3.5 h-3.5 inline mr-1" />
+                  Summary
+                </button>
+                <button
+                  type="button"
+                  className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${dialogTab === "edit" ? "border-blue-600 text-blue-600" : "border-transparent text-muted-foreground hover:text-foreground"}`}
                   onClick={() => { setDialogTab("edit"); setLinkTarget(""); setMergeTarget(""); }}
                   data-testid="tab-edit"
                 >
-                  <Save className="w-3.5 h-3.5 inline mr-1.5" />
+                  <Save className="w-3.5 h-3.5 inline mr-1" />
                   Edit
                 </button>
                 <button
                   type="button"
-                  className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${dialogTab === "link" ? "border-blue-600 text-blue-600" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+                  className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${dialogTab === "link" ? "border-blue-600 text-blue-600" : "border-transparent text-muted-foreground hover:text-foreground"}`}
                   onClick={() => { setDialogTab("link"); setMergeTarget(""); }}
                   data-testid="tab-link"
                 >
-                  <Link2 className="w-3.5 h-3.5 inline mr-1.5" />
+                  <Link2 className="w-3.5 h-3.5 inline mr-1" />
                   Link
                 </button>
                 <button
                   type="button"
-                  className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${dialogTab === "merge" ? "border-orange-600 text-orange-600" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+                  className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${dialogTab === "merge" ? "border-orange-600 text-orange-600" : "border-transparent text-muted-foreground hover:text-foreground"}`}
                   onClick={() => { setDialogTab("merge"); setLinkTarget(""); }}
                   data-testid="tab-merge"
                 >
-                  <Merge className="w-3.5 h-3.5 inline mr-1.5" />
+                  <Merge className="w-3.5 h-3.5 inline mr-1" />
                   Merge
                 </button>
                 {selectedProject.id && selectedProject.id > 0 && (
                   <button
                     type="button"
-                    className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${dialogTab === "gate" ? "border-green-600 text-green-600" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+                    className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${dialogTab === "gate" ? "border-green-600 text-green-600" : "border-transparent text-muted-foreground hover:text-foreground"}`}
                     onClick={() => { setDialogTab("gate"); setLinkTarget(""); setMergeTarget(""); if (selectedProject.id) loadGateData(selectedProject.id); }}
                     data-testid="tab-gate"
                   >
-                    <ShieldCheck className="w-3.5 h-3.5 inline mr-1.5" />
+                    <ShieldCheck className="w-3.5 h-3.5 inline mr-1" />
                     Gate
                   </button>
                 )}
               </div>
+
+              {dialogTab === "summary" && (
+                <div className="space-y-4" data-testid="summary-panel">
+                  {(() => {
+                    const p = selectedProject;
+                    const phaseKey = mapPhaseToGroup(p.phase, p.source);
+                    const showPM = phaseShowsPM(phaseKey);
+                    const phaseLabel = PHASE_GROUPS.find(g => g.key === phaseKey)?.label || p.phase || "Unknown";
+
+                    return (
+                      <>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="bg-muted/50 rounded-lg p-3 space-y-2">
+                            <div className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                              <Calendar className="w-3.5 h-3.5" />
+                              Project Info
+                            </div>
+                            <div className="space-y-1.5 text-xs">
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Phase</span>
+                                <span className="font-medium">{phaseLabel}</span>
+                              </div>
+                              {p.sizeKwp && parseFloat(p.sizeKwp) > 0 && (
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Size</span>
+                                  <span className="font-medium">{parseFloat(p.sizeKwp).toFixed(0)} kWp</span>
+                                </div>
+                              )}
+                              {formatZAR(p.contractValue) && (
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Value</span>
+                                  <span className="font-medium">{formatZAR(p.contractValue)}</span>
+                                </div>
+                              )}
+                              {p.ragStatus && (
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">RAG</span>
+                                  <Badge className={`text-[10px] px-1.5 py-0 ${p.ragStatus === "Green" ? "bg-green-100 text-green-700" : p.ragStatus === "Amber" ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"}`}>
+                                    {p.ragStatus}
+                                  </Badge>
+                                </div>
+                              )}
+                              {p.escalationLevel && (
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Escalation</span>
+                                  <span className="font-medium">{p.escalationLevel}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="bg-muted/50 rounded-lg p-3 space-y-2">
+                            <div className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                              <Users className="w-3.5 h-3.5" />
+                              People & Dates
+                            </div>
+                            <div className="space-y-1.5 text-xs">
+                              {p.pd && (
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">PD</span>
+                                  <span className="font-medium truncate ml-2">{p.pd}</span>
+                                </div>
+                              )}
+                              {p.pm && (
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">PM</span>
+                                  <span className="font-medium truncate ml-2">{p.pm}</span>
+                                </div>
+                              )}
+                              {p.phaseUpdatedAt && (
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Phase changed</span>
+                                  <span className="font-medium">{new Date(p.phaseUpdatedAt).toLocaleDateString("en-ZA")}</span>
+                                </div>
+                              )}
+                              {p.updatedAt && (
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Last updated</span>
+                                  <span className="font-medium">{new Date(p.updatedAt).toLocaleDateString("en-ZA")}</span>
+                                </div>
+                              )}
+                              {p.constructionStartDate && (
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Construction</span>
+                                  <span className="font-medium">{p.constructionStartDate}</span>
+                                </div>
+                              )}
+                              {p.commissioningDate && (
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Commissioning</span>
+                                  <span className="font-medium">{p.commissioningDate}</span>
+                                </div>
+                              )}
+                              {p.clientHandoverDate && (
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Handover</span>
+                                  <span className="font-medium">{p.clientHandoverDate}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="bg-muted/50 rounded-lg p-3 space-y-3">
+                          <div className="text-xs font-medium text-muted-foreground">Phase Completion</div>
+                          <div className="space-y-2">
+                            {p.engTotal > 0 && (
+                              <div className="space-y-1">
+                                <div className="flex justify-between text-xs">
+                                  <span className="text-muted-foreground">Engineering Tasks</span>
+                                  <span className="font-medium">{p.engDone}/{p.engTotal} done ({p.engTotal > 0 ? Math.round((p.engDone / p.engTotal) * 100) : 0}%)</span>
+                                </div>
+                                <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                                  <div className="h-full rounded-full bg-purple-500" style={{ width: `${p.engTotal > 0 ? (p.engDone / p.engTotal) * 100 : 0}%` }} />
+                                </div>
+                              </div>
+                            )}
+                            {p.qmTotal > 0 && (
+                              <div className="space-y-1">
+                                <div className="flex justify-between text-xs">
+                                  <span className="text-muted-foreground">Quality Items</span>
+                                  <span className="font-medium">{p.qmApproved}/{p.qmTotal} approved ({p.qmTotal > 0 ? Math.round((p.qmApproved / p.qmTotal) * 100) : 0}%)</span>
+                                </div>
+                                <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                                  <div className="h-full rounded-full bg-teal-500" style={{ width: `${p.qmTotal > 0 ? (p.qmApproved / p.qmTotal) * 100 : 0}%` }} />
+                                </div>
+                              </div>
+                            )}
+                            {showPM && p.projectPctComplete != null && (
+                              <div className="space-y-1">
+                                <div className="flex justify-between text-xs">
+                                  <span className="text-muted-foreground">Project Management</span>
+                                  <span className="font-medium">{Math.round(p.projectPctComplete * 100)}%</span>
+                                </div>
+                                <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                                  <div className={`h-full rounded-full ${p.projectPctComplete >= 0.9 ? "bg-emerald-500" : p.projectPctComplete >= 0.5 ? "bg-blue-500" : "bg-amber-500"}`} style={{ width: `${Math.min(Math.round(p.projectPctComplete * 100), 100)}%` }} />
+                                </div>
+                              </div>
+                            )}
+                            {p.engTotal === 0 && p.qmTotal === 0 && p.projectPctComplete == null && (
+                              <div className="text-xs text-muted-foreground text-center py-2">No completion data yet</div>
+                            )}
+                          </div>
+                        </div>
+
+                        {(p.engOverdue > 0 || p.engHighPriority > 0) && (
+                          <div className="space-y-1.5">
+                            {p.engOverdue > 0 && (
+                              <div className="flex items-center gap-2 text-xs text-red-700 bg-red-50 rounded-lg px-3 py-2" data-testid="alert-overdue">
+                                <AlertCircle className="w-4 h-4 shrink-0" />
+                                {p.engOverdue} overdue engineering task{p.engOverdue !== 1 ? "s" : ""}
+                              </div>
+                            )}
+                            {p.engHighPriority > 0 && (
+                              <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2" data-testid="alert-high-priority">
+                                <AlertTriangle className="w-4 h-4 shrink-0" />
+                                {p.engHighPriority} high priority task{p.engHighPriority !== 1 ? "s" : ""}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {p.engAssignees && p.engAssignees.length > 0 && (
+                          <div className="bg-muted/50 rounded-lg p-3">
+                            <div className="text-xs font-medium text-muted-foreground mb-1.5">Team Members</div>
+                            <div className="flex flex-wrap gap-1">
+                              {p.engAssignees.map((name, i) => (
+                                <Badge key={i} variant="secondary" className="text-[10px]">{name}</Badge>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="border-t pt-3 space-y-2">
+                          <div className="text-xs font-medium text-muted-foreground">View Details</div>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-xs justify-start"
+                              onClick={() => {
+                                setProjectDialogOpen(false);
+                                navigate(`/engineering/tasks?project=${encodeURIComponent(cleanProjectName(p.projectName))}`);
+                              }}
+                              data-testid="link-eng-tasks"
+                            >
+                              <Wrench className="w-3.5 h-3.5 mr-1.5 text-purple-600" />
+                              Engineering Tasks
+                              <ExternalLink className="w-3 h-3 ml-auto text-muted-foreground" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-xs justify-start"
+                              onClick={() => {
+                                setProjectDialogOpen(false);
+                                navigate(`/quality?project=${encodeURIComponent(cleanProjectName(p.projectName))}`);
+                              }}
+                              data-testid="link-quality"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5 mr-1.5 text-teal-600" />
+                              Quality Checklist
+                              <ExternalLink className="w-3 h-3 ml-auto text-muted-foreground" />
+                            </Button>
+                            {showPM && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-xs justify-start"
+                                onClick={() => {
+                                  setProjectDialogOpen(false);
+                                  navigate(`/projects?project=${encodeURIComponent(cleanProjectName(p.projectName))}`);
+                                }}
+                                data-testid="link-project-plan"
+                              >
+                                <ClipboardList className="w-3.5 h-3.5 mr-1.5 text-blue-600" />
+                                Project Plan
+                                <ExternalLink className="w-3 h-3 ml-auto text-muted-foreground" />
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
 
               {dialogTab === "edit" && (
                 <div className="space-y-3">
@@ -933,32 +1209,6 @@ export default function LifecycleBoardPage() {
                       </Select>
                     </div>
                   </div>
-                  {selectedProject.source !== "engineering" && (
-                    <div className="text-xs text-muted-foreground bg-muted/50 rounded-lg p-3 space-y-1">
-                      <div className="flex justify-between">
-                        <span>Source</span>
-                        <span className="font-medium">{selectedProject.source === "both" ? "Tracker + Engineering" : "Tracker"}</span>
-                      </div>
-                      {selectedProject.engTotal > 0 && (
-                        <div className="flex justify-between">
-                          <span>Engineering Tasks</span>
-                          <span className="font-medium">{selectedProject.engDone}/{selectedProject.engTotal} done</span>
-                        </div>
-                      )}
-                      {selectedProject.qmTotal > 0 && (
-                        <div className="flex justify-between">
-                          <span>Quality Items</span>
-                          <span className="font-medium">{selectedProject.qmApproved}/{selectedProject.qmTotal} approved</span>
-                        </div>
-                      )}
-                      {selectedProject.projectPctComplete != null && (
-                        <div className="flex justify-between">
-                          <span>PM Completion</span>
-                          <span className="font-medium">{Math.round(selectedProject.projectPctComplete * 100)}%</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
                   <DialogFooter>
                     <Button variant="outline" onClick={() => setProjectDialogOpen(false)} data-testid="btn-cancel-edit-project">
                       Cancel

@@ -62,11 +62,19 @@ export function registerLifecycleRoutes(app: Express) {
         signedDocumentLink: projectInfo.signedDocumentLink,
         executionPhase: projectInfo.executionPhase,
         archivedStatus: projectInfo.archivedStatus,
+        phaseUpdatedAt: projectInfo.phaseUpdatedAt,
+        updatedAt: projectInfo.updatedAt,
+        constructionStartDate: projectInfo.constructionStartDate,
+        commissioningDate: projectInfo.commissioningDate,
+        clientHandoverDate: projectInfo.clientHandoverDate,
       }).from(projectInfo);
 
       const allEngTasks = await db.select({
         projectName: operationalTasks.projectName,
         status: operationalTasks.status,
+        dueDate: operationalTasks.dueDate,
+        priority: operationalTasks.priority,
+        assignees: operationalTasks.assignees,
       }).from(operationalTasks);
 
       const allPlanTasks = await db.select({
@@ -96,17 +104,27 @@ export function registerLifecycleRoutes(app: Express) {
       }
 
       const DONE_STATUSES = ["DONE", "QC APPROVED", "COMPLETED"];
+      const today = new Date().toISOString().split("T")[0];
 
-      const engByNorm = new Map<string, { total: number; done: number; rawName: string }>();
+      const engByNorm = new Map<string, { total: number; done: number; overdue: number; highPriority: number; assignees: Set<string>; rawName: string }>();
       for (const t of allEngTasks) {
         const name = t.projectName;
         if (!name) continue;
         const norm = normalizeName(name);
-        if (!engByNorm.has(norm)) engByNorm.set(norm, { total: 0, done: 0, rawName: name });
+        if (!engByNorm.has(norm)) engByNorm.set(norm, { total: 0, done: 0, overdue: 0, highPriority: 0, assignees: new Set(), rawName: name });
         const entry = engByNorm.get(norm)!;
         entry.total++;
-        if (t.status && DONE_STATUSES.includes(t.status.toUpperCase())) {
+        const isDone = t.status && DONE_STATUSES.includes(t.status.toUpperCase());
+        if (isDone) {
           entry.done++;
+        } else {
+          if (t.dueDate && t.dueDate < today) entry.overdue++;
+          if (t.priority && ["High", "Urgent", "Highest"].includes(t.priority)) entry.highPriority++;
+        }
+        if (t.assignees && Array.isArray(t.assignees)) {
+          for (const a of t.assignees) {
+            if (a) entry.assignees.add(a);
+          }
         }
       }
 
@@ -144,7 +162,7 @@ export function registerLifecycleRoutes(app: Express) {
         const norm = normalizeName(proj.projectName);
         projectNormNames.add(norm);
 
-        const eng = engByNorm.get(norm) || { total: 0, done: 0, rawName: "" };
+        const eng = engByNorm.get(norm) || { total: 0, done: 0, overdue: 0, highPriority: 0, assignees: new Set<string>(), rawName: "" };
         const plan = planByNorm.get(norm) || { total: 0, sumPct: 0, count: 0 };
         const qm = qmByNorm.get(norm) || { total: 0, approved: 0 };
 
@@ -175,11 +193,19 @@ export function registerLifecycleRoutes(app: Express) {
           source,
           engTotal: eng.total,
           engDone: eng.done,
+          engOverdue: eng.overdue,
+          engHighPriority: eng.highPriority,
+          engAssignees: Array.from(eng.assignees),
           planTotal: plan.total,
           planAvgPct: plan.total > 0 ? Math.round((plan.sumPct / plan.total) * 100) / 100 : 0,
           projectPctComplete,
           qmTotal: qm.total,
           qmApproved: qm.approved,
+          phaseUpdatedAt: proj.phaseUpdatedAt,
+          updatedAt: proj.updatedAt,
+          constructionStartDate: proj.constructionStartDate,
+          commissioningDate: proj.commissioningDate,
+          clientHandoverDate: proj.clientHandoverDate,
         });
       }
 
@@ -204,11 +230,19 @@ export function registerLifecycleRoutes(app: Express) {
           source: "engineering" as const,
           engTotal: eng.total,
           engDone: eng.done,
+          engOverdue: eng.overdue,
+          engHighPriority: eng.highPriority,
+          engAssignees: Array.from(eng.assignees),
           planTotal: plan.total,
           planAvgPct: plan.total > 0 ? Math.round((plan.sumPct / plan.total) * 100) / 100 : 0,
           projectPctComplete,
           qmTotal: qm.total,
           qmApproved: qm.approved,
+          phaseUpdatedAt: null,
+          updatedAt: null,
+          constructionStartDate: null,
+          commissioningDate: null,
+          clientHandoverDate: null,
         });
       }
 

@@ -58,7 +58,10 @@ interface Warning {
 
 export default function QmDashboardPage() {
   const [, setLocation] = useLocation();
-  const [searchTerm, setSearchTerm] = useState("");
+  const [searchTerm, setSearchTerm] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("project") || "";
+  });
   const [selectedWarning, setSelectedWarning] = useState<Warning | null>(null);
   const [actionType, setActionType] = useState<"override" | "resolve" | null>(null);
   const [reasonText, setReasonText] = useState("");
