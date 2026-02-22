@@ -16,11 +16,7 @@ import {
   ShieldCheck,
   Wrench,
   ListTodo,
-  Package,
-  Users,
   Briefcase,
-  FileBarChart,
-  History,
   Upload,
 } from "lucide-react";
 
@@ -116,14 +112,6 @@ const engLinks: QuickLink[] = [
     color: "text-blue-600",
     bg: "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 hover:border-blue-400",
   },
-  {
-    label: "Deliverables Register",
-    description: "Track deliverables, versions, and approvals",
-    icon: Package,
-    path: "/engineering/deliverables",
-    color: "text-indigo-600",
-    bg: "bg-indigo-50 dark:bg-indigo-950/30 border-indigo-200 dark:border-indigo-800 hover:border-indigo-400",
-  },
 ];
 
 const qualityLinks: QuickLink[] = [
@@ -138,30 +126,6 @@ const qualityLinks: QuickLink[] = [
 ];
 
 const adminLinks: QuickLink[] = [
-  {
-    label: "Reports",
-    description: "Operational overview and project RAG reports",
-    icon: FileBarChart,
-    path: "/admin/reports",
-    color: "text-purple-600",
-    bg: "bg-purple-50 dark:bg-purple-950/30 border-purple-200 dark:border-purple-800 hover:border-purple-400",
-  },
-  {
-    label: "Audit Log",
-    description: "Task changes, phase transitions, and activity history",
-    icon: History,
-    path: "/admin/audit-log",
-    color: "text-slate-600",
-    bg: "bg-slate-50 dark:bg-slate-950/30 border-slate-200 dark:border-slate-800 hover:border-slate-400",
-  },
-  {
-    label: "Teams & Roles",
-    description: "Manage users, roles, and team assignments",
-    icon: Users,
-    path: "/admin/teams",
-    color: "text-cyan-600",
-    bg: "bg-cyan-50 dark:bg-cyan-950/30 border-cyan-200 dark:border-cyan-800 hover:border-cyan-400",
-  },
   {
     label: "Data Import",
     description: "Upload trackers and manage data ingestion",

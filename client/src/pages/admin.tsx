@@ -317,14 +317,7 @@ export default function AdminPage() {
           <h1 className="text-2xl font-bold" data-testid="text-admin-title">{viewerOnly ? "Data Import" : "Admin Dashboard"}</h1>
           <p className="text-muted-foreground">{viewerOnly ? "Upload tracker files to import project data" : "Data import, system health, and diagnostics"}</p>
         </div>
-        {!viewerOnly && (
-          <a href="/writeback-admin">
-            <Button variant="outline" data-testid="button-writeback-admin">
-              <FileSpreadsheet className="h-4 w-4 mr-2" />
-              Excel Writeback
-            </Button>
-          </a>
-        )}
+        
       </div>
 
       <Tabs defaultValue="import" className="w-full">

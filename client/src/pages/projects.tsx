@@ -1801,48 +1801,7 @@ export default function ProjectsSummary() {
         />
       )}
 
-      {writebackPromptProject && (
-        <div className="fixed bottom-4 right-4 z-50 bg-white border border-blue-200 shadow-lg rounded-xl p-4 max-w-sm animate-in slide-in-from-bottom-4" data-testid="writeback-prompt">
-          <div className="flex items-start gap-3">
-            <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
-              <FileText className="w-4 h-4 text-blue-600" />
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-semibold text-slate-800">Project info updated</p>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Would you like to configure Excel writeback mappings for these changes?
-              </p>
-              <div className="flex items-center gap-2 mt-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 text-xs"
-                  onClick={() => setLocation("/writeback-admin")}
-                  data-testid="btn-goto-writeback"
-                >
-                  <ExternalLink className="w-3 h-3 mr-1" />
-                  Configure Writeback
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 text-xs text-slate-400"
-                  onClick={() => setWritebackPromptProject(null)}
-                  data-testid="btn-dismiss-writeback"
-                >
-                  Dismiss
-                </Button>
-              </div>
-            </div>
-            <button
-              className="text-slate-400 hover:text-slate-600"
-              onClick={() => setWritebackPromptProject(null)}
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      )}
+      
     </div>
   );
 }
