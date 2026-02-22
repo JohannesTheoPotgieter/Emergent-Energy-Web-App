@@ -1,7 +1,7 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { normalizedCostLines, counterparties } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 const router = Router();
 
@@ -293,6 +293,49 @@ router.get("/api/subcontractor-dashboard/detail/:name", requireAuth, async (req:
     });
   } catch (err: any) {
     console.error("[subcontractor-detail] Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch("/api/subcontractor-dashboard/rename", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { oldName, newName } = req.body;
+    if (!oldName || !newName || typeof oldName !== "string" || typeof newName !== "string") {
+      return res.status(400).json({ error: "Both oldName and newName are required" });
+    }
+    const trimmedNew = newName.trim();
+    if (trimmedNew.length < 1) {
+      return res.status(400).json({ error: "New name cannot be empty" });
+    }
+
+    const existingCp = await db.select().from(counterparties)
+      .where(sql`LOWER(${counterparties.nameCanonical}) = LOWER(${trimmedNew})`);
+
+    const oldCp = await db.select().from(counterparties)
+      .where(sql`LOWER(${counterparties.nameCanonical}) = LOWER(${oldName.trim()})`);
+
+    if (existingCp.length > 0 && oldCp.length > 0 && existingCp[0].id !== oldCp[0].id) {
+      return res.status(409).json({ error: "A counterparty with that name already exists" });
+    }
+
+    await db.transaction(async (tx) => {
+      if (oldCp.length > 0) {
+        const currentAliases: string[] = Array.isArray(oldCp[0].nameAliases) ? oldCp[0].nameAliases as string[] : [];
+        const newAliases = [...new Set([...currentAliases, oldCp[0].nameCanonical])];
+        await tx.update(counterparties)
+          .set({ nameCanonical: trimmedNew, nameAliases: newAliases, lastSeenAt: new Date() })
+          .where(eq(counterparties.id, oldCp[0].id));
+      }
+
+      const updated = await tx.update(normalizedCostLines)
+        .set({ counterpartyName: trimmedNew })
+        .where(sql`LOWER(TRIM(${normalizedCostLines.counterpartyName})) = LOWER(${oldName.trim()})`);
+    });
+
+    console.log(`[subcontractor] Renamed "${oldName}" → "${trimmedNew}"`);
+    res.json({ success: true, oldName, newName: trimmedNew });
+  } catch (err: any) {
+    console.error("[subcontractor-rename] Error:", err);
     res.status(500).json({ error: err.message });
   }
 });
