@@ -400,7 +400,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 )}>
                   {companyRole
                     ? (companyRole === "COO_ADMIN" ? "COO" : companyRole === "CEO_ADMIN" ? "CEO" : companyRole.replace(/_/g, " ").split(" ").map(w => w[0]).join(""))
-                    : ['admin', 'COO_ADMIN'].includes(user?.role || '') ? "COO" : user?.role === "CEO_ADMIN" ? "CEO" : ['quality_manager', 'QUALITY_MANAGER'].includes(user?.role || '') ? "QM" : ['eng_program_manager', 'ENGINEERING_MANAGER'].includes(user?.role || '') ? "EPM" : user?.role?.replace(/_/g, " ").split(" ").map((w: string) => w[0]).join("") || ""}
+                    : user?.role === 'admin' ? "COO" : user?.role === 'quality_manager' ? "QM" : user?.role === 'eng_program_manager' ? "EPM" : user?.role?.replace(/_/g, " ").split(" ").map((w: string) => w[0]).join("") || ""}
                 </span>
               </div>
               <p className="text-xs text-sidebar-foreground/50 truncate">{companyRole ? companyRole.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, c => c.toUpperCase()) : user?.email}</p>

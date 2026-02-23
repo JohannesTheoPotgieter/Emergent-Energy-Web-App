@@ -14,6 +14,11 @@ import {
   PackageSearch,
   RefreshCw,
 } from "lucide-react";
+import {
+  COMPANY_ROLES,
+  COMPANY_ROLE_LABELS,
+  type CompanyRole,
+} from "@shared/schema";
 
 function getAuthHeaders(): HeadersInit {
   const token = localStorage.getItem("auth_token");
