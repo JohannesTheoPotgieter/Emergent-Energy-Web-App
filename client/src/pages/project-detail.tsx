@@ -413,7 +413,7 @@ const OLD_TAB_TO_SUPER: Record<string, { superTab: string; subTab: string }> = {
   "task-grid": { superTab: "overview", subTab: "task-grid" },
   "board": { superTab: "overview", subTab: "board" },
   "calendar": { superTab: "overview", subTab: "calendar" },
-  "eng-tasks": { superTab: "overview", subTab: "eng-tasks" },
+  "eng-tasks": { superTab: "engineering", subTab: "eng-tasks" },
   "project-plan": { superTab: "plan", subTab: "gantt" },
   "revenue-tracking": { superTab: "money", subTab: "revenue-tracking" },
   "expenditure": { superTab: "money", subTab: "expenditure" },
@@ -428,6 +428,7 @@ const OLD_TAB_TO_SUPER: Record<string, { superTab: string; subTab: string }> = {
 const SUPER_TAB_DEFAULTS: Record<string, string> = {
   overview: "task-grid",
   plan: "gantt",
+  engineering: "eng-tasks",
   money: "revenue-tracking",
   quality: "quality",
   history: "history",
@@ -460,7 +461,7 @@ export default function ProjectDetailPage() {
     if (!urlTab) return null;
     const mapped = OLD_TAB_TO_SUPER[urlTab];
     if (mapped) return mapped;
-    if (["overview", "plan", "money", "quality", "history"].includes(urlTab)) {
+    if (["overview", "plan", "engineering", "money", "quality", "history"].includes(urlTab)) {
       return { superTab: urlTab, subTab: SUPER_TAB_DEFAULTS[urlTab] };
     }
     return null;
@@ -470,6 +471,7 @@ export default function ProjectDetailPage() {
   const [subTabs, setSubTabs] = useState<Record<string, string>>({
     overview: resolvedFromUrl?.superTab === "overview" ? resolvedFromUrl.subTab : "task-grid",
     plan: resolvedFromUrl?.superTab === "plan" ? resolvedFromUrl.subTab : "gantt",
+    engineering: "eng-tasks",
     money: resolvedFromUrl?.superTab === "money" ? resolvedFromUrl.subTab : "revenue-tracking",
     quality: "quality",
     history: "history",
@@ -481,7 +483,7 @@ export default function ProjectDetailPage() {
       if (mapped) {
         setActiveSuperTab(mapped.superTab);
         setSubTabs(prev => ({ ...prev, [mapped.superTab]: mapped.subTab }));
-      } else if (["overview", "plan", "money", "quality", "history"].includes(urlTab)) {
+      } else if (["overview", "plan", "engineering", "money", "quality", "history"].includes(urlTab)) {
         setActiveSuperTab(urlTab);
       }
     }
@@ -856,6 +858,10 @@ export default function ProjectDetailPage() {
             <FileText className="h-3.5 w-3.5" />
             <span>Plan</span>
           </TabsTrigger>
+          <TabsTrigger value="engineering" className="flex items-center gap-1.5 text-xs" data-testid="tab-engineering">
+            <Wrench className="h-3.5 w-3.5" />
+            <span>Engineering</span>
+          </TabsTrigger>
           <TabsTrigger value="money" className="flex items-center gap-1.5 text-xs" data-testid="tab-money">
             <DollarSign className="h-3.5 w-3.5" />
             <span>Money</span>
@@ -881,14 +887,14 @@ export default function ProjectDetailPage() {
             <Button size="sm" variant={currentSubTab === "calendar" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("overview", "calendar")} data-testid="subtab-calendar">
               <CalendarDays className="h-3 w-3 mr-1" /> Calendar
             </Button>
-            <Button size="sm" variant={currentSubTab === "eng-tasks" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("overview", "eng-tasks")} data-testid="subtab-eng-tasks">
-              <Wrench className="h-3 w-3 mr-1" /> Eng Tasks
-            </Button>
           </div>
           {currentSubTab === "task-grid" && <TaskGridView projectName={projectName} onTaskClick={handleTaskClick} />}
           {currentSubTab === "board" && <BoardView projectName={projectName} onTaskClick={handleTaskClick} />}
           {currentSubTab === "calendar" && <CalendarView projectName={projectName} onTaskClick={handleTaskClick} />}
-          {currentSubTab === "eng-tasks" && <EngTasksTab projectInfoId={projectInfoId ?? null} isAdmin={isAdmin} />}
+        </TabsContent>
+
+        <TabsContent value="engineering" className="space-y-4">
+          <EngTasksTab projectInfoId={projectInfoId ?? null} isAdmin={isAdmin} />
         </TabsContent>
 
         <TabsContent value="plan" className="space-y-4">
