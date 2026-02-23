@@ -671,7 +671,7 @@ export default function LifecycleBoardPage() {
     <div className="space-y-4" data-testid="lifecycle-board-page">
       <div className="flex items-start justify-between flex-wrap gap-2">
         <div>
-          <h1 className="text-2xl font-bold" data-testid="text-lifecycle-title">Lifecycle Board</h1>
+          <h1 className="text-2xl font-bold" data-testid="text-lifecycle-title">Company Life Cycle</h1>
           <p className="text-muted-foreground text-sm">
             Drag projects between columns to change phase
             <span className="ml-2 text-xs">
