@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useRoute, useLocation, useSearch } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -17,6 +17,7 @@ import {
   ArrowLeft, User, CheckCircle, AlertCircle, Columns, CalendarDays,
   ListTodo, ShieldCheck, Clock, History, ArrowRight, Loader2,
   Wrench, PlusCircle, Circle, Calendar, PauseCircle, AlertTriangle,
+  ChevronDown, ChevronUp, Eye, Play, Zap, Target,
 } from "lucide-react";
 import { ProjectPlanTab } from "@/components/tabs/ProjectPlanTab";
 import { RevenueTrackingTab } from "@/components/tabs/RevenueTrackingTab";
@@ -31,6 +32,8 @@ import TaskGridView from "@/components/TaskGridView";
 import KeyDatesPanel from "@/components/KeyDatesPanel";
 import { QualityTab } from "@/components/tabs/QualityTab";
 import { ProjectHistoryTab } from "@/components/tabs/ProjectHistoryTab";
+import { WeeklyReviewWizard } from "@/components/WeeklyReviewWizard";
+import { GuidancePrompt, getPhaseGuidance } from "@/components/MicroGuidance";
 import { useProgramData } from "@/hooks/use-program-data";
 import { useAuth } from "@/hooks/use-auth";
 import { PROJECT_PHASES, PROJECT_PHASE_LABELS, type ProjectPhase } from "@shared/schema";
@@ -405,6 +408,34 @@ function EngTasksTab({ projectInfoId, isAdmin }: { projectInfoId: number | null;
   );
 }
 
+const OLD_TAB_TO_SUPER: Record<string, { superTab: string; subTab: string }> = {
+  "task-grid": { superTab: "overview", subTab: "task-grid" },
+  "board": { superTab: "overview", subTab: "board" },
+  "calendar": { superTab: "overview", subTab: "calendar" },
+  "eng-tasks": { superTab: "overview", subTab: "eng-tasks" },
+  "project-plan": { superTab: "plan", subTab: "gantt" },
+  "revenue-tracking": { superTab: "money", subTab: "revenue-tracking" },
+  "expenditure": { superTab: "money", subTab: "expenditure" },
+  "finance-revenue": { superTab: "money", subTab: "finance-revenue" },
+  "finance-cos": { superTab: "money", subTab: "finance-cos" },
+  "cashflow": { superTab: "money", subTab: "cashflow" },
+  "quality": { superTab: "quality", subTab: "quality" },
+  "history": { superTab: "history", subTab: "history" },
+};
+
+const SUPER_TAB_DEFAULTS: Record<string, string> = {
+  overview: "task-grid",
+  plan: "gantt",
+  money: "revenue-tracking",
+  quality: "quality",
+  history: "history",
+};
+
+function RagDot({ color }: { color: "green" | "amber" | "red" }) {
+  const cls = color === "green" ? "bg-emerald-500" : color === "amber" ? "bg-amber-500" : "bg-red-500";
+  return <span className={`inline-block w-2.5 h-2.5 rounded-full ${cls}`} />;
+}
+
 export default function ProjectDetailPage() {
   const [, params] = useRoute("/project/:projectName");
   const [, setLocation] = useLocation();
@@ -414,16 +445,44 @@ export default function ProjectDetailPage() {
   const { user } = useAuth();
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [phaseModalOpen, setPhaseModalOpen] = useState(false);
+  const [alertsExpanded, setAlertsExpanded] = useState(true);
+  const alertsRef = useRef<HTMLDivElement>(null);
 
   const searchParams = useMemo(() => new URLSearchParams(searchString), [searchString]);
   const urlTab = searchParams.get("tab");
   const highlightId = searchParams.get("highlightId") ? Number(searchParams.get("highlightId")) : null;
   const highlightType = searchParams.get("highlightType");
 
-  const [activeTab, setActiveTab] = useState(urlTab || "task-grid");
+  const resolvedFromUrl = useMemo(() => {
+    if (!urlTab) return null;
+    const mapped = OLD_TAB_TO_SUPER[urlTab];
+    if (mapped) return mapped;
+    if (["overview", "plan", "money", "quality", "history"].includes(urlTab)) {
+      return { superTab: urlTab, subTab: SUPER_TAB_DEFAULTS[urlTab] };
+    }
+    return null;
+  }, [urlTab]);
+
+  const [activeSuperTab, setActiveSuperTab] = useState(resolvedFromUrl?.superTab || "overview");
+  const [subTabs, setSubTabs] = useState<Record<string, string>>({
+    overview: resolvedFromUrl?.superTab === "overview" ? resolvedFromUrl.subTab : "task-grid",
+    plan: resolvedFromUrl?.superTab === "plan" ? resolvedFromUrl.subTab : "gantt",
+    money: resolvedFromUrl?.superTab === "money" ? resolvedFromUrl.subTab : "revenue-tracking",
+    quality: "quality",
+    history: "history",
+  });
 
   useEffect(() => {
-    if (urlTab) setActiveTab(urlTab);
+    if (urlTab) {
+      const mapped = OLD_TAB_TO_SUPER[urlTab];
+      if (mapped) {
+        setActiveSuperTab(mapped.superTab);
+        setSubTabs(prev => ({ ...prev, [mapped.superTab]: mapped.subTab }));
+      } else if (["overview", "plan", "money", "quality", "history"].includes(urlTab)) {
+        setActiveSuperTab(urlTab);
+      }
+    }
   }, [urlTab]);
 
   const projectInfo = projectsSummary?.find((p: any) => p.project_name === projectName);
@@ -493,6 +552,26 @@ export default function ProjectDetailPage() {
     enabled: !!projectName,
   });
 
+  const { data: engDataForAlerts } = useQuery<{ tasks: any[] }>({
+    queryKey: ["project-eng-tasks", projectInfo?.project_info_id],
+    queryFn: async () => {
+      const res = await engFetch(`/api/projects/${projectInfo?.project_info_id}/eng-tasks`);
+      if (!res.ok) return { tasks: [] };
+      return res.json();
+    },
+    enabled: !!projectInfo?.project_info_id,
+  });
+
+  const { data: qualityData } = useQuery({
+    queryKey: ["quality-checklist", projectName],
+    queryFn: async () => {
+      const res = await fetch(`/api/quality-checklist/${encodeURIComponent(projectName)}`);
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!projectName,
+  });
+
   if (!projectName) {
     return (
       <div className="space-y-6">
@@ -504,6 +583,7 @@ export default function ProjectDetailPage() {
 
   const displayName = projectName.replace("_Tracker", "");
   const phase = projectInfo?.phase || null;
+  const executionPhase = projectInfo?.execution_phase || null;
   const pd = projectInfo?.pd || "—";
   const pm = projectInfo?.pm || "—";
   const sizeKwp = projectInfo?.size_kwp ? `${projectInfo.size_kwp.toFixed(0)} kWp` : "—";
@@ -512,6 +592,8 @@ export default function ProjectDetailPage() {
     : "—";
   const isAdmin = ['admin', 'COO_ADMIN', 'CEO_ADMIN'].includes(user?.role || '');
   const projectInfoId = projectInfo?.project_info_id;
+  const contractValue = projectInfo?.contract_value || 0;
+  const budgetTotal = projectInfo?.budget_total || 0;
 
   const dataHealth = [
     { name: "Project Plan", rows: (projectPlanData as any[]).length, present: (projectPlanData as any[]).length > 0 },
@@ -525,8 +607,84 @@ export default function ProjectDetailPage() {
   const sheetsPresent = dataHealth.filter(s => s.present).length;
   const totalRows = dataHealth.reduce((sum, s) => sum + s.rows, 0);
 
+  const planTasks = projectPlanData as any[];
+  const today = new Date().toISOString().split("T")[0];
+  const overduePlanTasks = planTasks.filter((t: any) => t.endDate && t.endDate < today && t.status !== "Complete" && t.status !== "Done");
+  const scheduleRag: "green" | "amber" | "red" = overduePlanTasks.length === 0 ? "green" : overduePlanTasks.length <= 3 ? "amber" : "red";
+
+  const totalExpenses = (expenseData as any[]).reduce((s: number, e: any) => s + (Number(e.expenseActualTotal) || 0), 0);
+  const costRatio = budgetTotal > 0 ? totalExpenses / budgetTotal : 0;
+  const costRag: "green" | "amber" | "red" = costRatio < 0.9 ? "green" : costRatio <= 1 ? "amber" : "red";
+
+  const qualityChecklist = qualityData as any;
+  const qualityRag: "green" | "amber" | "red" = qualityChecklist && qualityChecklist.gates
+    ? (qualityChecklist.gates.every?.((g: any) => g.passed) ? "green" : qualityChecklist.gates.some?.((g: any) => g.failed) ? "red" : "amber")
+    : qualityChecklist && (Array.isArray(qualityChecklist) ? qualityChecklist.length > 0 : true) ? "amber" : "red";
+
+  const nextMilestone = useMemo(() => {
+    const now = new Date();
+    const future = planTasks
+      .filter((t: any) => t.endDate && new Date(t.endDate) >= now)
+      .sort((a: any, b: any) => new Date(a.endDate).getTime() - new Date(b.endDate).getTime());
+    return future[0] || null;
+  }, [planTasks]);
+
+  const totalPaidInflows = (revenueData as any[]).reduce((s: number, r: any) => {
+    if (r.paymentReceivedDate) return s + (Number(r.milestoneAmount) || 0);
+    return s;
+  }, 0);
+  const revenueRealisedPct = contractValue > 0 ? (totalPaidInflows / contractValue) * 100 : 0;
+  const cosRealisedPct = budgetTotal > 0 ? (totalExpenses / budgetTotal) * 100 : 0;
+  const marginDelta = revenueRealisedPct - cosRealisedPct;
+
+  const hasRedRag = scheduleRag === "red" || costRag === "red" || qualityRag === "red";
+
+  const alerts = useMemo(() => {
+    const result: { severity: "warning" | "info"; message: string; key: string }[] = [];
+    const now = new Date();
+    const in14Days = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+    (revenueData as any[]).forEach((r: any) => {
+      const planned = r.plannedPaymentDate ? new Date(r.plannedPaymentDate) : null;
+      if (planned && planned >= now && planned <= in14Days && !r.invoiceRaisedDate) {
+        result.push({ severity: "warning", message: `Revenue milestone "${r.milestoneName || "Unnamed"}" due within 14 days — no invoice raised`, key: `rev-${r.id || r.milestoneName}` });
+      }
+    });
+    const totalRev = (revenueData as any[]).reduce((s: number, r: any) => s + (Number(r.milestoneAmount) || 0), 0);
+    if (totalExpenses > totalRev && totalRev > 0) {
+      result.push({ severity: "warning", message: `COS (R${totalExpenses.toLocaleString()}) exceeds linked revenue (R${totalRev.toLocaleString()})`, key: "cos-exceeds-rev" });
+    }
+    const engTasks = engDataForAlerts?.tasks || [];
+    const overdueEng = engTasks.filter((t: any) => t.dueDate && t.dueDate < today && t.status !== "COMPLETE");
+    if (overdueEng.length > 0) {
+      result.push({ severity: "warning", message: `${overdueEng.length} overdue engineering task${overdueEng.length > 1 ? "s" : ""}`, key: "eng-overdue" });
+    }
+    if (planTasks.length === 0) {
+      result.push({ severity: "info", message: "No project plan data uploaded yet", key: "no-plan" });
+    }
+    return result;
+  }, [revenueData, expenseData, engDataForAlerts, planTasks, totalExpenses, today]);
+
+  const primaryCta = useMemo(() => {
+    if (phase?.includes("FIRST_ASSESSMENT") || phase?.includes("COST_PROPOSAL")) {
+      return { label: "Advance Gate", icon: <Zap className="h-4 w-4" />, action: () => setPhaseModalOpen(true) };
+    }
+    if (executionPhase && phase?.includes("CONSTRUCTION")) {
+      return { label: "Start Weekly Review", icon: <Play className="h-4 w-4" />, action: () => { setActiveSuperTab("overview"); setSubTabs(prev => ({ ...prev, overview: "task-grid" })); } };
+    }
+    if (hasRedRag) {
+      return { label: "Resolve Issue", icon: <AlertTriangle className="h-4 w-4" />, action: () => { setAlertsExpanded(true); alertsRef.current?.scrollIntoView({ behavior: "smooth" }); } };
+    }
+    return { label: "View Tasks", icon: <Eye className="h-4 w-4" />, action: () => { setActiveSuperTab("overview"); setSubTabs(prev => ({ ...prev, overview: "task-grid" })); } };
+  }, [phase, executionPhase, hasRedRag]);
+
+  const setSubTab = (superTab: string, subTab: string) => {
+    setSubTabs(prev => ({ ...prev, [superTab]: subTab }));
+  };
+
+  const currentSubTab = subTabs[activeSuperTab] || SUPER_TAB_DEFAULTS[activeSuperTab];
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <Button variant="ghost" size="sm" onClick={() => setLocation("/projects")} className="gap-2" data-testid="button-back">
         <ArrowLeft className="h-4 w-4" />
         Back to Projects
@@ -536,7 +694,6 @@ export default function ProjectDetailPage() {
         <div className="space-y-2">
           <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
             <h2 className="text-xl sm:text-3xl font-heading font-bold text-foreground" data-testid="text-project-name">{displayName}</h2>
-            <PhaseBadge phase={phase} />
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs sm:text-sm text-muted-foreground">
             <span className="flex items-center gap-1"><User className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> PD: {pd}</span>
@@ -577,107 +734,215 @@ export default function ProjectDetailPage() {
         </Card>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="flex overflow-x-auto gap-1 h-auto p-1 w-full no-scrollbar">
-          <TabsTrigger value="task-grid" className="flex items-center gap-1.5 text-xs" data-testid="tab-task-grid">
+      <Card className="sticky top-0 z-10 shadow-sm" data-testid="awareness-bar">
+        <CardContent className="p-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 items-center">
+            <div className="flex flex-col gap-1" data-testid="awareness-phase">
+              <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Phase</span>
+              <PhaseBadge phase={phase} />
+            </div>
+
+            <div className="flex flex-col gap-1" data-testid="awareness-execution-phase">
+              <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Execution</span>
+              <span className="text-xs font-medium truncate">{executionPhase || "—"}</span>
+            </div>
+
+            <div className="flex flex-col gap-1" data-testid="awareness-rag">
+              <span className="text-[10px] text-muted-foreground uppercase tracking-wider">RAG</span>
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1" title={`Schedule: ${scheduleRag}`}>
+                  <RagDot color={scheduleRag} />
+                  <span className="text-[10px]">S</span>
+                </div>
+                <div className="flex items-center gap-1" title={`Cost: ${costRag}`}>
+                  <RagDot color={costRag} />
+                  <span className="text-[10px]">C</span>
+                </div>
+                <div className="flex items-center gap-1" title={`Quality: ${qualityRag}`}>
+                  <RagDot color={qualityRag} />
+                  <span className="text-[10px]">Q</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1" data-testid="awareness-milestone">
+              <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Next Milestone</span>
+              <span className="text-xs font-medium truncate">
+                {nextMilestone ? `${nextMilestone.taskName || nextMilestone.task_name || "Task"} (${new Date(nextMilestone.endDate || nextMilestone.end_date).toLocaleDateString("en-ZA", { day: "2-digit", month: "short" })})` : "—"}
+              </span>
+            </div>
+
+            <div className="flex flex-col gap-1" data-testid="awareness-revenue">
+              <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Rev Realised</span>
+              <span className="text-sm font-bold">{revenueRealisedPct.toFixed(1)}%</span>
+            </div>
+
+            <div className="flex flex-col gap-1" data-testid="awareness-cos">
+              <span className="text-[10px] text-muted-foreground uppercase tracking-wider">COS Realised</span>
+              <span className="text-sm font-bold">{cosRealisedPct.toFixed(1)}%</span>
+            </div>
+
+            <div className="flex flex-col gap-1" data-testid="awareness-margin">
+              <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Margin Δ</span>
+              <span className={`text-sm font-bold ${marginDelta >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                {marginDelta >= 0 ? "+" : ""}{marginDelta.toFixed(1)}%
+              </span>
+            </div>
+
+            <div className="flex items-end justify-end">
+              <Button size="sm" onClick={primaryCta.action} className="gap-1.5" data-testid="button-primary-cta">
+                {primaryCta.icon}
+                {primaryCta.label}
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {(() => {
+        const phaseGuide = getPhaseGuidance(phase);
+        return phaseGuide ? (
+          <GuidancePrompt
+            type={phaseGuide.type}
+            title={phaseGuide.title}
+            message={phaseGuide.message}
+            learnMoreText={phaseGuide.learnMoreText}
+          />
+        ) : null;
+      })()}
+
+      {alerts.length > 0 && (
+        <div ref={alertsRef} data-testid="alert-panel">
+          <button
+            onClick={() => setAlertsExpanded(!alertsExpanded)}
+            className="flex items-center gap-2 w-full text-left mb-2"
+            data-testid="button-toggle-alerts"
+          >
+            <AlertTriangle className="h-4 w-4 text-amber-600" />
+            <span className="text-sm font-semibold">Business Alerts</span>
+            <Badge variant="destructive" className="text-[10px] px-1.5 py-0" data-testid="badge-alert-count">
+              {alerts.length}
+            </Badge>
+            {alertsExpanded ? <ChevronUp className="h-4 w-4 ml-auto" /> : <ChevronDown className="h-4 w-4 ml-auto" />}
+          </button>
+          {alertsExpanded && (
+            <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar" data-testid="alert-cards">
+              {alerts.map(alert => (
+                <Card key={alert.key} className="flex-shrink-0 w-72 border-l-4 border-l-amber-400" data-testid={`alert-card-${alert.key}`}>
+                  <CardContent className="p-3 flex items-start gap-2">
+                    {alert.severity === "warning" ? (
+                      <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                    ) : (
+                      <AlertCircle className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
+                    )}
+                    <span className="text-xs leading-tight">{alert.message}</span>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      <Tabs value={activeSuperTab} onValueChange={setActiveSuperTab} className="w-full">
+        <TabsList className="flex gap-1 h-auto p-1 w-full" data-testid="super-tabs">
+          <TabsTrigger value="overview" className="flex items-center gap-1.5 text-xs" data-testid="tab-overview">
             <ListTodo className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Tasks</span>
+            <span>Overview</span>
           </TabsTrigger>
-          <TabsTrigger value="board" className="flex items-center gap-1.5 text-xs" data-testid="tab-board">
-            <Columns className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Board</span>
-          </TabsTrigger>
-          <TabsTrigger value="calendar" className="flex items-center gap-1.5 text-xs" data-testid="tab-calendar">
-            <CalendarDays className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Calendar</span>
-          </TabsTrigger>
-          <TabsTrigger value="project-plan" className="flex items-center gap-1.5 text-xs" data-testid="tab-project-plan">
+          <TabsTrigger value="plan" className="flex items-center gap-1.5 text-xs" data-testid="tab-plan">
             <FileText className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Gantt</span>
+            <span>Plan</span>
           </TabsTrigger>
-          <TabsTrigger value="revenue-tracking" className="flex items-center gap-1.5 text-xs" data-testid="tab-revenue">
+          <TabsTrigger value="money" className="flex items-center gap-1.5 text-xs" data-testid="tab-money">
             <DollarSign className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Revenue</span>
-          </TabsTrigger>
-          <TabsTrigger value="expenditure" className="flex items-center gap-1.5 text-xs" data-testid="tab-expenditure">
-            <CreditCard className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Expenditure</span>
-          </TabsTrigger>
-          <TabsTrigger value="finance-revenue" className="flex items-center gap-1.5 text-xs" data-testid="tab-finance-rev">
-            <TrendingUp className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Fin-Rev</span>
-          </TabsTrigger>
-          <TabsTrigger value="finance-cos" className="flex items-center gap-1.5 text-xs" data-testid="tab-finance-cos">
-            <BarChart3 className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Fin-COS</span>
-          </TabsTrigger>
-          <TabsTrigger value="cashflow" className="flex items-center gap-1.5 text-xs" data-testid="tab-cashflow">
-            <Activity className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Cashflow</span>
+            <span>Money</span>
           </TabsTrigger>
           <TabsTrigger value="quality" className="flex items-center gap-1.5 text-xs" data-testid="tab-quality">
             <ShieldCheck className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Quality</span>
-          </TabsTrigger>
-          <TabsTrigger value="eng-tasks" className="flex items-center gap-1.5 text-xs" data-testid="tab-eng-tasks">
-            <Wrench className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Eng Tasks</span>
+            <span>Quality</span>
           </TabsTrigger>
           <TabsTrigger value="history" className="flex items-center gap-1.5 text-xs" data-testid="tab-history">
             <History className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">History</span>
+            <span>History</span>
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="task-grid" className="space-y-4">
-          <TaskGridView projectName={projectName} onTaskClick={handleTaskClick} />
-          <KeyDatesPanel projectName={projectName} />
+        <TabsContent value="overview" className="space-y-4">
+          <div className="flex gap-1 flex-wrap" data-testid="sub-tabs-overview">
+            <Button size="sm" variant={currentSubTab === "task-grid" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("overview", "task-grid")} data-testid="subtab-task-grid">
+              <ListTodo className="h-3 w-3 mr-1" /> Tasks
+            </Button>
+            <Button size="sm" variant={currentSubTab === "board" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("overview", "board")} data-testid="subtab-board">
+              <Columns className="h-3 w-3 mr-1" /> Board
+            </Button>
+            <Button size="sm" variant={currentSubTab === "calendar" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("overview", "calendar")} data-testid="subtab-calendar">
+              <CalendarDays className="h-3 w-3 mr-1" /> Calendar
+            </Button>
+            <Button size="sm" variant={currentSubTab === "eng-tasks" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("overview", "eng-tasks")} data-testid="subtab-eng-tasks">
+              <Wrench className="h-3 w-3 mr-1" /> Eng Tasks
+            </Button>
+          </div>
+          {currentSubTab === "task-grid" && <TaskGridView projectName={projectName} onTaskClick={handleTaskClick} />}
+          {currentSubTab === "board" && <BoardView projectName={projectName} onTaskClick={handleTaskClick} />}
+          {currentSubTab === "calendar" && <CalendarView projectName={projectName} onTaskClick={handleTaskClick} />}
+          {currentSubTab === "eng-tasks" && <EngTasksTab projectInfoId={projectInfoId ?? null} isAdmin={isAdmin} />}
         </TabsContent>
 
-        <TabsContent value="board" className="space-y-4">
-          <BoardView projectName={projectName} onTaskClick={handleTaskClick} />
-          <KeyDatesPanel projectName={projectName} />
+        <TabsContent value="plan" className="space-y-4">
+          <div className="flex gap-1 flex-wrap" data-testid="sub-tabs-plan">
+            <Button size="sm" variant={currentSubTab === "gantt" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("plan", "gantt")} data-testid="subtab-gantt">
+              <FileText className="h-3 w-3 mr-1" /> Gantt
+            </Button>
+            <Button size="sm" variant={currentSubTab === "key-dates" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("plan", "key-dates")} data-testid="subtab-key-dates">
+              <Calendar className="h-3 w-3 mr-1" /> Key Dates
+            </Button>
+          </div>
+          {currentSubTab === "gantt" && <ProjectPlanTab projectName={projectName} />}
+          {currentSubTab === "key-dates" && <KeyDatesPanel projectName={projectName} />}
         </TabsContent>
 
-        <TabsContent value="calendar" className="space-y-4">
-          <CalendarView projectName={projectName} onTaskClick={handleTaskClick} />
-          <KeyDatesPanel projectName={projectName} />
-        </TabsContent>
-
-        <TabsContent value="project-plan" className="space-y-4">
-          <ProjectPlanTab projectName={projectName} />
-          <KeyDatesPanel projectName={projectName} />
-        </TabsContent>
-
-        <TabsContent value="revenue-tracking" className="space-y-4">
-          <RevenueTrackingTab projectName={projectName} highlightId={highlightType === 'revenue' ? highlightId : null} />
-        </TabsContent>
-
-        <TabsContent value="expenditure" className="space-y-4">
-          <ExpenditureEditableTab projectName={projectName} highlightId={highlightType === 'expense' ? highlightId : null} />
-        </TabsContent>
-
-        <TabsContent value="finance-revenue" className="space-y-4">
-          <FinanceRevenueTab projectName={projectName} />
-        </TabsContent>
-
-        <TabsContent value="finance-cos" className="space-y-4">
-          <FinanceCosTab projectName={projectName} />
-        </TabsContent>
-
-        <TabsContent value="cashflow" className="space-y-4">
-          <CashflowTab projectName={projectName} />
+        <TabsContent value="money" className="space-y-4">
+          <div className="flex gap-1 flex-wrap" data-testid="sub-tabs-money">
+            <Button size="sm" variant={currentSubTab === "revenue-tracking" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("money", "revenue-tracking")} data-testid="subtab-revenue">
+              <DollarSign className="h-3 w-3 mr-1" /> Revenue
+            </Button>
+            <Button size="sm" variant={currentSubTab === "expenditure" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("money", "expenditure")} data-testid="subtab-expenditure">
+              <CreditCard className="h-3 w-3 mr-1" /> Expenditure
+            </Button>
+            <Button size="sm" variant={currentSubTab === "finance-revenue" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("money", "finance-revenue")} data-testid="subtab-fin-rev">
+              <TrendingUp className="h-3 w-3 mr-1" /> Fin-Rev
+            </Button>
+            <Button size="sm" variant={currentSubTab === "finance-cos" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("money", "finance-cos")} data-testid="subtab-fin-cos">
+              <BarChart3 className="h-3 w-3 mr-1" /> Fin-COS
+            </Button>
+            <Button size="sm" variant={currentSubTab === "cashflow" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("money", "cashflow")} data-testid="subtab-cashflow">
+              <Activity className="h-3 w-3 mr-1" /> Cashflow
+            </Button>
+          </div>
+          {currentSubTab === "revenue-tracking" && <RevenueTrackingTab projectName={projectName} highlightId={highlightType === 'revenue' ? highlightId : null} />}
+          {currentSubTab === "expenditure" && <ExpenditureEditableTab projectName={projectName} highlightId={highlightType === 'expense' ? highlightId : null} />}
+          {currentSubTab === "finance-revenue" && <FinanceRevenueTab projectName={projectName} />}
+          {currentSubTab === "finance-cos" && <FinanceCosTab projectName={projectName} />}
+          {currentSubTab === "cashflow" && <CashflowTab projectName={projectName} />}
         </TabsContent>
 
         <TabsContent value="quality" className="space-y-4">
           <QualityTab projectName={projectName} />
         </TabsContent>
 
-        <TabsContent value="eng-tasks" className="space-y-4">
-          <EngTasksTab projectInfoId={projectInfoId ?? null} isAdmin={isAdmin} />
-        </TabsContent>
-
         <TabsContent value="history" className="space-y-4">
+          <WeeklyReviewWizard
+            projectName={projectName}
+            snapshotMetrics={{
+              phase: phase || undefined,
+              completion: projectInfo?.project_pct_complete ?? undefined,
+              totalRevenue: totalPaidInflows,
+              totalExpenses,
+              margin: totalPaidInflows > 0 ? (totalPaidInflows - totalExpenses) / totalPaidInflows : 0,
+              overdueCount: (engDataForAlerts as any[])?.filter?.((t: any) => t.dueDate && t.dueDate < new Date().toISOString().split("T")[0] && t.status !== "COMPLETE")?.length || 0,
+            }}
+          />
           <ProjectHistoryTab projectName={projectName} />
         </TabsContent>
       </Tabs>
@@ -689,6 +954,14 @@ export default function ProjectDetailPage() {
         projectName={projectName}
       />
 
+      {projectInfoId && (
+        <PhaseChangeModal
+          projectId={projectInfoId}
+          currentPhase={phase}
+          open={phaseModalOpen}
+          onClose={() => setPhaseModalOpen(false)}
+        />
+      )}
     </div>
   );
 }

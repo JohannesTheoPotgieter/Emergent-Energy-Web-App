@@ -21,7 +21,11 @@ Preferred communication style: Simple, everyday language.
     -   **Smart Excel Import**: 5-step wizard for data ingestion, normalization, template profile learning, counterparty master data matching, anomaly detection, and invoice pattern classification.
     -   **Subcontractor Dashboard**: Aggregated view of installer/supplier accounts with KPIs and detailed spend analysis.
     -   **SharePoint Proposals Pipeline**: Intake requests from SharePoint, task generation, and workflow management.
-    -   **UX Guidance System**: Reusable overlay system with action bars, inline tips, smart validation, and micro-walkthroughs.
+    -   **UX Guidance System**: Reusable overlay system with action bars, inline tips, smart validation, micro-walkthroughs, and phase-aware micro-guidance prompts.
+    -   **Project Awareness Bar**: Sticky bar on project detail showing phase, execution phase, RAG indicators (Schedule/Cost/Quality), next milestone, revenue/COS realised %, margin delta, and context-sensitive primary CTA.
+    -   **Business Alert Engine**: Client-side alert rules (revenue milestones near due, COS exceeds revenue, overdue eng tasks, missing plan data) with collapsible panel and severity badges.
+    -   **5-Tab Navigation**: Project detail regrouped from 12 tabs into 5 super-tabs (Overview, Plan, Money, Quality, History) with sub-tab navigation preserving backward-compatible URL params.
+    -   **Weekly Review Wizard**: 6-step structured project review (Schedule, Budget, Risks, Quality, Actions, Summary) with snapshot metrics storage and past review history.
     -   **Utilities & Admin**: SafeMoney utilities, and a COO Execution Cockpit ("My Tool") for task management, DoD enforcement, and Read.ai meeting integration.
 
 ### Backend
@@ -53,6 +57,7 @@ Preferred communication style: Simple, everyday language.
 -   `/api/smart-import/*`: Smart import lifecycle and data queries.
 -   `/api/sp-sync/*`: SharePoint Proposals Pipeline management.
 -   `/api/audit/*`: Comprehensive audit logs and change tracking.
+-   `/api/weekly-reviews/*`: Weekly review wizard CRUD (create, update steps, complete).
 
 ## External Dependencies
 

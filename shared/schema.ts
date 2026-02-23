@@ -2722,6 +2722,36 @@ export const OVERRIDE_CATEGORIES = [
 ] as const;
 export type OverrideCategory = typeof OVERRIDE_CATEGORIES[number];
 
+export const weeklyReviews = pgTable("weekly_reviews", {
+  id: serial("id").primaryKey(),
+  projectName: text("project_name").notNull(),
+  weekStarting: date("week_starting").notNull(),
+  reviewedBy: integer("reviewed_by").references(() => users.id),
+  status: text("status").notNull().default("draft"),
+  stepSchedule: jsonb("step_schedule"),
+  stepBudget: jsonb("step_budget"),
+  stepRisks: jsonb("step_risks"),
+  stepQuality: jsonb("step_quality"),
+  stepActions: jsonb("step_actions"),
+  stepSummary: jsonb("step_summary"),
+  snapshotMetrics: jsonb("snapshot_metrics"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  completedAt: timestamp("completed_at"),
+});
+export const insertWeeklyReviewSchema = createInsertSchema(weeklyReviews).omit({ id: true, createdAt: true });
+export type InsertWeeklyReview = z.infer<typeof insertWeeklyReviewSchema>;
+export type WeeklyReview = typeof weeklyReviews.$inferSelect;
+
+export const WEEKLY_REVIEW_STEPS = [
+  'schedule',
+  'budget',
+  'risks',
+  'quality',
+  'actions',
+  'summary',
+] as const;
+export type WeeklyReviewStep = typeof WEEKLY_REVIEW_STEPS[number];
+
 export const DEFAULT_ROLE_PERMISSIONS: InsertRolePermission[] = [
   { role: "COO_ADMIN", label: "COO Admin", description: "Full executive access, settings, user management", sections: ["EXCO", "PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "ADMIN", "MY_TOOL", "FINANCE"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
   { role: "CEO_ADMIN", label: "CEO Admin", description: "Full executive access, strategic oversight", sections: ["EXCO", "PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "ADMIN", "MY_TOOL", "FINANCE"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
