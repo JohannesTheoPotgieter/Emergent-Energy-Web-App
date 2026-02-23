@@ -129,8 +129,8 @@ const emptyForm = {
 export default function MyToolPrioritiesPage() {
   const { user, isAdmin } = useAuth();
   const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
-  const excoRoles = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO"];
-  const canEdit = isAdmin || (companyRole ? excoRoles.includes(companyRole) : false);
+  const editRoles = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "admin"];
+  const canEdit = isAdmin || (companyRole ? editRoles.includes(companyRole) : false) || user?.role === "admin";
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [showDialog, setShowDialog] = useState(false);

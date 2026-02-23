@@ -8648,7 +8648,9 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/mytool/company-priorities", requireAuth, requireAdmin, async (req, res) => {
+  const requirePriorityAdmin = requireRole("admin", "COO_ADMIN", "CEO_ADMIN", "CCO", "CFO");
+
+  app.post("/api/mytool/company-priorities", requireAuth, requirePriorityAdmin, async (req, res) => {
     try {
       const priority = await storage.createMytoolCompanyPriority(req.body);
       res.json(priority);
@@ -8657,7 +8659,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/mytool/company-priorities/:id", requireAuth, requireAdmin, async (req, res) => {
+  app.patch("/api/mytool/company-priorities/:id", requireAuth, requirePriorityAdmin, async (req, res) => {
     try {
       const priority = await storage.updateMytoolCompanyPriority(parseInt(req.params.id), req.body);
       res.json(priority);
@@ -8666,7 +8668,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/mytool/company-priorities/:id", requireAuth, requireAdmin, async (req, res) => {
+  app.delete("/api/mytool/company-priorities/:id", requireAuth, requirePriorityAdmin, async (req, res) => {
     try {
       await storage.deleteMytoolCompanyPriority(parseInt(req.params.id));
       res.json({ success: true });
@@ -8697,7 +8699,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/mytool/company-priorities/:id/links", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/mytool/company-priorities/:id/links", requireAuth, requirePriorityAdmin, async (req, res) => {
     try {
       const { priorityLinks: plTable } = await import("@shared/schema");
       const priorityId = parseInt(req.params.id);
@@ -8716,7 +8718,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/mytool/priority-links/:linkId", requireAuth, requireAdmin, async (req, res) => {
+  app.delete("/api/mytool/priority-links/:linkId", requireAuth, requirePriorityAdmin, async (req, res) => {
     try {
       const { priorityLinks: plTable } = await import("@shared/schema");
       await db.delete(plTable).where(eq(plTable.id, parseInt(req.params.linkId)));
