@@ -39,14 +39,6 @@ interface CompanyPriority {
   links?: { id: number; linkType: string; projectName: string | null; taskId: number | null }[];
 }
 
-interface OverviewData {
-  total_program_budget: number;
-  actual_spend_paid: number;
-  revenue_realised: number;
-  active_projects: number;
-  data_as_of: string;
-}
-
 interface ProjectReport {
   project_name: string;
   project_info_id: number;
@@ -62,57 +54,6 @@ interface ProjectReport {
   is_active: boolean;
 }
 
-interface ExecutionProject {
-  id: number | null;
-  projectName: string;
-  sizeKwp: string | null;
-  contractValue: string | null;
-  phase: string | null;
-  isActive: boolean;
-  escalationLevel: string | null;
-  ragStatus: string | null;
-  executionEnabled: boolean;
-  executionPhase: string | null;
-  archivedStatus: string;
-  engTotal: number;
-  engDone: number;
-  engOverdue: number;
-  projectPctComplete: number | null;
-}
-
-function formatCurrency(val: number): string {
-  if (val >= 1_000_000) return `R${(val / 1_000_000).toFixed(1)}M`;
-  if (val >= 1_000) return `R${(val / 1_000).toFixed(0)}K`;
-  return `R${val.toFixed(0)}`;
-}
-
-function formatPct(val: number): string {
-  return `${val.toFixed(1)}%`;
-}
-
-function ragColor(pct: number): string {
-  if (pct >= 80) return "text-emerald-600";
-  if (pct >= 60) return "text-amber-500";
-  return "text-red-600";
-}
-
-function ragBg(pct: number): string {
-  if (pct >= 80) return "bg-emerald-50 border-emerald-200 dark:bg-emerald-950/20 dark:border-emerald-800";
-  if (pct >= 60) return "bg-amber-50 border-amber-200 dark:bg-amber-950/20 dark:border-amber-800";
-  return "bg-red-50 border-red-200 dark:bg-red-950/20 dark:border-red-800";
-}
-
-function riskBg(count: number): string {
-  if (count === 0) return "bg-emerald-50 border-emerald-200 dark:bg-emerald-950/20 dark:border-emerald-800";
-  if (count <= 3) return "bg-amber-50 border-amber-200 dark:bg-amber-950/20 dark:border-amber-800";
-  return "bg-red-50 border-red-200 dark:bg-red-950/20 dark:border-red-800";
-}
-
-function riskColor(count: number): string {
-  if (count === 0) return "text-emerald-600";
-  if (count <= 3) return "text-amber-500";
-  return "text-red-600";
-}
 
 function severityOrder(s: string): number {
   if (s === "critical") return 0;
@@ -149,83 +90,6 @@ function isOverdue(dueDate: string | null): boolean {
   return new Date(dueDate) < new Date();
 }
 
-function ExecutiveHealthStrip({ execProjects, overview }: { execProjects: ExecutionProject[]; overview: OverviewData | undefined }) {
-  if (!overview && execProjects.length === 0) {
-    return (
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3" data-testid="health-strip-loading">
-        {[1, 2, 3, 4].map(i => (
-          <div key={i} className="border rounded-lg p-3 animate-pulse bg-muted/30">
-            <div className="h-3 w-20 bg-muted rounded mb-2" />
-            <div className="h-8 w-16 bg-muted rounded" />
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  const activeExec = execProjects.filter(p => p.executionEnabled && p.archivedStatus === "ACTIVE");
-  const withPct = activeExec.filter(p => p.projectPctComplete !== null);
-  const avgCompletion = withPct.length > 0
-    ? Math.round(withPct.reduce((acc, p) => acc + (p.projectPctComplete || 0), 0) / withPct.length)
-    : 0;
-
-  const atRisk = activeExec.filter(p =>
-    p.ragStatus === "Red" || p.escalationLevel
-  );
-  const behindSchedule = activeExec.filter(p =>
-    p.engOverdue > 0 || p.ragStatus === "Red" || p.ragStatus === "Amber"
-  );
-
-  const revPct = overview && overview.total_program_budget > 0
-    ? (overview.revenue_realised / overview.total_program_budget) * 100
-    : 0;
-  const cosPct = overview && overview.total_program_budget > 0
-    ? (overview.actual_spend_paid / overview.total_program_budget) * 100
-    : 0;
-
-  const metrics = [
-    {
-      label: "Execution Projects",
-      value: activeExec.length.toString(),
-      sub: `${avgCompletion}% avg completion`,
-      color: "text-slate-800 dark:text-slate-200",
-      bg: "bg-slate-50 border-slate-200 dark:bg-slate-900/40 dark:border-slate-700",
-    },
-    {
-      label: "Revenue Realised",
-      value: overview ? formatPct(revPct) : "—",
-      sub: overview ? formatCurrency(overview.revenue_realised) : "",
-      color: ragColor(revPct),
-      bg: ragBg(revPct),
-    },
-    {
-      label: "Behind Schedule",
-      value: behindSchedule.length.toString(),
-      sub: `of ${activeExec.length} execution`,
-      color: riskColor(behindSchedule.length),
-      bg: riskBg(behindSchedule.length),
-    },
-    {
-      label: "Projects At Risk",
-      value: atRisk.length.toString(),
-      sub: atRisk.length > 0 ? atRisk.slice(0, 2).map(p => p.projectName.replace(/_Tracker.*$/, "").replace(/_/g, " ")).join(", ") : "None",
-      color: riskColor(atRisk.length),
-      bg: riskBg(atRisk.length),
-    },
-  ];
-
-  return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-3" data-testid="health-strip">
-      {metrics.map((m, i) => (
-        <div key={i} className={`border rounded-lg p-3 ${m.bg}`} data-testid={`health-metric-${i}`}>
-          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{m.label}</p>
-          <p className={`text-2xl font-bold ${m.color} leading-tight mt-0.5`}>{m.value}</p>
-          <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{m.sub}</p>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 function CompanyPrioritiesCards({ isAdmin, priorities, isLoading }: { isAdmin: boolean; priorities: CompanyPriority[]; isLoading: boolean }) {
   const activePriorities = priorities.filter(p => !["closed", "complete"].includes(p.status));
@@ -438,14 +302,6 @@ export default function Home() {
   const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
   const canEdit = isAdmin || (companyRole && ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO"].includes(companyRole));
 
-  const { data: overview } = useQuery<OverviewData>({
-    queryKey: ["/api/overview"],
-  });
-
-  const { data: execProjects = [] } = useQuery<ExecutionProject[]>({
-    queryKey: ["/api/lifecycle-board/projects"],
-  });
-
   const { data: projects = [] } = useQuery<ProjectReport[]>({
     queryKey: ["/api/projects-summary"],
   });
@@ -454,20 +310,16 @@ export default function Home() {
     queryKey: ["/api/mytool/company-priorities"],
   });
 
-  const activeExecCount = execProjects.filter(p => p.executionEnabled && p.archivedStatus === "ACTIVE").length;
-
   return (
     <div className="space-y-6" data-testid="home-page">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Execution Cockpit</h1>
           <p className="text-sm text-muted-foreground">
-            {activeExecCount || "—"} execution projects &middot; {new Date().toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" })}
+            {new Date().toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" })}
           </p>
         </div>
       </div>
-
-      <ExecutiveHealthStrip execProjects={execProjects} overview={overview} />
 
       <CompanyPrioritiesCards isAdmin={!!canEdit} priorities={priorities} isLoading={prioritiesLoading} />
 
