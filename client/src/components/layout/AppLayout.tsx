@@ -119,6 +119,7 @@ function getRedesignedNavGroups(): NavGroup[] {
       items: [
         { label: "Execution Board", icon: Gauge, path: "/dashboard" },
         { label: "My Tool", icon: Briefcase, path: "/my-tool" },
+        { label: "Company Priorities", icon: Flag, path: "/company-priorities" },
       ],
     },
     {
@@ -127,8 +128,6 @@ function getRedesignedNavGroups(): NavGroup[] {
       items: [
         { label: "Project Summary", icon: FolderKanban, path: "/projects" },
         { label: "Lifecycle Board", icon: Layers, path: "/lifecycle-board" },
-        { label: "New Project", icon: FolderPlus, path: "/project-create" },
-        { label: "Weekly Reviews", icon: CalendarCheck, path: "/weekly-reviews" },
       ],
     },
     {
@@ -146,8 +145,6 @@ function getRedesignedNavGroups(): NavGroup[] {
       items: [
         { label: "Engineering", icon: HardHat, path: "/engineering" },
         { label: "Task Board", icon: ListTodo, path: "/engineering/tasks" },
-        { label: "Pipeline Inbox", icon: InboxIcon, path: "/engineering/inbox" },
-        { label: "SP Sync", icon: RefreshCw, path: "/engineering/sync" },
       ],
     },
     {
@@ -155,8 +152,6 @@ function getRedesignedNavGroups(): NavGroup[] {
       section: "GOVERNANCE",
       items: [
         { label: "Quality Dashboard", icon: ShieldCheck, path: "/quality" },
-        { label: "Change Audit", icon: Activity, path: "/admin/activity-log" },
-        { label: "Company Priorities", icon: Flag, path: "/company-priorities" },
       ],
     },
     {
@@ -167,6 +162,9 @@ function getRedesignedNavGroups(): NavGroup[] {
         { label: "Phase Templates", icon: ClipboardCheck, path: "/admin/phase-templates" },
         { label: "Smart Import", icon: FileSpreadsheet, path: "/smart-import" },
         { label: "Invoice Patterns", icon: FileSpreadsheet, path: "/invoice-patterns" },
+        { label: "Pipeline Inbox", icon: InboxIcon, path: "/engineering/inbox" },
+        { label: "SP Sync", icon: RefreshCw, path: "/engineering/sync" },
+        { label: "Change Audit", icon: Activity, path: "/admin/activity-log" },
       ],
     },
   ];

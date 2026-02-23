@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
@@ -142,6 +142,41 @@ export default function MyToolPrioritiesPage() {
   const [existingLinks, setExistingLinks] = useState<PriorityLink[]>([]);
   const [linkProjectPicker, setLinkProjectPicker] = useState("");
   const [linkTaskPicker, setLinkTaskPicker] = useState("");
+  const [inlineEdit, setInlineEdit] = useState<{ id: number; field: string; value: string } | null>(null);
+
+  const inlineUpdateMutation = useMutation({
+    mutationFn: async ({ id, field, value }: { id: number; field: string; value: string }) => {
+      const payload: Record<string, any> = {};
+      if (field === "priorityRank") {
+        payload[field] = value ? parseInt(value) : null;
+      } else {
+        payload[field] = value.trim() || null;
+      }
+      return apiRequest("PATCH", `/api/mytool/company-priorities/${id}`, payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
+    },
+    onError: (err: any) => {
+      toast({ title: "Update failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const commitInlineEdit = useCallback(() => {
+    if (!inlineEdit) return;
+    const original = priorities.find(p => p.id === inlineEdit.id);
+    if (!original) { setInlineEdit(null); return; }
+    const origVal = (original as any)[inlineEdit.field] ?? "";
+    if (String(origVal) !== inlineEdit.value) {
+      inlineUpdateMutation.mutate({ id: inlineEdit.id, field: inlineEdit.field, value: inlineEdit.value });
+    }
+    setInlineEdit(null);
+  }, [inlineEdit, priorities]);
+
+  const startInlineEdit = (id: number, field: string, currentValue: string) => {
+    if (!canEdit) return;
+    setInlineEdit({ id, field, value: currentValue ?? "" });
+  };
 
   const { data: priorities = [], isLoading } = useQuery<CompanyPriority[]>({
     queryKey: ["/api/mytool/company-priorities"],
@@ -472,7 +507,25 @@ export default function MyToolPrioritiesPage() {
                           </Badge>
                         </div>
                         <div className="pr-2 flex items-center gap-1.5 min-w-0">
-                          <span className="font-medium truncate" data-testid={`text-priority-${p.id}`}>{p.title}</span>
+                          {inlineEdit?.id === p.id && inlineEdit.field === "title" ? (
+                            <Input
+                              autoFocus
+                              className="h-7 text-sm px-1.5"
+                              value={inlineEdit.value}
+                              onChange={(e) => setInlineEdit({ ...inlineEdit, value: e.target.value })}
+                              onBlur={commitInlineEdit}
+                              onKeyDown={(e) => { if (e.key === "Enter") commitInlineEdit(); if (e.key === "Escape") setInlineEdit(null); }}
+                              data-testid={`inline-edit-title-${p.id}`}
+                            />
+                          ) : (
+                            <span
+                              className={`font-medium truncate ${canEdit ? "cursor-pointer hover:underline hover:text-primary" : ""}`}
+                              onClick={() => startInlineEdit(p.id, "title", p.title)}
+                              data-testid={`text-priority-${p.id}`}
+                            >
+                              {p.title}
+                            </span>
+                          )}
                           {(p.links?.length > 0 || p.linkedProjectName) && (
                             <span title={p.links?.length > 0
                               ? `${p.links.length} linked item(s): ${p.links.map(l => l.linkType === 'project' ? (l.projectName || '').replace(/_Tracker.*$/i, '').replace(/_/g, ' ') : `Task #${l.taskId}`).join(', ')}`
@@ -510,19 +563,82 @@ export default function MyToolPrioritiesPage() {
                           )}
                         </div>
                         <div className="pr-2">
-                          <Badge variant="secondary" className={`text-[10px] px-2 py-0.5 ${stat.bg} ${stat.color}`}>
-                            {stat.label}
-                          </Badge>
-                        </div>
-                        <div className="pr-2 flex items-center gap-1 text-xs truncate">
-                          {p.assignedTo && (
-                            <>
-                              <User className="h-3 w-3 text-muted-foreground shrink-0" />
-                              <span className="truncate">{p.assignedTo}</span>
-                            </>
+                          {inlineEdit?.id === p.id && inlineEdit.field === "status" ? (
+                            <Select
+                              value={inlineEdit.value}
+                              onValueChange={(val) => {
+                                inlineUpdateMutation.mutate({ id: p.id, field: "status", value: val });
+                                setInlineEdit(null);
+                              }}
+                              open={true}
+                              onOpenChange={(open) => { if (!open) setInlineEdit(null); }}
+                            >
+                              <SelectTrigger className="h-7 text-[10px] px-1.5 w-24" data-testid={`inline-edit-status-${p.id}`}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="not_started">Not started</SelectItem>
+                                <SelectItem value="in_progress">In progress</SelectItem>
+                                <SelectItem value="active">Active</SelectItem>
+                                <SelectItem value="monitoring">Monitoring</SelectItem>
+                                <SelectItem value="complete">Complete</SelectItem>
+                                <SelectItem value="closed">Closed</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <Badge
+                              variant="secondary"
+                              className={`text-[10px] px-2 py-0.5 ${stat.bg} ${stat.color} ${canEdit ? "cursor-pointer hover:ring-1 hover:ring-primary/40" : ""}`}
+                              onClick={() => startInlineEdit(p.id, "status", p.status)}
+                              data-testid={`badge-status-${p.id}`}
+                            >
+                              {stat.label}
+                            </Badge>
                           )}
                         </div>
-                        <div className="pr-2 text-xs text-muted-foreground line-clamp-2">{p.nextAction || ""}</div>
+                        <div className="pr-2 flex items-center gap-1 text-xs truncate">
+                          {inlineEdit?.id === p.id && inlineEdit.field === "assignedTo" ? (
+                            <Input
+                              autoFocus
+                              className="h-7 text-xs px-1.5"
+                              value={inlineEdit.value}
+                              onChange={(e) => setInlineEdit({ ...inlineEdit, value: e.target.value })}
+                              onBlur={commitInlineEdit}
+                              onKeyDown={(e) => { if (e.key === "Enter") commitInlineEdit(); if (e.key === "Escape") setInlineEdit(null); }}
+                              data-testid={`inline-edit-assigned-${p.id}`}
+                            />
+                          ) : (
+                            <span
+                              className={`truncate flex items-center gap-1 ${canEdit ? "cursor-pointer hover:underline hover:text-primary" : ""}`}
+                              onClick={() => startInlineEdit(p.id, "assignedTo", p.assignedTo || "")}
+                              data-testid={`text-assigned-${p.id}`}
+                            >
+                              {p.assignedTo && <User className="h-3 w-3 text-muted-foreground shrink-0" />}
+                              {p.assignedTo || (canEdit ? <span className="text-muted-foreground/50 italic">assign...</span> : "")}
+                            </span>
+                          )}
+                        </div>
+                        <div className="pr-2 text-xs text-muted-foreground">
+                          {inlineEdit?.id === p.id && inlineEdit.field === "nextAction" ? (
+                            <Input
+                              autoFocus
+                              className="h-7 text-xs px-1.5"
+                              value={inlineEdit.value}
+                              onChange={(e) => setInlineEdit({ ...inlineEdit, value: e.target.value })}
+                              onBlur={commitInlineEdit}
+                              onKeyDown={(e) => { if (e.key === "Enter") commitInlineEdit(); if (e.key === "Escape") setInlineEdit(null); }}
+                              data-testid={`inline-edit-nextaction-${p.id}`}
+                            />
+                          ) : (
+                            <span
+                              className={`line-clamp-2 ${canEdit ? "cursor-pointer hover:underline hover:text-primary" : ""}`}
+                              onClick={() => startInlineEdit(p.id, "nextAction", p.nextAction || "")}
+                              data-testid={`text-nextaction-${p.id}`}
+                            >
+                              {p.nextAction || (canEdit ? <span className="text-muted-foreground/50 italic">add...</span> : "")}
+                            </span>
+                          )}
+                        </div>
                         <div className="pr-2">
                           {p.support && p.support.length > 0 && (
                             <div className="flex flex-col gap-0.5">
@@ -532,8 +648,52 @@ export default function MyToolPrioritiesPage() {
                             </div>
                           )}
                         </div>
-                        <div className="pr-2 text-xs text-muted-foreground line-clamp-2">{p.definitionOfDone || ""}</div>
-                        <div className="text-xs text-muted-foreground">{formatDisplayDate(p.dueDate)}</div>
+                        <div className="pr-2 text-xs text-muted-foreground">
+                          {inlineEdit?.id === p.id && inlineEdit.field === "definitionOfDone" ? (
+                            <Input
+                              autoFocus
+                              className="h-7 text-xs px-1.5"
+                              value={inlineEdit.value}
+                              onChange={(e) => setInlineEdit({ ...inlineEdit, value: e.target.value })}
+                              onBlur={commitInlineEdit}
+                              onKeyDown={(e) => { if (e.key === "Enter") commitInlineEdit(); if (e.key === "Escape") setInlineEdit(null); }}
+                              data-testid={`inline-edit-dod-${p.id}`}
+                            />
+                          ) : (
+                            <span
+                              className={`line-clamp-2 ${canEdit ? "cursor-pointer hover:underline hover:text-primary" : ""}`}
+                              onClick={() => startInlineEdit(p.id, "definitionOfDone", p.definitionOfDone || "")}
+                              data-testid={`text-dod-${p.id}`}
+                            >
+                              {p.definitionOfDone || (canEdit ? <span className="text-muted-foreground/50 italic">add...</span> : "")}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {inlineEdit?.id === p.id && inlineEdit.field === "dueDate" ? (
+                            <Input
+                              autoFocus
+                              type="date"
+                              className="h-7 text-xs px-1"
+                              value={inlineEdit.value}
+                              onChange={(e) => {
+                                inlineUpdateMutation.mutate({ id: p.id, field: "dueDate", value: e.target.value });
+                                setInlineEdit(null);
+                              }}
+                              onBlur={commitInlineEdit}
+                              onKeyDown={(e) => { if (e.key === "Escape") setInlineEdit(null); }}
+                              data-testid={`inline-edit-duedate-${p.id}`}
+                            />
+                          ) : (
+                            <span
+                              className={`${canEdit ? "cursor-pointer hover:underline hover:text-primary" : ""}`}
+                              onClick={() => startInlineEdit(p.id, "dueDate", p.dueDate || "")}
+                              data-testid={`text-duedate-${p.id}`}
+                            >
+                              {formatDisplayDate(p.dueDate) || (canEdit ? <span className="text-muted-foreground/50 italic">set...</span> : "")}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     );
                   })}
