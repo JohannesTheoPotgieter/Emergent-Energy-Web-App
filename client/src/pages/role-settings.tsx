@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -9,29 +8,12 @@ import {
   Save,
   KeyRound,
   FolderSync,
-  Users,
   AlertTriangle,
   Check,
   X,
   PackageSearch,
   RefreshCw,
 } from "lucide-react";
-import {
-  COMPANY_ROLES,
-  COMPANY_ROLE_LABELS,
-  COMPANY_LIFECYCLE_PHASES,
-  COMPANY_LIFECYCLE_PHASE_LABELS,
-  type CompanyRole,
-  type CompanyLifecyclePhase,
-} from "@shared/schema";
-
-const DEFAULT_PHASE_OWNERS: Record<CompanyLifecyclePhase, CompanyRole[]> = {
-  FIRST_ASSESSMENT: ["CCO"],
-  COST_PROPOSAL_DESIGN: ["ENGINEERING_MANAGER", "CCO"],
-  PD_PM_HANDOVER: ["COO_ADMIN", "PROGRAM_MANAGER"],
-  EXECUTION: ["PROGRAM_MANAGER", "CONSTRUCTION_MANAGER"],
-  AFTER_SALES: ["COO_ADMIN", "KEY_ACCOUNTS_MANAGER"],
-};
 
 function getAuthHeaders(): HeadersInit {
   const token = localStorage.getItem("auth_token");
@@ -87,13 +69,12 @@ export default function RoleSettingsPage() {
         <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900" data-testid="text-page-title">
           Settings
         </h1>
-        <p className="text-sm text-gray-500 mt-1">Manage role passwords, sync settings, phase ownership, and procurement analysis</p>
+        <p className="text-sm text-gray-500 mt-1">Manage role passwords, sync settings, and procurement analysis</p>
       </header>
 
       <ProcurementAnalysisSection toast={toast} />
       <RolePasswordsSection toast={toast} />
       <SyncRootSection toast={toast} />
-      <PhaseOwnershipSection toast={toast} />
     </div>
   );
 }
@@ -407,118 +388,3 @@ function SyncRootSection({ toast }: { toast: ReturnType<typeof useToast>["toast"
   );
 }
 
-function PhaseOwnershipSection({ toast }: { toast: ReturnType<typeof useToast>["toast"] }) {
-  const [phaseOwners, setPhaseOwners] = useState<Record<string, CompanyRole[]>>({});
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-
-  const loadPhaseOwners = useCallback(async () => {
-    const owners: Record<string, CompanyRole[]> = {};
-    for (const phase of COMPANY_LIFECYCLE_PHASES) {
-      const val = await fetchSetting(`phase_ownership_${phase}`);
-      if (val) {
-        try {
-          owners[phase] = JSON.parse(val);
-        } catch {
-          owners[phase] = DEFAULT_PHASE_OWNERS[phase] || [];
-        }
-      } else {
-        owners[phase] = DEFAULT_PHASE_OWNERS[phase] || [];
-      }
-    }
-    setPhaseOwners(owners);
-    setLoading(false);
-  }, []);
-
-  useEffect(() => {
-    loadPhaseOwners();
-  }, [loadPhaseOwners]);
-
-  const toggleRole = (phase: string, role: CompanyRole) => {
-    setPhaseOwners((prev) => {
-      const current = prev[phase] || [];
-      const next = current.includes(role)
-        ? current.filter((r) => r !== role)
-        : [...current, role];
-      return { ...prev, [phase]: next };
-    });
-  };
-
-  const handleSaveAll = async () => {
-    setSaving(true);
-    try {
-      let allOk = true;
-      for (const phase of COMPANY_LIFECYCLE_PHASES) {
-        const roles = phaseOwners[phase] || [];
-        const ok = await saveSetting(`phase_ownership_${phase}`, JSON.stringify(roles));
-        if (!ok) allOk = false;
-      }
-      if (allOk) {
-        toast({ title: "Saved", description: "Phase ownership mapping updated." });
-      } else {
-        toast({ title: "Partial Error", description: "Some phase settings failed to save.", variant: "destructive" });
-      }
-    } catch {
-      toast({ title: "Error", description: "Failed to save phase ownership.", variant: "destructive" });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <Card data-testid="card-phase-ownership">
-      <CardHeader>
-        <CardTitle className="text-base flex items-center gap-2">
-          <Users className="h-4 w-4 text-green-600" />
-          Phase Ownership Mapping
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-5">
-        {loading ? (
-          <div className="flex items-center gap-2 text-sm text-gray-400">
-            <Loader2 className="h-4 w-4 animate-spin" /> Loading...
-          </div>
-        ) : (
-          <>
-            {COMPANY_LIFECYCLE_PHASES.map((phase) => (
-              <div key={phase} className="space-y-2" data-testid={`phase-ownership-${phase}`}>
-                <div className="text-sm font-medium text-gray-700" data-testid={`text-phase-label-${phase}`}>
-                  {COMPANY_LIFECYCLE_PHASE_LABELS[phase]}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {COMPANY_ROLES.map((role) => {
-                    const isSelected = (phaseOwners[phase] || []).includes(role);
-                    return (
-                      <Badge
-                        key={role}
-                        variant={isSelected ? "default" : "outline"}
-                        className={`cursor-pointer select-none transition-colors text-xs ${
-                          isSelected
-                            ? "bg-green-600 hover:bg-green-700 text-white border-green-600"
-                            : "hover:bg-gray-100 text-gray-600 border-gray-300"
-                        }`}
-                        onClick={() => toggleRole(phase, role)}
-                        data-testid={`badge-phase-role-${phase}-${role}`}
-                      >
-                        {COMPANY_ROLE_LABELS[role]}
-                      </Badge>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-            <Button
-              onClick={handleSaveAll}
-              disabled={saving}
-              className="bg-green-600 hover:bg-green-700 mt-2"
-              data-testid="button-save-phase-ownership"
-            >
-              {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
-              Save Phase Ownership
-            </Button>
-          </>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
