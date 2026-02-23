@@ -316,8 +316,9 @@ async function seedUsers() {
   const { registerWeeklyReviewRoutes } = await import("./weekly-review-routes");
   registerWeeklyReviewRoutes(app);
 
-  const { registerTrRegisterRoutes } = await import("./tr-register-routes");
+  const { registerTrRegisterRoutes, seedTrRegisterData } = await import("./tr-register-routes");
   registerTrRegisterRoutes(app);
+  await seedTrRegisterData().catch(err => console.error('[Seed] TR Register error:', err));
 
   const { seedEngineeringData } = await import("./seed-engineering");
   await seedEngineeringData().catch(err => console.error('[Seed] Engineering data error:', err));
