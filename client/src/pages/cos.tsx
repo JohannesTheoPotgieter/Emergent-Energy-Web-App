@@ -4,7 +4,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
 import { apiRequest, getQueryFn, invalidateDashboardQueries } from "@/lib/queryClient";
 import {
   Bar,
@@ -424,7 +423,6 @@ export default function CosTracker() {
   const qc = useQueryClient();
   const [editing, setEditing] = useState<EditingCell | null>(null);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
-  const [reconciliationMode, setReconciliationMode] = useState(false);
   const [drawerMonth, setDrawerMonth] = useState<{ monthKey: string; monthLabel: string; defaultFilter?: "all" | "realised" | "unrealised"; defaultProject?: string } | null>(null);
 
   const { data: months = [], isLoading } = useQuery<MonthData[]>({
@@ -537,18 +535,6 @@ export default function CosTracker() {
     return formatRand(val);
   };
 
-  const reconciliation = useMemo(() => {
-    if (!months.length) return null;
-    let totalCOS = 0, totalBudget = 0, totalRealised = 0, totalUnrealised = 0;
-    for (const m of months) {
-      totalCOS += m.totalCOS;
-      totalBudget += m.budget;
-      totalRealised += m.realisedCOS;
-      totalUnrealised += m.unrealisedCOS;
-    }
-    return { totalCOS, totalBudget, totalRealised, totalUnrealised, variance: totalCOS - totalBudget, monthCount: months.length };
-  }, [months]);
-
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center h-64 text-muted-foreground gap-3" data-testid="loading-indicator">
@@ -593,14 +579,6 @@ export default function CosTracker() {
               Monthly COS tracking with planned vs budget analysis. Click any month cell to see contributing line items.
             </p>
           </div>
-          <div className="flex items-center gap-3 bg-slate-50 rounded-xl px-3 sm:px-4 py-2 sm:py-2.5 border border-slate-200/60 self-start sm:self-auto shrink-0">
-            <span className="text-xs sm:text-sm font-medium text-slate-600">Reconciliation</span>
-            <Switch
-              checked={reconciliationMode}
-              onCheckedChange={setReconciliationMode}
-              data-testid="toggle-reconciliation"
-            />
-          </div>
         </div>
       </div>
 
@@ -619,49 +597,6 @@ export default function CosTracker() {
           </CardContent>
         </Card>
 
-        {reconciliationMode && reconciliation && (
-          <Card className="border-blue-200/80 bg-gradient-to-r from-blue-50 to-blue-50/30 shadow-sm" data-testid="card-reconciliation">
-            <CardContent className="p-5">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="rounded-lg bg-blue-200/60 p-1.5">
-                  <Info className="h-4 w-4 text-blue-700" />
-                </div>
-                <span className="font-semibold text-sm text-blue-900">Reconciliation Mode</span>
-              </div>
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-                <div className="bg-white/60 rounded-lg p-3 border border-blue-100">
-                  <p className="text-xs text-slate-500 font-medium">Months</p>
-                  <p className="font-mono font-bold text-lg text-slate-800 mt-0.5">{reconciliation.monthCount}</p>
-                </div>
-                <div className="bg-white/60 rounded-lg p-3 border border-blue-100">
-                  <p className="text-xs text-slate-500 font-medium">Total COS (Finance)</p>
-                  <p className="font-mono font-bold text-lg text-slate-800 mt-0.5">{formatRand(reconciliation.totalCOS)}</p>
-                </div>
-                <div className="bg-white/60 rounded-lg p-3 border border-slate-200">
-                  <p className="text-xs text-slate-500 font-medium">Realised (Paid)</p>
-                  <p className="font-mono font-black text-lg text-slate-900 mt-0.5">{formatRand(reconciliation.totalRealised)}</p>
-                </div>
-                <div className="bg-white/60 rounded-lg p-3 border border-red-100">
-                  <p className="text-xs text-slate-500 font-medium">Unrealised (Not Paid)</p>
-                  <p className="font-mono font-bold text-lg text-red-600 mt-0.5">{formatRand(reconciliation.totalUnrealised)}</p>
-                </div>
-                <div className="bg-white/60 rounded-lg p-3 border border-purple-100">
-                  <p className="text-xs text-slate-500 font-medium">Total Budget</p>
-                  <p className="font-mono font-bold text-lg text-purple-700 mt-0.5">{formatRand(reconciliation.totalBudget)}</p>
-                </div>
-                <div className="bg-white/60 rounded-lg p-3 border border-blue-100">
-                  <p className="text-xs text-slate-500 font-medium">Total Variance</p>
-                  <p className={`font-mono font-bold text-lg mt-0.5 ${reconciliation.variance > 0 ? "text-red-600" : "text-green-600"}`}>
-                    {formatRand(reconciliation.variance)}
-                  </p>
-                </div>
-              </div>
-              <p className="text-xs text-blue-600/80 mt-4 leading-relaxed">
-                Realised = Invoice Number captured + Invoice Raised Date confirmed (black font). Unrealised = Finance COS minus Realised COS. Click any month value to drill down.
-              </p>
-            </CardContent>
-          </Card>
-        )}
 
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
           {kpiCards.map((kpi) => (

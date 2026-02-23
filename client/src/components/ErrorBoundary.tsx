@@ -11,6 +11,7 @@ interface Props {
 interface State {
   hasError: boolean;
   error?: Error;
+  errorPath?: string;
 }
 
 export class ErrorBoundary extends React.Component<Props, State> {
@@ -20,7 +21,14 @@ export class ErrorBoundary extends React.Component<Props, State> {
   }
 
   static getDerivedStateFromError(error: Error) {
-    return { hasError: true, error };
+    return { hasError: true, error, errorPath: typeof window !== "undefined" ? window.location.pathname : "" };
+  }
+
+  static getDerivedStateFromProps(_props: Props, state: State) {
+    if (typeof window !== "undefined" && state.hasError && state.errorPath && window.location.pathname !== state.errorPath) {
+      return { hasError: false, error: undefined, errorPath: undefined };
+    }
+    return null;
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
@@ -29,7 +37,6 @@ export class ErrorBoundary extends React.Component<Props, State> {
 
   render() {
     if (this.state.hasError) {
-      // Safely extract error message using helper
       const errorMessage = getErrorMessage(this.state.error, "An unexpected error occurred");
       
       return (
@@ -48,12 +55,21 @@ export class ErrorBoundary extends React.Component<Props, State> {
                   {errorMessage}
                 </p>
               </div>
-              <Button 
-                onClick={() => window.location.reload()} 
-                className="w-full"
-              >
-                Reload Page
-              </Button>
+              <div className="flex gap-2">
+                <Button 
+                  onClick={() => { this.setState({ hasError: false, error: undefined, errorPath: undefined }); window.history.back(); }}
+                  variant="outline"
+                  className="flex-1"
+                >
+                  Go Back
+                </Button>
+                <Button 
+                  onClick={() => window.location.reload()} 
+                  className="flex-1"
+                >
+                  Reload Page
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </div>

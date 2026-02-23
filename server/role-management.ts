@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { rolePermissions, users, DEFAULT_ROLE_PERMISSIONS } from "@shared/schema";
 import type { InsertRolePermission, RolePermission } from "@shared/schema";
 import { verifyToken } from "./jwt";
+import { invalidateEntityPermCache } from "./permission-middleware";
 
 const LEGACY_ROLE_MAP: Record<string, string> = {
   admin: "COO_ADMIN",
@@ -89,22 +90,28 @@ export function registerRoleManagementRoutes(app: Express) {
 
   app.put("/api/roles/:role", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const { label, description, sections, canManageUsers, canManageRoles, canEditData } = req.body;
+      const { label, description, sections, canManageUsers, canManageRoles, canEditData, entityPermissions: ep } = req.body;
       const [existing] = await db.select().from(rolePermissions).where(eq(rolePermissions.role, req.params.role));
       if (!existing) return res.status(404).json({ error: "Role not found" });
 
+      const updateData: Record<string, any> = {
+        label: label ?? existing.label,
+        description: description ?? existing.description,
+        sections: sections ?? existing.sections,
+        canManageUsers: canManageUsers ?? existing.canManageUsers,
+        canManageRoles: canManageRoles ?? existing.canManageRoles,
+        canEditData: canEditData ?? existing.canEditData,
+        updatedAt: new Date(),
+      };
+      if (ep !== undefined) {
+        updateData.entityPermissions = ep;
+      }
+
       const [updated] = await db.update(rolePermissions)
-        .set({
-          label: label ?? existing.label,
-          description: description ?? existing.description,
-          sections: sections ?? existing.sections,
-          canManageUsers: canManageUsers ?? existing.canManageUsers,
-          canManageRoles: canManageRoles ?? existing.canManageRoles,
-          canEditData: canEditData ?? existing.canEditData,
-          updatedAt: new Date(),
-        })
+        .set(updateData)
         .where(eq(rolePermissions.role, req.params.role))
         .returning();
+      invalidateEntityPermCache();
       res.json(updated);
     } catch (err: any) {
       res.status(500).json({ error: err.message });

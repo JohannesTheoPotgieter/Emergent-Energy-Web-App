@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback, DragEvent } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   ClipboardList, Plus, Loader2, Check, Link2, Unlink, Wand2,
-  CheckCircle2, XCircle, EyeOff, Search, Pencil, Database,
+  CheckCircle2, XCircle, EyeOff, Search, Pencil, Database, GripVertical,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -122,7 +122,7 @@ export default function TrRegisterPage() {
   const { toast } = useToast();
 
   const [activeTab, setActiveTab] = useState("list");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("active");
   const [ragFilter, setRagFilter] = useState("all");
   const [deptFilter, setDeptFilter] = useState("");
   const [ownerFilter, setOwnerFilter] = useState("");
@@ -169,6 +169,18 @@ export default function TrRegisterPage() {
       return res.json();
     },
   });
+
+  const { data: boardItems = [], isLoading: boardLoading } = useQuery<TrItem[]>({
+    queryKey: ["/api/tr-register", "board-all"],
+    queryFn: async () => {
+      const res = await fetch(`/api/tr-register`, { headers: getAuthHeaders() });
+      if (!res.ok) throw new Error("Failed to fetch TR items");
+      return res.json();
+    },
+    enabled: activeTab === "board",
+  });
+
+  const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
 
   const { data: itemDetail, isLoading: detailLoading } = useQuery<TrItemDetail>({
     queryKey: ["/api/tr-register", selectedItemId],
@@ -385,6 +397,47 @@ export default function TrRegisterPage() {
   const activeItems = sortedItems.filter(i => i.status === "Active");
   const completedItems = sortedItems.filter(i => i.status === "Completed");
 
+  const boardSorted = useMemo(() => {
+    return [...boardItems].sort((a, b) => {
+      if (!a.dueDate && !b.dueDate) return 0;
+      if (!a.dueDate) return 1;
+      if (!b.dueDate) return -1;
+      return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+    });
+  }, [boardItems]);
+
+  const boardActiveItems = boardSorted.filter(i => i.status === "Active");
+  const boardCompletedItems = boardSorted.filter(i => i.status === "Completed");
+
+  const handleDragStart = useCallback((e: DragEvent<HTMLDivElement>, item: TrItem) => {
+    e.dataTransfer.setData("text/plain", String(item.id));
+    e.dataTransfer.effectAllowed = "move";
+  }, []);
+
+  const handleDragOver = useCallback((e: DragEvent<HTMLDivElement>, column: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverColumn(column);
+  }, []);
+
+  const handleDragLeave = useCallback(() => {
+    setDragOverColumn(null);
+  }, []);
+
+  const handleDrop = useCallback((e: DragEvent<HTMLDivElement>, targetStatus: string) => {
+    e.preventDefault();
+    setDragOverColumn(null);
+    const itemId = parseInt(e.dataTransfer.getData("text/plain"), 10);
+    if (isNaN(itemId)) return;
+    const item = boardItems.find(i => i.id === itemId);
+    if (!item || item.status === targetStatus) return;
+    if (targetStatus === "Completed") {
+      completeMutation.mutate(itemId);
+    } else {
+      updateMutation.mutate({ id: itemId, data: { status: "Active", dateCompleted: null } });
+    }
+  }, [boardItems, completeMutation, updateMutation]);
+
   return (
     <div className="space-y-4" data-testid="tr-register-page">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -575,26 +628,47 @@ export default function TrRegisterPage() {
         </TabsContent>
 
         <TabsContent value="board" className="mt-3">
+          {boardLoading ? (
+            <div className="flex justify-center py-16" data-testid="board-loading-spinner">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4" data-testid="board-view">
-            <div>
+            <div
+              onDragOver={e => handleDragOver(e, "Active")}
+              onDragLeave={handleDragLeave}
+              onDrop={e => handleDrop(e, "Active")}
+              className={`min-h-[200px] rounded-lg p-2 transition-colors ${dragOverColumn === "Active" ? "bg-blue-50 ring-2 ring-blue-300" : ""}`}
+              data-testid="board-column-active"
+            >
               <h3 className="text-sm font-semibold mb-2 text-blue-700" data-testid="text-board-active-heading">
-                Active ({activeItems.length})
+                Active ({boardActiveItems.length})
               </h3>
               <div className="space-y-2">
-                {activeItems.map(item => (
+                {boardActiveItems.map(item => (
                   <Card
                     key={item.id}
-                    className="cursor-pointer hover:shadow-md transition-shadow"
+                    draggable={canManage}
+                    onDragStart={e => handleDragStart(e, item)}
+                    className={`cursor-pointer hover:shadow-md transition-shadow ${canManage ? "cursor-grab active:cursor-grabbing" : ""}`}
                     onClick={() => openDrawer(item.id)}
                     data-testid={`board-card-${item.id}`}
                   >
                     <CardContent className="p-3 space-y-2">
                       <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold" data-testid={`board-trid-${item.id}`}>{item.trId}</span>
+                        <div className="flex items-center gap-1">
+                          {canManage && <GripVertical className="h-3 w-3 text-muted-foreground/50" />}
+                          <span className="text-xs font-bold" data-testid={`board-trid-${item.id}`}>{item.trId}</span>
+                        </div>
                         <Badge className={`text-[10px] ${RAG_STYLES[item.ragStatus] || ""}`} data-testid={`board-rag-${item.id}`}>
                           {item.ragStatus}
                         </Badge>
                       </div>
+                      {item.department && (
+                        <Badge variant="secondary" className="text-[10px]" data-testid={`board-dept-${item.id}`}>
+                          {item.department}
+                        </Badge>
+                      )}
                       <p className="text-xs text-muted-foreground line-clamp-2" data-testid={`board-desc-${item.id}`}>
                         {item.actionDescription}
                       </p>
@@ -612,31 +686,47 @@ export default function TrRegisterPage() {
                     </CardContent>
                   </Card>
                 ))}
-                {activeItems.length === 0 && (
+                {boardActiveItems.length === 0 && (
                   <p className="text-xs text-muted-foreground text-center py-8">No active items</p>
                 )}
               </div>
             </div>
 
-            <div>
+            <div
+              onDragOver={e => handleDragOver(e, "Completed")}
+              onDragLeave={handleDragLeave}
+              onDrop={e => handleDrop(e, "Completed")}
+              className={`min-h-[200px] rounded-lg p-2 transition-colors ${dragOverColumn === "Completed" ? "bg-green-50 ring-2 ring-green-300" : ""}`}
+              data-testid="board-column-completed"
+            >
               <h3 className="text-sm font-semibold mb-2 text-gray-500" data-testid="text-board-completed-heading">
-                Completed ({completedItems.length})
+                Completed ({boardCompletedItems.length})
               </h3>
               <div className="space-y-2">
-                {completedItems.map(item => (
+                {boardCompletedItems.map(item => (
                   <Card
                     key={item.id}
-                    className="cursor-pointer hover:shadow-md transition-shadow opacity-80"
+                    draggable={canManage}
+                    onDragStart={e => handleDragStart(e, item)}
+                    className={`cursor-pointer hover:shadow-md transition-shadow opacity-80 ${canManage ? "cursor-grab active:cursor-grabbing" : ""}`}
                     onClick={() => openDrawer(item.id)}
                     data-testid={`board-card-${item.id}`}
                   >
                     <CardContent className="p-3 space-y-2">
                       <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold" data-testid={`board-trid-${item.id}`}>{item.trId}</span>
+                        <div className="flex items-center gap-1">
+                          {canManage && <GripVertical className="h-3 w-3 text-muted-foreground/50" />}
+                          <span className="text-xs font-bold" data-testid={`board-trid-${item.id}`}>{item.trId}</span>
+                        </div>
                         <Badge className={`text-[10px] ${RAG_STYLES[item.ragStatus] || ""}`} data-testid={`board-rag-${item.id}`}>
                           {item.ragStatus}
                         </Badge>
                       </div>
+                      {item.department && (
+                        <Badge variant="secondary" className="text-[10px]" data-testid={`board-dept-${item.id}`}>
+                          {item.department}
+                        </Badge>
+                      )}
                       <p className="text-xs text-muted-foreground line-clamp-2" data-testid={`board-desc-${item.id}`}>
                         {item.actionDescription}
                       </p>
@@ -652,12 +742,13 @@ export default function TrRegisterPage() {
                     </CardContent>
                   </Card>
                 ))}
-                {completedItems.length === 0 && (
+                {boardCompletedItems.length === 0 && (
                   <p className="text-xs text-muted-foreground text-center py-8">No completed items</p>
                 )}
               </div>
             </div>
           </div>
+          )}
         </TabsContent>
       </Tabs>
 

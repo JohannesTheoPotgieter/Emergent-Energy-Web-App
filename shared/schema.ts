@@ -2309,6 +2309,7 @@ export const rolePermissions = pgTable("role_permissions", {
   canManageUsers: boolean("can_manage_users").notNull().default(false),
   canManageRoles: boolean("can_manage_roles").notNull().default(false),
   canEditData: boolean("can_edit_data").notNull().default(true),
+  entityPermissions: jsonb("entity_permissions"),
   isSystem: boolean("is_system").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

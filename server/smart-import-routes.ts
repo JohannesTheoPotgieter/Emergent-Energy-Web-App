@@ -23,6 +23,7 @@ import {
   invoicePatternRules,
   invoicePatternMatches,
   projectInfo,
+  changeSets,
 } from "@shared/schema";
 import { recordImportChange, recordSystemEvent } from "./lib/audit/diff-engine";
 import { eq, desc, and, sql } from "drizzle-orm";
@@ -617,6 +618,27 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
             hint: "Set acknowledgeEqualDate=true after reviewing conflicts.",
           });
         }
+      }
+    }
+
+    const acknowledgeManualEdits = req.body?.acknowledgeManualEdits === true;
+    if (!acknowledgeManualEdits && run.projectId) {
+      const manualEditCount = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(changeSets)
+        .where(and(
+          eq(changeSets.projectId, run.projectId),
+          eq(changeSets.entityType, "expense_line"),
+          eq(changeSets.source, "MANUAL_EDIT")
+        ));
+      const editCount = Number(manualEditCount[0]?.count || 0);
+      if (editCount > 0) {
+        return res.status(409).json({
+          error: "manual_edits_warning",
+          message: `This project has ${editCount} manually edited expenditure record(s). Re-importing will overwrite these changes.`,
+          manualEditCount: editCount,
+          hint: "Set acknowledgeManualEdits=true to proceed, or review edits in the Change Audit first.",
+        });
       }
     }
 
