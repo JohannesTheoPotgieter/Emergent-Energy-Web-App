@@ -120,7 +120,6 @@ function getRedesignedNavGroups(): NavGroup[] {
       heading: "COCKPIT",
       section: "COCKPIT",
       items: [
-        { label: "Execution Board", icon: Gauge, path: "/dashboard" },
         { label: "My Tool", icon: Briefcase, path: "/my-tool" },
         { label: "Company Priorities", icon: Flag, path: "/company-priorities" },
       ],
@@ -129,6 +128,7 @@ function getRedesignedNavGroups(): NavGroup[] {
       heading: "PROJECTS",
       section: "PROJECTS",
       items: [
+        { label: "Execution Board", icon: Gauge, path: "/dashboard" },
         { label: "Project Summary", icon: FolderKanban, path: "/projects" },
         { label: "Lifecycle Board", icon: Layers, path: "/lifecycle-board" },
         { label: "TR Register", icon: ClipboardList, path: "/tr-register" },
