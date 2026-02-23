@@ -17,7 +17,7 @@ import {
 import {
   DollarSign, Users, Clock, TrendingUp, Search, Filter,
   Loader2, ArrowUpDown, ChevronRight, AlertCircle, Calendar,
-  CheckCircle2, CircleDot, ExternalLink, FileText, Pencil, Check, X,
+  CheckCircle2, CircleDot, ExternalLink, FileText, Pencil, Check, X, Trash2,
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
@@ -57,6 +57,8 @@ export default function SubcontractorDashboardPage() {
   const [renameValue, setRenameValue] = useState("");
   const [renameError, setRenameError] = useState("");
   const [renameLoading, setRenameLoading] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const handleStartRename = () => {
     setRenameValue(selectedCp || "");
@@ -90,6 +92,26 @@ export default function SubcontractorDashboardPage() {
       setRenameError(err.message || "Rename failed");
     } finally {
       setRenameLoading(false);
+    }
+  };
+
+  const handleDeleteCounterparty = async () => {
+    if (!selectedCp) return;
+    setDeleteLoading(true);
+    try {
+      const res = await fetch(`/api/subcontractor-dashboard/counterparty/${encodeURIComponent(selectedCp)}`, {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+      });
+      const data = await res.json();
+      if (!res.ok) { setRenameError(data.error || "Delete failed"); return; }
+      setSelectedCp(null);
+      setDeleteConfirm(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/subcontractor-dashboard/summary"] });
+    } catch (err: any) {
+      setRenameError(err.message || "Delete failed");
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -289,7 +311,7 @@ export default function SubcontractorDashboardPage() {
         </div>
       )}
 
-      <Sheet open={!!selectedCp} onOpenChange={(open) => { if (!open) { setSelectedCp(null); setInvoiceStatusFilter("all"); setIsRenaming(false); } }}>
+      <Sheet open={!!selectedCp} onOpenChange={(open) => { if (!open) { setSelectedCp(null); setInvoiceStatusFilter("all"); setIsRenaming(false); setDeleteConfirm(false); } }}>
         <SheetContent className="w-[540px] sm:w-[680px] overflow-y-auto" data-testid="cp-detail-drawer">
           <SheetHeader>
             {isRenaming ? (
@@ -315,12 +337,36 @@ export default function SubcontractorDashboardPage() {
                 {renameError && <p className="text-xs text-red-600" data-testid="text-rename-error">{renameError}</p>}
               </div>
             ) : (
-              <div className="flex items-center gap-2">
-                <SheetTitle className="text-lg">{selectedCp}</SheetTitle>
-                <Button size="icon" variant="ghost" className="h-7 w-7 text-slate-400 hover:text-blue-600"
-                  onClick={handleStartRename} title="Rename subcontractor" data-testid="btn-rename-counterparty">
-                  <Pencil className="w-3.5 h-3.5" />
-                </Button>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <SheetTitle className="text-lg">{selectedCp}</SheetTitle>
+                  <Button size="icon" variant="ghost" className="h-7 w-7 text-slate-400 hover:text-blue-600"
+                    onClick={handleStartRename} title="Rename subcontractor" data-testid="btn-rename-counterparty">
+                    <Pencil className="w-3.5 h-3.5" />
+                  </Button>
+                  <Button size="icon" variant="ghost" className="h-7 w-7 text-slate-400 hover:text-red-600"
+                    onClick={() => setDeleteConfirm(true)} title="Delete counterparty" data-testid="btn-delete-counterparty">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+                {deleteConfirm && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3" data-testid="delete-confirm-panel">
+                    <p className="text-xs text-red-800 mb-2">
+                      This will permanently delete <strong>{selectedCp}</strong> and all their associated cost line data. This cannot be undone.
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <Button size="sm" variant="destructive" className="h-7 text-xs"
+                        onClick={handleDeleteCounterparty} disabled={deleteLoading} data-testid="btn-confirm-delete">
+                        {deleteLoading ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Trash2 className="w-3 h-3 mr-1" />}
+                        Yes, delete
+                      </Button>
+                      <Button size="sm" variant="outline" className="h-7 text-xs"
+                        onClick={() => setDeleteConfirm(false)} data-testid="btn-cancel-delete">
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </SheetHeader>

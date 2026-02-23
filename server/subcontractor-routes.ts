@@ -479,6 +479,31 @@ router.patch("/api/subcontractor-dashboard/rename", requireAuth, async (req: Req
   }
 });
 
+router.delete("/api/subcontractor-dashboard/counterparty/:name", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const name = decodeURIComponent(req.params.name);
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: "Counterparty name is required" });
+    }
+
+    const normalized = name.trim().toLowerCase();
+
+    await db.transaction(async (tx) => {
+      await tx.delete(normalizedCostLines)
+        .where(sql`LOWER(TRIM(${normalizedCostLines.counterpartyName})) = ${normalized}`);
+
+      await tx.delete(counterparties)
+        .where(sql`LOWER(${counterparties.nameCanonical}) = ${normalized}`);
+    });
+
+    console.log(`[subcontractor] Deleted counterparty "${name}" and associated cost lines`);
+    res.json({ success: true, deleted: name });
+  } catch (err: any) {
+    console.error("[subcontractor-delete] Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get("/api/subcontractor-dashboard/admin-questions", requireAuth, async (_req: Request, res: Response) => {
   res.json({
     questions: [
