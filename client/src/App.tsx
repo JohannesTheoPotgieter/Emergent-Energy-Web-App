@@ -46,6 +46,8 @@ import InvoicePatternsPage from "@/pages/invoice-patterns";
 import SubcontractorDashboardPage from "@/pages/subcontractor-dashboard";
 import SystemActivityLogPage from "@/pages/system-activity-log";
 import WeeklyReviewsPage from "@/pages/weekly-reviews";
+import AdminRolesPage from "@/pages/admin-roles";
+import TrRegisterPage from "@/pages/tr-register";
 
 import { useAuth } from "@/hooks/use-auth";
 import { useProgramData } from "@/hooks/use-program-data";
@@ -239,6 +241,8 @@ function ProtectedPages() {
         <Route path="/subcontractor-dashboard" component={SubcontractorDashboardPage} />
         <Route path="/admin/activity-log" component={SystemActivityLogPage} />
         <Route path="/weekly-reviews" component={WeeklyReviewsPage} />
+        <Route path="/admin/roles" component={AdminRolesPage} />
+        <Route path="/tr-register" component={TrRegisterPage} />
 
         <Route component={NotFound} />
       </Switch>
