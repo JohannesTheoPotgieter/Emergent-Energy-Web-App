@@ -65,7 +65,7 @@ function getLegacyNavGroups(): NavGroup[] {
       heading: "EXCO",
       section: "EXCO",
       items: [
-        { label: "Lifecycle Board", icon: Layers, path: "/lifecycle-board" },
+        { label: "Exco", icon: Layers, path: "/lifecycle-board" },
         { label: "Company Priorities", icon: Flag, path: "/company-priorities" },
         { label: "My Tool", icon: Briefcase, path: "/my-tool" },
       ],
