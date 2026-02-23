@@ -144,6 +144,10 @@ export default function MyToolPrioritiesPage() {
   const [linkTaskPicker, setLinkTaskPicker] = useState("");
   const [inlineEdit, setInlineEdit] = useState<{ id: number; field: string; value: string } | null>(null);
 
+  const { data: priorities = [], isLoading } = useQuery<CompanyPriority[]>({
+    queryKey: ["/api/mytool/company-priorities"],
+  });
+
   const inlineUpdateMutation = useMutation({
     mutationFn: async ({ id, field, value }: { id: number; field: string; value: string }) => {
       const payload: Record<string, any> = {};
@@ -177,10 +181,6 @@ export default function MyToolPrioritiesPage() {
     if (!canEdit) return;
     setInlineEdit({ id, field, value: currentValue ?? "" });
   };
-
-  const { data: priorities = [], isLoading } = useQuery<CompanyPriority[]>({
-    queryKey: ["/api/mytool/company-priorities"],
-  });
 
   const { data: projects = [] } = useQuery<any[]>({
     queryKey: ["/api/projects-summary"],
