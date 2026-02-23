@@ -199,7 +199,17 @@ router.post("/api/smart-import/upload", requireAuth, upload.single("file"), asyn
     res.json({ runId: run.id, preview });
   } catch (err: any) {
     console.error("[smart-import] POST upload error:", err);
-    res.status(500).json({ error: err.message });
+    let userMessage = err.message || "Unknown error";
+    if (userMessage.includes("End of data reached") || userMessage.includes("Unexpected EOF") || userMessage.includes("Invalid signature")) {
+      userMessage = "The file appears to be corrupted or is not a valid Excel file. Please open it in Excel, save as a new .xlsx file, and try again.";
+    } else if (userMessage.includes("encrypted") || userMessage.includes("password")) {
+      userMessage = "The file is password-protected. Please remove the password in Excel and re-upload.";
+    } else if (userMessage.includes("ENOMEM") || userMessage.includes("heap")) {
+      userMessage = "The file is too large to process. Try splitting it into smaller files or removing unused sheets.";
+    } else if (userMessage.includes("ENOENT")) {
+      userMessage = "The uploaded file could not be found on the server. Please try uploading again.";
+    }
+    res.status(500).json({ error: userMessage });
   }
 });
 
