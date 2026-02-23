@@ -322,42 +322,112 @@ function UploadStep({
         </div>
 
         {files.length > 0 && (
-          <div className="border rounded-lg divide-y max-h-48 overflow-y-auto" data-testid="file-list">
+          <div className="border rounded-lg divide-y max-h-64 overflow-y-auto" data-testid="file-list">
             {files.map((entry, idx) => (
-              <div key={idx} className="flex items-center gap-2 px-3 py-2 text-sm" data-testid={`file-row-${idx}`}>
-                <FileSpreadsheet className={`w-4 h-4 flex-shrink-0 ${
-                  entry.status === "success" ? "text-emerald-500" :
-                  entry.status === "error" ? "text-red-500" :
-                  entry.status === "uploading" ? "text-blue-500" :
-                  "text-slate-400"
-                }`} />
-                <span className="flex-1 truncate">{entry.file.name}</span>
-                <span className="text-xs text-slate-400 flex-shrink-0">
-                  {(entry.file.size / 1024).toFixed(0)} KB
-                </span>
-                {entry.status === "success" && (
-                  <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] px-1.5 py-0">
-                    {entry.sectionsFound} sections
-                  </Badge>
-                )}
-                {entry.status === "error" && (
-                  <Badge className="bg-red-50 text-red-700 border-red-200 text-[10px] px-1.5 py-0">
-                    Failed
-                  </Badge>
-                )}
-                {entry.status === "uploading" && (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" />
-                )}
-                {entry.status === "pending" && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 w-6 p-0"
-                    onClick={() => removeFile(idx)}
-                    data-testid={`btn-remove-file-${idx}`}
-                  >
-                    <X className="w-3 h-3" />
-                  </Button>
+              <div key={idx} data-testid={`file-row-${idx}`}>
+                <div className="flex items-center gap-2 px-3 py-2 text-sm">
+                  <FileSpreadsheet className={`w-4 h-4 flex-shrink-0 ${
+                    entry.status === "success" ? "text-emerald-500" :
+                    entry.status === "error" ? "text-red-500" :
+                    entry.status === "uploading" ? "text-blue-500" :
+                    "text-slate-400"
+                  }`} />
+                  <span className="flex-1 truncate">{entry.file.name}</span>
+                  <span className="text-xs text-slate-400 flex-shrink-0">
+                    {(entry.file.size / 1024).toFixed(0)} KB
+                  </span>
+                  {entry.status === "success" && (
+                    <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] px-1.5 py-0">
+                      {entry.sectionsFound} sections
+                    </Badge>
+                  )}
+                  {entry.status === "error" && (
+                    <Badge className="bg-red-50 text-red-700 border-red-200 text-[10px] px-1.5 py-0">
+                      Failed
+                    </Badge>
+                  )}
+                  {entry.status === "uploading" && (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" />
+                  )}
+                  {(entry.status === "pending" || entry.status === "error") && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 w-6 p-0"
+                      onClick={() => removeFile(idx)}
+                      data-testid={`btn-remove-file-${idx}`}
+                    >
+                      <X className="w-3 h-3" />
+                    </Button>
+                  )}
+                </div>
+                {entry.status === "error" && entry.error && (
+                  <div className="mx-3 mb-2 rounded-md bg-red-50 border border-red-200 p-2.5 text-xs space-y-1.5" data-testid={`file-error-detail-${idx}`}>
+                    <div className="flex items-start gap-1.5">
+                      <AlertCircle className="w-3.5 h-3.5 text-red-500 mt-0.5 flex-shrink-0" />
+                      <div className="space-y-1">
+                        <p className="font-medium text-red-700">Why it failed</p>
+                        <p className="text-red-600">{entry.error}</p>
+                      </div>
+                    </div>
+                    <div className="border-t border-red-200 pt-1.5 mt-1.5">
+                      <p className="font-medium text-red-700 mb-1">How to fix</p>
+                      <ul className="text-red-600 space-y-0.5 list-disc list-inside">
+                        {entry.error.toLowerCase().includes("no file") && (
+                          <li>The file may not have been sent correctly. Try uploading again.</li>
+                        )}
+                        {(entry.error.toLowerCase().includes("format") || entry.error.toLowerCase().includes("xlsx") || entry.error.toLowerCase().includes("corrupt") || entry.error.toLowerCase().includes("load")) && (
+                          <>
+                            <li>Open the file in Excel, save as a fresh .xlsx file, and re-upload.</li>
+                            <li>Ensure the file is not password-protected or corrupted.</li>
+                          </>
+                        )}
+                        {(entry.error.toLowerCase().includes("section") || entry.error.toLowerCase().includes("detect") || entry.error.toLowerCase().includes("no section")) && (
+                          <>
+                            <li>The system could not find recognisable data sections (e.g. Expenses, Inflows, Plan).</li>
+                            <li>Check that your tracker follows the standard Emergent template layout.</li>
+                          </>
+                        )}
+                        {(entry.error.toLowerCase().includes("timeout") || entry.error.toLowerCase().includes("network") || entry.error.toLowerCase().includes("fetch")) && (
+                          <li>Check your internet connection and try again.</li>
+                        )}
+                        {(entry.error.toLowerCase().includes("401") || entry.error.toLowerCase().includes("auth") || entry.error.toLowerCase().includes("403")) && (
+                          <li>Your session may have expired. Refresh the page and log in again.</li>
+                        )}
+                        {(entry.error.toLowerCase().includes("500") || entry.error.toLowerCase().includes("server") || entry.error.toLowerCase().includes("internal")) && (
+                          <>
+                            <li>The server encountered an error processing this file.</li>
+                            <li>Try re-saving the file from Excel and uploading again.</li>
+                            <li>If the issue persists, the file structure may not match expected formats.</li>
+                          </>
+                        )}
+                        {!(
+                          entry.error.toLowerCase().includes("no file") ||
+                          entry.error.toLowerCase().includes("format") ||
+                          entry.error.toLowerCase().includes("xlsx") ||
+                          entry.error.toLowerCase().includes("corrupt") ||
+                          entry.error.toLowerCase().includes("load") ||
+                          entry.error.toLowerCase().includes("section") ||
+                          entry.error.toLowerCase().includes("detect") ||
+                          entry.error.toLowerCase().includes("timeout") ||
+                          entry.error.toLowerCase().includes("network") ||
+                          entry.error.toLowerCase().includes("fetch") ||
+                          entry.error.toLowerCase().includes("401") ||
+                          entry.error.toLowerCase().includes("auth") ||
+                          entry.error.toLowerCase().includes("403") ||
+                          entry.error.toLowerCase().includes("500") ||
+                          entry.error.toLowerCase().includes("server") ||
+                          entry.error.toLowerCase().includes("internal")
+                        ) && (
+                          <>
+                            <li>Open the file in Excel, confirm data is visible, and save as a new .xlsx file.</li>
+                            <li>Ensure the tracker follows the standard Emergent layout with named sections.</li>
+                            <li>If the problem continues, contact support with the file name and error above.</li>
+                          </>
+                        )}
+                      </ul>
+                    </div>
+                  </div>
                 )}
               </div>
             ))}
