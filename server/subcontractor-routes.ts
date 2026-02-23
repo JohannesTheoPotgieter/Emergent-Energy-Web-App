@@ -583,6 +583,11 @@ router.patch("/api/subcontractor-dashboard/counterparty/:name/type", requireAuth
 
 router.post("/api/subcontractor-dashboard/merge", requireAuth, requirePermission('procurement', 'edit'), async (req: Request, res: Response) => {
   try {
+    const userRole = (req as any).user?.role || (req as any).session?.passport?.user?.role || '';
+    const adminRoles = ['admin', 'COO_ADMIN', 'CEO_ADMIN'];
+    if (!adminRoles.includes(userRole)) {
+      return res.status(403).json({ error: "Only admin users can merge counterparties" });
+    }
     const { sourceNames, targetName } = req.body;
     if (!Array.isArray(sourceNames) || sourceNames.length === 0 || !targetName || typeof targetName !== "string") {
       return res.status(400).json({ error: "sourceNames (array) and targetName (string) are required" });

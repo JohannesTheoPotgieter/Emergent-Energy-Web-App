@@ -332,8 +332,8 @@ export function registerQualityRoutes(app: Express) {
       if (allowedWorkingDays !== undefined) updates.allowedWorkingDays = allowedWorkingDays;
       if (isApplicable !== undefined) {
         updates.isApplicable = isApplicable;
-        if (!isApplicable && notApplicableReason) updates.notApplicableReason = notApplicableReason;
       }
+      if (notApplicableReason !== undefined) updates.notApplicableReason = notApplicableReason;
       if (approvalComment !== undefined) updates.approvalComment = approvalComment;
 
       if (startDate && endDate) {

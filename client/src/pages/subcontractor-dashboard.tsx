@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { PermissionGate } from "@/components/PermissionGate";
+import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -47,6 +48,7 @@ type SortField = "totalSpendExVat" | "invoiceCount" | "projectCount" | "lastInvo
 export default function SubcontractorDashboardPage() {
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
+  const { isAdmin } = useAuth();
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [projectFilter, setProjectFilter] = useState("all");
@@ -368,7 +370,7 @@ export default function SubcontractorDashboardPage() {
           <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5" data-testid="bulk-action-bar">
             <span className="text-sm text-blue-800 font-medium">{selectedForMerge.size} selected</span>
             <div className="flex items-center gap-2 ml-auto">
-              {selectedForMerge.size >= 2 && (
+              {isAdmin && selectedForMerge.size >= 2 && (
                 <Button size="sm" variant="outline" className="h-7 text-xs border-blue-300 text-blue-700 hover:bg-blue-100"
                   onClick={() => { setMergeTarget(Array.from(selectedForMerge)[0]); setShowMergePanel(true); }}
                   data-testid="btn-open-merge">
@@ -401,7 +403,7 @@ export default function SubcontractorDashboardPage() {
         )}
       </PermissionGate>
 
-      {showMergePanel && (
+      {isAdmin && showMergePanel && (
         <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 space-y-3" data-testid="merge-panel">
           <div className="flex items-start justify-between">
             <div>
@@ -631,6 +633,31 @@ export default function SubcontractorDashboardPage() {
             <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>
           ) : detailData ? (
             <div className="space-y-6">
+              {selectedCp?.toLowerCase() === "unknown" && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4" data-testid="unknown-assign-banner">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold text-amber-900">Unassigned Cost Lines</p>
+                      <p className="text-xs text-amber-700 mt-1">
+                        These cost lines don't have a supplier assigned. Select lines below using the checkboxes, then use the "Link to counterparty" panel to assign them to the correct supplier.
+                      </p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="mt-2 h-7 text-xs border-amber-300 text-amber-800 hover:bg-amber-100"
+                        onClick={() => {
+                          const allIds = (detailData.lines || []).map((l: any) => l.id);
+                          setLinkingLineIds(allIds);
+                        }}
+                        data-testid="btn-select-all-unknown"
+                      >
+                        <Link2 className="w-3 h-3 mr-1" /> Select All Lines to Assign
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 {detailData.invoiceSummary && (
                   <>
