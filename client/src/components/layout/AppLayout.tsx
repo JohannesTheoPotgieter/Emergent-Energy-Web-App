@@ -325,7 +325,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <div className="p-3 md:p-4 border-t border-sidebar-border">
         <div className="flex items-center gap-3">
           <Avatar className="w-9 h-9 border border-sidebar-border/50 shrink-0">
-            <AvatarFallback>{user?.name.substring(0, 2).toUpperCase()}</AvatarFallback>
+            <AvatarFallback>{(user?.name || "U").substring(0, 2).toUpperCase()}</AvatarFallback>
           </Avatar>
           {sidebarShowLabels && (
             <div className="flex-1 min-w-0">
