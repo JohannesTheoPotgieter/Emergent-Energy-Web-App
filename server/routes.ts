@@ -4043,7 +4043,9 @@ export async function registerRoutes(
 
       const milestones = inflows.filter(isRealMilestone).map((r: any) => {
         const hasInvoice = !!(r.milestoneInvoiceNumber && r.milestoneInvoiceNumber.trim());
-        const inBank = r.inBank === 1 || r.inBank === '1' || r.inBank === true;
+        const manualInBank = r.inBank === 1 || r.inBank === '1' || r.inBank === true;
+        const hasPaymentReceived = !!(r.paymentReceivedDate && r.paymentReceivedDate.trim() && r.paymentReceivedDate !== '-');
+        const inBank = manualInBank || (hasPaymentReceived && hasInvoice);
 
         const date = r.paymentReceivedDate || r.plannedPaymentDate || null;
         const isConfirmed = inBank && hasInvoice;
