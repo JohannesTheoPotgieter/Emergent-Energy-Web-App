@@ -895,16 +895,32 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
           if (existing) {
             resolvedProjectId = existing.id;
           } else {
-            const trackerName = projectName + "_Tracker";
-            const [existingTracker] = await tx.select({ id: projectInfo.id }).from(projectInfo)
-              .where(eq(projectInfo.projectName, trackerName));
-            if (existingTracker) resolvedProjectId = existingTracker.id;
+            const underscoreName = projectName.replace(/\s+/g, "_");
+            const trackerName = underscoreName + "_Tracker";
+            const candidates = [
+              underscoreName,
+              trackerName,
+              projectName + "_Tracker",
+            ];
+            for (const candidate of candidates) {
+              const [match] = await tx.select({ id: projectInfo.id }).from(projectInfo)
+                .where(eq(projectInfo.projectName, candidate));
+              if (match) { resolvedProjectId = match.id; break; }
+            }
+            if (!resolvedProjectId) {
+              const allProjects = await tx.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo);
+              const normName = projectName.toLowerCase().replace(/[\s_]+/g, "").replace(/tracker$/i, "");
+              for (const p of allProjects) {
+                const normDB = p.projectName.toLowerCase().replace(/[\s_]+/g, "").replace(/tracker$/i, "");
+                if (normDB === normName) { resolvedProjectId = p.id; break; }
+              }
+            }
           }
         }
         if (resolvedProjectId) {
           const VALID_PHASES = [
             "dlp", "financial close", "planning", "construction", "qa",
-            "handover", "commercial close out", "commercial close out",
+            "handover", "commercial close out",
             "compliance handover", "hold"
           ];
           const updates: Record<string, any> = {};
@@ -916,6 +932,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
           if (rawPhase && VALID_PHASES.includes(rawPhase.toLowerCase())) {
             updates.phase = rawPhase;
             updates.executionPhase = rawPhase;
+            updates.phaseUpdatedAt = new Date();
           }
           if (detectedInfo.pdHandoverDate) updates.pdHandoverDate = detectedInfo.pdHandoverDate;
           if (detectedInfo.constructionStartDate) updates.constructionStartDate = detectedInfo.constructionStartDate;
@@ -924,8 +941,11 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
           if (detectedInfo.clientHandoverDate) updates.clientHandoverDate = detectedInfo.clientHandoverDate;
           if (Object.keys(updates).length > 0) {
             updates.updatedAt = new Date();
+            console.log(`[SmartImport] Updating projectInfo id=${resolvedProjectId} with:`, JSON.stringify(updates));
             await tx.update(projectInfo).set(updates).where(eq(projectInfo.id, resolvedProjectId));
           }
+        } else {
+          console.log(`[SmartImport] Could not resolve projectInfo for "${projectName}" — project metadata will not be updated`);
         }
       }
 
