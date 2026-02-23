@@ -2429,7 +2429,7 @@ export const normalizedCostLines = pgTable("normalized_cost_lines", {
   status: costLineStatusEnum("cost_line_status").notNull().default('PLANNED'),
   sourceSheet: text("source_sheet"),
   sourceRow: integer("source_row"),
-  importRunId: integer("import_run_id").notNull().references(() => smartImportRuns.id),
+  importRunId: integer("import_run_id").references(() => smartImportRuns.id),
   turnaroundDays: integer("turnaround_days"),
 });
 export const insertNormalizedCostLineSchema = createInsertSchema(normalizedCostLines).omit({ id: true });

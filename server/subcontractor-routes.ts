@@ -1,7 +1,8 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { normalizedCostLines, counterparties } from "@shared/schema";
+import { normalizedCostLines, counterparties, programExpense, projectInfo } from "@shared/schema";
 import { eq, sql } from "drizzle-orm";
+import { extractSupplierName } from "./lib/calculations/supplierExtractor";
 
 const router = Router();
 
@@ -293,6 +294,144 @@ router.get("/api/subcontractor-dashboard/detail/:name", requireAuth, async (req:
     });
   } catch (err: any) {
     console.error("[subcontractor-detail] Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/api/procurement-analysis/run", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.id || null;
+
+    const expenses = await db.select().from(programExpense);
+    if (expenses.length === 0) {
+      return res.json({ success: true, costLines: 0, counterpartiesCreated: 0, counterpartiesMatched: 0, projects: 0, message: "No expense data found" });
+    }
+
+    const projects = await db.select().from(projectInfo);
+    const projectMap = new Map(projects.map((p: any) => [p.projectName, p.id]));
+
+    const supplierNames = new Set<string>();
+    for (const exp of expenses) {
+      const supplier = exp.supplierName || extractSupplierName(exp.expenseInvoiceNumber);
+      if (supplier?.trim()) supplierNames.add(supplier.trim());
+    }
+
+    let counterpartiesCreated = 0;
+    let counterpartiesMatched = 0;
+    const counterpartyMap = new Map<string, number>();
+
+    await db.transaction(async (tx: any) => {
+      const supplierArray = Array.from(supplierNames);
+      for (const name of supplierArray) {
+        const normalized = name.toLowerCase();
+        const existing = await tx.select().from(counterparties)
+          .where(sql`LOWER(${counterparties.nameCanonical}) = ${normalized}`);
+
+        if (existing.length > 0) {
+          counterpartyMap.set(normalized, existing[0].id);
+          await tx.update(counterparties)
+            .set({ lastSeenAt: new Date() })
+            .where(eq(counterparties.id, existing[0].id));
+          counterpartiesMatched++;
+        } else {
+          const [created] = await tx.insert(counterparties)
+            .values({
+              nameCanonical: name,
+              nameAliases: [],
+              typeDefault: "OTHER",
+              isCore: false,
+              createdBy: userId,
+              lastSeenAt: new Date(),
+            })
+            .returning();
+          counterpartyMap.set(normalized, created.id);
+          counterpartiesCreated++;
+        }
+      }
+
+      await tx.delete(normalizedCostLines).where(
+        sql`${normalizedCostLines.sourceSheet} = 'program_expense'`
+      );
+
+      const projectsProcessed = new Set<string>();
+      const costValues: any[] = [];
+
+      for (const exp of expenses) {
+        const supplier = exp.supplierName || extractSupplierName(exp.expenseInvoiceNumber);
+        const cpName = supplier?.trim() || null;
+        const cpId = cpName ? counterpartyMap.get(cpName.toLowerCase()) || null : null;
+        const projId = projectMap.get(exp.projectName) || null;
+        if (exp.projectName) projectsProcessed.add(exp.projectName);
+
+        let status: string | null = null;
+        if (exp.expensePaymentDate) status = "PAID";
+        else if (exp.expenseInvoicedDate) status = "INVOICED";
+        else if (exp.expensePoNumber) status = "APPROVED";
+        else status = "PLANNED";
+
+        let turnaroundDays: number | null = null;
+        if (exp.expensePaymentDate && exp.expenseInvoicedDate) {
+          const paid = new Date(exp.expensePaymentDate);
+          const invoiced = new Date(exp.expenseInvoicedDate);
+          turnaroundDays = Math.max(0, Math.round((paid.getTime() - invoiced.getTime()) / (1000 * 60 * 60 * 24)));
+        }
+
+        costValues.push({
+          projectId: projId,
+          projectName: exp.projectName || "Unknown",
+          costCategory: exp.expenseCategory,
+          counterpartyId: cpId,
+          counterpartyName: cpName,
+          counterpartyType: null,
+          description: exp.expenseLineItem,
+          amountExVat: exp.expenseActualTotal ? String(exp.expenseActualTotal) : null,
+          invoiceNumber: exp.expenseInvoiceNumber,
+          invoiceDate: exp.expenseInvoicedDate,
+          approvedDate: null,
+          paidDate: exp.expensePaymentDate,
+          poNumber: exp.expensePoNumber,
+          status,
+          sourceSheet: "program_expense",
+          sourceRow: exp.rowNumber || exp.id,
+          importRunId: null,
+          turnaroundDays,
+        });
+      }
+
+      const batchSize = 500;
+      for (let i = 0; i < costValues.length; i += batchSize) {
+        const batch = costValues.slice(i, i + batchSize);
+        await tx.insert(normalizedCostLines).values(batch);
+      }
+
+      console.log(`[procurement-analysis] Processed ${costValues.length} cost lines, ${counterpartiesCreated} new counterparties, ${projectsProcessed.size} projects`);
+
+      res.json({
+        success: true,
+        costLines: costValues.length,
+        counterpartiesCreated,
+        counterpartiesMatched,
+        projects: projectsProcessed.size,
+        message: `Rebuilt ${costValues.length} cost lines across ${projectsProcessed.size} projects with ${counterpartiesCreated + counterpartiesMatched} suppliers`,
+      });
+    });
+  } catch (err: any) {
+    console.error("[procurement-analysis] Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/api/procurement-analysis/status", requireAuth, async (_req: Request, res: Response) => {
+  try {
+    const [costResult] = await db.select({ count: sql<number>`count(*)` }).from(normalizedCostLines);
+    const [cpResult] = await db.select({ count: sql<number>`count(*)` }).from(counterparties);
+    const [expResult] = await db.select({ count: sql<number>`count(*)` }).from(programExpense);
+    res.json({
+      costLines: Number(costResult.count),
+      counterparties: Number(cpResult.count),
+      sourceExpenses: Number(expResult.count),
+    });
+  } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });
