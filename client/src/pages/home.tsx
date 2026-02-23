@@ -158,9 +158,16 @@ function CompanyPrioritiesCards({ isAdmin, priorities, isLoading }: { isAdmin: b
               >
                 <div className="flex items-start justify-between gap-2">
                   <h3 className="font-semibold text-sm leading-snug" data-testid={`text-priority-title-${p.id}`}>{p.title}</h3>
-                  <Badge className={`text-[10px] px-1.5 py-0 shrink-0 ${statusColor(p.status)}`}>
-                    {p.status.replace(/_/g, " ")}
-                  </Badge>
+                  <div className="flex items-center gap-1 shrink-0">
+                    {p.department && (
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-blue-300 text-blue-700 bg-blue-50 dark:bg-blue-950/30 dark:text-blue-300 dark:border-blue-700" data-testid={`badge-dept-${p.id}`}>
+                        {p.department}
+                      </Badge>
+                    )}
+                    <Badge className={`text-[10px] px-1.5 py-0 ${statusColor(p.status)}`}>
+                      {p.status.replace(/_/g, " ")}
+                    </Badge>
+                  </div>
                 </div>
 
                 {p.assignedTo && (

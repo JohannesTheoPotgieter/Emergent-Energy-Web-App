@@ -1937,6 +1937,7 @@ function PreviewCommitStep({
   const [committed, setCommitted] = useState(false);
   const [commitResult, setCommitResult] = useState<any>(null);
   const [expandedTables, setExpandedTables] = useState<Record<string, boolean>>({});
+  const [manualEditsWarning, setManualEditsWarning] = useState<{ message: string; count: number } | null>(null);
   const [, navigate] = useLocation();
   const { toast } = useToast();
 
@@ -1953,21 +1954,27 @@ function PreviewCommitStep({
   const revenueDetection = detectedSections.find((s: any) => s.section === "REVENUE");
   const expenditureDetection = detectedSections.find((s: any) => s.section === "EXPENDITURE");
 
-  const handleCommit = async () => {
+  const doCommit = async (extraBody: Record<string, any> = {}) => {
     setCommitting(true);
     try {
       const res = await fetch(`/api/smart-import/${runId}/commit`, {
         method: "POST",
         headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify(extraBody),
       });
       if (res.ok) {
         const data = await res.json();
         setCommitted(true);
         setCommitResult(data);
+        setManualEditsWarning(null);
         toast({ title: "Import Committed!", description: "Data has been imported successfully" });
       } else {
         const err = await res.json().catch(() => ({ error: "Commit failed" }));
-        toast({ title: "Error", description: err.error || "Commit failed", variant: "destructive" });
+        if (err.error === "manual_edits_warning") {
+          setManualEditsWarning({ message: err.message, count: err.manualEditCount });
+        } else {
+          toast({ title: "Error", description: err.message || err.error || "Commit failed", variant: "destructive" });
+        }
       }
     } catch {
       toast({ title: "Error", description: "Network error", variant: "destructive" });
@@ -1975,6 +1982,9 @@ function PreviewCommitStep({
       setCommitting(false);
     }
   };
+
+  const handleCommit = () => doCommit({});
+  const handleCommitForce = () => doCommit({ acknowledgeManualEdits: true });
 
   const toggleTable = (key: string) => {
     setExpandedTables((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -2166,6 +2176,40 @@ function PreviewCommitStep({
               </div>
             </CardContent>
           )}
+        </Card>
+      )}
+
+      {manualEditsWarning && (
+        <Card className="border-amber-300 bg-amber-50" data-testid="manual-edits-warning">
+          <CardContent className="p-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+              <div className="flex-1 space-y-2">
+                <p className="text-sm font-medium text-amber-800">{manualEditsWarning.message}</p>
+                <p className="text-xs text-amber-600">Proceeding will overwrite these manual changes. You can review them in the Change Audit first.</p>
+                <div className="flex gap-2 mt-3">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setManualEditsWarning(null)}
+                    data-testid="btn-cancel-overwrite"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="bg-amber-600 hover:bg-amber-700"
+                    onClick={handleCommitForce}
+                    disabled={committing}
+                    data-testid="btn-confirm-overwrite"
+                  >
+                    {committing ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : null}
+                    Overwrite & Commit
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </CardContent>
         </Card>
       )}
 

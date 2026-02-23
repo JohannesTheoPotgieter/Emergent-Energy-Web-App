@@ -122,6 +122,7 @@ function getRedesignedNavGroups(): NavGroup[] {
       items: [
         { label: "My Tool", icon: Briefcase, path: "/my-tool" },
         { label: "Company Priorities", icon: Flag, path: "/company-priorities" },
+        { label: "Exco", icon: Layers, path: "/lifecycle-board" },
       ],
     },
     {
@@ -130,8 +131,8 @@ function getRedesignedNavGroups(): NavGroup[] {
       items: [
         { label: "Execution Board", icon: Gauge, path: "/dashboard" },
         { label: "Project Summary", icon: FolderKanban, path: "/projects" },
-        { label: "Lifecycle Board", icon: Layers, path: "/lifecycle-board" },
         { label: "TR Register", icon: ClipboardList, path: "/tr-register" },
+        { label: "Smart Import", icon: FileSpreadsheet, path: "/smart-import" },
       ],
     },
     {
@@ -165,10 +166,7 @@ function getRedesignedNavGroups(): NavGroup[] {
         { label: "Settings", icon: Cog, path: "/admin/settings" },
         { label: "Roles & Permissions", icon: ShieldAlert, path: "/admin/roles" },
         { label: "Phase Templates", icon: ClipboardCheck, path: "/admin/phase-templates" },
-        { label: "Smart Import", icon: FileSpreadsheet, path: "/smart-import" },
         { label: "Invoice Patterns", icon: FileSpreadsheet, path: "/invoice-patterns" },
-        { label: "Pipeline Inbox", icon: InboxIcon, path: "/engineering/inbox" },
-        { label: "SP Sync", icon: RefreshCw, path: "/engineering/sync" },
         { label: "Change Audit", icon: Activity, path: "/admin/activity-log" },
       ],
     },

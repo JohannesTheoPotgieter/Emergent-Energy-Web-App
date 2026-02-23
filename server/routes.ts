@@ -2673,9 +2673,21 @@ export async function registerRoutes(
         const phase = info.phase && info.phase.trim() !== '' ? info.phase : '(blank)';
         phaseCountMap.set(phase, (phaseCountMap.get(phase) || 0) + 1);
       }
+      const PHASE_LIFECYCLE_ORDER = [
+        "DLP", "Financial Close", "Planning", "Construction", "QA",
+        "Handover", "Commercial Close Out", "Compliance Handover", "Hold"
+      ];
       const projectsByPhase = Array.from(phaseCountMap.entries())
         .map(([phase, count]) => ({ phase, count }))
-        .sort((a, b) => b.count - a.count);
+        .sort((a, b) => {
+          const normalize = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
+          const ai = PHASE_LIFECYCLE_ORDER.findIndex(p => normalize(p) === normalize(a.phase));
+          const bi = PHASE_LIFECYCLE_ORDER.findIndex(p => normalize(p) === normalize(b.phase));
+          const aIdx = ai !== -1 ? ai : PHASE_LIFECYCLE_ORDER.length;
+          const bIdx = bi !== -1 ? bi : PHASE_LIFECYCLE_ORDER.length;
+          if (aIdx !== bIdx) return aIdx - bIdx;
+          return b.count - a.count;
+        });
 
       const constructionQAPhases = new Set<string>();
       for (const info of allProjectInfo) {

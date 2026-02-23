@@ -26,8 +26,11 @@ import {
 } from "lucide-react";
 import {
   COMPANY_ROLE_LABELS,
+  ENTITY_PERMISSION_DEFAULTS,
   type CompanyRole,
   type RolePermission,
+  type PermissionEntity,
+  type PermissionAction,
 } from "@shared/schema";
 
 const ALL_SECTIONS = [
@@ -154,6 +157,30 @@ function RoleTableSection({ toast }: { toast: ReturnType<typeof useToast>["toast
     setPendingChanges(prev => ({
       ...prev,
       [roleKey]: { ...prev[roleKey], [field]: !currentVal },
+    }));
+  };
+
+  const getEntityPerm = (roleKey: string, entity: PermissionEntity, action: PermissionAction): boolean => {
+    const changes = pendingChanges[roleKey]?.entityPermissions as Record<string, Record<string, boolean>> | undefined;
+    if (changes?.[entity]?.[action] !== undefined) return changes[entity][action];
+    const role = roles.find(r => r.role === roleKey);
+    const stored = role?.entityPermissions as Record<string, Record<string, boolean>> | null;
+    if (stored?.[entity]?.[action] !== undefined) return stored[entity][action];
+    const defaults = ENTITY_PERMISSION_DEFAULTS.find(r => r.entity === entity);
+    if (!defaults) return false;
+    const key = `${action}_roles` as keyof typeof defaults;
+    return ((defaults[key] as string[]) || []).includes(roleKey);
+  };
+
+  const toggleEntityPerm = (roleKey: string, entity: PermissionEntity, action: PermissionAction) => {
+    const current = getEntityPerm(roleKey, entity, action);
+    const role = roles.find(r => r.role === roleKey);
+    const storedEp = (role?.entityPermissions || {}) as Record<string, Record<string, boolean>>;
+    const pendingEp = (pendingChanges[roleKey]?.entityPermissions || storedEp) as Record<string, Record<string, boolean>>;
+    const updated = { ...pendingEp, [entity]: { ...(pendingEp[entity] || {}), [action]: !current } };
+    setPendingChanges(prev => ({
+      ...prev,
+      [roleKey]: { ...prev[roleKey], entityPermissions: updated as any },
     }));
   };
 
@@ -320,6 +347,47 @@ function RoleTableSection({ toast }: { toast: ReturnType<typeof useToast>["toast
                           onCheckedChange={() => toggleCapability(role.role, "canEditData")}
                         />
                       </label>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">Entity Permissions</h4>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs" data-testid={`entity-perms-${role.role}`}>
+                        <thead>
+                          <tr className="border-b border-gray-100">
+                            <th className="text-left py-1 pr-4 font-medium text-gray-500 w-28">Entity</th>
+                            {(["view", "edit", "approve", "override"] as PermissionAction[]).map(a => (
+                              <th key={a} className="text-center py-1 px-2 font-medium text-gray-500 capitalize w-16">{a}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(["projects", "financials", "quality", "engineering", "procurement", "admin", "governance"] as PermissionEntity[]).map(entity => (
+                            <tr key={entity} className="border-b border-gray-50 hover:bg-gray-50/50">
+                              <td className="py-1.5 pr-4 capitalize font-medium text-gray-700">{entity}</td>
+                              {(["view", "edit", "approve", "override"] as PermissionAction[]).map(action => {
+                                const active = getEntityPerm(role.role, entity, action);
+                                return (
+                                  <td key={action} className="text-center py-1.5 px-2">
+                                    <button
+                                      className={`w-6 h-6 rounded-md border transition-colors ${
+                                        active
+                                          ? "bg-green-600 border-green-600 text-white"
+                                          : "bg-white border-gray-300 text-gray-300 hover:border-gray-400"
+                                      }`}
+                                      onClick={() => toggleEntityPerm(role.role, entity, action)}
+                                      data-testid={`entity-perm-${role.role}-${entity}-${action}`}
+                                    >
+                                      {active ? <Check className="h-3 w-3 mx-auto" /> : null}
+                                    </button>
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
 

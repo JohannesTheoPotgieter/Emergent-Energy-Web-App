@@ -513,7 +513,10 @@ export default function CashflowPage() {
       const url = projectParam
         ? `/api/cashflow-2026?project=${encodeURIComponent(projectParam)}`
         : "/api/cashflow-2026";
-      const res = await fetch(url, { credentials: "include" });
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(url, { credentials: "include", headers });
       if (!res.ok) throw new Error("Failed to fetch cashflow data");
       return res.json();
     },
@@ -525,7 +528,10 @@ export default function CashflowPage() {
       const url = historyWeek
         ? `/api/cashflow-2026/balance-history?week=${historyWeek}`
         : "/api/cashflow-2026/balance-history";
-      const res = await fetch(url, { credentials: "include" });
+      const bToken = localStorage.getItem("auth_token");
+      const bHeaders: Record<string, string> = {};
+      if (bToken) bHeaders["Authorization"] = `Bearer ${bToken}`;
+      const res = await fetch(url, { credentials: "include", headers: bHeaders });
       if (!res.ok) throw new Error("Failed to fetch balance history");
       return res.json();
     },
@@ -535,7 +541,10 @@ export default function CashflowPage() {
   const { data: projectsSummary = [] } = useQuery<{ projectName: string }[]>({
     queryKey: ["/api/projects-summary"],
     queryFn: async () => {
-      const res = await fetch("/api/projects-summary", { credentials: "include" });
+      const pToken = localStorage.getItem("auth_token");
+      const pHeaders: Record<string, string> = {};
+      if (pToken) pHeaders["Authorization"] = `Bearer ${pToken}`;
+      const res = await fetch("/api/projects-summary", { credentials: "include", headers: pHeaders });
       if (!res.ok) throw new Error("Failed to fetch projects");
       return res.json();
     },

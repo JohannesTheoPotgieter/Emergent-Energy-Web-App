@@ -876,7 +876,10 @@ export default function ProjectsSummary() {
   const { data: projects = [], isLoading } = useQuery<ProjectSummary[]>({
     queryKey: ["/api/projects-summary"],
     queryFn: async () => {
-      const res = await fetch("/api/projects-summary", { credentials: "include" });
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch("/api/projects-summary", { credentials: "include", headers });
       if (!res.ok) throw new Error("Failed to fetch projects summary");
       return res.json();
     },
