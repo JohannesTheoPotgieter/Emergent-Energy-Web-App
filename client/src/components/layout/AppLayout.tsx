@@ -53,10 +53,18 @@ import { DatabaseStatusBanner } from "@/components/DatabaseStatusBanner";
 import { UploadValidationReport } from "@/components/UploadValidationReport";
 import { NotificationBell } from "@/components/NotificationBell";
 
+interface NavItem {
+  label: string;
+  icon: any;
+  path: string;
+  className?: string;
+  children?: { label: string; icon: any; path: string }[];
+}
+
 interface NavGroup {
   heading: string;
   section: string;
-  items: { label: string; icon: any; path: string; className?: string }[];
+  items: NavItem[];
 }
 
 function getLegacyNavGroups(): NavGroup[] {
@@ -164,12 +172,16 @@ function getRedesignedNavGroups(): NavGroup[] {
       heading: "ADMIN",
       section: "ADMIN",
       items: [
-        { label: "Settings", icon: Cog, path: "/admin/settings" },
-        { label: "Roles & Permissions", icon: ShieldAlert, path: "/admin/roles" },
-        { label: "Phase Templates", icon: ClipboardCheck, path: "/admin/phase-templates" },
-        { label: "Invoice Patterns", icon: FileSpreadsheet, path: "/invoice-patterns" },
-        { label: "Weekly Reviews", icon: CalendarCheck, path: "/weekly-reviews" },
-        { label: "Change Audit", icon: Activity, path: "/admin/activity-log" },
+        {
+          label: "Settings", icon: Cog, path: "/admin/settings",
+          children: [
+            { label: "Roles & Permissions", icon: ShieldAlert, path: "/admin/roles" },
+            { label: "Phase Templates", icon: ClipboardCheck, path: "/admin/phase-templates" },
+            { label: "Invoice Patterns", icon: FileSpreadsheet, path: "/invoice-patterns" },
+            { label: "Weekly Reviews", icon: CalendarCheck, path: "/weekly-reviews" },
+            { label: "Change Audit", icon: Activity, path: "/admin/activity-log" },
+          ],
+        },
       ],
     },
   ];
@@ -185,6 +197,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [desktopCollapsed, setDesktopCollapsed] = useState(false);
   const [showValidationReport, setShowValidationReport] = useState(false);
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+  const [expandedParents, setExpandedParents] = useState<Record<string, boolean>>({});
   const { data, overview, refreshData, isLoading, importFiles, lastUploadResult } = useProgramData();
   const { user, logout } = useAuth();
   const { data: healthStatus } = useQuery({
@@ -283,7 +296,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           const hasActiveItem = visibleItems.some(item => 
             location === item.path || 
             (item.path === "/my-tool" && location.startsWith("/my-tool")) || 
-            (item.path !== "/" && item.path !== "/engineering" && location.startsWith(item.path))
+            (item.path !== "/" && item.path !== "/engineering" && location.startsWith(item.path)) ||
+            (item.children && item.children.some(c => location === c.path || location.startsWith(c.path)))
           );
 
           return (
@@ -308,16 +322,56 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             )}
             {!isCollapsed && visibleItems.map((item) => {
               const isActive = location === item.path || (item.path === "/my-tool" && location.startsWith("/my-tool")) || (item.path !== "/" && item.path !== "/engineering" && location.startsWith(item.path));
+              const hasChildren = item.children && item.children.length > 0;
+              const childActive = hasChildren && item.children!.some(c => location === c.path || location.startsWith(c.path));
+              const isParentExpanded = expandedParents[item.path] ?? childActive ?? false;
+
               return (
-              <Link key={item.path} href={item.path} className={cn(
-                "flex items-center gap-3 px-3 py-2 rounded-md transition-all duration-200 group text-[13px]",
-                isActive 
-                  ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium shadow-md" 
-                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-              )}>
-                <item.icon className={cn("w-4 h-4 shrink-0", item.className)} />
-                {sidebarShowLabels && <span>{item.label}</span>}
-              </Link>
+              <div key={item.path}>
+                {hasChildren ? (
+                  <button
+                    onClick={() => setExpandedParents(prev => ({ ...prev, [item.path]: !isParentExpanded }))}
+                    className={cn(
+                      "w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all duration-200 group text-[13px]",
+                      isActive || childActive
+                        ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium shadow-md"
+                        : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                    )}
+                  >
+                    <item.icon className={cn("w-4 h-4 shrink-0", item.className)} />
+                    {sidebarShowLabels && (
+                      <>
+                        <span className="flex-1 text-left">{item.label}</span>
+                        {isParentExpanded ? <ChevronDown className="w-3 h-3 shrink-0" /> : <ChevronRight className="w-3 h-3 shrink-0" />}
+                      </>
+                    )}
+                  </button>
+                ) : (
+                  <Link href={item.path} className={cn(
+                    "flex items-center gap-3 px-3 py-2 rounded-md transition-all duration-200 group text-[13px]",
+                    isActive
+                      ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium shadow-md"
+                      : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                  )}>
+                    <item.icon className={cn("w-4 h-4 shrink-0", item.className)} />
+                    {sidebarShowLabels && <span>{item.label}</span>}
+                  </Link>
+                )}
+                {hasChildren && isParentExpanded && sidebarShowLabels && item.children!.map(child => {
+                  const isChildActive = location === child.path || location.startsWith(child.path);
+                  return (
+                    <Link key={child.path} href={child.path} className={cn(
+                      "flex items-center gap-3 pl-7 pr-3 py-1.5 rounded-md transition-all duration-200 text-[12px]",
+                      isChildActive
+                        ? "bg-sidebar-primary/80 text-sidebar-primary-foreground font-medium"
+                        : "text-sidebar-foreground/55 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                    )}>
+                      <child.icon className="w-3.5 h-3.5 shrink-0" />
+                      <span>{child.label}</span>
+                    </Link>
+                  );
+                })}
+              </div>
               );
             })}
           </div>
