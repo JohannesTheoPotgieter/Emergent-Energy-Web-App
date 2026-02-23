@@ -143,6 +143,26 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
     },
   });
 
+  const toggleInBankMutation = useMutation({
+    mutationFn: async ({ rowNumber, inBank }: { rowNumber: number; inBank: boolean }) => {
+      const res = await fetch(`/api/revenue-tracking/overrides`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ overrides: [{ projectName, rowNumber, fieldName: "inBank", overrideValue: inBank ? "1" : "0" }] }),
+      });
+      if (!res.ok) throw new Error("Failed to update");
+      return res.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["revenue-tab", projectName] });
+      invalidateDashboardQueries(queryClient);
+      toast({ title: variables.inBank ? "Marked as received" : "Marked as outstanding", description: variables.inBank ? "Payment confirmed in bank" : "Payment marked as not yet received" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to update payment status", variant: "destructive" });
+    },
+  });
+
   const { data: projectTasks = [] } = useQuery<any[]>({
     queryKey: ["operational-tasks", projectName],
     queryFn: async () => {
@@ -584,7 +604,7 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
                       <TableHead className="w-[100px] text-xs">INVOICE NO.</TableHead>
                       <TableHead className="w-[100px] text-xs">INVOICE DATE</TableHead>
                       <TableHead className="min-w-[140px] text-xs">DEPENDENT TASK</TableHead>
-                      <TableHead className="w-[80px] text-xs">STATUS</TableHead>
+                      <TableHead className="w-[130px] text-xs">STATUS</TableHead>
                       <TableHead className="w-[50px] text-xs">EDIT</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -779,9 +799,34 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
                             )}
                           </TableCell>
 
-                          {/* Status */}
+                          {/* Status + In Bank toggle */}
                           <TableCell>
-                            <StatusBadge status={m.status} flags={m.flags} />
+                            <div className="flex items-center gap-1">
+                              <StatusBadge status={m.status} flags={m.flags} />
+                              {m.status === "inBank" ? (
+                                <Button
+                                  variant="ghost" size="sm"
+                                  className="h-5 w-5 p-0 shrink-0"
+                                  onClick={() => toggleInBankMutation.mutate({ rowNumber: m.rowNumber, inBank: false })}
+                                  disabled={toggleInBankMutation.isPending}
+                                  title="Undo — mark as not yet received"
+                                  data-testid={`button-unmark-received-${m.rowNumber}`}
+                                >
+                                  <XCircle className="h-3 w-3 text-gray-400 hover:text-red-500" />
+                                </Button>
+                              ) : m.milestoneInvoiceNumber ? (
+                                <Button
+                                  variant="ghost" size="sm"
+                                  className="h-5 px-1.5 text-[9px] text-green-600 hover:text-green-700 hover:bg-green-50 gap-0.5 shrink-0"
+                                  onClick={() => toggleInBankMutation.mutate({ rowNumber: m.rowNumber, inBank: true })}
+                                  disabled={toggleInBankMutation.isPending}
+                                  title="Mark payment as received (in bank)"
+                                  data-testid={`button-mark-received-${m.rowNumber}`}
+                                >
+                                  <BanknoteIcon className="h-3 w-3" /> Received
+                                </Button>
+                              ) : null}
+                            </div>
                           </TableCell>
 
                           {/* Actions */}
