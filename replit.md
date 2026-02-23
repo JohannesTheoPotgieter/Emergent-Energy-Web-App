@@ -31,6 +31,8 @@ Preferred communication style: Simple, everyday language.
     -   **Execution Cockpit Home**: Executive Health Strip (Revenue Realised %, COS Realised %, Behind Schedule, Projects At Risk), Company Priorities as strategic cards (sorted by severity/overdue), and Immediate Attention Panel (escalations, schedule drift, margin drift).
     -   **Permission Gate System**: `<PermissionGate entity action>` component and `usePermission()` hook for role-aware UI rendering. Edit/approve/override buttons hidden for unpermitted roles.
     -   **Weekly Reviews Page**: Standalone `/weekly-reviews` page listing all projects with review status, due dates, and navigation to individual project review wizards.
+    -   **Admin Roles & Permissions**: `/admin/roles` page for COO/CEO Admin to manage all role permissions — toggle section access, capabilities (canManageUsers, canManageRoles, canEditData), and reassign user roles.
+    -   **TR Register (Program Manager Task Register)**: Full list+board module at `/tr-register` for tracking cross-project action items. Features: list view with filters (RAG, status, department, owner, overdue, linked), board view (Active/Completed kanban), detail drawer with inline editing, project linking with auto-PM-task creation, auto-link suggestions with scoring algorithm, seed runner with 41 initial records, and completion rule enforcement.
 
 ### Backend
 -   **Framework**: Express.js with TypeScript
@@ -50,6 +52,7 @@ Preferred communication style: Simple, everyday language.
 -   `uploadMetadata`, `sp_settings`, `import_runs`, `qm_templates`, `qm_checklists`
 -   `phase_template`, `smart_import_runs`, `template_profiles`, `counterparties`
 -   `intake_requests`, `intake_tasks`, `sync_audit_log`
+-   `tr_items`, `tr_item_project_links`, `tr_item_suggestion_decisions`
 
 ### API Endpoints (Examples)
 -   `/api/cos-control/*`: COS KPI aggregation and scenario analysis.
@@ -63,6 +66,8 @@ Preferred communication style: Simple, everyday language.
 -   `/api/sp-sync/*`: SharePoint Proposals Pipeline management.
 -   `/api/audit/*`: Comprehensive audit logs and change tracking.
 -   `/api/weekly-reviews/*`: Weekly review wizard CRUD (create, update steps, complete).
+-   `/api/tr-register/*`: TR Register CRUD, project linking, auto-link suggestions, seed runner.
+-   `/api/roles/*`: Role permission management (CRUD, user role assignment).
 
 ## External Dependencies
 

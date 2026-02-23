@@ -2837,6 +2837,66 @@ export const WEEKLY_REVIEW_STEPS = [
 ] as const;
 export type WeeklyReviewStep = typeof WEEKLY_REVIEW_STEPS[number];
 
+export const trRagStatusEnum = pgEnum("tr_rag_status", ["Red", "Amber", "Green"]);
+export const trStatusEnum = pgEnum("tr_status", ["Active", "Completed"]);
+export const trLinkStatusEnum = pgEnum("tr_link_status", ["Linked", "TaskCreated", "Done"]);
+export const trSuggestionDecisionEnum = pgEnum("tr_suggestion_decision", ["Suggested", "Accepted", "Rejected", "Suppressed"]);
+
+export const trItems = pgTable("tr_items", {
+  id: serial("id").primaryKey(),
+  trId: text("tr_id").notNull().unique(),
+  department: text("department").notNull(),
+  actionDescription: text("action_description").notNull(),
+  ragStatus: trRagStatusEnum("rag_status").notNull().default("Green"),
+  owners: text("owners").array().notNull().default([]),
+  support: text("support").array().notNull().default([]),
+  dateRaised: timestamp("date_raised"),
+  dueDate: timestamp("due_date"),
+  status: trStatusEnum("status").notNull().default("Active"),
+  dateCompleted: timestamp("date_completed"),
+  outcomeComments: text("outcome_comments"),
+  supportingInfo: text("supporting_info"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  createdBy: text("created_by"),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  updatedBy: text("updated_by"),
+});
+
+export const insertTrItemSchema = createInsertSchema(trItems).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertTrItem = z.infer<typeof insertTrItemSchema>;
+export type TrItem = typeof trItems.$inferSelect;
+
+export const trItemProjectLinks = pgTable("tr_item_project_links", {
+  id: serial("id").primaryKey(),
+  trItemId: integer("tr_item_id").notNull().references(() => trItems.id, { onDelete: "cascade" }),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
+  autoCreatedPmTaskId: integer("auto_created_pm_task_id"),
+  linkStatus: trLinkStatusEnum("link_status").notNull().default("Linked"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  createdBy: text("created_by"),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  updatedBy: text("updated_by"),
+});
+
+export const insertTrItemProjectLinkSchema = createInsertSchema(trItemProjectLinks).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertTrItemProjectLink = z.infer<typeof insertTrItemProjectLinkSchema>;
+export type TrItemProjectLink = typeof trItemProjectLinks.$inferSelect;
+
+export const trItemSuggestionDecisions = pgTable("tr_item_suggestion_decisions", {
+  id: serial("id").primaryKey(),
+  trItemId: integer("tr_item_id").notNull().references(() => trItems.id, { onDelete: "cascade" }),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
+  decision: trSuggestionDecisionEnum("decision").notNull().default("Suggested"),
+  score: integer("score").notNull().default(0),
+  rationale: text("rationale"),
+  decidedAt: timestamp("decided_at"),
+  decidedBy: text("decided_by"),
+});
+
+export const insertTrSuggestionDecisionSchema = createInsertSchema(trItemSuggestionDecisions).omit({ id: true });
+export type InsertTrSuggestionDecision = z.infer<typeof insertTrSuggestionDecisionSchema>;
+export type TrSuggestionDecision = typeof trItemSuggestionDecisions.$inferSelect;
+
 export const DEFAULT_ROLE_PERMISSIONS: InsertRolePermission[] = [
   { role: "COO_ADMIN", label: "COO Admin", description: "Full executive access, settings, user management", sections: ["EXCO", "PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "ADMIN", "MY_TOOL", "FINANCE", "PROJECTS", "OPERATIONS", "GOVERNANCE", "COCKPIT", "MONEY", "DELIVERY"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
   { role: "CEO_ADMIN", label: "CEO Admin", description: "Full executive access, strategic oversight", sections: ["EXCO", "PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "ADMIN", "MY_TOOL", "FINANCE", "PROJECTS", "OPERATIONS", "GOVERNANCE", "COCKPIT", "MONEY", "DELIVERY"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },

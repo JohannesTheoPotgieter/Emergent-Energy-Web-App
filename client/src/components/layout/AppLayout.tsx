@@ -38,6 +38,8 @@ import {
   Truck,
   Gauge,
   HardHat,
+  ShieldAlert,
+  ClipboardList,
 } from "lucide-react";
 import { UX_REDESIGN_ENABLED } from "@shared/schema";
 import { useProgramData } from "@/hooks/use-program-data";
@@ -101,6 +103,7 @@ function getLegacyNavGroups(): NavGroup[] {
       section: "ADMIN",
       items: [
         { label: "Settings", icon: Settings, path: "/admin/settings" },
+        { label: "Roles & Permissions", icon: ShieldAlert, path: "/admin/roles" },
         { label: "Phase Templates", icon: Layers, path: "/admin/phase-templates" },
         { label: "New Project", icon: FolderPlus, path: "/project-create" },
         { label: "Smart Import", icon: FileSpreadsheet, path: "/smart-import" },
@@ -145,6 +148,7 @@ function getRedesignedNavGroups(): NavGroup[] {
       items: [
         { label: "Engineering", icon: HardHat, path: "/engineering" },
         { label: "Task Board", icon: ListTodo, path: "/engineering/tasks" },
+        { label: "TR Register", icon: ClipboardList, path: "/tr-register" },
       ],
     },
     {
@@ -159,6 +163,7 @@ function getRedesignedNavGroups(): NavGroup[] {
       section: "ADMIN",
       items: [
         { label: "Settings", icon: Cog, path: "/admin/settings" },
+        { label: "Roles & Permissions", icon: ShieldAlert, path: "/admin/roles" },
         { label: "Phase Templates", icon: ClipboardCheck, path: "/admin/phase-templates" },
         { label: "Smart Import", icon: FileSpreadsheet, path: "/smart-import" },
         { label: "Invoice Patterns", icon: FileSpreadsheet, path: "/invoice-patterns" },
