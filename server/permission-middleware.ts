@@ -2,19 +2,28 @@ import { Request, Response, NextFunction } from "express";
 import { ENTITY_PERMISSION_DEFAULTS, type PermissionEntity, type PermissionAction } from "@shared/schema";
 import { verifyToken } from "./jwt";
 
-function resolveUserRole(req: Request): string | null {
-  if ((req as any).user?.role) return (req as any).user.role;
-  if (req.isAuthenticated?.() && req.user?.role) return req.user.role;
+const ROLE_ALIASES: Record<string, string> = { 'admin': 'COO_ADMIN' };
 
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    const payload = verifyToken(authHeader.substring(7));
-    if (payload) {
-      (req as any).user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role };
-      return payload.role;
+function resolveUserRole(req: Request): string | null {
+  let role = (req as any).user?.role || null;
+  if (!role && req.isAuthenticated?.() && req.user?.role) role = req.user.role;
+
+  if (!role) {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      const payload = verifyToken(authHeader.substring(7));
+      if (payload) {
+        (req as any).user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role };
+        role = payload.role;
+      }
     }
   }
-  return null;
+
+  if (role && ROLE_ALIASES[role]) {
+    role = ROLE_ALIASES[role];
+  }
+
+  return role;
 }
 
 export function requirePermission(entity: PermissionEntity, action: PermissionAction) {
