@@ -1909,9 +1909,12 @@ export class DatabaseStorage implements IStorage {
           and(
             not(inArray(mytoolTasks.status, ['done', 'cancelled'])),
             sql`${mytoolTasks.plannedForDate} < ${date}`
+          ),
+          and(
+            not(inArray(mytoolTasks.status, ['done', 'cancelled'])),
+            sql`${mytoolTasks.plannedForDate} IS NULL`
           )
-        ),
-        not(inArray(mytoolTasks.status, ['done', 'cancelled']))
+        )
       ))
       .orderBy(mytoolTasks.sortOrder);
   }
