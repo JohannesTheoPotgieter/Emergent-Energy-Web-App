@@ -477,7 +477,12 @@ export default function SubcontractorDashboardPage() {
                   </td>
                   <td className="px-3 py-2 text-xs font-mono">{formatCurrency(cp.totalSpendExVat)}</td>
                   <td className="px-3 py-2 text-xs">{cp.invoiceCount}</td>
-                  <td className="px-3 py-2 text-xs">{cp.projectCount}</td>
+                  <td className="px-3 py-2 text-xs" title={cp.projectNames?.join(", ") || ""}>
+                    <span className="font-medium">{cp.projectCount}</span>
+                    {cp.projectNames?.length > 0 && cp.projectNames.length <= 3 && (
+                      <span className="text-[10px] text-slate-400 ml-1 block truncate max-w-[120px]">{cp.projectNames.join(", ")}</span>
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-xs text-slate-500">{formatDate(cp.lastInvoiceDate)}</td>
                   <td className="px-3 py-2 text-xs text-slate-500">{formatDate(cp.lastPaidDate)}</td>
                   <td className="px-3 py-2 text-xs">{cp.avgTurnaroundDays != null ? `${cp.avgTurnaroundDays}d` : "\u2014"}</td>
@@ -764,10 +769,13 @@ export default function SubcontractorDashboardPage() {
                           <td className="px-2 py-1.5 font-mono">{l.invoiceNumber || "\u2014"}</td>
                           <td className="px-2 py-1.5 font-mono">{formatCurrency(parseFloat(l.amountExVat || "0"))}</td>
                           <td className="px-2 py-1.5 text-slate-500">{formatDate(l.invoiceDate)}</td>
-                          <td className="px-2 py-1.5 text-slate-500">{formatDate(l.paidDate)}</td>
+                          <td className={`px-2 py-1.5 ${l.paidDate && new Date(l.paidDate) > new Date() ? "text-red-500 font-medium" : "text-slate-500"}`}>
+                            {formatDate(l.paidDate)}
+                            {l.paidDate && new Date(l.paidDate) > new Date() && <span className="text-[8px] ml-0.5">(future)</span>}
+                          </td>
                           <td className="px-2 py-1.5">
                             <Badge variant={l.status === "PAID" ? "default" : l.status === "INVOICED" ? "secondary" : "outline"}
-                              className={`text-[9px] ${l.status === "PAID" ? "bg-green-100 text-green-700 border-green-200" : l.status !== "PLANNED" ? "" : "text-slate-500"}`}>
+                              className={`text-[9px] ${l.status === "PAID" ? "bg-green-100 text-green-700 border-green-200" : l.status === "INVOICED" ? "bg-amber-50 text-amber-700 border-amber-200" : l.status === "APPROVED" ? "bg-blue-50 text-blue-700 border-blue-200" : "text-slate-500"}`}>
                               {l.status}
                             </Badge>
                           </td>
