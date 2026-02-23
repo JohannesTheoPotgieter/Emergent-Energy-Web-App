@@ -749,19 +749,37 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
               .set({ lastSeenAt: new Date() })
               .where(eq(counterparties.id, existing[0].id));
           } else {
-            const [created] = await tx
-              .insert(counterparties)
-              .values({
-                nameCanonical: name.trim(),
-                nameAliases: [],
-                typeDefault: "OTHER",
-                isCore: false,
-                createdBy: userId,
-                lastSeenAt: new Date(),
-              })
-              .returning();
-            counterpartyMap.set(normalized, created.id);
-            counts.counterparties++;
+            const allCps = await tx.select().from(counterparties);
+            let aliasMatch: typeof allCps[0] | null = null;
+            for (const cp of allCps) {
+              const aliases = Array.isArray(cp.nameAliases) ? cp.nameAliases as string[] : [];
+              if (aliases.some(a => a.toLowerCase() === normalized)) {
+                aliasMatch = cp;
+                break;
+              }
+            }
+
+            if (aliasMatch) {
+              counterpartyMap.set(normalized, aliasMatch.id);
+              await tx
+                .update(counterparties)
+                .set({ lastSeenAt: new Date() })
+                .where(eq(counterparties.id, aliasMatch.id));
+            } else {
+              const [created] = await tx
+                .insert(counterparties)
+                .values({
+                  nameCanonical: name.trim(),
+                  nameAliases: [],
+                  typeDefault: "OTHER",
+                  isCore: false,
+                  createdBy: userId,
+                  lastSeenAt: new Date(),
+                })
+                .returning();
+              counterpartyMap.set(normalized, created.id);
+              counts.counterparties++;
+            }
           }
         }
       }

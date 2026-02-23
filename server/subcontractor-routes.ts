@@ -639,9 +639,30 @@ router.post("/api/subcontractor-dashboard/merge", requireAuth, async (req: Reque
       await tx.update(counterparties)
         .set({ nameAliases: uniqueAliases, lastSeenAt: new Date() })
         .where(eq(counterparties.id, targetCpId));
+
+      const targetCpFinal = await tx.select().from(counterparties).where(eq(counterparties.id, targetCpId));
+      const targetType = targetCpFinal[0]?.typeDefault || "OTHER";
+
+      for (const alias of uniqueAliases) {
+        const existing = await tx.select().from(invoicePatternRules)
+          .where(sql`${invoicePatternRules.patternType} = 'PREFIX' AND LOWER(${invoicePatternRules.patternValue}) = ${alias.toLowerCase()} AND ${invoicePatternRules.counterpartyId} = ${targetCpId}`);
+
+        if (existing.length === 0) {
+          await tx.insert(invoicePatternRules).values({
+            patternType: "PREFIX",
+            patternValue: alias,
+            normalizedExample: alias,
+            counterpartyId: targetCpId,
+            counterpartyName: trimmedTarget,
+            inferredType: targetType as any,
+            confidenceWeight: 90,
+            isActive: true,
+          });
+        }
+      }
     });
 
-    console.log(`[subcontractor] Merged [${sourceNames.join(", ")}] → "${trimmedTarget}"`);
+    console.log(`[subcontractor] Merged [${sourceNames.join(", ")}] → "${trimmedTarget}" with ${mergedAliases.length} alias patterns`);
     res.json({ success: true, merged: sourceNames, into: trimmedTarget });
   } catch (err: any) {
     console.error("[subcontractor-merge] Error:", err);
