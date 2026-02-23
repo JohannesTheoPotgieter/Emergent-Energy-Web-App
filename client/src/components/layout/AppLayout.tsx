@@ -30,7 +30,14 @@ import {
   RefreshCw,
   Users,
   Activity,
+  FolderKanban,
+  Scale,
+  ClipboardCheck,
+  Cog,
+  CalendarCheck,
+  Truck,
 } from "lucide-react";
+import { UX_REDESIGN_ENABLED } from "@shared/schema";
 import { useProgramData } from "@/hooks/use-program-data";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
@@ -48,7 +55,7 @@ interface NavGroup {
   items: { label: string; icon: any; path: string; className?: string }[];
 }
 
-function getNavGroups(): NavGroup[] {
+function getLegacyNavGroups(): NavGroup[] {
   return [
     {
       heading: "EXCO",
@@ -100,6 +107,59 @@ function getNavGroups(): NavGroup[] {
       ],
     },
   ];
+}
+
+function getRedesignedNavGroups(): NavGroup[] {
+  return [
+    {
+      heading: "PROJECTS",
+      section: "PROJECTS",
+      items: [
+        { label: "Project Summary", icon: FolderKanban, path: "/projects" },
+        { label: "Execution Board", icon: LayoutDashboard, path: "/dashboard" },
+        { label: "Lifecycle Board", icon: Layers, path: "/lifecycle-board" },
+        { label: "New Project", icon: FolderPlus, path: "/project-create" },
+        { label: "Weekly Reviews", icon: CalendarCheck, path: "/weekly-reviews" },
+      ],
+    },
+    {
+      heading: "OPERATIONS",
+      section: "OPERATIONS",
+      items: [
+        { label: "Cashflow", icon: Wallet, path: "/cashflow" },
+        { label: "COS Tracker", icon: TrendingUp, path: "/cos" },
+        { label: "Procurement", icon: Truck, path: "/subcontractor-dashboard" },
+        { label: "Engineering", icon: Wrench, path: "/engineering" },
+        { label: "Task Board", icon: ListTodo, path: "/engineering/tasks" },
+        { label: "Pipeline Inbox", icon: InboxIcon, path: "/engineering/inbox" },
+        { label: "SP Sync", icon: RefreshCw, path: "/engineering/sync" },
+        { label: "My Tool", icon: Briefcase, path: "/my-tool" },
+      ],
+    },
+    {
+      heading: "GOVERNANCE",
+      section: "GOVERNANCE",
+      items: [
+        { label: "Quality Dashboard", icon: ShieldCheck, path: "/quality" },
+        { label: "Change Audit", icon: Activity, path: "/admin/activity-log" },
+        { label: "Company Priorities", icon: Flag, path: "/company-priorities" },
+      ],
+    },
+    {
+      heading: "ADMIN",
+      section: "ADMIN",
+      items: [
+        { label: "Settings", icon: Cog, path: "/admin/settings" },
+        { label: "Phase Templates", icon: ClipboardCheck, path: "/admin/phase-templates" },
+        { label: "Smart Import", icon: FileSpreadsheet, path: "/smart-import" },
+        { label: "Invoice Patterns", icon: FileSpreadsheet, path: "/invoice-patterns" },
+      ],
+    },
+  ];
+}
+
+function getNavGroups(): NavGroup[] {
+  return UX_REDESIGN_ENABLED ? getRedesignedNavGroups() : getLegacyNavGroups();
 }
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {

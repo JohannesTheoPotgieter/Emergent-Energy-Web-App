@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
+import { PermissionGate } from "@/components/PermissionGate";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -362,41 +363,43 @@ export default function SubcontractorDashboardPage() {
         </label>
       </div>
 
-      {selectedForMerge.size > 0 && (
-        <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5" data-testid="bulk-action-bar">
-          <span className="text-sm text-blue-800 font-medium">{selectedForMerge.size} selected</span>
-          <div className="flex items-center gap-2 ml-auto">
-            {selectedForMerge.size >= 2 && (
-              <Button size="sm" variant="outline" className="h-7 text-xs border-blue-300 text-blue-700 hover:bg-blue-100"
-                onClick={() => { setMergeTarget(Array.from(selectedForMerge)[0]); setShowMergePanel(true); }}
-                data-testid="btn-open-merge">
-                <Merge className="w-3 h-3 mr-1" /> Merge
-              </Button>
-            )}
-            {!bulkDeleteConfirm ? (
-              <Button size="sm" variant="outline" className="h-7 text-xs border-red-300 text-red-700 hover:bg-red-50"
-                onClick={() => setBulkDeleteConfirm(true)} data-testid="btn-bulk-delete">
-                <Trash2 className="w-3 h-3 mr-1" /> Delete
-              </Button>
-            ) : (
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs text-red-700">Delete {selectedForMerge.size} counterpart{selectedForMerge.size > 1 ? "ies" : "y"}?</span>
-                <Button size="sm" variant="destructive" className="h-7 text-xs"
-                  onClick={handleBulkDelete} disabled={bulkDeleteLoading} data-testid="btn-confirm-bulk-delete">
-                  {bulkDeleteLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : "Yes"}
+      <PermissionGate entity="procurement" action="edit">
+        {selectedForMerge.size > 0 && (
+          <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5" data-testid="bulk-action-bar">
+            <span className="text-sm text-blue-800 font-medium">{selectedForMerge.size} selected</span>
+            <div className="flex items-center gap-2 ml-auto">
+              {selectedForMerge.size >= 2 && (
+                <Button size="sm" variant="outline" className="h-7 text-xs border-blue-300 text-blue-700 hover:bg-blue-100"
+                  onClick={() => { setMergeTarget(Array.from(selectedForMerge)[0]); setShowMergePanel(true); }}
+                  data-testid="btn-open-merge">
+                  <Merge className="w-3 h-3 mr-1" /> Merge
                 </Button>
-                <Button size="sm" variant="ghost" className="h-7 text-xs"
-                  onClick={() => setBulkDeleteConfirm(false)} data-testid="btn-cancel-bulk-delete">No</Button>
-              </div>
-            )}
-            <Button size="sm" variant="ghost" className="h-7 text-xs text-slate-500"
-              onClick={() => { setSelectedForMerge(new Set()); setBulkDeleteConfirm(false); }}
-              data-testid="btn-clear-selection">
-              Clear
-            </Button>
+              )}
+              {!bulkDeleteConfirm ? (
+                <Button size="sm" variant="outline" className="h-7 text-xs border-red-300 text-red-700 hover:bg-red-50"
+                  onClick={() => setBulkDeleteConfirm(true)} data-testid="btn-bulk-delete">
+                  <Trash2 className="w-3 h-3 mr-1" /> Delete
+                </Button>
+              ) : (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-red-700">Delete {selectedForMerge.size} counterpart{selectedForMerge.size > 1 ? "ies" : "y"}?</span>
+                  <Button size="sm" variant="destructive" className="h-7 text-xs"
+                    onClick={handleBulkDelete} disabled={bulkDeleteLoading} data-testid="btn-confirm-bulk-delete">
+                    {bulkDeleteLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : "Yes"}
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-7 text-xs"
+                    onClick={() => setBulkDeleteConfirm(false)} data-testid="btn-cancel-bulk-delete">No</Button>
+                </div>
+              )}
+              <Button size="sm" variant="ghost" className="h-7 text-xs text-slate-500"
+                onClick={() => { setSelectedForMerge(new Set()); setBulkDeleteConfirm(false); }}
+                data-testid="btn-clear-selection">
+                Clear
+              </Button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </PermissionGate>
 
       {showMergePanel && (
         <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 space-y-3" data-testid="merge-panel">
@@ -567,14 +570,16 @@ export default function SubcontractorDashboardPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <DialogTitle className="text-xl font-bold">{selectedCp}</DialogTitle>
-                      <Button size="icon" variant="ghost" className="h-7 w-7 text-slate-400 hover:text-blue-600"
-                        onClick={handleStartRename} title="Rename" data-testid="btn-rename-counterparty">
-                        <Pencil className="w-3.5 h-3.5" />
-                      </Button>
-                      <Button size="icon" variant="ghost" className="h-7 w-7 text-slate-400 hover:text-red-600"
-                        onClick={() => setDeleteConfirm(true)} title="Delete" data-testid="btn-delete-counterparty">
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </Button>
+                      <PermissionGate entity="procurement" action="edit">
+                        <Button size="icon" variant="ghost" className="h-7 w-7 text-slate-400 hover:text-blue-600"
+                          onClick={handleStartRename} title="Rename" data-testid="btn-rename-counterparty">
+                          <Pencil className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button size="icon" variant="ghost" className="h-7 w-7 text-slate-400 hover:text-red-600"
+                          onClick={() => setDeleteConfirm(true)} title="Delete" data-testid="btn-delete-counterparty">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </PermissionGate>
                       <div className="flex items-center gap-1.5 ml-2">
                         <Tag className="w-3 h-3 text-slate-400" />
                         <Select

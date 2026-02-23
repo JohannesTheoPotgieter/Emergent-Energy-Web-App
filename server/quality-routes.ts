@@ -10,6 +10,7 @@ import {
   qcPostmortem, qcPostmortemMetricValue, qcPostmortemSummary,
   qcAccessChallenge, calendarHoliday, projectPlan,
 } from "@shared/schema";
+import { requirePermission } from "./permission-middleware";
 
 type AppUser = { id: number; email: string; name: string; role: string; };
 
@@ -347,7 +348,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.post("/api/quality/project/:projectName/item/:itemInstanceId/approve", requireAuth, requireAdminOrQm, async (req, res) => {
+  app.post("/api/quality/project/:projectName/item/:itemInstanceId/approve", requireAuth, requireAdminOrQm, requirePermission('quality', 'approve'), async (req, res) => {
     try {
       const itemId = parseInt(req.params.itemInstanceId);
       const { approved, comment } = req.body;

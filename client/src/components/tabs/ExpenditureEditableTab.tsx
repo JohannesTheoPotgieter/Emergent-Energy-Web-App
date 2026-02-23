@@ -2,6 +2,7 @@ import React, { useState, useMemo, useCallback, useRef, useEffect } from "react"
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { invalidateDashboardQueries } from "@/lib/queryClient";
+import { PermissionGate } from "@/components/PermissionGate";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -892,14 +893,14 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
             </DropdownMenu>
           )}
 
-          {isAdmin && (
+          <PermissionGate entity="financials" action="edit">
             <Button onClick={handleSave} disabled={!hasEdits || saveMutation.isPending} size="sm"
               className={`h-7 text-xs ${hasEdits ? "bg-blue-600 hover:bg-blue-700 text-white shadow-sm" : ""}`}
               variant={hasEdits ? "default" : "outline"}
               data-testid="button-save-edits">
               <Save className="h-3.5 w-3.5 mr-1" /> {saveMutation.isPending ? "Saving..." : hasEdits ? `Save (${edits.size})` : "Save"}
             </Button>
-          )}
+          </PermissionGate>
 
           <Button onClick={() => setDrawerOpen(true)} variant="outline" size="sm" className="h-7 text-xs" data-testid="button-drilldown">
             <Search className="h-3.5 w-3.5 mr-1" /> Drilldown

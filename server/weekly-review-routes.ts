@@ -10,6 +10,18 @@ function requireAuth(req: Request, res: Response, next: Function) {
 }
 
 export function registerWeeklyReviewRoutes(app: Express) {
+  app.get("/api/weekly-reviews-all", requireAuth, async (req, res) => {
+    try {
+      const reviews = await db
+        .select()
+        .from(weeklyReviews)
+        .orderBy(desc(weeklyReviews.weekStarting));
+      res.json(reviews);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get("/api/weekly-reviews/:projectName", requireAuth, async (req, res) => {
     try {
       const { projectName } = req.params;

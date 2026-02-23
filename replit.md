@@ -27,10 +27,14 @@ Preferred communication style: Simple, everyday language.
     -   **5-Tab Navigation**: Project detail regrouped from 12 tabs into 5 super-tabs (Overview, Plan, Money, Quality, History) with sub-tab navigation preserving backward-compatible URL params.
     -   **Weekly Review Wizard**: 6-step structured project review (Schedule, Budget, Risks, Quality, Actions, Summary) with snapshot metrics storage and past review history.
     -   **Utilities & Admin**: SafeMoney utilities, and a COO Execution Cockpit ("My Tool") for task management, DoD enforcement, and Read.ai meeting integration.
+    -   **Redesigned Sidebar Navigation**: 4-group layout (Projects, Operations, Governance, Admin) behind `UX_REDESIGN_ENABLED` feature flag, with legacy 5-group layout preserved. Groups map to role-based section permissions.
+    -   **Permission Gate System**: `<PermissionGate entity action>` component and `usePermission()` hook for role-aware UI rendering. Edit/approve/override buttons hidden for unpermitted roles.
+    -   **Weekly Reviews Page**: Standalone `/weekly-reviews` page listing all projects with review status, due dates, and navigation to individual project review wizards.
 
 ### Backend
 -   **Framework**: Express.js with TypeScript
 -   **Authentication**: Passport.js with local strategy and PostgreSQL-backed sessions, supporting role-based access control (10 company roles) and rate limiting.
+-   **Permission Middleware**: `requirePermission(entity, action)` middleware enforcing per-entity role-based access at the API layer. Entities: projects, financials, quality, engineering, procurement, admin, governance. Actions: view, edit, approve, override.
 -   **File Handling**: Multer for uploads, `exceljs` for parsing.
 -   **Data Storage**: PostgreSQL (primary) with Drizzle ORM.
 -   **Data Integrity**: Transactional safety and reprocessing for data modifications.
