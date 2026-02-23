@@ -87,6 +87,7 @@ export default function SubcontractorDashboardPage() {
       const res = await fetch("/api/subcontractor-dashboard/rename", {
         method: "PATCH",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        credentials: "include",
         body: JSON.stringify({ oldName: selectedCp, newName: renameValue.trim() }),
       });
       const data = await res.json();
@@ -109,6 +110,7 @@ export default function SubcontractorDashboardPage() {
       const res = await fetch(`/api/subcontractor-dashboard/counterparty/${encodeURIComponent(selectedCp)}`, {
         method: "DELETE",
         headers: getAuthHeaders(),
+        credentials: "include",
       });
       const data = await res.json();
       if (!res.ok) { setRenameError(data.error || "Delete failed"); return; }
@@ -129,6 +131,7 @@ export default function SubcontractorDashboardPage() {
       const res = await fetch(`/api/subcontractor-dashboard/counterparty/${encodeURIComponent(selectedCp)}/type`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        credentials: "include",
         body: JSON.stringify({ type: newType }),
       });
       if (!res.ok) { const d = await res.json(); setRenameError(d.error || "Type change failed"); return; }
@@ -157,6 +160,7 @@ export default function SubcontractorDashboardPage() {
       const res = await fetch("/api/subcontractor-dashboard/merge", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        credentials: "include",
         body: JSON.stringify({ sourceNames: Array.from(selectedForMerge), targetName: mergeTarget.trim() }),
       });
       if (!res.ok) { const d = await res.json(); setRenameError(d.error || "Merge failed"); return; }
@@ -179,6 +183,7 @@ export default function SubcontractorDashboardPage() {
         const res = await fetch(`/api/subcontractor-dashboard/counterparty/${encodeURIComponent(name)}`, {
           method: "DELETE",
           headers: getAuthHeaders(),
+          credentials: "include",
         });
         if (!res.ok) { const d = await res.json(); setRenameError(d.error || `Failed to delete ${name}`); }
       }
@@ -199,7 +204,7 @@ export default function SubcontractorDashboardPage() {
       if (typeFilter !== "all") params.set("type", typeFilter);
       if (projectFilter !== "all") params.set("project", projectFilter);
       if (coreOnly) params.set("coreOnly", "true");
-      const res = await fetch(`/api/subcontractor-dashboard/summary?${params}`, { headers: getAuthHeaders() });
+      const res = await fetch(`/api/subcontractor-dashboard/summary?${params}`, { headers: getAuthHeaders(), credentials: "include" });
       if (!res.ok) throw new Error("Failed to load");
       return res.json();
     },
@@ -209,7 +214,7 @@ export default function SubcontractorDashboardPage() {
     queryKey: ["/api/subcontractor-dashboard/detail", selectedCp],
     queryFn: async () => {
       if (!selectedCp) return null;
-      const res = await fetch(`/api/subcontractor-dashboard/detail/${encodeURIComponent(selectedCp)}`, { headers: getAuthHeaders() });
+      const res = await fetch(`/api/subcontractor-dashboard/detail/${encodeURIComponent(selectedCp)}`, { headers: getAuthHeaders(), credentials: "include" });
       if (!res.ok) throw new Error("Failed to load");
       return res.json();
     },
