@@ -1,6 +1,6 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { normalizedCostLines, counterparties, programExpense, projectInfo } from "@shared/schema";
+import { normalizedCostLines, counterparties, programExpense, projectInfo, invoicePatternRules } from "@shared/schema";
 import { eq, sql } from "drizzle-orm";
 import { extractSupplierName } from "./lib/calculations/supplierExtractor";
 
@@ -647,6 +647,76 @@ router.post("/api/subcontractor-dashboard/merge", requireAuth, async (req: Reque
     res.json({ success: true, merged: sourceNames, into: trimmedTarget });
   } catch (err: any) {
     console.error("[subcontractor-merge] Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/api/subcontractor-dashboard/link-counterparty", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { costLineIds, counterpartyId, counterpartyName, counterpartyType, createPattern } = req.body;
+    if (!costLineIds || !Array.isArray(costLineIds) || costLineIds.length === 0) {
+      return res.status(400).json({ error: "costLineIds array is required" });
+    }
+    if (!counterpartyId && !counterpartyName) {
+      return res.status(400).json({ error: "counterpartyId or counterpartyName is required" });
+    }
+
+    let cpId = counterpartyId;
+    let cpName = counterpartyName;
+    let cpType = counterpartyType || null;
+
+    if (cpId) {
+      const [cp] = await db.select().from(counterparties).where(eq(counterparties.id, cpId));
+      if (cp) {
+        cpName = cp.nameCanonical;
+        cpType = cpType || cp.typeDefault;
+      }
+    }
+
+    await db.transaction(async (tx: any) => {
+      for (const lineId of costLineIds) {
+        await tx.update(normalizedCostLines)
+          .set({
+            counterpartyId: cpId || null,
+            counterpartyName: cpName,
+            counterpartyType: cpType,
+          })
+          .where(eq(normalizedCostLines.id, lineId));
+      }
+    });
+
+    let patternCreated = null;
+    if (createPattern) {
+      const lines = await db.select().from(normalizedCostLines).where(
+        sql`${normalizedCostLines.id} = ANY(${costLineIds})`
+      );
+      const invoiceNumbers = lines.map(l => l.invoiceNumber).filter(Boolean);
+      if (invoiceNumbers.length > 0) {
+        const userId = (req as any).user?.id || null;
+        const prefixMatch = invoiceNumbers[0]!.match(/^([A-Za-z\-_]+)/);
+        const patternValue = prefixMatch ? prefixMatch[1] : invoiceNumbers[0]!;
+        const [rule] = await db
+          .insert(invoicePatternRules)
+          .values({
+            patternType: "PREFIX",
+            patternValue: patternValue,
+            normalizedExample: invoiceNumbers[0],
+            counterpartyId: cpId || null,
+            counterpartyName: cpName,
+            inferredType: cpType || "OTHER",
+            confidenceWeight: 60,
+            createdBy: userId,
+            isActive: true,
+          })
+          .returning();
+        patternCreated = rule;
+      }
+    }
+
+    console.log(`[subcontractor] Linked ${costLineIds.length} cost lines to "${cpName}" (id=${cpId})`);
+    res.json({ success: true, linked: costLineIds.length, counterpartyName: cpName, patternCreated });
+  } catch (err: any) {
+    console.error("[subcontractor-link] Error:", err);
     res.status(500).json({ error: err.message });
   }
 });
