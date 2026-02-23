@@ -398,18 +398,6 @@ export default function TrRegisterPage() {
         </div>
         <div className="flex items-center gap-2">
           {canManage && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => seedMutation.mutate()}
-              disabled={seedMutation.isPending}
-              data-testid="button-seed-data"
-            >
-              {seedMutation.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Database className="h-4 w-4 mr-1" />}
-              Seed Data
-            </Button>
-          )}
-          {canManage && (
             <Button size="sm" onClick={() => setCreateDialogOpen(true)} data-testid="button-new-tr-item">
               <Plus className="h-4 w-4 mr-1" />
               New TR Item

@@ -131,6 +131,7 @@ function getRedesignedNavGroups(): NavGroup[] {
       items: [
         { label: "Project Summary", icon: FolderKanban, path: "/projects" },
         { label: "Lifecycle Board", icon: Layers, path: "/lifecycle-board" },
+        { label: "TR Register", icon: ClipboardList, path: "/tr-register" },
       ],
     },
     {
@@ -148,7 +149,6 @@ function getRedesignedNavGroups(): NavGroup[] {
       items: [
         { label: "Engineering", icon: HardHat, path: "/engineering" },
         { label: "Task Board", icon: ListTodo, path: "/engineering/tasks" },
-        { label: "TR Register", icon: ClipboardList, path: "/tr-register" },
       ],
     },
     {
