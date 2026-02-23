@@ -17,7 +17,7 @@ import {
 import {
   DollarSign, Users, Clock, TrendingUp, Search, Filter,
   Loader2, ArrowUpDown, ChevronRight, AlertCircle, Calendar,
-  CheckCircle2, CircleDot, ExternalLink, FileText, Pencil, Check, X, Trash2,
+  CheckCircle2, CircleDot, ExternalLink, FileText, Pencil, Check, X, Trash2, Merge, Tag,
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
@@ -59,6 +59,13 @@ export default function SubcontractorDashboardPage() {
   const [renameLoading, setRenameLoading] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [selectedForMerge, setSelectedForMerge] = useState<Set<string>>(new Set());
+  const [mergeTarget, setMergeTarget] = useState("");
+  const [showMergePanel, setShowMergePanel] = useState(false);
+  const [mergeLoading, setMergeLoading] = useState(false);
+  const [typeChangeLoading, setTypeChangeLoading] = useState(false);
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
+  const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
 
   const handleStartRename = () => {
     setRenameValue(selectedCp || "");
@@ -112,6 +119,76 @@ export default function SubcontractorDashboardPage() {
       setRenameError(err.message || "Delete failed");
     } finally {
       setDeleteLoading(false);
+    }
+  };
+
+  const handleChangeType = async (newType: string) => {
+    if (!selectedCp || !newType) return;
+    setTypeChangeLoading(true);
+    try {
+      const res = await fetch(`/api/subcontractor-dashboard/counterparty/${encodeURIComponent(selectedCp)}/type`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ type: newType }),
+      });
+      if (!res.ok) { const d = await res.json(); setRenameError(d.error || "Type change failed"); return; }
+      queryClient.invalidateQueries({ queryKey: ["/api/subcontractor-dashboard/summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/subcontractor-dashboard/detail"] });
+    } catch (err: any) {
+      setRenameError(err.message || "Type change failed");
+    } finally {
+      setTypeChangeLoading(false);
+    }
+  };
+
+  const toggleMergeSelection = (name: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedForMerge(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name); else next.add(name);
+      return next;
+    });
+  };
+
+  const handleMerge = async () => {
+    if (selectedForMerge.size < 2 || !mergeTarget.trim()) return;
+    setMergeLoading(true);
+    try {
+      const res = await fetch("/api/subcontractor-dashboard/merge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ sourceNames: Array.from(selectedForMerge), targetName: mergeTarget.trim() }),
+      });
+      if (!res.ok) { const d = await res.json(); setRenameError(d.error || "Merge failed"); return; }
+      setSelectedForMerge(new Set());
+      setShowMergePanel(false);
+      setMergeTarget("");
+      queryClient.invalidateQueries({ queryKey: ["/api/subcontractor-dashboard/summary"] });
+    } catch (err: any) {
+      setRenameError(err.message || "Merge failed");
+    } finally {
+      setMergeLoading(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedForMerge.size === 0) return;
+    setBulkDeleteLoading(true);
+    try {
+      for (const name of Array.from(selectedForMerge)) {
+        const res = await fetch(`/api/subcontractor-dashboard/counterparty/${encodeURIComponent(name)}`, {
+          method: "DELETE",
+          headers: getAuthHeaders(),
+        });
+        if (!res.ok) { const d = await res.json(); setRenameError(d.error || `Failed to delete ${name}`); }
+      }
+      setSelectedForMerge(new Set());
+      setBulkDeleteConfirm(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/subcontractor-dashboard/summary"] });
+    } catch (err: any) {
+      setRenameError(err.message || "Bulk delete failed");
+    } finally {
+      setBulkDeleteLoading(false);
     }
   };
 
@@ -243,6 +320,89 @@ export default function SubcontractorDashboardPage() {
         </label>
       </div>
 
+      {selectedForMerge.size > 0 && (
+        <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5" data-testid="bulk-action-bar">
+          <span className="text-sm text-blue-800 font-medium">{selectedForMerge.size} selected</span>
+          <div className="flex items-center gap-2 ml-auto">
+            {selectedForMerge.size >= 2 && (
+              <Button size="sm" variant="outline" className="h-7 text-xs border-blue-300 text-blue-700 hover:bg-blue-100"
+                onClick={() => { setMergeTarget(Array.from(selectedForMerge)[0]); setShowMergePanel(true); }}
+                data-testid="btn-open-merge">
+                <Merge className="w-3 h-3 mr-1" /> Merge
+              </Button>
+            )}
+            {!bulkDeleteConfirm ? (
+              <Button size="sm" variant="outline" className="h-7 text-xs border-red-300 text-red-700 hover:bg-red-50"
+                onClick={() => setBulkDeleteConfirm(true)} data-testid="btn-bulk-delete">
+                <Trash2 className="w-3 h-3 mr-1" /> Delete
+              </Button>
+            ) : (
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-red-700">Delete {selectedForMerge.size} counterpart{selectedForMerge.size > 1 ? "ies" : "y"}?</span>
+                <Button size="sm" variant="destructive" className="h-7 text-xs"
+                  onClick={handleBulkDelete} disabled={bulkDeleteLoading} data-testid="btn-confirm-bulk-delete">
+                  {bulkDeleteLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : "Yes"}
+                </Button>
+                <Button size="sm" variant="ghost" className="h-7 text-xs"
+                  onClick={() => setBulkDeleteConfirm(false)} data-testid="btn-cancel-bulk-delete">No</Button>
+              </div>
+            )}
+            <Button size="sm" variant="ghost" className="h-7 text-xs text-slate-500"
+              onClick={() => { setSelectedForMerge(new Set()); setBulkDeleteConfirm(false); }}
+              data-testid="btn-clear-selection">
+              Clear
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {showMergePanel && (
+        <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 space-y-3" data-testid="merge-panel">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-semibold text-indigo-900 flex items-center gap-1.5">
+                <Merge className="w-4 h-4" /> Merge Counterparties
+              </p>
+              <p className="text-xs text-indigo-700 mt-1">
+                Merging will combine all cost lines from the selected counterparties into one. The others will be removed.
+              </p>
+            </div>
+            <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setShowMergePanel(false)}>
+              <X className="w-4 h-4" />
+            </Button>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {Array.from(selectedForMerge).map(name => (
+              <Badge key={name} variant="secondary" className="text-xs">{name}</Badge>
+            ))}
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-indigo-800 whitespace-nowrap">Merge into:</label>
+            <Select value={mergeTarget} onValueChange={setMergeTarget}>
+              <SelectTrigger className="h-8 text-xs flex-1" data-testid="select-merge-target">
+                <SelectValue placeholder="Choose target name" />
+              </SelectTrigger>
+              <SelectContent>
+                {Array.from(selectedForMerge).map(name => (
+                  <SelectItem key={name} value={name}>{name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button size="sm" className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700"
+              onClick={handleMerge} disabled={mergeLoading || !mergeTarget}
+              data-testid="btn-confirm-merge">
+              {mergeLoading ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Merge className="w-3 h-3 mr-1" />}
+              Merge {selectedForMerge.size} into 1
+            </Button>
+            <Button size="sm" variant="ghost" className="h-7 text-xs"
+              onClick={() => setShowMergePanel(false)} data-testid="btn-cancel-merge">Cancel</Button>
+          </div>
+          {renameError && <p className="text-xs text-red-600">{renameError}</p>}
+        </div>
+      )}
+
       {isLoading ? (
         <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>
       ) : filtered.length === 0 ? (
@@ -257,6 +417,15 @@ export default function SubcontractorDashboardPage() {
           <table className="w-full text-sm" data-testid="counterparty-table">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200">
+                <th className="px-2 py-2 w-8">
+                  <input type="checkbox" className="rounded border-slate-300"
+                    checked={filtered.length > 0 && filtered.every((c: any) => selectedForMerge.has(c.counterpartyName))}
+                    onChange={e => {
+                      if (e.target.checked) setSelectedForMerge(new Set(filtered.map((c: any) => c.counterpartyName)));
+                      else setSelectedForMerge(new Set());
+                    }}
+                    data-testid="checkbox-select-all" />
+                </th>
                 {[
                   { key: "counterpartyName", label: "Counterparty" },
                   { key: "counterpartyType", label: "Type" },
@@ -282,9 +451,15 @@ export default function SubcontractorDashboardPage() {
             </thead>
             <tbody>
               {filtered.map((cp: any, i: number) => (
-                <tr key={cp.counterpartyName} className={`border-b border-slate-100 hover:bg-blue-50/30 cursor-pointer ${i % 2 === 0 ? "" : "bg-slate-50/50"}`}
+                <tr key={cp.counterpartyName} className={`border-b border-slate-100 hover:bg-blue-50/30 cursor-pointer ${i % 2 === 0 ? "" : "bg-slate-50/50"} ${selectedForMerge.has(cp.counterpartyName) ? "bg-blue-50" : ""}`}
                   onClick={() => setSelectedCp(cp.counterpartyName)}
                   data-testid={`cp-row-${i}`}>
+                  <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
+                    <input type="checkbox" className="rounded border-slate-300"
+                      checked={selectedForMerge.has(cp.counterpartyName)}
+                      onChange={() => toggleMergeSelection(cp.counterpartyName, { stopPropagation: () => {} } as any)}
+                      data-testid={`checkbox-cp-${i}`} />
+                  </td>
                   <td className="px-3 py-2 font-medium text-slate-800">
                     {cp.counterpartyName}
                     {cp.isCore && <Badge className="ml-1 text-[8px] bg-blue-50 text-blue-600">Core</Badge>}
@@ -348,6 +523,28 @@ export default function SubcontractorDashboardPage() {
                     onClick={() => setDeleteConfirm(true)} title="Delete counterparty" data-testid="btn-delete-counterparty">
                     <Trash2 className="w-3.5 h-3.5" />
                   </Button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Tag className="w-3 h-3 text-slate-400" />
+                  <span className="text-xs text-slate-500">Type:</span>
+                  <Select
+                    value={(() => {
+                      const cpData = (data?.counterparties || []).find((c: any) => c.counterpartyName === selectedCp);
+                      return cpData?.counterpartyType || "OTHER";
+                    })()}
+                    onValueChange={handleChangeType}
+                    disabled={typeChangeLoading}
+                  >
+                    <SelectTrigger className="h-7 w-32 text-xs" data-testid="select-cp-type">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="INSTALLER">Installer</SelectItem>
+                      <SelectItem value="SUPPLIER">Supplier</SelectItem>
+                      <SelectItem value="OTHER">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {typeChangeLoading && <Loader2 className="w-3 h-3 animate-spin text-slate-400" />}
                 </div>
                 {deleteConfirm && (
                   <div className="bg-red-50 border border-red-200 rounded-lg p-3" data-testid="delete-confirm-panel">
