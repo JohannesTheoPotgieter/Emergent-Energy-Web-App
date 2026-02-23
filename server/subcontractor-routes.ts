@@ -145,7 +145,7 @@ router.get("/api/subcontractor-dashboard/summary", requireAuth, async (req: Requ
 
     summaries.sort((a, b) => b.totalSpendExVat - a.totalSpendExVat);
 
-    const biggest = summaries[0] || null;
+    const biggest = summaries.find(s => s.counterpartyName.toLowerCase() !== "unknown") || null;
     const totalCounterparties = summaries.length;
     const totalOpenAmount = summaries.reduce((s, c) => s + c.openAmount, 0);
     const totalUpcoming30d = summaries.reduce((s, c) => s + c.upcomingAmount30d, 0);
