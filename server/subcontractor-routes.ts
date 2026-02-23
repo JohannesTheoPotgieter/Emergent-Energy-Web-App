@@ -172,7 +172,14 @@ router.get("/api/subcontractor-dashboard/detail/:name", requireAuth, async (req:
   try {
     const name = decodeURIComponent(req.params.name);
     const allLines = await db.select().from(normalizedCostLines);
-    const lines = allLines.filter(l => (l.counterpartyName || "").trim().toLowerCase() === name.trim().toLowerCase());
+    const normalizedName = name.trim().toLowerCase();
+    const lines = allLines.filter(l => {
+      const cpName = (l.counterpartyName || "").trim().toLowerCase();
+      if (normalizedName === "unknown") {
+        return cpName === "unknown" || cpName === "";
+      }
+      return cpName === normalizedName;
+    });
 
     if (lines.length === 0) {
       return res.json({ lines: [], upcoming: [], projectBreakdown: [], monthlyTrend: [] });
