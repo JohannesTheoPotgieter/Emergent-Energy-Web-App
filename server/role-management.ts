@@ -2,7 +2,6 @@ import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
 import { rolePermissions, users, DEFAULT_ROLE_PERMISSIONS } from "@shared/schema";
-import type { InsertRolePermission, RolePermission } from "@shared/schema";
 import { verifyToken } from "./jwt";
 import { invalidateEntityPermCache } from "./permission-middleware";
 
