@@ -13,6 +13,8 @@ import {
   AlertTriangle,
   Check,
   X,
+  PackageSearch,
+  RefreshCw,
 } from "lucide-react";
 import {
   COMPANY_ROLES,
@@ -85,13 +87,108 @@ export default function RoleSettingsPage() {
         <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900" data-testid="text-page-title">
           Settings
         </h1>
-        <p className="text-sm text-gray-500 mt-1">Manage role passwords, sync settings, and phase ownership</p>
+        <p className="text-sm text-gray-500 mt-1">Manage role passwords, sync settings, phase ownership, and procurement analysis</p>
       </header>
 
+      <ProcurementAnalysisSection toast={toast} />
       <RolePasswordsSection toast={toast} />
       <SyncRootSection toast={toast} />
       <PhaseOwnershipSection toast={toast} />
     </div>
+  );
+}
+
+function ProcurementAnalysisSection({ toast }: { toast: ReturnType<typeof useToast>["toast"] }) {
+  const [running, setRunning] = useState(false);
+  const [status, setStatus] = useState<{ costLines: number; counterparties: number; sourceExpenses: number } | null>(null);
+  const [lastResult, setLastResult] = useState<{ costLines: number; counterpartiesCreated: number; counterpartiesMatched: number; projects: number; message: string } | null>(null);
+
+  useEffect(() => {
+    loadStatus();
+  }, []);
+
+  const loadStatus = async () => {
+    try {
+      const res = await fetch("/api/procurement-analysis/status", { headers: getAuthHeaders() });
+      if (res.ok) setStatus(await res.json());
+    } catch {}
+  };
+
+  const handleRun = async () => {
+    setRunning(true);
+    setLastResult(null);
+    try {
+      const res = await fetch("/api/procurement-analysis/run", {
+        method: "POST",
+        headers: getAuthHeaders(),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast({ title: "Error", description: data.error || "Procurement analysis failed", variant: "destructive" });
+        return;
+      }
+      setLastResult(data);
+      toast({ title: "Procurement Analysis Complete", description: data.message });
+      loadStatus();
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message || "Failed to run procurement analysis", variant: "destructive" });
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <Card data-testid="procurement-analysis-section">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <PackageSearch className="h-5 w-5" />
+          Procurement Analysis
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          Rebuild the procurement cost line data from current expense records. This processes all expenses, extracts supplier names, creates counterparty records, and populates the Procurement dashboard.
+        </p>
+
+        {status && (
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-slate-50 rounded-lg p-3 text-center">
+              <div className="text-2xl font-bold text-slate-900" data-testid="text-source-expenses">{status.sourceExpenses.toLocaleString()}</div>
+              <div className="text-xs text-slate-500">Source Expenses</div>
+            </div>
+            <div className="bg-slate-50 rounded-lg p-3 text-center">
+              <div className="text-2xl font-bold text-blue-700" data-testid="text-cost-lines">{status.costLines.toLocaleString()}</div>
+              <div className="text-xs text-slate-500">Cost Lines</div>
+            </div>
+            <div className="bg-slate-50 rounded-lg p-3 text-center">
+              <div className="text-2xl font-bold text-emerald-700" data-testid="text-counterparties">{status.counterparties.toLocaleString()}</div>
+              <div className="text-xs text-slate-500">Counterparties</div>
+            </div>
+          </div>
+        )}
+
+        {lastResult && (
+          <div className="bg-green-50 border border-green-200 rounded-lg p-3" data-testid="procurement-result">
+            <p className="text-sm font-medium text-green-800">Analysis Complete</p>
+            <p className="text-xs text-green-700 mt-1">{lastResult.message}</p>
+            <div className="flex gap-4 mt-2 text-xs text-green-600">
+              <span>{lastResult.costLines} cost lines</span>
+              <span>{lastResult.counterpartiesCreated} new suppliers</span>
+              <span>{lastResult.counterpartiesMatched} matched</span>
+              <span>{lastResult.projects} projects</span>
+            </div>
+          </div>
+        )}
+
+        <Button onClick={handleRun} disabled={running} data-testid="btn-run-procurement">
+          {running ? (
+            <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Running Analysis...</>
+          ) : (
+            <><RefreshCw className="w-4 h-4 mr-2" /> Run Procurement Analysis</>
+          )}
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
 
