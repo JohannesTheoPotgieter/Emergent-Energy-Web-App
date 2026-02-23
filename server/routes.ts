@@ -7475,8 +7475,13 @@ export async function registerRoutes(
           .map((t: any) => t.importedTaskId)
       );
 
+      const SECTION_HEADER_TITLES = ["high level programme", "programme", "high level program"];
       const baselineTasks = planTasks
         .filter((pt: any) => !linkedImportedIds.has(pt.id))
+        .filter((pt: any) => {
+          const title = (pt.highLevelProgramme || "").trim().toLowerCase();
+          return title && !SECTION_HEADER_TITLES.includes(title);
+        })
         .map((pt: any) => {
           const pctComplete = pt.actualPctComplete != null ? Math.round(pt.actualPctComplete * 100) : 0;
           let status = "Not Started";
@@ -7866,8 +7871,13 @@ export async function registerRoutes(
           .map((t: any) => t.importedTaskId)
       );
 
+      const SECTION_HEADER_TITLES = ["high level programme", "programme", "high level program"];
       const baselineTasks = planTasks
         .filter((pt: any) => !linkedImportedIds.has(pt.id))
+        .filter((pt: any) => {
+          const title = (pt.highLevelProgramme || "").trim().toLowerCase();
+          return title && !SECTION_HEADER_TITLES.includes(title);
+        })
         .map((pt: any) => {
           const pctComplete = pt.actualPctComplete != null ? Math.round(pt.actualPctComplete * 100) : 0;
           let status = "Not Started";
