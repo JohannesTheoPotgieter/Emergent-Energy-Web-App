@@ -21,6 +21,7 @@ import { runDataQualityChecks } from "./lib/calculations/dataQuality";
 import { buildOverrideMap, applyOverridesToCashflowLines, applyOverridesToCOSLines, computeMonthlyBuckets, getEffectiveDate } from "./lib/calculations/scenarioResolver";
 import { recordOverride } from "./lib/audit/diff-engine";
 import { OVERRIDE_CATEGORIES } from "@shared/schema";
+import { requirePermission } from "./permission-middleware";
 
 // Ensure uploads directory exists
 const uploadDir = path.join(process.cwd(), 'uploads');
@@ -3943,7 +3944,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/revenue-tracking/overrides", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/revenue-tracking/overrides", requireAuth, requireAdmin, requirePermission('financials', 'edit'), async (req, res) => {
     try {
       const { overrides, overrideCategory, overrideComment } = req.body;
       if (!Array.isArray(overrides)) {
@@ -4314,7 +4315,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/expenditure/overrides", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/expenditure/overrides", requireAuth, requireAdmin, requirePermission('financials', 'edit'), async (req, res) => {
     try {
       const { overrides, overrideCategory, overrideComment } = req.body;
       if (!Array.isArray(overrides)) {
@@ -4682,7 +4683,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/finance/revenue/overrides", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/finance/revenue/overrides", requireAuth, requireAdmin, requirePermission('financials', 'edit'), async (req, res) => {
     try {
       const { overrides, overrideCategory, overrideComment } = req.body;
       if (!Array.isArray(overrides)) {
@@ -4743,7 +4744,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/finance/cos/overrides", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/finance/cos/overrides", requireAuth, requireAdmin, requirePermission('financials', 'edit'), async (req, res) => {
     try {
       const { overrides, overrideCategory, overrideComment } = req.body;
       if (!Array.isArray(overrides)) {
@@ -5052,7 +5053,7 @@ export async function registerRoutes(
   });
 
   // Clear all data
-  app.post("/api/admin/clear-all-data", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/admin/clear-all-data", requireAuth, requireAdmin, requirePermission('admin', 'edit'), async (req, res) => {
     const startTime = Date.now();
     
     try {

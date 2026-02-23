@@ -4,6 +4,7 @@ import { normalizedCostLines, counterparties, programExpense, projectInfo, invoi
 import { eq, sql } from "drizzle-orm";
 import { extractSupplierName } from "./lib/calculations/supplierExtractor";
 import { verifyToken } from "./jwt";
+import { requirePermission } from "./permission-middleware";
 
 const router = Router();
 
@@ -467,7 +468,7 @@ router.get("/api/procurement-analysis/status", requireAuth, async (_req: Request
   }
 });
 
-router.patch("/api/subcontractor-dashboard/rename", requireAuth, async (req: Request, res: Response) => {
+router.patch("/api/subcontractor-dashboard/rename", requireAuth, requirePermission('procurement', 'edit'), async (req: Request, res: Response) => {
   try {
     const { oldName, newName } = req.body;
     if (!oldName || !newName || typeof oldName !== "string" || typeof newName !== "string") {
@@ -510,7 +511,7 @@ router.patch("/api/subcontractor-dashboard/rename", requireAuth, async (req: Req
   }
 });
 
-router.delete("/api/subcontractor-dashboard/counterparty/:name", requireAuth, async (req: Request, res: Response) => {
+router.delete("/api/subcontractor-dashboard/counterparty/:name", requireAuth, requirePermission('procurement', 'edit'), async (req: Request, res: Response) => {
   try {
     const name = decodeURIComponent(req.params.name);
     if (!name || !name.trim()) {
@@ -542,7 +543,7 @@ router.delete("/api/subcontractor-dashboard/counterparty/:name", requireAuth, as
   }
 });
 
-router.patch("/api/subcontractor-dashboard/counterparty/:name/type", requireAuth, async (req: Request, res: Response) => {
+router.patch("/api/subcontractor-dashboard/counterparty/:name/type", requireAuth, requirePermission('procurement', 'edit'), async (req: Request, res: Response) => {
   try {
     const name = decodeURIComponent(req.params.name);
     const { type } = req.body;
@@ -580,7 +581,7 @@ router.patch("/api/subcontractor-dashboard/counterparty/:name/type", requireAuth
   }
 });
 
-router.post("/api/subcontractor-dashboard/merge", requireAuth, async (req: Request, res: Response) => {
+router.post("/api/subcontractor-dashboard/merge", requireAuth, requirePermission('procurement', 'edit'), async (req: Request, res: Response) => {
   try {
     const { sourceNames, targetName } = req.body;
     if (!Array.isArray(sourceNames) || sourceNames.length === 0 || !targetName || typeof targetName !== "string") {
