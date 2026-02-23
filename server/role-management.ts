@@ -44,18 +44,24 @@ function requireAdmin(req: Request, res: Response, next: NextFunction) {
 export async function seedRolePermissions() {
   try {
     const existing = await db.select().from(rolePermissions);
-    if (existing.length >= DEFAULT_ROLE_PERMISSIONS.length) {
-      console.log(`[Seed] Role permissions already present (${existing.length}), skipping.`);
-      return;
-    }
 
     for (const perm of DEFAULT_ROLE_PERMISSIONS) {
       const exists = existing.find(e => e.role === perm.role);
       if (!exists) {
         await db.insert(rolePermissions).values(perm);
+      } else {
+        const defaultSections = perm.sections as string[];
+        const currentSections = (exists.sections || []) as string[];
+        const missingSections = defaultSections.filter(s => !currentSections.includes(s));
+        if (missingSections.length > 0) {
+          const merged = [...currentSections, ...missingSections];
+          await db.update(rolePermissions)
+            .set({ sections: merged, updatedAt: new Date() })
+            .where(eq(rolePermissions.role, perm.role));
+        }
       }
     }
-    console.log(`[Seed] Role permissions seeded successfully.`);
+    console.log(`[Seed] Role permissions seeded/updated successfully.`);
   } catch (err: any) {
     console.error("[Seed] Role permissions error:", err.message);
   }

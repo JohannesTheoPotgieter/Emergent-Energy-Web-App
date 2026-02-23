@@ -27,7 +27,8 @@ Preferred communication style: Simple, everyday language.
     -   **5-Tab Navigation**: Project detail regrouped from 12 tabs into 5 super-tabs (Overview, Plan, Money, Quality, History) with sub-tab navigation preserving backward-compatible URL params.
     -   **Weekly Review Wizard**: 6-step structured project review (Schedule, Budget, Risks, Quality, Actions, Summary) with snapshot metrics storage and past review history.
     -   **Utilities & Admin**: SafeMoney utilities, and a COO Execution Cockpit ("My Tool") for task management, DoD enforcement, and Read.ai meeting integration.
-    -   **Redesigned Sidebar Navigation**: 4-group layout (Projects, Operations, Governance, Admin) behind `UX_REDESIGN_ENABLED` feature flag, with legacy 5-group layout preserved. Groups map to role-based section permissions.
+    -   **Redesigned Sidebar Navigation**: 6-group outcome-based layout (Cockpit, Projects, Money, Delivery, Governance, Admin) behind `UX_REDESIGN_ENABLED` feature flag, with legacy 5-group layout preserved. Groups map to role-based section permissions.
+    -   **Execution Cockpit Home**: Executive Health Strip (Revenue Realised %, COS Realised %, Behind Schedule, Projects At Risk), Company Priorities as strategic cards (sorted by severity/overdue), and Immediate Attention Panel (escalations, schedule drift, margin drift).
     -   **Permission Gate System**: `<PermissionGate entity action>` component and `usePermission()` hook for role-aware UI rendering. Edit/approve/override buttons hidden for unpermitted roles.
     -   **Weekly Reviews Page**: Standalone `/weekly-reviews` page listing all projects with review status, due dates, and navigation to individual project review wizards.
 

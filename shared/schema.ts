@@ -2205,6 +2205,9 @@ export const APP_SECTIONS = [
   'PROJECTS',
   'OPERATIONS',
   'GOVERNANCE',
+  'COCKPIT',
+  'MONEY',
+  'DELIVERY',
 ] as const;
 export type AppSection = typeof APP_SECTIONS[number];
 
@@ -2219,6 +2222,9 @@ export const APP_SECTION_LABELS: Record<AppSection, string> = {
   PROJECTS: "Projects (Summary, Lifecycle, Reviews)",
   OPERATIONS: "Operations (Finance, Engineering, Procurement)",
   GOVERNANCE: "Governance (Quality, Audit, Priorities)",
+  COCKPIT: "Cockpit (Execution Board, My Tool)",
+  MONEY: "Money (Cashflow, COS, Procurement)",
+  DELIVERY: "Delivery (Engineering, Tasks, Pipeline)",
 };
 
 export const UX_REDESIGN_ENABLED = true;
@@ -2832,14 +2838,14 @@ export const WEEKLY_REVIEW_STEPS = [
 export type WeeklyReviewStep = typeof WEEKLY_REVIEW_STEPS[number];
 
 export const DEFAULT_ROLE_PERMISSIONS: InsertRolePermission[] = [
-  { role: "COO_ADMIN", label: "COO Admin", description: "Full executive access, settings, user management", sections: ["EXCO", "PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "ADMIN", "MY_TOOL", "FINANCE", "PROJECTS", "OPERATIONS", "GOVERNANCE"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
-  { role: "CEO_ADMIN", label: "CEO Admin", description: "Full executive access, strategic oversight", sections: ["EXCO", "PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "ADMIN", "MY_TOOL", "FINANCE", "PROJECTS", "OPERATIONS", "GOVERNANCE"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
-  { role: "CCO", label: "CCO", description: "Commercial operations, project oversight", sections: ["EXCO", "PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "FINANCE", "PROJECTS", "OPERATIONS", "GOVERNANCE"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "CFO", label: "CFO", description: "Financial oversight, cashflow, budgets", sections: ["EXCO", "PROJECT_MANAGEMENT", "FINANCE", "PROJECTS", "OPERATIONS", "GOVERNANCE"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "PROGRAM_MANAGER", label: "Program Manager", description: "Project management, engineering dashboard", sections: ["PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "PROJECTS", "OPERATIONS", "GOVERNANCE"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "PROGRAM_FINANCE_MANAGER", label: "Program Finance Manager", description: "Project finance, cost tracking", sections: ["PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "FINANCE", "PROJECTS", "OPERATIONS", "GOVERNANCE"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "CONSTRUCTION_MANAGER", label: "Construction Manager", description: "Construction oversight, site management", sections: ["PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "PROJECTS", "OPERATIONS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "QUALITY_MANAGER", label: "Quality Manager", description: "Quality checklists, post-mortems, inspections", sections: ["PROJECT_MANAGEMENT", "QUALITY", "PROJECTS", "GOVERNANCE"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "ENGINEERING_MANAGER", label: "Engineering Manager", description: "Engineering tasks, deliverables, approvals", sections: ["ENGINEERING", "QUALITY", "PROJECTS", "OPERATIONS", "GOVERNANCE"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "KEY_ACCOUNTS_MANAGER", label: "Key Accounts Manager", description: "Client relations, account management", sections: ["PROJECT_MANAGEMENT", "PROJECTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "COO_ADMIN", label: "COO Admin", description: "Full executive access, settings, user management", sections: ["EXCO", "PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "ADMIN", "MY_TOOL", "FINANCE", "PROJECTS", "OPERATIONS", "GOVERNANCE", "COCKPIT", "MONEY", "DELIVERY"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
+  { role: "CEO_ADMIN", label: "CEO Admin", description: "Full executive access, strategic oversight", sections: ["EXCO", "PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "ADMIN", "MY_TOOL", "FINANCE", "PROJECTS", "OPERATIONS", "GOVERNANCE", "COCKPIT", "MONEY", "DELIVERY"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
+  { role: "CCO", label: "CCO", description: "Commercial operations, project oversight", sections: ["EXCO", "PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "FINANCE", "PROJECTS", "OPERATIONS", "GOVERNANCE", "COCKPIT", "MONEY", "DELIVERY"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "CFO", label: "CFO", description: "Financial oversight, cashflow, budgets", sections: ["EXCO", "PROJECT_MANAGEMENT", "FINANCE", "PROJECTS", "OPERATIONS", "GOVERNANCE", "COCKPIT", "MONEY"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "PROGRAM_MANAGER", label: "Program Manager", description: "Project management, engineering dashboard", sections: ["PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "PROJECTS", "OPERATIONS", "GOVERNANCE", "COCKPIT", "MONEY", "DELIVERY"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "PROGRAM_FINANCE_MANAGER", label: "Program Finance Manager", description: "Project finance, cost tracking", sections: ["PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "FINANCE", "PROJECTS", "OPERATIONS", "GOVERNANCE", "COCKPIT", "MONEY", "DELIVERY"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "CONSTRUCTION_MANAGER", label: "Construction Manager", description: "Construction oversight, site management", sections: ["PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "PROJECTS", "OPERATIONS", "COCKPIT", "DELIVERY"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "QUALITY_MANAGER", label: "Quality Manager", description: "Quality checklists, post-mortems, inspections", sections: ["PROJECT_MANAGEMENT", "QUALITY", "PROJECTS", "GOVERNANCE", "COCKPIT"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "ENGINEERING_MANAGER", label: "Engineering Manager", description: "Engineering tasks, deliverables, approvals", sections: ["ENGINEERING", "QUALITY", "PROJECTS", "OPERATIONS", "GOVERNANCE", "COCKPIT", "DELIVERY"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "KEY_ACCOUNTS_MANAGER", label: "Key Accounts Manager", description: "Client relations, account management", sections: ["PROJECT_MANAGEMENT", "PROJECTS", "COCKPIT"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
 ];

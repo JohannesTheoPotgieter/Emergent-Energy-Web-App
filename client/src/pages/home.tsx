@@ -5,29 +5,18 @@ import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
 import {
-  LayoutDashboard,
-  FileSpreadsheet,
-  Wallet,
-  TrendingUp,
-  Settings,
-  ArrowRight,
   Flag,
   Loader2,
-  ShieldCheck,
-  Wrench,
-  ListTodo,
-  Briefcase,
-  Upload,
+  ArrowRight,
+  AlertTriangle,
+  TrendingDown,
+  Clock,
+  ChevronRight,
+  ExternalLink,
+  Users,
+  Calendar,
+  Target,
 } from "lucide-react";
-
-interface QuickLink {
-  label: string;
-  description: string;
-  icon: any;
-  path: string;
-  color: string;
-  bg: string;
-}
 
 interface CompanyPriority {
   id: number;
@@ -47,344 +36,413 @@ interface CompanyPriority {
   dueDate: string | null;
   linkedTaskId: number | null;
   linkedTaskType: string | null;
+  links?: { id: number; linkType: string; projectName: string | null; taskId: number | null }[];
 }
 
-const excoLinks: QuickLink[] = [
-  {
-    label: "Dashboard",
-    description: "High-priority actions, milestones, and PM summary",
-    icon: LayoutDashboard,
-    path: "/dashboard",
-    color: "text-blue-600",
-    bg: "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 hover:border-blue-400",
-  },
-  {
-    label: "My Tool",
-    description: "Personal execution cockpit with tasks and time blocks",
-    icon: Briefcase,
-    path: "/my-tool",
-    color: "text-slate-600",
-    bg: "bg-slate-50 dark:bg-slate-950/30 border-slate-200 dark:border-slate-800 hover:border-slate-400",
-  },
-];
+interface OverviewData {
+  total_program_budget: number;
+  actual_spend_paid: number;
+  revenue_realised: number;
+  active_projects: number;
+  data_as_of: string;
+}
 
-const pmLinks: QuickLink[] = [
-  {
-    label: "Project Summary",
-    description: "All projects with progress, financials, and status",
-    icon: FileSpreadsheet,
-    path: "/projects",
-    color: "text-emerald-600",
-    bg: "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 hover:border-emerald-400",
-  },
-  {
-    label: "Cashflow",
-    description: "Weekly cashflow with inflow/outflow detail and forecast",
-    icon: Wallet,
-    path: "/cashflow",
-    color: "text-violet-600",
-    bg: "bg-violet-50 dark:bg-violet-950/30 border-violet-200 dark:border-violet-800 hover:border-violet-400",
-  },
-  {
-    label: "COS Tracker",
-    description: "Monthly cost of sales: planned vs realised vs budget",
-    icon: TrendingUp,
-    path: "/cos",
-    color: "text-amber-600",
-    bg: "bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800 hover:border-amber-400",
-  },
-];
+interface ProjectReport {
+  project_name: string;
+  project_info_id: number;
+  phase: string | null;
+  size_kwp: number | null;
+  delta_vs_expected: number | null;
+  escalation_level: string | null;
+  actual_revenue: number;
+  actual_expenses: number;
+  gp_percent: number | null;
+  project_pct_complete: number | null;
+  expected_pct_complete: number | null;
+  is_active: boolean;
+}
 
-const engLinks: QuickLink[] = [
-  {
-    label: "Engineering Dashboard",
-    description: "Workload, milestones at risk, pipeline, warnings",
-    icon: Wrench,
-    path: "/engineering",
-    color: "text-orange-600",
-    bg: "bg-orange-50 dark:bg-orange-950/30 border-orange-200 dark:border-orange-800 hover:border-orange-400",
-  },
-  {
-    label: "Task Board",
-    description: "Manage engineering tasks across all projects",
-    icon: ListTodo,
-    path: "/engineering/tasks",
-    color: "text-blue-600",
-    bg: "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 hover:border-blue-400",
-  },
-];
+function formatCurrency(val: number): string {
+  if (val >= 1_000_000) return `R${(val / 1_000_000).toFixed(1)}M`;
+  if (val >= 1_000) return `R${(val / 1_000).toFixed(0)}K`;
+  return `R${val.toFixed(0)}`;
+}
 
-const qualityLinks: QuickLink[] = [
-  {
-    label: "Quality Dashboard",
-    description: "Overview of quality status, warnings, and project completion",
-    icon: ShieldCheck,
-    path: "/quality",
-    color: "text-emerald-600",
-    bg: "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 hover:border-emerald-400",
-  },
-];
+function formatPct(val: number): string {
+  return `${val.toFixed(1)}%`;
+}
 
-const adminLinks: QuickLink[] = [
-  {
-    label: "Data Import",
-    description: "Upload trackers and manage data ingestion",
-    icon: Upload,
-    path: "/admin",
-    color: "text-teal-600",
-    bg: "bg-teal-50 dark:bg-teal-950/30 border-teal-200 dark:border-teal-800 hover:border-teal-400",
-  },
-];
+function ragColor(pct: number): string {
+  if (pct >= 80) return "text-emerald-600";
+  if (pct >= 60) return "text-amber-500";
+  return "text-red-600";
+}
 
-function NavTile({ link }: { link: QuickLink }) {
+function ragBg(pct: number): string {
+  if (pct >= 80) return "bg-emerald-50 border-emerald-200 dark:bg-emerald-950/20 dark:border-emerald-800";
+  if (pct >= 60) return "bg-amber-50 border-amber-200 dark:bg-amber-950/20 dark:border-amber-800";
+  return "bg-red-50 border-red-200 dark:bg-red-950/20 dark:border-red-800";
+}
+
+function riskBg(count: number): string {
+  if (count === 0) return "bg-emerald-50 border-emerald-200 dark:bg-emerald-950/20 dark:border-emerald-800";
+  if (count <= 3) return "bg-amber-50 border-amber-200 dark:bg-amber-950/20 dark:border-amber-800";
+  return "bg-red-50 border-red-200 dark:bg-red-950/20 dark:border-red-800";
+}
+
+function riskColor(count: number): string {
+  if (count === 0) return "text-emerald-600";
+  if (count <= 3) return "text-amber-500";
+  return "text-red-600";
+}
+
+function severityOrder(s: string): number {
+  if (s === "critical") return 0;
+  if (s === "important") return 1;
+  return 2;
+}
+
+function statusColor(status: string): string {
+  switch (status) {
+    case "active":
+    case "in_progress":
+      return "bg-emerald-600 text-white";
+    case "monitoring":
+      return "bg-blue-600 text-white";
+    case "not_started":
+      return "bg-slate-400 text-white";
+    case "complete":
+      return "bg-emerald-700 text-white";
+    case "closed":
+      return "bg-gray-400 text-white";
+    default:
+      return "bg-slate-500 text-white";
+  }
+}
+
+function severityBorder(severity: string): string {
+  if (severity === "critical") return "border-l-red-500";
+  if (severity === "important") return "border-l-amber-500";
+  return "border-l-slate-300 dark:border-l-slate-600";
+}
+
+function isOverdue(dueDate: string | null): boolean {
+  if (!dueDate) return false;
+  return new Date(dueDate) < new Date();
+}
+
+function ExecutiveHealthStrip({ overview, projects }: { overview: OverviewData | undefined; projects: ProjectReport[] }) {
+  if (!overview) {
+    return (
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3" data-testid="health-strip-loading">
+        {[1, 2, 3, 4].map(i => (
+          <div key={i} className="border rounded-lg p-3 animate-pulse bg-muted/30">
+            <div className="h-3 w-20 bg-muted rounded mb-2" />
+            <div className="h-8 w-16 bg-muted rounded" />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  const revPct = overview.total_program_budget > 0
+    ? (overview.revenue_realised / overview.total_program_budget) * 100
+    : 0;
+  const cosPct = overview.total_program_budget > 0
+    ? (overview.actual_spend_paid / overview.total_program_budget) * 100
+    : 0;
+
+  const activeProjects = projects.filter(p => p.is_active);
+  const atRisk = activeProjects.filter(p =>
+    p.escalation_level || (p.delta_vs_expected !== null && p.delta_vs_expected < -0.05)
+  );
+  const behindSchedule = activeProjects.filter(p =>
+    p.delta_vs_expected !== null && p.delta_vs_expected < -0.02
+  );
+
+  const metrics = [
+    {
+      label: "Revenue Realised",
+      value: formatPct(revPct),
+      sub: formatCurrency(overview.revenue_realised),
+      color: ragColor(revPct),
+      bg: ragBg(revPct),
+    },
+    {
+      label: "COS Realised",
+      value: formatPct(cosPct),
+      sub: formatCurrency(overview.actual_spend_paid),
+      color: ragColor(100 - cosPct),
+      bg: ragBg(100 - cosPct),
+    },
+    {
+      label: "Behind Schedule",
+      value: behindSchedule.length.toString(),
+      sub: `of ${activeProjects.length} active`,
+      color: riskColor(behindSchedule.length),
+      bg: riskBg(behindSchedule.length),
+    },
+    {
+      label: "Projects At Risk",
+      value: atRisk.length.toString(),
+      sub: atRisk.length > 0 ? atRisk.slice(0, 2).map(p => p.project_name.replace(/_Tracker.*$/, "").replace(/_/g, " ")).join(", ") : "None",
+      color: riskColor(atRisk.length),
+      bg: riskBg(atRisk.length),
+    },
+  ];
+
   return (
-    <Link href={link.path} data-testid={`tile-${link.label.toLowerCase().replace(/\s+/g, '-')}`}>
-      <Card className={`${link.bg} border transition-all duration-200 cursor-pointer hover:shadow-md group h-full`}>
-        <CardContent className="p-5 flex flex-col gap-3">
-          <div className="flex items-center justify-between">
-            <div className={`p-2.5 rounded-lg bg-white/60 dark:bg-white/10 ${link.color}`}>
-              <link.icon className="h-6 w-6" />
-            </div>
-            <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-          </div>
-          <div>
-            <h3 className="font-semibold text-base">{link.label}</h3>
-            <p className="text-sm text-muted-foreground mt-0.5 leading-snug">{link.description}</p>
-          </div>
-        </CardContent>
-      </Card>
-    </Link>
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-3" data-testid="health-strip">
+      {metrics.map((m, i) => (
+        <div key={i} className={`border rounded-lg p-3 ${m.bg}`} data-testid={`health-metric-${i}`}>
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{m.label}</p>
+          <p className={`text-2xl font-bold ${m.color} leading-tight mt-0.5`}>{m.value}</p>
+          <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{m.sub}</p>
+        </div>
+      ))}
+    </div>
   );
 }
 
-const statusLabels: Record<string, { label: string; color: string }> = {
-  active: { label: "Active", color: "bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400" },
-  not_started: { label: "Not started", color: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400" },
-  in_progress: { label: "In progress", color: "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400" },
-  complete: { label: "Complete", color: "bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400" },
-  monitoring: { label: "Monitoring", color: "bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400" },
-  closed: { label: "Closed", color: "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400" },
-};
-
-const homeDeptColors: Record<string, string> = {
-  Accounts: "bg-yellow-100 text-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-400",
-  "Project Development": "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400",
-  "Project Management": "bg-blue-100 text-blue-800 dark:bg-blue-950/40 dark:text-blue-400",
-  Operations: "bg-purple-100 text-purple-800 dark:bg-purple-950/40 dark:text-purple-400",
-  Engineering: "bg-orange-100 text-orange-800 dark:bg-orange-950/40 dark:text-orange-400",
-  Finance: "bg-indigo-100 text-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-400",
-};
-
-function CompanyPrioritiesSection({ isAdmin }: { isAdmin: boolean }) {
-  const { data: priorities = [], isLoading } = useQuery<CompanyPriority[]>({
-    queryKey: ["/api/mytool/company-priorities"],
-  });
-
+function CompanyPrioritiesCards({ isAdmin, priorities, isLoading }: { isAdmin: boolean; priorities: CompanyPriority[]; isLoading: boolean }) {
   const activePriorities = priorities.filter(p => !["closed", "complete"].includes(p.status));
 
-  const grouped = (() => {
-    const groups: Record<string, CompanyPriority[]> = {};
-    activePriorities.forEach(p => {
-      const dept = p.department || "Unassigned";
-      if (!groups[dept]) groups[dept] = [];
-      groups[dept].push(p);
-    });
-    Object.values(groups).forEach(items => items.sort((a, b) => (a.priorityRank ?? 999) - (b.priorityRank ?? 999)));
-    return Object.keys(groups).sort((a, b) => a === "Unassigned" ? 1 : b === "Unassigned" ? -1 : a.localeCompare(b)).map(d => ({ department: d, items: groups[d] }));
-  })();
+  const sorted = [...activePriorities].sort((a, b) => {
+    const aOverdue = isOverdue(a.dueDate) ? 0 : 1;
+    const bOverdue = isOverdue(b.dueDate) ? 0 : 1;
+    if (aOverdue !== bOverdue) return aOverdue - bOverdue;
+
+    const aSev = severityOrder(a.severity);
+    const bSev = severityOrder(b.severity);
+    if (aSev !== bSev) return aSev - bSev;
+
+    return (a.priorityRank ?? 999) - (b.priorityRank ?? 999);
+  });
 
   if (isLoading) {
     return (
-      <Card>
-        <CardContent className="flex items-center justify-center py-8">
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+            <Flag className="h-4 w-4 text-red-500" />
+            Company Priorities
+          </h2>
+        </div>
+        <div className="flex items-center justify-center py-8">
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     );
   }
 
   if (activePriorities.length === 0 && !isAdmin) return null;
 
   return (
-    <Card className="border-red-200 dark:border-red-900/50 bg-gradient-to-br from-red-50/50 to-orange-50/30 dark:from-red-950/20 dark:to-orange-950/10" data-testid="company-priorities-section">
-      <CardContent className="p-0">
-        <div className="flex items-center justify-between px-4 pt-4 pb-2">
-          <div className="flex items-center gap-2">
-            <div className="p-2 rounded-lg bg-red-100 dark:bg-red-950/40">
-              <Flag className="h-5 w-5 text-red-600 dark:text-red-400" />
-            </div>
-            <div>
-              <h3 className="text-base font-semibold">Company Priorities</h3>
-              <p className="text-xs text-muted-foreground">{activePriorities.length} active across {grouped.length} departments</p>
-            </div>
-          </div>
-          {isAdmin && (
-            <Link href="/company-priorities">
-              <Button variant="outline" size="sm" className="h-8 text-xs" data-testid="button-manage-priorities">
-                Manage
-                <ArrowRight className="h-3.5 w-3.5 ml-1" />
-              </Button>
-            </Link>
-          )}
-        </div>
-
-        {activePriorities.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-6 px-4">
-            No active company priorities.
-          </p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-[11px] text-muted-foreground border-y bg-muted/30">
-                  <th className="text-center px-2 py-1.5 w-8">#</th>
-                  <th className="text-left px-2 py-1.5 w-28">Department</th>
-                  <th className="text-left px-2 py-1.5">Priority</th>
-                  <th className="text-left px-2 py-1.5 w-24">Status</th>
-                  <th className="text-left px-2 py-1.5 w-28">Assigned to</th>
-                  <th className="text-left px-2 py-1.5 hidden lg:table-cell">Next Action</th>
-                  <th className="text-left px-2 py-1.5 w-20 hidden md:table-cell">Due Date</th>
-                </tr>
-              </thead>
-              <tbody>
-                {grouped.map(({ department, items }) => (
-                  items.map((p, idx) => {
-                    const stat = statusLabels[p.status] || statusLabels.active;
-                    const deptColor = homeDeptColors[department] || "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300";
-                    return (
-                      <tr key={p.id} className="border-b hover:bg-muted/10 transition-colors" data-testid={`priority-row-${p.id}`}>
-                        <td className="text-center px-2 py-2 text-xs text-muted-foreground">{p.priorityRank ?? (idx + 1)}</td>
-                        <td className="px-2 py-2">
-                          <Badge variant="secondary" className={`text-[10px] px-1.5 py-0.5 ${deptColor} truncate`}>
-                            {department.length > 12 ? department.slice(0, 10) + "..." : department}
-                          </Badge>
-                        </td>
-                        <td className="px-2 py-2">
-                          <span className="font-medium text-sm" data-testid={`text-priority-title-${p.id}`}>{p.title}</span>
-                          {p.linkedProjectName && (
-                            <span className="ml-1.5 text-[10px] text-primary">
-                              {p.linkedProjectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-2 py-2">
-                          <Badge variant="secondary" className={`text-[10px] px-1.5 py-0.5 ${stat.color}`}>
-                            {stat.label}
-                          </Badge>
-                        </td>
-                        <td className="px-2 py-2 text-xs text-muted-foreground truncate">{p.assignedTo || ""}</td>
-                        <td className="px-2 py-2 text-xs text-muted-foreground truncate hidden lg:table-cell max-w-[200px]">{p.nextAction || ""}</td>
-                        <td className="px-2 py-2 text-xs text-muted-foreground hidden md:table-cell">{p.dueDate || ""}</td>
-                      </tr>
-                    );
-                  })
-                ))}
-              </tbody>
-            </table>
-          </div>
+    <div className="space-y-3" data-testid="company-priorities-section">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+          <Flag className="h-4 w-4 text-red-500" />
+          Company Priorities
+          <span className="text-xs font-normal normal-case tracking-normal text-muted-foreground/70">
+            {activePriorities.length} active
+          </span>
+        </h2>
+        {isAdmin && (
+          <Link href="/company-priorities">
+            <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" data-testid="button-manage-priorities">
+              Manage <ArrowRight className="h-3 w-3" />
+            </Button>
+          </Link>
         )}
-      </CardContent>
-    </Card>
+      </div>
+
+      {activePriorities.length === 0 ? (
+        <p className="text-sm text-muted-foreground py-4">No active company priorities.</p>
+      ) : (
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {sorted.map(p => {
+            const overdue = isOverdue(p.dueDate);
+            const linkedCount = (p.links?.length ?? 0) + (p.linkedProjectName ? 1 : 0);
+            return (
+              <div
+                key={p.id}
+                className={`border-l-4 ${severityBorder(p.severity)} border rounded-lg bg-card p-3 space-y-2 ${overdue ? "ring-1 ring-red-300 dark:ring-red-800" : ""}`}
+                data-testid={`priority-card-${p.id}`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <h3 className="font-semibold text-sm leading-snug" data-testid={`text-priority-title-${p.id}`}>{p.title}</h3>
+                  <Badge className={`text-[10px] px-1.5 py-0 shrink-0 ${statusColor(p.status)}`}>
+                    {p.status.replace(/_/g, " ")}
+                  </Badge>
+                </div>
+
+                {p.assignedTo && (
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Users className="h-3 w-3" />
+                    <span>{p.assignedTo}</span>
+                  </div>
+                )}
+
+                {p.nextAction && (
+                  <div className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                    <Target className="h-3 w-3 mt-0.5 shrink-0" />
+                    <span className="line-clamp-2">{p.nextAction}</span>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between pt-1 border-t border-border/50">
+                  <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+                    {p.dueDate && (
+                      <span className={`flex items-center gap-1 ${overdue ? "text-red-600 font-medium" : ""}`}>
+                        <Calendar className="h-3 w-3" />
+                        {p.dueDate}
+                        {overdue && <AlertTriangle className="h-3 w-3" />}
+                      </span>
+                    )}
+                    {linkedCount > 0 && (
+                      <span className="flex items-center gap-1">
+                        <ExternalLink className="h-3 w-3" />
+                        {linkedCount} linked
+                      </span>
+                    )}
+                  </div>
+                  <Link href="/company-priorities">
+                    <Button variant="ghost" size="sm" className="h-6 text-[11px] px-2 gap-0.5" data-testid={`button-view-priority-${p.id}`}>
+                      Details <ChevronRight className="h-3 w-3" />
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
-interface HomeSection {
-  heading: string;
-  links: QuickLink[];
-  visibleTo?: string[];
-  cols?: number;
-}
+function ImmediateAttentionPanel({ projects }: { projects: ProjectReport[] }) {
+  const activeProjects = projects.filter(p => p.is_active);
 
-const homeSections: HomeSection[] = [
-  {
-    heading: "EXCO",
-    visibleTo: ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "admin"],
-    links: excoLinks,
-    cols: 4,
-  },
-  {
-    heading: "PROJECT MANAGEMENT",
-    links: pmLinks,
-  },
-  {
-    heading: "ENGINEERING",
-    visibleTo: ["COO_ADMIN", "CEO_ADMIN", "CCO", "ENGINEERING_MANAGER", "CONSTRUCTION_MANAGER", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "admin", "eng_program_manager"],
-    links: engLinks,
-  },
-  {
-    heading: "QUALITY",
-    visibleTo: ["COO_ADMIN", "CEO_ADMIN", "QUALITY_MANAGER", "CONSTRUCTION_MANAGER", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "admin", "quality_manager"],
-    links: qualityLinks,
-  },
-  {
-    heading: "ADMIN",
-    visibleTo: ["COO_ADMIN", "admin"],
-    links: adminLinks,
-    cols: 4,
-  },
-];
+  const attentionItems: { project: string; id: number; issue: string; severity: "high" | "medium" | "low"; borderColor: string }[] = [];
+
+  activeProjects.forEach(p => {
+    const name = p.project_name.replace(/_Tracker.*$/, "").replace(/_/g, " ");
+
+    if (p.escalation_level) {
+      attentionItems.push({
+        project: name,
+        id: p.project_info_id,
+        issue: `Escalation: ${p.escalation_level}`,
+        severity: p.escalation_level === "Highest" ? "high" : "medium",
+        borderColor: p.escalation_level === "Highest" ? "border-l-red-500" : "border-l-amber-500",
+      });
+    }
+
+    if (p.delta_vs_expected !== null && p.delta_vs_expected < -0.05) {
+      attentionItems.push({
+        project: name,
+        id: p.project_info_id,
+        issue: `Behind schedule by ${Math.abs(p.delta_vs_expected * 100).toFixed(1)}%`,
+        severity: p.delta_vs_expected < -0.1 ? "high" : "medium",
+        borderColor: p.delta_vs_expected < -0.1 ? "border-l-red-500" : "border-l-amber-500",
+      });
+    }
+
+    if (p.gp_percent !== null && p.gp_percent < 0.1 && p.actual_revenue > 500000) {
+      attentionItems.push({
+        project: name,
+        id: p.project_info_id,
+        issue: `Margin drift: GP ${(p.gp_percent * 100).toFixed(1)}%`,
+        severity: p.gp_percent < 0.05 ? "high" : "medium",
+        borderColor: p.gp_percent < 0.05 ? "border-l-red-500" : "border-l-amber-500",
+      });
+    }
+  });
+
+  attentionItems.sort((a, b) => {
+    const sevOrder = { high: 0, medium: 1, low: 2 };
+    return sevOrder[a.severity] - sevOrder[b.severity];
+  });
+
+  const display = attentionItems.slice(0, 8);
+
+  if (display.length === 0) return null;
+
+  return (
+    <div className="space-y-2" data-testid="attention-panel">
+      <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+        <AlertTriangle className="h-4 w-4 text-amber-500" />
+        Immediate Attention
+        <span className="text-xs font-normal normal-case tracking-normal text-muted-foreground/70">
+          {attentionItems.length} items
+        </span>
+      </h2>
+      <div className="space-y-1">
+        {display.map((item, i) => (
+          <Link key={`${item.id}-${i}`} href={`/projects/${item.id}`}>
+            <div
+              className={`border-l-4 ${item.borderColor} border rounded-md bg-card px-3 py-2 flex items-center justify-between gap-3 hover:bg-muted/30 transition-colors cursor-pointer group`}
+              data-testid={`attention-item-${i}`}
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <span className="font-medium text-sm truncate">{item.project}</span>
+                <span className="text-xs text-muted-foreground truncate hidden sm:inline">{item.issue}</span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Badge
+                  variant="secondary"
+                  className={`text-[10px] px-1.5 py-0 ${
+                    item.severity === "high"
+                      ? "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400"
+                      : "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400"
+                  }`}
+                >
+                  {item.severity}
+                </Badge>
+                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+              </div>
+            </div>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function Home() {
   const { user, isAdmin } = useAuth();
   const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
-  const role = user?.role;
-  const pmCompanyRoles = ["PROGRAM_MANAGER", "CONSTRUCTION_MANAGER", "PROGRAM_FINANCE_MANAGER"];
-
   const canEdit = isAdmin || (companyRole && ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO"].includes(companyRole));
 
-  const visibleSections = homeSections.filter(section => {
-    const cr = companyRole;
-    if (cr) {
-      if (cr === "COO_ADMIN") return true;
-      if (pmCompanyRoles.includes(cr)) {
-        return ["PROJECT MANAGEMENT", "ENGINEERING", "QUALITY"].includes(section.heading);
-      }
-      if (section.visibleTo) return section.visibleTo.includes(cr);
-      return true;
-    }
-    if (role === "quality_manager") {
-      return section.heading === "QUALITY" || section.heading === "PROJECT MANAGEMENT";
-    }
-    if (role === "eng_program_manager") {
-      return section.heading === "ENGINEERING" || section.heading === "QUALITY" || section.heading === "PROJECT MANAGEMENT";
-    }
-    if (role === "admin" || role === "COO_ADMIN" || role === "CEO_ADMIN") return true;
-    return section.heading === "PROJECT MANAGEMENT";
-  }).map(section => {
-    let links = [...section.links];
-    if (role === "quality_manager" && section.heading === "PROJECT MANAGEMENT") {
-      links = links.filter(l => l.path === "/projects");
-    }
-    if (role === "eng_program_manager" && section.heading === "PROJECT MANAGEMENT") {
-      links = links.filter(l => l.path === "/projects");
-    }
-    if (companyRole && pmCompanyRoles.includes(companyRole) && section.heading === "ENGINEERING") {
-      links = links.filter(l => l.path === "/engineering");
-    }
-    return { ...section, links };
-  }).filter(section => section.links.length > 0);
+  const { data: overview } = useQuery<OverviewData>({
+    queryKey: ["/api/overview"],
+  });
+
+  const { data: projects = [] } = useQuery<ProjectReport[]>({
+    queryKey: ["/api/projects-summary"],
+  });
+
+  const { data: priorities = [], isLoading: prioritiesLoading } = useQuery<CompanyPriority[]>({
+    queryKey: ["/api/mytool/company-priorities"],
+  });
 
   return (
-    <div className="space-y-8" data-testid="home-page">
-      <div>
-        <h1 className="text-3xl font-bold">Emergent Energy Dashboard</h1>
-        <p className="text-muted-foreground mt-1">Navigate to the section you need below.</p>
+    <div className="space-y-6" data-testid="home-page">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Execution Cockpit</h1>
+          <p className="text-sm text-muted-foreground">
+            {overview?.active_projects ?? "—"} active projects &middot; {new Date().toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" })}
+          </p>
+        </div>
       </div>
 
-      <CompanyPrioritiesSection isAdmin={!!canEdit} />
+      <ExecutiveHealthStrip overview={overview} projects={projects} />
 
-      {visibleSections.map(section => (
-        <div key={section.heading}>
-          <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">
-            {section.heading === "EXCO" ? "Exco" : section.heading === "ADMIN" ? "Admin / Settings" : section.heading.split(" ").map(w => w[0] + w.slice(1).toLowerCase()).join(" ")}
-          </h2>
-          <div className={`grid gap-4 sm:grid-cols-2 ${section.cols === 4 ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}>
-            {section.links.map((link) => (
-              <NavTile key={link.path} link={link} />
-            ))}
-          </div>
-        </div>
-      ))}
+      <CompanyPrioritiesCards isAdmin={!!canEdit} priorities={priorities} isLoading={prioritiesLoading} />
+
+      <ImmediateAttentionPanel projects={projects} />
     </div>
   );
 }
