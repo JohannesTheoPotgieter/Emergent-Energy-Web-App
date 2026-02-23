@@ -62,6 +62,24 @@ interface ProjectReport {
   is_active: boolean;
 }
 
+interface ExecutionProject {
+  id: number | null;
+  projectName: string;
+  sizeKwp: string | null;
+  contractValue: string | null;
+  phase: string | null;
+  isActive: boolean;
+  escalationLevel: string | null;
+  ragStatus: string | null;
+  executionEnabled: boolean;
+  executionPhase: string | null;
+  archivedStatus: string;
+  engTotal: number;
+  engDone: number;
+  engOverdue: number;
+  projectPctComplete: number | null;
+}
+
 function formatCurrency(val: number): string {
   if (val >= 1_000_000) return `R${(val / 1_000_000).toFixed(1)}M`;
   if (val >= 1_000) return `R${(val / 1_000).toFixed(0)}K`;
@@ -131,8 +149,8 @@ function isOverdue(dueDate: string | null): boolean {
   return new Date(dueDate) < new Date();
 }
 
-function ExecutiveHealthStrip({ overview, projects }: { overview: OverviewData | undefined; projects: ProjectReport[] }) {
-  if (!overview) {
+function ExecutiveHealthStrip({ execProjects, overview }: { execProjects: ExecutionProject[]; overview: OverviewData | undefined }) {
+  if (!overview && execProjects.length === 0) {
     return (
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3" data-testid="health-strip-loading">
         {[1, 2, 3, 4].map(i => (
@@ -145,47 +163,52 @@ function ExecutiveHealthStrip({ overview, projects }: { overview: OverviewData |
     );
   }
 
-  const revPct = overview.total_program_budget > 0
+  const activeExec = execProjects.filter(p => p.executionEnabled && p.archivedStatus === "ACTIVE");
+  const withPct = activeExec.filter(p => p.projectPctComplete !== null);
+  const avgCompletion = withPct.length > 0
+    ? Math.round(withPct.reduce((acc, p) => acc + (p.projectPctComplete || 0), 0) / withPct.length)
+    : 0;
+
+  const atRisk = activeExec.filter(p =>
+    p.ragStatus === "Red" || p.escalationLevel
+  );
+  const behindSchedule = activeExec.filter(p =>
+    p.engOverdue > 0 || p.ragStatus === "Red" || p.ragStatus === "Amber"
+  );
+
+  const revPct = overview && overview.total_program_budget > 0
     ? (overview.revenue_realised / overview.total_program_budget) * 100
     : 0;
-  const cosPct = overview.total_program_budget > 0
+  const cosPct = overview && overview.total_program_budget > 0
     ? (overview.actual_spend_paid / overview.total_program_budget) * 100
     : 0;
 
-  const activeProjects = projects.filter(p => p.is_active);
-  const atRisk = activeProjects.filter(p =>
-    p.escalation_level || (p.delta_vs_expected !== null && p.delta_vs_expected < -0.05)
-  );
-  const behindSchedule = activeProjects.filter(p =>
-    p.delta_vs_expected !== null && p.delta_vs_expected < -0.02
-  );
-
   const metrics = [
     {
+      label: "Execution Projects",
+      value: activeExec.length.toString(),
+      sub: `${avgCompletion}% avg completion`,
+      color: "text-slate-800 dark:text-slate-200",
+      bg: "bg-slate-50 border-slate-200 dark:bg-slate-900/40 dark:border-slate-700",
+    },
+    {
       label: "Revenue Realised",
-      value: formatPct(revPct),
-      sub: formatCurrency(overview.revenue_realised),
+      value: overview ? formatPct(revPct) : "—",
+      sub: overview ? formatCurrency(overview.revenue_realised) : "",
       color: ragColor(revPct),
       bg: ragBg(revPct),
     },
     {
-      label: "COS Realised",
-      value: formatPct(cosPct),
-      sub: formatCurrency(overview.actual_spend_paid),
-      color: ragColor(100 - cosPct),
-      bg: ragBg(100 - cosPct),
-    },
-    {
       label: "Behind Schedule",
       value: behindSchedule.length.toString(),
-      sub: `of ${activeProjects.length} active`,
+      sub: `of ${activeExec.length} execution`,
       color: riskColor(behindSchedule.length),
       bg: riskBg(behindSchedule.length),
     },
     {
       label: "Projects At Risk",
       value: atRisk.length.toString(),
-      sub: atRisk.length > 0 ? atRisk.slice(0, 2).map(p => p.project_name.replace(/_Tracker.*$/, "").replace(/_/g, " ")).join(", ") : "None",
+      sub: atRisk.length > 0 ? atRisk.slice(0, 2).map(p => p.projectName.replace(/_Tracker.*$/, "").replace(/_/g, " ")).join(", ") : "None",
       color: riskColor(atRisk.length),
       bg: riskBg(atRisk.length),
     },
@@ -419,6 +442,10 @@ export default function Home() {
     queryKey: ["/api/overview"],
   });
 
+  const { data: execProjects = [] } = useQuery<ExecutionProject[]>({
+    queryKey: ["/api/lifecycle-board/projects"],
+  });
+
   const { data: projects = [] } = useQuery<ProjectReport[]>({
     queryKey: ["/api/projects-summary"],
   });
@@ -427,18 +454,20 @@ export default function Home() {
     queryKey: ["/api/mytool/company-priorities"],
   });
 
+  const activeExecCount = execProjects.filter(p => p.executionEnabled && p.archivedStatus === "ACTIVE").length;
+
   return (
     <div className="space-y-6" data-testid="home-page">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Execution Cockpit</h1>
           <p className="text-sm text-muted-foreground">
-            {overview?.active_projects ?? "—"} active projects &middot; {new Date().toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" })}
+            {activeExecCount || "—"} execution projects &middot; {new Date().toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" })}
           </p>
         </div>
       </div>
 
-      <ExecutiveHealthStrip overview={overview} projects={projects} />
+      <ExecutiveHealthStrip execProjects={execProjects} overview={overview} />
 
       <CompanyPrioritiesCards isAdmin={!!canEdit} priorities={priorities} isLoading={prioritiesLoading} />
 
