@@ -126,12 +126,12 @@ function getLegacyNavGroups(): NavGroup[] {
 function getRedesignedNavGroups(): NavGroup[] {
   return [
     {
-      heading: "COCKPIT",
+      heading: "EXCO",
       section: "COCKPIT",
       items: [
         { label: "My Tool", icon: Briefcase, path: "/my-tool" },
         { label: "Company Priorities", icon: Flag, path: "/company-priorities" },
-        { label: "Exco", icon: Layers, path: "/lifecycle-board" },
+        { label: "Company Lifecycle Dashboard", icon: Layers, path: "/lifecycle-board" },
       ],
     },
     {
