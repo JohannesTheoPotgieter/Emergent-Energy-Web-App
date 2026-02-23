@@ -375,6 +375,10 @@ router.post("/api/procurement-analysis/run", requireAuth, async (req: Request, r
       const costValues: any[] = [];
 
       for (const exp of expenses) {
+        const actualAmount = parseFloat(String(exp.expenseActualTotal || '0')) || 0;
+        const hasInvoice = !!(exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim());
+        if (actualAmount === 0 || !hasInvoice) continue;
+
         const supplier = exp.supplierName || extractSupplierName(exp.expenseInvoiceNumber);
         const cpName = supplier?.trim() || null;
         const cpId = cpName ? counterpartyMap.get(cpName.toLowerCase()) || null : null;

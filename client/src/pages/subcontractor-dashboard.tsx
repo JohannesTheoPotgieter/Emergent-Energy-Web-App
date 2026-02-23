@@ -75,6 +75,7 @@ export default function SubcontractorDashboardPage() {
   const [linkCreatePattern, setLinkCreatePattern] = useState(true);
   const [linkLoading, setLinkLoading] = useState(false);
   const [linkError, setLinkError] = useState("");
+  const [analysisRunning, setAnalysisRunning] = useState(false);
 
   const handleStartRename = () => {
     setRenameValue(selectedCp || "");
@@ -237,6 +238,26 @@ export default function SubcontractorDashboardPage() {
     }
   };
 
+  const handleRunAnalysis = async () => {
+    setAnalysisRunning(true);
+    try {
+      const res = await fetch("/api/procurement-analysis/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Analysis failed");
+      queryClient.invalidateQueries({ queryKey: ["/api/subcontractor-dashboard/summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/subcontractor-dashboard/detail"] });
+      alert(`Analysis complete: ${data.message}`);
+    } catch (err: any) {
+      alert(`Analysis failed: ${err.message}`);
+    } finally {
+      setAnalysisRunning(false);
+    }
+  };
+
   const { data, isLoading } = useQuery({
     queryKey: ["/api/subcontractor-dashboard/summary", typeFilter, projectFilter, coreOnly],
     queryFn: async () => {
@@ -283,11 +304,25 @@ export default function SubcontractorDashboardPage() {
 
   return (
     <div className="space-y-6" data-testid="subcontractor-dashboard-page">
-      <div className="flex flex-col gap-2">
-        <h2 className="text-2xl font-bold text-foreground" data-testid="text-page-title">Subcontractor Dashboard</h2>
-        <p className="text-muted-foreground text-sm">
-          Aggregated view of installer and supplier accounts with spend, usage, and upcoming payments.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex flex-col gap-2">
+          <h2 className="text-2xl font-bold text-foreground" data-testid="text-page-title">Subcontractor Dashboard</h2>
+          <p className="text-muted-foreground text-sm">
+            Aggregated view of installer and supplier accounts with spend, usage, and upcoming payments.
+          </p>
+        </div>
+        {isAdmin && (
+          <Button
+            onClick={handleRunAnalysis}
+            disabled={analysisRunning}
+            size="sm"
+            className="shrink-0"
+            data-testid="btn-run-analysis"
+          >
+            {analysisRunning ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <TrendingUp className="w-4 h-4 mr-2" />}
+            {analysisRunning ? "Running..." : "Run Analysis"}
+          </Button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
