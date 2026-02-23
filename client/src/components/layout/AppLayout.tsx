@@ -36,6 +36,8 @@ import {
   Cog,
   CalendarCheck,
   Truck,
+  Gauge,
+  HardHat,
 } from "lucide-react";
 import { UX_REDESIGN_ENABLED } from "@shared/schema";
 import { useProgramData } from "@/hooks/use-program-data";
@@ -112,28 +114,40 @@ function getLegacyNavGroups(): NavGroup[] {
 function getRedesignedNavGroups(): NavGroup[] {
   return [
     {
+      heading: "COCKPIT",
+      section: "COCKPIT",
+      items: [
+        { label: "Execution Board", icon: Gauge, path: "/dashboard" },
+        { label: "My Tool", icon: Briefcase, path: "/my-tool" },
+      ],
+    },
+    {
       heading: "PROJECTS",
       section: "PROJECTS",
       items: [
         { label: "Project Summary", icon: FolderKanban, path: "/projects" },
-        { label: "Execution Board", icon: LayoutDashboard, path: "/dashboard" },
         { label: "Lifecycle Board", icon: Layers, path: "/lifecycle-board" },
         { label: "New Project", icon: FolderPlus, path: "/project-create" },
         { label: "Weekly Reviews", icon: CalendarCheck, path: "/weekly-reviews" },
       ],
     },
     {
-      heading: "OPERATIONS",
-      section: "OPERATIONS",
+      heading: "MONEY",
+      section: "MONEY",
       items: [
         { label: "Cashflow", icon: Wallet, path: "/cashflow" },
         { label: "COS Tracker", icon: TrendingUp, path: "/cos" },
         { label: "Procurement", icon: Truck, path: "/subcontractor-dashboard" },
-        { label: "Engineering", icon: Wrench, path: "/engineering" },
+      ],
+    },
+    {
+      heading: "DELIVERY",
+      section: "DELIVERY",
+      items: [
+        { label: "Engineering", icon: HardHat, path: "/engineering" },
         { label: "Task Board", icon: ListTodo, path: "/engineering/tasks" },
         { label: "Pipeline Inbox", icon: InboxIcon, path: "/engineering/inbox" },
         { label: "SP Sync", icon: RefreshCw, path: "/engineering/sync" },
-        { label: "My Tool", icon: Briefcase, path: "/my-tool" },
       ],
     },
     {
