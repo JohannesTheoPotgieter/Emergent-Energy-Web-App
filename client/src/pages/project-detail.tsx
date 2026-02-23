@@ -17,7 +17,7 @@ import {
   ArrowLeft, User, CheckCircle, AlertCircle, Columns, CalendarDays,
   ListTodo, ShieldCheck, Clock, History, ArrowRight, Loader2,
   Wrench, PlusCircle, Circle, Calendar, PauseCircle, AlertTriangle,
-  ChevronDown, ChevronUp, Eye, Play, Zap, Target,
+  ChevronDown, ChevronUp, Eye, Play, Zap, Target, Users,
 } from "lucide-react";
 import { ProjectPlanTab } from "@/components/tabs/ProjectPlanTab";
 import { RevenueTrackingTab } from "@/components/tabs/RevenueTrackingTab";
@@ -25,6 +25,7 @@ import { ExpenditureEditableTab } from "@/components/tabs/ExpenditureEditableTab
 import { FinanceRevenueTab } from "@/components/tabs/FinanceRevenueTab";
 import { FinanceCosTab } from "@/components/tabs/FinanceCosTab";
 import { CashflowTab } from "@/components/tabs/CashflowTab";
+import { ProjectSubcontractorsTab } from "@/components/tabs/ProjectSubcontractorsTab";
 import TaskDetailDrawer from "@/components/TaskDetailDrawer";
 import BoardView from "@/components/BoardView";
 import CalendarView from "@/components/CalendarView";
@@ -419,6 +420,7 @@ const OLD_TAB_TO_SUPER: Record<string, { superTab: string; subTab: string }> = {
   "finance-revenue": { superTab: "money", subTab: "finance-revenue" },
   "finance-cos": { superTab: "money", subTab: "finance-cos" },
   "cashflow": { superTab: "money", subTab: "cashflow" },
+  "subcontractors": { superTab: "money", subTab: "subcontractors" },
   "quality": { superTab: "quality", subTab: "quality" },
   "history": { superTab: "history", subTab: "history" },
 };
@@ -919,12 +921,16 @@ export default function ProjectDetailPage() {
             <Button size="sm" variant={currentSubTab === "cashflow" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("money", "cashflow")} data-testid="subtab-cashflow">
               <Activity className="h-3 w-3 mr-1" /> Cashflow
             </Button>
+            <Button size="sm" variant={currentSubTab === "subcontractors" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("money", "subcontractors")} data-testid="subtab-subcontractors">
+              <Users className="h-3 w-3 mr-1" /> Subcontractors
+            </Button>
           </div>
           {currentSubTab === "revenue-tracking" && <RevenueTrackingTab projectName={projectName} highlightId={highlightType === 'revenue' ? highlightId : null} />}
           {currentSubTab === "expenditure" && <ExpenditureEditableTab projectName={projectName} highlightId={highlightType === 'expense' ? highlightId : null} />}
           {currentSubTab === "finance-revenue" && <FinanceRevenueTab projectName={projectName} />}
           {currentSubTab === "finance-cos" && <FinanceCosTab projectName={projectName} />}
           {currentSubTab === "cashflow" && <CashflowTab projectName={projectName} />}
+          {currentSubTab === "subcontractors" && <ProjectSubcontractorsTab projectName={projectName} />}
         </TabsContent>
 
         <TabsContent value="quality" className="space-y-4">
