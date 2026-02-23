@@ -69,6 +69,7 @@ router.get("/api/subcontractor-dashboard/summary", requireAuth, async (req: Requ
       totalSpendExVat: number;
       invoiceCount: number;
       projectCount: number;
+      projectNames: string[];
       lastInvoiceDate: string | null;
       lastPaidDate: string | null;
       avgTurnaroundDays: number | null;
@@ -135,6 +136,7 @@ router.get("/api/subcontractor-dashboard/summary", requireAuth, async (req: Requ
         totalSpendExVat: totalSpend,
         invoiceCount: invoiceNumbers.size || groupLines.length,
         projectCount: projects.size,
+        projectNames: Array.from(projects).sort(),
         lastInvoiceDate,
         lastPaidDate,
         avgTurnaroundDays: turnaroundCount > 0 ? Math.round(turnaroundSum / turnaroundCount) : null,
@@ -321,17 +323,26 @@ router.post("/api/procurement-analysis/run", requireAuth, async (req: Request, r
     const counterpartyMap = new Map<string, number>();
 
     await db.transaction(async (tx: any) => {
+      const allCps = await tx.select().from(counterparties);
+      const aliasIndex = new Map<string, number>();
+      for (const cp of allCps) {
+        aliasIndex.set(cp.nameCanonical.toLowerCase(), cp.id);
+        const aliases = Array.isArray(cp.nameAliases) ? cp.nameAliases as string[] : [];
+        for (const alias of aliases) {
+          aliasIndex.set(alias.toLowerCase(), cp.id);
+        }
+      }
+
       const supplierArray = Array.from(supplierNames);
       for (const name of supplierArray) {
         const normalized = name.toLowerCase();
-        const existing = await tx.select().from(counterparties)
-          .where(sql`LOWER(${counterparties.nameCanonical}) = ${normalized}`);
+        const matchedId = aliasIndex.get(normalized);
 
-        if (existing.length > 0) {
-          counterpartyMap.set(normalized, existing[0].id);
+        if (matchedId) {
+          counterpartyMap.set(normalized, matchedId);
           await tx.update(counterparties)
             .set({ lastSeenAt: new Date() })
-            .where(eq(counterparties.id, existing[0].id));
+            .where(eq(counterparties.id, matchedId));
           counterpartiesMatched++;
         } else {
           const [created] = await tx.insert(counterparties)
@@ -345,6 +356,7 @@ router.post("/api/procurement-analysis/run", requireAuth, async (req: Request, r
             })
             .returning();
           counterpartyMap.set(normalized, created.id);
+          aliasIndex.set(normalized, created.id);
           counterpartiesCreated++;
         }
       }
@@ -364,10 +376,21 @@ router.post("/api/procurement-analysis/run", requireAuth, async (req: Request, r
         if (exp.projectName) projectsProcessed.add(exp.projectName);
 
         let status: string | null = null;
-        if (exp.expensePaymentDate) status = "PAID";
-        else if (exp.expenseInvoicedDate) status = "INVOICED";
-        else if (exp.expensePoNumber) status = "APPROVED";
-        else status = "PLANNED";
+        const now = new Date();
+        if (exp.expensePaymentDate) {
+          const paidD = new Date(exp.expensePaymentDate);
+          if (paidD <= now) {
+            status = "PAID";
+          } else {
+            status = exp.expenseInvoicedDate ? "INVOICED" : "APPROVED";
+          }
+        } else if (exp.expenseInvoicedDate) {
+          status = "INVOICED";
+        } else if (exp.expensePoNumber) {
+          status = "APPROVED";
+        } else {
+          status = "PLANNED";
+        }
 
         let turnaroundDays: number | null = null;
         if (exp.expensePaymentDate && exp.expenseInvoicedDate) {
@@ -376,13 +399,16 @@ router.post("/api/procurement-analysis/run", requireAuth, async (req: Request, r
           turnaroundDays = Math.max(0, Math.round((paid.getTime() - invoiced.getTime()) / (1000 * 60 * 60 * 24)));
         }
 
+        const matchedCp = cpId ? allCps.find(c => c.id === cpId) : null;
+        const cpType = matchedCp?.typeDefault || null;
+
         costValues.push({
           projectId: projId,
           projectName: exp.projectName || "Unknown",
           costCategory: exp.expenseCategory,
           counterpartyId: cpId,
           counterpartyName: cpName,
-          counterpartyType: null,
+          counterpartyType: cpType,
           description: exp.expenseLineItem,
           amountExVat: exp.expenseActualTotal ? String(exp.expenseActualTotal) : null,
           invoiceNumber: exp.expenseInvoiceNumber,

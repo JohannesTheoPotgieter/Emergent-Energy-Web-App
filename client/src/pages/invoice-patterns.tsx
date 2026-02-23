@@ -57,7 +57,7 @@ export default function InvoicePatternsPage() {
   const { data: rules = [], isLoading } = useQuery({
     queryKey: ["/api/invoice-patterns"],
     queryFn: async () => {
-      const res = await fetch("/api/invoice-patterns", { headers: getAuthHeaders() });
+      const res = await fetch("/api/invoice-patterns", { headers: getAuthHeaders(), credentials: "include" });
       if (!res.ok) throw new Error("Failed to load");
       return res.json();
     },
@@ -69,6 +69,7 @@ export default function InvoicePatternsPage() {
         const res = await fetch(`/api/invoice-patterns/${editingId}`, {
           method: "PATCH",
           headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+          credentials: "include",
           body: JSON.stringify(rule),
         });
         if (!res.ok) throw new Error("Failed to update");
@@ -77,6 +78,7 @@ export default function InvoicePatternsPage() {
       const res = await fetch("/api/invoice-patterns", {
         method: "POST",
         headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify(rule),
       });
       if (!res.ok) throw new Error("Failed to create");
@@ -94,6 +96,7 @@ export default function InvoicePatternsPage() {
       const res = await fetch(`/api/invoice-patterns/${id}`, {
         method: "PATCH",
         headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ isActive }),
       });
       if (!res.ok) throw new Error("Failed to update");
@@ -109,6 +112,7 @@ export default function InvoicePatternsPage() {
       const res = await fetch(`/api/invoice-patterns/${id}`, {
         method: "DELETE",
         headers: getAuthHeaders(),
+        credentials: "include",
       });
       if (!res.ok) throw new Error("Failed to delete");
     },
