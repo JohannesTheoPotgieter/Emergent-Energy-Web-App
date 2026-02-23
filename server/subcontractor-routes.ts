@@ -3,19 +3,17 @@ import { db } from "./db";
 import { normalizedCostLines, counterparties, programExpense, projectInfo, invoicePatternRules } from "@shared/schema";
 import { eq, sql } from "drizzle-orm";
 import { extractSupplierName } from "./lib/calculations/supplierExtractor";
+import { verifyToken } from "./jwt";
 
 const router = Router();
 
 function jwtAuth(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith("Bearer ")) {
-    try {
-      const jwt = require("jsonwebtoken");
-      const decoded = jwt.verify(authHeader.slice(7), process.env.JWT_SECRET || "emergent-fallback-secret");
-      if (decoded && typeof decoded === "object") {
-        (req as any).user = { id: decoded.userId || decoded.id, role: decoded.role };
-      }
-    } catch {}
+    const decoded = verifyToken(authHeader.slice(7));
+    if (decoded) {
+      (req as any).user = { id: decoded.userId, role: decoded.role };
+    }
   }
   next();
 }
