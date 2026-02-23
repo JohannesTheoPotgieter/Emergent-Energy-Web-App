@@ -489,17 +489,138 @@ router.delete("/api/subcontractor-dashboard/counterparty/:name", requireAuth, as
     const normalized = name.trim().toLowerCase();
 
     await db.transaction(async (tx) => {
-      await tx.delete(normalizedCostLines)
-        .where(sql`LOWER(TRIM(${normalizedCostLines.counterpartyName})) = ${normalized}`);
-
-      await tx.delete(counterparties)
+      const cpRows = await tx.select().from(counterparties)
         .where(sql`LOWER(${counterparties.nameCanonical}) = ${normalized}`);
+
+      if (cpRows.length > 0) {
+        const cpId = cpRows[0].id;
+        await tx.delete(normalizedCostLines)
+          .where(sql`${normalizedCostLines.counterpartyId} = ${cpId} OR LOWER(TRIM(${normalizedCostLines.counterpartyName})) = ${normalized}`);
+        await tx.delete(counterparties).where(eq(counterparties.id, cpId));
+      } else {
+        await tx.delete(normalizedCostLines)
+          .where(sql`LOWER(TRIM(${normalizedCostLines.counterpartyName})) = ${normalized}`);
+      }
     });
 
     console.log(`[subcontractor] Deleted counterparty "${name}" and associated cost lines`);
     res.json({ success: true, deleted: name });
   } catch (err: any) {
     console.error("[subcontractor-delete] Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch("/api/subcontractor-dashboard/counterparty/:name/type", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const name = decodeURIComponent(req.params.name);
+    const { type } = req.body;
+    if (!type || !["INSTALLER", "SUPPLIER", "OTHER"].includes(type)) {
+      return res.status(400).json({ error: "Type must be INSTALLER, SUPPLIER, or OTHER" });
+    }
+
+    const normalized = name.trim().toLowerCase();
+
+    await db.transaction(async (tx) => {
+      const cpRows = await tx.select().from(counterparties)
+        .where(sql`LOWER(${counterparties.nameCanonical}) = ${normalized}`);
+
+      if (cpRows.length > 0) {
+        const cpId = cpRows[0].id;
+        await tx.update(counterparties)
+          .set({ typeDefault: type, lastSeenAt: new Date() })
+          .where(eq(counterparties.id, cpId));
+
+        await tx.update(normalizedCostLines)
+          .set({ counterpartyType: type })
+          .where(sql`${normalizedCostLines.counterpartyId} = ${cpId} OR LOWER(TRIM(${normalizedCostLines.counterpartyName})) = ${normalized}`);
+      } else {
+        await tx.update(normalizedCostLines)
+          .set({ counterpartyType: type })
+          .where(sql`LOWER(TRIM(${normalizedCostLines.counterpartyName})) = ${normalized}`);
+      }
+    });
+
+    console.log(`[subcontractor] Changed type of "${name}" to ${type}`);
+    res.json({ success: true, name, type });
+  } catch (err: any) {
+    console.error("[subcontractor-type] Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/api/subcontractor-dashboard/merge", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { sourceNames, targetName } = req.body;
+    if (!Array.isArray(sourceNames) || sourceNames.length === 0 || !targetName || typeof targetName !== "string") {
+      return res.status(400).json({ error: "sourceNames (array) and targetName (string) are required" });
+    }
+
+    const trimmedTarget = targetName.trim();
+    if (!trimmedTarget) {
+      return res.status(400).json({ error: "Target name cannot be empty" });
+    }
+
+    const normalizedSources = sourceNames.map((n: string) => n.trim().toLowerCase());
+    const normalizedTarget = trimmedTarget.toLowerCase();
+
+    await db.transaction(async (tx) => {
+      const targetCp = await tx.select().from(counterparties)
+        .where(sql`LOWER(${counterparties.nameCanonical}) = ${normalizedTarget}`);
+
+      let targetCpId: number;
+      let mergedAliases: string[] = [];
+
+      if (targetCp.length > 0) {
+        targetCpId = targetCp[0].id;
+        mergedAliases = Array.isArray(targetCp[0].nameAliases) ? targetCp[0].nameAliases as string[] : [];
+      } else {
+        const [created] = await tx.insert(counterparties)
+          .values({
+            nameCanonical: trimmedTarget,
+            nameAliases: [],
+            typeDefault: "OTHER",
+            isCore: false,
+            lastSeenAt: new Date(),
+          })
+          .returning();
+        targetCpId = created.id;
+      }
+
+      for (const srcNorm of normalizedSources) {
+        if (srcNorm === normalizedTarget) continue;
+
+        const srcCp = await tx.select().from(counterparties)
+          .where(sql`LOWER(${counterparties.nameCanonical}) = ${srcNorm}`);
+
+        if (srcCp.length > 0) {
+          const srcId = srcCp[0].id;
+          mergedAliases.push(srcCp[0].nameCanonical);
+          const srcAliases = Array.isArray(srcCp[0].nameAliases) ? srcCp[0].nameAliases as string[] : [];
+          mergedAliases.push(...srcAliases);
+
+          await tx.update(normalizedCostLines)
+            .set({ counterpartyName: trimmedTarget, counterpartyId: targetCpId })
+            .where(sql`${normalizedCostLines.counterpartyId} = ${srcId} OR LOWER(TRIM(${normalizedCostLines.counterpartyName})) = ${srcNorm}`);
+
+          await tx.delete(counterparties).where(eq(counterparties.id, srcId));
+        } else {
+          await tx.update(normalizedCostLines)
+            .set({ counterpartyName: trimmedTarget, counterpartyId: targetCpId })
+            .where(sql`LOWER(TRIM(${normalizedCostLines.counterpartyName})) = ${srcNorm}`);
+        }
+      }
+
+      const uniqueAliases = [...new Set(mergedAliases.filter(a => a.toLowerCase() !== normalizedTarget))];
+      await tx.update(counterparties)
+        .set({ nameAliases: uniqueAliases, lastSeenAt: new Date() })
+        .where(eq(counterparties.id, targetCpId));
+    });
+
+    console.log(`[subcontractor] Merged [${sourceNames.join(", ")}] → "${trimmedTarget}"`);
+    res.json({ success: true, merged: sourceNames, into: trimmedTarget });
+  } catch (err: any) {
+    console.error("[subcontractor-merge] Error:", err);
     res.status(500).json({ error: err.message });
   }
 });
