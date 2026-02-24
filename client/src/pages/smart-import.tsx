@@ -12,7 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import {
   Upload, FileSpreadsheet, CheckCircle2, AlertCircle, AlertTriangle,
-  Info, ArrowRight, ArrowLeft, Loader2, X, Check, ChevronDown, ChevronUp,
+  Info, ArrowRight, ArrowLeft, Loader2, X, XCircle, Check, ChevronDown, ChevronUp,
   Pencil, History, Zap, SkipForward,
 } from "lucide-react";
 import { useLocation } from "wouter";
@@ -1269,9 +1269,13 @@ function IssuesStep({
   const [cpType, setCpType] = useState("subcontractor");
   const [creatingCp, setCreatingCp] = useState<number | null>(null);
   const [applyingPrior, setApplyingPrior] = useState(false);
+  const [ignoringAll, setIgnoringAll] = useState(false);
   const [editingOverride, setEditingOverride] = useState<number | null>(null);
   const [overrideFields, setOverrideFields] = useState<Record<string, string>>({});
   const { toast } = useToast();
+
+  const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
+  const isAdmin = ["COO_ADMIN", "CEO_ADMIN", "admin"].includes(companyRole || "");
 
   const issuesWithPriorRules = issues.filter((i: any) => i.matchedRuleId && !i.resolved && !i.autoResolved);
   const autoResolvedCount = issues.filter((i: any) => i.autoResolved).length;
@@ -1331,6 +1335,28 @@ function IssuesStep({
       toast({ title: "Error", description: "Network error", variant: "destructive" });
     } finally {
       setApplyingPrior(false);
+    }
+  };
+
+  const handleIgnoreAllBlockers = async () => {
+    setIgnoringAll(true);
+    try {
+      const res = await fetch(`/api/smart-import/${runId}/ignore-all-blockers`, {
+        method: "POST",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        onIssuesUpdate(data.issues);
+        toast({ title: "Blockers Ignored", description: `${data.ignored} blocker(s) ignored` });
+      } else {
+        const err = await res.json().catch(() => ({ error: "Failed" }));
+        toast({ title: "Error", description: err.error || "Failed to ignore blockers", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Error", description: "Network error", variant: "destructive" });
+    } finally {
+      setIgnoringAll(false);
     }
   };
 
@@ -1698,6 +1724,24 @@ function IssuesStep({
                 </li>
               ))}
             </ul>
+            {isAdmin && (
+              <div className="mt-3 pt-3 border-t border-red-200">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs border-red-300 text-red-700 hover:bg-red-100"
+                  disabled={ignoringAll}
+                  onClick={handleIgnoreAllBlockers}
+                  data-testid="btn-ignore-all-blockers"
+                >
+                  {ignoringAll ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <XCircle className="w-3 h-3 mr-1" />}
+                  Ignore All Blockers ({unresolvedBlockers.length})
+                </Button>
+                <p className="text-[10px] text-red-500 mt-1">
+                  Data rows with blockers will be skipped during import
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

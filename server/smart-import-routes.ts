@@ -570,6 +570,54 @@ router.patch("/api/smart-import/:runId/issue/:issueId/resolve", requireAuth, asy
   }
 });
 
+// POST /api/smart-import/:runId/ignore-all-blockers
+router.post("/api/smart-import/:runId/ignore-all-blockers", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const runId = parseInt(req.params.runId as string);
+    if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
+
+    let userRole = (req as any).user?.role;
+    if (userRole === "admin") userRole = "COO_ADMIN";
+    const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
+    if (!userRole || !ADMIN_ROLES.includes(userRole)) {
+      return res.status(403).json({ error: "Only admin users can ignore all blockers" });
+    }
+
+    const [run] = await db.select().from(smartImportRuns).where(eq(smartImportRuns.id, runId));
+    if (!run) return res.status(404).json({ error: "Import run not found" });
+
+    const userId = (req as any).user?.id || null;
+    const allIssues = await db.select().from(importIssues)
+      .where(eq(importIssues.importRunId, runId));
+
+    const unresolvedBlockers = allIssues.filter((i: any) =>
+      (i.severity === "BLOCKER" || i.severity === "blocker" || i.severity === "error") && !i.resolved
+    );
+
+    let ignored = 0;
+    for (const blocker of unresolvedBlockers) {
+      await db.update(importIssues)
+        .set({
+          resolved: true,
+          resolution: "IGNORED",
+          resolutionNote: "Bulk-ignored by admin",
+          resolvedBy: userId,
+          resolvedAt: new Date(),
+        })
+        .where(eq(importIssues.id, blocker.id));
+      ignored++;
+    }
+
+    const updatedIssues = await db.select().from(importIssues)
+      .where(eq(importIssues.importRunId, runId));
+
+    res.json({ ignored, issues: updatedIssues });
+  } catch (err: any) {
+    console.error("[smart-import] POST ignore-all-blockers error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/smart-import/:runId/apply-prior-resolutions
 router.post("/api/smart-import/:runId/apply-prior-resolutions", requireAuth, async (req: Request, res: Response) => {
   try {
