@@ -2472,6 +2472,7 @@ export const normalizedPlanTasks = pgTable("normalized_plan_tasks", {
   projectId: integer("project_id").references(() => projectInfo.id),
   projectName: text("project_name").notNull(),
   taskName: text("task_name").notNull(),
+  taskNo: text("task_no"),
   phase: text("phase"),
   startDate: text("start_date"),
   endDate: text("end_date"),

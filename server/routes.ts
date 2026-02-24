@@ -6,9 +6,10 @@ import fs from "fs";
 import path from "path";
 import { storage } from "./storage";
 import { parseTrackerFile, applyFontColors } from "./excelParser";
-import { insertBudgetSchema, programExpense, programInflows, projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedPlanTasks, smartImportRuns } from "@shared/schema";
+import { insertBudgetSchema, programExpense, programInflows, projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedPlanTasks, normalizedExecutionPhases, smartImportRuns } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, or, sql, isNull, asc, desc } from "drizzle-orm";
+import { runSmartImportPreview } from "./lib/import/index";
 import { z } from "zod";
 import { format } from "date-fns";
 import { generateToken, verifyToken } from "./jwt";
@@ -3652,6 +3653,81 @@ export async function registerRoutes(
             console.error("[Snapshot] Non-blocking snapshot creation failed:", snapErr.message);
           }
 
+          try {
+            const preview = await runSmartImportPreview(fileBuffer, file.originalname);
+            const norm = preview.normalization;
+            const resolvedProjectName = targetProjectName;
+            const [existingProject] = await db.select({ id: projectInfo.id }).from(projectInfo)
+              .where(eq(projectInfo.projectName, resolvedProjectName));
+            const pId = existingProject?.id || null;
+
+            await db.delete(normalizedPlanTasks).where(eq(normalizedPlanTasks.projectName, resolvedProjectName));
+            await db.delete(normalizedRevenueLines).where(eq(normalizedRevenueLines.projectName, resolvedProjectName));
+            await db.delete(normalizedCostLines).where(eq(normalizedCostLines.projectName, resolvedProjectName));
+            await db.delete(normalizedExecutionPhases).where(eq(normalizedExecutionPhases.projectName, resolvedProjectName));
+
+            const dummyRun = await db.insert(smartImportRuns).values({
+              fileName: file.originalname,
+              projectName: resolvedProjectName,
+              projectId: pId,
+              uploadedBy: req.user?.id || null,
+              status: "COMMITTED",
+              committedAt: new Date(),
+              committedBy: req.user?.id || null,
+              summaryJson: {} as any,
+            }).returning();
+            const importRunId = dummyRun[0].id;
+
+            if (norm.planTasks.length > 0) {
+              await db.insert(normalizedPlanTasks).values(norm.planTasks.map((t: any) => ({
+                projectId: pId, projectName: resolvedProjectName,
+                taskName: t.taskName, taskNo: t.taskNo || null, phase: t.phase,
+                startDate: t.startDate, endDate: t.endDate, durationDays: t.durationDays,
+                actualStartDate: t.actualStartDate, actualEndDate: t.actualEndDate,
+                actualDurationDays: t.actualDurationDays,
+                owner: t.owner, status: t.status, pctComplete: t.pctComplete,
+                comment: t.comment, sourceSheet: t.sourceSheet, sourceRow: t.sourceRow,
+                importRunId,
+              })));
+            }
+            if (norm.revenueLines.length > 0) {
+              await db.insert(normalizedRevenueLines).values(norm.revenueLines.map((r: any) => ({
+                projectId: pId, projectName: resolvedProjectName,
+                description: r.description, milestoneName: r.milestoneName,
+                amountExVat: r.amountExVat, vat: r.vat,
+                invoiceNumber: r.invoiceNumber, invoiceDate: r.invoiceDate,
+                invoiceDateFontColor: r.invoiceDateFontColor,
+                invoiceDateConfirmed: r.invoiceDateConfirmed || false,
+                expectedPaymentDate: r.expectedPaymentDate, paidDate: r.paidDate,
+                paidDateFontColor: r.paidDateFontColor,
+                paidDateConfirmed: r.paidDateConfirmed || false,
+                inBankDate: r.inBankDate, status: r.status,
+                sourceSheet: r.sourceSheet, sourceRow: r.sourceRow, importRunId,
+                turnaroundDays: r.turnaroundDays,
+              })));
+            }
+            if (norm.costLines.length > 0) {
+              await db.insert(normalizedCostLines).values(norm.costLines.map((c: any) => ({
+                projectId: pId, projectName: resolvedProjectName,
+                costCategory: c.costCategory, counterpartyName: c.counterpartyName,
+                description: c.description, amountExVat: c.amountExVat,
+                invoiceNumber: c.invoiceNumber, invoiceDate: c.invoiceDate,
+                invoiceDateFontColor: c.invoiceDateFontColor,
+                invoiceDateConfirmed: c.invoiceDateConfirmed || false,
+                approvedDate: c.approvedDate, paidDate: c.paidDate,
+                paidDateFontColor: c.paidDateFontColor,
+                paidDateConfirmed: c.paidDateConfirmed || false,
+                poNumber: c.poNumber, cosRealised: c.cosRealised || false,
+                cashflowConfirmed: c.cashflowConfirmed || false,
+                status: c.status, sourceSheet: c.sourceSheet, sourceRow: c.sourceRow,
+                importRunId, turnaroundDays: c.turnaroundDays,
+              })));
+            }
+            console.log(`[Upload] Also populated normalized tables for "${resolvedProjectName}" via smart import pipeline`);
+          } catch (normErr: any) {
+            console.error("[Upload] Non-blocking normalized table population failed:", normErr.message);
+          }
+
         } catch (fileError: any) {
           console.error("File parse/upload error:", fileError);
           const { dbMode } = await import("./db");
@@ -4475,6 +4551,15 @@ export async function registerRoutes(
           dateOverride: link?.dateOverride || null,
           dateOverrideReason: link?.dateOverrideReason || null,
         };
+      });
+
+      milestones.sort((a: any, b: any) => {
+        const numA = parseFloat(a.milestoneNo);
+        const numB = parseFloat(b.milestoneNo);
+        if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+        if (!isNaN(numA)) return -1;
+        if (!isNaN(numB)) return 1;
+        return (a.rowNumber || 0) - (b.rowNumber || 0);
       });
 
       const totalContract = milestones.reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
