@@ -184,9 +184,20 @@ function extractPlanTasks(
     if (!row) continue;
 
     const taskName = cellStr(row, taskNameCol);
-    const taskNo = cellStr(row, taskNoCol);
+    let taskNo = cellStr(row, taskNoCol);
 
     if (!taskName && !taskNo) continue;
+
+    if (taskNo && (taskNo.toLowerCase() === "no." || taskNo.toLowerCase() === "no")) continue;
+    if (taskName && (taskName.toLowerCase() === "high level programme" || taskName.toLowerCase() === "high level program")) continue;
+    if (taskName && taskName.toLowerCase().includes("end of sheet")) continue;
+
+    if (taskNo) {
+      const numVal = parseFloat(taskNo);
+      if (!isNaN(numVal)) {
+        taskNo = parseFloat(numVal.toFixed(10)).toString();
+      }
+    }
 
     if (phaseCol >= 0) {
       const phaseVal = cellStr(row, phaseCol);
@@ -270,8 +281,11 @@ function extractRevenueLines(
     const milestoneName = cellStr(row, milestoneNameCol);
     if (!milestoneName) continue;
 
+    const trimmedName = milestoneName.trim();
+    if (trimmedName === "-" || trimmedName === "—" || trimmedName === "") continue;
+
     const lowerName = milestoneName.toLowerCase();
-    if (lowerName.includes("end of sheet") || lowerName.startsWith("key")) break;
+    if (lowerName.includes("end of sheet") || lowerName.startsWith("key") || lowerName.includes("red font") || lowerName.includes("contains an error")) break;
 
     const amountExVat = amountCol >= 0 ? parseNumber(row[amountCol]) : null;
     const vat = vatCol >= 0 ? parseNumber(row[vatCol]) : null;
