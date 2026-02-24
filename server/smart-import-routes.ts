@@ -1237,6 +1237,200 @@ router.get("/api/smart-import/normalized/:projectName/expenditure", requireAuth,
   }
 });
 
+// POST /api/smart-import/bulk-commit
+router.post("/api/smart-import/bulk-commit", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.id || null;
+    const { runIds, acknowledgeManualEdits, forceCommit } = req.body || {};
+
+    let runs: any[];
+    if (runIds && Array.isArray(runIds) && runIds.length > 0) {
+      runs = await db.select().from(smartImportRuns)
+        .where(and(
+          sql`${smartImportRuns.id} = ANY(${runIds})`,
+          eq(smartImportRuns.status, "PREVIEW")
+        ));
+    } else {
+      runs = await db.select().from(smartImportRuns)
+        .where(eq(smartImportRuns.status, "PREVIEW"));
+    }
+
+    if (runs.length === 0) {
+      return res.json({ success: true, committed: 0, failed: 0, results: [] });
+    }
+
+    const results: Array<{
+      runId: number;
+      projectName: string;
+      status: "committed" | "skipped" | "failed";
+      counts?: any;
+      error?: string;
+    }> = [];
+
+    for (const run of runs) {
+      try {
+        const summary = run.summaryJson as any;
+        if (!summary || !summary.normalization) {
+          results.push({ runId: run.id, projectName: run.projectName, status: "skipped", error: "No normalization data" });
+          continue;
+        }
+
+        // Auto-resolve unresolved non-blocker issues by ignoring them
+        const allIssues = await db.select().from(importIssues).where(eq(importIssues.importRunId, run.id));
+        const unresolvedBlockers = allIssues.filter((i: any) => i.severity === "BLOCKER" && !i.resolved);
+
+        // Auto-apply prior resolutions to unresolved issues
+        const unresolvedIssues = allIssues.filter((i: any) => !i.resolved);
+        if (unresolvedIssues.length > 0) {
+          const activeRules = await db.select().from(issueResolutionRules)
+            .where(and(
+              eq(issueResolutionRules.active, true),
+              eq(issueResolutionRules.projectName, run.projectName),
+            ));
+          const ruleMap = new Map<string, typeof activeRules[0]>();
+          for (const rule of activeRules) {
+            ruleMap.set(`${rule.issueType}::${rule.fingerprint}::${rule.section}`, rule);
+          }
+
+          for (const issue of unresolvedIssues) {
+            if (!issue.issueType || !issue.issueFingerprint) continue;
+            const lookupKey = `${issue.issueType}::${issue.issueFingerprint}::${issue.section}`;
+            const rule = ruleMap.get(lookupKey);
+            if (rule) {
+              await db.update(importIssues)
+                .set({
+                  resolved: true,
+                  resolution: rule.resolution,
+                  resolutionNote: rule.resolutionNote,
+                  resolvedBy: userId,
+                  resolvedAt: new Date(),
+                  autoResolved: true,
+                  matchedRuleId: rule.id,
+                })
+                .where(eq(importIssues.id, issue.id));
+            } else if (issue.severity !== "BLOCKER") {
+              await db.update(importIssues)
+                .set({
+                  resolved: true,
+                  resolution: "IGNORED",
+                  resolutionNote: "Auto-ignored during bulk commit",
+                  resolvedBy: userId,
+                  resolvedAt: new Date(),
+                  autoResolved: true,
+                })
+                .where(eq(importIssues.id, issue.id));
+            }
+          }
+        }
+
+        // Re-check for unresolved blockers after auto-resolution
+        const remainingIssues = await db.select().from(importIssues)
+          .where(and(eq(importIssues.importRunId, run.id), eq(importIssues.resolved, false)));
+        const remainingBlockers = remainingIssues.filter((i: any) => i.severity === "BLOCKER");
+
+        if (remainingBlockers.length > 0) {
+          results.push({
+            runId: run.id,
+            projectName: run.projectName,
+            status: "skipped",
+            error: `${remainingBlockers.length} unresolved blocker issue(s)`,
+          });
+          continue;
+        }
+
+        // Now commit this run using internal fetch to the existing commit endpoint
+        const commitRes = await fetch(`http://localhost:${process.env.PORT || 5000}/api/smart-import/${run.id}/commit`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": req.headers.authorization || "",
+          },
+          body: JSON.stringify({ acknowledgeManualEdits: true, forceCommit: true, acknowledgeEqualDate: true }),
+        });
+
+        if (commitRes.ok) {
+          const commitData = await commitRes.json();
+          results.push({
+            runId: run.id,
+            projectName: run.projectName,
+            status: "committed",
+            counts: commitData.counts,
+          });
+        } else {
+          const err = await commitRes.json().catch(() => ({ error: "Commit failed" }));
+          results.push({
+            runId: run.id,
+            projectName: run.projectName,
+            status: "failed",
+            error: err.error || err.message || "Commit failed",
+          });
+        }
+      } catch (runErr: any) {
+        results.push({
+          runId: run.id,
+          projectName: run.projectName,
+          status: "failed",
+          error: runErr.message || "Unknown error",
+        });
+      }
+    }
+
+    const committed = results.filter(r => r.status === "committed").length;
+    const failed = results.filter(r => r.status === "failed").length;
+    const skipped = results.filter(r => r.status === "skipped").length;
+
+    res.json({
+      success: true,
+      committed,
+      failed,
+      skipped,
+      total: runs.length,
+      results,
+    });
+  } catch (err: any) {
+    console.error("[smart-import] POST bulk-commit error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/smart-import/pending-runs
+router.get("/api/smart-import/pending-runs", requireAuth, async (_req: Request, res: Response) => {
+  try {
+    const runs = await db
+      .select({
+        id: smartImportRuns.id,
+        projectName: smartImportRuns.projectName,
+        status: smartImportRuns.status,
+        uploadedAt: smartImportRuns.uploadedAt,
+        sourceFileName: smartImportRuns.sourceFileName,
+      })
+      .from(smartImportRuns)
+      .where(eq(smartImportRuns.status, "PREVIEW"))
+      .orderBy(smartImportRuns.projectName);
+
+    const runsWithIssues = await Promise.all(runs.map(async (run: any) => {
+      const issues = await db.select().from(importIssues)
+        .where(eq(importIssues.importRunId, run.id));
+      const blockers = issues.filter((i: any) => i.severity === "BLOCKER" && !i.resolved);
+      const warnings = issues.filter((i: any) => i.severity !== "BLOCKER" && !i.resolved);
+      const totalIssues = issues.length;
+      const resolvedIssues = issues.filter((i: any) => i.resolved).length;
+      return {
+        ...run,
+        blockerCount: blockers.length,
+        warningCount: warnings.length,
+        totalIssues,
+        resolvedIssues,
+      };
+    }));
+
+    res.json(runsWithIssues);
+  } catch (err: any) {
+    console.error("[smart-import] GET pending-runs error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export function registerSmartImportRoutes(app: Express) {
   app.use(router);
 }
