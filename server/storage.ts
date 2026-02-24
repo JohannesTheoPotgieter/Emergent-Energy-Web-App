@@ -48,6 +48,9 @@ import {
   type OpexBudgetMonthly, type InsertOpexBudgetMonthly,
   opexWeeklyManual,
   type OpexWeeklyManual, type InsertOpexWeeklyManual,
+  availablePaymentOverrides, availablePaymentHistory,
+  type AvailablePaymentOverride, type InsertAvailablePaymentOverride,
+  type AvailablePaymentHistory, type InsertAvailablePaymentHistory,
   type TrackerMonthlyManual, type InsertTrackerMonthlyManual,
   type OperationalTask, type InsertOperationalTask,
   type TaskComment, type InsertTaskComment,
@@ -294,6 +297,13 @@ export interface IStorage {
   getAllOpexWeeklyManual(): Promise<OpexWeeklyManual[]>;
   upsertOpexWeeklyManual(weekStartDate: string, opexAmount: string): Promise<OpexWeeklyManual>;
   deleteOpexWeeklyManual(weekStartDate: string): Promise<void>;
+
+  // Available Payment Overrides
+  getAllAvailablePaymentOverrides(): Promise<AvailablePaymentOverride[]>;
+  upsertAvailablePaymentOverride(weekStartDate: string, overrideValue: string, reason: string | null, updatedBy: string | null): Promise<AvailablePaymentOverride>;
+  deleteAvailablePaymentOverride(weekStartDate: string): Promise<void>;
+  getAvailablePaymentHistory(weekStartDate: string): Promise<AvailablePaymentHistory[]>;
+  addAvailablePaymentHistory(entry: InsertAvailablePaymentHistory): Promise<AvailablePaymentHistory>;
 
   // Tracker Monthly Manual (REV/COS)
   getTrackerMonthlyManual(trackerType: string): Promise<TrackerMonthlyManual[]>;
@@ -1652,6 +1662,38 @@ export class DatabaseStorage implements IStorage {
 
   async deleteOpexWeeklyManual(weekStartDate: string): Promise<void> {
     await this.dbInstance.delete(opexWeeklyManual).where(eq(opexWeeklyManual.weekStartDate, weekStartDate));
+  }
+
+  async getAllAvailablePaymentOverrides(): Promise<AvailablePaymentOverride[]> {
+    return this.dbInstance.select().from(availablePaymentOverrides);
+  }
+
+  async upsertAvailablePaymentOverride(weekStartDate: string, overrideValue: string, reason: string | null, updatedBy: string | null): Promise<AvailablePaymentOverride> {
+    const existing = await this.dbInstance.select().from(availablePaymentOverrides).where(eq(availablePaymentOverrides.weekStartDate, weekStartDate));
+    if (existing[0]) {
+      const updated = await this.dbInstance.update(availablePaymentOverrides)
+        .set({ overrideValue, reason, updatedBy, updatedAt: new Date() })
+        .where(eq(availablePaymentOverrides.id, existing[0].id))
+        .returning();
+      return updated[0];
+    }
+    const inserted = await this.dbInstance.insert(availablePaymentOverrides).values({ weekStartDate, overrideValue, reason, updatedBy }).returning();
+    return inserted[0];
+  }
+
+  async deleteAvailablePaymentOverride(weekStartDate: string): Promise<void> {
+    await this.dbInstance.delete(availablePaymentOverrides).where(eq(availablePaymentOverrides.weekStartDate, weekStartDate));
+  }
+
+  async getAvailablePaymentHistory(weekStartDate: string): Promise<AvailablePaymentHistory[]> {
+    return this.dbInstance.select().from(availablePaymentHistory)
+      .where(eq(availablePaymentHistory.weekStartDate, weekStartDate))
+      .orderBy(desc(availablePaymentHistory.changedAt));
+  }
+
+  async addAvailablePaymentHistory(entry: InsertAvailablePaymentHistory): Promise<AvailablePaymentHistory> {
+    const inserted = await this.dbInstance.insert(availablePaymentHistory).values(entry).returning();
+    return inserted[0];
   }
 
   async getTrackerMonthlyManual(trackerType: string): Promise<TrackerMonthlyManual[]> {

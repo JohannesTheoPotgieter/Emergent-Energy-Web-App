@@ -12,11 +12,10 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Lock, Shield } from "lucide-react";
+import { Lock } from "lucide-react";
 import {
   COMPANY_ROLES,
   COMPANY_ROLE_LABELS,
-  ADMIN_ROLES,
   type CompanyRole,
 } from "@shared/schema";
 
@@ -87,9 +86,6 @@ export default function LoginPage() {
     }
   };
 
-  const isAdmin = (role: CompanyRole) =>
-    (ADMIN_ROLES as readonly string[]).includes(role);
-
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-white p-4" data-testid="page-login">
       <div className="w-full max-w-2xl space-y-8">
@@ -121,12 +117,6 @@ export default function LoginPage() {
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-semibold text-sm text-gray-900">{COMPANY_ROLE_LABELS[role]}</span>
-                        {isAdmin(role) && (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
-                            <Shield className="w-2.5 h-2.5" />
-                            Admin
-                          </span>
-                        )}
                       </div>
                     </div>
                   </CardContent>

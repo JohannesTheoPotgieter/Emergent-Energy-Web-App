@@ -1,6 +1,6 @@
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { rolePermissions, users, DEFAULT_ROLE_PERMISSIONS } from "@shared/schema";
 import { verifyToken } from "./jwt";
 import { invalidateEntityPermCache } from "./permission-middleware";
@@ -46,7 +46,7 @@ export async function seedRolePermissions() {
     const existing = await db.select().from(rolePermissions);
 
     for (const perm of DEFAULT_ROLE_PERMISSIONS) {
-      const exists = existing.find(e => e.role === perm.role);
+      const exists = existing.find((e: any) => e.role === perm.role);
       if (!exists) {
         await db.insert(rolePermissions).values(perm);
       } else {
@@ -79,7 +79,8 @@ export function registerRoleManagementRoutes(app: Express) {
 
   app.get("/api/roles/:role", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const [role] = await db.select().from(rolePermissions).where(eq(rolePermissions.role, req.params.role));
+      const roleKey = req.params.role as string;
+      const [role] = await db.select().from(rolePermissions).where(eq(rolePermissions.role, roleKey));
       if (!role) return res.status(404).json({ error: "Role not found" });
       res.json(role);
     } catch (err: any) {
@@ -89,8 +90,9 @@ export function registerRoleManagementRoutes(app: Express) {
 
   app.put("/api/roles/:role", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
+      const roleKey = req.params.role as string;
       const { label, description, sections, canManageUsers, canManageRoles, canEditData, entityPermissions: ep } = req.body;
-      const [existing] = await db.select().from(rolePermissions).where(eq(rolePermissions.role, req.params.role));
+      const [existing] = await db.select().from(rolePermissions).where(eq(rolePermissions.role, roleKey));
       if (!existing) return res.status(404).json({ error: "Role not found" });
 
       const updateData: Record<string, any> = {
@@ -108,7 +110,7 @@ export function registerRoleManagementRoutes(app: Express) {
 
       const [updated] = await db.update(rolePermissions)
         .set(updateData)
-        .where(eq(rolePermissions.role, req.params.role))
+        .where(eq(rolePermissions.role, roleKey))
         .returning();
       invalidateEntityPermCache();
       res.json(updated);
@@ -143,16 +145,17 @@ export function registerRoleManagementRoutes(app: Express) {
 
   app.delete("/api/roles/:role", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const [existing] = await db.select().from(rolePermissions).where(eq(rolePermissions.role, req.params.role));
+      const roleKey = req.params.role as string;
+      const [existing] = await db.select().from(rolePermissions).where(eq(rolePermissions.role, roleKey));
       if (!existing) return res.status(404).json({ error: "Role not found" });
       if (existing.isSystem) return res.status(403).json({ error: "Cannot delete system roles" });
 
-      const usersWithRole = await db.select({ id: users.id }).from(users).where(eq(users.role, req.params.role as any));
+      const usersWithRole = await db.select({ id: users.id }).from(users).where(sql`${users.role} = ${roleKey}`);
       if (usersWithRole.length > 0) {
         return res.status(409).json({ error: `Cannot delete role. ${usersWithRole.length} user(s) still assigned to this role.` });
       }
 
-      await db.delete(rolePermissions).where(eq(rolePermissions.role, req.params.role));
+      await db.delete(rolePermissions).where(eq(rolePermissions.role, roleKey));
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -167,7 +170,7 @@ export function registerRoleManagementRoutes(app: Express) {
         email: users.email,
         role: users.role,
       }).from(users);
-      const mapped = allUsers.map(u => ({ ...u, role: mapRole(u.role) }));
+      const mapped = allUsers.map((u: any) => ({ ...u, role: mapRole(u.role) }));
       res.json(mapped);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -176,7 +179,7 @@ export function registerRoleManagementRoutes(app: Express) {
 
   app.patch("/api/admin/users/:userId/role", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const userId = parseInt(req.params.userId);
+      const userId = parseInt(req.params.userId as string);
       const { role } = req.body;
       if (!role) return res.status(400).json({ error: "Role is required" });
 

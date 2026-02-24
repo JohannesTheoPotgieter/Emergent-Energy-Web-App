@@ -10,7 +10,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import {
   FileSpreadsheet, Plus, Trash2, Loader2, Search,
-  ToggleLeft, ToggleRight, Pencil,
+  ToggleLeft, ToggleRight, Pencil, Play, BarChart3,
+  CheckCircle2, AlertCircle, TrendingUp,
 } from "lucide-react";
 
 function getAuthHeaders(): Record<string, string> {
@@ -32,6 +33,7 @@ export default function InvoicePatternsPage() {
     counterpartyName: "",
     normalizedExample: "",
   });
+  const [lastRunResult, setLastRunResult] = useState<any>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -61,6 +63,16 @@ export default function InvoicePatternsPage() {
       if (!res.ok) throw new Error("Failed to load");
       return res.json();
     },
+  });
+
+  const { data: patternStats, isLoading: statsLoading } = useQuery({
+    queryKey: ["/api/procurement-analysis/pattern-stats"],
+    queryFn: async () => {
+      const res = await fetch("/api/procurement-analysis/pattern-stats", { headers: getAuthHeaders(), credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load stats");
+      return res.json();
+    },
+    refetchInterval: 30000,
   });
 
   const createMutation = useMutation({
@@ -122,6 +134,30 @@ export default function InvoicePatternsPage() {
     },
   });
 
+  const classifyMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/procurement-analysis/classify", {
+        method: "POST",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to run classification");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setLastRunResult(data);
+      queryClient.invalidateQueries({ queryKey: ["/api/invoice-patterns"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/procurement-analysis/pattern-stats"] });
+      toast({
+        title: "Pattern Analysis Complete",
+        description: data.message,
+      });
+    },
+    onError: (err: any) => {
+      toast({ title: "Analysis failed", description: err.message, variant: "destructive" });
+    },
+  });
+
   const filtered = rules.filter((r: any) =>
     !search || r.patternValue.toLowerCase().includes(search.toLowerCase()) ||
     r.inferredType.toLowerCase().includes(search.toLowerCase()) ||
@@ -137,7 +173,56 @@ export default function InvoicePatternsPage() {
         </p>
       </div>
 
-      <div className="flex items-center gap-3">
+      {patternStats && (
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3" data-testid="pattern-stats-panel">
+          <Card className="bg-white">
+            <CardContent className="pt-4 pb-3 px-4">
+              <div className="text-xs text-slate-500 mb-1">Eligible Lines</div>
+              <div className="text-xl font-bold" data-testid="stat-eligible">{patternStats.eligibleLines}</div>
+              <div className="text-[10px] text-slate-400">with invoice & amount</div>
+            </CardContent>
+          </Card>
+          <Card className="bg-white">
+            <CardContent className="pt-4 pb-3 px-4">
+              <div className="text-xs text-slate-500 mb-1">Tagged</div>
+              <div className="text-xl font-bold text-green-600" data-testid="stat-tagged">{patternStats.taggedLines}</div>
+              <div className="text-[10px] text-slate-400">pattern matched</div>
+            </CardContent>
+          </Card>
+          <Card className="bg-white">
+            <CardContent className="pt-4 pb-3 px-4">
+              <div className="text-xs text-slate-500 mb-1">Untagged</div>
+              <div className="text-xl font-bold text-amber-600" data-testid="stat-untagged">{patternStats.untaggedLines}</div>
+              <div className="text-[10px] text-slate-400">awaiting classification</div>
+            </CardContent>
+          </Card>
+          <Card className="bg-white">
+            <CardContent className="pt-4 pb-3 px-4">
+              <div className="text-xs text-slate-500 mb-1">Classification Rate</div>
+              <div className="text-xl font-bold" data-testid="stat-rate">{patternStats.classificationRate}%</div>
+              <div className="text-[10px] text-slate-400">tagged / eligible</div>
+            </CardContent>
+          </Card>
+          <Card className="bg-white">
+            <CardContent className="pt-4 pb-3 px-4">
+              <div className="text-xs text-slate-500 mb-1">Type Breakdown</div>
+              <div className="flex flex-wrap gap-1 mt-1" data-testid="stat-types">
+                {Object.entries(patternStats.typeCounts || {}).map(([type, count]) => (
+                  <Badge key={type} variant={type === "INSTALLER" ? "default" : type === "SUPPLIER" ? "secondary" : "outline"}
+                    className="text-[9px]">
+                    {type}: {count as number}
+                  </Badge>
+                ))}
+                {Object.keys(patternStats.typeCounts || {}).length === 0 && (
+                  <span className="text-[10px] text-slate-400">No classified lines yet</span>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      <div className="flex items-center gap-3 flex-wrap">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <Input
@@ -151,7 +236,47 @@ export default function InvoicePatternsPage() {
         <Button onClick={() => { if (showAdd) cancelEdit(); else setShowAdd(true); }} data-testid="btn-add-rule">
           <Plus className="w-4 h-4 mr-2" /> {editingId ? "Editing Rule" : "Add Rule"}
         </Button>
+        <Button
+          onClick={() => classifyMutation.mutate()}
+          disabled={classifyMutation.isPending}
+          variant="default"
+          className="bg-emerald-600 hover:bg-emerald-700"
+          data-testid="btn-run-pattern-analysis"
+        >
+          {classifyMutation.isPending ? (
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+          ) : (
+            <Play className="w-4 h-4 mr-2" />
+          )}
+          Run Pattern Analysis
+        </Button>
       </div>
+
+      {lastRunResult && (
+        <Card className="bg-emerald-50 border-emerald-200" data-testid="analysis-result-card">
+          <CardContent className="pt-4 pb-3">
+            <div className="flex items-start gap-3">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 mt-0.5 shrink-0" />
+              <div className="flex-1">
+                <div className="font-medium text-emerald-800 text-sm mb-1">Analysis Complete</div>
+                <div className="text-xs text-emerald-700">{lastRunResult.message}</div>
+                <div className="flex flex-wrap gap-3 mt-2 text-xs">
+                  <span className="text-slate-600">Eligible: <strong>{lastRunResult.totalEligible}</strong></span>
+                  <span className="text-slate-600">Already tagged: <strong>{lastRunResult.alreadyTagged}</strong></span>
+                  <span className="text-green-700">Newly classified: <strong>{lastRunResult.newlyClassified}</strong></span>
+                  <span className="text-blue-700">Auto-applied: <strong>{lastRunResult.autoApplied}</strong></span>
+                  <span className="text-amber-700">Unresolved: <strong>{lastRunResult.unresolved}</strong></span>
+                  <span className="text-purple-700">Rules updated: <strong>{lastRunResult.rulesUpdated}</strong></span>
+                </div>
+              </div>
+              <Button variant="ghost" size="sm" className="h-6 px-2 text-xs"
+                onClick={() => setLastRunResult(null)}>
+                Dismiss
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {showAdd && (
         <Card className="bg-white" data-testid="add-rule-form">
@@ -259,7 +384,7 @@ export default function InvoicePatternsPage() {
                   </td>
                   <td className="px-4 py-2 text-xs text-slate-600">{r.counterpartyName || "—"}</td>
                   <td className="px-4 py-2 text-xs">{r.confidenceWeight}</td>
-                  <td className="px-4 py-2 text-xs">{r.timesMatched}</td>
+                  <td className="px-4 py-2 text-xs font-semibold">{r.timesMatched}</td>
                   <td className="px-4 py-2 text-xs text-green-600">{r.timesConfirmed}</td>
                   <td className="px-4 py-2 text-xs text-red-600">{r.timesOverridden}</td>
                   <td className="px-4 py-2">
