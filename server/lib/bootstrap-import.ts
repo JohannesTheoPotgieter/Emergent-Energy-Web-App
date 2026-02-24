@@ -127,10 +127,10 @@ export async function commitProjectFromTracker(
   }
 
   const [importRun] = await db.insert(smartImportRuns).values({
-    fileName,
-    fileHash: hash,
+    sourceFileName: fileName,
+    sourceFileHash: hash,
     status: "COMMITTED" as any,
-    userId: userId || null,
+    uploadedBy: userId || null,
     projectName,
   }).returning();
 
