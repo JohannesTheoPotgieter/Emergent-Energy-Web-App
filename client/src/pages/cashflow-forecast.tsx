@@ -1,21 +1,13 @@
 import React, { useState, useMemo } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequest, getQueryFn } from "@/lib/queryClient";
+import { useQuery } from "@tanstack/react-query";
+import { getQueryFn } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from "@/components/ui/dialog";
 import {
   Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, ComposedChart, Line, ReferenceLine,
 } from "recharts";
-import {
-  Calendar, ChevronRight, X, Edit2, TrendingUp, TrendingDown,
-} from "lucide-react";
-import ScenarioSelector from "@/components/ScenarioSelector";
+import { TrendingUp, TrendingDown, DollarSign, ArrowDownRight, ArrowUpRight } from "lucide-react";
 
 function formatRand(val: number | null | undefined): string {
   if (val == null || isNaN(val)) return "R 0";
@@ -26,537 +18,288 @@ function formatRand(val: number | null | undefined): string {
   return `${sign}R ${Math.round(abs)}`;
 }
 
-const confidenceColors: Record<string, string> = {
-  High: "bg-green-100 text-green-700",
-  Medium: "bg-amber-100 text-amber-700",
-  Low: "bg-red-100 text-red-700",
-};
+function formatRandExact(val: number | null | undefined): string {
+  if (val == null || isNaN(val)) return "R 0.00";
+  return `R ${val.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
 
-interface ScenarioWeek {
+function formatWeekLabel(dateStr: string): string {
+  const d = new Date(dateStr + 'T00:00:00Z');
+  const day = d.getUTCDate();
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${day} ${months[d.getUTCMonth()]} ${String(d.getUTCFullYear()).slice(2)}`;
+}
+
+interface TrackerWeek {
   weekStart: string;
-  weekEnd: string;
-  weekLabel: string;
-  openingBalance: number;
-  inflowsActual: number;
-  inflowsForecast: number;
-  outflowsActual: number;
-  outflowsForecast: number;
-  closingBalance: number;
-  inflowLineCount: number;
-  outflowLineCount: number;
-  baselineClosingBalance: number;
-  baselineInflowsTotal: number;
-  baselineOutflowsTotal: number;
-  deltaInflows: number;
-  deltaOutflows: number;
-  deltaClosingBalance: number;
+  inflows: number;
+  confirmedInflows: number;
+  outflows: number;
+  confirmedOutflows: number;
+  cashflow: number;
+  invoicedPayments: number;
 }
 
-interface WeekLineItem {
-  id: number;
-  type: string;
-  projectName: string;
-  description: string;
-  amount: number;
-  actualDate: string | null;
-  forecastDate: string | null;
-  effectiveDate: string;
-  invoiceNumber: string | null;
-  poNumber: string | null;
-  category: string | null;
-  supplierName: string | null;
-  confidence: string;
-  hasOverride: boolean;
-  originalDate: string | null;
+interface TrackerData {
+  weeks: TrackerWeek[];
+  totals: {
+    inflows: number;
+    confirmedInflows: number;
+    outflows: number;
+    confirmedOutflows: number;
+    cashflow: number;
+    invoicedPayments: number;
+  };
 }
 
-function DateEditDialog({ open, onClose, item, scenarioId }: {
-  open: boolean;
-  onClose: () => void;
-  item: WeekLineItem | null;
-  scenarioId: number;
-}) {
-  const [newDate, setNewDate] = useState("");
-  const [reason, setReason] = useState("");
-  const queryClient = useQueryClient();
-
-  const saveMutation = useMutation({
-    mutationFn: async () => {
-      if (!item) return;
-      const entityType = item.type === 'inflow' ? 'inflow_line' : 'expense_line';
-      const fieldName = item.type === 'inflow' ? 'receipt_date' : 'payment_date';
-      await apiRequest("POST", `/api/scenarios/${scenarioId}/overrides`, {
-        entityType,
-        entityId: String(item.id),
-        fieldName,
-        originalDate: item.originalDate,
-        overrideDate: newDate,
-        reason,
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries();
-      onClose();
-      setNewDate("");
-      setReason("");
-    },
-  });
-
-  return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Move {item?.type === 'inflow' ? 'Receipt' : 'Payment'} Date</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div>
-            <label className="text-sm font-medium">Line</label>
-            <p className="text-sm text-muted-foreground">{item?.description}</p>
-            <p className="text-xs text-muted-foreground">{item?.projectName} | {formatRand(item?.amount)}</p>
-          </div>
-          <div>
-            <label className="text-sm font-medium">Current Date</label>
-            <p className="text-sm text-muted-foreground">{item?.effectiveDate || 'None'}</p>
-          </div>
-          <div>
-            <label className="text-sm font-medium">New Date</label>
-            <Input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} data-testid="input-forecast-date" />
-          </div>
-          <div>
-            <label className="text-sm font-medium">Reason</label>
-            <Input value={reason} onChange={e => setReason(e.target.value)} placeholder="Why is this date changing?" data-testid="input-forecast-reason" />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => saveMutation.mutate()} disabled={!newDate || !reason || saveMutation.isPending} data-testid="button-save-forecast-override">
-            Save
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
+function getFinancialYear(weekStart: string): string {
+  const d = new Date(weekStart + 'T00:00:00Z');
+  const month = d.getUTCMonth() + 1;
+  const year = d.getUTCFullYear();
+  if (month >= 3) return `FY${year}/${year + 1}`;
+  return `FY${year - 1}/${year}`;
 }
 
-function WeekDetailPanel({ weekStart, weekEnd, weekLabel, scenarioId, onClose }: {
-  weekStart: string;
-  weekEnd: string;
-  weekLabel: string;
-  scenarioId: number | null;
-  onClose: () => void;
-}) {
-  const { data, isLoading } = useQuery<{
-    lines: WeekLineItem[];
-    total: number;
-    inflowTotal: number;
-    outflowTotal: number;
-    inflowCount: number;
-    outflowCount: number;
-  }>({
-    queryKey: [`/api/cashflow-forecast/scenario-week-detail?weekStart=${weekStart}&weekEnd=${weekEnd}&scenarioId=${scenarioId || ''}`],
-    queryFn: getQueryFn({ on401: "throw" }),
-  });
+function getMonthKey(weekStart: string): string {
+  const d = new Date(weekStart + 'T00:00:00Z');
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
 
-  const [editItem, setEditItem] = useState<WeekLineItem | null>(null);
-  const [searchTerm, setSearchTerm] = useState("");
-
-  const inflows = useMemo(() => {
-    let items = (data?.lines ?? []).filter(l => l.type === 'inflow');
-    if (searchTerm) items = items.filter(l => 
-      l.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      l.projectName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (l.invoiceNumber || '').toLowerCase().includes(searchTerm.toLowerCase())
-    );
-    return items;
-  }, [data, searchTerm]);
-
-  const outflows = useMemo(() => {
-    let items = (data?.lines ?? []).filter(l => l.type === 'outflow');
-    if (searchTerm) items = items.filter(l =>
-      l.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      l.projectName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (l.invoiceNumber || '').toLowerCase().includes(searchTerm.toLowerCase())
-    );
-    return items;
-  }, [data, searchTerm]);
-
-  return (
-    <>
-      <div className="fixed right-0 top-0 h-full w-[420px] bg-background border-l shadow-lg z-50 flex flex-col" data-testid="week-detail-panel">
-        <div className="p-4 border-b">
-          <div className="flex items-center justify-between mb-2">
-            <div>
-              <h3 className="font-bold">Week of {weekLabel}</h3>
-              <p className="text-xs text-muted-foreground">{weekStart} to {weekEnd}</p>
-            </div>
-            <button onClick={onClose} className="p-1 hover:bg-muted rounded" data-testid="button-close-detail">
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-          <Input
-            placeholder="Search lines..."
-            className="h-7 text-xs"
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-            data-testid="input-week-search"
-          />
-          {data && (
-            <div className="flex gap-4 mt-2 text-xs">
-              <span className="text-green-600">Inflows: {data.inflowCount} | {formatRand(data.inflowTotal)}</span>
-              <span className="text-red-600">Outflows: {data.outflowCount} | {formatRand(data.outflowTotal)}</span>
-            </div>
-          )}
-        </div>
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {isLoading ? (
-            <div className="text-center text-muted-foreground">Loading...</div>
-          ) : (
-            <>
-              <div>
-                <h4 className="font-medium text-sm text-green-600 mb-2">Inflows ({inflows.length})</h4>
-                {inflows.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">No inflows this week</p>
-                ) : (
-                  <div className="space-y-2">
-                    {inflows.map(line => (
-                      <div key={`in-${line.id}`} className={`border rounded p-2 text-xs space-y-1 ${line.hasOverride ? 'border-amber-300 bg-amber-50/30' : ''}`}>
-                        <div className="flex justify-between items-start">
-                          <span className="font-medium truncate max-w-[200px]">{line.projectName}</span>
-                          <span className="font-mono font-bold text-green-600">{formatRand(line.amount)}</span>
-                        </div>
-                        <p className="text-muted-foreground">{line.description}</p>
-                        <div className="flex gap-2 items-center">
-                          <span className={`px-1.5 py-0.5 rounded text-[10px] ${confidenceColors[line.confidence] || ''}`}>
-                            {line.confidence}
-                          </span>
-                          {line.hasOverride && <span className="text-amber-600 text-[10px]">overridden</span>}
-                          {scenarioId && (
-                            <Button size="sm" variant="ghost" className="h-5 px-1 ml-auto" onClick={() => setEditItem(line)} data-testid={`button-edit-inflow-${line.id}`}>
-                              <Edit2 className="h-3 w-3" />
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div>
-                <h4 className="font-medium text-sm text-red-600 mb-2">Outflows ({outflows.length})</h4>
-                {outflows.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">No outflows this week</p>
-                ) : (
-                  <div className="space-y-2">
-                    {outflows.map(line => (
-                      <div key={`out-${line.id}`} className={`border rounded p-2 text-xs space-y-1 ${line.hasOverride ? 'border-amber-300 bg-amber-50/30' : ''}`}>
-                        <div className="flex justify-between items-start">
-                          <span className="font-medium truncate max-w-[200px]">{line.projectName}</span>
-                          <span className="font-mono font-bold text-red-600">{formatRand(line.amount)}</span>
-                        </div>
-                        <p className="text-muted-foreground">{line.description}</p>
-                        <div className="flex gap-2 items-center flex-wrap">
-                          <span className={`px-1.5 py-0.5 rounded text-[10px] ${confidenceColors[line.confidence] || ''}`}>
-                            {line.confidence}
-                          </span>
-                          {line.supplierName && <span className="text-muted-foreground">{line.supplierName}</span>}
-                          {line.invoiceNumber && <span className="text-muted-foreground">Inv: {line.invoiceNumber}</span>}
-                          {line.hasOverride && <span className="text-amber-600 text-[10px]">overridden</span>}
-                          {scenarioId && (
-                            <Button size="sm" variant="ghost" className="h-5 px-1 ml-auto" onClick={() => setEditItem(line)} data-testid={`button-edit-outflow-${line.id}`}>
-                              <Edit2 className="h-3 w-3" />
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-      {editItem && scenarioId && (
-        <DateEditDialog open={!!editItem} onClose={() => setEditItem(null)} item={editItem} scenarioId={scenarioId} />
-      )}
-    </>
-  );
+function getMonthLabel(monthKey: string): string {
+  const [year, month] = monthKey.split('-').map(Number);
+  const months = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${months[month]} ${year}`;
 }
 
 export default function CashflowForecastPage() {
-  const [scenarioId, setScenarioId] = useState<number | null>(null);
-  const [selectedWeek, setSelectedWeek] = useState<ScenarioWeek | null>(null);
-  const [weeksToShow, setWeeksToShow] = useState(26);
-  const [showReconciliation, setShowReconciliation] = useState(false);
+  const [viewMode, setViewMode] = useState<'weekly' | 'monthly' | 'fy'>('monthly');
+  const [fyFilter, setFyFilter] = useState<string>('all');
 
-  const { data, isLoading } = useQuery<{ weeks: ScenarioWeek[] }>({
-    queryKey: [`/api/cashflow-forecast/scenario-weekly?scenarioId=${scenarioId || ''}`],
+  const { data, isLoading } = useQuery<TrackerData>({
+    queryKey: ["/api/cashflow-tracker"],
     queryFn: getQueryFn({ on401: "throw" }),
   });
 
-  const weeks = data?.weeks ?? [];
+  const allFYs = useMemo(() => {
+    if (!data?.weeks) return [];
+    const fys = new Set<string>();
+    data.weeks.forEach(w => fys.add(getFinancialYear(w.weekStart)));
+    return Array.from(fys).sort();
+  }, [data]);
+
+  const filteredWeeks = useMemo(() => {
+    if (!data?.weeks) return [];
+    if (fyFilter === 'all') return data.weeks;
+    return data.weeks.filter(w => getFinancialYear(w.weekStart) === fyFilter);
+  }, [data, fyFilter]);
+
+  const monthlyData = useMemo(() => {
+    const monthMap = new Map<string, { inflows: number; outflows: number; cashflow: number; confirmedInflows: number; confirmedOutflows: number; invoicedPayments: number }>();
+    for (const w of filteredWeeks) {
+      const mk = getMonthKey(w.weekStart);
+      if (!monthMap.has(mk)) monthMap.set(mk, { inflows: 0, outflows: 0, cashflow: 0, confirmedInflows: 0, confirmedOutflows: 0, invoicedPayments: 0 });
+      const bucket = monthMap.get(mk)!;
+      bucket.inflows += w.inflows;
+      bucket.outflows += w.outflows;
+      bucket.cashflow += w.cashflow;
+      bucket.confirmedInflows += w.confirmedInflows;
+      bucket.confirmedOutflows += w.confirmedOutflows;
+      bucket.invoicedPayments += w.invoicedPayments;
+    }
+    return Array.from(monthMap.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([mk, vals]) => ({
+      label: getMonthLabel(mk),
+      ...vals,
+    }));
+  }, [filteredWeeks]);
+
+  const fyGrouped = useMemo(() => {
+    const fyMap = new Map<string, { inflows: number; outflows: number; cashflow: number; confirmedInflows: number; confirmedOutflows: number; invoicedPayments: number }>();
+    for (const w of filteredWeeks) {
+      const fy = getFinancialYear(w.weekStart);
+      if (!fyMap.has(fy)) fyMap.set(fy, { inflows: 0, outflows: 0, cashflow: 0, confirmedInflows: 0, confirmedOutflows: 0, invoicedPayments: 0 });
+      const bucket = fyMap.get(fy)!;
+      bucket.inflows += w.inflows;
+      bucket.outflows += w.outflows;
+      bucket.cashflow += w.cashflow;
+      bucket.confirmedInflows += w.confirmedInflows;
+      bucket.confirmedOutflows += w.confirmedOutflows;
+      bucket.invoicedPayments += w.invoicedPayments;
+    }
+    return Array.from(fyMap.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([fy, vals]) => ({
+      label: fy,
+      ...vals,
+    }));
+  }, [filteredWeeks]);
+
+  const filteredTotals = useMemo(() => {
+    const t = { inflows: 0, outflows: 0, cashflow: 0, confirmedInflows: 0, confirmedOutflows: 0, invoicedPayments: 0 };
+    for (const w of filteredWeeks) {
+      t.inflows += w.inflows;
+      t.outflows += w.outflows;
+      t.cashflow += w.cashflow;
+      t.confirmedInflows += w.confirmedInflows;
+      t.confirmedOutflows += w.confirmedOutflows;
+      t.invoicedPayments += w.invoicedPayments;
+    }
+    return t;
+  }, [filteredWeeks]);
+
+  const displayData = useMemo(() => {
+    if (viewMode === 'fy') return fyGrouped;
+    if (viewMode === 'monthly') return monthlyData;
+    return filteredWeeks.map(w => ({ label: formatWeekLabel(w.weekStart), ...w }));
+  }, [viewMode, fyGrouped, monthlyData, filteredWeeks]);
 
   const chartData = useMemo(() => {
-    return weeks.slice(0, weeksToShow).map(w => ({
-      ...w,
-      inflowTotal: w.inflowsActual + w.inflowsForecast,
-      outflowTotal: -(w.outflowsActual + w.outflowsForecast),
-      netFlow: (w.inflowsActual + w.inflowsForecast) - (w.outflowsActual + w.outflowsForecast),
-    }));
-  }, [weeks, weeksToShow]);
+    let cumCashflow = 0;
+    return displayData.map(d => {
+      cumCashflow += d.cashflow;
+      return { ...d, cumulativeCashflow: cumCashflow };
+    });
+  }, [displayData]);
 
-  const totals = useMemo(() => {
-    const result = { inflowsActual: 0, inflowsForecast: 0, outflowsActual: 0, outflowsForecast: 0, deltaInflows: 0, deltaOutflows: 0, deltaBalance: 0 };
-    for (const w of weeks.slice(0, weeksToShow)) {
-      result.inflowsActual += w.inflowsActual;
-      result.inflowsForecast += w.inflowsForecast;
-      result.outflowsActual += w.outflowsActual;
-      result.outflowsForecast += w.outflowsForecast;
-      result.deltaInflows += w.deltaInflows;
-      result.deltaOutflows += w.deltaOutflows;
-    }
-    const lastWeek = weeks[Math.min(weeksToShow - 1, weeks.length - 1)];
-    result.deltaBalance = lastWeek?.deltaClosingBalance ?? 0;
-    return result;
-  }, [weeks, weeksToShow]);
-
-  if (isLoading) {
-    return (
-      <div className="space-y-6">
-        <h2 className="text-2xl font-heading font-bold">Cashflow Forecast</h2>
-        <div className="p-12 text-center text-muted-foreground">Loading forecast data...</div>
-      </div>
-    );
-  }
+  if (isLoading) return <div className="p-4 text-muted-foreground">Loading cashflow data...</div>;
 
   return (
     <div className="space-y-4" data-testid="cashflow-forecast-page">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+      <div className="flex flex-col md:flex-row gap-3 items-start md:items-center justify-between">
         <div>
-          <h2 className="text-2xl font-heading font-bold">Cashflow Forecast</h2>
-          <p className="text-sm text-muted-foreground">Weekly line-item forecast — edit dates, see cashflow impact</p>
+          <h2 className="text-2xl font-heading font-bold">Cashflow Tracker</h2>
+          <p className="text-sm text-muted-foreground">{filteredWeeks.length} weeks of cashflow data from underlying project records</p>
         </div>
-        <div className="flex gap-3 items-center">
-          <ScenarioSelector selectedScenarioId={scenarioId} onScenarioChange={setScenarioId} />
-          <div className="flex gap-1 items-center">
-            {[13, 26, 39, 52].map(n => (
-              <button
-                key={n}
-                data-testid={`button-weeks-${n}`}
-                className={`px-2 py-1 rounded text-xs ${weeksToShow === n ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}
-                onClick={() => setWeeksToShow(n)}
-              >
-                {n}w
-              </button>
-            ))}
+        <div className="flex gap-2 items-center">
+          <select
+            className="h-8 rounded-md border px-2 text-sm bg-background"
+            value={fyFilter}
+            onChange={e => setFyFilter(e.target.value)}
+            data-testid="select-fy-filter"
+          >
+            <option value="all">All Financial Years</option>
+            {allFYs.map(fy => <option key={fy} value={fy}>{fy}</option>)}
+          </select>
+          <div className="flex gap-1">
+            <Button size="sm" variant={viewMode === 'fy' ? 'default' : 'ghost'} onClick={() => setViewMode('fy')} data-testid="button-view-fy">By FY</Button>
+            <Button size="sm" variant={viewMode === 'monthly' ? 'default' : 'ghost'} onClick={() => setViewMode('monthly')} data-testid="button-view-monthly">Monthly</Button>
+            <Button size="sm" variant={viewMode === 'weekly' ? 'default' : 'ghost'} onClick={() => setViewMode('weekly')} data-testid="button-view-weekly">Weekly</Button>
           </div>
         </div>
       </div>
 
-      {!scenarioId && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
-          Viewing baseline. Create a scenario to edit dates and see cashflow impact.
-        </div>
-      )}
-
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <Card>
           <CardContent className="p-3">
-            <p className="text-xs text-muted-foreground">Inflows (Actual)</p>
-            <p className="text-lg font-bold text-green-600">{formatRand(totals.inflowsActual)}</p>
+            <p className="text-xs text-muted-foreground">Total Inflows</p>
+            <p className="text-lg font-bold text-green-600" data-testid="text-total-inflows">{formatRand(filteredTotals.inflows)}</p>
+            <p className="text-[10px] text-muted-foreground">Confirmed: {formatRand(filteredTotals.confirmedInflows)}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-3">
-            <p className="text-xs text-muted-foreground">Inflows (Forecast)</p>
-            <p className="text-lg font-bold text-green-400">{formatRand(totals.inflowsForecast)}</p>
-            {scenarioId && totals.deltaInflows !== 0 && (
-              <p className={`text-xs ${totals.deltaInflows > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {totals.deltaInflows > 0 ? '+' : ''}{formatRand(totals.deltaInflows)} vs baseline
-              </p>
-            )}
+            <p className="text-xs text-muted-foreground">Total Outflows</p>
+            <p className="text-lg font-bold text-red-600" data-testid="text-total-outflows">{formatRand(filteredTotals.outflows)}</p>
+            <p className="text-[10px] text-muted-foreground">Confirmed: {formatRand(filteredTotals.confirmedOutflows)}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-3">
-            <p className="text-xs text-muted-foreground">Outflows (Actual)</p>
-            <p className="text-lg font-bold text-red-600">{formatRand(totals.outflowsActual)}</p>
+            <p className="text-xs text-muted-foreground">Net Cashflow</p>
+            <p className={`text-lg font-bold ${filteredTotals.cashflow >= 0 ? 'text-green-600' : 'text-red-600'}`} data-testid="text-net-cashflow">{formatRand(filteredTotals.cashflow)}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-3">
-            <p className="text-xs text-muted-foreground">Outflows (Forecast)</p>
-            <p className="text-lg font-bold text-red-400">{formatRand(totals.outflowsForecast)}</p>
-            {scenarioId && totals.deltaOutflows !== 0 && (
-              <p className={`text-xs ${totals.deltaOutflows < 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {totals.deltaOutflows > 0 ? '+' : ''}{formatRand(totals.deltaOutflows)} vs baseline
-              </p>
-            )}
+            <p className="text-xs text-muted-foreground">Invoiced Payments</p>
+            <p className="text-lg font-bold text-blue-600" data-testid="text-invoiced-payments">{formatRand(filteredTotals.invoicedPayments)}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-3">
+            <p className="text-xs text-muted-foreground">Outstanding Outflows</p>
+            <p className="text-lg font-bold text-amber-600" data-testid="text-outstanding-outflows">{formatRand(filteredTotals.outflows - filteredTotals.confirmedOutflows)}</p>
           </CardContent>
         </Card>
       </div>
 
       <Card>
         <CardHeader className="pb-2">
-          <div className="flex justify-between items-center">
-            <CardTitle className="text-sm">Weekly Cashflow</CardTitle>
-            <Button size="sm" variant="ghost" className="text-xs" onClick={() => setShowReconciliation(!showReconciliation)} data-testid="button-toggle-reconciliation">
-              {showReconciliation ? 'Hide' : 'Show'} Reconciliation
-            </Button>
-          </div>
+          <CardTitle className="text-sm">Cashflow Chart</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                <XAxis dataKey="weekLabel" tick={{ fontSize: 10 }} interval={Math.floor(weeksToShow / 12)} />
-                <YAxis tick={{ fontSize: 10 }} tickFormatter={(v: number) => formatRand(v)} />
-                <Tooltip formatter={(value: number) => formatRand(value)} labelFormatter={(label: string) => `Week of ${label}`} />
-                <Legend />
-                <Bar dataKey="inflowTotal" name="Inflows" fill="#22c55e" opacity={0.7} />
-                <Bar dataKey="outflowTotal" name="Outflows" fill="#ef4444" opacity={0.7} />
-                <Line dataKey="closingBalance" name="Balance" stroke="#3b82f6" strokeWidth={2} dot={false} />
-                {scenarioId && (
-                  <Line dataKey="baselineClosingBalance" name="Baseline Balance" stroke="#9ca3af" strokeWidth={1} strokeDasharray="5 5" dot={false} />
-                )}
-                <ReferenceLine y={0} stroke="#6b7280" strokeDasharray="3 3" />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </div>
+          <ResponsiveContainer width="100%" height={320}>
+            <ComposedChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+              <XAxis dataKey="label" tick={{ fontSize: 10 }} angle={viewMode === 'weekly' ? -45 : 0} textAnchor={viewMode === 'weekly' ? 'end' : 'middle'} height={viewMode === 'weekly' ? 60 : 30} />
+              <YAxis tickFormatter={(v: number) => formatRand(v)} tick={{ fontSize: 10 }} />
+              <Tooltip formatter={(v: number) => formatRandExact(v)} />
+              <Legend />
+              <Bar dataKey="inflows" fill="#22c55e" name="Inflows" opacity={0.8} />
+              <Bar dataKey="outflows" fill="#ef4444" name="Outflows" opacity={0.8} />
+              <Line type="monotone" dataKey="cumulativeCashflow" stroke="#3b82f6" strokeWidth={2} name="Cumulative Cashflow" dot={false} />
+              <ReferenceLine y={0} stroke="#6b7280" strokeDasharray="3 3" />
+            </ComposedChart>
+          </ResponsiveContainer>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm">Weekly Grid</CardTitle>
-          <p className="text-xs text-muted-foreground">Click any week to drill down and edit line-item dates</p>
+          <CardTitle className="text-sm">Cashflow Tracker</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="sticky top-0 bg-background z-10 border-b">
+              <thead className="border-b bg-muted/50">
                 <tr>
-                  <th className="p-2 text-left">Week</th>
-                  <th className="p-2 text-right">Inflows</th>
-                  <th className="p-2 text-right">Outflows</th>
-                  <th className="p-2 text-right">Net</th>
-                  <th className="p-2 text-right">Balance</th>
-                  {scenarioId && (
-                    <>
-                      <th className="p-2 text-right text-amber-600">Δ Inflows</th>
-                      <th className="p-2 text-right text-amber-600">Δ Outflows</th>
-                      <th className="p-2 text-right text-amber-600">Δ Balance</th>
-                    </>
-                  )}
-                  <th className="p-2 text-center">Lines</th>
-                  <th className="p-2 w-6"></th>
+                  <th className="p-2 text-left font-semibold sticky left-0 bg-muted/50">Cashflow</th>
+                  {displayData.map(d => (
+                    <th key={d.label} className="p-2 text-right font-medium whitespace-nowrap text-xs">{d.label}</th>
+                  ))}
+                  <th className="p-2 text-right font-semibold">Total</th>
                 </tr>
               </thead>
               <tbody>
-                {weeks.slice(0, weeksToShow).map(week => {
-                  const inflowTotal = week.inflowsActual + week.inflowsForecast;
-                  const outflowTotal = week.outflowsActual + week.outflowsForecast;
-                  const net = inflowTotal - outflowTotal;
-                  const hasActivity = week.inflowLineCount + week.outflowLineCount > 0;
-                  const hasDelta = scenarioId && (week.deltaInflows !== 0 || week.deltaOutflows !== 0);
-
-                  return (
-                    <tr
-                      key={week.weekStart}
-                      data-testid={`cashflow-week-${week.weekStart}`}
-                      className={`border-b cursor-pointer transition-colors ${
-                        selectedWeek?.weekStart === week.weekStart ? 'bg-primary/5' : 'hover:bg-muted/50'
-                      } ${!hasActivity ? 'opacity-50' : ''} ${hasDelta ? 'bg-amber-50/30' : ''}`}
-                      onClick={() => hasActivity && setSelectedWeek(week)}
-                    >
-                      <td className="p-2 font-medium text-xs whitespace-nowrap">{week.weekLabel}</td>
-                      <td className="p-2 text-right font-mono text-xs text-green-600">
-                        {inflowTotal > 0 ? formatRand(inflowTotal) : '-'}
-                      </td>
-                      <td className="p-2 text-right font-mono text-xs text-red-600">
-                        {outflowTotal > 0 ? formatRand(outflowTotal) : '-'}
-                      </td>
-                      <td className={`p-2 text-right font-mono text-xs font-medium ${net >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {hasActivity ? formatRand(net) : '-'}
-                      </td>
-                      <td className="p-2 text-right font-mono text-xs">{formatRand(week.closingBalance)}</td>
-                      {scenarioId && (
-                        <>
-                          <td className={`p-2 text-right font-mono text-xs ${week.deltaInflows > 0 ? 'text-green-600' : week.deltaInflows < 0 ? 'text-red-600' : ''}`}>
-                            {week.deltaInflows !== 0 ? (week.deltaInflows > 0 ? '+' : '') + formatRand(week.deltaInflows) : '-'}
-                          </td>
-                          <td className={`p-2 text-right font-mono text-xs ${week.deltaOutflows < 0 ? 'text-green-600' : week.deltaOutflows > 0 ? 'text-red-600' : ''}`}>
-                            {week.deltaOutflows !== 0 ? (week.deltaOutflows > 0 ? '+' : '') + formatRand(week.deltaOutflows) : '-'}
-                          </td>
-                          <td className={`p-2 text-right font-mono text-xs ${week.deltaClosingBalance > 0 ? 'text-green-600' : week.deltaClosingBalance < 0 ? 'text-red-600' : ''}`}>
-                            {week.deltaClosingBalance !== 0 ? (week.deltaClosingBalance > 0 ? '+' : '') + formatRand(week.deltaClosingBalance) : '-'}
-                          </td>
-                        </>
-                      )}
-                      <td className="p-2 text-center text-xs text-muted-foreground">
-                        {hasActivity ? week.inflowLineCount + week.outflowLineCount : '-'}
-                      </td>
-                      <td className="p-2">
-                        {hasActivity && <ChevronRight className="h-3 w-3 text-muted-foreground" />}
-                      </td>
-                    </tr>
-                  );
-                })}
+                <tr className="border-b hover:bg-muted/30 bg-green-50/50">
+                  <td className="p-2 font-medium text-green-700 sticky left-0 bg-green-50/50">COS Inflows</td>
+                  {displayData.map(d => (
+                    <td key={d.label} className="p-2 text-right font-mono text-xs text-green-700">{d.inflows > 0 ? formatRandExact(d.inflows) : '-'}</td>
+                  ))}
+                  <td className="p-2 text-right font-mono text-xs font-bold text-green-700">{formatRandExact(filteredTotals.inflows)}</td>
+                </tr>
+                <tr className="border-b hover:bg-muted/30 bg-red-50/50">
+                  <td className="p-2 font-medium text-red-700 sticky left-0 bg-red-50/50">COS Outflows</td>
+                  {displayData.map(d => (
+                    <td key={d.label} className="p-2 text-right font-mono text-xs text-red-700">{d.outflows > 0 ? formatRandExact(d.outflows) : '-'}</td>
+                  ))}
+                  <td className="p-2 text-right font-mono text-xs font-bold text-red-700">{formatRandExact(filteredTotals.outflows)}</td>
+                </tr>
+                <tr className="border-b hover:bg-muted/30 bg-emerald-50/70">
+                  <td className="p-2 font-semibold text-emerald-800 sticky left-0 bg-emerald-50/70">Project Cashflow</td>
+                  {displayData.map(d => (
+                    <td key={d.label} className={`p-2 text-right font-mono text-xs font-semibold ${d.cashflow >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                      {d.inflows > 0 || d.outflows > 0 ? formatRandExact(d.cashflow) : '-'}
+                    </td>
+                  ))}
+                  <td className={`p-2 text-right font-mono text-xs font-bold ${filteredTotals.cashflow >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>{formatRandExact(filteredTotals.cashflow)}</td>
+                </tr>
+                <tr className="border-b hover:bg-muted/30 bg-orange-50/50">
+                  <td className="p-2 font-medium text-orange-700 sticky left-0 bg-orange-50/50">Project Outflows</td>
+                  {displayData.map(d => (
+                    <td key={d.label} className="p-2 text-right font-mono text-xs text-orange-700">{d.confirmedOutflows > 0 ? formatRandExact(d.confirmedOutflows) : '-'}</td>
+                  ))}
+                  <td className="p-2 text-right font-mono text-xs font-bold text-orange-700">{formatRandExact(filteredTotals.confirmedOutflows)}</td>
+                </tr>
+                <tr className="border-b hover:bg-muted/30">
+                  <td className="p-2 font-medium text-blue-700 sticky left-0 bg-white">Invoiced Payments</td>
+                  {displayData.map(d => (
+                    <td key={d.label} className="p-2 text-right font-mono text-xs text-blue-700">{d.invoicedPayments > 0 ? formatRandExact(d.invoicedPayments) : '-'}</td>
+                  ))}
+                  <td className="p-2 text-right font-mono text-xs font-bold text-blue-700">{formatRandExact(filteredTotals.invoicedPayments)}</td>
+                </tr>
               </tbody>
             </table>
           </div>
         </CardContent>
       </Card>
-
-      {showReconciliation && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Reconciliation Summary</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-xs space-y-1">
-              <div className="flex justify-between">
-                <span>Total weeks displayed</span>
-                <span>{Math.min(weeksToShow, weeks.length)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Weeks with activity</span>
-                <span>{weeks.slice(0, weeksToShow).filter(w => w.inflowLineCount + w.outflowLineCount > 0).length}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Total inflow amount</span>
-                <span className="text-green-600">{formatRand(totals.inflowsActual + totals.inflowsForecast)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Total outflow amount</span>
-                <span className="text-red-600">{formatRand(totals.outflowsActual + totals.outflowsForecast)}</span>
-              </div>
-              {scenarioId && (
-                <>
-                  <div className="border-t my-2" />
-                  <div className="flex justify-between font-medium">
-                    <span>Net delta vs baseline</span>
-                    <span className={totals.deltaBalance > 0 ? 'text-green-600' : 'text-red-600'}>
-                      {totals.deltaBalance > 0 ? '+' : ''}{formatRand(totals.deltaBalance)}
-                    </span>
-                  </div>
-                </>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {selectedWeek && (
-        <WeekDetailPanel
-          weekStart={selectedWeek.weekStart}
-          weekEnd={selectedWeek.weekEnd}
-          weekLabel={selectedWeek.weekLabel}
-          scenarioId={scenarioId}
-          onClose={() => setSelectedWeek(null)}
-        />
-      )}
     </div>
   );
 }
