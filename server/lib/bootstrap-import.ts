@@ -15,6 +15,9 @@ import {
   derivedPortfolioKpis,
   derivedRagSummary,
   appSettings,
+  projectPlan,
+  programExpense,
+  programInflows,
 } from "@shared/schema";
 import { runSmartImportPreview } from "./import/index";
 
@@ -137,7 +140,8 @@ export async function commitProjectFromTracker(
   const [project] = await db.insert(projectInfo).values({
     projectName,
     phase: detectedInfo?.phase || "PLANNING",
-    systemSize: detectedInfo?.sizeKwp || null,
+    sizeKwp: detectedInfo?.sizeKwp || null,
+    pd: detectedInfo?.pd || null,
     contractValue: detectedInfo?.contractValue || null,
   } as any).returning();
 
@@ -167,6 +171,21 @@ export async function commitProjectFromTracker(
       await db.insert(normalizedPlanTasks).values(planBatch.slice(i, i + 100));
     }
     planCount = planBatch.length;
+
+    const legacyPlanBatch = norm.planTasks.map((t: any, idx: number) => ({
+      projectName,
+      rowNumber: t.sourceRow || (idx + 1),
+      taskNo: String(idx + 1),
+      highLevelProgramme: t.taskName,
+      actualStart: t.startDate || t.actualStartDate || null,
+      durationDays: t.durationDays || null,
+      actualEnd: t.endDate || t.actualEndDate || null,
+      actualPctComplete: t.pctComplete != null ? Number(t.pctComplete) : null,
+      expectedPctComplete: null,
+    }));
+    for (let i = 0; i < legacyPlanBatch.length; i += 100) {
+      await db.insert(projectPlan).values(legacyPlanBatch.slice(i, i + 100));
+    }
   }
 
   if (norm.revenueLines && norm.revenueLines.length > 0) {
@@ -196,6 +215,22 @@ export async function commitProjectFromTracker(
       await db.insert(normalizedRevenueLines).values(revBatch.slice(i, i + 100));
     }
     revCount = revBatch.length;
+
+    const legacyRevBatch = norm.revenueLines.map((r: any, idx: number) => ({
+      projectName,
+      rowNumber: r.sourceRow || (idx + 1),
+      milestoneNo: String(idx + 1),
+      milestoneName: r.milestoneName || r.description || null,
+      milestoneAmount: r.amountExVat || null,
+      plannedPaymentDate: r.expectedPaymentDate || null,
+      milestoneInvoiceNumber: r.invoiceNumber || null,
+      invoiceRaisedDate: r.invoiceDate || null,
+      paymentReceivedDate: r.paidDate || null,
+      inBank: r.inBankDate ? 1 : 0,
+    }));
+    for (let i = 0; i < legacyRevBatch.length; i += 100) {
+      await db.insert(programInflows).values(legacyRevBatch.slice(i, i + 100));
+    }
   }
 
   if (norm.costLines && norm.costLines.length > 0) {
@@ -227,6 +262,27 @@ export async function commitProjectFromTracker(
       await db.insert(normalizedCostLines).values(costBatch.slice(i, i + 100));
     }
     costCount = costBatch.length;
+
+    const legacyCostBatch = norm.costLines.map((c: any, idx: number) => ({
+      projectName,
+      rowNumber: c.sourceRow || (idx + 1),
+      rowType: "item" as const,
+      expenseCategory: c.costCategory || null,
+      expenseLineItem: c.description || null,
+      expenseActualTotal: c.amountExVat || null,
+      expensePoNumber: c.poNumber || null,
+      expenseInvoiceNumber: c.invoiceNumber || null,
+      expenseInvoicedDate: c.invoiceDate || null,
+      invoiceDateConfirmed: c.invoiceDateConfirmed || false,
+      invoiceDateFontColor: c.invoiceDateFontColor || null,
+      expensePaymentDate: c.paidDate || null,
+      paymentDateConfirmed: c.paidDateConfirmed || false,
+      paymentDateFontColor: c.paidDateFontColor || null,
+      supplierName: c.counterpartyName || null,
+    } as any));
+    for (let i = 0; i < legacyCostBatch.length; i += 100) {
+      await db.insert(programExpense).values(legacyCostBatch.slice(i, i + 100));
+    }
   }
 
   if (norm.executionPhases && norm.executionPhases.length > 0) {
