@@ -48,6 +48,7 @@ import SystemActivityLogPage from "@/pages/system-activity-log";
 import WeeklyReviewsPage from "@/pages/weekly-reviews";
 import AdminRolesPage from "@/pages/admin-roles";
 import TrRegisterPage from "@/pages/tr-register";
+import FeedbackPage from "@/pages/feedback";
 import { useAuth } from "@/hooks/use-auth";
 import { useProgramData } from "@/hooks/use-program-data";
 import { TrackerTable } from "@/components/dashboard/TrackerTable";
@@ -55,7 +56,7 @@ import { format } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 
-const EPM_ALLOWED_PATHS = ["/", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/projects"];
+const EPM_ALLOWED_PATHS = ["/", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/projects", "/feedback"];
 
 function RoleGuard({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -71,7 +72,7 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
   }
 
   if (user?.role === "quality_manager") {
-    const qmAllowed = ["/", "/quality", "/projects"];
+    const qmAllowed = ["/", "/quality", "/projects", "/feedback"];
     const allowed = qmAllowed.some(p => 
       p === location || (p === "/projects" && location.startsWith("/project/"))
     );
@@ -242,6 +243,7 @@ function ProtectedPages() {
         <Route path="/weekly-reviews" component={WeeklyReviewsPage} />
         <Route path="/admin/roles" component={AdminRolesPage} />
         <Route path="/tr-register" component={TrRegisterPage} />
+        <Route path="/feedback" component={FeedbackPage} />
 
         <Route component={NotFound} />
       </Switch>
