@@ -2315,8 +2315,12 @@ function BulkCommitPanel({ onBack, onSwitchToWizard }: {
   const [commitDone, setCommitDone] = useState(false);
   const [commitResults, setCommitResults] = useState<BulkCommitResult[]>([]);
   const [progress, setProgress] = useState(0);
+  const [ignoringAllBlockers, setIgnoringAllBlockers] = useState(false);
   const { toast } = useToast();
   const [, navigate] = useLocation();
+
+  const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
+  const isAdmin = ["COO_ADMIN", "CEO_ADMIN", "admin"].includes(companyRole || "");
 
   const loadPendingRuns = useCallback(async () => {
     setLoading(true);
@@ -2336,6 +2340,30 @@ function BulkCommitPanel({ onBack, onSwitchToWizard }: {
 
   const committableRuns = pendingRuns.filter(r => r.blockerCount === 0);
   const blockedRuns = pendingRuns.filter(r => r.blockerCount > 0);
+
+  const handleIgnoreAllBlockers = async () => {
+    if (blockedRuns.length === 0) return;
+    setIgnoringAllBlockers(true);
+    try {
+      let totalIgnored = 0;
+      for (const run of blockedRuns) {
+        const res = await fetch(`/api/smart-import/${run.id}/ignore-all-blockers`, {
+          method: "POST",
+          headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          totalIgnored += data.ignored;
+        }
+      }
+      toast({ title: "Blockers Ignored", description: `${totalIgnored} blocker(s) ignored across ${blockedRuns.length} files` });
+      await loadPendingRuns();
+    } catch {
+      toast({ title: "Error", description: "Failed to ignore blockers", variant: "destructive" });
+    } finally {
+      setIgnoringAllBlockers(false);
+    }
+  };
 
   const handleBulkCommit = async () => {
     if (committableRuns.length === 0) return;
@@ -2597,7 +2625,7 @@ function BulkCommitPanel({ onBack, onSwitchToWizard }: {
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3" data-testid="blocked-runs-notice">
           <div className="flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
-            <div>
+            <div className="flex-1">
               <p className="text-sm font-medium text-amber-800">
                 {blockedRuns.length} file{blockedRuns.length > 1 ? "s have" : " has"} unresolved blockers
               </p>
@@ -2605,6 +2633,24 @@ function BulkCommitPanel({ onBack, onSwitchToWizard }: {
                 Click "Review" on those files to resolve issues before committing.
                 Non-blocker warnings will be auto-resolved during bulk commit.
               </p>
+              {isAdmin && (
+                <div className="mt-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs border-red-300 text-red-700 hover:bg-red-100 bg-white"
+                    disabled={ignoringAllBlockers}
+                    onClick={handleIgnoreAllBlockers}
+                    data-testid="btn-ignore-all-blockers-bulk"
+                  >
+                    {ignoringAllBlockers ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <XCircle className="w-3 h-3 mr-1" />}
+                    Ignore All Blockers ({blockedRuns.length} files)
+                  </Button>
+                  <p className="text-[10px] text-amber-600 mt-1">
+                    Blocked rows will be skipped during import. All files will become committable.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         </div>
