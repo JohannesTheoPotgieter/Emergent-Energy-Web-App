@@ -40,6 +40,7 @@ import {
   HardHat,
   ShieldAlert,
   ClipboardList,
+  MessageSquareText,
 } from "lucide-react";
 import { UX_REDESIGN_ENABLED } from "@shared/schema";
 import { useProgramData } from "@/hooks/use-program-data";
@@ -107,6 +108,13 @@ function getLegacyNavGroups(): NavGroup[] {
       ],
     },
     {
+      heading: "FEEDBACK",
+      section: "FEEDBACK",
+      items: [
+        { label: "Feedback & Support", icon: MessageSquareText, path: "/feedback" },
+      ],
+    },
+    {
       heading: "ADMIN",
       section: "ADMIN",
       items: [
@@ -166,6 +174,13 @@ function getRedesignedNavGroups(): NavGroup[] {
       section: "GOVERNANCE",
       items: [
         { label: "Quality Dashboard", icon: ShieldCheck, path: "/quality" },
+      ],
+    },
+    {
+      heading: "FEEDBACK",
+      section: "FEEDBACK",
+      items: [
+        { label: "Feedback & Support", icon: MessageSquareText, path: "/feedback" },
       ],
     },
     {
@@ -283,6 +298,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </Link>
 
         {navGroups.filter(group => {
+          if (group.section === "FEEDBACK") return true;
           if (allowedSections.length === 0 && !activeRole) return group.section === "PROJECT_MANAGEMENT";
           return allowedSections.includes(group.section);
         }).map((group) => {
