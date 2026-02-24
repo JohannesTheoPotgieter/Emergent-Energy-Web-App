@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, getQueryFn } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -60,6 +60,7 @@ function getMonthLabel(monthStr: string): string {
 
 function TrackerView({ data }: { data: TrackerData | undefined }) {
   const [viewMode, setViewMode] = useState<'monthly' | 'fy'>('fy');
+  const [selectedFY, setSelectedFY] = useState<string>('');
 
   const fyData = useMemo(() => {
     if (!data?.months) return [];
@@ -78,43 +79,84 @@ function TrackerView({ data }: { data: TrackerData | undefined }) {
       .map(([fy, vals]) => ({ label: fy, ...vals }));
   }, [data]);
 
+  const availableFYs = useMemo(() => {
+    return ['All', ...fyData.map(f => f.label)];
+  }, [fyData]);
+
+  useEffect(() => {
+    if (selectedFY === '' && fyData.length > 0) {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = now.getMonth() + 1;
+      const currentFY = month >= 3 ? `FY${year}/${year + 1}` : `FY${year - 1}/${year}`;
+      const match = fyData.find(f => f.label === currentFY);
+      setSelectedFY(match ? currentFY : fyData[fyData.length - 1].label);
+    }
+  }, [fyData, selectedFY]);
+
+  const filteredMonths = useMemo(() => {
+    if (!data?.months || selectedFY === 'All') return data?.months || [];
+    return data.months.filter(m => getFinancialYear(m.month) === selectedFY);
+  }, [data, selectedFY]);
+
+  const displayTotals = useMemo(() => {
+    if (selectedFY === 'All') return data?.totals || { planned: 0, realised: 0, outstanding: 0, budget: 0 };
+    const fyEntry = fyData.find(f => f.label === selectedFY);
+    if (fyEntry) return { planned: fyEntry.planned, realised: fyEntry.realised, outstanding: fyEntry.outstanding, budget: fyEntry.budget };
+    return { planned: 0, realised: 0, outstanding: 0, budget: 0 };
+  }, [data, fyData, selectedFY]);
+
   const chartData = useMemo(() => {
     if (viewMode === 'fy') return fyData;
-    return (data?.months || []).map(m => ({
+    return filteredMonths.map(m => ({
       label: getMonthLabel(m.month),
       ...m,
     }));
-  }, [data, fyData, viewMode]);
+  }, [filteredMonths, fyData, viewMode]);
 
   if (!data) return <div className="text-sm text-muted-foreground p-4">Loading...</div>;
 
-  const displayData = viewMode === 'fy' ? fyData : (data.months || []).map(m => ({ label: getMonthLabel(m.month), ...m }));
+  const displayData = viewMode === 'fy' ? fyData : filteredMonths.map(m => ({ label: getMonthLabel(m.month), ...m }));
 
   return (
     <div className="space-y-4">
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-sm font-medium text-muted-foreground">Financial Year:</span>
+        <select
+          value={selectedFY}
+          onChange={(e) => setSelectedFY(e.target.value)}
+          className="text-sm border rounded px-2 py-1 bg-white"
+          data-testid="select-fy-filter"
+        >
+          {availableFYs.map(fy => (
+            <option key={fy} value={fy}>{fy}</option>
+          ))}
+        </select>
+      </div>
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Card>
           <CardContent className="p-3">
-            <p className="text-xs text-muted-foreground">Planned COS</p>
-            <p className="text-lg font-bold text-slate-700" data-testid="text-total-planned">{formatRand(data.totals.planned)}</p>
+            <p className="text-xs text-muted-foreground">Planned COS {selectedFY !== 'All' ? `(${selectedFY})` : ''}</p>
+            <p className="text-lg font-bold text-slate-700" data-testid="text-total-planned">{formatRand(displayTotals.planned)}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-3">
-            <p className="text-xs text-muted-foreground">Realised COS</p>
-            <p className="text-lg font-bold text-green-600" data-testid="text-total-realised">{formatRand(data.totals.realised)}</p>
+            <p className="text-xs text-muted-foreground">Realised COS {selectedFY !== 'All' ? `(${selectedFY})` : ''}</p>
+            <p className="text-lg font-bold text-green-600" data-testid="text-total-realised">{formatRand(displayTotals.realised)}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-3">
-            <p className="text-xs text-muted-foreground">Outstanding COS</p>
-            <p className="text-lg font-bold text-amber-600" data-testid="text-total-outstanding">{formatRand(data.totals.outstanding)}</p>
+            <p className="text-xs text-muted-foreground">Outstanding COS {selectedFY !== 'All' ? `(${selectedFY})` : ''}</p>
+            <p className="text-lg font-bold text-amber-600" data-testid="text-total-outstanding">{formatRand(displayTotals.outstanding)}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-3">
-            <p className="text-xs text-muted-foreground">Budget COS</p>
-            <p className="text-lg font-bold text-blue-600" data-testid="text-total-budget">{formatRand(data.totals.budget)}</p>
+            <p className="text-xs text-muted-foreground">Budget COS {selectedFY !== 'All' ? `(${selectedFY})` : ''}</p>
+            <p className="text-lg font-bold text-blue-600" data-testid="text-total-budget">{formatRand(displayTotals.budget)}</p>
           </CardContent>
         </Card>
       </div>
@@ -171,28 +213,28 @@ function TrackerView({ data }: { data: TrackerData | undefined }) {
                   {displayData.map(d => (
                     <td key={d.label} className="p-2 text-right font-mono text-xs">{formatRandExact(d.planned)}</td>
                   ))}
-                  <td className="p-2 text-right font-mono text-xs font-bold">{formatRandExact(data.totals.planned)}</td>
+                  <td className="p-2 text-right font-mono text-xs font-bold">{formatRandExact(displayTotals.planned)}</td>
                 </tr>
                 <tr className="border-b hover:bg-muted/30 bg-green-50/50">
                   <td className="p-2 font-medium text-green-700 sticky left-0 bg-green-50/50">Realised COS</td>
                   {displayData.map(d => (
                     <td key={d.label} className="p-2 text-right font-mono text-xs text-green-700">{formatRandExact(d.realised)}</td>
                   ))}
-                  <td className="p-2 text-right font-mono text-xs font-bold text-green-700">{formatRandExact(data.totals.realised)}</td>
+                  <td className="p-2 text-right font-mono text-xs font-bold text-green-700">{formatRandExact(displayTotals.realised)}</td>
                 </tr>
                 <tr className="border-b hover:bg-muted/30 bg-amber-50/50">
                   <td className="p-2 font-medium text-amber-700 sticky left-0 bg-amber-50/50">Outstanding COS</td>
                   {displayData.map(d => (
                     <td key={d.label} className="p-2 text-right font-mono text-xs text-amber-700">{formatRandExact(d.outstanding)}</td>
                   ))}
-                  <td className="p-2 text-right font-mono text-xs font-bold text-amber-700">{formatRandExact(data.totals.outstanding)}</td>
+                  <td className="p-2 text-right font-mono text-xs font-bold text-amber-700">{formatRandExact(displayTotals.outstanding)}</td>
                 </tr>
                 <tr className="border-b hover:bg-muted/30 bg-blue-50/50">
                   <td className="p-2 font-medium text-blue-700 sticky left-0 bg-blue-50/50">Budget COS</td>
                   {displayData.map(d => (
                     <td key={d.label} className="p-2 text-right font-mono text-xs text-blue-700">{formatRandExact(d.budget)}</td>
                   ))}
-                  <td className="p-2 text-right font-mono text-xs font-bold text-blue-700">{formatRandExact(data.totals.budget)}</td>
+                  <td className="p-2 text-right font-mono text-xs font-bold text-blue-700">{formatRandExact(displayTotals.budget)}</td>
                 </tr>
               </tbody>
             </table>
