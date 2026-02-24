@@ -7296,8 +7296,8 @@ export async function registerRoutes(
       const monthMap = new Map<string, { planned: number; realised: number; budget: number }>();
 
       for (const e of items) {
-        const actualAmt = Math.abs(parseFloat(e.expenseActualTotal || '0'));
-        const budgetAmt = Math.abs(parseFloat(e.budgetTotal || '0'));
+        const actualAmt = parseFloat(e.expenseActualTotal || '0');
+        const budgetAmt = parseFloat(e.budgetTotal || '0');
 
         const dateStr = e.expenseInvoicedDate || e.expensePaymentDate;
         if (!dateStr && actualAmt === 0 && budgetAmt === 0) continue;
@@ -7317,7 +7317,7 @@ export async function registerRoutes(
         }
         const bucket = monthMap.get(monthKey)!;
 
-        if (actualAmt > 0) {
+        if (actualAmt !== 0) {
           bucket.planned += actualAmt;
 
           const isRealised = e.expenseInvoiceNumber && e.invoiceDateFontColor === 'black';
@@ -7326,7 +7326,7 @@ export async function registerRoutes(
           }
         }
 
-        if (budgetAmt > 0) {
+        if (budgetAmt !== 0) {
           bucket.budget += budgetAmt;
         }
       }
@@ -7387,7 +7387,7 @@ export async function registerRoutes(
       }
 
       for (const e of items) {
-        const amt = Math.abs(parseFloat(e.expenseActualTotal || '0'));
+        const amt = parseFloat(e.expenseActualTotal || '0');
         if (amt === 0) continue;
 
         const payDate = e.expensePaymentDate || e.forecastPaymentDate;
@@ -7408,7 +7408,7 @@ export async function registerRoutes(
       }
 
       for (const inf of allInflows) {
-        const amt = Math.abs(parseFloat(inf.milestoneAmount || '0'));
+        const amt = parseFloat(inf.milestoneAmount || '0');
         if (amt === 0) continue;
 
         const dateStr = inf.paymentReceivedDate || (inf as any).effectiveDate || inf.plannedPaymentDate;
