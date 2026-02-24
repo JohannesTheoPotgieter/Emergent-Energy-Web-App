@@ -323,6 +323,9 @@ async function seedUsers() {
   const { registerRoleManagementRoutes, seedRolePermissions } = await import("./role-management");
   registerRoleManagementRoutes(app);
   await seedRolePermissions().catch(err => console.error('[Seed] Role permissions error:', err));
+
+  const { registerBootstrapImportRoutes } = await import("./bootstrap-import-routes");
+  registerBootstrapImportRoutes(app);
   
   await registerRoutes(httpServer, app);
 
