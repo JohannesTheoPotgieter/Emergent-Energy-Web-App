@@ -318,10 +318,26 @@ export async function parseTrackerFile(buffer: Buffer, fileName: string): Promis
         const row = data[rowIdx];
         if (!row) continue;
         
-        const taskNo = noCol >= 0 ? row[noCol] : null;
+        const rawTaskNo = noCol >= 0 ? row[noCol] : null;
         const highLevelProgramme = programmeCol >= 0 ? row[programmeCol] : null;
         
-        if (!taskNo && !highLevelProgramme) continue;
+        if (!rawTaskNo && !highLevelProgramme) continue;
+        
+        const taskNoStr = rawTaskNo ? String(rawTaskNo).trim() : null;
+        const progStr = highLevelProgramme ? String(highLevelProgramme).trim().toLowerCase() : "";
+        if (taskNoStr && taskNoStr.toLowerCase() === "no." || taskNoStr === "no") continue;
+        if (progStr === "high level programme" || progStr === "high level program") continue;
+        if (progStr.includes("end of sheet")) continue;
+        
+        let cleanTaskNo: string | null = null;
+        if (taskNoStr) {
+          const numVal = parseFloat(taskNoStr);
+          if (!isNaN(numVal)) {
+            cleanTaskNo = parseFloat(numVal.toFixed(10)).toString();
+          } else {
+            cleanTaskNo = taskNoStr;
+          }
+        }
         
         const actualStart = actualStartCol >= 0 ? parseDate(row[actualStartCol]) : null;
         const rawDuration = durationCol >= 0 && row[durationCol] ? parseInt(String(row[durationCol])) : null;
@@ -333,8 +349,8 @@ export async function parseTrackerFile(buffer: Buffer, fileName: string): Promis
         planItems.push({
           projectName,
           rowNumber: rowIdx + 1,
-          taskNo: taskNo ? String(taskNo) : null,
-          highLevelProgramme: highLevelProgramme ? String(highLevelProgramme) : null,
+          taskNo: cleanTaskNo,
+          highLevelProgramme: highLevelProgramme ? String(highLevelProgramme).trim() : null,
           actualStart,
           durationDays,
           actualEnd,
@@ -657,9 +673,14 @@ export async function parseTrackerFile(buffer: Buffer, fileName: string): Promis
           if (!row) continue;
           
           const milestoneDesc = milestoneCol >= 0 ? row[milestoneCol] : null;
+          const milestoneNoRaw = milestoneNoCol >= 0 ? row[milestoneNoCol] : null;
           
-          if (milestoneDesc && String(milestoneDesc).toUpperCase().startsWith("KEY")) break;
-          if (milestoneDesc && String(milestoneDesc).toLowerCase().includes("end of sheet")) break;
+          const anyColUpper = [milestoneDesc, milestoneNoRaw].filter(Boolean).map(v => String(v).toUpperCase()).join(" ");
+          const anyColLower = anyColUpper.toLowerCase();
+          if (anyColUpper.includes("KEY:") || anyColUpper.startsWith("KEY")) break;
+          if (anyColLower.includes("end of sheet")) break;
+          if (anyColLower.includes("red font")) break;
+          if (anyColLower.includes("contains an error")) break;
           
           const checkSecondHeader = milestoneDesc && 
             (String(milestoneDesc).includes("PAYMENT MILESTONE") || 
@@ -667,6 +688,9 @@ export async function parseTrackerFile(buffer: Buffer, fileName: string): Promis
           if (checkSecondHeader && rowIdx > headerRowIdx + 1) break;
           
           if (!milestoneDesc) continue;
+          
+          const trimmedMilestone = String(milestoneDesc).trim();
+          if (trimmedMilestone === "-" || trimmedMilestone === "" || trimmedMilestone === "—") continue;
           
           let inBankValue = 0;
           if (paymentDateCol >= 0) {
