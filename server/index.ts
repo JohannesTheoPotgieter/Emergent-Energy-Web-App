@@ -233,12 +233,6 @@ async function seedUsers() {
       name: "Engineering Manager",
       role: "ENGINEERING_MANAGER" as const,
     },
-    {
-      email: "kam@emergent.energy",
-      password: "emergent2026",
-      name: "Key Accounts Manager",
-      role: "KEY_ACCOUNTS_MANAGER" as const,
-    },
   ];
 
   for (const u of usersToSeed) {
