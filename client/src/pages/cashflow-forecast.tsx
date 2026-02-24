@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getQueryFn } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -73,7 +73,7 @@ function getMonthLabel(monthKey: string): string {
 
 export default function CashflowForecastPage() {
   const [viewMode, setViewMode] = useState<'weekly' | 'monthly' | 'fy'>('monthly');
-  const [fyFilter, setFyFilter] = useState<string>('all');
+  const [fyFilter, setFyFilter] = useState<string>('');
 
   const { data, isLoading } = useQuery<TrackerData>({
     queryKey: ["/api/cashflow-tracker"],
@@ -86,6 +86,17 @@ export default function CashflowForecastPage() {
     data.weeks.forEach(w => fys.add(getFinancialYear(w.weekStart)));
     return Array.from(fys).sort();
   }, [data]);
+
+  useEffect(() => {
+    if (fyFilter === '' && allFYs.length > 0) {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = now.getMonth() + 1;
+      const currentFY = month >= 3 ? `FY${year}/${year + 1}` : `FY${year - 1}/${year}`;
+      const match = allFYs.find(fy => fy === currentFY);
+      setFyFilter(match ? currentFY : allFYs[allFYs.length - 1]);
+    }
+  }, [allFYs, fyFilter]);
 
   const filteredWeeks = useMemo(() => {
     if (!data?.weeks) return [];
