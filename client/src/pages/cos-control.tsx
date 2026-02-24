@@ -57,6 +57,7 @@ interface InvoiceLine {
   invoiceNumber: string | null;
   supplierName: string | null;
   projects: string[];
+  projectName?: string;
   invoicedDate: string | null;
   paymentDate: string | null;
   forecastPaymentDate: string | null;
