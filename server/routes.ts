@@ -3533,7 +3533,8 @@ export async function registerRoutes(
         try {
           // Read and parse file first (no DB writes yet)
           const fileBuffer = fs.readFileSync(file.path);
-          const parseResult = await parseTrackerFile(fileBuffer, file.originalname);
+          const cleanedFilename = file.originalname.replace(/^\d{10,}_/, '');
+          const parseResult = await parseTrackerFile(fileBuffer, cleanedFilename);
           
           await applyFontColors(parseResult.expenses, fileBuffer);
 
