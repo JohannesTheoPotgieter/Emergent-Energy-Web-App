@@ -6,6 +6,7 @@ import { worksheetToArray, parseDate, parseNumber, parsePercent, parseStatus, da
 export interface NormalizationResult {
   planTasks: Array<{
     taskName: string;
+    taskNo: string | null;
     phase: string | null;
     startDate: string | null;
     endDate: string | null;
@@ -220,6 +221,7 @@ function extractPlanTasks(
 
     tasks.push({
       taskName: taskName || taskNo || "",
+      taskNo: taskNo || null,
       phase: currentPhase,
       startDate,
       endDate,
@@ -404,19 +406,30 @@ function extractCostLines(
   const effectiveAmountCol = amountCol >= 0 ? amountCol : actualTotalCol;
 
   const invoiceNumbers = new Set<string>();
+  let currentCategory: string | null = null;
 
   for (let i = startRow; i < Math.min(endRow, data.length); i++) {
     const row = data[i];
     if (!row) continue;
 
-    const category = cellStr(row, categoryCol);
+    const rawCategory = cellStr(row, categoryCol);
     const description = cellStr(row, descCol);
     const counterparty = cellStr(row, counterpartyCol);
 
-    if (!category && !description && !counterparty) continue;
+    if (!rawCategory && !description && !counterparty) continue;
 
-    const lowerJoined = [category, description].filter(Boolean).join(" ").toLowerCase();
+    const lowerJoined = [rawCategory, description].filter(Boolean).join(" ").toLowerCase();
     if (lowerJoined.includes("sub total") || lowerJoined.includes("end of sheet")) continue;
+
+    if (rawCategory) {
+      const isCategoryPattern = /^\d+\.?\s*[A-Za-z]/.test(rawCategory);
+      if (isCategoryPattern) {
+        currentCategory = rawCategory;
+      } else if (!currentCategory) {
+        currentCategory = rawCategory;
+      }
+    }
+    const category = rawCategory || currentCategory;
 
     const amountExVat = effectiveAmountCol >= 0 ? parseNumber(row[effectiveAmountCol]) : null;
     const invoiceNumber = cellStr(row, invoiceNumCol);

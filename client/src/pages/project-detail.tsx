@@ -22,8 +22,7 @@ import {
 import { ProjectPlanTab } from "@/components/tabs/ProjectPlanTab";
 import { RevenueTrackingTab } from "@/components/tabs/RevenueTrackingTab";
 import { ExpenditureEditableTab } from "@/components/tabs/ExpenditureEditableTab";
-import { FinanceRevenueTab } from "@/components/tabs/FinanceRevenueTab";
-import { FinanceCosTab } from "@/components/tabs/FinanceCosTab";
+import { MonthlyRealisationTab } from "@/components/tabs/MonthlyRealisationTab";
 import { CashflowTab } from "@/components/tabs/CashflowTab";
 import { ProjectSubcontractorsTab } from "@/components/tabs/ProjectSubcontractorsTab";
 import TaskDetailDrawer from "@/components/TaskDetailDrawer";
@@ -417,8 +416,7 @@ const OLD_TAB_TO_SUPER: Record<string, { superTab: string; subTab: string }> = {
   "project-plan": { superTab: "plan", subTab: "gantt" },
   "revenue-tracking": { superTab: "money", subTab: "revenue-tracking" },
   "expenditure": { superTab: "money", subTab: "expenditure" },
-  "finance-revenue": { superTab: "money", subTab: "finance-revenue" },
-  "finance-cos": { superTab: "money", subTab: "finance-cos" },
+  "monthly-realisation": { superTab: "money", subTab: "monthly-realisation" },
   "cashflow": { superTab: "money", subTab: "cashflow" },
   "subcontractors": { superTab: "money", subTab: "subcontractors" },
   "quality": { superTab: "quality", subTab: "quality" },
@@ -526,26 +524,6 @@ export default function ProjectDetailPage() {
     enabled: !!projectName,
   });
 
-  const { data: financeRevData = [] } = useQuery({
-    queryKey: ["finance-revenue", projectName],
-    queryFn: async () => {
-      const res = await fetch(`/api/finance/revenue?projectName=${encodeURIComponent(projectName)}`);
-      if (!res.ok) return [];
-      return res.json();
-    },
-    enabled: !!projectName,
-  });
-
-  const { data: financeCosData = [] } = useQuery({
-    queryKey: ["finance-cos", projectName],
-    queryFn: async () => {
-      const res = await fetch(`/api/finance/cos?projectName=${encodeURIComponent(projectName)}`);
-      if (!res.ok) return [];
-      return res.json();
-    },
-    enabled: !!projectName,
-  });
-
   const { data: cashflowData = [] } = useQuery({
     queryKey: ["cashflow", projectName],
     queryFn: async () => {
@@ -603,8 +581,7 @@ export default function ProjectDetailPage() {
     { name: "Project Plan", rows: (projectPlanData as any[]).length, present: (projectPlanData as any[]).length > 0 },
     { name: "Revenue Tracking", rows: (revenueData as any[]).length, present: (revenueData as any[]).length > 0 },
     { name: "Expenditure Breakdown", rows: (expenseData as any[]).length, present: (expenseData as any[]).length > 0 },
-    { name: "Finance - Revenue", rows: (financeRevData as any[]).length, present: (financeRevData as any[]).length > 0 },
-    { name: "Finance - COS", rows: (financeCosData as any[]).length, present: (financeCosData as any[]).length > 0 },
+    { name: "Finance Summary", rows: 0, present: false },
     { name: "Cashflow", rows: (cashflowData as any[]).length, present: (cashflowData as any[]).length > 0 },
   ];
 
@@ -918,11 +895,8 @@ export default function ProjectDetailPage() {
             <Button size="sm" variant={currentSubTab === "expenditure" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("money", "expenditure")} data-testid="subtab-expenditure">
               <CreditCard className="h-3 w-3 mr-1" /> Expenditure
             </Button>
-            <Button size="sm" variant={currentSubTab === "finance-revenue" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("money", "finance-revenue")} data-testid="subtab-fin-rev">
-              <TrendingUp className="h-3 w-3 mr-1" /> Fin-Rev
-            </Button>
-            <Button size="sm" variant={currentSubTab === "finance-cos" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("money", "finance-cos")} data-testid="subtab-fin-cos">
-              <BarChart3 className="h-3 w-3 mr-1" /> Fin-COS
+            <Button size="sm" variant={currentSubTab === "monthly-realisation" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("money", "monthly-realisation")} data-testid="subtab-monthly-realisation">
+              <TrendingUp className="h-3 w-3 mr-1" /> Monthly Summary
             </Button>
             <Button size="sm" variant={currentSubTab === "cashflow" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("money", "cashflow")} data-testid="subtab-cashflow">
               <Activity className="h-3 w-3 mr-1" /> Cashflow
@@ -933,8 +907,7 @@ export default function ProjectDetailPage() {
           </div>
           {currentSubTab === "revenue-tracking" && <RevenueTrackingTab projectName={projectName} highlightId={highlightType === 'revenue' ? highlightId : null} />}
           {currentSubTab === "expenditure" && <ExpenditureEditableTab projectName={projectName} highlightId={highlightType === 'expense' ? highlightId : null} />}
-          {currentSubTab === "finance-revenue" && <FinanceRevenueTab projectName={projectName} />}
-          {currentSubTab === "finance-cos" && <FinanceCosTab projectName={projectName} />}
+          {currentSubTab === "monthly-realisation" && <MonthlyRealisationTab projectName={projectName} />}
           {currentSubTab === "cashflow" && <CashflowTab projectName={projectName} />}
           {currentSubTab === "subcontractors" && <ProjectSubcontractorsTab projectName={projectName} />}
         </TabsContent>
