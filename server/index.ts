@@ -94,16 +94,16 @@ app.use(passport.session());
 // Passport Local Strategy
 passport.use(
   new LocalStrategy(
-    { usernameField: "email" },
-    async (email, password, done) => {
+    { usernameField: "username" },
+    async (username, password, done) => {
       try {
-        const user = await storage.getUserByEmail(email);
+        const user = await storage.getUserByUsername(username.toLowerCase());
         if (!user) {
-          return done(null, false, { message: "Invalid email or password" });
+          return done(null, false, { message: "Invalid username or password" });
         }
         const isValid = await bcrypt.compare(password, user.password);
         if (!isValid) {
-          return done(null, false, { message: "Invalid email or password" });
+          return done(null, false, { message: "Invalid username or password" });
         }
         return done(null, { 
           id: user.id, 
@@ -176,86 +176,43 @@ app.use((req, res, next) => {
   next();
 });
 
-// Seed demo users on startup (idempotent)
 async function seedUsers() {
   const usersToSeed = [
-    {
-      email: process.env.DEMO_ADMIN_EMAIL || "admin@emergent.energy",
-      password: process.env.DEMO_ADMIN_PASSWORD || "admin123",
-      name: "COO Admin",
-      role: "COO_ADMIN" as const,
-    },
-    {
-      email: "ceo@emergent.energy",
-      password: "ceo2026",
-      name: "CEO Admin",
-      role: "CEO_ADMIN" as const,
-    },
-    {
-      email: "cco@emergent.energy",
-      password: "emergent2026",
-      name: "CCO",
-      role: "CCO" as const,
-    },
-    {
-      email: "cfo@emergent.energy",
-      password: "emergent2026",
-      name: "CFO",
-      role: "CFO" as const,
-    },
-    {
-      email: "pm@emergent.energy",
-      password: "emergent2026",
-      name: "Program Manager",
-      role: "PROGRAM_MANAGER" as const,
-    },
-    {
-      email: "pfm@emergent.energy",
-      password: "emergent2026",
-      name: "Program Finance Manager",
-      role: "PROGRAM_FINANCE_MANAGER" as const,
-    },
-    {
-      email: "cm@emergent.energy",
-      password: "emergent2026",
-      name: "Construction Manager",
-      role: "CONSTRUCTION_MANAGER" as const,
-    },
-    {
-      email: "qm@emergent.energy",
-      password: "quality123",
-      name: "Quality Manager",
-      role: "QUALITY_MANAGER" as const,
-    },
-    {
-      email: "epm@emergent.energy",
-      password: "emergent2026",
-      name: "Engineering Manager",
-      role: "ENGINEERING_MANAGER" as const,
-    },
+    { username: "dayne", name: "Dayne", role: "CEO_ADMIN" as const, password: "2020" },
+    { username: "natasha", name: "Natasha", role: "CCO" as const, password: "2021" },
+    { username: "tasneema", name: "Tasneema", role: "CFO" as const, password: "2022" },
+    { username: "johannes", name: "Johannes", role: "COO_ADMIN" as const, password: "2023" },
+    { username: "roedolph", name: "Roedolph", role: "PROGRAM_MANAGER" as const, password: "2024" },
+    { username: "dean", name: "Dean", role: "QUALITY_MANAGER" as const, password: "2025" },
+    { username: "peet", name: "Peet", role: "CONSTRUCTION_MANAGER" as const, password: "2026" },
+    { username: "mizelda", name: "Mizelda", role: "PROGRAM_FINANCE_MANAGER" as const, password: "2027" },
+    { username: "thami", name: "Thami", role: "ACCOUNTANT" as const, password: "2028" },
+    { username: "paul", name: "Paul", role: "ENGINEER" as const, password: "2029" },
+    { username: "tanaka", name: "Tanaka", role: "ENGINEER" as const, password: "2030" },
+    { username: "johan", name: "Johan", role: "ENGINEER" as const, password: "2031" },
+    { username: "mary", name: "Mary", role: "ENGINEER" as const, password: "2032" },
+    { username: "gerhard", name: "Gerhard", role: "ENGINEER" as const, password: "2033" },
+    { username: "brandon", name: "Brandon", role: "ENGINEER" as const, password: "2034" },
   ];
 
   for (const u of usersToSeed) {
     try {
-      const existing = await storage.getUserByEmail(u.email);
+      const existing = await storage.getUserByUsername(u.username);
       if (!existing) {
         const hashedPassword = await bcrypt.hash(u.password, 10);
-        const userData: any = {
-          email: u.email,
+        await storage.createUser({
+          username: u.username,
+          email: `${u.username}@emergent.energy`,
           password: hashedPassword,
           name: u.name,
           role: u.role,
-        };
-        if (dbMode === 'sqlite') {
-          userData.createdAt = new Date();
-        }
-        await storage.createUser(userData);
-        log(`✓ ${u.role} user seeded: ${u.email}`);
+        });
+        log(`✓ User seeded: ${u.username} (${u.role})`);
       } else {
-        log(`✓ ${u.role} user exists: ${u.email}`);
+        log(`✓ User exists: ${u.username} (${u.role})`);
       }
     } catch (error) {
-      log(`✗ Error seeding ${u.role} user: ` + error);
+      log(`✗ Error seeding user ${u.username}: ` + error);
       console.error("[SEED ERROR] Full error:", error);
     }
   }

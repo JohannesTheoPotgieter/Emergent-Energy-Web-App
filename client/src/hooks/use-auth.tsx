@@ -10,7 +10,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isAdmin: boolean;
   isQm: boolean;
-  login: (email: string, password: string) => Promise<boolean>;
+  login: (username: string, password: string) => Promise<boolean>;
   logout: () => Promise<void>;
 }
 
@@ -30,6 +30,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const response = await authApi.me();
       setUser(response.user);
+      if (response.user?.role) {
+        localStorage.setItem("company_role", response.user.role);
+      }
     } catch {
       setUser(null);
     } finally {
@@ -37,14 +40,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const login = async (email: string, password: string): Promise<boolean> => {
+  const login = async (username: string, password: string): Promise<boolean> => {
     try {
-      const response = await authApi.login(email, password);
+      const response = await authApi.login(username, password);
       setUser(response.user);
-      const existingRoleToken = localStorage.getItem("auth_token");
-      if (!existingRoleToken) {
-        setAuthToken(response.token);
-      }
+      setAuthToken(response.token);
+      localStorage.setItem("company_role", response.user.role);
       toast({
         title: "Welcome back!",
         description: `Logged in as ${response.user.name}`,

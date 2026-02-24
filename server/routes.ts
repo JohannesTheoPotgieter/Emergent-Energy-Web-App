@@ -570,9 +570,9 @@ export async function registerRoutes(
       }
       
       if (!user) {
-        console.log("[LOGIN] Failed login attempt:", req.body?.email, "- Reason:", info?.message);
+        console.log("[LOGIN] Failed login attempt:", req.body?.username, "- Reason:", info?.message);
         return res.status(401).json({ 
-          error: info?.message || "Invalid email or password",
+          error: info?.message || "Invalid username or password",
           message: info?.message || "Login failed" 
         });
       }
