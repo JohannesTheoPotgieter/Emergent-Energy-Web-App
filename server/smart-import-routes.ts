@@ -26,7 +26,7 @@ import {
   changeSets,
 } from "@shared/schema";
 import { recordImportChange, recordSystemEvent } from "./lib/audit/diff-engine";
-import { eq, desc, and, sql } from "drizzle-orm";
+import { eq, desc, and, sql, inArray } from "drizzle-orm";
 
 function extractProjectNameFromFilename(fileName: string): string {
   let name = fileName.replace(/\.(xlsx|xlsm|xls)$/i, "");
@@ -1314,9 +1314,13 @@ router.post("/api/smart-import/bulk-commit", requireAuth, async (req: Request, r
 
     let runs: any[];
     if (runIds && Array.isArray(runIds) && runIds.length > 0) {
+      const validIds = runIds.map((id: any) => parseInt(id)).filter((id: number) => !isNaN(id));
+      if (validIds.length === 0) {
+        return res.json({ success: true, committed: 0, failed: 0, results: [] });
+      }
       runs = await db.select().from(smartImportRuns)
         .where(and(
-          sql`${smartImportRuns.id} = ANY(${runIds})`,
+          inArray(smartImportRuns.id, validIds),
           eq(smartImportRuns.status, "PREVIEW")
         ));
     } else {
