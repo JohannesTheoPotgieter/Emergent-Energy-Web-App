@@ -7291,7 +7291,12 @@ export async function registerRoutes(
 
   app.get("/api/cos-control/tracker", requireAuth, async (req, res) => {
     try {
-      const allExpenses = await db.select().from(programExpense);
+      const [legacyExp, legacyInf] = await Promise.all([
+        storage.getAllProgramExpenses(),
+        storage.getAllProgramInflows(),
+      ]);
+      const mergedData = await getMergedExpensesAndInflows(legacyExp, legacyInf);
+      const allExpenses = mergedData.expenses;
       const items = allExpenses.filter((e: any) => e.rowType === 'item' || !e.rowType);
 
       const monthMap = new Map<string, { planned: number; realised: number; budget: number }>();
@@ -7305,9 +7310,9 @@ export async function registerRoutes(
 
         let monthKey = '';
         if (dateStr) {
-          const d = new Date(dateStr);
-          if (!isNaN(d.getTime())) {
-            monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+          const dateMatch = (dateStr as string).match(/^(\d{4})-(\d{2})/);
+          if (dateMatch) {
+            monthKey = `${dateMatch[1]}-${dateMatch[2]}`;
           }
         }
         if (!monthKey && actualAmt === 0 && budgetAmt === 0) continue;
@@ -7321,7 +7326,9 @@ export async function registerRoutes(
         if (actualAmt !== 0) {
           bucket.planned += actualAmt;
 
-          const isRealised = e.expensePoNumber && e.expenseInvoiceNumber && e.invoiceDateFontColor === 'black';
+          const hasInvoice = !!e.expenseInvoiceNumber;
+          const dateConfirmed = e.invoiceDateConfirmed === true || e.invoiceDateFontColor === 'black';
+          const isRealised = hasInvoice && dateConfirmed;
           if (isRealised) {
             bucket.realised += actualAmt;
           }
@@ -7362,15 +7369,16 @@ export async function registerRoutes(
 
   app.get("/api/cashflow-tracker", requireAuth, async (req, res) => {
     try {
-      const allExpenses = await db.select().from(programExpense);
-      const [allInflowsRaw, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
-        db.select().from(programInflows),
+      const [legacyExpCF, legacyInflowsCF, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
+        storage.getAllProgramExpenses(),
+        storage.getAllProgramInflows(),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
         storage.getAllProjectPlans(),
       ]);
-      const allInflows = resolveInflowEffectiveDates(allInflowsRaw, allTaskLinks, allOpTasks, allPlanTasks);
-      const items = allExpenses.filter((e: any) => e.rowType === 'item' || !e.rowType);
+      const mergedCF = await getMergedExpensesAndInflows(legacyExpCF, legacyInflowsCF);
+      const allInflows = resolveInflowEffectiveDates(mergedCF.inflows, allTaskLinks, allOpTasks, allPlanTasks);
+      const items = mergedCF.expenses.filter((e: any) => e.rowType === 'item' || !e.rowType);
 
       const weekMap = new Map<string, {
         inflows: number; confirmedInflows: number;
