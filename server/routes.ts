@@ -22,6 +22,30 @@ import { buildOverrideMap, applyOverridesToCashflowLines, applyOverridesToCOSLin
 import { recordOverride } from "./lib/audit/diff-engine";
 import { OVERRIDE_CATEGORIES } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
+import { createNameResolver, fetchAllNormalized, mergeExpensesOnly, mergeInflowsOnly, mergePlansOnly } from "./lib/data-merge";
+
+async function getMergedExpensesAndInflows(legacyExpenses: any[], legacyInflows: any[]) {
+  const piRows = await db.select({ projectName: projectInfo.projectName }).from(projectInfo);
+  const piNames = piRows.map((r: any) => r.projectName);
+  const resolve = createNameResolver(piNames);
+  const { costLines, revenueLines } = await fetchAllNormalized();
+  return {
+    expenses: mergeExpensesOnly(legacyExpenses, costLines, resolve),
+    inflows: mergeInflowsOnly(legacyInflows, revenueLines, resolve),
+  };
+}
+
+async function getMergedAll(legacyExpenses: any[], legacyInflows: any[], legacyPlans: any[]) {
+  const piRows = await db.select({ projectName: projectInfo.projectName }).from(projectInfo);
+  const piNames = piRows.map((r: any) => r.projectName);
+  const resolve = createNameResolver(piNames);
+  const { costLines, revenueLines, planTasks } = await fetchAllNormalized();
+  return {
+    expenses: mergeExpensesOnly(legacyExpenses, costLines, resolve),
+    inflows: mergeInflowsOnly(legacyInflows, revenueLines, resolve),
+    plans: mergePlansOnly(legacyPlans, planTasks, resolve),
+  };
+}
 
 // Ensure uploads directory exists
 const uploadDir = path.join(process.cwd(), 'uploads');
@@ -780,7 +804,7 @@ export async function registerRoutes(
 
   app.get("/api/home/summary", async (req, res) => {
     try {
-      const [allProjectInfo, allExpenses, rawInflows, allPlans, latestRefresh, revenueSummaries, allTaskLinks, allOpTasks] = await Promise.all([
+      const [allProjectInfo, legacyExpenses, legacyRawInflows, legacyPlans, latestRefresh, revenueSummaries, allTaskLinks, allOpTasks] = await Promise.all([
         storage.getAllProjectInfo(),
         storage.getAllProgramExpenses(),
         storage.getAllProgramInflows(),
@@ -790,7 +814,10 @@ export async function registerRoutes(
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
       ]);
-      const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
+      const merged = await getMergedAll(legacyExpenses, legacyRawInflows, legacyPlans);
+      const allExpenses = merged.expenses;
+      const allPlans = merged.plans;
+      const allInflows = resolveInflowEffectiveDates(merged.inflows, allTaskLinks, allOpTasks, allPlans);
 
       const today = new Date().toISOString().split("T")[0];
       const fyRange = getFYRange();
@@ -1846,7 +1873,7 @@ export async function registerRoutes(
     try {
       const projectFilter = req.query.project ? String(req.query.project) : null;
 
-      const [allExpenses, rawInflows, manualBalances, opexBudgets, opexWeeklyOverrides, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
+      const [legacyExp, legacyInf, manualBalances, opexBudgets, opexWeeklyOverrides, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
         storage.getAllProgramExpenses(),
         storage.getAllProgramInflows(),
         storage.getAllCashflowWeeklyManual(),
@@ -1856,8 +1883,9 @@ export async function registerRoutes(
         storage.getAllOperationalTasks(),
         storage.getAllProjectPlans(),
       ]);
-
-      const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlanTasks);
+      const mergedData = await getMergedExpensesAndInflows(legacyExp, legacyInf);
+      const allExpenses = mergedData.expenses;
+      const allInflows = resolveInflowEffectiveDates(mergedData.inflows, allTaskLinks, allOpTasks, allPlanTasks);
 
       const manualMap = new Map(manualBalances.map(m => [m.weekStartDate, parseFloat(m.openingBalance || "0")]));
       const opexMonthlyMap = new Map(opexBudgets.map(o => [o.monthKey, parseFloat(o.amount || "0")]));
@@ -1959,24 +1987,24 @@ export async function registerRoutes(
       wsDate.setUTCDate(wsDate.getUTCDate() + 7);
       const weekEnd = wsDate.toISOString().split('T')[0];
 
-      const [allExpenses, rawInflows, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
+      const [legacyExp, legacyInf, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
         storage.getAllProgramExpenses(),
         storage.getAllProgramInflows(),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
         storage.getAllProjectPlans(),
       ]);
+      const mergedDetail = await getMergedExpensesAndInflows(legacyExp, legacyInf);
+      const resolvedInflows = resolveInflowEffectiveDates(mergedDetail.inflows, allTaskLinks, allOpTasks, allPlanTasks);
 
-      const resolvedInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlanTasks);
-
-      const outflows = allExpenses
-        .filter(e => {
+      const outflows = mergedDetail.expenses
+        .filter((e: any) => {
           if (projectFilter && e.projectName !== projectFilter) return false;
           const pd = e.expensePaymentDate;
           if (!pd || !/^\d{4}-\d{2}-\d{2}$/.test(pd)) return false;
           return pd >= weekStart && pd < weekEnd;
         })
-        .map(e => ({
+        .map((e: any) => ({
           projectName: e.projectName,
           expenseCategory: e.expenseCategory,
           expenseLineItem: e.expenseLineItem,
@@ -2270,7 +2298,7 @@ export async function registerRoutes(
 
   app.get("/api/cos-tracker", requireAuth, async (req, res) => {
     try {
-      const [allProgramExpenses, manualEntries, rawInflows, allTaskLinks, allOpTasks, allPlans] = await Promise.all([
+      const [legacyExpenses, manualEntries, legacyRawInflows, allTaskLinks, allOpTasks, allPlans] = await Promise.all([
         storage.getAllProgramExpenses(),
         storage.getTrackerMonthlyManual('COS'),
         storage.getAllProgramInflows(),
@@ -2278,7 +2306,9 @@ export async function registerRoutes(
         storage.getAllOperationalTasks(),
         storage.getAllProjectPlans(),
       ]);
-      const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
+      const mergedData = await getMergedExpensesAndInflows(legacyExpenses, legacyRawInflows);
+      const allProgramExpenses = mergedData.expenses;
+      const allInflows = resolveInflowEffectiveDates(mergedData.inflows, allTaskLinks, allOpTasks, allPlans);
 
       const revByMonth = new Map<string, number>();
       for (const inflow of allInflows) {
@@ -2437,7 +2467,8 @@ export async function registerRoutes(
       const match = monthKey.match(/^(\d{4})-(\d{2})$/);
       if (!match) return res.status(400).json({ error: "Invalid monthKey format" });
 
-      const allExpenses = await storage.getAllProgramExpenses();
+      const legacyExp = await storage.getAllProgramExpenses();
+      const { expenses: allExpenses } = await getMergedExpensesAndInflows(legacyExp, []);
 
       interface LineItem {
         id: number;
@@ -6291,7 +6322,8 @@ export async function registerRoutes(
 
   app.get("/api/cos-control/summary", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const expenses = await db.select().from(programExpense);
+      const legacyExp = await db.select().from(programExpense);
+      const { expenses } = await getMergedExpensesAndInflows(legacyExp, []);
       const lines = expenses
         .filter((e: any) => e.rowType === 'item' || !e.rowType)
         .filter((e: any) => {
@@ -6325,8 +6357,8 @@ export async function registerRoutes(
 
   app.get("/api/cos-control/by-project", requireAuth, requireAdmin, async (req, res) => {
     try {
-
-      const expenses = await db.select().from(programExpense);
+      const legacyExp = await db.select().from(programExpense);
+      const { expenses } = await getMergedExpensesAndInflows(legacyExp, []);
       const lines = expenses
         .filter((e: any) => e.rowType === 'item' || !e.rowType)
         .filter((e: any) => {
@@ -6360,9 +6392,9 @@ export async function registerRoutes(
 
   app.get("/api/cos-control/lines", requireAuth, requireAdmin, async (req, res) => {
     try {
-
       const { project, state, supplier, search } = req.query;
-      let expenses = await db.select().from(programExpense);
+      const legacyExp = await db.select().from(programExpense);
+      let expenses = (await getMergedExpensesAndInflows(legacyExp, [])).expenses;
 
       let lines = expenses
         .filter((e: any) => e.rowType === 'item' || !e.rowType)
@@ -6411,8 +6443,8 @@ export async function registerRoutes(
 
   app.get("/api/cos-control/invoices", requireAuth, requireAdmin, async (req, res) => {
     try {
-
-      const expenses = await db.select().from(programExpense);
+      const legacyExp = await db.select().from(programExpense);
+      const { expenses } = await getMergedExpensesAndInflows(legacyExp, []);
       const invoiceMap = new Map<string, any>();
 
       for (const e of expenses) {
@@ -6450,7 +6482,8 @@ export async function registerRoutes(
 
   app.get("/api/cos-control/pos", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const expenses = await db.select().from(programExpense);
+      const legacyExp = await db.select().from(programExpense);
+      const { expenses } = await getMergedExpensesAndInflows(legacyExp, []);
       const poMap = new Map<string, any>();
 
       for (const e of expenses) {
@@ -6496,15 +6529,16 @@ export async function registerRoutes(
       const weeks = parseInt(String(req.query.weeks || '52'));
       const startDate = String(req.query.start || new Date().toISOString().split('T')[0]);
 
-      const [expenses, rawInflows, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
+      const [legacyExp, legacyInf, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
         db.select().from(programExpense),
         db.select().from(programInflows),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
         storage.getAllProjectPlans(),
       ]);
-
-      const resolvedInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlanTasks);
+      const mergedForecast = await getMergedExpensesAndInflows(legacyExp, legacyInf);
+      const expenses = mergedForecast.expenses;
+      const resolvedInflows = resolveInflowEffectiveDates(mergedForecast.inflows, allTaskLinks, allOpTasks, allPlanTasks);
 
       const outflowLines: CashflowLineItem[] = expenses
         .filter((e: any) => e.rowType === 'item' || !e.rowType)
@@ -6567,17 +6601,17 @@ export async function registerRoutes(
         return res.status(400).json({ error: 'weekStart and weekEnd required' });
       }
 
-      const [expenses, rawInflows, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
+      const [legacyExp2, legacyInf2, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
         db.select().from(programExpense),
         db.select().from(programInflows),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
         storage.getAllProjectPlans(),
       ]);
+      const mergedWeekDetail = await getMergedExpensesAndInflows(legacyExp2, legacyInf2);
+      const resolvedInflows = resolveInflowEffectiveDates(mergedWeekDetail.inflows, allTaskLinks, allOpTasks, allPlanTasks);
 
-      const resolvedInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlanTasks);
-
-      const outflowLines: CashflowLineItem[] = expenses
+      const outflowLines: CashflowLineItem[] = mergedWeekDetail.expenses
         .filter((e: any) => e.rowType === 'item' || !e.rowType)
         .filter((e: any) => {
           const amt = parseFloat(e.expenseActualTotal || e.budgetTotal || '0');
@@ -6636,8 +6670,11 @@ export async function registerRoutes(
   app.get("/api/data-quality/scan", requireAuth, requireAdmin, async (req, res) => {
     try {
 
-      const expenses = await db.select().from(programExpense);
-      const inflows = await db.select().from(programInflows);
+      const legacyExpDQ = await db.select().from(programExpense);
+      const legacyInfDQ = await db.select().from(programInflows);
+      const mergedDQ = await getMergedExpensesAndInflows(legacyExpDQ, legacyInfDQ);
+      const expenses = mergedDQ.expenses;
+      const inflows = mergedDQ.inflows;
       const projects = await db.select().from(projectInfo);
 
       const expenseInputs = expenses
@@ -6776,8 +6813,11 @@ export async function registerRoutes(
   app.get("/api/planning-board/projects", requireAuth, requireAdmin, async (req, res) => {
     try {
       const projects = await db.select().from(projectInfo);
-      const expenses = await db.select().from(programExpense);
-      const inflows = await db.select().from(programInflows);
+      const legacyExpPB = await db.select().from(programExpense);
+      const legacyInfPB = await db.select().from(programInflows);
+      const mergedPB = await getMergedExpensesAndInflows(legacyExpPB, legacyInfPB);
+      const expenses = mergedPB.expenses;
+      const inflows = mergedPB.inflows;
 
       const projectData = projects.map((p: any) => {
         const projExpenses = expenses.filter((e: any) => e.projectName === p.projectName && (e.rowType === 'item' || !e.rowType));
@@ -6920,7 +6960,8 @@ export async function registerRoutes(
   app.get("/api/cos-control/scenario-monthly", requireAuth, requireAdmin, async (req, res) => {
     try {
       const scenarioId = req.query.scenarioId ? parseInt(req.query.scenarioId as string) : null;
-      const allExpenses = await db.select().from(programExpense);
+      const legacyExpSM = await db.select().from(programExpense);
+      const allExpenses = (await getMergedExpensesAndInflows(legacyExpSM, [])).expenses;
       const items = allExpenses.filter((e: any) => e.rowType === 'item' || !e.rowType);
 
       const cosLines: any[] = items.map((e: any) => ({
@@ -6989,7 +7030,8 @@ export async function registerRoutes(
       const project = req.query.project as string || '';
       const state = req.query.state as string || '';
 
-      const allExpenses = await db.select().from(programExpense);
+      const legacyExpSI = await db.select().from(programExpense);
+      const allExpenses = (await getMergedExpensesAndInflows(legacyExpSI, [])).expenses;
       const items = allExpenses.filter((e: any) => e.rowType === 'item' || !e.rowType);
 
       let overrideMap: any = {};
@@ -7079,7 +7121,8 @@ export async function registerRoutes(
       const project = req.query.project as string || '';
       const state = req.query.state as string || '';
 
-      const allExpenses = await db.select().from(programExpense);
+      const legacyExpSL = await db.select().from(programExpense);
+      const allExpenses = (await getMergedExpensesAndInflows(legacyExpSL, [])).expenses;
       const items = allExpenses.filter((e: any) => e.rowType === 'item' || !e.rowType);
 
       let overrideMap: any = {};
@@ -7153,7 +7196,8 @@ export async function registerRoutes(
       const scenarioId = req.query.scenarioId ? parseInt(req.query.scenarioId as string) : null;
       if (!scenarioId) return res.json({ shifts: [], cashflowDelta: [] });
 
-      const allExpenses = await db.select().from(programExpense);
+      const legacyExpSI2 = await db.select().from(programExpense);
+      const allExpenses = (await getMergedExpensesAndInflows(legacyExpSI2, [])).expenses;
       const items = allExpenses.filter((e: any) => e.rowType === 'item' || !e.rowType);
       const overrides = await storage.getDateOverridesByScenario(scenarioId);
       const overrideMap = buildOverrideMap(overrides);
@@ -7195,15 +7239,16 @@ export async function registerRoutes(
       const scenarioId = req.query.scenarioId ? parseInt(req.query.scenarioId as string) : null;
       const projectFilter = req.query.project as string || '';
 
-      let allExpenses = await db.select().from(programExpense);
-      const rawInflows = await db.select().from(programInflows);
+      const legacyExpSW = await db.select().from(programExpense);
+      const legacyInfSW = await db.select().from(programInflows);
       const [allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
         storage.getAllProjectPlans(),
       ]);
-
-      let allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlanTasks);
+      const mergedSW = await getMergedExpensesAndInflows(legacyExpSW, legacyInfSW);
+      let allExpenses = mergedSW.expenses;
+      let allInflows = resolveInflowEffectiveDates(mergedSW.inflows, allTaskLinks, allOpTasks, allPlanTasks);
 
       if (projectFilter) {
         allExpenses = allExpenses.filter((e: any) => e.projectName === projectFilter);
@@ -7309,15 +7354,16 @@ export async function registerRoutes(
 
       if (!weekStart || !weekEnd) return res.status(400).json({ error: "weekStart and weekEnd required" });
 
-      const [allExpenses, rawInflows, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
+      const [legacyExpSWD, legacyInfSWD, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
         db.select().from(programExpense),
         db.select().from(programInflows),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
         storage.getAllProjectPlans(),
       ]);
-      const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlanTasks);
-      const expenseItems = allExpenses.filter((e: any) => e.rowType === 'item' || !e.rowType);
+      const mergedSWD = await getMergedExpensesAndInflows(legacyExpSWD, legacyInfSWD);
+      const allInflows = resolveInflowEffectiveDates(mergedSWD.inflows, allTaskLinks, allOpTasks, allPlanTasks);
+      const expenseItems = mergedSWD.expenses.filter((e: any) => e.rowType === 'item' || !e.rowType);
 
       let overrideMap: any = {};
       if (scenarioId) {

@@ -144,11 +144,15 @@ export function mergeExpensesOnly(
   normCosts: NormalizedCostLine[],
   resolve: (name: string) => string
 ): any[] {
-  const legacyProjects = new Set(legacyExpenses.map((e: any) => e.projectName));
+  const legacyProjects = new Set<string>();
+  legacyExpenses.forEach((e: any) => {
+    legacyProjects.add(e.projectName);
+    legacyProjects.add(resolve(e.projectName));
+  });
   const merged = [...legacyExpenses];
   for (const cost of normCosts) {
     const rn = resolve(cost.projectName);
-    if (legacyProjects.has(rn)) continue;
+    if (legacyProjects.has(rn) || legacyProjects.has(cost.projectName)) continue;
     merged.push(adaptCostToExpense(cost, rn));
   }
   return merged;
@@ -159,11 +163,15 @@ export function mergeInflowsOnly(
   normRevenue: NormalizedRevenueLine[],
   resolve: (name: string) => string
 ): any[] {
-  const legacyProjects = new Set(legacyInflows.map((i: any) => i.projectName));
+  const legacyProjects = new Set<string>();
+  legacyInflows.forEach((i: any) => {
+    legacyProjects.add(i.projectName);
+    legacyProjects.add(resolve(i.projectName));
+  });
   const merged = [...legacyInflows];
   for (const rev of normRevenue) {
     const rn = resolve(rev.projectName);
-    if (legacyProjects.has(rn)) continue;
+    if (legacyProjects.has(rn) || legacyProjects.has(rev.projectName)) continue;
     merged.push(adaptRevenueToInflow(rev, rn));
   }
   return merged;
@@ -174,11 +182,15 @@ export function mergePlansOnly(
   normPlans: NormalizedPlanTask[],
   resolve: (name: string) => string
 ): any[] {
-  const legacyProjects = new Set(legacyPlans.map((p: any) => p.projectName));
+  const legacyProjects = new Set<string>();
+  legacyPlans.forEach((p: any) => {
+    legacyProjects.add(p.projectName);
+    legacyProjects.add(resolve(p.projectName));
+  });
   const merged = [...legacyPlans];
   for (const plan of normPlans) {
     const rn = resolve(plan.projectName);
-    if (legacyProjects.has(rn)) continue;
+    if (legacyProjects.has(rn) || legacyProjects.has(plan.projectName)) continue;
     merged.push(adaptPlanToProjectPlan(plan, rn));
   }
   return merged;
