@@ -35,7 +35,7 @@ declare global {
       id: number;
       email: string;
       name: string;
-      role: "admin" | "member" | "quality_manager" | "viewer";
+      role: string;
     }
   }
 }
