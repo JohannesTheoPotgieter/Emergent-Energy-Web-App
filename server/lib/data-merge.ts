@@ -5,23 +5,26 @@ import type { NormalizedCostLine, NormalizedRevenueLine, NormalizedPlanTask } fr
 export function createNameResolver(projectInfoNames: string[]) {
   const piNames = new Set(projectInfoNames);
   const normMap = new Map<string, string>();
-  for (const n of piNames) {
+  projectInfoNames.forEach(n => {
     normMap.set(n.replace(/_Tracker\d*$/i, "").replace(/[_ ]/g, " ").toLowerCase().trim(), n);
-  }
+  });
 
   return function resolve(name: string): string {
     if (piNames.has(name)) return name;
-    for (const v of [
+    const variants = [
       name.replace(/ /g, "_") + "_Tracker",
       name + "_Tracker",
       name.replace(/ /g, "_"),
-    ]) {
-      if (piNames.has(v)) return v;
+    ];
+    for (let i = 0; i < variants.length; i++) {
+      if (piNames.has(variants[i])) return variants[i];
     }
     const nk = name.replace(/[_ ]/g, " ").toLowerCase().trim();
     const fm = normMap.get(nk);
     if (fm) return fm;
-    for (const [pn, pi] of normMap) {
+    const entries = Array.from(normMap.entries());
+    for (let i = 0; i < entries.length; i++) {
+      const [pn, pi] = entries[i];
       if (pn.endsWith(nk) || nk.endsWith(pn)) return pi;
     }
     return name;
