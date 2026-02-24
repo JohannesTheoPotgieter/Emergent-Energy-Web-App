@@ -7359,6 +7359,100 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/cashflow-tracker", requireAuth, async (req, res) => {
+    try {
+      const allExpenses = await db.select().from(programExpense);
+      const [allInflowsRaw, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
+        db.select().from(programInflows),
+        storage.getAllMilestoneTaskLinks(),
+        storage.getAllOperationalTasks(),
+        storage.getAllProjectPlans(),
+      ]);
+      const allInflows = resolveInflowEffectiveDates(allInflowsRaw, allTaskLinks, allOpTasks, allPlanTasks);
+      const items = allExpenses.filter((e: any) => e.rowType === 'item' || !e.rowType);
+
+      const weekMap = new Map<string, {
+        inflows: number; confirmedInflows: number;
+        outflows: number; confirmedOutflows: number;
+        invoicedPayments: number;
+      }>();
+
+      function getWeekStart(dateStr: string): string | null {
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return null;
+        const day = d.getUTCDay();
+        const diff = d.getUTCDate() - day + (day === 0 ? -6 : 1);
+        const monday = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), diff));
+        return monday.toISOString().split('T')[0];
+      }
+
+      for (const e of items) {
+        const amt = Math.abs(parseFloat(e.expenseActualTotal || '0'));
+        if (amt === 0) continue;
+
+        const payDate = e.expensePaymentDate || e.forecastPaymentDate;
+        if (!payDate) continue;
+        const wk = getWeekStart(payDate);
+        if (!wk) continue;
+
+        if (!weekMap.has(wk)) weekMap.set(wk, { inflows: 0, confirmedInflows: 0, outflows: 0, confirmedOutflows: 0, invoicedPayments: 0 });
+        const bucket = weekMap.get(wk)!;
+        bucket.outflows += amt;
+        if (e.paymentDateFontColor === 'black') {
+          bucket.confirmedOutflows += amt;
+        }
+
+        if (e.expenseInvoiceNumber && e.invoiceDateFontColor === 'black') {
+          bucket.invoicedPayments += amt;
+        }
+      }
+
+      for (const inf of allInflows) {
+        const amt = Math.abs(parseFloat(inf.milestoneAmount || '0'));
+        if (amt === 0) continue;
+
+        const dateStr = inf.paymentReceivedDate || (inf as any).effectiveDate || inf.plannedPaymentDate;
+        if (!dateStr) continue;
+        const wk = getWeekStart(dateStr);
+        if (!wk) continue;
+
+        if (!weekMap.has(wk)) weekMap.set(wk, { inflows: 0, confirmedInflows: 0, outflows: 0, confirmedOutflows: 0, invoicedPayments: 0 });
+        const bucket = weekMap.get(wk)!;
+        bucket.inflows += amt;
+        if (inf.paymentReceivedDate) {
+          bucket.confirmedInflows += amt;
+        }
+      }
+
+      const weeks = Array.from(weekMap.entries())
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([weekStart, data]) => ({
+          weekStart,
+          inflows: data.inflows,
+          confirmedInflows: data.confirmedInflows,
+          outflows: data.outflows,
+          confirmedOutflows: data.confirmedOutflows,
+          cashflow: data.inflows - data.outflows,
+          invoicedPayments: data.invoicedPayments,
+        }));
+
+      const totals = {
+        inflows: weeks.reduce((s, w) => s + w.inflows, 0),
+        confirmedInflows: weeks.reduce((s, w) => s + w.confirmedInflows, 0),
+        outflows: weeks.reduce((s, w) => s + w.outflows, 0),
+        confirmedOutflows: weeks.reduce((s, w) => s + w.confirmedOutflows, 0),
+        cashflow: 0,
+        invoicedPayments: weeks.reduce((s, w) => s + w.invoicedPayments, 0),
+      };
+      totals.cashflow = totals.inflows - totals.outflows;
+
+      res.json({ weeks, totals });
+    } catch (err: any) {
+      console.error('[Cashflow Tracker]', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get("/api/cos-control/scenario-invoices", requireAuth, requireAdmin, async (req, res) => {
     try {
       const scenarioId = req.query.scenarioId ? parseInt(req.query.scenarioId as string) : null;
