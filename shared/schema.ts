@@ -2011,8 +2011,8 @@ export const COMPANY_ROLES = [
 export type CompanyRole = typeof COMPANY_ROLES[number];
 
 export const COMPANY_ROLE_LABELS: Record<CompanyRole, string> = {
-  COO_ADMIN: "COO Admin",
-  CEO_ADMIN: "CEO Admin",
+  COO_ADMIN: "COO",
+  CEO_ADMIN: "CEO",
   CCO: "CCO",
   CFO: "CFO",
   PROGRAM_MANAGER: "Program Manager",
@@ -2902,8 +2902,8 @@ export type InsertTrSuggestionDecision = z.infer<typeof insertTrSuggestionDecisi
 export type TrSuggestionDecision = typeof trItemSuggestionDecisions.$inferSelect;
 
 export const DEFAULT_ROLE_PERMISSIONS: InsertRolePermission[] = [
-  { role: "COO_ADMIN", label: "COO Admin", description: "Full executive access, settings, user management", sections: ["EXCO", "PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "ADMIN", "MY_TOOL", "FINANCE", "PROJECTS", "OPERATIONS", "GOVERNANCE", "COCKPIT", "MONEY", "DELIVERY"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
-  { role: "CEO_ADMIN", label: "CEO Admin", description: "Full executive access, strategic oversight", sections: ["EXCO", "PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "ADMIN", "MY_TOOL", "FINANCE", "PROJECTS", "OPERATIONS", "GOVERNANCE", "COCKPIT", "MONEY", "DELIVERY"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
+  { role: "COO_ADMIN", label: "COO", description: "Full executive access, settings, user management", sections: ["EXCO", "PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "ADMIN", "MY_TOOL", "FINANCE", "PROJECTS", "OPERATIONS", "GOVERNANCE", "COCKPIT", "MONEY", "DELIVERY"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
+  { role: "CEO_ADMIN", label: "CEO", description: "Full executive access, strategic oversight", sections: ["EXCO", "PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "ADMIN", "MY_TOOL", "FINANCE", "PROJECTS", "OPERATIONS", "GOVERNANCE", "COCKPIT", "MONEY", "DELIVERY"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
   { role: "CCO", label: "CCO", description: "Commercial operations, project oversight", sections: ["EXCO", "PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "FINANCE", "PROJECTS", "OPERATIONS", "GOVERNANCE", "COCKPIT", "MONEY", "DELIVERY"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
   { role: "CFO", label: "CFO", description: "Financial oversight, cashflow, budgets", sections: ["EXCO", "PROJECT_MANAGEMENT", "FINANCE", "PROJECTS", "OPERATIONS", "GOVERNANCE", "COCKPIT", "MONEY"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
   { role: "PROGRAM_MANAGER", label: "Program Manager", description: "Project management, engineering dashboard", sections: ["PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "PROJECTS", "OPERATIONS", "GOVERNANCE", "COCKPIT", "MONEY", "DELIVERY"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
