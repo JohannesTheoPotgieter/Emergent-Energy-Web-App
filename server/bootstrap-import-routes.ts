@@ -22,7 +22,7 @@ import {
 } from "./lib/bootstrap-import";
 
 const router = Router();
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024, files: 200 } });
 
 function jwtAuth(req: Request, _res: Response, next: NextFunction) {
   if ((req as any).user) return next();
@@ -67,7 +67,7 @@ router.post("/preview", requireAuth, requireAdmin, upload.single("file"), async 
   }
 });
 
-router.post("/preview-batch", requireAuth, requireAdmin, upload.array("files", 50), async (req: Request, res: Response) => {
+router.post("/preview-batch", requireAuth, requireAdmin, upload.array("files", 200), async (req: Request, res: Response) => {
   try {
     const files = req.files as Express.Multer.File[];
     if (!files || files.length === 0) return res.status(400).json({ error: "No files uploaded" });
@@ -107,7 +107,7 @@ router.post("/commit", requireAuth, requireAdmin, upload.single("file"), async (
   }
 });
 
-router.post("/commit-batch", requireAuth, requireAdmin, upload.array("files", 50), async (req: Request, res: Response) => {
+router.post("/commit-batch", requireAuth, requireAdmin, upload.array("files", 200), async (req: Request, res: Response) => {
   try {
     const files = req.files as Express.Multer.File[];
     if (!files || files.length === 0) return res.status(400).json({ error: "No files uploaded" });
