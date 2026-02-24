@@ -199,16 +199,16 @@ export default function CashflowForecastPage() {
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <Card>
           <CardContent className="p-3">
-            <p className="text-xs text-muted-foreground">Total Inflows</p>
+            <p className="text-xs text-muted-foreground">Planned Inflows</p>
             <p className="text-lg font-bold text-green-600" data-testid="text-total-inflows">{formatRand(filteredTotals.inflows)}</p>
-            <p className="text-[10px] text-muted-foreground">Confirmed: {formatRand(filteredTotals.confirmedInflows)}</p>
+            <p className="text-[10px] text-muted-foreground">Received: {formatRand(filteredTotals.confirmedInflows)}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-3">
-            <p className="text-xs text-muted-foreground">Total Outflows</p>
+            <p className="text-xs text-muted-foreground">Planned Outflows</p>
             <p className="text-lg font-bold text-red-600" data-testid="text-total-outflows">{formatRand(filteredTotals.outflows)}</p>
-            <p className="text-[10px] text-muted-foreground">Confirmed: {formatRand(filteredTotals.confirmedOutflows)}</p>
+            <p className="text-[10px] text-muted-foreground">Paid: {formatRand(filteredTotals.confirmedOutflows)}</p>
           </CardContent>
         </Card>
         <Card>
@@ -225,8 +225,8 @@ export default function CashflowForecastPage() {
         </Card>
         <Card>
           <CardContent className="p-3">
-            <p className="text-xs text-muted-foreground">Outstanding Outflows</p>
-            <p className="text-lg font-bold text-amber-600" data-testid="text-outstanding-outflows">{formatRand(filteredTotals.outflows - filteredTotals.confirmedOutflows)}</p>
+            <p className="text-xs text-muted-foreground">Total All Flows</p>
+            <p className="text-lg font-bold text-amber-600" data-testid="text-outstanding-outflows">{formatRand(filteredTotals.inflows + filteredTotals.confirmedInflows + filteredTotals.outflows + filteredTotals.confirmedOutflows)}</p>
           </CardContent>
         </Card>
       </div>
@@ -243,8 +243,10 @@ export default function CashflowForecastPage() {
               <YAxis tickFormatter={(v: number) => formatRand(v)} tick={{ fontSize: 10 }} />
               <Tooltip formatter={(v: number) => formatRandExact(v)} />
               <Legend />
-              <Bar dataKey="inflows" fill="#22c55e" name="Inflows" opacity={0.8} />
-              <Bar dataKey="outflows" fill="#ef4444" name="Outflows" opacity={0.8} />
+              <Bar dataKey="inflows" fill="#86efac" name="Planned Inflows" opacity={0.8} />
+              <Bar dataKey="confirmedInflows" fill="#22c55e" name="Received Inflows" opacity={0.8} />
+              <Bar dataKey="outflows" fill="#fca5a5" name="Planned Outflows" opacity={0.8} />
+              <Bar dataKey="confirmedOutflows" fill="#ef4444" name="Paid Outflows" opacity={0.8} />
               <Line type="monotone" dataKey="cumulativeCashflow" stroke="#3b82f6" strokeWidth={2} name="Cumulative Cashflow" dot={false} />
               <ReferenceLine y={0} stroke="#6b7280" strokeDasharray="3 3" />
             </ComposedChart>
@@ -270,34 +272,41 @@ export default function CashflowForecastPage() {
               </thead>
               <tbody>
                 <tr className="border-b hover:bg-muted/30 bg-green-50/50">
-                  <td className="p-2 font-medium text-green-700 sticky left-0 bg-green-50/50">COS Inflows</td>
+                  <td className="p-2 font-medium text-green-700 sticky left-0 bg-green-50/50">Planned Inflows</td>
                   {displayData.map(d => (
                     <td key={d.label} className="p-2 text-right font-mono text-xs text-green-700">{d.inflows > 0 ? formatRandExact(d.inflows) : '-'}</td>
                   ))}
                   <td className="p-2 text-right font-mono text-xs font-bold text-green-700">{formatRandExact(filteredTotals.inflows)}</td>
                 </tr>
+                <tr className="border-b hover:bg-muted/30 bg-green-100/50">
+                  <td className="p-2 font-medium text-green-800 sticky left-0 bg-green-100/50">Received Inflows (Paid)</td>
+                  {displayData.map(d => (
+                    <td key={d.label} className="p-2 text-right font-mono text-xs text-green-800">{d.confirmedInflows > 0 ? formatRandExact(d.confirmedInflows) : '-'}</td>
+                  ))}
+                  <td className="p-2 text-right font-mono text-xs font-bold text-green-800">{formatRandExact(filteredTotals.confirmedInflows)}</td>
+                </tr>
                 <tr className="border-b hover:bg-muted/30 bg-red-50/50">
-                  <td className="p-2 font-medium text-red-700 sticky left-0 bg-red-50/50">COS Outflows</td>
+                  <td className="p-2 font-medium text-red-700 sticky left-0 bg-red-50/50">Planned Outflows</td>
                   {displayData.map(d => (
                     <td key={d.label} className="p-2 text-right font-mono text-xs text-red-700">{d.outflows > 0 ? formatRandExact(d.outflows) : '-'}</td>
                   ))}
                   <td className="p-2 text-right font-mono text-xs font-bold text-red-700">{formatRandExact(filteredTotals.outflows)}</td>
                 </tr>
+                <tr className="border-b hover:bg-muted/30 bg-red-100/50">
+                  <td className="p-2 font-medium text-red-800 sticky left-0 bg-red-100/50">Confirmed Outflows (Paid)</td>
+                  {displayData.map(d => (
+                    <td key={d.label} className="p-2 text-right font-mono text-xs text-red-800">{d.confirmedOutflows > 0 ? formatRandExact(d.confirmedOutflows) : '-'}</td>
+                  ))}
+                  <td className="p-2 text-right font-mono text-xs font-bold text-red-800">{formatRandExact(filteredTotals.confirmedOutflows)}</td>
+                </tr>
                 <tr className="border-b hover:bg-muted/30 bg-emerald-50/70">
-                  <td className="p-2 font-semibold text-emerald-800 sticky left-0 bg-emerald-50/70">Project Cashflow</td>
+                  <td className="p-2 font-semibold text-emerald-800 sticky left-0 bg-emerald-50/70">Net Cashflow</td>
                   {displayData.map(d => (
                     <td key={d.label} className={`p-2 text-right font-mono text-xs font-semibold ${d.cashflow >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
-                      {d.inflows > 0 || d.outflows > 0 ? formatRandExact(d.cashflow) : '-'}
+                      {d.inflows > 0 || d.outflows > 0 || d.confirmedInflows > 0 || d.confirmedOutflows > 0 ? formatRandExact(d.cashflow) : '-'}
                     </td>
                   ))}
                   <td className={`p-2 text-right font-mono text-xs font-bold ${filteredTotals.cashflow >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>{formatRandExact(filteredTotals.cashflow)}</td>
-                </tr>
-                <tr className="border-b hover:bg-muted/30 bg-orange-50/50">
-                  <td className="p-2 font-medium text-orange-700 sticky left-0 bg-orange-50/50">Project Outflows</td>
-                  {displayData.map(d => (
-                    <td key={d.label} className="p-2 text-right font-mono text-xs text-orange-700">{d.confirmedOutflows > 0 ? formatRandExact(d.confirmedOutflows) : '-'}</td>
-                  ))}
-                  <td className="p-2 text-right font-mono text-xs font-bold text-orange-700">{formatRandExact(filteredTotals.confirmedOutflows)}</td>
                 </tr>
                 <tr className="border-b hover:bg-muted/30">
                   <td className="p-2 font-medium text-blue-700 sticky left-0 bg-white">Invoiced Payments</td>

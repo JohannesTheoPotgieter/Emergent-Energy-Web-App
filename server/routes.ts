@@ -7321,7 +7321,7 @@ export async function registerRoutes(
         if (actualAmt !== 0) {
           bucket.planned += actualAmt;
 
-          const isRealised = e.expenseInvoiceNumber && e.invoiceDateFontColor === 'black';
+          const isRealised = e.expensePoNumber && e.expenseInvoiceNumber && e.invoiceDateFontColor === 'black';
           if (isRealised) {
             bucket.realised += actualAmt;
           }
@@ -7398,9 +7398,11 @@ export async function registerRoutes(
 
         if (!weekMap.has(wk)) weekMap.set(wk, { inflows: 0, confirmedInflows: 0, outflows: 0, confirmedOutflows: 0, invoicedPayments: 0 });
         const bucket = weekMap.get(wk)!;
-        bucket.outflows += amt;
-        if (e.paymentDateFontColor === 'black') {
+        const isConfirmedOutflow = e.paymentDateFontColor === 'black';
+        if (isConfirmedOutflow) {
           bucket.confirmedOutflows += amt;
+        } else {
+          bucket.outflows += amt;
         }
 
         if (e.expenseInvoiceNumber && e.invoiceDateFontColor === 'black') {
@@ -7419,9 +7421,11 @@ export async function registerRoutes(
 
         if (!weekMap.has(wk)) weekMap.set(wk, { inflows: 0, confirmedInflows: 0, outflows: 0, confirmedOutflows: 0, invoicedPayments: 0 });
         const bucket = weekMap.get(wk)!;
-        bucket.inflows += amt;
-        if (inf.paymentReceivedDate) {
+        const isConfirmedInflow = !!inf.paymentReceivedDate;
+        if (isConfirmedInflow) {
           bucket.confirmedInflows += amt;
+        } else {
+          bucket.inflows += amt;
         }
       }
 
@@ -7433,7 +7437,7 @@ export async function registerRoutes(
           confirmedInflows: data.confirmedInflows,
           outflows: data.outflows,
           confirmedOutflows: data.confirmedOutflows,
-          cashflow: data.inflows - data.outflows,
+          cashflow: (data.inflows + data.confirmedInflows) - (data.outflows + data.confirmedOutflows),
           invoicedPayments: data.invoicedPayments,
         }));
 
@@ -7445,7 +7449,7 @@ export async function registerRoutes(
         cashflow: 0,
         invoicedPayments: weeks.reduce((s, w) => s + w.invoicedPayments, 0),
       };
-      totals.cashflow = totals.inflows - totals.outflows;
+      totals.cashflow = (totals.inflows + totals.confirmedInflows) - (totals.outflows + totals.confirmedOutflows);
 
       res.json({ weeks, totals });
     } catch (err: any) {
