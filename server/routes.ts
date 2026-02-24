@@ -7288,6 +7288,77 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/cos-control/tracker", requireAuth, async (req, res) => {
+    try {
+      const allExpenses = await db.select().from(programExpense);
+      const items = allExpenses.filter((e: any) => e.rowType === 'item' || !e.rowType);
+
+      const monthMap = new Map<string, { planned: number; realised: number; budget: number }>();
+
+      for (const e of items) {
+        const actualAmt = Math.abs(parseFloat(e.expenseActualTotal || '0'));
+        const budgetAmt = Math.abs(parseFloat(e.budgetTotal || '0'));
+
+        const dateStr = e.expenseInvoicedDate || e.expensePaymentDate;
+        if (!dateStr && actualAmt === 0 && budgetAmt === 0) continue;
+
+        let monthKey = '';
+        if (dateStr) {
+          const d = new Date(dateStr);
+          if (!isNaN(d.getTime())) {
+            monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+          }
+        }
+        if (!monthKey && actualAmt === 0 && budgetAmt === 0) continue;
+        if (!monthKey) monthKey = 'undated';
+
+        if (!monthMap.has(monthKey)) {
+          monthMap.set(monthKey, { planned: 0, realised: 0, budget: 0 });
+        }
+        const bucket = monthMap.get(monthKey)!;
+
+        if (actualAmt > 0) {
+          bucket.planned += actualAmt;
+
+          const isRealised = e.expenseInvoiceNumber && e.invoiceDateFontColor === 'black';
+          if (isRealised) {
+            bucket.realised += actualAmt;
+          }
+        }
+
+        if (budgetAmt > 0) {
+          bucket.budget += budgetAmt;
+        }
+      }
+
+      const months = Array.from(monthMap.entries())
+        .filter(([k]) => k !== 'undated')
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([month, data]) => ({
+          month,
+          planned: data.planned,
+          realised: data.realised,
+          outstanding: data.planned - data.realised,
+          budget: data.budget,
+        }));
+
+      const undated = monthMap.get('undated');
+
+      const totals = {
+        planned: months.reduce((s, m) => s + m.planned, 0) + (undated?.planned || 0),
+        realised: months.reduce((s, m) => s + m.realised, 0) + (undated?.realised || 0),
+        outstanding: 0,
+        budget: months.reduce((s, m) => s + m.budget, 0) + (undated?.budget || 0),
+      };
+      totals.outstanding = totals.planned - totals.realised;
+
+      res.json({ months, totals, lineCount: items.length });
+    } catch (err: any) {
+      console.error('[COS Tracker]', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get("/api/cos-control/scenario-invoices", requireAuth, requireAdmin, async (req, res) => {
     try {
       const scenarioId = req.query.scenarioId ? parseInt(req.query.scenarioId as string) : null;
