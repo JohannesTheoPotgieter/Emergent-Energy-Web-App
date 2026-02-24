@@ -2,7 +2,9 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { useLocation } from "wouter";
+import { Button } from "@/components/ui/button";
+import { useLocation, Link } from "wouter";
+import { useAuth } from "@/hooks/use-auth";
 import {
   AlertTriangle,
   Wrench,
@@ -22,6 +24,11 @@ import {
   Users,
   ArrowUpRight,
   Timer,
+  Flag,
+  Target,
+  ExternalLink,
+  UserCheck,
+  Eye,
 } from "lucide-react";
 import { PROJECT_PHASE_LABELS, type ProjectPhase } from "@shared/schema";
 
@@ -349,10 +356,121 @@ function WorkloadTable({ workload }: { workload: WorkloadEntry[] }) {
   );
 }
 
+interface CompanyPriority {
+  id: number;
+  title: string;
+  description: string | null;
+  department: string | null;
+  severity: string;
+  status: string;
+  assignedTo: string | null;
+  nextAction: string | null;
+  dueDate: string | null;
+  linkedProjectName: string | null;
+  links?: { id: number; linkType: string; projectName: string | null; taskId: number | null }[];
+}
+
+function severityBorder(s: string) {
+  if (s === "critical") return "border-l-red-500";
+  if (s === "important") return "border-l-amber-400";
+  return "border-l-blue-400";
+}
+
+function CompanyPrioritiesSection() {
+  const { data: priorities = [], isLoading } = useQuery<CompanyPriority[]>({
+    queryKey: ["/api/mytool/company-priorities"],
+    queryFn: () => engFetch("/api/mytool/company-priorities"),
+  });
+
+  const active = priorities.filter((p: CompanyPriority) => p.status !== "completed" && p.status !== "cancelled");
+  const sorted = [...active].sort((a, b) => {
+    const sevOrder = (s: string) => s === "critical" ? 0 : s === "important" ? 1 : 2;
+    return sevOrder(a.severity) - sevOrder(b.severity);
+  });
+
+  if (isLoading) {
+    return (
+      <Card>
+        <div className="px-4 py-3 border-b flex items-center gap-2">
+          <Flag className="h-4 w-4 text-red-500" />
+          <span className="font-semibold text-sm">Company Priorities</span>
+        </div>
+        <CardContent className="p-4">
+          <div className="flex items-center justify-center py-4">
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (sorted.length === 0) return null;
+
+  return (
+    <Card data-testid="section-company-priorities">
+      <div className="px-4 py-3 border-b flex items-center gap-2">
+        <Flag className="h-4 w-4 text-red-500" />
+        <span className="font-semibold text-sm">Company Priorities</span>
+        <span className="text-xs text-muted-foreground ml-auto">{sorted.length} active</span>
+      </div>
+      <CardContent className="p-3">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {sorted.map(p => {
+            const overdue = p.dueDate && new Date(p.dueDate) < new Date();
+            return (
+              <div
+                key={p.id}
+                className={`border-l-4 ${severityBorder(p.severity)} border rounded-lg bg-card p-3 space-y-1.5 ${overdue ? "ring-1 ring-red-300" : ""}`}
+                data-testid={`priority-card-${p.id}`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <h4 className="font-semibold text-xs leading-snug">{p.title}</h4>
+                  <Badge className={`text-[9px] px-1.5 py-0 shrink-0 ${
+                    p.severity === "critical" ? "bg-red-100 text-red-700" :
+                    p.severity === "important" ? "bg-amber-100 text-amber-700" :
+                    "bg-blue-100 text-blue-700"
+                  }`}>{p.severity}</Badge>
+                </div>
+                {p.assignedTo && (
+                  <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                    <Users className="h-3 w-3" /> {p.assignedTo}
+                  </div>
+                )}
+                {p.nextAction && (
+                  <div className="flex items-start gap-1 text-[10px] text-muted-foreground">
+                    <Target className="h-3 w-3 mt-0.5 shrink-0" />
+                    <span className="line-clamp-2">{p.nextAction}</span>
+                  </div>
+                )}
+                {p.dueDate && (
+                  <div className={`text-[10px] flex items-center gap-1 ${overdue ? "text-red-600 font-medium" : "text-muted-foreground"}`}>
+                    <Calendar className="h-3 w-3" /> {p.dueDate}
+                    {overdue && <AlertTriangle className="h-3 w-3" />}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function EngineeringDashboard() {
+  const { user, isAdmin } = useAuth();
+  const userRole = (user as any)?.role || "";
+  const managerRoles = ["admin", "eng_program_manager", "CEO_ADMIN", "COO_ADMIN", "CCO", "PROGRAM_MANAGER", "CONSTRUCTION_MANAGER"];
+  const isManagerRole = isAdmin || managerRoles.includes(userRole);
+  const [showAllTasks, setShowAllTasks] = useState(isManagerRole);
+  const fullName = user?.name || "";
+  const firstName = fullName.split(/\s+/)[0];
+
+  const assigneeParam = (!showAllTasks && firstName) ? `?assignee=${encodeURIComponent(firstName)}` : "";
+
   const { data, isLoading, error } = useQuery<StandupData>({
-    queryKey: ["eng-standup"],
-    queryFn: () => engFetch("/api/eng/dashboard/standup"),
+    queryKey: ["eng-standup", assigneeParam],
+    queryFn: () => engFetch(`/api/eng/dashboard/standup${assigneeParam}`),
     refetchOnMount: "always",
     staleTime: 0,
   });
@@ -365,9 +483,9 @@ export default function EngineeringDashboard() {
             <Wrench className="h-5 w-5 text-white" />
           </div>
           <div>
-            <h2 className="text-xl sm:text-2xl font-heading font-bold">Engineering Standup</h2>
+            <h2 className="text-xl sm:text-2xl font-heading font-bold">Engineering Dashboard</h2>
             <p className="text-xs text-muted-foreground flex items-center gap-1">
-              <Loader2 className="h-3 w-3 animate-spin" /> Loading standup data...
+              <Loader2 className="h-3 w-3 animate-spin" /> Loading your tasks...
             </p>
           </div>
         </div>
@@ -386,7 +504,7 @@ export default function EngineeringDashboard() {
       <div data-testid="eng-dashboard" className="flex items-center justify-center py-20">
         <div className="text-center">
           <AlertTriangle className="h-10 w-10 text-red-400 mx-auto mb-2" />
-          <p className="font-medium">Failed to load standup data</p>
+          <p className="font-medium">Failed to load dashboard data</p>
           <p className="text-sm text-muted-foreground mt-1">{(error as Error)?.message || "Unknown error"}</p>
         </div>
       </div>
@@ -409,21 +527,46 @@ export default function EngineeringDashboard() {
           </div>
           <div>
             <h2 className="text-xl sm:text-2xl font-heading font-bold" data-testid="text-standup-title">
-              Engineering Standup
+              {showAllTasks ? "Engineering Standup" : `${firstName}'s Dashboard`}
             </h2>
             <p className="text-xs text-muted-foreground flex items-center gap-1.5">
               <Clock className="h-3 w-3" />
               {todayFormatted}
+              {!showAllTasks && firstName && (
+                <span className="ml-1 flex items-center gap-1 text-blue-600">
+                  <UserCheck className="h-3 w-3" />
+                  Filtered to your tasks
+                </span>
+              )}
             </p>
           </div>
         </div>
-        {totalBlockers > 0 && (
-          <div className="flex items-center gap-1.5 text-red-600 bg-red-50 px-3 py-1.5 rounded-lg text-xs font-semibold" data-testid="blocker-alert">
-            <ShieldAlert className="h-4 w-4" />
-            {totalBlockers} blocker{totalBlockers !== 1 ? "s" : ""} need attention
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          {firstName && isManagerRole && (
+            <Button
+              variant={showAllTasks ? "default" : "outline"}
+              size="sm"
+              className="h-7 text-xs gap-1"
+              onClick={() => setShowAllTasks(!showAllTasks)}
+              data-testid="toggle-all-tasks"
+            >
+              {showAllTasks ? (
+                <><UserCheck className="h-3 w-3" /> My Tasks</>
+              ) : (
+                <><Eye className="h-3 w-3" /> All Tasks</>
+              )}
+            </Button>
+          )}
+          {totalBlockers > 0 && (
+            <div className="flex items-center gap-1.5 text-red-600 bg-red-50 px-3 py-1.5 rounded-lg text-xs font-semibold" data-testid="blocker-alert">
+              <ShieldAlert className="h-4 w-4" />
+              {totalBlockers} blocker{totalBlockers !== 1 ? "s" : ""} need attention
+            </div>
+          )}
+        </div>
       </div>
+
+      <CompanyPrioritiesSection />
 
       <KpiStrip summary={summary} />
 

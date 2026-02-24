@@ -936,8 +936,19 @@ export function registerEngineeringRoutes(app: Express) {
 
   // ========== ENGINEERING STANDUP DASHBOARD ==========
 
-  app.get("/api/eng/dashboard/standup", requireAuth, requireAdminOrEpm, async (req, res) => {
+  app.get("/api/eng/dashboard/standup", requireAuth, async (req, res) => {
     try {
+      const role = getUserRole(req);
+      const managerRoles = ["admin", "eng_program_manager", "CEO_ADMIN", "COO_ADMIN", "CCO", "PROGRAM_MANAGER", "CONSTRUCTION_MANAGER"];
+      const isManager = managerRoles.includes(role);
+      const userName = getUser(req).name || "";
+      const userFirstName = userName.split(/\s+/)[0];
+      let assigneeFilter: string | undefined;
+      if (isManager) {
+        assigneeFilter = req.query.assignee as string | undefined;
+      } else {
+        assigneeFilter = userFirstName || undefined;
+      }
       const todayStr = new Date().toISOString().split('T')[0];
       const yesterday = new Date();
       yesterday.setDate(yesterday.getDate() - 1);
@@ -946,12 +957,20 @@ export function registerEngineeringRoutes(app: Express) {
       sevenDaysOut.setDate(sevenDaysOut.getDate() + 7);
       const weekEndStr = sevenDaysOut.toISOString().split('T')[0];
 
-      const [allTasks, allProjectInfoRows] = await Promise.all([
+      const [rawTasks, allProjectInfoRows] = await Promise.all([
         db.select().from(operationalTasks)
           .orderBy(asc(operationalTasks.projectName), asc(operationalTasks.sortOrder)),
         db.select({ projectName: projectInfo.projectName, phase: projectInfo.phase })
           .from(projectInfo),
       ]);
+
+      const allTasks = assigneeFilter
+        ? rawTasks.filter(t => {
+            if (!t.assignees || !Array.isArray(t.assignees)) return false;
+            const filterLower = assigneeFilter.toLowerCase();
+            return t.assignees.some(a => a && a.toLowerCase().startsWith(filterLower));
+          })
+        : rawTasks;
 
       const normalizeKey = (n: string) => n.replace(/_Tracker.*$/i, "").replace(/_/g, " ").toLowerCase().trim();
       const phaseByNorm = new Map<string, string>();
