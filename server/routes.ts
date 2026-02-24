@@ -1489,6 +1489,25 @@ export async function registerRoutes(
         const norm = piName.replace(/_Tracker\d*$/i, "").replace(/[_ ]/g, " ").toLowerCase().trim();
         projectInfoNormMap.set(norm, piName);
       }
+
+      function normalizeForMatch(s: string): string {
+        return s
+          .replace(/_Tracker\d*$/i, "")
+          .replace(/[_\-]/g, " ")
+          .replace(/\bph(\d)/gi, "phase $1")
+          .replace(/\bphase\s*(\d)/gi, "phase $1")
+          .replace(/\bstd\b/gi, "standard")
+          .replace(/\bgq\b/gi, "gq")
+          .replace(/\s+/g, " ")
+          .toLowerCase()
+          .trim();
+      }
+
+      const projectInfoDeepNormMap = new Map<string, string>();
+      for (const piName of projectInfoNames) {
+        projectInfoDeepNormMap.set(normalizeForMatch(piName), piName);
+      }
+
       function resolveToCanonical(name: string): string {
         if (projectInfoNames.has(name)) return name;
         const variants = [
@@ -1505,17 +1524,61 @@ export async function registerRoutes(
         for (const [piNorm, piName] of projectInfoNormMap) {
           if (piNorm.endsWith(normKey) || normKey.endsWith(piNorm)) return piName;
         }
+
+        const deepNorm = normalizeForMatch(name);
+        const deepMatch = projectInfoDeepNormMap.get(deepNorm);
+        if (deepMatch) return deepMatch;
+
+        for (const [piDeep, piName] of projectInfoDeepNormMap) {
+          if (piDeep.includes(deepNorm) || deepNorm.includes(piDeep)) return piName;
+        }
+
+        const nameWords = deepNorm.split(" ").filter(w => w.length > 1);
+        if (nameWords.length >= 1) {
+          let bestMatch: string | null = null;
+          let bestScore = 0;
+          for (const [piDeep, piName] of projectInfoDeepNormMap) {
+            const piWords = piDeep.split(" ").filter(w => w.length > 1);
+            const matchingWords = nameWords.filter(w => piWords.some(pw => pw.includes(w) || w.includes(pw)));
+            const score = matchingWords.length / Math.max(nameWords.length, piWords.length);
+            if (score > bestScore && score >= 0.5) {
+              bestScore = score;
+              bestMatch = piName;
+            }
+          }
+          if (bestMatch) return bestMatch;
+        }
+
         return name;
       }
 
+      const JUNK_NAMES = new Set(["PROJECT SIZE (kWp)", "FY 2026 Adhoc", "PROJECT MANAGERS"]);
+      function isJunkName(name: string): boolean {
+        return JUNK_NAMES.has(name) || /^(FY\s*\d|PROJECT\s+(SIZE|MANAGER))/i.test(name);
+      }
+
       const allProjectNames = new Set<string>();
-      for (const info of allProjectInfo) allProjectNames.add(info.projectName);
-      for (const expense of allExpenses) allProjectNames.add(resolveToCanonical(expense.projectName));
-      for (const inflow of allInflows) allProjectNames.add(resolveToCanonical(inflow.projectName));
-      for (const plan of allPlans) allProjectNames.add(resolveToCanonical(plan.projectName));
-      for (const c of allNormCosts) allProjectNames.add(resolveToCanonical(c.projectName));
-      for (const r of allNormRevenue) allProjectNames.add(resolveToCanonical(r.projectName));
-      for (const p of allNormPlans) allProjectNames.add(resolveToCanonical(p.projectName));
+      for (const info of allProjectInfo) {
+        if (!isJunkName(info.projectName)) allProjectNames.add(info.projectName);
+      }
+      for (const expense of allExpenses) {
+        if (!isJunkName(expense.projectName)) allProjectNames.add(resolveToCanonical(expense.projectName));
+      }
+      for (const inflow of allInflows) {
+        if (!isJunkName(inflow.projectName)) allProjectNames.add(resolveToCanonical(inflow.projectName));
+      }
+      for (const plan of allPlans) {
+        if (!isJunkName(plan.projectName)) allProjectNames.add(resolveToCanonical(plan.projectName));
+      }
+      for (const c of allNormCosts) {
+        if (!isJunkName(c.projectName)) allProjectNames.add(resolveToCanonical(c.projectName));
+      }
+      for (const r of allNormRevenue) {
+        if (!isJunkName(r.projectName)) allProjectNames.add(resolveToCanonical(r.projectName));
+      }
+      for (const p of allNormPlans) {
+        if (!isJunkName(p.projectName)) allProjectNames.add(resolveToCanonical(p.projectName));
+      }
 
       const taskCountsByProject = new Map<string, Record<string, number>>();
       for (const task of allOpTasks) {
