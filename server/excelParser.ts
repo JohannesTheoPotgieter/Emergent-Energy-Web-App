@@ -353,22 +353,55 @@ export async function parseTrackerFile(buffer: Buffer, fileName: string): Promis
     const sheet = workbook.getWorksheet("Expenditure Breakdown")!;
     const data = worksheetToArray(sheet);
     
+    let actualSectionStartCol = -1;
+    for (let scanRow = 0; scanRow < Math.min(data.length, 30); scanRow++) {
+      const row = data[scanRow];
+      if (!row) continue;
+      for (let c = 0; c < row.length; c++) {
+        const cellText = String(row[c] || "").toLowerCase().trim();
+        if (cellText.includes("actual expenditure breakdown") || cellText.includes("actual expenditure")) {
+          actualSectionStartCol = c;
+          break;
+        }
+      }
+      if (actualSectionStartCol >= 0) break;
+    }
+
     const expenseHeaderTokens = [
       "product/ service",
       "description of work",
       "actual total",
       "po number",
       "invoice number",
-      "finance payment date",
-      "total cos"
+      "finance payment date"
     ];
     
     const expenseHeader = findHeaderRow(data, expenseHeaderTokens);
     
     if (expenseHeader) {
-      const { rowIdx: headerRowIdx, colMap } = expenseHeader;
+      const { rowIdx: headerRowIdx, colMap: rawColMap } = expenseHeader;
       
-      const categoryCol = getColumnIndex(colMap, ["product/ service", "product", "category"]);
+      const colMap = new Map<string, number>();
+      if (actualSectionStartCol >= 0) {
+        const entries = Array.from(rawColMap.entries());
+        for (const [header, colIdx] of entries) {
+          if (colIdx >= actualSectionStartCol) {
+            colMap.set(header, colIdx);
+          }
+        }
+        if (colMap.size < 4) {
+          for (const [header, colIdx] of entries) {
+            if (!colMap.has(header)) colMap.set(header, colIdx);
+          }
+        }
+      } else {
+        const entries = Array.from(rawColMap.entries());
+        for (const [header, colIdx] of entries) {
+          colMap.set(header, colIdx);
+        }
+      }
+      
+      const categoryCol = getColumnIndex(colMap, ["product/ service", "product/service", "product", "category"]);
       const descCol = getColumnIndex(colMap, ["description of work", "description"]);
       const budgetQtyCol = getColumnIndex(colMap, ["qty", "quantity"]);
       const budgetRateCol = getColumnIndex(colMap, ["rate / unit", "rate"]);
@@ -378,9 +411,10 @@ export async function parseTrackerFile(buffer: Buffer, fileName: string): Promis
       let budgetCosCol = -1;
       let actualCosCol = -1;
       const cosMatches: number[] = [];
-      for (const [key, idx] of Object.entries(colMap)) {
+      const colMapEntries = Array.from(colMap.entries());
+      for (const [key, idx] of colMapEntries) {
         if (key.toLowerCase().includes("total cos") || key.toLowerCase() === "cos") {
-          cosMatches.push(idx as number);
+          cosMatches.push(idx);
         }
       }
       if (cosMatches.length >= 2) {
@@ -393,7 +427,7 @@ export async function parseTrackerFile(buffer: Buffer, fileName: string): Promis
       const actualTotalCol = getColumnIndex(colMap, ["actual total"]);
       const poCol = getColumnIndex(colMap, ["po number"]);
       const invoiceCol = getColumnIndex(colMap, ["invoice number"]);
-      const invoiceDateCol = getColumnIndex(colMap, ["invoice raised date"]);
+      const invoiceDateCol = getColumnIndex(colMap, ["invoice raised date", "invoice date"]);
       const paymentDateCol = getColumnIndex(colMap, ["finance payment date", "payment date"]);
       
       let dataStartRow = headerRowIdx + 1;
@@ -420,13 +454,14 @@ export async function parseTrackerFile(buffer: Buffer, fileName: string): Promis
         let expenseCategory = currentCategory;
         let expenseLineItem = rawDesc ? String(rawDesc) : null;
         
-        if (rawCategory && typeof rawCategory === "string") {
-          const catStr = rawCategory.trim();
+        if (rawCategory && (typeof rawCategory === "string" || typeof rawCategory === "number")) {
+          const catStr = String(rawCategory).trim();
           const isCategoryPattern = /^\d+\.?\s*[A-Za-z]/.test(catStr);
           
           if (isCategoryPattern) {
+            const cleanCategory = catStr.replace(/^\d+\.?\s*/, "").trim();
             if (catStr !== currentCategory) {
-              currentCategory = catStr;
+              currentCategory = cleanCategory || catStr;
             }
             expenseCategory = currentCategory;
             
@@ -446,6 +481,9 @@ export async function parseTrackerFile(buffer: Buffer, fileName: string): Promis
                 continue;
               }
             }
+          } else if (!currentCategory) {
+            currentCategory = catStr;
+            expenseCategory = currentCategory;
           }
         }
         
@@ -453,7 +491,17 @@ export async function parseTrackerFile(buffer: Buffer, fileName: string): Promis
           rowType = "subtotal";
         }
         
+        const lowerJoined = [rawCategory, rawDesc].filter(Boolean).map(v => String(v).toLowerCase()).join(" ");
+        if (lowerJoined.includes("sub total") || lowerJoined.includes("end of sheet")) continue;
+        
         if (!rawCategory && !rawDesc && !rawBudgetTotal && !rawActualTotal) continue;
+        
+        const parsedActual = rawActualTotal !== null && rawActualTotal !== undefined ? parseFloat(String(rawActualTotal)) : NaN;
+        const hasNonZeroActual = !isNaN(parsedActual) && parsedActual !== 0;
+        
+        if (rowType === "item" && !hasNonZeroActual && !rawDesc) {
+          continue;
+        }
         
         const poNumber = poCol >= 0 && row[poCol] ? String(row[poCol]) : null;
         const invoiceNumber = invoiceCol >= 0 && row[invoiceCol] ? String(row[invoiceCol]) : null;
@@ -464,6 +512,70 @@ export async function parseTrackerFile(buffer: Buffer, fileName: string): Promis
         let invoiceDateFontColor: string | null = null;
         let paymentDateConfirmed = false;
         let paymentDateFontColor: string | null = null;
+
+        if (invoiceDate && invoiceDateCol >= 0) {
+          try {
+            const cell = sheet.getRow(rowIdx + 1).getCell(invoiceDateCol + 1);
+            if (cell && cell.value) {
+              const font = cell.font;
+              if (!font || !font.color) {
+                invoiceDateConfirmed = true;
+                invoiceDateFontColor = "black";
+              } else if (font.color.theme !== undefined && !font.color.argb) {
+                if (font.color.theme === 1 || font.color.theme === 0) {
+                  invoiceDateConfirmed = true;
+                  invoiceDateFontColor = "black";
+                }
+              } else {
+                const argb = (font.color.argb || "").toLowerCase();
+                if (!argb) {
+                  invoiceDateConfirmed = true;
+                  invoiceDateFontColor = "black";
+                } else {
+                  const hex = argb.length === 8 ? argb.substring(2) : argb;
+                  const r = parseInt(hex.substring(0, 2), 16);
+                  const g = parseInt(hex.substring(2, 4), 16);
+                  const b = parseInt(hex.substring(4, 6), 16);
+                  const isBlack = (hex === "000000" || argb === "ff000000" || (r < 40 && g < 40 && b < 40));
+                  invoiceDateConfirmed = isBlack;
+                  invoiceDateFontColor = isBlack ? "black" : (r > 150 && g < 80 && b < 80) ? "red" : argb;
+                }
+              }
+            }
+          } catch {}
+        }
+
+        if (paymentDate && paymentDateCol >= 0) {
+          try {
+            const cell = sheet.getRow(rowIdx + 1).getCell(paymentDateCol + 1);
+            if (cell && cell.value) {
+              const font = cell.font;
+              if (!font || !font.color) {
+                paymentDateConfirmed = true;
+                paymentDateFontColor = "black";
+              } else if (font.color.theme !== undefined && !font.color.argb) {
+                if (font.color.theme === 1 || font.color.theme === 0) {
+                  paymentDateConfirmed = true;
+                  paymentDateFontColor = "black";
+                }
+              } else {
+                const argb = (font.color.argb || "").toLowerCase();
+                if (!argb) {
+                  paymentDateConfirmed = true;
+                  paymentDateFontColor = "black";
+                } else {
+                  const hex = argb.length === 8 ? argb.substring(2) : argb;
+                  const r = parseInt(hex.substring(0, 2), 16);
+                  const g = parseInt(hex.substring(2, 4), 16);
+                  const b = parseInt(hex.substring(4, 6), 16);
+                  const isBlack = (hex === "000000" || argb === "ff000000" || (r < 40 && g < 40 && b < 40));
+                  paymentDateConfirmed = isBlack;
+                  paymentDateFontColor = isBlack ? "black" : (r > 150 && g < 80 && b < 80) ? "red" : argb;
+                }
+              }
+            }
+          } catch {}
+        }
 
         let lineStatus = "Planned";
         if (paymentDate) {

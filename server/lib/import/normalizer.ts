@@ -416,7 +416,11 @@ function extractCostLines(
     const description = cellStr(row, descCol);
     const counterparty = cellStr(row, counterpartyCol);
 
-    if (!rawCategory && !description && !counterparty) continue;
+    const amountExVat = effectiveAmountCol >= 0 ? parseNumber(row[effectiveAmountCol]) : null;
+    const parsedAmount = amountExVat !== null ? parseFloat(String(amountExVat)) : NaN;
+    const hasAmount = !isNaN(parsedAmount) && parsedAmount !== 0;
+
+    if (!rawCategory && !description && !counterparty && !hasAmount) continue;
 
     const lowerJoined = [rawCategory, description].filter(Boolean).join(" ").toLowerCase();
     if (lowerJoined.includes("sub total") || lowerJoined.includes("end of sheet")) continue;
@@ -424,14 +428,13 @@ function extractCostLines(
     if (rawCategory) {
       const isCategoryPattern = /^\d+\.?\s*[A-Za-z]/.test(rawCategory);
       if (isCategoryPattern) {
-        currentCategory = rawCategory;
+        const cleanCat = rawCategory.replace(/^\d+\.?\s*/, "").trim();
+        currentCategory = cleanCat || rawCategory;
       } else if (!currentCategory) {
         currentCategory = rawCategory;
       }
     }
-    const category = rawCategory || currentCategory;
-
-    const amountExVat = effectiveAmountCol >= 0 ? parseNumber(row[effectiveAmountCol]) : null;
+    const category = currentCategory || rawCategory;
     const invoiceNumber = cellStr(row, invoiceNumCol);
     const invoiceDate = invoiceDateCol >= 0 ? parseDate(row[invoiceDateCol]) : null;
     const approvedDate = approvedDateCol >= 0 ? parseDate(row[approvedDateCol]) : null;
@@ -445,8 +448,6 @@ function extractCostLines(
       turnaroundDays = daysBetween(invoiceDate, paidDate);
     }
 
-    const parsedAmount = amountExVat !== null ? parseFloat(String(amountExVat)) : NaN;
-    const hasAmount = !isNaN(parsedAmount) && parsedAmount !== 0;
     if (!hasAmount) {
       continue;
     }
