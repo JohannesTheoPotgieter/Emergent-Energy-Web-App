@@ -246,7 +246,37 @@ router.get("/api/smart-import/pending-runs", requireAuth, async (_req: Request, 
       .where(eq(smartImportRuns.status, "PREVIEW"))
       .orderBy(smartImportRuns.projectName);
 
-    const runsWithIssues = await Promise.all(runs.map(async (run: any) => {
+    const latestByProject = new Map<string, typeof runs[0]>();
+    const duplicateIds: number[] = [];
+    for (const run of runs) {
+      const key = `${run.projectName}::${run.sourceFileName}`;
+      const existing = latestByProject.get(key);
+      if (!existing) {
+        latestByProject.set(key, run);
+      } else {
+        const existingTime = new Date(existing.uploadedAt!).getTime();
+        const currentTime = new Date(run.uploadedAt!).getTime();
+        if (currentTime > existingTime) {
+          duplicateIds.push(existing.id);
+          latestByProject.set(key, run);
+        } else {
+          duplicateIds.push(run.id);
+        }
+      }
+    }
+
+    if (duplicateIds.length > 0) {
+      for (const dupId of duplicateIds) {
+        await db.update(smartImportRuns)
+          .set({ status: "SUPERSEDED" })
+          .where(eq(smartImportRuns.id, dupId));
+      }
+      console.log(`[smart-import] Marked ${duplicateIds.length} duplicate PREVIEW runs as SUPERSEDED`);
+    }
+
+    const dedupedRuns = Array.from(latestByProject.values());
+
+    const runsWithIssues = await Promise.all(dedupedRuns.map(async (run: any) => {
       const issues = await db.select().from(importIssues)
         .where(eq(importIssues.importRunId, run.id));
       const blockers = issues.filter((i: any) => i.severity === "BLOCKER" && !i.resolved);
@@ -262,6 +292,7 @@ router.get("/api/smart-import/pending-runs", requireAuth, async (_req: Request, 
       };
     }));
 
+    runsWithIssues.sort((a, b) => a.projectName.localeCompare(b.projectName));
     res.json(runsWithIssues);
   } catch (err: any) {
     console.error("[smart-import] GET pending-runs error:", err);

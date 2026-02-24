@@ -2576,6 +2576,16 @@ export default function SmartImportPage() {
   const [issues, setIssues] = useState<any[]>([]);
   const [loadingRun, setLoadingRun] = useState(false);
   const [bulkMode, setBulkMode] = useState(false);
+  const [cameFromBulk, setCameFromBulk] = useState(false);
+
+  const returnToBulkPanel = useCallback(() => {
+    setCameFromBulk(false);
+    setBulkMode(true);
+    setStep(1);
+    setRunId(null);
+    setPreview(null);
+    setIssues([]);
+  }, []);
 
   const loadRunData = useCallback(async (id: number) => {
     setLoadingRun(true);
@@ -2596,6 +2606,7 @@ export default function SmartImportPage() {
     setRunId(newRunId);
     setPreview(newPreview);
     setBulkMode(false);
+    setCameFromBulk(false);
     setStep(2);
     loadRunData(newRunId);
   };
@@ -2611,6 +2622,7 @@ export default function SmartImportPage() {
 
   const handleSwitchToWizard = (wizardRunId: number) => {
     setBulkMode(false);
+    setCameFromBulk(true);
     setRunId(wizardRunId);
     setStep(2);
     setIssues([]);
@@ -2640,6 +2652,22 @@ export default function SmartImportPage() {
         />
       ) : (
         <>
+          {cameFromBulk && step >= 2 && (
+            <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2" data-testid="back-to-bulk-banner">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-blue-700 hover:text-blue-800 hover:bg-blue-100 h-7 px-2 text-xs font-medium"
+                onClick={returnToBulkPanel}
+                data-testid="btn-back-to-bulk"
+              >
+                <ArrowLeft className="w-3.5 h-3.5 mr-1.5" />
+                Back to Bulk Panel
+              </Button>
+              <span className="text-xs text-blue-600">Reviewing individual file — resolve issues then return to commit all</span>
+            </div>
+          )}
+
           {step === 1 && (
             <UploadStep onUploaded={handleUploaded} onBatchUploaded={handleBatchUploaded} />
           )}
