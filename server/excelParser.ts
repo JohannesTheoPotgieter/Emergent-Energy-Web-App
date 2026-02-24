@@ -514,12 +514,27 @@ export async function parseTrackerFile(buffer: Buffer, fileName: string): Promis
         const lowerJoined = [rawCategory, rawDesc].filter(Boolean).map(v => String(v).toLowerCase()).join(" ");
         if (lowerJoined.includes("sub total") || lowerJoined.includes("end of sheet")) continue;
         
-        if (!rawCategory && !rawDesc && !rawBudgetTotal && !rawActualTotal) continue;
+        const rawBudgetCosCheck = budgetCosCol >= 0 ? row[budgetCosCol] : null;
+        const rawActualCosCheck = actualCosCol >= 0 ? row[actualCosCol] : null;
+        if (!rawCategory && !rawDesc && !rawBudgetTotal && !rawActualTotal && !rawBudgetCosCheck && !rawActualCosCheck) continue;
         
         const parsedActual = rawActualTotal !== null && rawActualTotal !== undefined ? parseFloat(String(rawActualTotal)) : NaN;
         const hasNonZeroActual = !isNaN(parsedActual) && parsedActual !== 0;
-        
-        if (rowType === "item" && !hasNonZeroActual && !rawDesc) {
+
+        const parsedBudgetTotal = rawBudgetTotal !== null && rawBudgetTotal !== undefined ? parseFloat(String(rawBudgetTotal)) : NaN;
+        const hasNonZeroBudget = !isNaN(parsedBudgetTotal) && parsedBudgetTotal !== 0;
+
+        const rawBudgetCos = budgetCosCol >= 0 ? row[budgetCosCol] : null;
+        const parsedBudgetCos = rawBudgetCos !== null && rawBudgetCos !== undefined ? parseFloat(String(rawBudgetCos)) : NaN;
+        const hasNonZeroBudgetCos = !isNaN(parsedBudgetCos) && parsedBudgetCos !== 0;
+
+        const rawActualCos = actualCosCol >= 0 ? row[actualCosCol] : null;
+        const parsedActualCos = rawActualCos !== null && rawActualCos !== undefined ? parseFloat(String(rawActualCos)) : NaN;
+        const hasNonZeroActualCos = !isNaN(parsedActualCos) && parsedActualCos !== 0;
+
+        const hasAnyTotal = hasNonZeroActual || hasNonZeroBudget || hasNonZeroBudgetCos || hasNonZeroActualCos;
+
+        if (rowType === "item" && !hasAnyTotal && !rawDesc) {
           continue;
         }
         
