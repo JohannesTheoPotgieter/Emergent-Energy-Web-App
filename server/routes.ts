@@ -473,11 +473,18 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   
+  const EXECUTION_PHASES = [
+    "Construction", "QA", "Commissioning", "Handover", "Compliance Handover",
+    "Commercial Close Out", "Commercial Close out", "DLP", "Financial Close",
+    "Planning", "Cost Proposal"
+  ];
+
   function safeguardImportProjectInfo(info: any): any {
     if (info.phase && !info.executionPhase) {
       info.executionPhase = info.phase;
     }
-    info.executionEnabled = false;
+    const phase = info.executionPhase || info.phase || "";
+    info.executionEnabled = EXECUTION_PHASES.some(p => p.toLowerCase() === phase.toLowerCase());
     return info;
   }
 
@@ -3787,8 +3794,11 @@ export async function registerRoutes(
       for (const upload of uploads) {
         if (!upload.filePath) continue;
         
-        // Extract project name from filename
-        const projectName = upload.fileName.replace(/_Tracker\.(xlsx|xlsm|xls)$/i, '');
+        const projectName = upload.fileName
+          .replace(/\.(xlsx|xlsm|xls)$/i, '')
+          .replace(/_[Tt]racker\d*$/, '')
+          .replace(/_/g, ' ')
+          .trim();
         
         // Only keep if this is the most recent or if project not yet seen
         if (!projectFiles.has(projectName)) {
@@ -5351,7 +5361,7 @@ export async function registerRoutes(
         const projectFiles = new Map<string, { filePath: string; fileName: string; uploadedAt: Date }>();
         for (const upload of uploads) {
           if (!upload.filePath) continue;
-          const projectName = upload.fileName.replace(/_Tracker\.(xlsx|xlsm|xls)$/i, '').replace(/^\d+_/, '');
+          const projectName = upload.fileName.replace(/\.(xlsx|xlsm|xls)$/i, '').replace(/_[Tt]racker\d*$/, '').replace(/^\d+_/, '').replace(/_/g, ' ').trim();
           const existing = projectFiles.get(projectName);
           if (!existing || (upload.uploadedAt && existing.uploadedAt < upload.uploadedAt)) {
             projectFiles.set(projectName, { filePath: upload.filePath, fileName: upload.fileName, uploadedAt: upload.uploadedAt || new Date(0) });
@@ -5423,7 +5433,7 @@ export async function registerRoutes(
       const projectFiles = new Map<string, { filePath: string; fileName: string; uploadedAt: Date }>();
       for (const upload of uploads) {
         if (!upload.filePath) continue;
-        const projectName = upload.fileName.replace(/_Tracker\.(xlsx|xlsm|xls)$/i, '').replace(/^\d+_/, '');
+        const projectName = upload.fileName.replace(/\.(xlsx|xlsm|xls)$/i, '').replace(/_[Tt]racker\d*$/, '').replace(/^\d+_/, '').replace(/_/g, ' ').trim();
         const existing = projectFiles.get(projectName);
         if (!existing || (upload.uploadedAt && existing.uploadedAt < upload.uploadedAt)) {
           projectFiles.set(projectName, { 
@@ -5787,7 +5797,7 @@ export async function registerRoutes(
       const sourceFiles = new Map<string, { fileName: string; filePath: string; exists: boolean; uploadedAt: string }>();
       for (const upload of uploads) {
         if (!upload.filePath) continue;
-        const projectName = upload.fileName.replace(/_Tracker\.(xlsx|xlsm|xls)$/i, '').replace(/^\d+_/, '');
+        const projectName = upload.fileName.replace(/\.(xlsx|xlsm|xls)$/i, '').replace(/_[Tt]racker\d*$/, '').replace(/^\d+_/, '').replace(/_/g, ' ').trim();
         
         const existing = sourceFiles.get(projectName);
         if (!existing || (upload.uploadedAt && new Date(existing.uploadedAt) < upload.uploadedAt)) {
