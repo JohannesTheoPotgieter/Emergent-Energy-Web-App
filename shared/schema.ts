@@ -647,6 +647,34 @@ export const insertCashflowBalanceHistorySchema = createInsertSchema(cashflowBal
 export type InsertCashflowBalanceHistory = z.infer<typeof insertCashflowBalanceHistorySchema>;
 export type CashflowBalanceHistory = typeof cashflowBalanceHistory.$inferSelect;
 
+export const availablePaymentOverrides = pgTable("available_payment_overrides", {
+  id: serial("id").primaryKey(),
+  weekStartDate: text("week_start_date").notNull().unique(),
+  overrideValue: decimal("override_value", { precision: 15, scale: 2 }).notNull(),
+  reason: text("reason"),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  updatedBy: text("updated_by"),
+});
+
+export const insertAvailablePaymentOverrideSchema = createInsertSchema(availablePaymentOverrides).omit({ id: true, updatedAt: true });
+export type InsertAvailablePaymentOverride = z.infer<typeof insertAvailablePaymentOverrideSchema>;
+export type AvailablePaymentOverride = typeof availablePaymentOverrides.$inferSelect;
+
+export const availablePaymentHistory = pgTable("available_payment_history", {
+  id: serial("id").primaryKey(),
+  weekStartDate: text("week_start_date").notNull(),
+  previousValue: decimal("previous_value", { precision: 15, scale: 2 }),
+  newValue: decimal("new_value", { precision: 15, scale: 2 }).notNull(),
+  computedValue: decimal("computed_value", { precision: 15, scale: 2 }),
+  reason: text("reason"),
+  changedAt: timestamp("changed_at").notNull().defaultNow(),
+  changedBy: text("changed_by"),
+});
+
+export const insertAvailablePaymentHistorySchema = createInsertSchema(availablePaymentHistory).omit({ id: true, changedAt: true });
+export type InsertAvailablePaymentHistory = z.infer<typeof insertAvailablePaymentHistorySchema>;
+export type AvailablePaymentHistory = typeof availablePaymentHistory.$inferSelect;
+
 export const opexBudgetMonthly = pgTable("opex_budget_monthly", {
   id: serial("id").primaryKey(),
   monthKey: text("month_key").notNull().unique(),

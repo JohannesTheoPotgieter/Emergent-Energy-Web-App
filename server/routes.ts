@@ -1873,12 +1873,13 @@ export async function registerRoutes(
     try {
       const projectFilter = req.query.project ? String(req.query.project) : null;
 
-      const [legacyExp, legacyInf, manualBalances, opexBudgets, opexWeeklyOverrides, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
+      const [legacyExp, legacyInf, manualBalances, opexBudgets, opexWeeklyOverrides, availPaymentOverrides, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
         storage.getAllProgramExpenses(),
         storage.getAllProgramInflows(),
         storage.getAllCashflowWeeklyManual(),
         storage.getAllOpexBudgetMonthly(),
         storage.getAllOpexWeeklyManual(),
+        storage.getAllAvailablePaymentOverrides(),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
         storage.getAllProjectPlans(),
@@ -1890,6 +1891,7 @@ export async function registerRoutes(
       const manualMap = new Map(manualBalances.map(m => [m.weekStartDate, parseFloat(m.openingBalance || "0")]));
       const opexMonthlyMap = new Map(opexBudgets.map(o => [o.monthKey, parseFloat(o.amount || "0")]));
       const opexWeeklyMap = new Map(opexWeeklyOverrides.map(o => [o.weekStartDate, parseFloat(o.opexAmount || "0")]));
+      const availPayMap = new Map(availPaymentOverrides.map(o => [o.weekStartDate, { value: parseFloat(o.overrideValue || "0"), reason: o.reason }]));
 
       const fyStart = new Date(Date.UTC(2025, 8, 1));
       const fyEnd = new Date(Date.UTC(2026, 7, 31));
@@ -1944,8 +1946,13 @@ export async function registerRoutes(
         const hasOpexOverride = opexWeeklyMap.has(weekStart);
         const opexOutflows = hasOpexOverride ? opexWeeklyMap.get(weekStart)! : computedOpex;
 
-        const closingBalance = openingBalance + projectInflowsSum - opexOutflows - projectOutflowsSum;
-        const availablePayment = openingBalance + projectInflowsSum;
+        const totalOutflows = opexOutflows + projectOutflowsSum;
+        const closingBalance = openingBalance + projectInflowsSum - totalOutflows;
+        const computedAvailablePayment = openingBalance + projectInflowsSum - totalOutflows;
+        const hasAvailPayOverride = availPayMap.has(weekStart);
+        const availPayOverride = availPayMap.get(weekStart);
+        const availablePayment = hasAvailPayOverride ? availPayOverride!.value : computedAvailablePayment;
+        const availPayReason = hasAvailPayOverride ? availPayOverride!.reason : null;
 
         weeks.push({
           weekStart,
@@ -1961,6 +1968,9 @@ export async function registerRoutes(
           hasOpexOverride,
           closingBalance,
           availablePayment,
+          computedAvailablePayment,
+          hasAvailPayOverride,
+          availPayReason,
         });
 
         runningBalance = closingBalance;
@@ -2182,6 +2192,84 @@ export async function registerRoutes(
     } catch (error) {
       console.error("OPEX weekly delete error:", error);
       res.status(500).json({ error: "Failed to delete weekly OPEX override" });
+    }
+  });
+
+  app.post("/api/cashflow-2026/available-payment", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { weekStartDate, overrideValue, reason, computedValue } = req.body;
+      if (!weekStartDate || overrideValue == null) {
+        return res.status(400).json({ error: "weekStartDate and overrideValue required" });
+      }
+
+      const existingOverrides = await storage.getAllAvailablePaymentOverrides();
+      const existing = existingOverrides.find(o => o.weekStartDate === weekStartDate);
+      const previousValue = existing ? existing.overrideValue : null;
+      const newVal = parseFloat(String(overrideValue));
+      const compVal = computedValue != null ? parseFloat(String(computedValue)) : null;
+
+      const user = req.user as any;
+      await storage.addAvailablePaymentHistory({
+        weekStartDate,
+        previousValue: previousValue || null,
+        newValue: String(newVal),
+        computedValue: compVal != null ? String(compVal) : null,
+        reason: reason || null,
+        changedBy: user?.username || user?.name || null,
+      });
+
+      const result = await storage.upsertAvailablePaymentOverride(
+        weekStartDate,
+        String(newVal),
+        reason || null,
+        user?.username || user?.name || null
+      );
+
+      res.json(result);
+    } catch (error) {
+      console.error("Available payment save error:", error);
+      res.status(500).json({ error: "Failed to save available payment override" });
+    }
+  });
+
+  app.delete("/api/cashflow-2026/available-payment", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { weekStartDate } = req.body;
+      if (!weekStartDate) {
+        return res.status(400).json({ error: "weekStartDate required" });
+      }
+      const existingOverrides = await storage.getAllAvailablePaymentOverrides();
+      const existing = existingOverrides.find(o => o.weekStartDate === weekStartDate);
+      if (existing) {
+        const user = req.user as any;
+        await storage.addAvailablePaymentHistory({
+          weekStartDate,
+          previousValue: existing.overrideValue || null,
+          newValue: "0",
+          computedValue: null,
+          reason: "Override cleared",
+          changedBy: user?.username || user?.name || null,
+        });
+        await storage.deleteAvailablePaymentOverride(weekStartDate);
+      }
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("Available payment delete error:", error);
+      res.status(500).json({ error: "Failed to delete available payment override" });
+    }
+  });
+
+  app.get("/api/cashflow-2026/available-payment-history", requireAuth, async (req, res) => {
+    try {
+      const weekStart = req.query.week ? String(req.query.week) : null;
+      if (!weekStart) {
+        return res.status(400).json({ error: "week query parameter required" });
+      }
+      const history = await storage.getAvailablePaymentHistory(weekStart);
+      res.json(history);
+    } catch (error) {
+      console.error("Available payment history error:", error);
+      res.status(500).json({ error: "Failed to fetch available payment history" });
     }
   });
 
