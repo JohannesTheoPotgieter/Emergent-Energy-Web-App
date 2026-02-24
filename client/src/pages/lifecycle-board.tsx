@@ -15,7 +15,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
 import { useLocation } from "wouter";
-import { Loader2, Search, Zap, User, Wrench, FileSpreadsheet, GripVertical, CheckCircle2, ClipboardList, Link2, Merge, ArrowRight, X, Save, AlertTriangle, ShieldCheck, ExternalLink, Calendar, Clock, AlertCircle, Users, Trash2 } from "lucide-react";
+import { Loader2, Search, Zap, User, Wrench, FileSpreadsheet, GripVertical, CheckCircle2, ClipboardList, Link2, Merge, ArrowRight, X, Save, AlertTriangle, ShieldCheck, ExternalLink, Calendar, Clock, AlertCircle, Users } from "lucide-react";
 import { ActionBar } from "@/components/guidance/ActionBar";
 import { InlineTip } from "@/components/guidance/InlineTip";
 import { MicroWalkthrough, ReplayWalkthrough } from "@/components/guidance/MicroWalkthrough";
@@ -309,9 +309,6 @@ export default function LifecycleBoardPage() {
     overrideReason: "",
   });
   const [showOverrideReason, setShowOverrideReason] = useState(false);
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<ProjectInfo | null>(null);
-  const [deleting, setDeleting] = useState(false);
   const { toast } = useToast();
 
   const role = localStorage.getItem("company_role") || "";
@@ -439,33 +436,6 @@ export default function LifecycleBoardPage() {
       toast({ title: "Error", description: "Network error", variant: "destructive" });
     } finally {
       setEditSaving(false);
-    }
-  };
-
-  const handleDeleteProject = async () => {
-    if (!deleteTarget?.id) return;
-    setDeleting(true);
-    try {
-      const res = await fetch(`/api/lifecycle-board/projects/${deleteTarget.id}`, {
-        method: "DELETE",
-        headers: getAuthHeaders(),
-        credentials: "include",
-      });
-      if (res.ok) {
-        toast({ title: "Project Archived", description: `${cleanProjectName(deleteTarget.projectName)} has been removed from the board` });
-        setDeleteConfirmOpen(false);
-        setDeleteTarget(null);
-        setProjectDialogOpen(false);
-        setSelectedProject(null);
-        invalidateProjects();
-      } else {
-        const err = await res.json();
-        toast({ title: "Error", description: err.error || "Failed to delete project", variant: "destructive" });
-      }
-    } catch {
-      toast({ title: "Error", description: "Network error", variant: "destructive" });
-    } finally {
-      setDeleting(false);
     }
   };
 
@@ -1277,32 +1247,18 @@ export default function LifecycleBoardPage() {
                       </Select>
                     </div>
                   </div>
-                  <DialogFooter className="flex justify-between sm:justify-between">
-                    {isExec && selectedProject?.id && selectedProject.id > 0 ? (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                        onClick={() => { setDeleteTarget(selectedProject); setDeleteConfirmOpen(true); }}
-                        data-testid="btn-delete-project"
-                      >
-                        <Trash2 className="w-4 h-4 mr-1" />
-                        Delete
-                      </Button>
-                    ) : <div />}
-                    <div className="flex gap-2">
-                      <Button variant="outline" onClick={() => setProjectDialogOpen(false)} data-testid="btn-cancel-edit-project">
-                        Cancel
-                      </Button>
-                      <Button
-                        onClick={handleSaveEdit}
-                        disabled={editSaving || !selectedProject?.id || selectedProject.id <= 0}
-                        data-testid="btn-save-edit-project"
-                      >
-                        {editSaving ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Save className="w-4 h-4 mr-1" />}
-                        Save
-                      </Button>
-                    </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setProjectDialogOpen(false)} data-testid="btn-cancel-edit-project">
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={handleSaveEdit}
+                      disabled={editSaving || !selectedProject?.id || selectedProject.id <= 0}
+                      data-testid="btn-save-edit-project"
+                    >
+                      {editSaving ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Save className="w-4 h-4 mr-1" />}
+                      Save
+                    </Button>
                   </DialogFooter>
                 </div>
               )}
@@ -1560,34 +1516,6 @@ export default function LifecycleBoardPage() {
               )}
             </>
           )}
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-600" data-testid="text-delete-title">
-              <Trash2 className="w-5 h-5" />
-              Delete Project
-            </DialogTitle>
-            <DialogDescription>
-              Are you sure you want to remove <strong>{deleteTarget ? cleanProjectName(deleteTarget.projectName) : ""}</strong> from the lifecycle board? The project data will be archived and no longer visible.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => { setDeleteConfirmOpen(false); setDeleteTarget(null); }} data-testid="btn-cancel-delete">
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleDeleteProject}
-              disabled={deleting}
-              data-testid="btn-confirm-delete"
-            >
-              {deleting ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Trash2 className="w-4 h-4 mr-1" />}
-              Delete Project
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

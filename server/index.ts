@@ -35,7 +35,7 @@ declare global {
       id: number;
       email: string;
       name: string;
-      role: string;
+      role: "admin" | "member" | "quality_manager" | "viewer";
     }
   }
 }
@@ -233,6 +233,12 @@ async function seedUsers() {
       name: "Engineering Manager",
       role: "ENGINEERING_MANAGER" as const,
     },
+    {
+      email: "kam@emergent.energy",
+      password: "emergent2026",
+      name: "Key Accounts Manager",
+      role: "KEY_ACCOUNTS_MANAGER" as const,
+    },
   ];
 
   for (const u of usersToSeed) {
@@ -323,9 +329,6 @@ async function seedUsers() {
   const { registerRoleManagementRoutes, seedRolePermissions } = await import("./role-management");
   registerRoleManagementRoutes(app);
   await seedRolePermissions().catch(err => console.error('[Seed] Role permissions error:', err));
-
-  const { registerBootstrapImportRoutes } = await import("./bootstrap-import-routes");
-  registerBootstrapImportRoutes(app);
   
   await registerRoutes(httpServer, app);
 

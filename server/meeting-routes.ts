@@ -8,7 +8,6 @@ import {
   mytoolTasks,
   mytoolCompanyPriorities,
   projectInfo,
-  users,
 } from "@shared/schema";
 import { z } from "zod";
 
@@ -271,24 +270,10 @@ export function registerMeetingRoutes(app: Express) {
 
       const overrides = req.body || {};
 
-      const userEmail = (req as any).user?.email;
-      let ownerUserId: number | null = null;
-      if (userEmail) {
-        const [dbUser] = await db.select().from(users).where(eq(users.email, userEmail));
-        if (dbUser) ownerUserId = dbUser.id;
-      }
-      if (!ownerUserId && userId) {
-        const [dbUser] = await db.select().from(users).where(eq(users.id, userId));
-        if (dbUser) ownerUserId = dbUser.id;
-      }
-      if (!ownerUserId) {
-        return res.status(400).json({ error: "Could not resolve a valid user. Please log in again." });
-      }
-
       const [task] = await db
         .insert(mytoolTasks)
         .values({
-          ownerUserId,
+          ownerUserId: userId,
           title: overrides.title || actionItem.text,
           status: "inbox",
           priority: overrides.priority || "normal",
