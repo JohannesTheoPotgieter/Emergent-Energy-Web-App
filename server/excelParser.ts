@@ -614,7 +614,11 @@ export async function parseTrackerFile(buffer: Buffer, fileName: string): Promis
           expenseLineItem,
           budgetQty: budgetQtyCol >= 0 ? parseNumber(row[budgetQtyCol]) : null,
           budgetRateUnit: budgetRateCol >= 0 ? parseNumber(row[budgetRateCol]) : null,
-          budgetTotal: budgetTotalCol >= 0 ? parseNumber(row[budgetTotalCol]) : null,
+          budgetTotal: budgetTotalCol >= 0 ? parseNumber(row[budgetTotalCol]) : (
+            budgetQtyCol >= 0 && budgetRateCol >= 0 && parseNumber(row[budgetQtyCol]) != null && parseNumber(row[budgetRateCol]) != null
+              ? (parseNumber(row[budgetQtyCol])! * parseNumber(row[budgetRateCol])!)
+              : null
+          ),
           forecastPaymentDate: forecastPayDateCol >= 0 ? parseDate(row[forecastPayDateCol]) : null,
           budgetCosTotal: budgetCosCol >= 0 ? parseNumber(row[budgetCosCol]) : null,
           expenseQty: budgetQtyCol >= 0 ? parseNumber(row[budgetQtyCol]) : null,
