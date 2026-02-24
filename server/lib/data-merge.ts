@@ -41,6 +41,27 @@ export async function fetchAllNormalized() {
 }
 
 export function adaptCostToExpense(cost: NormalizedCostLine, resolvedName: string): any {
+  const invoiceDateConfirmed = cost.invoiceDateConfirmed ?? false;
+  const paidDateConfirmed = cost.paidDateConfirmed ?? false;
+  const invoiceDateFontColor = cost.invoiceDateFontColor ?? null;
+  const paymentDateFontColor = cost.paidDateFontColor ?? null;
+
+  const hasInvoice = !!(cost.invoiceNumber);
+  const hasInvoiceDate = !!(cost.invoiceDate);
+  const hasPO = !!(cost.poNumber);
+  const hasPaidDate = !!(cost.paidDate);
+
+  const invoiceDateActual = hasInvoiceDate && (
+    invoiceDateConfirmed === true ||
+    (invoiceDateConfirmed == null && invoiceDateFontColor !== 'red')
+  );
+  const paidDateActual = hasPaidDate && paymentDateFontColor !== 'red';
+
+  let computedState = "Planned";
+  if (hasInvoice && hasPaidDate && paidDateActual) computedState = "Paid";
+  else if (hasInvoice && hasInvoiceDate && invoiceDateActual) computedState = "Invoiced";
+  else if (hasPO || hasInvoice) computedState = "Committed";
+
   return {
     id: cost.id + 900000,
     projectName: resolvedName,
@@ -56,9 +77,11 @@ export function adaptCostToExpense(cost: NormalizedCostLine, resolvedName: strin
     actualCosTotal: cost.amountExVat,
     forecastPaymentDate: null,
     computedForecastPaymentDate: null,
-    computedState: cost.paidDate ? "Paid" : cost.invoiceNumber ? "Invoiced" : cost.poNumber ? "Committed" : "Planned",
-    invoiceDateConfirmed: !!cost.invoiceDate,
-    paymentDateConfirmed: !!cost.paidDate,
+    computedState,
+    invoiceDateConfirmed,
+    invoiceDateFontColor,
+    paymentDateConfirmed: paidDateConfirmed,
+    paymentDateFontColor,
     supplierName: cost.counterpartyName,
     _isNormalized: true,
   };
@@ -72,8 +95,13 @@ export function adaptRevenueToInflow(rev: NormalizedRevenueLine, resolvedName: s
     milestoneAmount: rev.amountExVat,
     milestoneInvoiceNumber: rev.invoiceNumber,
     invoiceRaisedDate: rev.invoiceDate,
+    invoiceDateFontColor: rev.invoiceDateFontColor ?? null,
+    invoiceDateConfirmed: rev.invoiceDateConfirmed ?? false,
     plannedPaymentDate: rev.expectedPaymentDate,
     paymentReceivedDate: rev.paidDate,
+    paidDateFontColor: rev.paidDateFontColor ?? null,
+    paidDateConfirmed: rev.paidDateConfirmed ?? false,
+    inBankDate: rev.inBankDate,
     effectiveDate: rev.paidDate || rev.inBankDate || rev.expectedPaymentDate || rev.invoiceDate,
     _isNormalized: true,
   };

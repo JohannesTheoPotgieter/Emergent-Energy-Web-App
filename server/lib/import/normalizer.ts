@@ -101,17 +101,26 @@ function getCellFontColor(ws: ExcelJS.Worksheet, rowIdx: number, colIdx: number)
     if (!cell || !cell.value) return { color: null, isBlack: false };
     const font = cell.font;
     if (!font || !font.color) {
-      return { color: null, isBlack: false };
+      return { color: "black", isBlack: true };
+    }
+    if (font.color.theme !== undefined && !font.color.argb) {
+      if (font.color.theme === 1 || font.color.theme === 0) {
+        return { color: "black", isBlack: true };
+      }
     }
     const argb = (font.color.argb || "").toLowerCase();
-    if (!argb) return { color: null, isBlack: false };
+    if (!argb) return { color: "black", isBlack: true };
     const colorHex = argb.length === 8 ? argb.substring(2) : argb;
     const isBlack = colorHex === "000000" || argb === "ff000000";
-    const isRed = colorHex === "ff0000" || colorHex.startsWith("ff00");
-    const isBlue = colorHex === "0000ff" || colorHex === "0070c0" || colorHex.startsWith("0000");
-    if (isBlack) return { color: "black", isBlack: true };
-    if (isRed) return { color: "red", isBlack: false };
-    if (isBlue) return { color: "blue", isBlack: false };
+    const r = parseInt(colorHex.substring(0, 2), 16);
+    const g = parseInt(colorHex.substring(2, 4), 16);
+    const b = parseInt(colorHex.substring(4, 6), 16);
+    const isRedish = r > 150 && g < 80 && b < 80;
+    const isBlueish = b > 150 && r < 80 && g < 80;
+    const isDark = r < 40 && g < 40 && b < 40;
+    if (isBlack || isDark) return { color: "black", isBlack: true };
+    if (isRedish) return { color: "red", isBlack: false };
+    if (isBlueish) return { color: "blue", isBlack: false };
     return { color: argb, isBlack: false };
   } catch {
     return { color: null, isBlack: false };

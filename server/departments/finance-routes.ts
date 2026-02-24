@@ -903,7 +903,12 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       cosBucket.projects.set(pName, (cosBucket.projects.get(pName) || 0) + amount);
 
       const hasInvoice = !!exp.expenseInvoiceNumber;
-      const dateConfirmed = exp.invoiceDateConfirmed === true;
+      const hasInvDate = !!(exp.expenseInvoicedDate && (exp.expenseInvoicedDate as string).trim());
+      const dateConfirmed = hasInvDate && (
+        exp.invoiceDateConfirmed === true ||
+        (exp as any).invoiceDateFontColor === 'black' ||
+        !(exp as any).invoiceDateFontColor
+      );
       const isRealised = hasInvoice && dateConfirmed;
 
       if (isRealised) {
@@ -1046,7 +1051,12 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       if (isNaN(cosTotal) || cosTotal === 0) continue;
 
       const hasInvoice = !!exp.expenseInvoiceNumber;
-      const dateConfirmed = exp.invoiceDateConfirmed === true;
+      const hasInvDate2 = !!(exp.expenseInvoicedDate && (exp.expenseInvoicedDate as string).trim());
+      const dateConfirmed = hasInvDate2 && (
+        exp.invoiceDateConfirmed === true ||
+        (exp as any).invoiceDateFontColor === 'black' ||
+        !(exp as any).invoiceDateFontColor
+      );
       const isRealised = hasInvoice && dateConfirmed;
 
       let cosState = 'Planned';
@@ -2225,7 +2235,8 @@ router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, r
       const hasInvoiceDate = !!(exp.expenseInvoicedDate && exp.expenseInvoicedDate.trim());
       const invoiceDateActual = hasInvoiceDate && (
         exp.invoiceDateConfirmed === true ||
-        (exp.invoiceDateConfirmed == null && exp.invoiceDateFontColor !== 'red')
+        exp.invoiceDateFontColor === 'black' ||
+        (!exp.invoiceDateFontColor && exp.invoiceDateFontColor !== 'red')
       );
       const hasPaymentDate = !!(exp.expensePaymentDate && exp.expensePaymentDate.trim());
       const paymentDateActual = hasPaymentDate && exp.paymentDateFontColor !== 'red';
