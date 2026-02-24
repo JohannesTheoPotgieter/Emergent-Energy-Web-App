@@ -1206,8 +1206,13 @@ export default function EngineeringTasksPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [viewMode, setViewMode] = useState<"board" | "list" | "projects">("board");
-  const [myTasksOnly, setMyTasksOnly] = useState(false);
-  const [myName, setMyName] = useState(getSavedMyName());
+  const [myTasksOnly, setMyTasksOnly] = useState(true);
+  const [myName, setMyName] = useState(() => {
+    const saved = getSavedMyName();
+    if (saved) return saved;
+    const fullName = user?.name || "";
+    return fullName.split(/\s+/)[0];
+  });
   const [showNamePicker, setShowNamePicker] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
@@ -1238,8 +1243,9 @@ export default function EngineeringTasksPage() {
 
   const myTasks = useMemo(() => {
     if (!myName) return [];
+    const nameLower = myName.toLowerCase();
     return tasks.filter(t =>
-      (t.assignees || []).some(a => a === myName)
+      (t.assignees || []).some(a => a && a.toLowerCase().startsWith(nameLower))
     );
   }, [tasks, myName]);
 
