@@ -34,6 +34,7 @@ Preferred communication style: Simple, everyday language.
     -   **Admin Roles & Permissions**: `/admin/roles` page for COO/CEO Admin to manage all role permissions — toggle section access, capabilities (canManageUsers, canManageRoles, canEditData), entity-level permissions grid (view/edit/approve/override per entity), and reassign user roles.
     -   **TR Register (Program Manager Task Register)**: Full list+board module at `/tr-register` for tracking cross-project action items. Features: list view with filters (RAG, status, department, owner, overdue, linked), board view (Active/Completed kanban with drag-drop status changes and department badges), detail drawer with inline editing, project linking with auto-PM-task creation, auto-link suggestions with scoring algorithm, seed runner with 41 initial records, and completion rule enforcement. Default list view filters to Active status only.
     -   **Smart Import Re-run Protection**: Procurement (expenditure) re-import warns when manual edits exist, requiring explicit acknowledgment before overwriting. Warning dialog shown in commit step.
+    -   **Bootstrap Import**: Admin-only bulk Excel import system at `/admin/bootstrap-import`. 6-step pipeline (discover, stage, upsert, rebuild KPIs, validate, report) with hash-based deduplication, quarantine for parse errors, and pre-computed derived KPI tables. Feature flag `USE_NEW_DASHBOARD_ROLLUPS` enables fast dashboard reads from derived tables.
 
 ### Backend
 -   **Framework**: Express.js with TypeScript
