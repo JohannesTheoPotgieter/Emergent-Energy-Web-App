@@ -94,14 +94,14 @@ router.get("/projects", requireAuth, async (_req: Request, res: Response) => {
     const revenue = await db.select({ projectId: normalizedRevenueLines.projectId }).from(normalizedRevenueLines);
     const plans = await db.select({ projectId: normalizedPlanTasks.projectId }).from(normalizedPlanTasks);
 
-    const summary = projects.map(p => ({
+    const summary = projects.map((p: any) => ({
       id: p.id,
       projectName: p.projectName,
-      projectPhase: (p as any).projectPhase || null,
+      projectPhase: p.projectPhase || null,
       contractValue: p.contractValue,
-      costLineCount: costs.filter(c => c.projectId === p.id).length,
-      revenueLineCount: revenue.filter(r => r.projectId === p.id).length,
-      planTaskCount: plans.filter(t => t.projectId === p.id).length,
+      costLineCount: costs.filter((c: any) => c.projectId === p.id).length,
+      revenueLineCount: revenue.filter((r: any) => r.projectId === p.id).length,
+      planTaskCount: plans.filter((t: any) => t.projectId === p.id).length,
     }));
 
     res.json(summary);

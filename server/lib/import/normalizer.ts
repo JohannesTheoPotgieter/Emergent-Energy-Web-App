@@ -100,15 +100,19 @@ function getCellFontColor(ws: ExcelJS.Worksheet, rowIdx: number, colIdx: number)
     const cell = ws.getRow(rowIdx + 1).getCell(colIdx + 1);
     if (!cell || !cell.value) return { color: null, isBlack: false };
     const font = cell.font;
-    if (!font || !font.color || !font.color.argb) {
-      return { color: "black", isBlack: true };
+    if (!font || !font.color) {
+      return { color: null, isBlack: false };
     }
-    const argb = font.color.argb.toLowerCase();
-    const isRed = argb.includes("ff0000") || argb.endsWith("ff0000");
-    const isBlue = argb.includes("0000ff") || argb.endsWith("0000ff") || argb.includes("0070c0");
+    const argb = (font.color.argb || "").toLowerCase();
+    if (!argb) return { color: null, isBlack: false };
+    const colorHex = argb.length === 8 ? argb.substring(2) : argb;
+    const isBlack = colorHex === "000000" || argb === "ff000000";
+    const isRed = colorHex === "ff0000" || colorHex.startsWith("ff00");
+    const isBlue = colorHex === "0000ff" || colorHex === "0070c0" || colorHex.startsWith("0000");
+    if (isBlack) return { color: "black", isBlack: true };
     if (isRed) return { color: "red", isBlack: false };
     if (isBlue) return { color: "blue", isBlack: false };
-    return { color: "black", isBlack: true };
+    return { color: argb, isBlack: false };
   } catch {
     return { color: null, isBlack: false };
   }
