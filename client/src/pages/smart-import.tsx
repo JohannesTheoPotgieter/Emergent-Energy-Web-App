@@ -2241,15 +2241,341 @@ function PreviewCommitStep({
   );
 }
 
+interface PendingRun {
+  id: number;
+  projectName: string;
+  status: string;
+  uploadedAt: string;
+  sourceFileName: string;
+  blockerCount: number;
+  warningCount: number;
+  totalIssues: number;
+  resolvedIssues: number;
+}
+
+interface BulkCommitResult {
+  runId: number;
+  projectName: string;
+  status: "committed" | "skipped" | "failed";
+  counts?: any;
+  error?: string;
+}
+
+function BulkCommitPanel({ onBack, onSwitchToWizard }: {
+  onBack: () => void;
+  onSwitchToWizard: (runId: number) => void;
+}) {
+  const [pendingRuns, setPendingRuns] = useState<PendingRun[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [committing, setCommitting] = useState(false);
+  const [commitDone, setCommitDone] = useState(false);
+  const [commitResults, setCommitResults] = useState<BulkCommitResult[]>([]);
+  const [progress, setProgress] = useState(0);
+  const { toast } = useToast();
+  const [, navigate] = useLocation();
+
+  const loadPendingRuns = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/smart-import/pending-runs", { headers: getAuthHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        setPendingRuns(data);
+      }
+    } catch {
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadPendingRuns(); }, [loadPendingRuns]);
+
+  const committableRuns = pendingRuns.filter(r => r.blockerCount === 0);
+  const blockedRuns = pendingRuns.filter(r => r.blockerCount > 0);
+
+  const handleBulkCommit = async () => {
+    if (committableRuns.length === 0) return;
+    setCommitting(true);
+    setProgress(0);
+
+    const progressInterval = setInterval(() => {
+      setProgress(prev => Math.min(prev + 2, 95));
+    }, 500);
+
+    try {
+      const res = await fetch("/api/smart-import/bulk-commit", {
+        method: "POST",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          runIds: committableRuns.map(r => r.id),
+          acknowledgeManualEdits: true,
+          forceCommit: true,
+        }),
+      });
+      clearInterval(progressInterval);
+      setProgress(100);
+
+      if (res.ok) {
+        const data = await res.json();
+        setCommitDone(true);
+        setCommitResults(data.results || []);
+        toast({
+          title: "Bulk Commit Complete",
+          description: `${data.committed} committed, ${data.skipped || 0} skipped, ${data.failed || 0} failed`,
+        });
+      } else {
+        const err = await res.json().catch(() => ({ error: "Bulk commit failed" }));
+        toast({ title: "Error", description: err.error || "Bulk commit failed", variant: "destructive" });
+      }
+    } catch {
+      clearInterval(progressInterval);
+      toast({ title: "Error", description: "Network error during bulk commit", variant: "destructive" });
+    } finally {
+      setCommitting(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <Card className="bg-white rounded-xl shadow-sm">
+        <CardContent className="flex items-center justify-center py-12">
+          <Loader2 className="w-5 h-5 animate-spin text-blue-500 mr-2" />
+          <span className="text-sm text-slate-500">Loading pending imports...</span>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (commitDone) {
+    const committed = commitResults.filter(r => r.status === "committed");
+    const failed = commitResults.filter(r => r.status === "failed");
+    const skipped = commitResults.filter(r => r.status === "skipped");
+    return (
+      <div className="space-y-4" data-testid="bulk-commit-results">
+        <Card className="bg-white rounded-xl shadow-sm">
+          <CardContent className="flex flex-col items-center justify-center py-10 gap-4">
+            <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center">
+              <CheckCircle2 className="w-8 h-8 text-emerald-600" />
+            </div>
+            <h3 className="text-lg font-semibold text-emerald-700" data-testid="text-bulk-success">
+              Bulk Import Complete
+            </h3>
+            <div className="flex gap-4 text-sm">
+              <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 px-3 py-1" data-testid="badge-committed-count">
+                {committed.length} Committed
+              </Badge>
+              {skipped.length > 0 && (
+                <Badge className="bg-amber-50 text-amber-700 border-amber-200 px-3 py-1" data-testid="badge-skipped-count">
+                  {skipped.length} Skipped
+                </Badge>
+              )}
+              {failed.length > 0 && (
+                <Badge className="bg-red-50 text-red-700 border-red-200 px-3 py-1" data-testid="badge-failed-count">
+                  {failed.length} Failed
+                </Badge>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {commitResults.length > 0 && (
+          <Card className="bg-white rounded-xl shadow-sm">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Results by Project</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="divide-y" data-testid="bulk-results-list">
+                {commitResults.map((r, idx) => (
+                  <div key={idx} className="flex items-center gap-3 py-2.5" data-testid={`bulk-result-${idx}`}>
+                    {r.status === "committed" ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                    ) : r.status === "skipped" ? (
+                      <SkipForward className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
+                    )}
+                    <span className="text-sm font-medium flex-1 truncate">{r.projectName}</span>
+                    {r.status === "committed" && r.counts && (
+                      <span className="text-xs text-slate-500">
+                        {[
+                          r.counts.planTasks && `${r.counts.planTasks} tasks`,
+                          r.counts.revenueLines && `${r.counts.revenueLines} revenue`,
+                          r.counts.costLines && `${r.counts.costLines} costs`,
+                        ].filter(Boolean).join(", ")}
+                      </span>
+                    )}
+                    {(r.status === "skipped" || r.status === "failed") && r.error && (
+                      <span className="text-xs text-red-500 max-w-[200px] truncate">{r.error}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => navigate("/projects")} data-testid="btn-view-projects">
+            View Projects
+          </Button>
+          <Button onClick={() => { setCommitDone(false); setCommitResults([]); loadPendingRuns(); onBack(); }} data-testid="btn-import-more">
+            Import More Files
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (pendingRuns.length === 0) {
+    return (
+      <Card className="bg-white rounded-xl shadow-sm" data-testid="no-pending-runs">
+        <CardContent className="flex flex-col items-center justify-center py-12 gap-3">
+          <CheckCircle2 className="w-10 h-10 text-slate-300" />
+          <p className="text-sm text-slate-500">No pending imports to commit</p>
+          <Button variant="outline" onClick={onBack} data-testid="btn-back-to-upload">
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Upload Files
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-4" data-testid="bulk-commit-panel">
+      <Card className="bg-white rounded-xl shadow-sm">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Zap className="w-4 h-4 text-blue-600" />
+            Pending Imports ({pendingRuns.length} files)
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="mb-4 flex items-center gap-3 text-sm">
+            <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 px-2.5 py-1" data-testid="badge-ready-count">
+              {committableRuns.length} ready to commit
+            </Badge>
+            {blockedRuns.length > 0 && (
+              <Badge className="bg-red-50 text-red-700 border-red-200 px-2.5 py-1" data-testid="badge-blocked-count">
+                {blockedRuns.length} have blockers
+              </Badge>
+            )}
+          </div>
+
+          <div className="border rounded-lg divide-y max-h-[400px] overflow-y-auto" data-testid="pending-runs-list">
+            {pendingRuns.map((run) => (
+              <div
+                key={run.id}
+                className="flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 transition-colors"
+                data-testid={`pending-run-${run.id}`}
+              >
+                {run.blockerCount > 0 ? (
+                  <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
+                ) : run.warningCount > 0 ? (
+                  <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate" data-testid={`pending-name-${run.id}`}>
+                    {run.projectName}
+                  </p>
+                  <p className="text-[10px] text-slate-400 truncate">{run.sourceFileName}</p>
+                </div>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  {run.totalIssues > 0 && (
+                    <span className="text-[10px] text-slate-400">
+                      {run.resolvedIssues}/{run.totalIssues} resolved
+                    </span>
+                  )}
+                  {run.blockerCount > 0 && (
+                    <Badge className="bg-red-50 text-red-700 border-red-200 text-[10px] px-1.5 py-0">
+                      {run.blockerCount} blocker{run.blockerCount > 1 ? "s" : ""}
+                    </Badge>
+                  )}
+                  {run.warningCount > 0 && run.blockerCount === 0 && (
+                    <Badge className="bg-amber-50 text-amber-700 border-amber-200 text-[10px] px-1.5 py-0">
+                      {run.warningCount} warning{run.warningCount > 1 ? "s" : ""}
+                    </Badge>
+                  )}
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs h-7 px-2"
+                  onClick={() => onSwitchToWizard(run.id)}
+                  data-testid={`btn-review-${run.id}`}
+                >
+                  Review
+                </Button>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {committing && (
+        <div className="space-y-1">
+          <div className="flex justify-between text-xs text-slate-500">
+            <span>Committing {committableRuns.length} files...</span>
+            <span>{Math.round(progress)}%</span>
+          </div>
+          <Progress value={progress} className="h-1.5" />
+        </div>
+      )}
+
+      <div className="flex gap-2">
+        <Button variant="outline" onClick={onBack} data-testid="btn-back-upload">
+          <ArrowLeft className="w-4 h-4 mr-2" />
+          Back
+        </Button>
+        <Button
+          className="flex-1"
+          disabled={committableRuns.length === 0 || committing}
+          onClick={handleBulkCommit}
+          data-testid="btn-bulk-commit"
+        >
+          {committing ? (
+            <>
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              Committing {committableRuns.length} files...
+            </>
+          ) : (
+            <>
+              <Zap className="w-4 h-4 mr-2" />
+              Commit All ({committableRuns.length} files)
+            </>
+          )}
+        </Button>
+      </div>
+
+      {blockedRuns.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3" data-testid="blocked-runs-notice">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-amber-800">
+                {blockedRuns.length} file{blockedRuns.length > 1 ? "s have" : " has"} unresolved blockers
+              </p>
+              <p className="text-xs text-amber-600 mt-0.5">
+                Click "Review" on those files to resolve issues before committing.
+                Non-blocker warnings will be auto-resolved during bulk commit.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function SmartImportPage() {
   const [step, setStep] = useState(1);
   const [runId, setRunId] = useState<number | null>(null);
   const [preview, setPreview] = useState<any>(null);
   const [issues, setIssues] = useState<any[]>([]);
   const [loadingRun, setLoadingRun] = useState(false);
-  const [batchResults, setBatchResults] = useState<FileUploadResult[]>([]);
-  const [batchMode, setBatchMode] = useState(false);
-  const [batchIndex, setBatchIndex] = useState(0);
+  const [bulkMode, setBulkMode] = useState(false);
 
   const loadRunData = useCallback(async (id: number) => {
     setLoadingRun(true);
@@ -2269,36 +2595,26 @@ export default function SmartImportPage() {
   const handleUploaded = (newRunId: number, newPreview: any) => {
     setRunId(newRunId);
     setPreview(newPreview);
-    setBatchMode(false);
+    setBulkMode(false);
     setStep(2);
     loadRunData(newRunId);
   };
 
   const handleBatchUploaded = (results: FileUploadResult[]) => {
     const successful = results.filter(r => r.status === "success");
-    setBatchResults(successful);
     if (successful.length === 1) {
       handleUploaded(successful[0].runId!, successful[0].preview);
     } else if (successful.length > 1) {
-      setBatchMode(true);
-      setBatchIndex(0);
-      setRunId(successful[0].runId!);
-      setPreview(successful[0].preview);
-      setStep(2);
-      loadRunData(successful[0].runId!);
+      setBulkMode(true);
     }
   };
 
-  const handleBatchNav = (idx: number) => {
-    const entry = batchResults[idx];
-    if (entry) {
-      setBatchIndex(idx);
-      setRunId(entry.runId!);
-      setPreview(entry.preview);
-      setStep(2);
-      setIssues([]);
-      loadRunData(entry.runId!);
-    }
+  const handleSwitchToWizard = (wizardRunId: number) => {
+    setBulkMode(false);
+    setRunId(wizardRunId);
+    setStep(2);
+    setIssues([]);
+    loadRunData(wizardRunId);
   };
 
   return (
@@ -2308,85 +2624,69 @@ export default function SmartImportPage() {
         <p className="text-muted-foreground text-sm">Upload and review Excel tracker imports step by step</p>
       </div>
 
-      <StepIndicator currentStep={step} />
+      {!bulkMode && <StepIndicator currentStep={step} />}
 
-      {batchMode && step >= 2 && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3" data-testid="batch-nav">
-          <div className="flex items-center gap-2 mb-2">
-            <FileSpreadsheet className="w-4 h-4 text-blue-600" />
-            <span className="text-sm font-medium text-blue-700">
-              Reviewing file {batchIndex + 1} of {batchResults.length}
-            </span>
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {batchResults.map((entry, idx) => (
-              <Button
-                key={idx}
-                variant={idx === batchIndex ? "default" : "outline"}
-                size="sm"
-                className={`text-xs ${idx === batchIndex ? "" : "border-blue-300 hover:bg-blue-100"}`}
-                data-testid={`btn-batch-file-${idx}`}
-                onClick={() => handleBatchNav(idx)}
-              >
-                {entry.file.name.replace(/\.(xlsx|xlsm)$/i, "")}
-              </Button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {loadingRun && step > 1 && (
+      {loadingRun && step > 1 && !bulkMode && (
         <div className="flex items-center justify-center py-4">
           <Loader2 className="w-5 h-5 animate-spin text-blue-500 mr-2" />
           <span className="text-sm text-slate-500">Loading import data...</span>
         </div>
       )}
 
-      {step === 1 && (
-        <UploadStep onUploaded={handleUploaded} onBatchUploaded={handleBatchUploaded} />
-      )}
-
-      {step === 2 && preview && (
-        <SectionDetectionStep
-          preview={preview}
-          runId={runId}
-          onContinue={() => setStep(3)}
-          onBack={() => setStep(1)}
-          onProjectInfoUpdated={(updatedInfo) => {
-            if (preview?.detection) {
-              setPreview({ ...preview, detection: { ...preview.detection, projectInfo: updatedInfo } });
-            }
-          }}
+      {bulkMode ? (
+        <BulkCommitPanel
+          onBack={() => { setBulkMode(false); setStep(1); }}
+          onSwitchToWizard={handleSwitchToWizard}
         />
-      )}
+      ) : (
+        <>
+          {step === 1 && (
+            <UploadStep onUploaded={handleUploaded} onBatchUploaded={handleBatchUploaded} />
+          )}
 
-      {step === 3 && runId && preview && (
-        <ColumnMappingStep
-          runId={runId}
-          preview={preview}
-          onContinue={() => setStep(4)}
-          onBack={() => setStep(2)}
-          onPreviewUpdate={setPreview}
-        />
-      )}
+          {step === 2 && preview && (
+            <SectionDetectionStep
+              preview={preview}
+              runId={runId}
+              onContinue={() => setStep(3)}
+              onBack={() => setStep(1)}
+              onProjectInfoUpdated={(updatedInfo) => {
+                if (preview?.detection) {
+                  setPreview({ ...preview, detection: { ...preview.detection, projectInfo: updatedInfo } });
+                }
+              }}
+            />
+          )}
 
-      {step === 4 && runId && (
-        <IssuesStep
-          runId={runId}
-          issues={issues}
-          normalization={preview?.normalization}
-          onContinue={() => setStep(5)}
-          onBack={() => setStep(3)}
-          onIssuesUpdate={setIssues}
-        />
-      )}
+          {step === 3 && runId && preview && (
+            <ColumnMappingStep
+              runId={runId}
+              preview={preview}
+              onContinue={() => setStep(4)}
+              onBack={() => setStep(2)}
+              onPreviewUpdate={setPreview}
+            />
+          )}
 
-      {step === 5 && runId && preview && (
-        <PreviewCommitStep
-          runId={runId}
-          preview={preview}
-          onBack={() => setStep(4)}
-        />
+          {step === 4 && runId && (
+            <IssuesStep
+              runId={runId}
+              issues={issues}
+              normalization={preview?.normalization}
+              onContinue={() => setStep(5)}
+              onBack={() => setStep(3)}
+              onIssuesUpdate={setIssues}
+            />
+          )}
+
+          {step === 5 && runId && preview && (
+            <PreviewCommitStep
+              runId={runId}
+              preview={preview}
+              onBack={() => setStep(4)}
+            />
+          )}
+        </>
       )}
     </div>
   );
