@@ -5,8 +5,9 @@ import {
   invoicePatternMatches,
   counterparties,
   smartImportRuns,
+  normalizedCostLines,
 } from "@shared/schema";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, isNull, isNotNull } from "drizzle-orm";
 import { classifyCostLines, generateRuleFromInvoice, normalizeInvoiceNumber } from "./lib/import/invoice-classifier";
 
 const router = Router();
@@ -265,6 +266,188 @@ router.post("/api/smart-import/:runId/classify-review", requireAuth, async (req:
     res.json({ classification, classifications });
   } catch (err: any) {
     console.error("[invoice-classify-review] Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/api/procurement-analysis/classify", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.id || null;
+
+    const allLines = await db.select().from(normalizedCostLines);
+
+    const eligibleLines = allLines.filter(line => {
+      const amt = parseFloat(line.amountExVat || "0") || 0;
+      const hasInvoice = !!(line.invoiceNumber && String(line.invoiceNumber).trim());
+      return amt !== 0 && hasInvoice;
+    });
+
+    const untaggedLines = eligibleLines.filter(line => !line.patternRuleId);
+
+    if (untaggedLines.length === 0) {
+      return res.json({
+        success: true,
+        totalEligible: eligibleLines.length,
+        alreadyTagged: eligibleLines.length - untaggedLines.length,
+        newlyClassified: 0,
+        autoApplied: 0,
+        unresolved: 0,
+        rulesUpdated: 0,
+        message: "All eligible lines have already been classified",
+      });
+    }
+
+    const activeRules = await db
+      .select()
+      .from(invoicePatternRules)
+      .where(eq(invoicePatternRules.isActive, true));
+
+    const ruleMatchCounts = new Map<number, number>();
+    let autoApplied = 0;
+    let unresolved = 0;
+    const matchRecords: any[] = [];
+    const lineUpdates: { id: number; ruleId: number; inferredType: string }[] = [];
+
+    for (const line of untaggedLines) {
+      const raw = line.invoiceNumber;
+      const norm = normalizeInvoiceNumber(raw);
+      if (!norm) {
+        unresolved++;
+        continue;
+      }
+
+      const costLineInput = [{
+        sourceRow: line.sourceRow || line.id,
+        invoiceNumber: raw,
+        counterpartyName: line.counterpartyName,
+        counterpartyType: line.counterpartyType,
+      }];
+
+      const classifications = await classifyCostLines(costLineInput);
+      const result = classifications[0];
+
+      if (result && result.matchedRuleId && result.confidenceScore >= 85) {
+        ruleMatchCounts.set(
+          result.matchedRuleId,
+          (ruleMatchCounts.get(result.matchedRuleId) || 0) + 1
+        );
+
+        lineUpdates.push({
+          id: line.id,
+          ruleId: result.matchedRuleId,
+          inferredType: result.inferredType,
+        });
+
+        matchRecords.push({
+          projectId: line.projectId,
+          invoiceNumberRaw: raw,
+          invoiceNumberNorm: norm,
+          matchedRuleId: result.matchedRuleId,
+          inferredType: result.inferredType,
+          inferredCounterpartyId: result.inferredCounterpartyId,
+          confidenceScore: result.confidenceScore,
+          outcome: 'AUTO_APPLIED',
+          sourceRow: line.sourceRow || line.id,
+        });
+
+        autoApplied++;
+      } else {
+        unresolved++;
+      }
+    }
+
+    await db.transaction(async (tx: any) => {
+      const ruleEntries = Array.from(ruleMatchCounts.entries());
+      for (const [ruleId, count] of ruleEntries) {
+        await tx
+          .update(invoicePatternRules)
+          .set({
+            timesMatched: sql`${invoicePatternRules.timesMatched} + ${count}`,
+          })
+          .where(eq(invoicePatternRules.id, ruleId));
+      }
+
+      for (const upd of lineUpdates) {
+        await tx
+          .update(normalizedCostLines)
+          .set({
+            patternRuleId: upd.ruleId,
+            patternClassifiedAt: new Date(),
+            patternInferredType: upd.inferredType,
+          })
+          .where(eq(normalizedCostLines.id, upd.id));
+      }
+
+      if (matchRecords.length > 0) {
+        const batchSize = 200;
+        for (let i = 0; i < matchRecords.length; i += batchSize) {
+          const batch = matchRecords.slice(i, i + batchSize);
+          await tx.insert(invoicePatternMatches).values(batch);
+        }
+      }
+    });
+
+    console.log(`[procurement-classify] Classified ${lineUpdates.length} lines, ${autoApplied} auto-applied, ${unresolved} unresolved, ${ruleMatchCounts.size} rules updated`);
+
+    res.json({
+      success: true,
+      totalEligible: eligibleLines.length,
+      alreadyTagged: eligibleLines.length - untaggedLines.length,
+      newlyClassified: lineUpdates.length,
+      autoApplied,
+      unresolved,
+      rulesUpdated: ruleMatchCounts.size,
+      message: `Classified ${lineUpdates.length} lines: ${autoApplied} auto-applied, ${unresolved} need review. ${ruleMatchCounts.size} pattern rules updated.`,
+    });
+  } catch (err: any) {
+    console.error("[procurement-classify] Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/api/procurement-analysis/pattern-stats", requireAuth, async (_req: Request, res: Response) => {
+  try {
+    const allLines = await db.select().from(normalizedCostLines);
+
+    const eligible = allLines.filter(line => {
+      const amt = parseFloat(line.amountExVat || "0") || 0;
+      const hasInvoice = !!(line.invoiceNumber && String(line.invoiceNumber).trim());
+      return amt !== 0 && hasInvoice;
+    });
+
+    const tagged = eligible.filter(l => l.patternRuleId);
+    const untagged = eligible.filter(l => !l.patternRuleId);
+
+    const typeCounts: Record<string, number> = {};
+    for (const l of tagged) {
+      const t = l.patternInferredType || 'OTHER';
+      typeCounts[t] = (typeCounts[t] || 0) + 1;
+    }
+
+    const rules = await db
+      .select()
+      .from(invoicePatternRules)
+      .orderBy(desc(invoicePatternRules.timesMatched));
+
+    res.json({
+      totalCostLines: allLines.length,
+      eligibleLines: eligible.length,
+      taggedLines: tagged.length,
+      untaggedLines: untagged.length,
+      classificationRate: eligible.length > 0 ? Math.round((tagged.length / eligible.length) * 100) : 0,
+      typeCounts,
+      topRules: rules.slice(0, 10).map(r => ({
+        id: r.id,
+        patternValue: r.patternValue,
+        patternType: r.patternType,
+        inferredType: r.inferredType,
+        timesMatched: r.timesMatched,
+        timesConfirmed: r.timesConfirmed,
+        timesOverridden: r.timesOverridden,
+        counterpartyName: r.counterpartyName,
+      })),
+    });
+  } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });
