@@ -782,8 +782,28 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
 
     const norm = summary.normalization;
     const projectName = run.projectName;
-    const projectId = run.projectId;
+    let projectId = run.projectId;
     const userId = (req as any).user?.id || null;
+
+    if (!projectId && projectName) {
+      const existingProj = await db.select({ id: projectInfo.id }).from(projectInfo)
+        .where(eq(projectInfo.projectName, projectName)).limit(1);
+      if (existingProj.length > 0) {
+        projectId = existingProj[0].id;
+        await db.update(smartImportRuns).set({ projectId }).where(eq(smartImportRuns.id, runId));
+      } else {
+        const detectedInfo = summary.detection?.projectInfo;
+        const [newProject] = await db.insert(projectInfo).values({
+          projectName,
+          phase: detectedInfo?.phase || "PLANNING",
+          sizeKwp: detectedInfo?.sizeKwp || null,
+          pd: detectedInfo?.pd || null,
+          contractValue: detectedInfo?.contractValue || null,
+        } as any).returning();
+        projectId = newProject.id;
+        await db.update(smartImportRuns).set({ projectId }).where(eq(smartImportRuns.id, runId));
+      }
+    }
 
     const ignoredRows = new Map<string, Set<number>>();
     const overrideRows = new Map<string, Map<number, any>>();
@@ -887,8 +907,12 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
               vat: merged.vat,
               invoiceNumber: merged.invoiceNumber,
               invoiceDate: merged.invoiceDate,
+              invoiceDateFontColor: merged.invoiceDateFontColor || null,
+              invoiceDateConfirmed: merged.invoiceDateConfirmed || false,
               expectedPaymentDate: merged.expectedPaymentDate,
               paidDate: merged.paidDate,
+              paidDateFontColor: merged.paidDateFontColor || null,
+              paidDateConfirmed: merged.paidDateConfirmed || false,
               inBankDate: merged.inBankDate,
               status: merged.status,
               sourceSheet: r.sourceSheet,
@@ -1005,9 +1029,15 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
               amountExVat: merged.amountExVat,
               invoiceNumber: merged.invoiceNumber,
               invoiceDate: merged.invoiceDate,
+              invoiceDateFontColor: merged.invoiceDateFontColor || null,
+              invoiceDateConfirmed: merged.invoiceDateConfirmed || false,
               approvedDate: merged.approvedDate,
               paidDate: merged.paidDate,
+              paidDateFontColor: merged.paidDateFontColor || null,
+              paidDateConfirmed: merged.paidDateConfirmed || false,
               poNumber: merged.poNumber,
+              cosRealised: merged.cosRealised || false,
+              cashflowConfirmed: merged.cashflowConfirmed || false,
               status: merged.status,
               sourceSheet: c.sourceSheet,
               sourceRow: c.sourceRow,
@@ -1017,6 +1047,27 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
           });
         if (costValues.length > 0) {
           await tx.insert(normalizedCostLines).values(costValues);
+
+          const legacyCostBatch = costValues.map((c: any, idx: number) => ({
+            projectName,
+            rowNumber: c.sourceRow || (idx + 1),
+            rowType: "item" as const,
+            expenseCategory: c.costCategory || null,
+            expenseLineItem: c.description || null,
+            expenseActualTotal: c.amountExVat || null,
+            expensePoNumber: c.poNumber || null,
+            expenseInvoiceNumber: c.invoiceNumber || null,
+            expenseInvoicedDate: c.invoiceDate || null,
+            invoiceDateConfirmed: c.invoiceDateConfirmed || false,
+            invoiceDateFontColor: c.invoiceDateFontColor || null,
+            expensePaymentDate: c.paidDate || null,
+            paymentDateConfirmed: c.paidDateConfirmed || false,
+            paymentDateFontColor: c.paidDateFontColor || null,
+            supplierName: c.counterpartyName || null,
+          } as any));
+          for (let i = 0; i < legacyCostBatch.length; i += 100) {
+            await tx.insert(programExpense).values(legacyCostBatch.slice(i, i + 100));
+          }
         }
         counts.costLines = costValues.length;
 
