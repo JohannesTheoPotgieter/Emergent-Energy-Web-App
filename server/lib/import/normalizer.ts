@@ -432,10 +432,9 @@ function extractCostLines(
       turnaroundDays = daysBetween(invoiceDate, paidDate);
     }
 
-    const hasAmount = amountExVat !== null && amountExVat !== "0" && amountExVat !== "0.00" && parseFloat(String(amountExVat)) !== 0;
-    const hasAnyDate = !!(invoiceDate || approvedDate || paidDate);
-    const hasInvoiceRef = !!invoiceNumber;
-    if (!hasAmount && !hasAnyDate && !hasInvoiceRef) {
+    const parsedAmount = amountExVat !== null ? parseFloat(String(amountExVat)) : NaN;
+    const hasAmount = !isNaN(parsedAmount) && parsedAmount !== 0;
+    if (!hasAmount) {
       continue;
     }
 
@@ -471,18 +470,6 @@ function extractCostLines(
           payloadJson: { invoiceDate, paidDate, row: i + 1 },
         });
       }
-    }
-
-    if (!amountExVat && (invoiceNumber || invoiceDate || paidDate)) {
-      issues.push({
-        severity: "BLOCKER",
-        section: "EXPENDITURE",
-        message: `Missing amount on cost line row ${i + 1} with invoice/payment data`,
-        suggestedAction: "Add the financial amount for this cost line",
-        issueType: "MISSING_AMOUNT",
-        issueFingerprint: makeFingerprint("MISSING_AMOUNT", "EXPENDITURE", description || `row_${i + 1}`),
-        payloadJson: { category, description, row: i + 1 },
-      });
     }
 
     if (counterparty) {
