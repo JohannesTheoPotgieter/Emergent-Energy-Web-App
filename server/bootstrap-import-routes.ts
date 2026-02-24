@@ -67,6 +67,26 @@ router.post("/preview", requireAuth, requireAdmin, upload.single("file"), async 
   }
 });
 
+router.post("/preview-batch", requireAuth, requireAdmin, upload.array("files", 50), async (req: Request, res: Response) => {
+  try {
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) return res.status(400).json({ error: "No files uploaded" });
+
+    const results: Array<{ fileName: string; preview?: any; error?: string }> = [];
+    for (const file of files) {
+      try {
+        const preview = await previewTrackerUpload(file.buffer, file.originalname);
+        results.push({ fileName: file.originalname, preview });
+      } catch (err: any) {
+        results.push({ fileName: file.originalname, error: err.message });
+      }
+    }
+    res.json({ results, totalFiles: files.length });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 router.post("/commit", requireAuth, requireAdmin, upload.single("file"), async (req: Request, res: Response) => {
   try {
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
@@ -83,6 +103,39 @@ router.post("/commit", requireAuth, requireAdmin, upload.single("file"), async (
     if (error.message.includes("already exists")) {
       return res.status(409).json({ error: error.message });
     }
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post("/commit-batch", requireAuth, requireAdmin, upload.array("files", 50), async (req: Request, res: Response) => {
+  try {
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) return res.status(400).json({ error: "No files uploaded" });
+
+    const user = (req as any).user;
+    let nameOverrides: Record<string, string> = {};
+    try {
+      if (req.body.nameOverrides) nameOverrides = JSON.parse(req.body.nameOverrides);
+    } catch {}
+
+    const results: Array<{ fileName: string; result?: any; error?: string }> = [];
+    for (let idx = 0; idx < files.length; idx++) {
+      const file = files[idx];
+      try {
+        const overrideName = nameOverrides[String(idx)] || nameOverrides[file.originalname] || undefined;
+        const result = await commitProjectFromTracker(
+          file.buffer,
+          file.originalname,
+          overrideName,
+          user.id || 1
+        );
+        results.push({ fileName: file.originalname, result });
+      } catch (err: any) {
+        results.push({ fileName: file.originalname, error: err.message });
+      }
+    }
+    res.json({ results, committed: results.filter(r => r.result).length, failed: results.filter(r => r.error).length });
+  } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
