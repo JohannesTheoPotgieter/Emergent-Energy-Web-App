@@ -76,7 +76,7 @@ export async function previewTrackerUpload(
   const preview = await runSmartImportPreview(buffer, fileName);
 
   const info = preview.detection.projectInfo;
-  const projectName = info?.name || extractedName;
+  const projectName = extractedName;
   const norm = preview.normalization;
 
   const cosRealisedCount = norm.costLines.filter((c: any) => c.cosRealised).length;
