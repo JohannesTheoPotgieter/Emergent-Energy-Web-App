@@ -19,7 +19,7 @@ export const userRoleEnum = pgEnum('user_role', [
   'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER',
 ]);
 
-export const smartImportStatusEnum = pgEnum('smart_import_status', ['PREVIEW', 'AWAITING_REVIEW', 'COMMITTED', 'ROLLED_BACK', 'FAILED']);
+export const smartImportStatusEnum = pgEnum('smart_import_status', ['PREVIEW', 'AWAITING_REVIEW', 'COMMITTED', 'ROLLED_BACK', 'FAILED', 'SUPERSEDED']);
 export const importIssueSeverityEnum = pgEnum('import_issue_severity', ['INFO', 'WARNING', 'BLOCKER']);
 export const importSectionEnum = pgEnum('import_section', ['PLAN', 'REVENUE', 'EXPENDITURE', 'CASHFLOW', 'GENERAL']);
 export const counterpartyTypeEnum = pgEnum('counterparty_type', ['SUPPLIER', 'INSTALLER', 'OTHER']);
@@ -646,6 +646,34 @@ export const cashflowBalanceHistory = pgTable("cashflow_balance_history", {
 export const insertCashflowBalanceHistorySchema = createInsertSchema(cashflowBalanceHistory).omit({ id: true, changedAt: true });
 export type InsertCashflowBalanceHistory = z.infer<typeof insertCashflowBalanceHistorySchema>;
 export type CashflowBalanceHistory = typeof cashflowBalanceHistory.$inferSelect;
+
+export const availablePaymentOverrides = pgTable("available_payment_overrides", {
+  id: serial("id").primaryKey(),
+  weekStartDate: text("week_start_date").notNull().unique(),
+  overrideValue: decimal("override_value", { precision: 15, scale: 2 }).notNull(),
+  reason: text("reason"),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  updatedBy: text("updated_by"),
+});
+
+export const insertAvailablePaymentOverrideSchema = createInsertSchema(availablePaymentOverrides).omit({ id: true, updatedAt: true });
+export type InsertAvailablePaymentOverride = z.infer<typeof insertAvailablePaymentOverrideSchema>;
+export type AvailablePaymentOverride = typeof availablePaymentOverrides.$inferSelect;
+
+export const availablePaymentHistory = pgTable("available_payment_history", {
+  id: serial("id").primaryKey(),
+  weekStartDate: text("week_start_date").notNull(),
+  previousValue: decimal("previous_value", { precision: 15, scale: 2 }),
+  newValue: decimal("new_value", { precision: 15, scale: 2 }).notNull(),
+  computedValue: decimal("computed_value", { precision: 15, scale: 2 }),
+  reason: text("reason"),
+  changedAt: timestamp("changed_at").notNull().defaultNow(),
+  changedBy: text("changed_by"),
+});
+
+export const insertAvailablePaymentHistorySchema = createInsertSchema(availablePaymentHistory).omit({ id: true, changedAt: true });
+export type InsertAvailablePaymentHistory = z.infer<typeof insertAvailablePaymentHistorySchema>;
+export type AvailablePaymentHistory = typeof availablePaymentHistory.$inferSelect;
 
 export const opexBudgetMonthly = pgTable("opex_budget_monthly", {
   id: serial("id").primaryKey(),
@@ -2011,8 +2039,8 @@ export const COMPANY_ROLES = [
 export type CompanyRole = typeof COMPANY_ROLES[number];
 
 export const COMPANY_ROLE_LABELS: Record<CompanyRole, string> = {
-  COO_ADMIN: "COO Admin",
-  CEO_ADMIN: "CEO Admin",
+  COO_ADMIN: "COO",
+  CEO_ADMIN: "CEO",
   CCO: "CCO",
   CFO: "CFO",
   PROGRAM_MANAGER: "Program Manager",
@@ -2470,8 +2498,12 @@ export const normalizedRevenueLines = pgTable("normalized_revenue_lines", {
   vat: text("vat"),
   invoiceNumber: text("invoice_number"),
   invoiceDate: text("invoice_date"),
+  invoiceDateFontColor: text("invoice_date_font_color"),
+  invoiceDateConfirmed: boolean("invoice_date_confirmed"),
   expectedPaymentDate: text("expected_payment_date"),
   paidDate: text("paid_date"),
+  paidDateFontColor: text("paid_date_font_color"),
+  paidDateConfirmed: boolean("paid_date_confirmed"),
   inBankDate: text("in_bank_date"),
   status: revenueLineStatusEnum("status").notNull().default('PLANNED'),
   sourceSheet: text("source_sheet"),
@@ -2509,14 +2541,23 @@ export const normalizedCostLines = pgTable("normalized_cost_lines", {
   amountExVat: text("amount_ex_vat"),
   invoiceNumber: text("invoice_number"),
   invoiceDate: text("invoice_date"),
+  invoiceDateFontColor: text("invoice_date_font_color"),
+  invoiceDateConfirmed: boolean("invoice_date_confirmed"),
   approvedDate: text("approved_date"),
   paidDate: text("paid_date"),
+  paidDateFontColor: text("paid_date_font_color"),
+  paidDateConfirmed: boolean("paid_date_confirmed"),
   poNumber: text("po_number"),
+  cosRealised: boolean("cos_realised"),
+  cashflowConfirmed: boolean("cashflow_confirmed"),
   status: costLineStatusEnum("cost_line_status").notNull().default('PLANNED'),
   sourceSheet: text("source_sheet"),
   sourceRow: integer("source_row"),
   importRunId: integer("import_run_id").references(() => smartImportRuns.id),
   turnaroundDays: integer("turnaround_days"),
+  patternRuleId: integer("pattern_rule_id"),
+  patternClassifiedAt: timestamp("pattern_classified_at"),
+  patternInferredType: text("pattern_inferred_type"),
 });
 export const insertNormalizedCostLineSchema = createInsertSchema(normalizedCostLines).omit({ id: true });
 export type InsertNormalizedCostLine = z.infer<typeof insertNormalizedCostLineSchema>;
@@ -2898,9 +2939,121 @@ export const insertTrSuggestionDecisionSchema = createInsertSchema(trItemSuggest
 export type InsertTrSuggestionDecision = z.infer<typeof insertTrSuggestionDecisionSchema>;
 export type TrSuggestionDecision = typeof trItemSuggestionDecisions.$inferSelect;
 
+// ===================== BOOTSTRAP IMPORT SYSTEM =====================
+
+export const bootstrapRunStatusEnum = pgEnum('bootstrap_run_status', ['SCANNING', 'STAGING', 'UPSERTING', 'REBUILDING', 'VALIDATING', 'COMPLETED', 'FAILED']);
+
+export const bootstrapImportRuns = pgTable("bootstrap_import_runs", {
+  id: serial("id").primaryKey(),
+  status: bootstrapRunStatusEnum("status").notNull().default('SCANNING'),
+  triggeredByUserId: integer("triggered_by_user_id").references(() => users.id),
+  triggeredByRole: text("triggered_by_role"),
+  sourcePath: text("source_path").notNull(),
+  startedAt: timestamp("started_at").notNull().defaultNow(),
+  finishedAt: timestamp("finished_at"),
+  discoveredCount: integer("discovered_count").notNull().default(0),
+  importedCount: integer("imported_count").notNull().default(0),
+  updatedCount: integer("updated_count").notNull().default(0),
+  skippedCount: integer("skipped_count").notNull().default(0),
+  quarantinedCount: integer("quarantined_count").notNull().default(0),
+  errorsCount: integer("errors_count").notNull().default(0),
+  validationJson: jsonb("validation_json"),
+  logsJson: jsonb("logs_json"),
+});
+export const insertBootstrapImportRunSchema = createInsertSchema(bootstrapImportRuns).omit({ id: true, startedAt: true });
+export type InsertBootstrapImportRun = z.infer<typeof insertBootstrapImportRunSchema>;
+export type BootstrapImportRun = typeof bootstrapImportRuns.$inferSelect;
+
+export const stagingParseStatusEnum = pgEnum('staging_parse_status', ['OK', 'PARTIAL', 'FAILED']);
+
+export const stagingBootstrapProjects = pgTable("staging_bootstrap_projects", {
+  id: serial("id").primaryKey(),
+  importRunId: integer("import_run_id").notNull().references(() => bootstrapImportRuns.id),
+  sourcePath: text("source_path").notNull(),
+  sourceModifiedAt: timestamp("source_modified_at"),
+  sourceHash: text("source_hash"),
+  projectNameExtracted: text("project_name_extracted"),
+  parseStatus: stagingParseStatusEnum("parse_status").notNull().default('OK'),
+  errorReason: text("error_reason"),
+  rawJson: jsonb("raw_json"),
+  sheetsFound: jsonb("sheets_found"),
+  planRowCount: integer("plan_row_count").notNull().default(0),
+  revenueRowCount: integer("revenue_row_count").notNull().default(0),
+  costRowCount: integer("cost_row_count").notNull().default(0),
+  infoExtracted: jsonb("info_extracted"),
+  needsReview: boolean("needs_review").notNull().default(false),
+  canonicalProjectName: text("canonical_project_name"),
+  importedAt: timestamp("imported_at").notNull().defaultNow(),
+});
+export type StagingBootstrapProject = typeof stagingBootstrapProjects.$inferSelect;
+
+export const derivedProjectKpis = pgTable("derived_project_kpis", {
+  id: serial("id").primaryKey(),
+  projectKey: text("project_key").notNull().unique(),
+  projectName: text("project_name").notNull(),
+  phase: text("phase"),
+  sizeKwp: decimal("size_kwp", { precision: 12, scale: 2 }),
+  contractValue: decimal("contract_value", { precision: 15, scale: 2 }),
+  ragStatus: text("rag_status"),
+  pm: text("pm"),
+  pd: text("pd"),
+  isActive: boolean("is_active").notNull().default(true),
+  totalPlannedRevenue: decimal("total_planned_revenue", { precision: 15, scale: 2 }),
+  totalActualRevenue: decimal("total_actual_revenue", { precision: 15, scale: 2 }),
+  revenueRealised: decimal("revenue_realised", { precision: 15, scale: 2 }),
+  revenueOutstanding: decimal("revenue_outstanding", { precision: 15, scale: 2 }),
+  totalPlannedExpenses: decimal("total_planned_expenses", { precision: 15, scale: 2 }),
+  totalActualExpenses: decimal("total_actual_expenses", { precision: 15, scale: 2 }),
+  cosRealised: decimal("cos_realised", { precision: 15, scale: 2 }),
+  expensesOutstanding: decimal("expenses_outstanding", { precision: 15, scale: 2 }),
+  grossProfit: decimal("gross_profit", { precision: 15, scale: 2 }),
+  grossMarginPct: decimal("gross_margin_pct", { precision: 8, scale: 4 }),
+  avgActualPctComplete: decimal("avg_actual_pct_complete", { precision: 8, scale: 4 }),
+  avgExpectedPctComplete: decimal("avg_expected_pct_complete", { precision: 8, scale: 4 }),
+  scheduleDelta: decimal("schedule_delta", { precision: 8, scale: 4 }),
+  taskCount: integer("task_count").notNull().default(0),
+  expenseLineCount: integer("expense_line_count").notNull().default(0),
+  revenueLineCount: integer("revenue_line_count").notNull().default(0),
+  needsReview: boolean("needs_review").notNull().default(false),
+  needsReviewReason: text("needs_review_reason"),
+  computedAt: timestamp("computed_at").notNull().defaultNow(),
+});
+export type DerivedProjectKpi = typeof derivedProjectKpis.$inferSelect;
+
+export const derivedPortfolioKpis = pgTable("derived_portfolio_kpis", {
+  id: serial("id").primaryKey(),
+  snapshotKey: text("snapshot_key").notNull().unique().default('current'),
+  totalProgramBudget: decimal("total_program_budget", { precision: 15, scale: 2 }),
+  actualSpendPaid: decimal("actual_spend_paid", { precision: 15, scale: 2 }),
+  revenueRealised: decimal("revenue_realised", { precision: 15, scale: 2 }),
+  activeProjectsCount: integer("active_projects_count").notNull().default(0),
+  activeCapacityMw: decimal("active_capacity_mw", { precision: 12, scale: 2 }),
+  onScheduleRate: decimal("on_schedule_rate", { precision: 8, scale: 4 }),
+  behindPlanCount: integer("behind_plan_count").notNull().default(0),
+  onHoldCount: integer("on_hold_count").notNull().default(0),
+  closedCount: integer("closed_count").notNull().default(0),
+  grossProfit: decimal("gross_profit", { precision: 15, scale: 2 }),
+  grossProfitPct: decimal("gross_profit_pct", { precision: 8, scale: 4 }),
+  revenueOutstanding: decimal("revenue_outstanding", { precision: 15, scale: 2 }),
+  expensesOutstanding: decimal("expenses_outstanding", { precision: 15, scale: 2 }),
+  phaseDistributionJson: jsonb("phase_distribution_json"),
+  computedAt: timestamp("computed_at").notNull().defaultNow(),
+});
+export type DerivedPortfolioKpi = typeof derivedPortfolioKpis.$inferSelect;
+
+export const derivedRagSummary = pgTable("derived_rag_summary", {
+  id: serial("id").primaryKey(),
+  ragStatus: text("rag_status").notNull(),
+  projectCount: integer("project_count").notNull().default(0),
+  totalKwp: decimal("total_kwp", { precision: 15, scale: 2 }),
+  totalContractValue: decimal("total_contract_value", { precision: 15, scale: 2 }),
+  computedAt: timestamp("computed_at").notNull().defaultNow(),
+});
+export type DerivedRagSummary = typeof derivedRagSummary.$inferSelect;
+
 export const DEFAULT_ROLE_PERMISSIONS: InsertRolePermission[] = [
-  { role: "COO_ADMIN", label: "COO Admin", description: "Full executive access, settings, user management", sections: ["EXCO", "PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "ADMIN", "MY_TOOL", "FINANCE", "PROJECTS", "OPERATIONS", "GOVERNANCE", "COCKPIT", "MONEY", "DELIVERY"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
-  { role: "CEO_ADMIN", label: "CEO Admin", description: "Full executive access, strategic oversight", sections: ["EXCO", "PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "ADMIN", "MY_TOOL", "FINANCE", "PROJECTS", "OPERATIONS", "GOVERNANCE", "COCKPIT", "MONEY", "DELIVERY"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
+  { role: "COO_ADMIN", label: "COO", description: "Full executive access, settings, user management", sections: ["EXCO", "PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "ADMIN", "MY_TOOL", "FINANCE", "PROJECTS", "OPERATIONS", "GOVERNANCE", "COCKPIT", "MONEY", "DELIVERY"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
+  { role: "CEO_ADMIN", label: "CEO", description: "Full executive access, strategic oversight", sections: ["EXCO", "PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "ADMIN", "MY_TOOL", "FINANCE", "PROJECTS", "OPERATIONS", "GOVERNANCE", "COCKPIT", "MONEY", "DELIVERY"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
   { role: "CCO", label: "CCO", description: "Commercial operations, project oversight", sections: ["EXCO", "PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "FINANCE", "PROJECTS", "OPERATIONS", "GOVERNANCE", "COCKPIT", "MONEY", "DELIVERY"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
   { role: "CFO", label: "CFO", description: "Financial oversight, cashflow, budgets", sections: ["EXCO", "PROJECT_MANAGEMENT", "FINANCE", "PROJECTS", "OPERATIONS", "GOVERNANCE", "COCKPIT", "MONEY"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
   { role: "PROGRAM_MANAGER", label: "Program Manager", description: "Project management, engineering dashboard", sections: ["PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "PROJECTS", "OPERATIONS", "GOVERNANCE", "COCKPIT", "MONEY", "DELIVERY"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },

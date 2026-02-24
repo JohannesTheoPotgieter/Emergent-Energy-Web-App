@@ -54,6 +54,9 @@ interface CashflowWeek {
   projectOutflows: number;
   closingBalance: number;
   availablePayment: number;
+  computedAvailablePayment: number;
+  hasAvailPayOverride: boolean;
+  availPayReason: string | null;
 }
 
 interface BalanceHistoryEntry {
@@ -220,7 +223,7 @@ function DetailRow({ weekStart, project }: { weekStart: string; project: string 
   if (isLoading) {
     return (
       <tr>
-        <td colSpan={8} className="p-0">
+        <td colSpan={9} className="p-0">
           <div className="flex items-center justify-center gap-2 text-muted-foreground py-6 bg-gradient-to-b from-slate-50 to-white">
             <Loader2 className="h-4 w-4 animate-spin" data-testid="spinner-detail" />
             <span className="text-sm">Loading week detail...</span>
@@ -256,7 +259,7 @@ function DetailRow({ weekStart, project }: { weekStart: string; project: string 
 
   return (
     <tr>
-      <td colSpan={8} className="p-0">
+      <td colSpan={9} className="p-0">
         <div className="bg-gradient-to-b from-slate-50/80 to-white border-y border-slate-200/60 px-6 py-5">
           <div className="flex items-center gap-3 mb-4">
             <Input
@@ -504,6 +507,10 @@ export default function CashflowPage() {
   const [editingOpex, setEditingOpex] = useState<string | null>(null);
   const [editingOpexValue, setEditingOpexValue] = useState("");
   const [historyWeek, setHistoryWeek] = useState<string | null>(null);
+  const [availPayEdit, setAvailPayEdit] = useState<{ weekStart: string; computedValue: number } | null>(null);
+  const [availPayValue, setAvailPayValue] = useState("");
+  const [availPayReason, setAvailPayReason] = useState("");
+  const [availPayHistoryWeek, setAvailPayHistoryWeek] = useState<string | null>(null);
 
   const projectParam = selectedProject !== "all" ? selectedProject : undefined;
 
@@ -617,6 +624,63 @@ export default function CashflowPage() {
       toast({ title: "Clear Failed", variant: "destructive" });
     },
   });
+
+  const { data: availPayHistory = [] } = useQuery<{ id: number; weekStartDate: string; previousValue: string | null; newValue: string; computedValue: string | null; reason: string | null; changedAt: string; changedBy: string | null }[]>({
+    queryKey: ["/api/cashflow-2026/available-payment-history", availPayHistoryWeek],
+    queryFn: async () => {
+      const hToken = localStorage.getItem("auth_token");
+      const hHeaders: Record<string, string> = {};
+      if (hToken) hHeaders["Authorization"] = `Bearer ${hToken}`;
+      const res = await fetch(`/api/cashflow-2026/available-payment-history?week=${availPayHistoryWeek}`, { credentials: "include", headers: hHeaders });
+      if (!res.ok) throw new Error("Failed to fetch history");
+      return res.json();
+    },
+    enabled: !!availPayHistoryWeek,
+  });
+
+  const availPayMutation = useMutation({
+    mutationFn: async (body: { weekStartDate: string; overrideValue: number; reason: string; computedValue: number }) => {
+      await apiRequest("POST", "/api/cashflow-2026/available-payment", body);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026/available-payment-history"] });
+      invalidateDashboardQueries(queryClient);
+      setAvailPayEdit(null);
+      setAvailPayValue("");
+      setAvailPayReason("");
+      toast({ title: "Available Payment Updated", description: "Override saved with reason" });
+    },
+    onError: () => {
+      toast({ title: "Save Failed", variant: "destructive" });
+    },
+  });
+
+  const clearAvailPayMutation = useMutation({
+    mutationFn: async (weekStartDate: string) => {
+      await apiRequest("DELETE", "/api/cashflow-2026/available-payment", { weekStartDate });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026/available-payment-history"] });
+      invalidateDashboardQueries(queryClient);
+      toast({ title: "Override Cleared", description: "Using computed available payment" });
+    },
+    onError: () => {
+      toast({ title: "Clear Failed", variant: "destructive" });
+    },
+  });
+
+  const handleAvailPaySave = useCallback(() => {
+    if (!availPayEdit) return;
+    const val = parseFloat(availPayValue);
+    if (!Number.isFinite(val)) return;
+    if (!availPayReason.trim()) {
+      toast({ title: "Reason Required", description: "Please provide a reason for the override", variant: "destructive" });
+      return;
+    }
+    availPayMutation.mutate({ weekStartDate: availPayEdit.weekStart, overrideValue: val, reason: availPayReason.trim(), computedValue: availPayEdit.computedValue });
+  }, [availPayEdit, availPayValue, availPayReason, availPayMutation, toast]);
 
   const handleOpexSave = useCallback(
     (weekStart: string) => {
@@ -896,9 +960,6 @@ export default function CashflowPage() {
                         <th className="text-right px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider min-w-[130px]">
                           Proj Inflows
                         </th>
-                        <th className="text-right px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider min-w-[140px]">
-                          Avail Payment
-                        </th>
                         <th className="text-right px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider min-w-[120px]">
                           OPEX
                         </th>
@@ -910,6 +971,9 @@ export default function CashflowPage() {
                         </th>
                         <th className="text-right px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider min-w-[130px]">
                           Closing Bal
+                        </th>
+                        <th className="text-right px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider min-w-[150px]">
+                          Avail Payment
                         </th>
                       </tr>
                     </thead>
@@ -1029,12 +1093,6 @@ export default function CashflowPage() {
                                 {formatRand(week.projectInflows)}
                               </td>
                               <td
-                                className="px-4 py-3 text-right font-mono text-[13px] font-semibold text-slate-800"
-                                data-testid={`text-available-${week.weekStart}`}
-                              >
-                                {formatRand(week.availablePayment)}
-                              </td>
-                              <td
                                 className="px-4 py-3 text-right font-mono text-[13px] text-red-500"
                                 data-testid={`text-opex-${week.weekStart}`}
                               >
@@ -1115,6 +1173,56 @@ export default function CashflowPage() {
                               >
                                 {formatRand(week.closingBalance)}
                               </td>
+                              <td
+                                className="px-4 py-3 text-right font-mono text-[13px]"
+                                data-testid={`text-available-${week.weekStart}`}
+                              >
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <span
+                                    className={`font-semibold ${
+                                      (week.availablePayment || 0) >= 0 ? "text-blue-700" : "text-red-700"
+                                    } ${isAdmin ? "cursor-pointer hover:underline decoration-dashed underline-offset-2 transition-colors" : ""}`}
+                                    onClick={(e) => {
+                                      if (!isAdmin) return;
+                                      e.stopPropagation();
+                                      setAvailPayEdit({ weekStart: week.weekStart, computedValue: week.computedAvailablePayment || 0 });
+                                      setAvailPayValue(week.availablePayment?.toString() || "0");
+                                      setAvailPayReason("");
+                                    }}
+                                    data-testid={`text-available-value-${week.weekStart}`}
+                                  >
+                                    {formatRand(week.availablePayment)}
+                                  </span>
+                                  {week.hasAvailPayOverride && (
+                                    <>
+                                      <span
+                                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 cursor-pointer"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setAvailPayHistoryWeek(week.weekStart);
+                                        }}
+                                        title={`Manual override. Computed: ${formatRand(week.computedAvailablePayment)}${week.availPayReason ? `. Reason: ${week.availPayReason}` : ""}`}
+                                        data-testid={`badge-avail-override-${week.weekStart}`}
+                                      >
+                                        <ArrowRight className="h-3 w-3" />
+                                      </span>
+                                      {isAdmin && (
+                                        <button
+                                          className="p-0.5 rounded hover:bg-red-100 text-red-400 hover:text-red-600 transition-colors"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            clearAvailPayMutation.mutate(week.weekStart);
+                                          }}
+                                          title="Clear override — use computed value"
+                                          data-testid={`button-clear-avail-${week.weekStart}`}
+                                        >
+                                          <X className="h-3 w-3" />
+                                        </button>
+                                      )}
+                                    </>
+                                  )}
+                                </div>
+                              </td>
                             </tr>
                             {showDetail && isExpanded && (
                               <DetailRow
@@ -1135,6 +1243,129 @@ export default function CashflowPage() {
       </div>
 
       <OpexBudgetModal open={opexOpen} onClose={() => setOpexOpen(false)} />
+
+      <Dialog open={!!availPayEdit} onOpenChange={(v) => { if (!v) { setAvailPayEdit(null); setAvailPayValue(""); setAvailPayReason(""); } }}>
+        <DialogContent className="max-w-md" data-testid="dialog-avail-payment-edit">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-semibold">
+              Edit Available Payment — {availPayEdit ? formatWeek(availPayEdit.weekStart) : ""}
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground mt-1">
+              Computed value: {formatRand(availPayEdit?.computedValue || 0)} (Opening + Inflows - All Outflows)
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <label className="text-sm font-medium text-slate-700">Override Value (R)</label>
+              <Input
+                type="number"
+                value={availPayValue}
+                onChange={(e) => setAvailPayValue(e.target.value)}
+                className="mt-1 font-mono"
+                autoFocus
+                onKeyDown={(e) => { if (e.key === "Enter") handleAvailPaySave(); }}
+                data-testid="input-avail-payment-value"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-slate-700">Reason for Override *</label>
+              <Input
+                value={availPayReason}
+                onChange={(e) => setAvailPayReason(e.target.value)}
+                placeholder="e.g. Adjusting for expected delayed payment"
+                className="mt-1"
+                onKeyDown={(e) => { if (e.key === "Enter") handleAvailPaySave(); }}
+                data-testid="input-avail-payment-reason"
+              />
+              <p className="text-[11px] text-muted-foreground mt-1">A reason is required for all manual overrides</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setAvailPayEdit(null); setAvailPayValue(""); setAvailPayReason(""); }} data-testid="button-avail-cancel">
+              Cancel
+            </Button>
+            <Button
+              onClick={handleAvailPaySave}
+              disabled={availPayMutation.isPending || !availPayReason.trim()}
+              className="bg-blue-600 hover:bg-blue-700"
+              data-testid="button-avail-save"
+            >
+              {availPayMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : null}
+              Save Override
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!availPayHistoryWeek} onOpenChange={(v) => !v && setAvailPayHistoryWeek(null)}>
+        <DialogContent className="max-w-lg" data-testid="dialog-avail-payment-history">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-semibold">
+              Available Payment History — {availPayHistoryWeek ? formatWeek(availPayHistoryWeek) : ""}
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground mt-1">
+              All manual overrides for this week, most recent first
+            </DialogDescription>
+          </DialogHeader>
+          {availPayHistory.length === 0 ? (
+            <div className="py-8 text-center text-sm text-muted-foreground">
+              No history yet for this week
+            </div>
+          ) : (
+            <div className="max-h-[400px] overflow-y-auto space-y-2">
+              {availPayHistory.map((entry) => {
+                const prev = entry.previousValue ? parseFloat(entry.previousValue) : null;
+                const newVal = parseFloat(entry.newValue);
+                const computed = entry.computedValue ? parseFloat(entry.computedValue) : null;
+                return (
+                  <div
+                    key={entry.id}
+                    className="border border-slate-100 rounded-lg px-4 py-3 bg-slate-50/50"
+                    data-testid={`avail-history-entry-${entry.id}`}
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs text-slate-500">
+                        {(() => {
+                          try {
+                            return format(new Date(entry.changedAt), "dd MMM yyyy HH:mm");
+                          } catch {
+                            return entry.changedAt;
+                          }
+                        })()}
+                      </span>
+                      {entry.changedBy && (
+                        <span className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-medium">
+                          {entry.changedBy}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3 font-mono text-sm">
+                      <span className="text-slate-400">{prev != null ? formatRand(prev) : "—"}</span>
+                      <ArrowRight className="h-3 w-3 text-slate-300 flex-shrink-0" />
+                      <span className="font-semibold text-slate-800">{formatRand(newVal)}</span>
+                    </div>
+                    {entry.reason && (
+                      <div className="mt-1.5 text-[11px] text-slate-600 bg-blue-50/50 rounded px-2 py-1">
+                        <span className="font-medium">Reason:</span> {entry.reason}
+                      </div>
+                    )}
+                    {computed != null && (
+                      <div className="mt-1 text-[11px] text-slate-400">
+                        Computed: {formatRand(computed)}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAvailPayHistoryWeek(null)} data-testid="button-avail-history-close">
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!historyWeek} onOpenChange={(v) => !v && setHistoryWeek(null)}>
         <DialogContent className="max-w-lg" data-testid="dialog-balance-history">

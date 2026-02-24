@@ -5,8 +5,9 @@ import {
   invoicePatternMatches,
   counterparties,
   smartImportRuns,
+  normalizedCostLines,
 } from "@shared/schema";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, isNull, isNotNull } from "drizzle-orm";
 import { classifyCostLines, generateRuleFromInvoice, normalizeInvoiceNumber } from "./lib/import/invoice-classifier";
 
 const router = Router();
@@ -269,6 +270,188 @@ router.post("/api/smart-import/:runId/classify-review", requireAuth, async (req:
   }
 });
 
+router.post("/api/procurement-analysis/classify", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.id || null;
+
+    const allLines = await db.select().from(normalizedCostLines);
+
+    const eligibleLines = allLines.filter(line => {
+      const amt = parseFloat(line.amountExVat || "0") || 0;
+      const hasInvoice = !!(line.invoiceNumber && String(line.invoiceNumber).trim());
+      return amt !== 0 && hasInvoice;
+    });
+
+    const untaggedLines = eligibleLines.filter(line => !line.patternRuleId);
+
+    if (untaggedLines.length === 0) {
+      return res.json({
+        success: true,
+        totalEligible: eligibleLines.length,
+        alreadyTagged: eligibleLines.length - untaggedLines.length,
+        newlyClassified: 0,
+        autoApplied: 0,
+        unresolved: 0,
+        rulesUpdated: 0,
+        message: "All eligible lines have already been classified",
+      });
+    }
+
+    const activeRules = await db
+      .select()
+      .from(invoicePatternRules)
+      .where(eq(invoicePatternRules.isActive, true));
+
+    const ruleMatchCounts = new Map<number, number>();
+    let autoApplied = 0;
+    let unresolved = 0;
+    const matchRecords: any[] = [];
+    const lineUpdates: { id: number; ruleId: number; inferredType: string }[] = [];
+
+    for (const line of untaggedLines) {
+      const raw = line.invoiceNumber;
+      const norm = normalizeInvoiceNumber(raw);
+      if (!norm) {
+        unresolved++;
+        continue;
+      }
+
+      const costLineInput = [{
+        sourceRow: line.sourceRow || line.id,
+        invoiceNumber: raw,
+        counterpartyName: line.counterpartyName,
+        counterpartyType: line.counterpartyType,
+      }];
+
+      const classifications = await classifyCostLines(costLineInput);
+      const result = classifications[0];
+
+      if (result && result.matchedRuleId && result.confidenceScore >= 85) {
+        ruleMatchCounts.set(
+          result.matchedRuleId,
+          (ruleMatchCounts.get(result.matchedRuleId) || 0) + 1
+        );
+
+        lineUpdates.push({
+          id: line.id,
+          ruleId: result.matchedRuleId,
+          inferredType: result.inferredType,
+        });
+
+        matchRecords.push({
+          projectId: line.projectId,
+          invoiceNumberRaw: raw,
+          invoiceNumberNorm: norm,
+          matchedRuleId: result.matchedRuleId,
+          inferredType: result.inferredType,
+          inferredCounterpartyId: result.inferredCounterpartyId,
+          confidenceScore: result.confidenceScore,
+          outcome: 'AUTO_APPLIED',
+          sourceRow: line.sourceRow || line.id,
+        });
+
+        autoApplied++;
+      } else {
+        unresolved++;
+      }
+    }
+
+    await db.transaction(async (tx: any) => {
+      const ruleEntries = Array.from(ruleMatchCounts.entries());
+      for (const [ruleId, count] of ruleEntries) {
+        await tx
+          .update(invoicePatternRules)
+          .set({
+            timesMatched: sql`${invoicePatternRules.timesMatched} + ${count}`,
+          })
+          .where(eq(invoicePatternRules.id, ruleId));
+      }
+
+      for (const upd of lineUpdates) {
+        await tx
+          .update(normalizedCostLines)
+          .set({
+            patternRuleId: upd.ruleId,
+            patternClassifiedAt: new Date(),
+            patternInferredType: upd.inferredType,
+          })
+          .where(eq(normalizedCostLines.id, upd.id));
+      }
+
+      if (matchRecords.length > 0) {
+        const batchSize = 200;
+        for (let i = 0; i < matchRecords.length; i += batchSize) {
+          const batch = matchRecords.slice(i, i + batchSize);
+          await tx.insert(invoicePatternMatches).values(batch);
+        }
+      }
+    });
+
+    console.log(`[procurement-classify] Classified ${lineUpdates.length} lines, ${autoApplied} auto-applied, ${unresolved} unresolved, ${ruleMatchCounts.size} rules updated`);
+
+    res.json({
+      success: true,
+      totalEligible: eligibleLines.length,
+      alreadyTagged: eligibleLines.length - untaggedLines.length,
+      newlyClassified: lineUpdates.length,
+      autoApplied,
+      unresolved,
+      rulesUpdated: ruleMatchCounts.size,
+      message: `Classified ${lineUpdates.length} lines: ${autoApplied} auto-applied, ${unresolved} need review. ${ruleMatchCounts.size} pattern rules updated.`,
+    });
+  } catch (err: any) {
+    console.error("[procurement-classify] Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/api/procurement-analysis/pattern-stats", requireAuth, async (_req: Request, res: Response) => {
+  try {
+    const allLines = await db.select().from(normalizedCostLines);
+
+    const eligible = allLines.filter(line => {
+      const amt = parseFloat(line.amountExVat || "0") || 0;
+      const hasInvoice = !!(line.invoiceNumber && String(line.invoiceNumber).trim());
+      return amt !== 0 && hasInvoice;
+    });
+
+    const tagged = eligible.filter(l => l.patternRuleId);
+    const untagged = eligible.filter(l => !l.patternRuleId);
+
+    const typeCounts: Record<string, number> = {};
+    for (const l of tagged) {
+      const t = l.patternInferredType || 'OTHER';
+      typeCounts[t] = (typeCounts[t] || 0) + 1;
+    }
+
+    const rules = await db
+      .select()
+      .from(invoicePatternRules)
+      .orderBy(desc(invoicePatternRules.timesMatched));
+
+    res.json({
+      totalCostLines: allLines.length,
+      eligibleLines: eligible.length,
+      taggedLines: tagged.length,
+      untaggedLines: untagged.length,
+      classificationRate: eligible.length > 0 ? Math.round((tagged.length / eligible.length) * 100) : 0,
+      typeCounts,
+      topRules: rules.slice(0, 10).map(r => ({
+        id: r.id,
+        patternValue: r.patternValue,
+        patternType: r.patternType,
+        inferredType: r.inferredType,
+        timesMatched: r.timesMatched,
+        timesConfirmed: r.timesConfirmed,
+        timesOverridden: r.timesOverridden,
+        counterpartyName: r.counterpartyName,
+      })),
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get("/api/invoice-pattern-matches", requireAuth, async (req: Request, res: Response) => {
   try {
     const runId = req.query.runId ? parseInt(req.query.runId as string) : undefined;
@@ -279,6 +462,145 @@ router.get("/api/invoice-pattern-matches", requireAuth, async (req: Request, res
     const matches = await query;
     res.json(matches);
   } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/api/procurement-analysis/reset-tags", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const userRole = user?.role;
+    if (!["COO_ADMIN", "CEO_ADMIN"].includes(userRole)) {
+      return res.status(403).json({ error: "Only COO/CEO Admin can reset tags" });
+    }
+
+    if (req.body?.confirm !== true) {
+      return res.status(400).json({ error: "Must send confirm: true to execute this destructive action" });
+    }
+
+    const taggedBefore = await db.select({ count: sql<number>`count(*)` }).from(normalizedCostLines).where(sql`pattern_rule_id IS NOT NULL`);
+    const matchesBefore = await db.select({ count: sql<number>`count(*)` }).from(invoicePatternMatches);
+
+    await db.transaction(async (tx: any) => {
+      await tx.update(normalizedCostLines).set({
+        patternRuleId: null,
+        patternClassifiedAt: null,
+        patternInferredType: null,
+      }).where(sql`pattern_rule_id IS NOT NULL`);
+
+      await tx.delete(invoicePatternMatches);
+
+      await tx.update(invoicePatternRules).set({
+        timesMatched: 0,
+        timesConfirmed: 0,
+        timesOverridden: 0,
+      });
+    });
+
+    console.log(`[AUDIT] reset-tags executed by ${user?.email} (${userRole}): cleared ${taggedBefore[0]?.count || 0} tags, ${matchesBefore[0]?.count || 0} matches`);
+
+    res.json({
+      success: true,
+      tagsCleared: taggedBefore[0]?.count || 0,
+      matchesDeleted: matchesBefore[0]?.count || 0,
+      message: `Cleared ${taggedBefore[0]?.count || 0} tags and ${matchesBefore[0]?.count || 0} match records. Pattern rules preserved with counters reset.`,
+    });
+  } catch (err: any) {
+    console.error("[reset-tags] Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/api/admin/wipe-all-data", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const userRole = user?.role;
+    if (!["admin", "COO_ADMIN", "CEO_ADMIN"].includes(userRole)) {
+      return res.status(403).json({ error: "Only COO/CEO Admin can wipe data" });
+    }
+    if (req.body?.confirm !== "WIPE_ALL_DATA") {
+      return res.status(400).json({ error: 'Must send confirm: "WIPE_ALL_DATA" to execute this destructive action' });
+    }
+
+    const tables = [
+      'invoice_pattern_matches', 'invoice_pattern_rules',
+      'normalized_cost_lines', 'normalized_revenue_lines', 'normalized_execution_phases', 'normalized_plan_tasks',
+      'smart_import_runs', 'template_profiles', 'counterparties',
+      'field_changes', 'change_sets', 'change_ledger',
+      'import_diff_events', 'import_issues', 'import_runs',
+      'upload_metadata', 'sync_audit_log', 'merge_audit_log', 'writeback_audit_log',
+      'cashflow_planning_overrides', 'cashflow_points', 'cashflow_weekly_manual', 'cashflow_balance_history',
+      'expenditure_overrides', 'line_item_overrides', 'planning_overrides', 'date_overrides',
+      'finance_cos_monthly', 'finance_cos_overrides', 'finance_revenue_monthly', 'finance_revenue_overrides',
+      'revenue_tracking_overrides', 'revenue_milestone_manual',
+      'opex_budget_monthly', 'opex_weekly_manual', 'tracker_monthly_manual',
+      'expense_task_links', 'milestone_task_links',
+      'program_expense', 'program_inflows', 'project_plan',
+      'project_plan_dependency', 'project_plan_overrides',
+      'working_plan_task_override', 'working_plan_dependency_override', 'working_plan_scenario',
+      'scenarios', 'budgets',
+      'operational_tasks',
+      'qc_item_evidence', 'qc_item_instance', 'qc_plan_link', 'qc_access_challenge',
+      'qc_postmortem_metric_value', 'qc_postmortem_summary', 'qc_postmortem',
+      'qc_risk_answer', 'qc_warning_event', 'qc_warning', 'qc_checklist',
+      'qc_template_postmortem_metric', 'qc_template_risk_question',
+      'qc_template_item', 'qc_template_phase', 'qc_template_group', 'qc_template',
+      'phase_template_item_history', 'phase_template_item', 'phase_template_application', 'phase_template',
+      'engineering_task_attachments', 'engineering_tasks', 'engineering_template_items', 'engineering_templates',
+      'deliverable_events', 'deliverable_files', 'deliverable_versions', 'deliverables',
+      'task_activity_log', 'task_attachments', 'task_checklist_items', 'task_checklists',
+      'task_comments', 'task_watchers', 'tasks',
+      'tr_item_suggestion_decisions', 'tr_item_project_links', 'tr_items',
+      'intake_tasks', 'intake_task_templates', 'intake_requests',
+      'meeting_action_items', 'meeting_summaries',
+      'mytool_tasks', 'mytool_company_priorities', 'mytool_daily_reviews',
+      'mytool_dod_templates', 'mytool_email_links', 'mytool_timeblocks',
+      'mytool_settings', 'mytool_user_preferences',
+      'weekly_reviews', 'snapshot_metrics', 'snapshots',
+      'notifications', 'notification_throttle',
+      'sp_file_pointers', 'sp_files', 'sp_list_config', 'sp_settings', 'mock_sp_items',
+      'approvals', 'audit_events', 'error_logs', 'refresh_logs',
+      'project_editable_fields', 'project_notes', 'project_phase_history',
+      'project_revenue_summary', 'project_team_members', 'home_notes',
+      'schedule_change_notice', 'execution_gate_log',
+      'support_tickets', 'triage_rules', 'issue_resolution_rules',
+      'mapping_rules', 'writeback_mappings', 'key_date_mappings',
+      'payment_terms', 'priority_links', 'resource_capacity',
+      'calendar_holiday', 'app_settings',
+      'company_projects', 'projects', 'project_info', 'expenses', 'revenues',
+      'outlook_accounts',
+      'role_permissions', 'role_credentials',
+      'session', 'users',
+    ];
+
+    let truncated = 0;
+    let skipped = 0;
+    const errors: string[] = [];
+
+    for (const table of tables) {
+      try {
+        await db.execute(sql.raw(`TRUNCATE TABLE "${table}" CASCADE`));
+        truncated++;
+      } catch (err: any) {
+        if (err.message?.includes('does not exist')) {
+          skipped++;
+        } else {
+          errors.push(`${table}: ${err.message}`);
+        }
+      }
+    }
+
+    console.log(`[AUDIT] FULL DATABASE WIPE by ${user?.email} (${userRole}): ${truncated} tables truncated, ${skipped} skipped, ${errors.length} errors`);
+
+    res.json({
+      success: true,
+      tablesTruncated: truncated,
+      tablesSkipped: skipped,
+      errors: errors.length > 0 ? errors : undefined,
+      message: `Wiped ${truncated} tables. ${skipped} tables not found (OK). Server will re-seed users on next restart. Please restart the deployment to restore login accounts.`,
+    });
+  } catch (err: any) {
+    console.error("[wipe-all] Error:", err);
     res.status(500).json({ error: err.message });
   }
 });

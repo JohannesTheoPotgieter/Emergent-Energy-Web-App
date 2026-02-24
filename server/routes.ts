@@ -6,9 +6,9 @@ import fs from "fs";
 import path from "path";
 import { storage } from "./storage";
 import { parseTrackerFile, applyFontColors } from "./excelParser";
-import { insertBudgetSchema, programExpense, programInflows, projectInfo } from "@shared/schema";
+import { insertBudgetSchema, programExpense, programInflows, projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedPlanTasks, smartImportRuns } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, or, sql, isNull, asc } from "drizzle-orm";
+import { eq, and, or, sql, isNull, asc, desc } from "drizzle-orm";
 import { z } from "zod";
 import { format } from "date-fns";
 import { generateToken, verifyToken } from "./jwt";
@@ -22,6 +22,32 @@ import { buildOverrideMap, applyOverridesToCashflowLines, applyOverridesToCOSLin
 import { recordOverride } from "./lib/audit/diff-engine";
 import { OVERRIDE_CATEGORIES } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
+import { createNameResolver, fetchAllNormalized, mergeExpensesOnly, mergeInflowsOnly, mergePlansOnly } from "./lib/data-merge";
+import { getFeatureFlag } from "./lib/bootstrap-import";
+import { derivedPortfolioKpis, derivedProjectKpis } from "@shared/schema";
+
+async function getMergedExpensesAndInflows(legacyExpenses: any[], legacyInflows: any[]) {
+  const piRows = await db.select({ projectName: projectInfo.projectName }).from(projectInfo);
+  const piNames = piRows.map((r: any) => r.projectName);
+  const resolve = createNameResolver(piNames);
+  const { costLines, revenueLines } = await fetchAllNormalized();
+  return {
+    expenses: mergeExpensesOnly(legacyExpenses, costLines, resolve),
+    inflows: mergeInflowsOnly(legacyInflows, revenueLines, resolve),
+  };
+}
+
+async function getMergedAll(legacyExpenses: any[], legacyInflows: any[], legacyPlans: any[]) {
+  const piRows = await db.select({ projectName: projectInfo.projectName }).from(projectInfo);
+  const piNames = piRows.map((r: any) => r.projectName);
+  const resolve = createNameResolver(piNames);
+  const { costLines, revenueLines, planTasks } = await fetchAllNormalized();
+  return {
+    expenses: mergeExpensesOnly(legacyExpenses, costLines, resolve),
+    inflows: mergeInflowsOnly(legacyInflows, revenueLines, resolve),
+    plans: mergePlansOnly(legacyPlans, planTasks, resolve),
+  };
+}
 
 // Ensure uploads directory exists
 const uploadDir = path.join(process.cwd(), 'uploads');
@@ -611,7 +637,23 @@ export async function registerRoutes(
 
   app.get("/api/overview", async (req, res) => {
     try {
-      const [allProjectInfo, allExpenses, rawInflows, allPlans, latestRefresh, allTaskLinks, allOpTasks] = await Promise.all([
+      const useRollups = await getFeatureFlag("USE_NEW_DASHBOARD_ROLLUPS");
+      if (useRollups) {
+        const [portfolio] = await db.select().from(derivedPortfolioKpis)
+          .where(eq(derivedPortfolioKpis.snapshotKey, "current")).limit(1);
+        if (portfolio) {
+          return res.json({
+            total_program_budget: parseFloat(portfolio.totalProgramBudget || "0"),
+            actual_spend_paid: parseFloat(portfolio.actualSpendPaid || "0"),
+            revenue_realised: parseFloat(portfolio.revenueRealised || "0"),
+            active_projects: portfolio.activeProjectsCount,
+            data_as_of: portfolio.computedAt?.toISOString() || new Date().toISOString(),
+            source: "derived_rollups",
+          });
+        }
+      }
+
+      const [allProjectInfo, allExpenses, rawInflows, allPlans, latestRefresh, allTaskLinks, allOpTasks, allNormCostsOv, allNormRevOv, allNormPlansOv] = await Promise.all([
         storage.getAllProjectInfo(),
         storage.getAllProgramExpenses(),
         storage.getAllProgramInflows(),
@@ -619,11 +661,35 @@ export async function registerRoutes(
         storage.getLatestRefresh(),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
+        db.select().from(normalizedCostLines),
+        db.select().from(normalizedRevenueLines),
+        db.select().from(normalizedPlanTasks),
       ]);
 
       const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
 
       const today = new Date().toISOString().split("T")[0];
+
+      const piNamesOvEarly = new Set(allProjectInfo.map(i => i.projectName));
+      const piNormMapOvEarly = new Map<string, string>();
+      for (const n of piNamesOvEarly) {
+        piNormMapOvEarly.set(n.replace(/_Tracker\d*$/i, "").replace(/[_ ]/g, " ").toLowerCase().trim(), n);
+      }
+      function resolveOvName(name: string): string {
+        if (piNamesOvEarly.has(name)) return name;
+        for (const v of [name.replace(/ /g, "_") + "_Tracker", name + "_Tracker", name.replace(/ /g, "_")]) {
+          if (piNamesOvEarly.has(v)) return v;
+        }
+        const nk = name.replace(/[_ ]/g, " ").toLowerCase().trim();
+        const fm = piNormMapOvEarly.get(nk);
+        if (fm) return fm;
+        for (const [pn, pi] of piNormMapOvEarly) {
+          if (pn.endsWith(nk) || nk.endsWith(pn)) return pi;
+        }
+        return name;
+      }
+      const oldExpenseProjects = new Set(allExpenses.map(e => resolveOvName(e.projectName)));
+      const oldInflowProjects = new Set(allInflows.map(i => resolveOvName(i.projectName)));
 
       // total_program_budget = SUM(project_info.contract_value)
       let totalProgramBudget = 0;
@@ -640,6 +706,11 @@ export async function registerRoutes(
             totalProgramBudget += parseFloat(inflow.milestoneAmount);
           }
         }
+        if (totalProgramBudget === 0) {
+          for (const rev of allNormRevOv) {
+            if (rev.amountExVat) totalProgramBudget += parseFloat(rev.amountExVat);
+          }
+        }
       }
 
       // actual_spend_paid = SUM(expense_actual_total where payment_date is valid YYYY-MM-DD and <= today)
@@ -648,6 +719,13 @@ export async function registerRoutes(
         const paymentDate = expense.expensePaymentDate;
         if (paymentDate && /^\d{4}-\d{2}-\d{2}$/.test(paymentDate) && paymentDate <= today && expense.expenseActualTotal) {
           actualSpendPaid += parseFloat(expense.expenseActualTotal);
+        }
+      }
+      for (const cost of allNormCostsOv) {
+        if (oldExpenseProjects.has(resolveOvName(cost.projectName))) continue;
+        const paymentDate = cost.paidDate;
+        if (paymentDate && /^\d{4}-\d{2}-\d{2}$/.test(paymentDate) && paymentDate <= today && cost.amountExVat) {
+          actualSpendPaid += parseFloat(cost.amountExVat);
         }
       }
 
@@ -659,21 +737,22 @@ export async function registerRoutes(
           revenueRealised += parseFloat(inflow.milestoneAmount);
         }
       }
+      for (const rev of allNormRevOv) {
+        if (oldInflowProjects.has(resolveOvName(rev.projectName))) continue;
+        const paymentDate = rev.paidDate || rev.inBankDate;
+        if (paymentDate && /^\d{4}-\d{2}-\d{2}$/.test(paymentDate) && paymentDate <= today && rev.amountExVat) {
+          revenueRealised += parseFloat(rev.amountExVat);
+        }
+      }
 
-      // active_projects = count distinct project names from ALL data sources (union)
       const uniqueProjects = new Set<string>();
-      for (const info of allProjectInfo) {
-        uniqueProjects.add(info.projectName);
-      }
-      for (const expense of allExpenses) {
-        uniqueProjects.add(expense.projectName);
-      }
-      for (const inflow of allInflows) {
-        uniqueProjects.add(inflow.projectName);
-      }
-      for (const plan of allPlans) {
-        uniqueProjects.add(plan.projectName);
-      }
+      for (const info of allProjectInfo) uniqueProjects.add(info.projectName);
+      for (const expense of allExpenses) uniqueProjects.add(resolveOvName(expense.projectName));
+      for (const inflow of allInflows) uniqueProjects.add(resolveOvName(inflow.projectName));
+      for (const plan of allPlans) uniqueProjects.add(resolveOvName(plan.projectName));
+      for (const c of allNormCostsOv) uniqueProjects.add(resolveOvName(c.projectName));
+      for (const r of allNormRevOv) uniqueProjects.add(resolveOvName(r.projectName));
+      for (const p of allNormPlansOv) uniqueProjects.add(resolveOvName(p.projectName));
 
       res.json({
         total_program_budget: totalProgramBudget,
@@ -743,7 +822,7 @@ export async function registerRoutes(
 
   app.get("/api/home/summary", async (req, res) => {
     try {
-      const [allProjectInfo, allExpenses, rawInflows, allPlans, latestRefresh, revenueSummaries, allTaskLinks, allOpTasks] = await Promise.all([
+      const [allProjectInfo, legacyExpenses, legacyRawInflows, legacyPlans, latestRefresh, revenueSummaries, allTaskLinks, allOpTasks] = await Promise.all([
         storage.getAllProjectInfo(),
         storage.getAllProgramExpenses(),
         storage.getAllProgramInflows(),
@@ -753,7 +832,10 @@ export async function registerRoutes(
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
       ]);
-      const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
+      const merged = await getMergedAll(legacyExpenses, legacyRawInflows, legacyPlans);
+      const allExpenses = merged.expenses;
+      const allPlans = merged.plans;
+      const allInflows = resolveInflowEffectiveDates(merged.inflows, allTaskLinks, allOpTasks, allPlans);
 
       const today = new Date().toISOString().split("T")[0];
       const fyRange = getFYRange();
@@ -1328,7 +1410,7 @@ export async function registerRoutes(
 
   app.get("/api/projects-summary", async (req, res) => {
     try {
-      const [allProjectInfo, allExpenses, rawInflows, allPlans, allEditableFields, allTaskLinks, allOpTasks, uploadMetaRows] = await Promise.all([
+      const [allProjectInfo, allExpenses, rawInflows, allPlans, allEditableFields, allTaskLinks, allOpTasks, uploadMetaRows, committedSmartImports, allNormCosts, allNormRevenue, allNormPlans] = await Promise.all([
         storage.getAllProjectInfo(),
         storage.getAllProgramExpenses(),
         storage.getAllProgramInflows(),
@@ -1337,6 +1419,10 @@ export async function registerRoutes(
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
         db.execute(sql`SELECT DISTINCT file_name FROM upload_metadata`),
+        db.selectDistinct({ projectName: smartImportRuns.projectName }).from(smartImportRuns).where(eq(smartImportRuns.status, 'COMMITTED')),
+        db.select().from(normalizedCostLines),
+        db.select().from(normalizedRevenueLines),
+        db.select().from(normalizedPlanTasks),
       ]);
       const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
 
@@ -1347,6 +1433,14 @@ export async function registerRoutes(
         const stripped = fileName.replace(/\.(xlsx|xlsm|xls)$/i, '');
         importedProjectNames.add(stripped);
         importedProjectNames.add(stripped.replace(/ /g, '_'));
+      }
+      for (const row of committedSmartImports) {
+        if (row.projectName) {
+          importedProjectNames.add(row.projectName);
+          importedProjectNames.add(row.projectName.replace(/ /g, '_'));
+          importedProjectNames.add(row.projectName + '_Tracker');
+          importedProjectNames.add(row.projectName.replace(/ /g, '_') + '_Tracker');
+        }
       }
 
       const today = new Date().toISOString().split("T")[0];
@@ -1371,11 +1465,120 @@ export async function registerRoutes(
 
       const editableMap = new Map(allEditableFields.map(f => [f.projectName, f]));
 
+      const normCostsByProject = new Map<string, typeof allNormCosts>();
+      for (const c of allNormCosts) {
+        if (!normCostsByProject.has(c.projectName)) normCostsByProject.set(c.projectName, []);
+        normCostsByProject.get(c.projectName)!.push(c);
+      }
+      const normRevByProject = new Map<string, typeof allNormRevenue>();
+      for (const r of allNormRevenue) {
+        if (!normRevByProject.has(r.projectName)) normRevByProject.set(r.projectName, []);
+        normRevByProject.get(r.projectName)!.push(r);
+      }
+      const normPlansByProject = new Map<string, typeof allNormPlans>();
+      for (const p of allNormPlans) {
+        if (!normPlansByProject.has(p.projectName)) normPlansByProject.set(p.projectName, []);
+        normPlansByProject.get(p.projectName)!.push(p);
+      }
+
+      const projectInfoMap = new Map(allProjectInfo.map(info => [info.projectName, info]));
+
+      const projectInfoNames = new Set(allProjectInfo.map(i => i.projectName));
+      const projectInfoNormMap = new Map<string, string>();
+      for (const piName of projectInfoNames) {
+        const norm = piName.replace(/_Tracker\d*$/i, "").replace(/[_ ]/g, " ").toLowerCase().trim();
+        projectInfoNormMap.set(norm, piName);
+      }
+
+      function normalizeForMatch(s: string): string {
+        return s
+          .replace(/_Tracker\d*$/i, "")
+          .replace(/[_\-]/g, " ")
+          .replace(/\bph(\d)/gi, "phase $1")
+          .replace(/\bphase\s*(\d)/gi, "phase $1")
+          .replace(/\bstd\b/gi, "standard")
+          .replace(/\bgq\b/gi, "gq")
+          .replace(/\s+/g, " ")
+          .toLowerCase()
+          .trim();
+      }
+
+      const projectInfoDeepNormMap = new Map<string, string>();
+      for (const piName of projectInfoNames) {
+        projectInfoDeepNormMap.set(normalizeForMatch(piName), piName);
+      }
+
+      function resolveToCanonical(name: string): string {
+        if (projectInfoNames.has(name)) return name;
+        const variants = [
+          name.replace(/ /g, "_") + "_Tracker",
+          name + "_Tracker",
+          name.replace(/ /g, "_"),
+        ];
+        for (const v of variants) {
+          if (projectInfoNames.has(v)) return v;
+        }
+        const normKey = name.replace(/[_ ]/g, " ").toLowerCase().trim();
+        const fuzzyMatch = projectInfoNormMap.get(normKey);
+        if (fuzzyMatch) return fuzzyMatch;
+        for (const [piNorm, piName] of projectInfoNormMap) {
+          if (piNorm.endsWith(normKey) || normKey.endsWith(piNorm)) return piName;
+        }
+
+        const deepNorm = normalizeForMatch(name);
+        const deepMatch = projectInfoDeepNormMap.get(deepNorm);
+        if (deepMatch) return deepMatch;
+
+        for (const [piDeep, piName] of projectInfoDeepNormMap) {
+          if (piDeep.includes(deepNorm) || deepNorm.includes(piDeep)) return piName;
+        }
+
+        const nameWords = deepNorm.split(" ").filter(w => w.length > 1);
+        if (nameWords.length >= 1) {
+          let bestMatch: string | null = null;
+          let bestScore = 0;
+          for (const [piDeep, piName] of projectInfoDeepNormMap) {
+            const piWords = piDeep.split(" ").filter(w => w.length > 1);
+            const matchingWords = nameWords.filter(w => piWords.some(pw => pw.includes(w) || w.includes(pw)));
+            const score = matchingWords.length / Math.max(nameWords.length, piWords.length);
+            if (score > bestScore && score >= 0.5) {
+              bestScore = score;
+              bestMatch = piName;
+            }
+          }
+          if (bestMatch) return bestMatch;
+        }
+
+        return name;
+      }
+
+      const JUNK_NAMES = new Set(["PROJECT SIZE (kWp)", "FY 2026 Adhoc", "PROJECT MANAGERS"]);
+      function isJunkName(name: string): boolean {
+        return JUNK_NAMES.has(name) || /^(FY\s*\d|PROJECT\s+(SIZE|MANAGER))/i.test(name);
+      }
+
       const allProjectNames = new Set<string>();
-      for (const info of allProjectInfo) allProjectNames.add(info.projectName);
-      for (const expense of allExpenses) allProjectNames.add(expense.projectName);
-      for (const inflow of allInflows) allProjectNames.add(inflow.projectName);
-      for (const plan of allPlans) allProjectNames.add(plan.projectName);
+      for (const info of allProjectInfo) {
+        if (!isJunkName(info.projectName)) allProjectNames.add(info.projectName);
+      }
+      for (const expense of allExpenses) {
+        if (!isJunkName(expense.projectName)) allProjectNames.add(resolveToCanonical(expense.projectName));
+      }
+      for (const inflow of allInflows) {
+        if (!isJunkName(inflow.projectName)) allProjectNames.add(resolveToCanonical(inflow.projectName));
+      }
+      for (const plan of allPlans) {
+        if (!isJunkName(plan.projectName)) allProjectNames.add(resolveToCanonical(plan.projectName));
+      }
+      for (const c of allNormCosts) {
+        if (!isJunkName(c.projectName)) allProjectNames.add(resolveToCanonical(c.projectName));
+      }
+      for (const r of allNormRevenue) {
+        if (!isJunkName(r.projectName)) allProjectNames.add(resolveToCanonical(r.projectName));
+      }
+      for (const p of allNormPlans) {
+        if (!isJunkName(p.projectName)) allProjectNames.add(resolveToCanonical(p.projectName));
+      }
 
       const taskCountsByProject = new Map<string, Record<string, number>>();
       for (const task of allOpTasks) {
@@ -1388,21 +1591,47 @@ export async function registerRoutes(
         counts[status] = (counts[status] || 0) + 1;
       }
 
-      const projectInfoMap = new Map(allProjectInfo.map(info => [info.projectName, info]));
-
       const projectsSummary = Array.from(allProjectNames).map(projectName => {
         const info = projectInfoMap.get(projectName);
-        const projectExpenses = expensesByProject.get(projectName) || [];
-        const projectInflows = inflowsByProject.get(projectName) || [];
-        const projectPlans = plansByProject.get(projectName) || [];
-        const editable = editableMap.get(projectName);
+
+        const cleanName = projectName.replace(/_Tracker\d*$/i, "").replace(/_/g, " ").trim();
+        const underscoreName = cleanName.replace(/ /g, "_");
+        const nameVariants = [projectName, cleanName, underscoreName, cleanName + "_Tracker", underscoreName + "_Tracker"];
+
+        function lookupAll<T>(map: Map<string, T[]>): T[] {
+          for (const v of nameVariants) {
+            const data = map.get(v);
+            if (data && data.length > 0) return data;
+          }
+          return [];
+        }
+
+        const projectExpenses = lookupAll(expensesByProject);
+        const projectInflows = lookupAll(inflowsByProject);
+        const projectPlans = lookupAll(plansByProject);
+        const editable = editableMap.get(projectName) || editableMap.get(cleanName);
+
+        const normCosts = lookupAll(normCostsByProject);
+        const normRev = lookupAll(normRevByProject);
+        const normPlans = lookupAll(normPlansByProject);
+
+        const useNormPlans = projectPlans.length === 0 && normPlans.length > 0;
+        const planLikeRows = useNormPlans ? normPlans.map(np => ({
+          taskNo: null as string | null,
+          highLevelProgramme: np.taskName,
+          actualStart: np.actualStartDate,
+          actualEnd: np.actualEndDate,
+          durationDays: np.durationDays,
+          actualPctComplete: np.pctComplete,
+          expectedPctComplete: null as number | null,
+        })) : projectPlans;
 
         // Compute milestone dates from plan tasks (Excel spec: max ActualEndDate matching descriptions)
-        const pdFromPlan = findMaxEndDate(projectPlans, ['bd handover', 'project charter handover']);
-        const csFromPlan = findMinStartDate(projectPlans, ['site establishment']);
-        const commFromPlan = findMaxEndDate(projectPlans, ['commissioning']);
-        const omFromPlan = findMaxEndDate(projectPlans, ['handover to matriarch']);
-        const chFromPlan = findMaxEndDate(projectPlans, ['handover to client']);
+        const pdFromPlan = findMaxEndDate(planLikeRows as any, ['bd handover', 'project charter handover']);
+        const csFromPlan = findMinStartDate(planLikeRows as any, ['site establishment']);
+        const commFromPlan = findMaxEndDate(planLikeRows as any, ['commissioning']);
+        const omFromPlan = findMaxEndDate(planLikeRows as any, ['handover to matriarch']);
+        const chFromPlan = findMaxEndDate(planLikeRows as any, ['handover to client']);
 
         const pdHandoverDate = pdFromPlan || info?.pdHandoverDate || null;
         const constructionStartDate = csFromPlan || info?.constructionStartDate || null;
@@ -1427,23 +1656,35 @@ export async function registerRoutes(
         const workingWeeks = commWorkDays ? commWorkDays / 5 : null;
         const kwPerWeek = (sizeKwp && workingWeeks && workingWeeks > 0) ? sizeKwp / workingWeeks : null;
 
-        // Actual Revenue = SUM(MilstoneAmount) from ProgramInflows
+        // Actual Revenue = SUM(MilstoneAmount) from ProgramInflows, fallback to normalized
         let actualRevenue = 0;
-        for (const inflow of projectInflows) {
-          if (inflow.milestoneAmount) actualRevenue += parseFloat(inflow.milestoneAmount);
+        if (projectInflows.length > 0) {
+          for (const inflow of projectInflows) {
+            if (inflow.milestoneAmount) actualRevenue += parseFloat(inflow.milestoneAmount);
+          }
+        } else if (normRev.length > 0) {
+          for (const rev of normRev) {
+            if (rev.amountExVat) actualRevenue += parseFloat(rev.amountExVat);
+          }
         }
 
-        // Actual Expenses = SUM(ExpenseActualTotal) from ProgramExpense
+        // Actual Expenses = SUM(ExpenseActualTotal) from ProgramExpense, fallback to normalized
         let actualExpenses = 0;
-        for (const expense of projectExpenses) {
-          if (expense.expenseActualTotal) actualExpenses += parseFloat(expense.expenseActualTotal);
+        if (projectExpenses.length > 0) {
+          for (const expense of projectExpenses) {
+            if (expense.expenseActualTotal) actualExpenses += parseFloat(expense.expenseActualTotal);
+          }
+        } else if (normCosts.length > 0) {
+          for (const cost of normCosts) {
+            if (cost.amountExVat) actualExpenses += parseFloat(cost.amountExVat);
+          }
         }
 
         // GP % = 1 - (ActualExpenses / ActualRevenue); if revenue = 0 then null
         const gpPercent = actualRevenue > 0 ? 1 - (actualExpenses / actualRevenue) : null;
 
         // Project % Complete and Expected % — prefer summary row (No./#) from Excel
-        const summaryRow = projectPlans.find(p => {
+        const summaryRow = (planLikeRows as any[]).find((p: any) => {
           const tn = (p.taskNo || '').toString().toLowerCase().trim();
           return tn === 'no.' || tn === 'no' || tn === '#';
         });
@@ -1454,15 +1695,15 @@ export async function registerRoutes(
           expectedPctComplete = summaryRow.expectedPctComplete ?? null;
         }
         if (projectPctComplete === null) {
-          const validActualPcts = projectPlans.filter(p => p.actualPctComplete !== null);
+          const validActualPcts = (planLikeRows as any[]).filter((p: any) => p.actualPctComplete !== null);
           projectPctComplete = validActualPcts.length > 0
-            ? validActualPcts.reduce((sum, p) => sum + (p.actualPctComplete || 0), 0) / validActualPcts.length
+            ? validActualPcts.reduce((sum: number, p: any) => sum + (p.actualPctComplete || 0), 0) / validActualPcts.length
             : null;
         }
         if (expectedPctComplete === null) {
           const todayDate = today;
           const tasksWithExpected: number[] = [];
-          for (const task of projectPlans) {
+          for (const task of (planLikeRows as any[])) {
             if (task.expectedPctComplete !== null && task.expectedPctComplete !== undefined) {
               tasksWithExpected.push(task.expectedPctComplete);
               continue;
@@ -1491,24 +1732,48 @@ export async function registerRoutes(
 
         // Revenue Outstanding (Excel spec): SUM(MilstoneAmount) where PaymentRecievedDate <= today AND MilestoneInvoiceNumber is blank
         let revenueOutstanding = 0;
-        for (const inflow of projectInflows) {
-          if (inflow.milestoneAmount) {
-            const hasPayment = inflow.paymentReceivedDate && /^\d{4}-\d{2}-\d{2}/.test(inflow.paymentReceivedDate) && inflow.paymentReceivedDate <= today;
-            const noInvoice = !inflow.milestoneInvoiceNumber || inflow.milestoneInvoiceNumber.trim() === '';
-            if (hasPayment && noInvoice) {
-              revenueOutstanding += parseFloat(inflow.milestoneAmount);
+        if (projectInflows.length > 0) {
+          for (const inflow of projectInflows) {
+            if (inflow.milestoneAmount) {
+              const hasPayment = inflow.paymentReceivedDate && /^\d{4}-\d{2}-\d{2}/.test(inflow.paymentReceivedDate) && inflow.paymentReceivedDate <= today;
+              const noInvoice = !inflow.milestoneInvoiceNumber || inflow.milestoneInvoiceNumber.trim() === '';
+              if (hasPayment && noInvoice) {
+                revenueOutstanding += parseFloat(inflow.milestoneAmount);
+              }
+            }
+          }
+        } else if (normRev.length > 0) {
+          for (const rev of normRev) {
+            if (rev.amountExVat) {
+              const hasPayment = rev.paidDate && /^\d{4}-\d{2}-\d{2}/.test(rev.paidDate) && rev.paidDate <= today;
+              const noInvoice = !rev.invoiceNumber || rev.invoiceNumber.trim() === '';
+              if (hasPayment && noInvoice) {
+                revenueOutstanding += parseFloat(rev.amountExVat);
+              }
             }
           }
         }
 
         // Expenses Due (Excel spec): SUM(ExpenseActualTotal) where ExpensePaymentDate < today AND ExpenseInvoiceNumber is blank
         let expensesDue = 0;
-        for (const expense of projectExpenses) {
-          if (expense.expenseActualTotal) {
-            const hasPastPaymentDate = expense.expensePaymentDate && /^\d{4}-\d{2}-\d{2}/.test(expense.expensePaymentDate) && expense.expensePaymentDate < today;
-            const noInvoice = !expense.expenseInvoiceNumber || expense.expenseInvoiceNumber.trim() === '';
-            if (hasPastPaymentDate && noInvoice) {
-              expensesDue += parseFloat(expense.expenseActualTotal);
+        if (projectExpenses.length > 0) {
+          for (const expense of projectExpenses) {
+            if (expense.expenseActualTotal) {
+              const hasPastPaymentDate = expense.expensePaymentDate && /^\d{4}-\d{2}-\d{2}/.test(expense.expensePaymentDate) && expense.expensePaymentDate < today;
+              const noInvoice = !expense.expenseInvoiceNumber || expense.expenseInvoiceNumber.trim() === '';
+              if (hasPastPaymentDate && noInvoice) {
+                expensesDue += parseFloat(expense.expenseActualTotal);
+              }
+            }
+          }
+        } else if (normCosts.length > 0) {
+          for (const cost of normCosts) {
+            if (cost.amountExVat) {
+              const hasPastPaymentDate = cost.paidDate && /^\d{4}-\d{2}-\d{2}/.test(cost.paidDate) && cost.paidDate < today;
+              const noInvoice = !cost.invoiceNumber || cost.invoiceNumber.trim() === '';
+              if (hasPastPaymentDate && noInvoice) {
+                expensesDue += parseFloat(cost.amountExVat);
+              }
             }
           }
         }
@@ -1559,9 +1824,9 @@ export async function registerRoutes(
           latest_update_at: editable?.latestUpdateAt || null,
           latest_update_by: editable?.latestUpdateBy || null,
           escalation_level: info?.escalationLevel || null,
-          task_status_counts: taskCountsByProject.get(projectName) || {},
+          task_status_counts: taskCountsByProject.get(projectName) || taskCountsByProject.get(cleanName) || {},
           phase_updated_at: info?.phaseUpdatedAt || null,
-          has_tracker_import: importedProjectNames.has(projectName) || importedProjectNames.has(projectName.replace(/_/g, ' ')),
+          has_tracker_import: nameVariants.some(v => importedProjectNames.has(v)) || importedProjectNames.has(cleanName),
           is_active: info?.isActive !== false,
         };
       });
@@ -1689,22 +1954,25 @@ export async function registerRoutes(
     try {
       const projectFilter = req.query.project ? String(req.query.project) : null;
 
-      const [allExpenses, rawInflows, manualBalances, opexBudgets, opexWeeklyOverrides, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
+      const [legacyExp, legacyInf, manualBalances, opexBudgets, opexWeeklyOverrides, availPaymentOverrides, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
         storage.getAllProgramExpenses(),
         storage.getAllProgramInflows(),
         storage.getAllCashflowWeeklyManual(),
         storage.getAllOpexBudgetMonthly(),
         storage.getAllOpexWeeklyManual(),
+        storage.getAllAvailablePaymentOverrides(),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
         storage.getAllProjectPlans(),
       ]);
-
-      const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlanTasks);
+      const mergedData = await getMergedExpensesAndInflows(legacyExp, legacyInf);
+      const allExpenses = mergedData.expenses;
+      const allInflows = resolveInflowEffectiveDates(mergedData.inflows, allTaskLinks, allOpTasks, allPlanTasks);
 
       const manualMap = new Map(manualBalances.map(m => [m.weekStartDate, parseFloat(m.openingBalance || "0")]));
       const opexMonthlyMap = new Map(opexBudgets.map(o => [o.monthKey, parseFloat(o.amount || "0")]));
       const opexWeeklyMap = new Map(opexWeeklyOverrides.map(o => [o.weekStartDate, parseFloat(o.opexAmount || "0")]));
+      const availPayMap = new Map(availPaymentOverrides.map(o => [o.weekStartDate, { value: parseFloat(o.overrideValue || "0"), reason: o.reason }]));
 
       const fyStart = new Date(Date.UTC(2025, 8, 1));
       const fyEnd = new Date(Date.UTC(2026, 7, 31));
@@ -1759,8 +2027,13 @@ export async function registerRoutes(
         const hasOpexOverride = opexWeeklyMap.has(weekStart);
         const opexOutflows = hasOpexOverride ? opexWeeklyMap.get(weekStart)! : computedOpex;
 
-        const closingBalance = openingBalance + projectInflowsSum - opexOutflows - projectOutflowsSum;
-        const availablePayment = openingBalance + projectInflowsSum;
+        const totalOutflows = opexOutflows + projectOutflowsSum;
+        const closingBalance = openingBalance + projectInflowsSum - totalOutflows;
+        const computedAvailablePayment = openingBalance + projectInflowsSum - totalOutflows;
+        const hasAvailPayOverride = availPayMap.has(weekStart);
+        const availPayOverride = availPayMap.get(weekStart);
+        const availablePayment = hasAvailPayOverride ? availPayOverride!.value : computedAvailablePayment;
+        const availPayReason = hasAvailPayOverride ? availPayOverride!.reason : null;
 
         weeks.push({
           weekStart,
@@ -1776,6 +2049,9 @@ export async function registerRoutes(
           hasOpexOverride,
           closingBalance,
           availablePayment,
+          computedAvailablePayment,
+          hasAvailPayOverride,
+          availPayReason,
         });
 
         runningBalance = closingBalance;
@@ -1802,24 +2078,24 @@ export async function registerRoutes(
       wsDate.setUTCDate(wsDate.getUTCDate() + 7);
       const weekEnd = wsDate.toISOString().split('T')[0];
 
-      const [allExpenses, rawInflows, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
+      const [legacyExp, legacyInf, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
         storage.getAllProgramExpenses(),
         storage.getAllProgramInflows(),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
         storage.getAllProjectPlans(),
       ]);
+      const mergedDetail = await getMergedExpensesAndInflows(legacyExp, legacyInf);
+      const resolvedInflows = resolveInflowEffectiveDates(mergedDetail.inflows, allTaskLinks, allOpTasks, allPlanTasks);
 
-      const resolvedInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlanTasks);
-
-      const outflows = allExpenses
-        .filter(e => {
+      const outflows = mergedDetail.expenses
+        .filter((e: any) => {
           if (projectFilter && e.projectName !== projectFilter) return false;
           const pd = e.expensePaymentDate;
           if (!pd || !/^\d{4}-\d{2}-\d{2}$/.test(pd)) return false;
           return pd >= weekStart && pd < weekEnd;
         })
-        .map(e => ({
+        .map((e: any) => ({
           projectName: e.projectName,
           expenseCategory: e.expenseCategory,
           expenseLineItem: e.expenseLineItem,
@@ -2000,6 +2276,84 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/cashflow-2026/available-payment", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { weekStartDate, overrideValue, reason, computedValue } = req.body;
+      if (!weekStartDate || overrideValue == null) {
+        return res.status(400).json({ error: "weekStartDate and overrideValue required" });
+      }
+
+      const existingOverrides = await storage.getAllAvailablePaymentOverrides();
+      const existing = existingOverrides.find(o => o.weekStartDate === weekStartDate);
+      const previousValue = existing ? existing.overrideValue : null;
+      const newVal = parseFloat(String(overrideValue));
+      const compVal = computedValue != null ? parseFloat(String(computedValue)) : null;
+
+      const user = req.user as any;
+      await storage.addAvailablePaymentHistory({
+        weekStartDate,
+        previousValue: previousValue || null,
+        newValue: String(newVal),
+        computedValue: compVal != null ? String(compVal) : null,
+        reason: reason || null,
+        changedBy: user?.username || user?.name || null,
+      });
+
+      const result = await storage.upsertAvailablePaymentOverride(
+        weekStartDate,
+        String(newVal),
+        reason || null,
+        user?.username || user?.name || null
+      );
+
+      res.json(result);
+    } catch (error) {
+      console.error("Available payment save error:", error);
+      res.status(500).json({ error: "Failed to save available payment override" });
+    }
+  });
+
+  app.delete("/api/cashflow-2026/available-payment", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { weekStartDate } = req.body;
+      if (!weekStartDate) {
+        return res.status(400).json({ error: "weekStartDate required" });
+      }
+      const existingOverrides = await storage.getAllAvailablePaymentOverrides();
+      const existing = existingOverrides.find(o => o.weekStartDate === weekStartDate);
+      if (existing) {
+        const user = req.user as any;
+        await storage.addAvailablePaymentHistory({
+          weekStartDate,
+          previousValue: existing.overrideValue || null,
+          newValue: "0",
+          computedValue: null,
+          reason: "Override cleared",
+          changedBy: user?.username || user?.name || null,
+        });
+        await storage.deleteAvailablePaymentOverride(weekStartDate);
+      }
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("Available payment delete error:", error);
+      res.status(500).json({ error: "Failed to delete available payment override" });
+    }
+  });
+
+  app.get("/api/cashflow-2026/available-payment-history", requireAuth, async (req, res) => {
+    try {
+      const weekStart = req.query.week ? String(req.query.week) : null;
+      if (!weekStart) {
+        return res.status(400).json({ error: "week query parameter required" });
+      }
+      const history = await storage.getAvailablePaymentHistory(weekStart);
+      res.json(history);
+    } catch (error) {
+      console.error("Available payment history error:", error);
+      res.status(500).json({ error: "Failed to fetch available payment history" });
+    }
+  });
+
   app.post("/api/tracker-monthly", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { trackerType, monthKey, realised, outstanding, budget } = req.body;
@@ -2113,7 +2467,7 @@ export async function registerRoutes(
 
   app.get("/api/cos-tracker", requireAuth, async (req, res) => {
     try {
-      const [allProgramExpenses, manualEntries, rawInflows, allTaskLinks, allOpTasks, allPlans] = await Promise.all([
+      const [legacyExpenses, manualEntries, legacyRawInflows, allTaskLinks, allOpTasks, allPlans] = await Promise.all([
         storage.getAllProgramExpenses(),
         storage.getTrackerMonthlyManual('COS'),
         storage.getAllProgramInflows(),
@@ -2121,7 +2475,9 @@ export async function registerRoutes(
         storage.getAllOperationalTasks(),
         storage.getAllProjectPlans(),
       ]);
-      const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
+      const mergedData = await getMergedExpensesAndInflows(legacyExpenses, legacyRawInflows);
+      const allProgramExpenses = mergedData.expenses;
+      const allInflows = resolveInflowEffectiveDates(mergedData.inflows, allTaskLinks, allOpTasks, allPlans);
 
       const revByMonth = new Map<string, number>();
       for (const inflow of allInflows) {
@@ -2280,7 +2636,8 @@ export async function registerRoutes(
       const match = monthKey.match(/^(\d{4})-(\d{2})$/);
       if (!match) return res.status(400).json({ error: "Invalid monthKey format" });
 
-      const allExpenses = await storage.getAllProgramExpenses();
+      const legacyExp = await storage.getAllProgramExpenses();
+      const { expenses: allExpenses } = await getMergedExpensesAndInflows(legacyExp, []);
 
       interface LineItem {
         id: number;
@@ -6134,7 +6491,8 @@ export async function registerRoutes(
 
   app.get("/api/cos-control/summary", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const expenses = await db.select().from(programExpense);
+      const legacyExp = await db.select().from(programExpense);
+      const { expenses } = await getMergedExpensesAndInflows(legacyExp, []);
       const lines = expenses
         .filter((e: any) => e.rowType === 'item' || !e.rowType)
         .filter((e: any) => {
@@ -6168,8 +6526,8 @@ export async function registerRoutes(
 
   app.get("/api/cos-control/by-project", requireAuth, requireAdmin, async (req, res) => {
     try {
-
-      const expenses = await db.select().from(programExpense);
+      const legacyExp = await db.select().from(programExpense);
+      const { expenses } = await getMergedExpensesAndInflows(legacyExp, []);
       const lines = expenses
         .filter((e: any) => e.rowType === 'item' || !e.rowType)
         .filter((e: any) => {
@@ -6203,9 +6561,9 @@ export async function registerRoutes(
 
   app.get("/api/cos-control/lines", requireAuth, requireAdmin, async (req, res) => {
     try {
-
       const { project, state, supplier, search } = req.query;
-      let expenses = await db.select().from(programExpense);
+      const legacyExp = await db.select().from(programExpense);
+      let expenses = (await getMergedExpensesAndInflows(legacyExp, [])).expenses;
 
       let lines = expenses
         .filter((e: any) => e.rowType === 'item' || !e.rowType)
@@ -6254,8 +6612,8 @@ export async function registerRoutes(
 
   app.get("/api/cos-control/invoices", requireAuth, requireAdmin, async (req, res) => {
     try {
-
-      const expenses = await db.select().from(programExpense);
+      const legacyExp = await db.select().from(programExpense);
+      const { expenses } = await getMergedExpensesAndInflows(legacyExp, []);
       const invoiceMap = new Map<string, any>();
 
       for (const e of expenses) {
@@ -6293,7 +6651,8 @@ export async function registerRoutes(
 
   app.get("/api/cos-control/pos", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const expenses = await db.select().from(programExpense);
+      const legacyExp = await db.select().from(programExpense);
+      const { expenses } = await getMergedExpensesAndInflows(legacyExp, []);
       const poMap = new Map<string, any>();
 
       for (const e of expenses) {
@@ -6339,15 +6698,16 @@ export async function registerRoutes(
       const weeks = parseInt(String(req.query.weeks || '52'));
       const startDate = String(req.query.start || new Date().toISOString().split('T')[0]);
 
-      const [expenses, rawInflows, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
+      const [legacyExp, legacyInf, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
         db.select().from(programExpense),
         db.select().from(programInflows),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
         storage.getAllProjectPlans(),
       ]);
-
-      const resolvedInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlanTasks);
+      const mergedForecast = await getMergedExpensesAndInflows(legacyExp, legacyInf);
+      const expenses = mergedForecast.expenses;
+      const resolvedInflows = resolveInflowEffectiveDates(mergedForecast.inflows, allTaskLinks, allOpTasks, allPlanTasks);
 
       const outflowLines: CashflowLineItem[] = expenses
         .filter((e: any) => e.rowType === 'item' || !e.rowType)
@@ -6410,17 +6770,17 @@ export async function registerRoutes(
         return res.status(400).json({ error: 'weekStart and weekEnd required' });
       }
 
-      const [expenses, rawInflows, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
+      const [legacyExp2, legacyInf2, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
         db.select().from(programExpense),
         db.select().from(programInflows),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
         storage.getAllProjectPlans(),
       ]);
+      const mergedWeekDetail = await getMergedExpensesAndInflows(legacyExp2, legacyInf2);
+      const resolvedInflows = resolveInflowEffectiveDates(mergedWeekDetail.inflows, allTaskLinks, allOpTasks, allPlanTasks);
 
-      const resolvedInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlanTasks);
-
-      const outflowLines: CashflowLineItem[] = expenses
+      const outflowLines: CashflowLineItem[] = mergedWeekDetail.expenses
         .filter((e: any) => e.rowType === 'item' || !e.rowType)
         .filter((e: any) => {
           const amt = parseFloat(e.expenseActualTotal || e.budgetTotal || '0');
@@ -6479,8 +6839,11 @@ export async function registerRoutes(
   app.get("/api/data-quality/scan", requireAuth, requireAdmin, async (req, res) => {
     try {
 
-      const expenses = await db.select().from(programExpense);
-      const inflows = await db.select().from(programInflows);
+      const legacyExpDQ = await db.select().from(programExpense);
+      const legacyInfDQ = await db.select().from(programInflows);
+      const mergedDQ = await getMergedExpensesAndInflows(legacyExpDQ, legacyInfDQ);
+      const expenses = mergedDQ.expenses;
+      const inflows = mergedDQ.inflows;
       const projects = await db.select().from(projectInfo);
 
       const expenseInputs = expenses
@@ -6619,8 +6982,11 @@ export async function registerRoutes(
   app.get("/api/planning-board/projects", requireAuth, requireAdmin, async (req, res) => {
     try {
       const projects = await db.select().from(projectInfo);
-      const expenses = await db.select().from(programExpense);
-      const inflows = await db.select().from(programInflows);
+      const legacyExpPB = await db.select().from(programExpense);
+      const legacyInfPB = await db.select().from(programInflows);
+      const mergedPB = await getMergedExpensesAndInflows(legacyExpPB, legacyInfPB);
+      const expenses = mergedPB.expenses;
+      const inflows = mergedPB.inflows;
 
       const projectData = projects.map((p: any) => {
         const projExpenses = expenses.filter((e: any) => e.projectName === p.projectName && (e.rowType === 'item' || !e.rowType));
@@ -6763,7 +7129,8 @@ export async function registerRoutes(
   app.get("/api/cos-control/scenario-monthly", requireAuth, requireAdmin, async (req, res) => {
     try {
       const scenarioId = req.query.scenarioId ? parseInt(req.query.scenarioId as string) : null;
-      const allExpenses = await db.select().from(programExpense);
+      const legacyExpSM = await db.select().from(programExpense);
+      const allExpenses = (await getMergedExpensesAndInflows(legacyExpSM, [])).expenses;
       const items = allExpenses.filter((e: any) => e.rowType === 'item' || !e.rowType);
 
       const cosLines: any[] = items.map((e: any) => ({
@@ -6832,7 +7199,8 @@ export async function registerRoutes(
       const project = req.query.project as string || '';
       const state = req.query.state as string || '';
 
-      const allExpenses = await db.select().from(programExpense);
+      const legacyExpSI = await db.select().from(programExpense);
+      const allExpenses = (await getMergedExpensesAndInflows(legacyExpSI, [])).expenses;
       const items = allExpenses.filter((e: any) => e.rowType === 'item' || !e.rowType);
 
       let overrideMap: any = {};
@@ -6922,7 +7290,8 @@ export async function registerRoutes(
       const project = req.query.project as string || '';
       const state = req.query.state as string || '';
 
-      const allExpenses = await db.select().from(programExpense);
+      const legacyExpSL = await db.select().from(programExpense);
+      const allExpenses = (await getMergedExpensesAndInflows(legacyExpSL, [])).expenses;
       const items = allExpenses.filter((e: any) => e.rowType === 'item' || !e.rowType);
 
       let overrideMap: any = {};
@@ -6996,7 +7365,8 @@ export async function registerRoutes(
       const scenarioId = req.query.scenarioId ? parseInt(req.query.scenarioId as string) : null;
       if (!scenarioId) return res.json({ shifts: [], cashflowDelta: [] });
 
-      const allExpenses = await db.select().from(programExpense);
+      const legacyExpSI2 = await db.select().from(programExpense);
+      const allExpenses = (await getMergedExpensesAndInflows(legacyExpSI2, [])).expenses;
       const items = allExpenses.filter((e: any) => e.rowType === 'item' || !e.rowType);
       const overrides = await storage.getDateOverridesByScenario(scenarioId);
       const overrideMap = buildOverrideMap(overrides);
@@ -7038,15 +7408,16 @@ export async function registerRoutes(
       const scenarioId = req.query.scenarioId ? parseInt(req.query.scenarioId as string) : null;
       const projectFilter = req.query.project as string || '';
 
-      let allExpenses = await db.select().from(programExpense);
-      const rawInflows = await db.select().from(programInflows);
+      const legacyExpSW = await db.select().from(programExpense);
+      const legacyInfSW = await db.select().from(programInflows);
       const [allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
         storage.getAllProjectPlans(),
       ]);
-
-      let allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlanTasks);
+      const mergedSW = await getMergedExpensesAndInflows(legacyExpSW, legacyInfSW);
+      let allExpenses = mergedSW.expenses;
+      let allInflows = resolveInflowEffectiveDates(mergedSW.inflows, allTaskLinks, allOpTasks, allPlanTasks);
 
       if (projectFilter) {
         allExpenses = allExpenses.filter((e: any) => e.projectName === projectFilter);
@@ -7152,15 +7523,16 @@ export async function registerRoutes(
 
       if (!weekStart || !weekEnd) return res.status(400).json({ error: "weekStart and weekEnd required" });
 
-      const [allExpenses, rawInflows, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
+      const [legacyExpSWD, legacyInfSWD, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
         db.select().from(programExpense),
         db.select().from(programInflows),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
         storage.getAllProjectPlans(),
       ]);
-      const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlanTasks);
-      const expenseItems = allExpenses.filter((e: any) => e.rowType === 'item' || !e.rowType);
+      const mergedSWD = await getMergedExpensesAndInflows(legacyExpSWD, legacyInfSWD);
+      const allInflows = resolveInflowEffectiveDates(mergedSWD.inflows, allTaskLinks, allOpTasks, allPlanTasks);
+      const expenseItems = mergedSWD.expenses.filter((e: any) => e.rowType === 'item' || !e.rowType);
 
       let overrideMap: any = {};
       if (scenarioId) {

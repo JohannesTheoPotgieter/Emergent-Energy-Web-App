@@ -24,9 +24,12 @@ import {
   invoicePatternMatches,
   projectInfo,
   changeSets,
+  projectPlan,
+  programExpense,
+  programInflows,
 } from "@shared/schema";
 import { recordImportChange, recordSystemEvent } from "./lib/audit/diff-engine";
-import { eq, desc, and, sql } from "drizzle-orm";
+import { eq, desc, and, sql, inArray } from "drizzle-orm";
 
 function extractProjectNameFromFilename(fileName: string): string {
   let name = fileName.replace(/\.(xlsx|xlsm|xls)$/i, "");
@@ -227,6 +230,75 @@ router.get("/api/smart-import/history/:projectName", requireAuth, async (req: Re
     res.json(runs);
   } catch (err: any) {
     console.error("[smart-import] GET history error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/smart-import/pending-runs (must be BEFORE :runId to avoid route conflict)
+router.get("/api/smart-import/pending-runs", requireAuth, async (_req: Request, res: Response) => {
+  try {
+    const runs = await db
+      .select({
+        id: smartImportRuns.id,
+        projectName: smartImportRuns.projectName,
+        status: smartImportRuns.status,
+        uploadedAt: smartImportRuns.uploadedAt,
+        sourceFileName: smartImportRuns.sourceFileName,
+      })
+      .from(smartImportRuns)
+      .where(eq(smartImportRuns.status, "PREVIEW"))
+      .orderBy(smartImportRuns.projectName);
+
+    const latestByProject = new Map<string, typeof runs[0]>();
+    const duplicateIds: number[] = [];
+    for (const run of runs) {
+      const key = `${run.projectName}::${run.sourceFileName}`;
+      const existing = latestByProject.get(key);
+      if (!existing) {
+        latestByProject.set(key, run);
+      } else {
+        const existingTime = new Date(existing.uploadedAt!).getTime();
+        const currentTime = new Date(run.uploadedAt!).getTime();
+        if (currentTime > existingTime) {
+          duplicateIds.push(existing.id);
+          latestByProject.set(key, run);
+        } else {
+          duplicateIds.push(run.id);
+        }
+      }
+    }
+
+    if (duplicateIds.length > 0) {
+      for (const dupId of duplicateIds) {
+        await db.update(smartImportRuns)
+          .set({ status: "SUPERSEDED" })
+          .where(eq(smartImportRuns.id, dupId));
+      }
+      console.log(`[smart-import] Marked ${duplicateIds.length} duplicate PREVIEW runs as SUPERSEDED`);
+    }
+
+    const dedupedRuns = Array.from(latestByProject.values());
+
+    const runsWithIssues = await Promise.all(dedupedRuns.map(async (run: any) => {
+      const issues = await db.select().from(importIssues)
+        .where(eq(importIssues.importRunId, run.id));
+      const blockers = issues.filter((i: any) => i.severity === "BLOCKER" && !i.resolved);
+      const warnings = issues.filter((i: any) => i.severity !== "BLOCKER" && !i.resolved);
+      const totalIssues = issues.length;
+      const resolvedIssues = issues.filter((i: any) => i.resolved).length;
+      return {
+        ...run,
+        blockerCount: blockers.length,
+        warningCount: warnings.length,
+        totalIssues,
+        resolvedIssues,
+      };
+    }));
+
+    runsWithIssues.sort((a, b) => a.projectName.localeCompare(b.projectName));
+    res.json(runsWithIssues);
+  } catch (err: any) {
+    console.error("[smart-import] GET pending-runs error:", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -501,6 +573,54 @@ router.patch("/api/smart-import/:runId/issue/:issueId/resolve", requireAuth, asy
   }
 });
 
+// POST /api/smart-import/:runId/ignore-all-blockers
+router.post("/api/smart-import/:runId/ignore-all-blockers", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const runId = parseInt(req.params.runId as string);
+    if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
+
+    let userRole = (req as any).user?.role;
+    if (userRole === "admin") userRole = "COO_ADMIN";
+    const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
+    if (!userRole || !ADMIN_ROLES.includes(userRole)) {
+      return res.status(403).json({ error: "Only admin users can ignore all blockers" });
+    }
+
+    const [run] = await db.select().from(smartImportRuns).where(eq(smartImportRuns.id, runId));
+    if (!run) return res.status(404).json({ error: "Import run not found" });
+
+    const userId = (req as any).user?.id || null;
+    const allIssues = await db.select().from(importIssues)
+      .where(eq(importIssues.importRunId, runId));
+
+    const unresolvedBlockers = allIssues.filter((i: any) =>
+      (i.severity === "BLOCKER" || i.severity === "blocker" || i.severity === "error") && !i.resolved
+    );
+
+    let ignored = 0;
+    for (const blocker of unresolvedBlockers) {
+      await db.update(importIssues)
+        .set({
+          resolved: true,
+          resolution: "IGNORED",
+          resolutionNote: "Bulk-ignored by admin",
+          resolvedBy: userId,
+          resolvedAt: new Date(),
+        })
+        .where(eq(importIssues.id, blocker.id));
+      ignored++;
+    }
+
+    const updatedIssues = await db.select().from(importIssues)
+      .where(eq(importIssues.importRunId, runId));
+
+    res.json({ ignored, issues: updatedIssues });
+  } catch (err: any) {
+    console.error("[smart-import] POST ignore-all-blockers error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/smart-import/:runId/apply-prior-resolutions
 router.post("/api/smart-import/:runId/apply-prior-resolutions", requireAuth, async (req: Request, res: Response) => {
   try {
@@ -662,8 +782,28 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
 
     const norm = summary.normalization;
     const projectName = run.projectName;
-    const projectId = run.projectId;
+    let projectId = run.projectId;
     const userId = (req as any).user?.id || null;
+
+    if (!projectId && projectName) {
+      const existingProj = await db.select({ id: projectInfo.id }).from(projectInfo)
+        .where(eq(projectInfo.projectName, projectName)).limit(1);
+      if (existingProj.length > 0) {
+        projectId = existingProj[0].id;
+        await db.update(smartImportRuns).set({ projectId }).where(eq(smartImportRuns.id, runId));
+      } else {
+        const detectedInfo = summary.detection?.projectInfo;
+        const [newProject] = await db.insert(projectInfo).values({
+          projectName,
+          phase: detectedInfo?.phase || "PLANNING",
+          sizeKwp: detectedInfo?.sizeKwp || null,
+          pd: detectedInfo?.pd || null,
+          contractValue: detectedInfo?.contractValue || null,
+        } as any).returning();
+        projectId = newProject.id;
+        await db.update(smartImportRuns).set({ projectId }).where(eq(smartImportRuns.id, runId));
+      }
+    }
 
     const ignoredRows = new Map<string, Set<number>>();
     const overrideRows = new Map<string, Map<number, any>>();
@@ -697,6 +837,9 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
         await tx.delete(normalizedCostLines).where(eq(normalizedCostLines.projectName, projectName));
         await tx.delete(normalizedExecutionPhases).where(eq(normalizedExecutionPhases.projectName, projectName));
       }
+      await tx.delete(projectPlan).where(eq(projectPlan.projectName, projectName));
+      await tx.delete(programExpense).where(eq(programExpense.projectName, projectName));
+      await tx.delete(programInflows).where(eq(programInflows.projectName, projectName));
 
       if (norm.planTasks && norm.planTasks.length > 0) {
         const planIgnored = ignoredRows.get("PLAN") || new Set();
@@ -728,6 +871,21 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
           });
         if (planValues.length > 0) {
           await tx.insert(normalizedPlanTasks).values(planValues);
+
+          const legacyPlanBatch = planValues.map((t: any, idx: number) => ({
+            projectName,
+            rowNumber: t.sourceRow || (idx + 1),
+            taskNo: String(idx + 1),
+            highLevelProgramme: t.taskName,
+            actualStart: t.startDate || t.actualStartDate || null,
+            durationDays: t.durationDays || null,
+            actualEnd: t.endDate || t.actualEndDate || null,
+            actualPctComplete: t.pctComplete != null ? Number(t.pctComplete) : null,
+            expectedPctComplete: null,
+          }));
+          for (let i = 0; i < legacyPlanBatch.length; i += 100) {
+            await tx.insert(projectPlan).values(legacyPlanBatch.slice(i, i + 100));
+          }
         }
         counts.planTasks = planValues.length;
       }
@@ -749,8 +907,12 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
               vat: merged.vat,
               invoiceNumber: merged.invoiceNumber,
               invoiceDate: merged.invoiceDate,
+              invoiceDateFontColor: merged.invoiceDateFontColor || null,
+              invoiceDateConfirmed: merged.invoiceDateConfirmed || false,
               expectedPaymentDate: merged.expectedPaymentDate,
               paidDate: merged.paidDate,
+              paidDateFontColor: merged.paidDateFontColor || null,
+              paidDateConfirmed: merged.paidDateConfirmed || false,
               inBankDate: merged.inBankDate,
               status: merged.status,
               sourceSheet: r.sourceSheet,
@@ -761,6 +923,22 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
           });
         if (revValues.length > 0) {
           await tx.insert(normalizedRevenueLines).values(revValues);
+
+          const legacyRevBatch = revValues.map((r: any, idx: number) => ({
+            projectName,
+            rowNumber: r.sourceRow || (idx + 1),
+            milestoneNo: String(idx + 1),
+            milestoneName: r.milestoneName || r.description || null,
+            milestoneAmount: r.amountExVat || null,
+            plannedPaymentDate: r.expectedPaymentDate || null,
+            milestoneInvoiceNumber: r.invoiceNumber || null,
+            invoiceRaisedDate: r.invoiceDate || null,
+            paymentReceivedDate: r.paidDate || null,
+            inBank: r.inBankDate ? 1 : 0,
+          }));
+          for (let i = 0; i < legacyRevBatch.length; i += 100) {
+            await tx.insert(programInflows).values(legacyRevBatch.slice(i, i + 100));
+          }
         }
         counts.revenueLines = revValues.length;
       }
@@ -851,9 +1029,15 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
               amountExVat: merged.amountExVat,
               invoiceNumber: merged.invoiceNumber,
               invoiceDate: merged.invoiceDate,
+              invoiceDateFontColor: merged.invoiceDateFontColor || null,
+              invoiceDateConfirmed: merged.invoiceDateConfirmed || false,
               approvedDate: merged.approvedDate,
               paidDate: merged.paidDate,
+              paidDateFontColor: merged.paidDateFontColor || null,
+              paidDateConfirmed: merged.paidDateConfirmed || false,
               poNumber: merged.poNumber,
+              cosRealised: merged.cosRealised || false,
+              cashflowConfirmed: merged.cashflowConfirmed || false,
               status: merged.status,
               sourceSheet: c.sourceSheet,
               sourceRow: c.sourceRow,
@@ -863,6 +1047,27 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
           });
         if (costValues.length > 0) {
           await tx.insert(normalizedCostLines).values(costValues);
+
+          const legacyCostBatch = costValues.map((c: any, idx: number) => ({
+            projectName,
+            rowNumber: c.sourceRow || (idx + 1),
+            rowType: "item" as const,
+            expenseCategory: c.costCategory || null,
+            expenseLineItem: c.description || null,
+            expenseActualTotal: c.amountExVat || null,
+            expensePoNumber: c.poNumber || null,
+            expenseInvoiceNumber: c.invoiceNumber || null,
+            expenseInvoicedDate: c.invoiceDate || null,
+            invoiceDateConfirmed: c.invoiceDateConfirmed || false,
+            invoiceDateFontColor: c.invoiceDateFontColor || null,
+            expensePaymentDate: c.paidDate || null,
+            paymentDateConfirmed: c.paidDateConfirmed || false,
+            paymentDateFontColor: c.paidDateFontColor || null,
+            supplierName: c.counterpartyName || null,
+          } as any));
+          for (let i = 0; i < legacyCostBatch.length; i += 100) {
+            await tx.insert(programExpense).values(legacyCostBatch.slice(i, i + 100));
+          }
         }
         counts.costLines = costValues.length;
 
@@ -1233,6 +1438,166 @@ router.get("/api/smart-import/normalized/:projectName/expenditure", requireAuth,
     res.json(records);
   } catch (err: any) {
     console.error("[smart-import] GET normalized expenditure error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/smart-import/bulk-commit
+router.post("/api/smart-import/bulk-commit", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.id || null;
+    const { runIds, acknowledgeManualEdits, forceCommit } = req.body || {};
+
+    let runs: any[];
+    if (runIds && Array.isArray(runIds) && runIds.length > 0) {
+      const validIds = runIds.map((id: any) => parseInt(id)).filter((id: number) => !isNaN(id));
+      if (validIds.length === 0) {
+        return res.json({ success: true, committed: 0, failed: 0, results: [] });
+      }
+      runs = await db.select().from(smartImportRuns)
+        .where(and(
+          inArray(smartImportRuns.id, validIds),
+          eq(smartImportRuns.status, "PREVIEW")
+        ));
+    } else {
+      runs = await db.select().from(smartImportRuns)
+        .where(eq(smartImportRuns.status, "PREVIEW"));
+    }
+
+    if (runs.length === 0) {
+      return res.json({ success: true, committed: 0, failed: 0, results: [] });
+    }
+
+    const results: Array<{
+      runId: number;
+      projectName: string;
+      status: "committed" | "skipped" | "failed";
+      counts?: any;
+      error?: string;
+    }> = [];
+
+    for (const run of runs) {
+      try {
+        const summary = run.summaryJson as any;
+        if (!summary || !summary.normalization) {
+          results.push({ runId: run.id, projectName: run.projectName, status: "skipped", error: "No normalization data" });
+          continue;
+        }
+
+        // Auto-resolve unresolved non-blocker issues by ignoring them
+        const allIssues = await db.select().from(importIssues).where(eq(importIssues.importRunId, run.id));
+        const unresolvedBlockers = allIssues.filter((i: any) => i.severity === "BLOCKER" && !i.resolved);
+
+        // Auto-apply prior resolutions to unresolved issues
+        const unresolvedIssues = allIssues.filter((i: any) => !i.resolved);
+        if (unresolvedIssues.length > 0) {
+          const activeRules = await db.select().from(issueResolutionRules)
+            .where(and(
+              eq(issueResolutionRules.active, true),
+              eq(issueResolutionRules.projectName, run.projectName),
+            ));
+          const ruleMap = new Map<string, typeof activeRules[0]>();
+          for (const rule of activeRules) {
+            ruleMap.set(`${rule.issueType}::${rule.fingerprint}::${rule.section}`, rule);
+          }
+
+          for (const issue of unresolvedIssues) {
+            if (!issue.issueType || !issue.issueFingerprint) continue;
+            const lookupKey = `${issue.issueType}::${issue.issueFingerprint}::${issue.section}`;
+            const rule = ruleMap.get(lookupKey);
+            if (rule) {
+              await db.update(importIssues)
+                .set({
+                  resolved: true,
+                  resolution: rule.resolution,
+                  resolutionNote: rule.resolutionNote,
+                  resolvedBy: userId,
+                  resolvedAt: new Date(),
+                  autoResolved: true,
+                  matchedRuleId: rule.id,
+                })
+                .where(eq(importIssues.id, issue.id));
+            } else if (issue.severity !== "BLOCKER") {
+              await db.update(importIssues)
+                .set({
+                  resolved: true,
+                  resolution: "IGNORED",
+                  resolutionNote: "Auto-ignored during bulk commit",
+                  resolvedBy: userId,
+                  resolvedAt: new Date(),
+                  autoResolved: true,
+                })
+                .where(eq(importIssues.id, issue.id));
+            }
+          }
+        }
+
+        // Re-check for unresolved blockers after auto-resolution
+        const remainingIssues = await db.select().from(importIssues)
+          .where(and(eq(importIssues.importRunId, run.id), eq(importIssues.resolved, false)));
+        const remainingBlockers = remainingIssues.filter((i: any) => i.severity === "BLOCKER");
+
+        if (remainingBlockers.length > 0) {
+          results.push({
+            runId: run.id,
+            projectName: run.projectName,
+            status: "skipped",
+            error: `${remainingBlockers.length} unresolved blocker issue(s)`,
+          });
+          continue;
+        }
+
+        const commitHeaders: Record<string, string> = { "Content-Type": "application/json" };
+        if (req.headers.authorization) commitHeaders["Authorization"] = req.headers.authorization as string;
+        if (req.headers.cookie) commitHeaders["Cookie"] = req.headers.cookie;
+
+        const commitRes = await fetch(`http://localhost:${process.env.PORT || 5000}/api/smart-import/${run.id}/commit`, {
+          method: "POST",
+          headers: commitHeaders,
+          body: JSON.stringify({ acknowledgeManualEdits: true, forceCommit: true, acknowledgeEqualDate: true }),
+        });
+
+        if (commitRes.ok) {
+          const commitData = await commitRes.json();
+          results.push({
+            runId: run.id,
+            projectName: run.projectName,
+            status: "committed",
+            counts: commitData.counts,
+          });
+        } else {
+          const err = await commitRes.json().catch(() => ({ error: "Commit failed" }));
+          results.push({
+            runId: run.id,
+            projectName: run.projectName,
+            status: "failed",
+            error: err.error || err.message || "Commit failed",
+          });
+        }
+      } catch (runErr: any) {
+        results.push({
+          runId: run.id,
+          projectName: run.projectName,
+          status: "failed",
+          error: runErr.message || "Unknown error",
+        });
+      }
+    }
+
+    const committed = results.filter(r => r.status === "committed").length;
+    const failed = results.filter(r => r.status === "failed").length;
+    const skipped = results.filter(r => r.status === "skipped").length;
+
+    res.json({
+      success: true,
+      committed,
+      failed,
+      skipped,
+      total: runs.length,
+      results,
+    });
+  } catch (err: any) {
+    console.error("[smart-import] POST bulk-commit error:", err);
     res.status(500).json({ error: err.message });
   }
 });

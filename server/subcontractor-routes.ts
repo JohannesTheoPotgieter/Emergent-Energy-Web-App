@@ -607,6 +607,7 @@ router.post("/api/subcontractor-dashboard/merge", requireAuth, requirePermission
     const normalizedSources = sourceNames.map((n: string) => n.trim().toLowerCase());
     const normalizedTarget = trimmedTarget.toLowerCase();
 
+    let mergedAliasCount = 0;
     await db.transaction(async (tx) => {
       const targetCp = await tx.select().from(counterparties)
         .where(sql`LOWER(${counterparties.nameCanonical}) = ${normalizedTarget}`);
@@ -655,6 +656,7 @@ router.post("/api/subcontractor-dashboard/merge", requireAuth, requirePermission
       }
 
       const uniqueAliases = [...new Set(mergedAliases.filter(a => a.toLowerCase() !== normalizedTarget))];
+      mergedAliasCount = uniqueAliases.length;
       await tx.update(counterparties)
         .set({ nameAliases: uniqueAliases, lastSeenAt: new Date() })
         .where(eq(counterparties.id, targetCpId));
@@ -681,7 +683,7 @@ router.post("/api/subcontractor-dashboard/merge", requireAuth, requirePermission
       }
     });
 
-    console.log(`[subcontractor] Merged [${sourceNames.join(", ")}] → "${trimmedTarget}" with ${mergedAliases.length} alias patterns`);
+    console.log(`[subcontractor] Merged [${sourceNames.join(", ")}] → "${trimmedTarget}" with ${mergedAliasCount} alias patterns`);
     res.json({ success: true, merged: sourceNames, into: trimmedTarget });
   } catch (err: any) {
     console.error("[subcontractor-merge] Error:", err);
