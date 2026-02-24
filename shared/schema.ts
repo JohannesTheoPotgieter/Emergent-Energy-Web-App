@@ -17,6 +17,7 @@ export const userRoleEnum = pgEnum('user_role', [
   'COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO',
   'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER',
   'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER',
+  'ACCOUNTANT', 'ENGINEER',
 ]);
 
 export const smartImportStatusEnum = pgEnum('smart_import_status', ['PREVIEW', 'AWAITING_REVIEW', 'COMMITTED', 'ROLLED_BACK', 'FAILED', 'SUPERSEDED']);
@@ -30,7 +31,8 @@ export const phaseSourceEnum = pgEnum('phase_source', ['EXCEL_IMPORT', 'MANUAL']
 // Users Table
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
-  email: text("email").notNull().unique(),
+  username: text("username").notNull().unique(),
+  email: text("email").notNull(),
   password: text("password").notNull(),
   name: text("name").notNull(),
   role: userRoleEnum("role").notNull().default('member'),
@@ -2038,6 +2040,8 @@ export const COMPANY_ROLES = [
   'QUALITY_MANAGER',
   'ENGINEERING_MANAGER',
   'KEY_ACCOUNTS_MANAGER',
+  'ACCOUNTANT',
+  'ENGINEER',
 ] as const;
 export type CompanyRole = typeof COMPANY_ROLES[number];
 
@@ -2052,6 +2056,8 @@ export const COMPANY_ROLE_LABELS: Record<CompanyRole, string> = {
   QUALITY_MANAGER: "Quality Manager",
   ENGINEERING_MANAGER: "Engineering Manager",
   KEY_ACCOUNTS_MANAGER: "Key Accounts Manager",
+  ACCOUNTANT: "Accountant",
+  ENGINEER: "Engineer",
 };
 
 export const ADMIN_ROLES: CompanyRole[] = ['COO_ADMIN', 'CEO_ADMIN'];

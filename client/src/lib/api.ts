@@ -69,10 +69,10 @@ async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
 
 // Auth API
 export const authApi = {
-  login: async (email: string, password: string) => {
+  login: async (username: string, password: string) => {
     return fetchJSON<{ message: string; user: User; token: string }>(`${API_BASE}/auth/login`, {
       method: "POST",
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ username, password }),
     });
   },
   logout: async () => {
