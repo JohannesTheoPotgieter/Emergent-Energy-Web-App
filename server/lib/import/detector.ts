@@ -108,9 +108,26 @@ function findHeaderRow(
 
   if (bestRowIndex < 0 || bestScore < 1) return null;
 
+  let actualSectionStartCol = -1;
+  if (sectionKey === "EXPENDITURE") {
+    for (let scanRow = 0; scanRow < Math.min(data.length, bestRowIndex); scanRow++) {
+      const scanRowData = data[scanRow];
+      if (!scanRowData) continue;
+      for (let c = 0; c < scanRowData.length; c++) {
+        const cellText = String(scanRowData[c] || "").toLowerCase().trim();
+        if (cellText.includes("actual expenditure breakdown") || cellText.includes("actual expenditure")) {
+          actualSectionStartCol = c;
+          break;
+        }
+      }
+      if (actualSectionStartCol >= 0) break;
+    }
+  }
+
   const headerRow = data[bestRowIndex];
   const headers: { colIndex: number; rawHeader: string; normalizedHeader: string }[] = [];
   for (let c = 0; c < headerRow.length; c++) {
+    if (actualSectionStartCol >= 0 && c < actualSectionStartCol) continue;
     const raw = headerRow[c];
     if (raw != null && String(raw).trim() !== "") {
       headers.push({
