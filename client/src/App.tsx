@@ -48,8 +48,6 @@ import SystemActivityLogPage from "@/pages/system-activity-log";
 import WeeklyReviewsPage from "@/pages/weekly-reviews";
 import AdminRolesPage from "@/pages/admin-roles";
 import TrRegisterPage from "@/pages/tr-register";
-import BootstrapImportPage from "@/pages/bootstrap-import";
-
 import { useAuth } from "@/hooks/use-auth";
 import { useProgramData } from "@/hooks/use-program-data";
 import { TrackerTable } from "@/components/dashboard/TrackerTable";
@@ -243,7 +241,6 @@ function ProtectedPages() {
         <Route path="/admin/activity-log" component={SystemActivityLogPage} />
         <Route path="/weekly-reviews" component={WeeklyReviewsPage} />
         <Route path="/admin/roles" component={AdminRolesPage} />
-        <Route path="/admin/bootstrap-import" component={BootstrapImportPage} />
         <Route path="/tr-register" component={TrRegisterPage} />
 
         <Route component={NotFound} />

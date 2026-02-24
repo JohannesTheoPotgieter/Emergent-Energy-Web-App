@@ -914,6 +914,7 @@ export const PHASE_TEXT_TO_ENUM: Record<string, ProjectPhase> = {
 
 export const operationalTasks = pgTable("operational_tasks", {
   id: serial("id").primaryKey(),
+  projectId: integer("project_id").references(() => projectInfo.id),
   projectName: text("project_name").notNull(),
   importedTaskId: integer("imported_task_id"),
   taskNumber: text("task_number"),
@@ -1594,6 +1595,7 @@ export type QcTemplatePostmortemMetric = typeof qcTemplatePostmortemMetric.$infe
 
 export const qcChecklist = pgTable("qc_checklist", {
   id: serial("id").primaryKey(),
+  projectId: integer("project_id").references(() => projectInfo.id),
   projectName: text("project_name").notNull(),
   templateId: integer("template_id").notNull().references(() => qcTemplate.id),
   status: text("status").notNull().default("active"),
@@ -1852,6 +1854,7 @@ export type DeliverableStatus = typeof DELIVERABLE_STATUSES[number];
 
 export const deliverables = pgTable("deliverables", {
   id: serial("id").primaryKey(),
+  projectId: integer("project_id").references(() => projectInfo.id),
   projectName: text("project_name").notNull(),
   deliverableType: text("deliverable_type").notNull(),
   title: text("title").notNull(),
@@ -2126,7 +2129,7 @@ export const engTaskStatusEnum = pgEnum('eng_task_status', ['NOT_STARTED', 'IN_P
 
 export const engineeringTasks = pgTable("engineering_tasks", {
   id: serial("id").primaryKey(),
-  projectId: integer("project_id").references(() => companyProjects.id),
+  projectId: integer("project_id").references(() => projectInfo.id),
   projectName: text("project_name"),
   title: text("title").notNull(),
   description: text("description"),
@@ -2938,54 +2941,6 @@ export const trItemSuggestionDecisions = pgTable("tr_item_suggestion_decisions",
 export const insertTrSuggestionDecisionSchema = createInsertSchema(trItemSuggestionDecisions).omit({ id: true });
 export type InsertTrSuggestionDecision = z.infer<typeof insertTrSuggestionDecisionSchema>;
 export type TrSuggestionDecision = typeof trItemSuggestionDecisions.$inferSelect;
-
-// ===================== BOOTSTRAP IMPORT SYSTEM =====================
-
-export const bootstrapRunStatusEnum = pgEnum('bootstrap_run_status', ['SCANNING', 'STAGING', 'UPSERTING', 'REBUILDING', 'VALIDATING', 'COMPLETED', 'FAILED']);
-
-export const bootstrapImportRuns = pgTable("bootstrap_import_runs", {
-  id: serial("id").primaryKey(),
-  status: bootstrapRunStatusEnum("status").notNull().default('SCANNING'),
-  triggeredByUserId: integer("triggered_by_user_id").references(() => users.id),
-  triggeredByRole: text("triggered_by_role"),
-  sourcePath: text("source_path").notNull(),
-  startedAt: timestamp("started_at").notNull().defaultNow(),
-  finishedAt: timestamp("finished_at"),
-  discoveredCount: integer("discovered_count").notNull().default(0),
-  importedCount: integer("imported_count").notNull().default(0),
-  updatedCount: integer("updated_count").notNull().default(0),
-  skippedCount: integer("skipped_count").notNull().default(0),
-  quarantinedCount: integer("quarantined_count").notNull().default(0),
-  errorsCount: integer("errors_count").notNull().default(0),
-  validationJson: jsonb("validation_json"),
-  logsJson: jsonb("logs_json"),
-});
-export const insertBootstrapImportRunSchema = createInsertSchema(bootstrapImportRuns).omit({ id: true, startedAt: true });
-export type InsertBootstrapImportRun = z.infer<typeof insertBootstrapImportRunSchema>;
-export type BootstrapImportRun = typeof bootstrapImportRuns.$inferSelect;
-
-export const stagingParseStatusEnum = pgEnum('staging_parse_status', ['OK', 'PARTIAL', 'FAILED']);
-
-export const stagingBootstrapProjects = pgTable("staging_bootstrap_projects", {
-  id: serial("id").primaryKey(),
-  importRunId: integer("import_run_id").notNull().references(() => bootstrapImportRuns.id),
-  sourcePath: text("source_path").notNull(),
-  sourceModifiedAt: timestamp("source_modified_at"),
-  sourceHash: text("source_hash"),
-  projectNameExtracted: text("project_name_extracted"),
-  parseStatus: stagingParseStatusEnum("parse_status").notNull().default('OK'),
-  errorReason: text("error_reason"),
-  rawJson: jsonb("raw_json"),
-  sheetsFound: jsonb("sheets_found"),
-  planRowCount: integer("plan_row_count").notNull().default(0),
-  revenueRowCount: integer("revenue_row_count").notNull().default(0),
-  costRowCount: integer("cost_row_count").notNull().default(0),
-  infoExtracted: jsonb("info_extracted"),
-  needsReview: boolean("needs_review").notNull().default(false),
-  canonicalProjectName: text("canonical_project_name"),
-  importedAt: timestamp("imported_at").notNull().defaultNow(),
-});
-export type StagingBootstrapProject = typeof stagingBootstrapProjects.$inferSelect;
 
 export const derivedProjectKpis = pgTable("derived_project_kpis", {
   id: serial("id").primaryKey(),
