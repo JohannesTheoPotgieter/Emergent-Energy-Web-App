@@ -6,6 +6,11 @@ The Emergent Energy Dashboard is a full-stack web application designed to track 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
 
+### Data Import Rules
+- **Project Name Derivation**: The project name is ALWAYS derived from the Excel filename — specifically all alphanumeric characters (letters, numbers, spaces) before "_Tracker" or "_tracker" in the filename. E.g., `Coega_Steels_Phase_2_Tracker.xlsx` → project name "Coega Steels Phase 2". Underscores in the filename before "_Tracker" are replaced with spaces.
+- **COS Realized**: Invoice captured + invoice date font is black (confirmed/actual).
+- **Cashflow Confirmed**: Invoice captured + PO captured + payment date font is black (confirmed).
+
 ## System Architecture
 
 ### Frontend
