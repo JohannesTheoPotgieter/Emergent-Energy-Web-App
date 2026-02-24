@@ -24,6 +24,9 @@ import {
   invoicePatternMatches,
   projectInfo,
   changeSets,
+  projectPlan,
+  programExpense,
+  programInflows,
 } from "@shared/schema";
 import { recordImportChange, recordSystemEvent } from "./lib/audit/diff-engine";
 import { eq, desc, and, sql, inArray } from "drizzle-orm";
@@ -814,6 +817,9 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
         await tx.delete(normalizedCostLines).where(eq(normalizedCostLines.projectName, projectName));
         await tx.delete(normalizedExecutionPhases).where(eq(normalizedExecutionPhases.projectName, projectName));
       }
+      await tx.delete(projectPlan).where(eq(projectPlan.projectName, projectName));
+      await tx.delete(programExpense).where(eq(programExpense.projectName, projectName));
+      await tx.delete(programInflows).where(eq(programInflows.projectName, projectName));
 
       if (norm.planTasks && norm.planTasks.length > 0) {
         const planIgnored = ignoredRows.get("PLAN") || new Set();
@@ -845,6 +851,21 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
           });
         if (planValues.length > 0) {
           await tx.insert(normalizedPlanTasks).values(planValues);
+
+          const legacyPlanBatch = planValues.map((t: any, idx: number) => ({
+            projectName,
+            rowNumber: t.sourceRow || (idx + 1),
+            taskNo: String(idx + 1),
+            highLevelProgramme: t.taskName,
+            actualStart: t.startDate || t.actualStartDate || null,
+            durationDays: t.durationDays || null,
+            actualEnd: t.endDate || t.actualEndDate || null,
+            actualPctComplete: t.pctComplete != null ? Number(t.pctComplete) : null,
+            expectedPctComplete: null,
+          }));
+          for (let i = 0; i < legacyPlanBatch.length; i += 100) {
+            await tx.insert(projectPlan).values(legacyPlanBatch.slice(i, i + 100));
+          }
         }
         counts.planTasks = planValues.length;
       }
@@ -878,6 +899,22 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
           });
         if (revValues.length > 0) {
           await tx.insert(normalizedRevenueLines).values(revValues);
+
+          const legacyRevBatch = revValues.map((r: any, idx: number) => ({
+            projectName,
+            rowNumber: r.sourceRow || (idx + 1),
+            milestoneNo: String(idx + 1),
+            milestoneName: r.milestoneName || r.description || null,
+            milestoneAmount: r.amountExVat || null,
+            plannedPaymentDate: r.expectedPaymentDate || null,
+            milestoneInvoiceNumber: r.invoiceNumber || null,
+            invoiceRaisedDate: r.invoiceDate || null,
+            paymentReceivedDate: r.paidDate || null,
+            inBank: r.inBankDate ? 1 : 0,
+          }));
+          for (let i = 0; i < legacyRevBatch.length; i += 100) {
+            await tx.insert(programInflows).values(legacyRevBatch.slice(i, i + 100));
+          }
         }
         counts.revenueLines = revValues.length;
       }
