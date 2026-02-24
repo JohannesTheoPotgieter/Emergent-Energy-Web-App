@@ -511,6 +511,100 @@ router.post("/api/procurement-analysis/reset-tags", requireAuth, async (req: Req
   }
 });
 
+router.post("/api/admin/wipe-all-data", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const userRole = user?.role;
+    if (!["COO_ADMIN", "CEO_ADMIN"].includes(userRole)) {
+      return res.status(403).json({ error: "Only COO/CEO Admin can wipe data" });
+    }
+    if (req.body?.confirm !== "WIPE_ALL_DATA") {
+      return res.status(400).json({ error: 'Must send confirm: "WIPE_ALL_DATA" to execute this destructive action' });
+    }
+
+    const tables = [
+      'invoice_pattern_matches', 'invoice_pattern_rules',
+      'normalized_cost_lines', 'normalized_revenue_lines', 'normalized_execution_phases', 'normalized_plan_tasks',
+      'smart_import_runs', 'template_profiles', 'counterparties',
+      'field_changes', 'change_sets', 'change_ledger',
+      'import_diff_events', 'import_issues', 'import_runs',
+      'upload_metadata', 'sync_audit_log', 'merge_audit_log', 'writeback_audit_log',
+      'cashflow_planning_overrides', 'cashflow_points', 'cashflow_weekly_manual', 'cashflow_balance_history',
+      'expenditure_overrides', 'line_item_overrides', 'planning_overrides', 'date_overrides',
+      'finance_cos_monthly', 'finance_cos_overrides', 'finance_revenue_monthly', 'finance_revenue_overrides',
+      'revenue_tracking_overrides', 'revenue_milestone_manual',
+      'opex_budget_monthly', 'opex_weekly_manual', 'tracker_monthly_manual',
+      'expense_task_links', 'milestone_task_links',
+      'program_expense', 'program_inflows', 'project_plan',
+      'project_plan_dependency', 'project_plan_overrides',
+      'working_plan_task_override', 'working_plan_dependency_override', 'working_plan_scenario',
+      'scenarios', 'budgets',
+      'operational_tasks',
+      'qc_item_evidence', 'qc_item_instance', 'qc_plan_link', 'qc_access_challenge',
+      'qc_postmortem_metric_value', 'qc_postmortem_summary', 'qc_postmortem',
+      'qc_risk_answer', 'qc_warning_event', 'qc_warning', 'qc_checklist',
+      'qc_template_postmortem_metric', 'qc_template_risk_question',
+      'qc_template_item', 'qc_template_phase', 'qc_template_group', 'qc_template',
+      'phase_template_item_history', 'phase_template_item', 'phase_template_application', 'phase_template',
+      'engineering_task_attachments', 'engineering_tasks', 'engineering_template_items', 'engineering_templates',
+      'deliverable_events', 'deliverable_files', 'deliverable_versions', 'deliverables',
+      'task_activity_log', 'task_attachments', 'task_checklist_items', 'task_checklists',
+      'task_comments', 'task_watchers', 'tasks',
+      'tr_item_suggestion_decisions', 'tr_item_project_links', 'tr_items',
+      'intake_tasks', 'intake_task_templates', 'intake_requests',
+      'meeting_action_items', 'meeting_summaries',
+      'mytool_tasks', 'mytool_company_priorities', 'mytool_daily_reviews',
+      'mytool_dod_templates', 'mytool_email_links', 'mytool_timeblocks',
+      'mytool_settings', 'mytool_user_preferences',
+      'weekly_reviews', 'snapshot_metrics', 'snapshots',
+      'notifications', 'notification_throttle',
+      'sp_file_pointers', 'sp_files', 'sp_list_config', 'sp_settings', 'mock_sp_items',
+      'approvals', 'audit_events', 'error_logs', 'refresh_logs',
+      'project_editable_fields', 'project_notes', 'project_phase_history',
+      'project_revenue_summary', 'project_team_members', 'home_notes',
+      'schedule_change_notice', 'execution_gate_log',
+      'support_tickets', 'triage_rules', 'issue_resolution_rules',
+      'mapping_rules', 'writeback_mappings', 'key_date_mappings',
+      'payment_terms', 'priority_links', 'resource_capacity',
+      'calendar_holiday', 'app_settings',
+      'company_projects', 'projects', 'project_info', 'expenses', 'revenues',
+      'outlook_accounts',
+      'role_permissions', 'role_credentials',
+      'session', 'users',
+    ];
+
+    let truncated = 0;
+    let skipped = 0;
+    const errors: string[] = [];
+
+    for (const table of tables) {
+      try {
+        await db.execute(sql.raw(`TRUNCATE TABLE "${table}" CASCADE`));
+        truncated++;
+      } catch (err: any) {
+        if (err.message?.includes('does not exist')) {
+          skipped++;
+        } else {
+          errors.push(`${table}: ${err.message}`);
+        }
+      }
+    }
+
+    console.log(`[AUDIT] FULL DATABASE WIPE by ${user?.email} (${userRole}): ${truncated} tables truncated, ${skipped} skipped, ${errors.length} errors`);
+
+    res.json({
+      success: true,
+      tablesTruncated: truncated,
+      tablesSkipped: skipped,
+      errors: errors.length > 0 ? errors : undefined,
+      message: `Wiped ${truncated} tables. ${skipped} tables not found (OK). Server will re-seed users on next restart. Please restart the deployment to restore login accounts.`,
+    });
+  } catch (err: any) {
+    console.error("[wipe-all] Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export function registerInvoicePatternRoutes(app: any) {
   app.use(router);
 }
