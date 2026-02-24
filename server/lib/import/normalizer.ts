@@ -236,6 +236,13 @@ function extractRevenueLines(
     const paidDate = paidDateCol >= 0 ? parseDate(row[paidDateCol]) : null;
     const inBankDate = inBankDateCol >= 0 ? parseDate(row[inBankDateCol]) : null;
 
+    const hasRevAmount = amountExVat !== null && amountExVat !== "0" && amountExVat !== "0.00" && parseFloat(String(amountExVat)) !== 0;
+    const hasRevDate = !!(invoiceDate || paidDate || inBankDate || expectedPaymentDate);
+    const hasRevRef = !!invoiceNumber;
+    if (!hasRevAmount && !hasRevDate && !hasRevRef) {
+      continue;
+    }
+
     const status = deriveRevenueStatus(invoiceNumber, invoiceDate, paidDate, inBankDate);
 
     let turnaroundDays: number | null = null;
@@ -359,6 +366,13 @@ function extractCostLines(
     let turnaroundDays: number | null = null;
     if (invoiceDate && paidDate) {
       turnaroundDays = daysBetween(invoiceDate, paidDate);
+    }
+
+    const hasAmount = amountExVat !== null && amountExVat !== "0" && amountExVat !== "0.00" && parseFloat(String(amountExVat)) !== 0;
+    const hasAnyDate = !!(invoiceDate || approvedDate || paidDate);
+    const hasInvoiceRef = !!invoiceNumber;
+    if (!hasAmount && !hasAnyDate && !hasInvoiceRef) {
+      continue;
     }
 
     if (counterparty) {
