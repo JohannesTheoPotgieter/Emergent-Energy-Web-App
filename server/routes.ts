@@ -628,8 +628,26 @@ export async function registerRoutes(
 
       const today = new Date().toISOString().split("T")[0];
 
-      const oldExpenseProjects = new Set(allExpenses.map(e => e.projectName));
-      const oldInflowProjects = new Set(allInflows.map(i => i.projectName));
+      const piNamesOvEarly = new Set(allProjectInfo.map(i => i.projectName));
+      const piNormMapOvEarly = new Map<string, string>();
+      for (const n of piNamesOvEarly) {
+        piNormMapOvEarly.set(n.replace(/_Tracker\d*$/i, "").replace(/[_ ]/g, " ").toLowerCase().trim(), n);
+      }
+      function resolveOvName(name: string): string {
+        if (piNamesOvEarly.has(name)) return name;
+        for (const v of [name.replace(/ /g, "_") + "_Tracker", name + "_Tracker", name.replace(/ /g, "_")]) {
+          if (piNamesOvEarly.has(v)) return v;
+        }
+        const nk = name.replace(/[_ ]/g, " ").toLowerCase().trim();
+        const fm = piNormMapOvEarly.get(nk);
+        if (fm) return fm;
+        for (const [pn, pi] of piNormMapOvEarly) {
+          if (pn.endsWith(nk) || nk.endsWith(pn)) return pi;
+        }
+        return name;
+      }
+      const oldExpenseProjects = new Set(allExpenses.map(e => resolveOvName(e.projectName)));
+      const oldInflowProjects = new Set(allInflows.map(i => resolveOvName(i.projectName)));
 
       // total_program_budget = SUM(project_info.contract_value)
       let totalProgramBudget = 0;
@@ -662,7 +680,7 @@ export async function registerRoutes(
         }
       }
       for (const cost of allNormCostsOv) {
-        if (oldExpenseProjects.has(cost.projectName)) continue;
+        if (oldExpenseProjects.has(resolveOvName(cost.projectName))) continue;
         const paymentDate = cost.paidDate;
         if (paymentDate && /^\d{4}-\d{2}-\d{2}$/.test(paymentDate) && paymentDate <= today && cost.amountExVat) {
           actualSpendPaid += parseFloat(cost.amountExVat);
@@ -678,30 +696,21 @@ export async function registerRoutes(
         }
       }
       for (const rev of allNormRevOv) {
-        if (oldInflowProjects.has(rev.projectName)) continue;
+        if (oldInflowProjects.has(resolveOvName(rev.projectName))) continue;
         const paymentDate = rev.paidDate || rev.inBankDate;
         if (paymentDate && /^\d{4}-\d{2}-\d{2}$/.test(paymentDate) && paymentDate <= today && rev.amountExVat) {
           revenueRealised += parseFloat(rev.amountExVat);
         }
       }
 
-      // active_projects = count distinct project names from ALL data sources (union)
       const uniqueProjects = new Set<string>();
-      for (const info of allProjectInfo) {
-        uniqueProjects.add(info.projectName);
-      }
-      for (const expense of allExpenses) {
-        uniqueProjects.add(expense.projectName);
-      }
-      for (const inflow of allInflows) {
-        uniqueProjects.add(inflow.projectName);
-      }
-      for (const plan of allPlans) {
-        uniqueProjects.add(plan.projectName);
-      }
-      for (const c of allNormCostsOv) uniqueProjects.add(c.projectName);
-      for (const r of allNormRevOv) uniqueProjects.add(r.projectName);
-      for (const p of allNormPlansOv) uniqueProjects.add(p.projectName);
+      for (const info of allProjectInfo) uniqueProjects.add(info.projectName);
+      for (const expense of allExpenses) uniqueProjects.add(resolveOvName(expense.projectName));
+      for (const inflow of allInflows) uniqueProjects.add(resolveOvName(inflow.projectName));
+      for (const plan of allPlans) uniqueProjects.add(resolveOvName(plan.projectName));
+      for (const c of allNormCostsOv) uniqueProjects.add(resolveOvName(c.projectName));
+      for (const r of allNormRevOv) uniqueProjects.add(resolveOvName(r.projectName));
+      for (const p of allNormPlansOv) uniqueProjects.add(resolveOvName(p.projectName));
 
       res.json({
         total_program_budget: totalProgramBudget,
@@ -1427,14 +1436,41 @@ export async function registerRoutes(
         normPlansByProject.get(p.projectName)!.push(p);
       }
 
+      const projectInfoMap = new Map(allProjectInfo.map(info => [info.projectName, info]));
+
+      const projectInfoNames = new Set(allProjectInfo.map(i => i.projectName));
+      const projectInfoNormMap = new Map<string, string>();
+      for (const piName of projectInfoNames) {
+        const norm = piName.replace(/_Tracker\d*$/i, "").replace(/[_ ]/g, " ").toLowerCase().trim();
+        projectInfoNormMap.set(norm, piName);
+      }
+      function resolveToCanonical(name: string): string {
+        if (projectInfoNames.has(name)) return name;
+        const variants = [
+          name.replace(/ /g, "_") + "_Tracker",
+          name + "_Tracker",
+          name.replace(/ /g, "_"),
+        ];
+        for (const v of variants) {
+          if (projectInfoNames.has(v)) return v;
+        }
+        const normKey = name.replace(/[_ ]/g, " ").toLowerCase().trim();
+        const fuzzyMatch = projectInfoNormMap.get(normKey);
+        if (fuzzyMatch) return fuzzyMatch;
+        for (const [piNorm, piName] of projectInfoNormMap) {
+          if (piNorm.endsWith(normKey) || normKey.endsWith(piNorm)) return piName;
+        }
+        return name;
+      }
+
       const allProjectNames = new Set<string>();
       for (const info of allProjectInfo) allProjectNames.add(info.projectName);
-      for (const expense of allExpenses) allProjectNames.add(expense.projectName);
-      for (const inflow of allInflows) allProjectNames.add(inflow.projectName);
-      for (const plan of allPlans) allProjectNames.add(plan.projectName);
-      for (const c of allNormCosts) allProjectNames.add(c.projectName);
-      for (const r of allNormRevenue) allProjectNames.add(r.projectName);
-      for (const p of allNormPlans) allProjectNames.add(p.projectName);
+      for (const expense of allExpenses) allProjectNames.add(resolveToCanonical(expense.projectName));
+      for (const inflow of allInflows) allProjectNames.add(resolveToCanonical(inflow.projectName));
+      for (const plan of allPlans) allProjectNames.add(resolveToCanonical(plan.projectName));
+      for (const c of allNormCosts) allProjectNames.add(resolveToCanonical(c.projectName));
+      for (const r of allNormRevenue) allProjectNames.add(resolveToCanonical(r.projectName));
+      for (const p of allNormPlans) allProjectNames.add(resolveToCanonical(p.projectName));
 
       const taskCountsByProject = new Map<string, Record<string, number>>();
       for (const task of allOpTasks) {
@@ -1447,18 +1483,29 @@ export async function registerRoutes(
         counts[status] = (counts[status] || 0) + 1;
       }
 
-      const projectInfoMap = new Map(allProjectInfo.map(info => [info.projectName, info]));
-
       const projectsSummary = Array.from(allProjectNames).map(projectName => {
         const info = projectInfoMap.get(projectName);
-        const projectExpenses = expensesByProject.get(projectName) || [];
-        const projectInflows = inflowsByProject.get(projectName) || [];
-        const projectPlans = plansByProject.get(projectName) || [];
-        const editable = editableMap.get(projectName);
 
-        const normCosts = normCostsByProject.get(projectName) || [];
-        const normRev = normRevByProject.get(projectName) || [];
-        const normPlans = normPlansByProject.get(projectName) || [];
+        const cleanName = projectName.replace(/_Tracker\d*$/i, "").replace(/_/g, " ").trim();
+        const underscoreName = cleanName.replace(/ /g, "_");
+        const nameVariants = [projectName, cleanName, underscoreName, cleanName + "_Tracker", underscoreName + "_Tracker"];
+
+        function lookupAll<T>(map: Map<string, T[]>): T[] {
+          for (const v of nameVariants) {
+            const data = map.get(v);
+            if (data && data.length > 0) return data;
+          }
+          return [];
+        }
+
+        const projectExpenses = lookupAll(expensesByProject);
+        const projectInflows = lookupAll(inflowsByProject);
+        const projectPlans = lookupAll(plansByProject);
+        const editable = editableMap.get(projectName) || editableMap.get(cleanName);
+
+        const normCosts = lookupAll(normCostsByProject);
+        const normRev = lookupAll(normRevByProject);
+        const normPlans = lookupAll(normPlansByProject);
 
         const useNormPlans = projectPlans.length === 0 && normPlans.length > 0;
         const planLikeRows = useNormPlans ? normPlans.map(np => ({
@@ -1669,9 +1716,9 @@ export async function registerRoutes(
           latest_update_at: editable?.latestUpdateAt || null,
           latest_update_by: editable?.latestUpdateBy || null,
           escalation_level: info?.escalationLevel || null,
-          task_status_counts: taskCountsByProject.get(projectName) || {},
+          task_status_counts: taskCountsByProject.get(projectName) || taskCountsByProject.get(cleanName) || {},
           phase_updated_at: info?.phaseUpdatedAt || null,
-          has_tracker_import: importedProjectNames.has(projectName) || importedProjectNames.has(projectName.replace(/_/g, ' ')),
+          has_tracker_import: nameVariants.some(v => importedProjectNames.has(v)) || importedProjectNames.has(cleanName),
           is_active: info?.isActive !== false,
         };
       });
