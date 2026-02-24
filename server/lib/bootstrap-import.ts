@@ -121,13 +121,10 @@ export async function commitProjectFromTracker(
   const detection = preview.detection;
 
   const detectedInfo = detection.projectInfo;
-  const projectName = overrideProjectName || detectedInfo?.name || extractProjectNameFromFilename(fileName);
+  const projectName = overrideProjectName || extractProjectNameFromFilename(fileName);
 
   const existing = await db.select({ id: projectInfo.id }).from(projectInfo)
     .where(eq(projectInfo.projectName, projectName)).limit(1);
-  if (existing.length > 0) {
-    throw new Error(`Project "${projectName}" already exists (ID: ${existing[0].id}). Use a different name or delete the existing project first.`);
-  }
 
   const [importRun] = await db.insert(smartImportRuns).values({
     sourceFileName: fileName,
@@ -135,15 +132,35 @@ export async function commitProjectFromTracker(
     status: "COMMITTED" as any,
     uploadedBy: userId || null,
     projectName,
+    projectId: existing.length > 0 ? existing[0].id : null,
   }).returning();
 
-  const [project] = await db.insert(projectInfo).values({
-    projectName,
-    phase: detectedInfo?.phase || "PLANNING",
-    sizeKwp: detectedInfo?.sizeKwp || null,
-    pd: detectedInfo?.pd || null,
-    contractValue: detectedInfo?.contractValue || null,
-  } as any).returning();
+  let project: any;
+  if (existing.length > 0) {
+    const updates: Record<string, any> = { updatedAt: new Date() };
+    if (detectedInfo?.sizeKwp) updates.sizeKwp = String(detectedInfo.sizeKwp);
+    if (detectedInfo?.pd) updates.pd = String(detectedInfo.pd);
+    if (detectedInfo?.contractValue) updates.contractValue = String(detectedInfo.contractValue);
+    if (detectedInfo?.phase) updates.phase = detectedInfo.phase;
+    await db.update(projectInfo).set(updates).where(eq(projectInfo.id, existing[0].id));
+    [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, existing[0].id));
+
+    await db.delete(normalizedPlanTasks).where(eq(normalizedPlanTasks.projectId, project.id));
+    await db.delete(normalizedRevenueLines).where(eq(normalizedRevenueLines.projectId, project.id));
+    await db.delete(normalizedCostLines).where(eq(normalizedCostLines.projectId, project.id));
+    await db.delete(normalizedExecutionPhases).where(eq(normalizedExecutionPhases.projectId, project.id));
+    await db.delete(projectPlan).where(eq(projectPlan.projectName, projectName));
+    await db.delete(programExpense).where(eq(programExpense.projectName, projectName));
+    await db.delete(programInflows).where(eq(programInflows.projectName, projectName));
+  } else {
+    [project] = await db.insert(projectInfo).values({
+      projectName,
+      phase: detectedInfo?.phase || "PLANNING",
+      sizeKwp: detectedInfo?.sizeKwp || null,
+      pd: detectedInfo?.pd || null,
+      contractValue: detectedInfo?.contractValue || null,
+    } as any).returning();
+  }
 
   let planCount = 0, revCount = 0, costCount = 0, phaseCount = 0;
 
