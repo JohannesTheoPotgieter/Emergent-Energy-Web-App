@@ -108,6 +108,11 @@ export default function MyToolMeetingsPage() {
     refetchInterval: 30_000,
   });
 
+  const { data: projects = [] } = useQuery<{ id: number; projectName: string }[]>({
+    queryKey: ["/api/projects"],
+    select: (data: any[]) => data.map((p: any) => ({ id: p.id, projectName: p.projectName })).sort((a: any, b: any) => a.projectName.localeCompare(b.projectName)),
+  });
+
   const { data: webhookStatus } = useQuery<WebhookStatus>({
     queryKey: ["/api/meetings/webhook-status"],
     refetchInterval: 60_000,
@@ -586,6 +591,15 @@ export default function MyToolMeetingsPage() {
                       onChange={(e) => setConvertForm((p) => ({ ...p, plannedForDate: e.target.value }))}
                       data-testid="input-planned-date"
                     />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-500">Link to Project</label>
+                    <Select value={convertForm.projectName || ""} onValueChange={(v) => setConvertForm((p) => ({ ...p, projectName: v }))}>
+                      <SelectTrigger data-testid="select-project-link"><SelectValue placeholder="None (optional)" /></SelectTrigger>
+                      <SelectContent>
+                        {projects.map((p) => <SelectItem key={p.id} value={p.projectName}>{p.projectName}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
                   </div>
                 </>
               )}
