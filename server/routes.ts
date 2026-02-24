@@ -4983,7 +4983,8 @@ export async function registerRoutes(
         const hasInvoiceDate = !!(exp.expenseInvoicedDate && exp.expenseInvoicedDate.trim());
         const invoiceDateActual = hasInvoiceDate && (
           exp.invoiceDateConfirmed === true ||
-          (exp.invoiceDateConfirmed == null && exp.invoiceDateFontColor !== 'red')
+          exp.invoiceDateFontColor === 'black' ||
+          (!exp.invoiceDateFontColor && exp.invoiceDateFontColor !== 'red')
         );
         const hasPaymentDate = !!(exp.expensePaymentDate && exp.expensePaymentDate.trim());
         const paymentDateActual = hasPaymentDate && exp.paymentDateFontColor !== 'red';
