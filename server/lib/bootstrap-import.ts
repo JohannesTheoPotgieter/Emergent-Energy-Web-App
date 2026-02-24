@@ -136,7 +136,7 @@ export async function commitProjectFromTracker(
 
   const [project] = await db.insert(projectInfo).values({
     projectName,
-    projectPhase: detectedInfo?.phase || "PLANNING",
+    phase: detectedInfo?.phase || "PLANNING",
     systemSize: detectedInfo?.sizeKwp || null,
     contractValue: detectedInfo?.contractValue || null,
   } as any).returning();
