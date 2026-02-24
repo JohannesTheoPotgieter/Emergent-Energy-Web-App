@@ -23,7 +23,7 @@ import { recordOverride } from "./lib/audit/diff-engine";
 import { OVERRIDE_CATEGORIES } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
 import { createNameResolver, fetchAllNormalized, mergeExpensesOnly, mergeInflowsOnly, mergePlansOnly } from "./lib/data-merge";
-import { getFeatureFlag } from "./lib/bootstrap-import";
+import { getFeatureFlag } from "./lib/feature-flags";
 import { derivedPortfolioKpis, derivedProjectKpis } from "@shared/schema";
 
 async function getMergedExpensesAndInflows(legacyExpenses: any[], legacyInflows: any[]) {

@@ -324,9 +324,9 @@ async function seedUsers() {
   registerRoleManagementRoutes(app);
   await seedRolePermissions().catch(err => console.error('[Seed] Role permissions error:', err));
 
-  const { registerBootstrapImportRoutes } = await import("./bootstrap-import-routes");
-  registerBootstrapImportRoutes(app);
-  
+  const { backfillProjectIds } = await import("./lib/backfill-project-ids");
+  await backfillProjectIds().catch(err => console.error('[Backfill] Project IDs error:', err));
+
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {

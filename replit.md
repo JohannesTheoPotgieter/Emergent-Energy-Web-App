@@ -39,7 +39,7 @@ Preferred communication style: Simple, everyday language.
     -   **Admin Roles & Permissions**: `/admin/roles` page for COO/CEO Admin to manage all role permissions — toggle section access, capabilities (canManageUsers, canManageRoles, canEditData), entity-level permissions grid (view/edit/approve/override per entity), and reassign user roles.
     -   **TR Register (Program Manager Task Register)**: Full list+board module at `/tr-register` for tracking cross-project action items. Features: list view with filters (RAG, status, department, owner, overdue, linked), board view (Active/Completed kanban with drag-drop status changes and department badges), detail drawer with inline editing, project linking with auto-PM-task creation, auto-link suggestions with scoring algorithm, seed runner with 41 initial records, and completion rule enforcement. Default list view filters to Active status only.
     -   **Smart Import Re-run Protection**: Procurement (expenditure) re-import warns when manual edits exist, requiring explicit acknowledgment before overwriting. Warning dialog shown in commit step.
-    -   **Bootstrap Import**: Admin-only single-file project creation tool at `/admin/bootstrap-import`. Upload a tracker Excel file → preview detected data (plan tasks, revenue lines, cost lines, execution phases, counterparties, business rules) → commit to create project_info + all normalized data in one transaction. Font color extraction from Excel cells determines COS realised (invoice captured + black invoice date font) and cashflow confirmed (invoice + PO + black payment date font). Derived KPI tables rebuilt on demand. Feature flag `USE_NEW_DASHBOARD_ROLLUPS` enables fast dashboard reads from derived tables.
+    -   **Smart Import as Sole Project Path**: Smart Import is the only way to create or update projects. It creates `project_info` when missing and updates existing projects. Font color extraction from Excel cells determines COS realised (invoice captured + black invoice date font) and cashflow confirmed (invoice + PO + black payment date font). Derived KPI tables rebuilt on demand. Feature flag `USE_NEW_DASHBOARD_ROLLUPS` enables fast dashboard reads from derived tables.
 
 ### Backend
 -   **Framework**: Express.js with TypeScript
@@ -49,11 +49,19 @@ Preferred communication style: Simple, everyday language.
 -   **Data Storage**: PostgreSQL (primary) with Drizzle ORM.
 -   **Data Integrity**: Transactional safety and reprocessing for data modifications.
 -   **Calculation Engine**: Pure-function modules for financial computations, data quality checks, and various data processing tasks.
--   **Backfill System**: Automated population of computed columns on server startup.
+-   **Backfill System**: Automated population of computed columns and projectId foreign keys on server startup.
 -   **Audit Trails**: Immutable `change_sets` and `field_changes` for all data mutations, plus detailed logs for imports, SharePoint syncs, and system activities.
 
+### Database Architecture
+-   **Central spine**: `project_info` is the primary project table. All modules link to it via `project_id` FK.
+-   **Normalized data**: `normalized_cost_lines`, `normalized_revenue_lines`, `normalized_plan_tasks` are the source of truth for imported financial/plan data.
+-   **Legacy tables**: `program_expense`, `program_inflows`, `project_plan` still exist for backward compatibility but Smart Import writes to both normalized and legacy tables.
+-   **Derived tables**: `derived_project_kpis`, `derived_portfolio_kpis`, `derived_rag_summary` are rebuilt on demand from normalized data.
+-   **FK backfill**: On startup, `backfill-project-ids.ts` populates `projectId` on `operational_tasks`, `qc_checklist`, `deliverables`, `engineering_tasks` by matching `projectName` to `project_info`.
+
 ### Key Database Tables (Examples)
--   `users`, `projectInfo`, `programExpense`, `programInflows`, `projectPlan`
+-   `users`, `projectInfo`, `normalizedCostLines`, `normalizedRevenueLines`, `normalizedPlanTasks`
+-   `programExpense` (legacy), `programInflows` (legacy), `projectPlan` (legacy)
 -   `cashflowPlanningOverrides`, `scenarios`, `operationalTasks`, `mytool_tasks`
 -   `meeting_summaries`, `meeting_action_items`, `change_sets`, `field_changes`
 -   `uploadMetadata`, `sp_settings`, `import_runs`, `qm_templates`, `qm_checklists`
