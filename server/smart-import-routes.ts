@@ -231,6 +231,44 @@ router.get("/api/smart-import/history/:projectName", requireAuth, async (req: Re
   }
 });
 
+// GET /api/smart-import/pending-runs (must be BEFORE :runId to avoid route conflict)
+router.get("/api/smart-import/pending-runs", requireAuth, async (_req: Request, res: Response) => {
+  try {
+    const runs = await db
+      .select({
+        id: smartImportRuns.id,
+        projectName: smartImportRuns.projectName,
+        status: smartImportRuns.status,
+        uploadedAt: smartImportRuns.uploadedAt,
+        sourceFileName: smartImportRuns.sourceFileName,
+      })
+      .from(smartImportRuns)
+      .where(eq(smartImportRuns.status, "PREVIEW"))
+      .orderBy(smartImportRuns.projectName);
+
+    const runsWithIssues = await Promise.all(runs.map(async (run: any) => {
+      const issues = await db.select().from(importIssues)
+        .where(eq(importIssues.importRunId, run.id));
+      const blockers = issues.filter((i: any) => i.severity === "BLOCKER" && !i.resolved);
+      const warnings = issues.filter((i: any) => i.severity !== "BLOCKER" && !i.resolved);
+      const totalIssues = issues.length;
+      const resolvedIssues = issues.filter((i: any) => i.resolved).length;
+      return {
+        ...run,
+        blockerCount: blockers.length,
+        warningCount: warnings.length,
+        totalIssues,
+        resolvedIssues,
+      };
+    }));
+
+    res.json(runsWithIssues);
+  } catch (err: any) {
+    console.error("[smart-import] GET pending-runs error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/smart-import/:runId
 router.get("/api/smart-import/:runId", requireAuth, async (req: Request, res: Response) => {
   try {
@@ -1338,13 +1376,13 @@ router.post("/api/smart-import/bulk-commit", requireAuth, async (req: Request, r
           continue;
         }
 
-        // Now commit this run using internal fetch to the existing commit endpoint
+        const commitHeaders: Record<string, string> = { "Content-Type": "application/json" };
+        if (req.headers.authorization) commitHeaders["Authorization"] = req.headers.authorization as string;
+        if (req.headers.cookie) commitHeaders["Cookie"] = req.headers.cookie;
+
         const commitRes = await fetch(`http://localhost:${process.env.PORT || 5000}/api/smart-import/${run.id}/commit`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": req.headers.authorization || "",
-          },
+          headers: commitHeaders,
           body: JSON.stringify({ acknowledgeManualEdits: true, forceCommit: true, acknowledgeEqualDate: true }),
         });
 
@@ -1389,44 +1427,6 @@ router.post("/api/smart-import/bulk-commit", requireAuth, async (req: Request, r
     });
   } catch (err: any) {
     console.error("[smart-import] POST bulk-commit error:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// GET /api/smart-import/pending-runs
-router.get("/api/smart-import/pending-runs", requireAuth, async (_req: Request, res: Response) => {
-  try {
-    const runs = await db
-      .select({
-        id: smartImportRuns.id,
-        projectName: smartImportRuns.projectName,
-        status: smartImportRuns.status,
-        uploadedAt: smartImportRuns.uploadedAt,
-        sourceFileName: smartImportRuns.sourceFileName,
-      })
-      .from(smartImportRuns)
-      .where(eq(smartImportRuns.status, "PREVIEW"))
-      .orderBy(smartImportRuns.projectName);
-
-    const runsWithIssues = await Promise.all(runs.map(async (run: any) => {
-      const issues = await db.select().from(importIssues)
-        .where(eq(importIssues.importRunId, run.id));
-      const blockers = issues.filter((i: any) => i.severity === "BLOCKER" && !i.resolved);
-      const warnings = issues.filter((i: any) => i.severity !== "BLOCKER" && !i.resolved);
-      const totalIssues = issues.length;
-      const resolvedIssues = issues.filter((i: any) => i.resolved).length;
-      return {
-        ...run,
-        blockerCount: blockers.length,
-        warningCount: warnings.length,
-        totalIssues,
-        resolvedIssues,
-      };
-    }));
-
-    res.json(runsWithIssues);
-  } catch (err: any) {
-    console.error("[smart-import] GET pending-runs error:", err);
     res.status(500).json({ error: err.message });
   }
 });
