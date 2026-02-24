@@ -3013,6 +3013,28 @@ export const derivedRagSummary = pgTable("derived_rag_summary", {
 });
 export type DerivedRagSummary = typeof derivedRagSummary.$inferSelect;
 
+export const feedbackTicketTypeEnum = pgEnum('feedback_ticket_type', ['bug', 'feature']);
+export const feedbackTicketStatusEnum = pgEnum('feedback_ticket_status', ['open', 'in_progress', 'resolved', 'closed']);
+export const feedbackTicketPriorityEnum = pgEnum('feedback_ticket_priority', ['low', 'medium', 'high', 'critical']);
+
+export const feedbackTickets = pgTable("feedback_tickets", {
+  id: serial("id").primaryKey(),
+  type: text("type").notNull().default("bug"),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  status: text("status").notNull().default("open"),
+  priority: text("priority").notNull().default("medium"),
+  submittedBy: integer("submitted_by").notNull(),
+  submittedByName: text("submitted_by_name").notNull(),
+  adminNotes: text("admin_notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertFeedbackTicketSchema = createInsertSchema(feedbackTickets).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertFeedbackTicket = z.infer<typeof insertFeedbackTicketSchema>;
+export type FeedbackTicket = typeof feedbackTickets.$inferSelect;
+
 export const DEFAULT_ROLE_PERMISSIONS: InsertRolePermission[] = [
   { role: "COO_ADMIN", label: "COO", description: "Full executive access, settings, user management", sections: ["EXCO", "PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "ADMIN", "MY_TOOL", "FINANCE", "PROJECTS", "OPERATIONS", "GOVERNANCE", "COCKPIT", "MONEY", "DELIVERY"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
   { role: "CEO_ADMIN", label: "CEO", description: "Full executive access, strategic oversight", sections: ["EXCO", "PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "ADMIN", "MY_TOOL", "FINANCE", "PROJECTS", "OPERATIONS", "GOVERNANCE", "COCKPIT", "MONEY", "DELIVERY"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },

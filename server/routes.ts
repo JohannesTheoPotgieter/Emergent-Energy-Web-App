@@ -10271,6 +10271,8 @@ export async function registerRoutes(
     }
   });
 
+  registerFeedbackRoutes(app);
+
   return httpServer;
 }
 
@@ -10346,3 +10348,65 @@ function generateCSV(data: any[], columns: string[]): string {
   return [header, ...rows].join("\n");
 }
 
+
+// ========== FEEDBACK / BUG REPORT SYSTEM ==========
+
+import { feedbackTickets } from "@shared/schema";
+
+function registerFeedbackRoutes(app: Express) {
+  app.get("/api/feedback", requireAuth, async (req, res) => {
+    try {
+      const tickets = await db.select().from(feedbackTickets).orderBy(desc(feedbackTickets.createdAt));
+      res.json(tickets);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/feedback", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { type, title, description, priority } = req.body;
+      if (!title || !description) {
+        return res.status(400).json({ error: "Title and description are required" });
+      }
+      const [ticket] = await db.insert(feedbackTickets).values({
+        type: type || "bug",
+        title,
+        description,
+        priority: priority || "medium",
+        submittedBy: user.id,
+        submittedByName: user.name || user.email || "Unknown",
+      }).returning();
+      res.json(ticket);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/feedback/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { status, adminNotes, priority } = req.body;
+      const updates: any = { updatedAt: new Date() };
+      if (status) updates.status = status;
+      if (adminNotes !== undefined) updates.adminNotes = adminNotes;
+      if (priority) updates.priority = priority;
+      const [updated] = await db.update(feedbackTickets).set(updates).where(eq(feedbackTickets.id, id)).returning();
+      if (!updated) return res.status(404).json({ error: "Ticket not found" });
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/feedback/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await db.delete(feedbackTickets).where(eq(feedbackTickets.id, id));
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+}
