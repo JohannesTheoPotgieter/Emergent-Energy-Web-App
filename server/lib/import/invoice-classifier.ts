@@ -76,9 +76,12 @@ interface ActiveRule {
 }
 
 function matchRules(norm: string, shape: TokenShape, rules: ActiveRule[]): { rule: ActiveRule; baseScore: number } | null {
+  const normUpper = norm.toUpperCase();
+
   for (const rule of rules) {
     if (rule.patternType === "PREFIX") {
-      if (norm.startsWith(rule.patternValue)) {
+      const ruleNorm = normalizeInvoiceNumber(rule.patternValue);
+      if (ruleNorm && normUpper.startsWith(ruleNorm)) {
         return { rule, baseScore: rule.confidenceWeight };
       }
     }
@@ -97,7 +100,7 @@ function matchRules(norm: string, shape: TokenShape, rules: ActiveRule[]): { rul
 
   for (const rule of rules) {
     if (rule.patternType === "TOKEN_SHAPE") {
-      if (shape.signature === rule.patternValue || shape.prefixLetters === rule.patternValue) {
+      if (shape.signature === rule.patternValue || shape.prefixLetters === rule.patternValue.toUpperCase()) {
         return { rule, baseScore: Math.min(rule.confidenceWeight, 60) };
       }
     }
