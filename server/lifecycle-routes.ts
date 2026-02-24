@@ -671,4 +671,29 @@ export function registerLifecycleRoutes(app: Express) {
       res.status(500).json({ error: err.message });
     }
   });
+
+  app.delete("/api/lifecycle-board/projects/:id", requireAuth, requireExecRole, async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id as string, 10);
+      if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
+
+      const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
+      if (!project) return res.status(404).json({ error: "Project not found" });
+
+      if (project.archivedStatus === "ARCHIVED_DELETED") {
+        return res.status(400).json({ error: "Project is already deleted" });
+      }
+
+      await db.update(projectInfo)
+        .set({ archivedStatus: "ARCHIVED_DELETED", isActive: false })
+        .where(eq(projectInfo.id, projectId));
+
+      console.log(`[lifecycle-board] Project ${projectId} (${project.projectName}) soft-deleted by ${((req as any).user as any)?.email || "unknown"}`);
+
+      res.json({ success: true, projectName: project.projectName });
+    } catch (err: any) {
+      console.error("[lifecycle-board] DELETE project error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
 }
