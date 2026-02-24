@@ -27,8 +27,12 @@ export interface NormalizationResult {
     vat: string | null;
     invoiceNumber: string | null;
     invoiceDate: string | null;
+    invoiceDateFontColor: string | null;
+    invoiceDateConfirmed: boolean | null;
     expectedPaymentDate: string | null;
     paidDate: string | null;
+    paidDateFontColor: string | null;
+    paidDateConfirmed: boolean | null;
     inBankDate: string | null;
     status: "PLANNED" | "INVOICED" | "PAID" | "IN_BANK" | "REALISED";
     sourceSheet: string;
@@ -42,9 +46,15 @@ export interface NormalizationResult {
     amountExVat: string | null;
     invoiceNumber: string | null;
     invoiceDate: string | null;
+    invoiceDateFontColor: string | null;
+    invoiceDateConfirmed: boolean | null;
     approvedDate: string | null;
     paidDate: string | null;
+    paidDateFontColor: string | null;
+    paidDateConfirmed: boolean | null;
     poNumber: string | null;
+    cosRealised: boolean | null;
+    cashflowConfirmed: boolean | null;
     status: "PLANNED" | "INVOICED" | "APPROVED" | "PAID";
     sourceSheet: string;
     sourceRow: number;
@@ -83,6 +93,25 @@ function cellStr(row: any[], colIndex: number): string | null {
   const v = row[colIndex];
   if (v == null || String(v).trim() === "") return null;
   return String(v).trim();
+}
+
+function getCellFontColor(ws: ExcelJS.Worksheet, rowIdx: number, colIdx: number): { color: string | null; isBlack: boolean } {
+  try {
+    const cell = ws.getRow(rowIdx + 1).getCell(colIdx + 1);
+    if (!cell || !cell.value) return { color: null, isBlack: false };
+    const font = cell.font;
+    if (!font || !font.color || !font.color.argb) {
+      return { color: "black", isBlack: true };
+    }
+    const argb = font.color.argb.toLowerCase();
+    const isRed = argb.includes("ff0000") || argb.endsWith("ff0000");
+    const isBlue = argb.includes("0000ff") || argb.endsWith("0000ff") || argb.includes("0070c0");
+    if (isRed) return { color: "red", isBlack: false };
+    if (isBlue) return { color: "blue", isBlack: false };
+    return { color: "black", isBlack: true };
+  } catch {
+    return { color: null, isBlack: false };
+  }
 }
 
 function deriveRevenueStatus(
@@ -203,7 +232,8 @@ function extractRevenueLines(
   sheetName: string,
   startRow: number,
   endRow: number,
-  issues: IssueEntry[]
+  issues: IssueEntry[],
+  ws?: ExcelJS.Worksheet
 ): NormalizationResult["revenueLines"] {
   const lines: NormalizationResult["revenueLines"] = [];
 
@@ -295,6 +325,22 @@ function extractRevenueLines(
       });
     }
 
+    let invoiceDateFontColor: string | null = null;
+    let invoiceDateConfirmed: boolean | null = null;
+    let paidDateFontColor: string | null = null;
+    let paidDateConfirmed: boolean | null = null;
+
+    if (ws && invoiceDate) {
+      const fc = getCellFontColor(ws, i, invoiceDateCol);
+      invoiceDateFontColor = fc.color;
+      invoiceDateConfirmed = fc.isBlack;
+    }
+    if (ws && paidDate) {
+      const fc = getCellFontColor(ws, i, paidDateCol);
+      paidDateFontColor = fc.color;
+      paidDateConfirmed = fc.isBlack;
+    }
+
     lines.push({
       description: milestoneName,
       milestoneName,
@@ -302,8 +348,12 @@ function extractRevenueLines(
       vat,
       invoiceNumber,
       invoiceDate,
+      invoiceDateFontColor,
+      invoiceDateConfirmed,
       expectedPaymentDate,
       paidDate,
+      paidDateFontColor,
+      paidDateConfirmed,
       inBankDate,
       status,
       sourceSheet: sheetName,
@@ -321,7 +371,8 @@ function extractCostLines(
   sheetName: string,
   startRow: number,
   endRow: number,
-  issues: IssueEntry[]
+  issues: IssueEntry[],
+  ws?: ExcelJS.Worksheet
 ): { lines: NormalizationResult["costLines"]; counterparties: string[] } {
   const lines: NormalizationResult["costLines"] = [];
   const counterpartySet = new Set<string>();
@@ -433,6 +484,25 @@ function extractCostLines(
       });
     }
 
+    let invoiceDateFontColor: string | null = null;
+    let invoiceDateConfirmed: boolean | null = null;
+    let paidDateFontColor: string | null = null;
+    let paidDateConfirmed: boolean | null = null;
+
+    if (ws && invoiceDate) {
+      const fc = getCellFontColor(ws, i, invoiceDateCol);
+      invoiceDateFontColor = fc.color;
+      invoiceDateConfirmed = fc.isBlack;
+    }
+    if (ws && paidDate) {
+      const fc = getCellFontColor(ws, i, paidDateCol);
+      paidDateFontColor = fc.color;
+      paidDateConfirmed = fc.isBlack;
+    }
+
+    const cosRealised = !!(invoiceNumber && invoiceDateConfirmed);
+    const cashflowConfirmed = !!(invoiceNumber && poNumber && paidDateConfirmed);
+
     lines.push({
       costCategory: category,
       counterpartyName: counterparty,
@@ -440,9 +510,15 @@ function extractCostLines(
       amountExVat,
       invoiceNumber,
       invoiceDate,
+      invoiceDateFontColor,
+      invoiceDateConfirmed,
       approvedDate,
       paidDate,
+      paidDateFontColor,
+      paidDateConfirmed,
       poNumber,
+      cosRealised,
+      cashflowConfirmed,
       status,
       sourceSheet: sheetName,
       sourceRow: i + 1,
@@ -501,14 +577,14 @@ export function normalizeData(
       case "REVENUE": {
         revenueLines = extractRevenueLines(
           data, mapping, section.sheetName,
-          section.dataStartRowIndex, section.dataEndRowIndex, issues
+          section.dataStartRowIndex, section.dataEndRowIndex, issues, ws
         );
         break;
       }
       case "EXPENDITURE": {
         const result = extractCostLines(
           data, mapping, section.sheetName,
-          section.dataStartRowIndex, section.dataEndRowIndex, issues
+          section.dataStartRowIndex, section.dataEndRowIndex, issues, ws
         );
         costLines = result.lines;
         counterpartyNames = result.counterparties;

@@ -1,23 +1,28 @@
 import { Router, Request, Response, NextFunction } from "express";
+import multer from "multer";
 import { db } from "./db";
 import { eq, desc } from "drizzle-orm";
 import { verifyToken } from "./jwt";
 import {
-  bootstrapImportRuns,
-  stagingBootstrapProjects,
   derivedProjectKpis,
   derivedPortfolioKpis,
   derivedRagSummary,
+  projectInfo,
+  normalizedCostLines,
+  normalizedRevenueLines,
+  normalizedPlanTasks,
+  normalizedExecutionPhases,
 } from "@shared/schema";
 import {
-  discoverSourceFiles,
-  runBootstrapImport,
+  previewTrackerUpload,
+  commitProjectFromTracker,
   rebuildDerivedTables,
   getFeatureFlag,
   setFeatureFlag,
 } from "./lib/bootstrap-import";
 
 const router = Router();
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
 function jwtAuth(req: Request, _res: Response, next: NextFunction) {
   if ((req as any).user) return next();
@@ -52,132 +57,54 @@ function requireAdmin(req: Request, res: Response, next: NextFunction) {
 
 router.use(jwtAuth);
 
-router.post("/scan", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+router.post("/preview", requireAuth, requireAdmin, upload.single("file"), async (req: Request, res: Response) => {
   try {
-    const sourcePath = req.body.sourcePath || process.cwd() + "/uploads";
-    const result = await discoverSourceFiles(sourcePath);
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+    const result = await previewTrackerUpload(req.file.buffer, req.file.originalname);
     res.json(result);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
 
-router.post("/run", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+router.post("/commit", requireAuth, requireAdmin, upload.single("file"), async (req: Request, res: Response) => {
   try {
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
     const user = (req as any).user;
-    const sourcePath = req.body.sourcePath || process.cwd() + "/uploads";
-    const { runId } = await runBootstrapImport(sourcePath, user.id || 1, user.role || "admin");
-    res.json({ runId, message: "Bootstrap import started" });
+    const overrideName = req.body.projectName || undefined;
+    const result = await commitProjectFromTracker(
+      req.file.buffer,
+      req.file.originalname,
+      overrideName,
+      user.id || 1
+    );
+    res.json(result);
   } catch (error: any) {
+    if (error.message.includes("already exists")) {
+      return res.status(409).json({ error: error.message });
+    }
     res.status(500).json({ error: error.message });
   }
 });
 
-router.get("/runs", requireAuth, requireAdmin, async (_req: Request, res: Response) => {
+router.get("/projects", requireAuth, async (_req: Request, res: Response) => {
   try {
-    const runs = await db.select().from(bootstrapImportRuns).orderBy(desc(bootstrapImportRuns.startedAt)).limit(50);
-    res.json(runs);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
+    const projects = await db.select().from(projectInfo);
+    const costs = await db.select({ projectId: normalizedCostLines.projectId }).from(normalizedCostLines);
+    const revenue = await db.select({ projectId: normalizedRevenueLines.projectId }).from(normalizedRevenueLines);
+    const plans = await db.select({ projectId: normalizedPlanTasks.projectId }).from(normalizedPlanTasks);
 
-router.get("/runs/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
-  try {
-    const id = parseInt(req.params.id);
-    const [run] = await db.select().from(bootstrapImportRuns).where(eq(bootstrapImportRuns.id, id));
-    if (!run) return res.status(404).json({ error: "Run not found" });
-    res.json(run);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
+    const summary = projects.map(p => ({
+      id: p.id,
+      projectName: p.projectName,
+      projectPhase: (p as any).projectPhase || null,
+      contractValue: p.contractValue,
+      costLineCount: costs.filter(c => c.projectId === p.id).length,
+      revenueLineCount: revenue.filter(r => r.projectId === p.id).length,
+      planTaskCount: plans.filter(t => t.projectId === p.id).length,
+    }));
 
-router.get("/report/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
-  try {
-    const id = parseInt(req.params.id);
-    const [run] = await db.select().from(bootstrapImportRuns).where(eq(bootstrapImportRuns.id, id));
-    if (!run) return res.status(404).json({ error: "Run not found" });
-
-    const staging = await db.select().from(stagingBootstrapProjects)
-      .where(eq(stagingBootstrapProjects.importRunId, id));
-
-    const quarantined = staging.filter(s => s.needsReview || s.parseStatus === "FAILED");
-    const successful = staging.filter(s => s.parseStatus === "OK" && !s.needsReview);
-
-    res.json({
-      run,
-      staging: staging.map(s => ({
-        id: s.id,
-        sourcePath: s.sourcePath,
-        projectNameExtracted: s.projectNameExtracted,
-        canonicalProjectName: s.canonicalProjectName,
-        parseStatus: s.parseStatus,
-        errorReason: s.errorReason,
-        planRowCount: s.planRowCount,
-        revenueRowCount: s.revenueRowCount,
-        costRowCount: s.costRowCount,
-        needsReview: s.needsReview,
-        sheetsFound: s.sheetsFound,
-      })),
-      quarantined: quarantined.map(q => ({
-        id: q.id,
-        projectNameExtracted: q.projectNameExtracted,
-        parseStatus: q.parseStatus,
-        errorReason: q.errorReason,
-        rawJson: q.rawJson,
-      })),
-      validation: run.validationJson,
-      summary: {
-        discovered: run.discoveredCount,
-        imported: run.importedCount,
-        updated: run.updatedCount,
-        skipped: run.skippedCount,
-        quarantined: run.quarantinedCount,
-        errors: run.errorsCount,
-        successCount: successful.length,
-      },
-    });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-router.get("/report/:id/download", requireAuth, requireAdmin, async (req: Request, res: Response) => {
-  try {
-    const id = parseInt(req.params.id);
-    const [run] = await db.select().from(bootstrapImportRuns).where(eq(bootstrapImportRuns.id, id));
-    if (!run) return res.status(404).json({ error: "Run not found" });
-
-    const staging = await db.select().from(stagingBootstrapProjects)
-      .where(eq(stagingBootstrapProjects.importRunId, id));
-
-    const report = {
-      run: { id: run.id, status: run.status, startedAt: run.startedAt, finishedAt: run.finishedAt },
-      counts: {
-        discovered: run.discoveredCount,
-        imported: run.importedCount,
-        updated: run.updatedCount,
-        skipped: run.skippedCount,
-        quarantined: run.quarantinedCount,
-        errors: run.errorsCount,
-      },
-      validation: run.validationJson,
-      projects: staging.map(s => ({
-        projectName: s.projectNameExtracted,
-        canonicalName: s.canonicalProjectName,
-        parseStatus: s.parseStatus,
-        errorReason: s.errorReason,
-        plans: s.planRowCount,
-        revenue: s.revenueRowCount,
-        costs: s.costRowCount,
-        needsReview: s.needsReview,
-      })),
-    };
-
-    res.setHeader("Content-Type", "application/json");
-    res.setHeader("Content-Disposition", `attachment; filename="bootstrap-import-run-${id}.json"`);
-    res.send(JSON.stringify(report, null, 2));
+    res.json(summary);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
