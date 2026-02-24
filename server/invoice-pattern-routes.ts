@@ -515,7 +515,7 @@ router.post("/api/admin/wipe-all-data", requireAuth, async (req: Request, res: R
   try {
     const user = (req as any).user;
     const userRole = user?.role;
-    if (!["COO_ADMIN", "CEO_ADMIN"].includes(userRole)) {
+    if (!["admin", "COO_ADMIN", "CEO_ADMIN"].includes(userRole)) {
       return res.status(403).json({ error: "Only COO/CEO Admin can wipe data" });
     }
     if (req.body?.confirm !== "WIPE_ALL_DATA") {
