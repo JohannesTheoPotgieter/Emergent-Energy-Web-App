@@ -13,6 +13,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import {
   Loader2,
   Save,
   Shield,
@@ -23,6 +31,10 @@ import {
   ChevronDown,
   ChevronRight,
   RefreshCw,
+  Plus,
+  Pencil,
+  Trash2,
+  UserPlus,
 } from "lucide-react";
 import {
   COMPANY_ROLE_LABELS,
@@ -119,6 +131,14 @@ function RoleTableSection({ toast }: { toast: ReturnType<typeof useToast>["toast
   const [saving, setSaving] = useState<string | null>(null);
   const [expandedRole, setExpandedRole] = useState<string | null>(null);
   const [pendingChanges, setPendingChanges] = useState<Record<string, Partial<RolePermission>>>({});
+  const [showCreateRole, setShowCreateRole] = useState(false);
+  const [newRoleKey, setNewRoleKey] = useState("");
+  const [newRoleLabel, setNewRoleLabel] = useState("");
+  const [newRoleDesc, setNewRoleDesc] = useState("");
+  const [creatingRole, setCreatingRole] = useState(false);
+  const [editingLabel, setEditingLabel] = useState<string | null>(null);
+  const [editLabelValue, setEditLabelValue] = useState("");
+  const [deletingRole, setDeletingRole] = useState<string | null>(null);
 
   const loadRoles = useCallback(async () => {
     try {
@@ -221,6 +241,81 @@ function RoleTableSection({ toast }: { toast: ReturnType<typeof useToast>["toast
     });
   };
 
+  const handleCreateRole = async () => {
+    if (!newRoleKey || !newRoleLabel) {
+      toast({ title: "Error", description: "Role key and display name are required.", variant: "destructive" });
+      return;
+    }
+    setCreatingRole(true);
+    try {
+      const res = await fetch("/api/roles", {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ role: newRoleKey.toUpperCase().replace(/\s+/g, "_"), label: newRoleLabel, description: newRoleDesc }),
+      });
+      if (res.ok) {
+        toast({ title: "Role Created", description: `${newRoleLabel} has been created.` });
+        setShowCreateRole(false);
+        setNewRoleKey("");
+        setNewRoleLabel("");
+        setNewRoleDesc("");
+        loadRoles();
+      } else {
+        const data = await res.json();
+        toast({ title: "Error", description: data.error || "Failed to create role.", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Error", description: "Failed to create role.", variant: "destructive" });
+    } finally {
+      setCreatingRole(false);
+    }
+  };
+
+  const handleRenameRole = async (roleKey: string) => {
+    if (!editLabelValue.trim()) return;
+    setSaving(roleKey);
+    try {
+      const res = await fetch(`/api/roles/${roleKey}`, {
+        method: "PUT",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ label: editLabelValue.trim() }),
+      });
+      if (res.ok) {
+        toast({ title: "Renamed", description: `Role renamed to "${editLabelValue.trim()}".` });
+        setEditingLabel(null);
+        loadRoles();
+      } else {
+        const data = await res.json();
+        toast({ title: "Error", description: data.error || "Failed to rename.", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Error", description: "Failed to rename role.", variant: "destructive" });
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const handleDeleteRole = async (roleKey: string) => {
+    setDeletingRole(roleKey);
+    try {
+      const res = await fetch(`/api/roles/${roleKey}`, {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        toast({ title: "Deleted", description: `Role "${roleKey}" has been deleted.` });
+        loadRoles();
+      } else {
+        const data = await res.json();
+        toast({ title: "Error", description: data.error || "Failed to delete role.", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Error", description: "Failed to delete role.", variant: "destructive" });
+    } finally {
+      setDeletingRole(null);
+    }
+  };
+
   if (loading) {
     return (
       <Card data-testid="card-roles-loading">
@@ -233,20 +328,31 @@ function RoleTableSection({ toast }: { toast: ReturnType<typeof useToast>["toast
   }
 
   return (
+    <>
     <Card data-testid="card-role-table">
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="text-base flex items-center gap-2">
           <Shield className="h-4 w-4 text-green-600" />
           Role Permissions
         </CardTitle>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => { setLoading(true); loadRoles(); }}
-          data-testid="btn-refresh-roles"
-        >
-          <RefreshCw className="h-4 w-4" />
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            className="bg-green-600 hover:bg-green-700"
+            onClick={() => setShowCreateRole(true)}
+            data-testid="btn-create-role"
+          >
+            <Plus className="h-4 w-4 mr-1" /> New Role
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => { setLoading(true); loadRoles(); }}
+            data-testid="btn-refresh-roles"
+          >
+            <RefreshCw className="h-4 w-4" />
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="space-y-2">
         {roles.map((role) => {
@@ -264,29 +370,77 @@ function RoleTableSection({ toast }: { toast: ReturnType<typeof useToast>["toast
               className={`border rounded-lg transition-colors ${hasChanges ? "border-amber-300 bg-amber-50/30" : "border-gray-200"}`}
               data-testid={`role-row-${role.role}`}
             >
-              <button
-                className="w-full flex items-center gap-3 p-3 text-left hover:bg-gray-50/50 transition-colors"
-                onClick={() => setExpandedRole(isExpanded ? null : role.role)}
-                data-testid={`btn-expand-role-${role.role}`}
-              >
-                {isExpanded ? <ChevronDown className="h-4 w-4 text-gray-400 shrink-0" /> : <ChevronRight className="h-4 w-4 text-gray-400 shrink-0" />}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-gray-800" data-testid={`text-role-name-${role.role}`}>
-                      {role.label}
-                    </span>
-                    <span className="text-xs text-gray-400 font-mono">{role.role}</span>
-                    {role.isSystem && <Badge variant="outline" className="text-[10px] py-0 px-1.5">System</Badge>}
-                    {hasChanges && <Badge className="text-[10px] py-0 px-1.5 bg-amber-500">Unsaved</Badge>}
+              <div className="flex items-center gap-1 p-3">
+                <button
+                  className="flex-1 flex items-center gap-3 text-left hover:bg-gray-50/50 transition-colors rounded"
+                  onClick={() => setExpandedRole(isExpanded ? null : role.role)}
+                  data-testid={`btn-expand-role-${role.role}`}
+                >
+                  {isExpanded ? <ChevronDown className="h-4 w-4 text-gray-400 shrink-0" /> : <ChevronRight className="h-4 w-4 text-gray-400 shrink-0" />}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      {editingLabel === role.role ? (
+                        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                          <Input
+                            value={editLabelValue}
+                            onChange={(e) => setEditLabelValue(e.target.value)}
+                            className="h-7 w-40 text-sm"
+                            autoFocus
+                            onKeyDown={(e) => { if (e.key === "Enter") handleRenameRole(role.role); if (e.key === "Escape") setEditingLabel(null); }}
+                            data-testid={`input-rename-role-${role.role}`}
+                          />
+                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={(e) => { e.stopPropagation(); handleRenameRole(role.role); }}>
+                            <Check className="h-3 w-3 text-green-600" />
+                          </Button>
+                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={(e) => { e.stopPropagation(); setEditingLabel(null); }}>
+                            <X className="h-3 w-3 text-gray-400" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <>
+                          <span className="text-sm font-medium text-gray-800" data-testid={`text-role-name-${role.role}`}>
+                            {role.label}
+                          </span>
+                          <span className="text-xs text-gray-400 font-mono">{role.role}</span>
+                          {role.isSystem && <Badge variant="outline" className="text-[10px] py-0 px-1.5">System</Badge>}
+                          {hasChanges && <Badge className="text-[10px] py-0 px-1.5 bg-amber-500">Unsaved</Badge>}
+                        </>
+                      )}
+                    </div>
+                    {role.description && (
+                      <p className="text-xs text-gray-500 mt-0.5">{role.description}</p>
+                    )}
                   </div>
-                  {role.description && (
-                    <p className="text-xs text-gray-500 mt-0.5">{role.description}</p>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Badge variant="outline" className="text-[10px]">{effectiveSections.length} sections</Badge>
+                  </div>
+                </button>
+                <div className="flex items-center gap-1 shrink-0">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 w-7 p-0"
+                    onClick={(e) => { e.stopPropagation(); setEditingLabel(role.role); setEditLabelValue(role.label); }}
+                    title="Rename role"
+                    data-testid={`btn-rename-role-${role.role}`}
+                  >
+                    <Pencil className="h-3 w-3 text-gray-400" />
+                  </Button>
+                  {!role.isSystem && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 w-7 p-0"
+                      onClick={(e) => { e.stopPropagation(); handleDeleteRole(role.role); }}
+                      disabled={deletingRole === role.role}
+                      title="Delete role"
+                      data-testid={`btn-delete-role-${role.role}`}
+                    >
+                      {deletingRole === role.role ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3 text-red-400" />}
+                    </Button>
                   )}
                 </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <Badge variant="outline" className="text-[10px]">{effectiveSections.length} sections</Badge>
-                </div>
-              </button>
+              </div>
 
               {isExpanded && (
                 <div className="px-3 pb-3 space-y-4 border-t border-gray-100 pt-3" data-testid={`role-details-${role.role}`}>
@@ -420,14 +574,72 @@ function RoleTableSection({ toast }: { toast: ReturnType<typeof useToast>["toast
         })}
       </CardContent>
     </Card>
+
+    <Dialog open={showCreateRole} onOpenChange={setShowCreateRole}>
+      <DialogContent data-testid="dialog-create-role">
+        <DialogHeader>
+          <DialogTitle>Create New Role</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <Label htmlFor="role-key">Role Key</Label>
+            <Input
+              id="role-key"
+              placeholder="e.g. SITE_MANAGER"
+              value={newRoleKey}
+              onChange={(e) => setNewRoleKey(e.target.value.toUpperCase().replace(/\s+/g, "_"))}
+              data-testid="input-new-role-key"
+            />
+            <p className="text-[10px] text-gray-400 mt-1">Uppercase identifier used internally (auto-formatted)</p>
+          </div>
+          <div>
+            <Label htmlFor="role-label">Display Name</Label>
+            <Input
+              id="role-label"
+              placeholder="e.g. Site Manager"
+              value={newRoleLabel}
+              onChange={(e) => setNewRoleLabel(e.target.value)}
+              data-testid="input-new-role-label"
+            />
+          </div>
+          <div>
+            <Label htmlFor="role-desc">Description (optional)</Label>
+            <Input
+              id="role-desc"
+              placeholder="Manages on-site operations"
+              value={newRoleDesc}
+              onChange={(e) => setNewRoleDesc(e.target.value)}
+              data-testid="input-new-role-desc"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => setShowCreateRole(false)} data-testid="btn-cancel-create-role">Cancel</Button>
+          <Button
+            className="bg-green-600 hover:bg-green-700"
+            onClick={handleCreateRole}
+            disabled={creatingRole || !newRoleKey || !newRoleLabel}
+            data-testid="btn-confirm-create-role"
+          >
+            {creatingRole ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Plus className="h-4 w-4 mr-1" />}
+            Create Role
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }
 
 function UserManagementSection({ toast }: { toast: ReturnType<typeof useToast>["toast"] }) {
-  const [users, setUsers] = useState<UserRecord[]>([]);
+  const [userList, setUserList] = useState<UserRecord[]>([]);
   const [roles, setRoles] = useState<RolePermission[]>([]);
   const [loading, setLoading] = useState(true);
   const [changingUserId, setChangingUserId] = useState<number | null>(null);
+  const [deletingUserId, setDeletingUserId] = useState<number | null>(null);
+  const [showCreateUser, setShowCreateUser] = useState(false);
+  const [newUser, setNewUser] = useState({ username: "", name: "", email: "", password: "", role: "PROGRAM_MANAGER" });
+  const [creatingUser, setCreatingUser] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -435,7 +647,7 @@ function UserManagementSection({ toast }: { toast: ReturnType<typeof useToast>["
         fetch("/api/admin/users", { headers: getAuthHeaders() }),
         fetch("/api/roles", { headers: getAuthHeaders() }),
       ]);
-      if (usersRes.ok) setUsers(await usersRes.json());
+      if (usersRes.ok) setUserList(await usersRes.json());
       if (rolesRes.ok) setRoles(await rolesRes.json());
     } catch {
     } finally {
@@ -469,6 +681,55 @@ function UserManagementSection({ toast }: { toast: ReturnType<typeof useToast>["
     }
   };
 
+  const handleCreateUser = async () => {
+    if (!newUser.username || !newUser.name || !newUser.email || !newUser.password) {
+      toast({ title: "Error", description: "All fields are required.", variant: "destructive" });
+      return;
+    }
+    setCreatingUser(true);
+    try {
+      const res = await fetch("/api/admin/users", {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify(newUser),
+      });
+      if (res.ok) {
+        toast({ title: "User Created", description: `${newUser.name} has been created.` });
+        setShowCreateUser(false);
+        setNewUser({ username: "", name: "", email: "", password: "", role: "PROGRAM_MANAGER" });
+        loadData();
+      } else {
+        const data = await res.json();
+        toast({ title: "Error", description: data.error || "Failed to create user.", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Error", description: "Failed to create user.", variant: "destructive" });
+    } finally {
+      setCreatingUser(false);
+    }
+  };
+
+  const handleDeleteUser = async (userId: number) => {
+    setDeletingUserId(userId);
+    try {
+      const res = await fetch(`/api/admin/users/${userId}`, {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        toast({ title: "User Deleted", description: "User has been removed." });
+        loadData();
+      } else {
+        const data = await res.json();
+        toast({ title: "Error", description: data.error || "Failed to delete user.", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Error", description: "Failed to delete user.", variant: "destructive" });
+    } finally {
+      setDeletingUserId(null);
+    }
+  };
+
   if (loading) {
     return (
       <Card data-testid="card-users-loading">
@@ -481,20 +742,30 @@ function UserManagementSection({ toast }: { toast: ReturnType<typeof useToast>["
   }
 
   return (
+    <>
     <Card data-testid="card-user-management">
-      <CardHeader>
+      <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="text-base flex items-center gap-2">
           <Users className="h-4 w-4 text-green-600" />
           User Management
         </CardTitle>
+        <Button
+          size="sm"
+          className="bg-green-600 hover:bg-green-700"
+          onClick={() => setShowCreateUser(true)}
+          data-testid="btn-create-user"
+        >
+          <UserPlus className="h-4 w-4 mr-1" /> New User
+        </Button>
       </CardHeader>
       <CardContent>
-        {users.length === 0 ? (
+        {userList.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-6" data-testid="text-no-users">No users found.</p>
         ) : (
           <div className="space-y-2">
-            {users.map((user) => {
-              const roleLabel = COMPANY_ROLE_LABELS[user.role as CompanyRole] || user.role;
+            {userList.map((user) => {
+              const roleObj = roles.find(r => r.role === user.role);
+              const roleLabel = roleObj?.label || COMPANY_ROLE_LABELS[user.role as CompanyRole] || user.role;
               return (
                 <div
                   key={user.id}
@@ -535,6 +806,18 @@ function UserManagementSection({ toast }: { toast: ReturnType<typeof useToast>["
                     </SelectContent>
                   </Select>
 
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 w-8 p-0 shrink-0"
+                    onClick={() => handleDeleteUser(user.id)}
+                    disabled={deletingUserId === user.id}
+                    title="Delete user"
+                    data-testid={`btn-delete-user-${user.id}`}
+                  >
+                    {deletingUserId === user.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4 text-red-400" />}
+                  </Button>
+
                   {changingUserId === user.id && (
                     <Loader2 className="h-4 w-4 animate-spin text-muted-foreground shrink-0" />
                   )}
@@ -545,5 +828,85 @@ function UserManagementSection({ toast }: { toast: ReturnType<typeof useToast>["
         )}
       </CardContent>
     </Card>
+
+    <Dialog open={showCreateUser} onOpenChange={setShowCreateUser}>
+      <DialogContent data-testid="dialog-create-user">
+        <DialogHeader>
+          <DialogTitle>Create New User</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <Label htmlFor="user-username">Username</Label>
+            <Input
+              id="user-username"
+              placeholder="johndoe"
+              value={newUser.username}
+              onChange={(e) => setNewUser(prev => ({ ...prev, username: e.target.value }))}
+              data-testid="input-new-user-username"
+            />
+          </div>
+          <div>
+            <Label htmlFor="user-name">Full Name</Label>
+            <Input
+              id="user-name"
+              placeholder="John Doe"
+              value={newUser.name}
+              onChange={(e) => setNewUser(prev => ({ ...prev, name: e.target.value }))}
+              data-testid="input-new-user-name"
+            />
+          </div>
+          <div>
+            <Label htmlFor="user-email">Email</Label>
+            <Input
+              id="user-email"
+              type="email"
+              placeholder="john@example.com"
+              value={newUser.email}
+              onChange={(e) => setNewUser(prev => ({ ...prev, email: e.target.value }))}
+              data-testid="input-new-user-email"
+            />
+          </div>
+          <div>
+            <Label htmlFor="user-password">Password</Label>
+            <Input
+              id="user-password"
+              type="password"
+              placeholder="Enter password"
+              value={newUser.password}
+              onChange={(e) => setNewUser(prev => ({ ...prev, password: e.target.value }))}
+              data-testid="input-new-user-password"
+            />
+          </div>
+          <div>
+            <Label htmlFor="user-role">Role</Label>
+            <Select value={newUser.role} onValueChange={(val) => setNewUser(prev => ({ ...prev, role: val }))}>
+              <SelectTrigger className="h-9" data-testid="select-new-user-role">
+                <SelectValue placeholder="Select role" />
+              </SelectTrigger>
+              <SelectContent>
+                {roles.map((r) => (
+                  <SelectItem key={r.role} value={r.role}>
+                    {r.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => setShowCreateUser(false)} data-testid="btn-cancel-create-user">Cancel</Button>
+          <Button
+            className="bg-green-600 hover:bg-green-700"
+            onClick={handleCreateUser}
+            disabled={creatingUser || !newUser.username || !newUser.name || !newUser.email || !newUser.password}
+            data-testid="btn-confirm-create-user"
+          >
+            {creatingUser ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <UserPlus className="h-4 w-4 mr-1" />}
+            Create User
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }
