@@ -6,9 +6,9 @@ import fs from "fs";
 import path from "path";
 import { storage } from "./storage";
 import { parseTrackerFile, applyFontColors } from "./excelParser";
-import { insertBudgetSchema, programExpense, programInflows, projectInfo } from "@shared/schema";
+import { insertBudgetSchema, programExpense, programInflows, projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedPlanTasks, smartImportRuns } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, or, sql, isNull, asc } from "drizzle-orm";
+import { eq, and, or, sql, isNull, asc, desc } from "drizzle-orm";
 import { z } from "zod";
 import { format } from "date-fns";
 import { generateToken, verifyToken } from "./jwt";
@@ -611,7 +611,7 @@ export async function registerRoutes(
 
   app.get("/api/overview", async (req, res) => {
     try {
-      const [allProjectInfo, allExpenses, rawInflows, allPlans, latestRefresh, allTaskLinks, allOpTasks] = await Promise.all([
+      const [allProjectInfo, allExpenses, rawInflows, allPlans, latestRefresh, allTaskLinks, allOpTasks, allNormCostsOv, allNormRevOv, allNormPlansOv] = await Promise.all([
         storage.getAllProjectInfo(),
         storage.getAllProgramExpenses(),
         storage.getAllProgramInflows(),
@@ -619,11 +619,17 @@ export async function registerRoutes(
         storage.getLatestRefresh(),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
+        db.select().from(normalizedCostLines),
+        db.select().from(normalizedRevenueLines),
+        db.select().from(normalizedPlanTasks),
       ]);
 
       const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
 
       const today = new Date().toISOString().split("T")[0];
+
+      const oldExpenseProjects = new Set(allExpenses.map(e => e.projectName));
+      const oldInflowProjects = new Set(allInflows.map(i => i.projectName));
 
       // total_program_budget = SUM(project_info.contract_value)
       let totalProgramBudget = 0;
@@ -640,6 +646,11 @@ export async function registerRoutes(
             totalProgramBudget += parseFloat(inflow.milestoneAmount);
           }
         }
+        if (totalProgramBudget === 0) {
+          for (const rev of allNormRevOv) {
+            if (rev.amountExVat) totalProgramBudget += parseFloat(rev.amountExVat);
+          }
+        }
       }
 
       // actual_spend_paid = SUM(expense_actual_total where payment_date is valid YYYY-MM-DD and <= today)
@@ -650,6 +661,13 @@ export async function registerRoutes(
           actualSpendPaid += parseFloat(expense.expenseActualTotal);
         }
       }
+      for (const cost of allNormCostsOv) {
+        if (oldExpenseProjects.has(cost.projectName)) continue;
+        const paymentDate = cost.paidDate;
+        if (paymentDate && /^\d{4}-\d{2}-\d{2}$/.test(paymentDate) && paymentDate <= today && cost.amountExVat) {
+          actualSpendPaid += parseFloat(cost.amountExVat);
+        }
+      }
 
       // revenue_realised = SUM(milestone_amount where effective date is valid and <= today)
       let revenueRealised = 0;
@@ -657,6 +675,13 @@ export async function registerRoutes(
         const paymentDate = inflow.effectiveDate;
         if (paymentDate && /^\d{4}-\d{2}-\d{2}$/.test(paymentDate) && paymentDate <= today && inflow.milestoneAmount) {
           revenueRealised += parseFloat(inflow.milestoneAmount);
+        }
+      }
+      for (const rev of allNormRevOv) {
+        if (oldInflowProjects.has(rev.projectName)) continue;
+        const paymentDate = rev.paidDate || rev.inBankDate;
+        if (paymentDate && /^\d{4}-\d{2}-\d{2}$/.test(paymentDate) && paymentDate <= today && rev.amountExVat) {
+          revenueRealised += parseFloat(rev.amountExVat);
         }
       }
 
@@ -674,6 +699,9 @@ export async function registerRoutes(
       for (const plan of allPlans) {
         uniqueProjects.add(plan.projectName);
       }
+      for (const c of allNormCostsOv) uniqueProjects.add(c.projectName);
+      for (const r of allNormRevOv) uniqueProjects.add(r.projectName);
+      for (const p of allNormPlansOv) uniqueProjects.add(p.projectName);
 
       res.json({
         total_program_budget: totalProgramBudget,
@@ -1328,7 +1356,7 @@ export async function registerRoutes(
 
   app.get("/api/projects-summary", async (req, res) => {
     try {
-      const [allProjectInfo, allExpenses, rawInflows, allPlans, allEditableFields, allTaskLinks, allOpTasks, uploadMetaRows] = await Promise.all([
+      const [allProjectInfo, allExpenses, rawInflows, allPlans, allEditableFields, allTaskLinks, allOpTasks, uploadMetaRows, committedSmartImports, allNormCosts, allNormRevenue, allNormPlans] = await Promise.all([
         storage.getAllProjectInfo(),
         storage.getAllProgramExpenses(),
         storage.getAllProgramInflows(),
@@ -1337,6 +1365,10 @@ export async function registerRoutes(
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
         db.execute(sql`SELECT DISTINCT file_name FROM upload_metadata`),
+        db.selectDistinct({ projectName: smartImportRuns.projectName }).from(smartImportRuns).where(eq(smartImportRuns.status, 'COMMITTED')),
+        db.select().from(normalizedCostLines),
+        db.select().from(normalizedRevenueLines),
+        db.select().from(normalizedPlanTasks),
       ]);
       const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
 
@@ -1347,6 +1379,14 @@ export async function registerRoutes(
         const stripped = fileName.replace(/\.(xlsx|xlsm|xls)$/i, '');
         importedProjectNames.add(stripped);
         importedProjectNames.add(stripped.replace(/ /g, '_'));
+      }
+      for (const row of committedSmartImports) {
+        if (row.projectName) {
+          importedProjectNames.add(row.projectName);
+          importedProjectNames.add(row.projectName.replace(/ /g, '_'));
+          importedProjectNames.add(row.projectName + '_Tracker');
+          importedProjectNames.add(row.projectName.replace(/ /g, '_') + '_Tracker');
+        }
       }
 
       const today = new Date().toISOString().split("T")[0];
@@ -1371,11 +1411,30 @@ export async function registerRoutes(
 
       const editableMap = new Map(allEditableFields.map(f => [f.projectName, f]));
 
+      const normCostsByProject = new Map<string, typeof allNormCosts>();
+      for (const c of allNormCosts) {
+        if (!normCostsByProject.has(c.projectName)) normCostsByProject.set(c.projectName, []);
+        normCostsByProject.get(c.projectName)!.push(c);
+      }
+      const normRevByProject = new Map<string, typeof allNormRevenue>();
+      for (const r of allNormRevenue) {
+        if (!normRevByProject.has(r.projectName)) normRevByProject.set(r.projectName, []);
+        normRevByProject.get(r.projectName)!.push(r);
+      }
+      const normPlansByProject = new Map<string, typeof allNormPlans>();
+      for (const p of allNormPlans) {
+        if (!normPlansByProject.has(p.projectName)) normPlansByProject.set(p.projectName, []);
+        normPlansByProject.get(p.projectName)!.push(p);
+      }
+
       const allProjectNames = new Set<string>();
       for (const info of allProjectInfo) allProjectNames.add(info.projectName);
       for (const expense of allExpenses) allProjectNames.add(expense.projectName);
       for (const inflow of allInflows) allProjectNames.add(inflow.projectName);
       for (const plan of allPlans) allProjectNames.add(plan.projectName);
+      for (const c of allNormCosts) allProjectNames.add(c.projectName);
+      for (const r of allNormRevenue) allProjectNames.add(r.projectName);
+      for (const p of allNormPlans) allProjectNames.add(p.projectName);
 
       const taskCountsByProject = new Map<string, Record<string, number>>();
       for (const task of allOpTasks) {
@@ -1397,12 +1456,27 @@ export async function registerRoutes(
         const projectPlans = plansByProject.get(projectName) || [];
         const editable = editableMap.get(projectName);
 
+        const normCosts = normCostsByProject.get(projectName) || [];
+        const normRev = normRevByProject.get(projectName) || [];
+        const normPlans = normPlansByProject.get(projectName) || [];
+
+        const useNormPlans = projectPlans.length === 0 && normPlans.length > 0;
+        const planLikeRows = useNormPlans ? normPlans.map(np => ({
+          taskNo: null as string | null,
+          highLevelProgramme: np.taskName,
+          actualStart: np.actualStartDate,
+          actualEnd: np.actualEndDate,
+          durationDays: np.durationDays,
+          actualPctComplete: np.pctComplete,
+          expectedPctComplete: null as number | null,
+        })) : projectPlans;
+
         // Compute milestone dates from plan tasks (Excel spec: max ActualEndDate matching descriptions)
-        const pdFromPlan = findMaxEndDate(projectPlans, ['bd handover', 'project charter handover']);
-        const csFromPlan = findMinStartDate(projectPlans, ['site establishment']);
-        const commFromPlan = findMaxEndDate(projectPlans, ['commissioning']);
-        const omFromPlan = findMaxEndDate(projectPlans, ['handover to matriarch']);
-        const chFromPlan = findMaxEndDate(projectPlans, ['handover to client']);
+        const pdFromPlan = findMaxEndDate(planLikeRows as any, ['bd handover', 'project charter handover']);
+        const csFromPlan = findMinStartDate(planLikeRows as any, ['site establishment']);
+        const commFromPlan = findMaxEndDate(planLikeRows as any, ['commissioning']);
+        const omFromPlan = findMaxEndDate(planLikeRows as any, ['handover to matriarch']);
+        const chFromPlan = findMaxEndDate(planLikeRows as any, ['handover to client']);
 
         const pdHandoverDate = pdFromPlan || info?.pdHandoverDate || null;
         const constructionStartDate = csFromPlan || info?.constructionStartDate || null;
@@ -1427,23 +1501,35 @@ export async function registerRoutes(
         const workingWeeks = commWorkDays ? commWorkDays / 5 : null;
         const kwPerWeek = (sizeKwp && workingWeeks && workingWeeks > 0) ? sizeKwp / workingWeeks : null;
 
-        // Actual Revenue = SUM(MilstoneAmount) from ProgramInflows
+        // Actual Revenue = SUM(MilstoneAmount) from ProgramInflows, fallback to normalized
         let actualRevenue = 0;
-        for (const inflow of projectInflows) {
-          if (inflow.milestoneAmount) actualRevenue += parseFloat(inflow.milestoneAmount);
+        if (projectInflows.length > 0) {
+          for (const inflow of projectInflows) {
+            if (inflow.milestoneAmount) actualRevenue += parseFloat(inflow.milestoneAmount);
+          }
+        } else if (normRev.length > 0) {
+          for (const rev of normRev) {
+            if (rev.amountExVat) actualRevenue += parseFloat(rev.amountExVat);
+          }
         }
 
-        // Actual Expenses = SUM(ExpenseActualTotal) from ProgramExpense
+        // Actual Expenses = SUM(ExpenseActualTotal) from ProgramExpense, fallback to normalized
         let actualExpenses = 0;
-        for (const expense of projectExpenses) {
-          if (expense.expenseActualTotal) actualExpenses += parseFloat(expense.expenseActualTotal);
+        if (projectExpenses.length > 0) {
+          for (const expense of projectExpenses) {
+            if (expense.expenseActualTotal) actualExpenses += parseFloat(expense.expenseActualTotal);
+          }
+        } else if (normCosts.length > 0) {
+          for (const cost of normCosts) {
+            if (cost.amountExVat) actualExpenses += parseFloat(cost.amountExVat);
+          }
         }
 
         // GP % = 1 - (ActualExpenses / ActualRevenue); if revenue = 0 then null
         const gpPercent = actualRevenue > 0 ? 1 - (actualExpenses / actualRevenue) : null;
 
         // Project % Complete and Expected % — prefer summary row (No./#) from Excel
-        const summaryRow = projectPlans.find(p => {
+        const summaryRow = (planLikeRows as any[]).find((p: any) => {
           const tn = (p.taskNo || '').toString().toLowerCase().trim();
           return tn === 'no.' || tn === 'no' || tn === '#';
         });
@@ -1454,15 +1540,15 @@ export async function registerRoutes(
           expectedPctComplete = summaryRow.expectedPctComplete ?? null;
         }
         if (projectPctComplete === null) {
-          const validActualPcts = projectPlans.filter(p => p.actualPctComplete !== null);
+          const validActualPcts = (planLikeRows as any[]).filter((p: any) => p.actualPctComplete !== null);
           projectPctComplete = validActualPcts.length > 0
-            ? validActualPcts.reduce((sum, p) => sum + (p.actualPctComplete || 0), 0) / validActualPcts.length
+            ? validActualPcts.reduce((sum: number, p: any) => sum + (p.actualPctComplete || 0), 0) / validActualPcts.length
             : null;
         }
         if (expectedPctComplete === null) {
           const todayDate = today;
           const tasksWithExpected: number[] = [];
-          for (const task of projectPlans) {
+          for (const task of (planLikeRows as any[])) {
             if (task.expectedPctComplete !== null && task.expectedPctComplete !== undefined) {
               tasksWithExpected.push(task.expectedPctComplete);
               continue;
@@ -1491,24 +1577,48 @@ export async function registerRoutes(
 
         // Revenue Outstanding (Excel spec): SUM(MilstoneAmount) where PaymentRecievedDate <= today AND MilestoneInvoiceNumber is blank
         let revenueOutstanding = 0;
-        for (const inflow of projectInflows) {
-          if (inflow.milestoneAmount) {
-            const hasPayment = inflow.paymentReceivedDate && /^\d{4}-\d{2}-\d{2}/.test(inflow.paymentReceivedDate) && inflow.paymentReceivedDate <= today;
-            const noInvoice = !inflow.milestoneInvoiceNumber || inflow.milestoneInvoiceNumber.trim() === '';
-            if (hasPayment && noInvoice) {
-              revenueOutstanding += parseFloat(inflow.milestoneAmount);
+        if (projectInflows.length > 0) {
+          for (const inflow of projectInflows) {
+            if (inflow.milestoneAmount) {
+              const hasPayment = inflow.paymentReceivedDate && /^\d{4}-\d{2}-\d{2}/.test(inflow.paymentReceivedDate) && inflow.paymentReceivedDate <= today;
+              const noInvoice = !inflow.milestoneInvoiceNumber || inflow.milestoneInvoiceNumber.trim() === '';
+              if (hasPayment && noInvoice) {
+                revenueOutstanding += parseFloat(inflow.milestoneAmount);
+              }
+            }
+          }
+        } else if (normRev.length > 0) {
+          for (const rev of normRev) {
+            if (rev.amountExVat) {
+              const hasPayment = rev.paidDate && /^\d{4}-\d{2}-\d{2}/.test(rev.paidDate) && rev.paidDate <= today;
+              const noInvoice = !rev.invoiceNumber || rev.invoiceNumber.trim() === '';
+              if (hasPayment && noInvoice) {
+                revenueOutstanding += parseFloat(rev.amountExVat);
+              }
             }
           }
         }
 
         // Expenses Due (Excel spec): SUM(ExpenseActualTotal) where ExpensePaymentDate < today AND ExpenseInvoiceNumber is blank
         let expensesDue = 0;
-        for (const expense of projectExpenses) {
-          if (expense.expenseActualTotal) {
-            const hasPastPaymentDate = expense.expensePaymentDate && /^\d{4}-\d{2}-\d{2}/.test(expense.expensePaymentDate) && expense.expensePaymentDate < today;
-            const noInvoice = !expense.expenseInvoiceNumber || expense.expenseInvoiceNumber.trim() === '';
-            if (hasPastPaymentDate && noInvoice) {
-              expensesDue += parseFloat(expense.expenseActualTotal);
+        if (projectExpenses.length > 0) {
+          for (const expense of projectExpenses) {
+            if (expense.expenseActualTotal) {
+              const hasPastPaymentDate = expense.expensePaymentDate && /^\d{4}-\d{2}-\d{2}/.test(expense.expensePaymentDate) && expense.expensePaymentDate < today;
+              const noInvoice = !expense.expenseInvoiceNumber || expense.expenseInvoiceNumber.trim() === '';
+              if (hasPastPaymentDate && noInvoice) {
+                expensesDue += parseFloat(expense.expenseActualTotal);
+              }
+            }
+          }
+        } else if (normCosts.length > 0) {
+          for (const cost of normCosts) {
+            if (cost.amountExVat) {
+              const hasPastPaymentDate = cost.paidDate && /^\d{4}-\d{2}-\d{2}/.test(cost.paidDate) && cost.paidDate < today;
+              const noInvoice = !cost.invoiceNumber || cost.invoiceNumber.trim() === '';
+              if (hasPastPaymentDate && noInvoice) {
+                expensesDue += parseFloat(cost.amountExVat);
+              }
             }
           }
         }
