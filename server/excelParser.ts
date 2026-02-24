@@ -235,7 +235,7 @@ function getColumnIndex(colMap: Map<string, number>, searchTerms: string[]): num
 export async function parseTrackerFile(buffer: Buffer, fileName: string): Promise<ParseResult> {
   const projectName = fileName
     .replace(/\.(xlsx|xlsm|xls)$/i, "")
-    .replace(/_[Tt]racker\d*$/, "")
+    .replace(/_[Tt]racker.*$/, "")
     .replace(/_/g, " ")
     .trim();
   const warnings: string[] = [];
