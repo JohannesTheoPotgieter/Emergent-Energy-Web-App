@@ -13,7 +13,7 @@ import { Progress } from "@/components/ui/progress";
 import {
   Upload, FileSpreadsheet, CheckCircle2, AlertCircle, AlertTriangle,
   Info, ArrowRight, ArrowLeft, Loader2, X, Check, ChevronDown, ChevronUp,
-  Pencil, History,
+  Pencil, History, Zap, SkipForward,
 } from "lucide-react";
 import { useLocation } from "wouter";
 
