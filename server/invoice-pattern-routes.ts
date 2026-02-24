@@ -466,6 +466,51 @@ router.get("/api/invoice-pattern-matches", requireAuth, async (req: Request, res
   }
 });
 
+router.post("/api/procurement-analysis/reset-tags", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const userRole = user?.role;
+    if (!["COO_ADMIN", "CEO_ADMIN"].includes(userRole)) {
+      return res.status(403).json({ error: "Only COO/CEO Admin can reset tags" });
+    }
+
+    if (req.body?.confirm !== true) {
+      return res.status(400).json({ error: "Must send confirm: true to execute this destructive action" });
+    }
+
+    const taggedBefore = await db.select({ count: sql<number>`count(*)` }).from(normalizedCostLines).where(sql`pattern_rule_id IS NOT NULL`);
+    const matchesBefore = await db.select({ count: sql<number>`count(*)` }).from(invoicePatternMatches);
+
+    await db.transaction(async (tx: any) => {
+      await tx.update(normalizedCostLines).set({
+        patternRuleId: null,
+        patternClassifiedAt: null,
+        patternInferredType: null,
+      }).where(sql`pattern_rule_id IS NOT NULL`);
+
+      await tx.delete(invoicePatternMatches);
+
+      await tx.update(invoicePatternRules).set({
+        timesMatched: 0,
+        timesConfirmed: 0,
+        timesOverridden: 0,
+      });
+    });
+
+    console.log(`[AUDIT] reset-tags executed by ${user?.email} (${userRole}): cleared ${taggedBefore[0]?.count || 0} tags, ${matchesBefore[0]?.count || 0} matches`);
+
+    res.json({
+      success: true,
+      tagsCleared: taggedBefore[0]?.count || 0,
+      matchesDeleted: matchesBefore[0]?.count || 0,
+      message: `Cleared ${taggedBefore[0]?.count || 0} tags and ${matchesBefore[0]?.count || 0} match records. Pattern rules preserved with counters reset.`,
+    });
+  } catch (err: any) {
+    console.error("[reset-tags] Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export function registerInvoicePatternRoutes(app: any) {
   app.use(router);
 }

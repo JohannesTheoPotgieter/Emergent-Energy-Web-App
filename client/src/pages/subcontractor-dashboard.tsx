@@ -75,8 +75,6 @@ export default function SubcontractorDashboardPage() {
   const [linkCreatePattern, setLinkCreatePattern] = useState(true);
   const [linkLoading, setLinkLoading] = useState(false);
   const [linkError, setLinkError] = useState("");
-  const [analysisRunning, setAnalysisRunning] = useState(false);
-
   const handleStartRename = () => {
     setRenameValue(selectedCp || "");
     setRenameError("");
@@ -238,25 +236,15 @@ export default function SubcontractorDashboardPage() {
     }
   };
 
-  const handleRunAnalysis = async () => {
-    setAnalysisRunning(true);
-    try {
-      const res = await fetch("/api/procurement-analysis/run", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        credentials: "include",
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Analysis failed");
-      queryClient.invalidateQueries({ queryKey: ["/api/subcontractor-dashboard/summary"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/subcontractor-dashboard/detail"] });
-      alert(`Analysis complete: ${data.message}`);
-    } catch (err: any) {
-      alert(`Analysis failed: ${err.message}`);
-    } finally {
-      setAnalysisRunning(false);
-    }
-  };
+  const { data: patternStats } = useQuery({
+    queryKey: ["/api/procurement-analysis/pattern-stats"],
+    queryFn: async () => {
+      const res = await fetch("/api/procurement-analysis/pattern-stats", { headers: getAuthHeaders(), credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load stats");
+      return res.json();
+    },
+    refetchInterval: 30000,
+  });
 
   const { data, isLoading } = useQuery({
     queryKey: ["/api/subcontractor-dashboard/summary", typeFilter, projectFilter, coreOnly],
@@ -311,19 +299,56 @@ export default function SubcontractorDashboardPage() {
             Aggregated view of installer and supplier accounts with spend, usage, and upcoming payments.
           </p>
         </div>
-        {isAdmin && (
-          <Button
-            onClick={handleRunAnalysis}
-            disabled={analysisRunning}
-            size="sm"
-            className="shrink-0"
-            data-testid="btn-run-analysis"
-          >
-            {analysisRunning ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <TrendingUp className="w-4 h-4 mr-2" />}
-            {analysisRunning ? "Running..." : "Run Analysis"}
-          </Button>
-        )}
       </div>
+
+      {patternStats && (patternStats.taggedLines > 0 || patternStats.eligibleLines > 0) && (
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3" data-testid="pattern-stats-strip">
+          <Card className="bg-white">
+            <CardContent className="pt-3 pb-2 px-3">
+              <div className="text-[10px] text-slate-500 mb-0.5">Eligible Lines</div>
+              <div className="text-lg font-bold" data-testid="stat-eligible">{patternStats.eligibleLines.toLocaleString()}</div>
+              <div className="text-[9px] text-slate-400">with invoice & amount</div>
+            </CardContent>
+          </Card>
+          <Card className="bg-white">
+            <CardContent className="pt-3 pb-2 px-3">
+              <div className="text-[10px] text-slate-500 mb-0.5">Tagged</div>
+              <div className="text-lg font-bold text-green-700" data-testid="stat-tagged">{patternStats.taggedLines.toLocaleString()}</div>
+              <div className="text-[9px] text-slate-400">pattern-matched</div>
+            </CardContent>
+          </Card>
+          <Card className="bg-white">
+            <CardContent className="pt-3 pb-2 px-3">
+              <div className="text-[10px] text-slate-500 mb-0.5">Untagged</div>
+              <div className="text-lg font-bold text-amber-600" data-testid="stat-untagged">{patternStats.untaggedLines.toLocaleString()}</div>
+              <div className="text-[9px] text-slate-400">awaiting classification</div>
+            </CardContent>
+          </Card>
+          <Card className="bg-white">
+            <CardContent className="pt-3 pb-2 px-3">
+              <div className="text-[10px] text-slate-500 mb-0.5">Classification Rate</div>
+              <div className="text-lg font-bold" data-testid="stat-rate">{patternStats.classificationRate}%</div>
+              <div className="text-[9px] text-slate-400">tagged / eligible</div>
+            </CardContent>
+          </Card>
+          <Card className="bg-white">
+            <CardContent className="pt-3 pb-2 px-3">
+              <div className="text-[10px] text-slate-500 mb-0.5">Type Breakdown</div>
+              <div className="flex flex-wrap gap-1 mt-1" data-testid="stat-types">
+                {Object.entries(patternStats.typeCounts || {}).map(([type, count]) => (
+                  <Badge key={type} variant={type === "INSTALLER" ? "default" : type === "SUPPLIER" ? "secondary" : "outline"}
+                    className="text-[9px]">
+                    {type}: {count as number}
+                  </Badge>
+                ))}
+                {Object.keys(patternStats.typeCounts || {}).length === 0 && (
+                  <span className="text-[9px] text-slate-400">No classified lines yet</span>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card data-testid="kpi-biggest">
