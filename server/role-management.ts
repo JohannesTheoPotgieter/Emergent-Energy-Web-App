@@ -4,6 +4,7 @@ import { eq, sql } from "drizzle-orm";
 import { rolePermissions, users, DEFAULT_ROLE_PERMISSIONS } from "@shared/schema";
 import { verifyToken } from "./jwt";
 import { invalidateEntityPermCache } from "./permission-middleware";
+import bcrypt from "bcryptjs";
 
 const LEGACY_ROLE_MAP: Record<string, string> = {
   admin: "COO_ADMIN",
@@ -150,9 +151,12 @@ export function registerRoleManagementRoutes(app: Express) {
       if (!existing) return res.status(404).json({ error: "Role not found" });
       if (existing.isSystem) return res.status(403).json({ error: "Cannot delete system roles" });
 
-      const usersWithRole = await db.select({ id: users.id }).from(users).where(sql`${users.role} = ${roleKey}`);
-      if (usersWithRole.length > 0) {
-        return res.status(409).json({ error: `Cannot delete role. ${usersWithRole.length} user(s) still assigned to this role.` });
+      try {
+        const usersWithRole = await db.select({ id: users.id }).from(users).where(eq(users.role, roleKey));
+        if (usersWithRole.length > 0) {
+          return res.status(409).json({ error: `Cannot delete role. ${usersWithRole.length} user(s) still assigned to this role.` });
+        }
+      } catch {
       }
 
       await db.delete(rolePermissions).where(eq(rolePermissions.role, roleKey));
@@ -193,6 +197,54 @@ export function registerRoleManagementRoutes(app: Express) {
       if (!updated) return res.status(404).json({ error: "User not found" });
 
       res.json({ id: updated.id, email: updated.email, name: updated.name, role: updated.role });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/admin/users", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { username, name, email, password, role } = req.body;
+      if (!username || !name || !email || !password) {
+        return res.status(400).json({ error: "Username, name, email, and password are required" });
+      }
+
+      const [existingUser] = await db.select().from(users).where(eq(users.username, username));
+      if (existingUser) return res.status(409).json({ error: "Username already exists" });
+
+      const assignedRole = role || "PROGRAM_MANAGER";
+
+      const [roleExists] = await db.select().from(rolePermissions).where(eq(rolePermissions.role, assignedRole));
+      if (!roleExists) return res.status(400).json({ error: `Role "${assignedRole}" does not exist. Create the role first.` });
+
+      const hashedPassword = await bcrypt.hash(password, 10);
+
+      const [created] = await db.insert(users).values({
+        username,
+        name,
+        email,
+        password: hashedPassword,
+        role: assignedRole,
+      }).returning();
+
+      res.json({ id: created.id, username: created.username, name: created.name, email: created.email, role: created.role });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/admin/users/:userId", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const userId = parseInt(req.params.userId as string);
+      const currentUser = (req as any).user;
+      if (currentUser?.id === userId) {
+        return res.status(400).json({ error: "Cannot delete your own account" });
+      }
+
+      const [deleted] = await db.delete(users).where(eq(users.id, userId)).returning();
+      if (!deleted) return res.status(404).json({ error: "User not found" });
+
+      res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
