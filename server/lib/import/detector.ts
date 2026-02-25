@@ -9,6 +9,7 @@ export interface DetectedSection {
   dataStartRowIndex: number;
   dataEndRowIndex: number;
   detectedHeaders: { colIndex: number; rawHeader: string; normalizedHeader: string }[];
+  budgetHeaders?: { colIndex: number; rawHeader: string; normalizedHeader: string }[];
   confidence: number;
 }
 
@@ -126,10 +127,17 @@ function findHeaderRow(
 
   const headerRow = data[bestRowIndex];
   const headers: { colIndex: number; rawHeader: string; normalizedHeader: string }[] = [];
+  const budgetHeaders: { colIndex: number; rawHeader: string; normalizedHeader: string }[] = [];
   for (let c = 0; c < headerRow.length; c++) {
-    if (actualSectionStartCol >= 0 && c < actualSectionStartCol) continue;
     const raw = headerRow[c];
-    if (raw != null && String(raw).trim() !== "") {
+    if (raw == null || String(raw).trim() === "") continue;
+    if (actualSectionStartCol >= 0 && c < actualSectionStartCol) {
+      budgetHeaders.push({
+        colIndex: c,
+        rawHeader: String(raw),
+        normalizedHeader: normalizeHeader(raw),
+      });
+    } else {
       headers.push({
         colIndex: c,
         rawHeader: String(raw),
@@ -138,7 +146,7 @@ function findHeaderRow(
     }
   }
 
-  return { rowIndex: bestRowIndex, headers };
+  return { rowIndex: bestRowIndex, headers, budgetHeaders: budgetHeaders.length > 0 ? budgetHeaders : undefined };
 }
 
 function findDataEndRow(data: any[][], startRow: number, colCount: number): number {
@@ -430,6 +438,7 @@ export function detectSections(workbook: ExcelJS.Workbook): DetectionResult {
         dataStartRowIndex: bestCandidate.dataStartRow,
         dataEndRowIndex: bestCandidate.dataEndRow,
         detectedHeaders: bestCandidate.headerResult.headers,
+        budgetHeaders: bestCandidate.headerResult.budgetHeaders,
         confidence: bestCandidate.confidence,
       });
 

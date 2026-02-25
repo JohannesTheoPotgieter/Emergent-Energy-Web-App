@@ -17,6 +17,7 @@ export interface ColumnMapping {
 export interface MappingResult {
   section: "PLAN" | "REVENUE" | "EXPENDITURE";
   mappings: ColumnMapping[];
+  budgetMappings?: ColumnMapping[];
   unmappedHeaders: { colIndex: number; rawHeader: string }[];
   missingRequired: string[];
   overallConfidence: number;
@@ -175,6 +176,39 @@ export function mapColumns(
     }
   }
 
+  let budgetMappings: ColumnMapping[] | undefined;
+  if (detectedSection.section === "EXPENDITURE" && detectedSection.budgetHeaders && detectedSection.budgetHeaders.length > 0) {
+    budgetMappings = [];
+    const budgetClaimed = new Set<string>();
+    const budgetMatches: typeof headerMatches = [];
+
+    for (const header of detectedSection.budgetHeaders) {
+      const match = findBestMatch(header.normalizedHeader, synonymMap);
+      if (match) {
+        budgetMatches.push({
+          colIndex: header.colIndex,
+          rawHeader: header.rawHeader,
+          normalizedHeader: header.normalizedHeader,
+          ...match,
+        });
+      }
+    }
+
+    budgetMatches.sort((a, b) => b.confidence - a.confidence);
+
+    for (const match of budgetMatches) {
+      if (budgetClaimed.has(match.canonicalField)) continue;
+      budgetClaimed.add(match.canonicalField);
+      budgetMappings.push({
+        colIndex: match.colIndex,
+        rawHeader: match.rawHeader,
+        canonicalField: match.canonicalField,
+        confidence: match.confidence,
+        matchType: match.matchType,
+      });
+    }
+  }
+
   const missingRequired: string[] = [];
   if (anchor) {
     for (const reqField of anchor.requiredFields) {
@@ -191,6 +225,7 @@ export function mapColumns(
   return {
     section: detectedSection.section,
     mappings,
+    budgetMappings,
     unmappedHeaders,
     missingRequired,
     overallConfidence,
