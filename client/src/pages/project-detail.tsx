@@ -835,13 +835,13 @@ export default function ProjectDetailPage() {
             <FileText className="h-3.5 w-3.5" />
             <span>Plan</span>
           </TabsTrigger>
-          <TabsTrigger value="engineering" className="flex items-center gap-1.5 text-xs" data-testid="tab-engineering">
-            <Wrench className="h-3.5 w-3.5" />
-            <span>Engineering</span>
-          </TabsTrigger>
           <TabsTrigger value="money" className="flex items-center gap-1.5 text-xs" data-testid="tab-money">
             <DollarSign className="h-3.5 w-3.5" />
             <span>Project Finance</span>
+          </TabsTrigger>
+          <TabsTrigger value="engineering" className="flex items-center gap-1.5 text-xs" data-testid="tab-engineering">
+            <Wrench className="h-3.5 w-3.5" />
+            <span>Engineering</span>
           </TabsTrigger>
           <TabsTrigger value="quality" className="flex items-center gap-1.5 text-xs" data-testid="tab-quality">
             <ShieldCheck className="h-3.5 w-3.5" />
