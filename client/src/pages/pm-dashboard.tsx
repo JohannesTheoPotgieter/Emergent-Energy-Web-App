@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useLocation } from "wouter";
 import {
   startOfMonth,
@@ -411,12 +412,12 @@ function OverviewTab({ data, navigate }: { data: PMDashboardData; navigate: (pat
   );
 }
 
-function PriorityTab({ navigate }: { navigate: (path: string) => void }) {
+function PriorityTab({ navigate, pmUserId }: { navigate: (path: string) => void; pmUserId?: string }) {
   const [filterType, setFilterType] = useState<string>("all");
 
   const { data, isLoading } = useQuery<{ items: PriorityItem[] }>({
-    queryKey: ["pm-priority"],
-    queryFn: () => pmFetch("/api/pm/priority-items"),
+    queryKey: ["pm-priority", pmUserId],
+    queryFn: () => pmFetch(`/api/pm/priority-items${pmUserId ? `?pmUserId=${pmUserId}` : ""}`),
   });
 
   if (isLoading) {
@@ -524,12 +525,12 @@ function PriorityTab({ navigate }: { navigate: (path: string) => void }) {
   );
 }
 
-function CalendarTab({ navigate }: { navigate: (path: string) => void }) {
+function CalendarTab({ navigate, pmUserId }: { navigate: (path: string) => void; pmUserId?: string }) {
   const [currentMonth, setCurrentMonth] = useState(new Date());
 
   const { data, isLoading } = useQuery<{ events: CalendarEvent[] }>({
-    queryKey: ["pm-calendar"],
-    queryFn: () => pmFetch("/api/pm/calendar-events"),
+    queryKey: ["pm-calendar", pmUserId],
+    queryFn: () => pmFetch(`/api/pm/calendar-events${pmUserId ? `?pmUserId=${pmUserId}` : ""}`),
   });
 
   const events = data?.events || [];
@@ -742,15 +743,64 @@ function CalendarTab({ navigate }: { navigate: (path: string) => void }) {
   );
 }
 
+interface PMUser {
+  id: number;
+  username: string;
+  name: string;
+  project_count: string;
+}
+
+const COO_VIEW_ROLES = ["COO_ADMIN", "CEO_ADMIN", "admin"];
+
 export default function PMDashboard() {
   const { user } = useAuth();
   const [, navigate] = useLocation();
   const [activeTab, setActiveTab] = useState("overview");
+  const [selectedPmId, setSelectedPmId] = useState<string>("");
+
+  const isCooView = user?.role ? COO_VIEW_ROLES.includes(user.role) : false;
+
+  const { data: pmUsersData } = useQuery<{ users: PMUser[] }>({
+    queryKey: ["pm-users"],
+    queryFn: () => pmFetch("/api/pm/users"),
+    enabled: isCooView,
+  });
+
+  const pmUsers = pmUsersData?.users || [];
+  const pmIdParam = isCooView && selectedPmId ? selectedPmId : undefined;
 
   const { data, isLoading, error } = useQuery<PMDashboardData>({
-    queryKey: ["pm-dashboard"],
-    queryFn: () => pmFetch("/api/pm/dashboard"),
+    queryKey: ["pm-dashboard", pmIdParam],
+    queryFn: () => pmFetch(`/api/pm/dashboard${pmIdParam ? `?pmUserId=${pmIdParam}` : ""}`),
+    enabled: isCooView ? !!selectedPmId : true,
   });
+
+  const selectedPmName = pmUsers.find(u => String(u.id) === selectedPmId)?.name;
+
+  if (isCooView && !selectedPmId && pmUsers.length > 0) {
+    return (
+      <div className="space-y-4 p-4 md:p-6" data-testid="pm-dashboard">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight" data-testid="pm-title">PM Dashboard</h1>
+          <p className="text-sm text-muted-foreground">Select a project manager to view their portfolio</p>
+        </div>
+        <div className="max-w-xs">
+          <Select value={selectedPmId} onValueChange={setSelectedPmId} data-testid="pm-selector">
+            <SelectTrigger data-testid="pm-selector-trigger">
+              <SelectValue placeholder="Choose a PM..." />
+            </SelectTrigger>
+            <SelectContent>
+              {pmUsers.map(u => (
+                <SelectItem key={u.id} value={String(u.id)} data-testid={`pm-option-${u.id}`}>
+                  {u.name || u.username} ({u.project_count} projects)
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -773,16 +823,32 @@ export default function PMDashboard() {
 
   return (
     <div className="space-y-4 p-4 md:p-6" data-testid="pm-dashboard">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight" data-testid="pm-title">
-            My Projects
+            {isCooView ? "PM Dashboard" : "My Projects"}
           </h1>
           <p className="text-sm text-muted-foreground">
-            {user?.name ? `${user.name} \u2014 ` : ""}
+            {isCooView && selectedPmName ? `${selectedPmName} — ` : user?.name ? `${user.name} \u2014 ` : ""}
             {summary.totalProjects} project{summary.totalProjects !== 1 ? "s" : ""} assigned
           </p>
         </div>
+        {isCooView && (
+          <div className="w-56">
+            <Select value={selectedPmId} onValueChange={setSelectedPmId} data-testid="pm-selector">
+              <SelectTrigger className="h-9" data-testid="pm-selector-trigger">
+                <SelectValue placeholder="Select PM" />
+              </SelectTrigger>
+              <SelectContent>
+                {pmUsers.map(u => (
+                  <SelectItem key={u.id} value={String(u.id)} data-testid={`pm-option-${u.id}`}>
+                    {u.name || u.username} ({u.project_count})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} data-testid="pm-tabs">
@@ -806,11 +872,11 @@ export default function PMDashboard() {
         </TabsContent>
 
         <TabsContent value="priority" className="mt-4">
-          <PriorityTab navigate={navigate} />
+          <PriorityTab navigate={navigate} pmUserId={pmIdParam} />
         </TabsContent>
 
         <TabsContent value="calendar" className="mt-4">
-          <CalendarTab navigate={navigate} />
+          <CalendarTab navigate={navigate} pmUserId={pmIdParam} />
         </TabsContent>
       </Tabs>
     </div>

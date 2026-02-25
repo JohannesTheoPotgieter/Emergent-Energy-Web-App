@@ -35,6 +35,16 @@ function getUser(req: Request): { userId: number; name: string; role: string } {
   return (req as any).user;
 }
 
+const COO_ROLES = ["COO_ADMIN", "CEO_ADMIN", "admin"];
+
+function resolveTargetPmUserId(req: Request): number {
+  const user = getUser(req);
+  if (COO_ROLES.includes(user.role) && req.query.pmUserId) {
+    return parseInt(req.query.pmUserId as string);
+  }
+  return user.userId;
+}
+
 async function getPmProjectNames(userId: number): Promise<{ projects: any[]; pgArray: string }> {
   const projects = await db
     .select({
@@ -69,10 +79,26 @@ async function getPmProjectNames(userId: number): Promise<{ projects: any[]; pgA
 export function registerPmRoutes(app: Express) {
   app.use("/api/pm", jwtAuth);
 
+  app.get("/api/pm/users", requireAuth, requirePmRole, async (req: Request, res: Response) => {
+    try {
+      const result = await db.execute(sql.raw(
+        `SELECT u.id, u.username, u.name, COUNT(pi.id) AS project_count
+         FROM users u
+         LEFT JOIN project_info pi ON pi.pm_user_id = u.id
+         WHERE u.role = 'PROJECT_MANAGER_SITE'
+         GROUP BY u.id, u.username, u.name
+         ORDER BY u.name`
+      ));
+      res.json({ users: result.rows });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get("/api/pm/dashboard", requireAuth, requirePmRole, async (req: Request, res: Response) => {
     try {
-      const user = getUser(req);
-      const { projects, pgArray } = await getPmProjectNames(user.userId);
+      const targetUserId = resolveTargetPmUserId(req);
+      const { projects, pgArray } = await getPmProjectNames(targetUserId);
       const projectNames = projects.map(p => p.projectName);
 
       if (projectNames.length === 0) {
@@ -227,8 +253,8 @@ export function registerPmRoutes(app: Express) {
 
   app.get("/api/pm/priority-items", requireAuth, requirePmRole, async (req: Request, res: Response) => {
     try {
-      const user = getUser(req);
-      const { projects, pgArray } = await getPmProjectNames(user.userId);
+      const targetUserId = resolveTargetPmUserId(req);
+      const { projects, pgArray } = await getPmProjectNames(targetUserId);
       const projectNames = projects.map(p => p.projectName);
 
       if (projectNames.length === 0) {
@@ -393,8 +419,8 @@ export function registerPmRoutes(app: Express) {
 
   app.get("/api/pm/calendar-events", requireAuth, requirePmRole, async (req: Request, res: Response) => {
     try {
-      const user = getUser(req);
-      const { projects, pgArray } = await getPmProjectNames(user.userId);
+      const targetUserId = resolveTargetPmUserId(req);
+      const { projects, pgArray } = await getPmProjectNames(targetUserId);
       const projectNames = projects.map(p => p.projectName);
 
       const events: any[] = [];
