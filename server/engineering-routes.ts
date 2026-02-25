@@ -249,6 +249,12 @@ export function registerEngineeringRoutes(app: Express) {
       if (!TASK_STATUSES.includes(data.status)) {
         data.status = "TO DO";
       }
+      if (!data.ownerUserId && data.assignees?.length > 0) {
+        const assigneeName = data.assignees[0];
+        const [matchedUser] = await db.select({ id: users.id }).from(users)
+          .where(sql`LOWER(${users.name}) = LOWER(${assigneeName})`).limit(1);
+        if (matchedUser) data.ownerUserId = matchedUser.id;
+      }
       const [task] = await db.insert(operationalTasks).values({
         ...data,
         createdBy: getUser(req).id,
@@ -288,6 +294,9 @@ export function registerEngineeringRoutes(app: Express) {
       if (updates.status === "HOLD" && !updates.holdReason) {
         return res.status(400).json({ error: "Hold reason required when setting status to HOLD" });
       }
+      if (updates.status && updates.status !== "HOLD" && existing.status === "HOLD" && !updates.holdReason) {
+        updates.holdReason = null;
+      }
       if (updates.status === "PROJECTS ASSISTANCE" && !updates.requesterUserId && !existing.requesterUserId) {
         return res.status(400).json({ error: "Requester required for PROJECTS ASSISTANCE status" });
       }
@@ -296,6 +305,11 @@ export function registerEngineeringRoutes(app: Express) {
       }
       if (updates.status === "COMPLETE") {
         updates.completedAt = new Date();
+      }
+      if (updates.assignees && Array.isArray(updates.assignees) && updates.assignees.length > 0 && !updates.ownerUserId) {
+        const [matchedUser] = await db.select({ id: users.id }).from(users)
+          .where(sql`LOWER(${users.name}) = LOWER(${updates.assignees[0]})`).limit(1);
+        if (matchedUser) updates.ownerUserId = matchedUser.id;
       }
 
       const [updated] = await db.update(operationalTasks).set(updates).where(eq(operationalTasks.id, id)).returning();
@@ -340,11 +354,19 @@ export function registerEngineeringRoutes(app: Express) {
       if (!Array.isArray(taskIds) || taskIds.length === 0) {
         return res.status(400).json({ error: "taskIds array required" });
       }
+      if (updates.status === "HOLD" && !updates.holdReason) {
+        return res.status(400).json({ error: "Hold reason required when setting status to HOLD" });
+      }
+      if (updates.status === "NEEDS APPROVAL" && !updates.approverUserId) {
+        return res.status(400).json({ error: "Approver required for NEEDS APPROVAL status" });
+      }
 
       const updatedTasks = [];
       for (const taskId of taskIds) {
+        const bulkSet: Record<string, any> = { ...updates, updatedAt: new Date() };
+        if (updates.status === "COMPLETE") bulkSet.completedAt = new Date();
         const [updated] = await db.update(operationalTasks)
-          .set({ ...updates, updatedAt: new Date() })
+          .set(bulkSet)
           .where(eq(operationalTasks.id, taskId))
           .returning();
         if (updated) {

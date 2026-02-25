@@ -348,10 +348,17 @@ function PostUpdateForm({ taskId, currentStatus, onDone }: { taskId: number; cur
   const queryClient = useQueryClient();
   const [updateText, setUpdateText] = useState("");
   const [newStatus, setNewStatus] = useState(currentStatus);
+  const [holdReason, setHoldReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  const needsHoldReason = newStatus === "HOLD" && newStatus !== currentStatus;
 
   const handleSubmit = async () => {
     if (!updateText.trim() && newStatus === currentStatus) return;
+    if (needsHoldReason && !holdReason.trim()) {
+      toast({ title: "Hold reason required", variant: "destructive" });
+      return;
+    }
     setSubmitting(true);
     try {
       if (updateText.trim()) {
@@ -361,15 +368,18 @@ function PostUpdateForm({ taskId, currentStatus, onDone }: { taskId: number; cur
         });
       }
       if (newStatus !== currentStatus) {
+        const patch: Record<string, string> = { status: newStatus };
+        if (needsHoldReason) patch.holdReason = holdReason.trim();
         await engFetch(`/api/eng/tasks/${taskId}`, {
           method: "PATCH",
-          body: JSON.stringify({ status: newStatus }),
+          body: JSON.stringify(patch),
         });
       }
       queryClient.invalidateQueries({ queryKey: ["eng-tasks"] });
       queryClient.invalidateQueries({ queryKey: ["task-comments", taskId] });
       queryClient.invalidateQueries({ queryKey: ["task-activity", taskId] });
       setUpdateText("");
+      setHoldReason("");
       toast({ title: "Update posted" });
       onDone();
     } catch (e: any) {
@@ -395,7 +405,7 @@ function PostUpdateForm({ taskId, currentStatus, onDone }: { taskId: number; cur
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span className="text-[10px] text-muted-foreground">Move to:</span>
-          <Select value={newStatus} onValueChange={setNewStatus}>
+          <Select value={newStatus} onValueChange={(v) => { setNewStatus(v); if (v !== "HOLD") setHoldReason(""); }}>
             <SelectTrigger className="h-7 text-[10px] w-[140px]" data-testid="select-post-update-status">
               <SelectValue />
             </SelectTrigger>
@@ -409,7 +419,7 @@ function PostUpdateForm({ taskId, currentStatus, onDone }: { taskId: number; cur
         <Button
           size="sm"
           className="h-7 text-xs bg-blue-600 hover:bg-blue-700"
-          disabled={submitting || (!updateText.trim() && newStatus === currentStatus)}
+          disabled={submitting || (!updateText.trim() && newStatus === currentStatus) || (needsHoldReason && !holdReason.trim())}
           onClick={handleSubmit}
           data-testid="btn-post-update"
         >
@@ -417,6 +427,17 @@ function PostUpdateForm({ taskId, currentStatus, onDone }: { taskId: number; cur
           Post Update
         </Button>
       </div>
+      {needsHoldReason && (
+        <div className="pt-1">
+          <Input
+            value={holdReason}
+            onChange={(e) => setHoldReason(e.target.value)}
+            placeholder="Reason for hold (required)"
+            className="h-7 text-xs border-amber-300 focus:ring-amber-400"
+            data-testid="input-post-update-hold-reason"
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -442,6 +463,8 @@ function TaskDetailDrawer({
   const [editValues, setEditValues] = useState<Record<string, string>>({});
   const [approvalComment, setApprovalComment] = useState("");
   const [showApprovalActions, setShowApprovalActions] = useState(false);
+  const [drawerHoldDialog, setDrawerHoldDialog] = useState(false);
+  const [drawerHoldReason, setDrawerHoldReason] = useState("");
 
   const { data: comments = [] } = useQuery<Comment[]>({
     queryKey: ["task-comments", task.id],
@@ -487,6 +510,15 @@ function TaskDetailDrawer({
   });
 
   const handleStatusChange = (newStatus: string) => {
+    if (newStatus === "HOLD") {
+      setDrawerHoldDialog(true);
+      setDrawerHoldReason("");
+      return;
+    }
+    if (newStatus === "NEEDS APPROVAL" && !task.approverUserId) {
+      toast({ title: "Set an approver first", description: "Assign an approver below before requesting approval.", variant: "destructive" });
+      return;
+    }
     if (newStatus === "COMPLETE") {
       const hasHighWarnings = task.trackingRag === "Red" || task.priority === "Critical";
       if (hasHighWarnings) {
@@ -939,6 +971,43 @@ function TaskDetailDrawer({
           </div>
         </ScrollArea>
       </div>
+
+      <Dialog open={drawerHoldDialog} onOpenChange={setDrawerHoldDialog}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <PauseCircle className="h-5 w-5 text-amber-500" />
+              Hold Reason Required
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 pt-2">
+            <p className="text-sm text-muted-foreground">Please provide a reason for putting this task on hold.</p>
+            <Textarea
+              value={drawerHoldReason}
+              onChange={(e) => setDrawerHoldReason(e.target.value)}
+              placeholder="e.g. Waiting for client approval, materials delayed..."
+              className="min-h-[80px]"
+              data-testid="input-drawer-hold-reason"
+            />
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setDrawerHoldDialog(false)} data-testid="btn-drawer-hold-cancel">Cancel</Button>
+              <Button
+                size="sm"
+                className="bg-amber-600 hover:bg-amber-700"
+                disabled={!drawerHoldReason.trim()}
+                onClick={() => {
+                  updateMutation.mutate({ status: "HOLD", holdReason: drawerHoldReason.trim() });
+                  setDrawerHoldDialog(false);
+                  setDrawerHoldReason("");
+                }}
+                data-testid="btn-drawer-hold-confirm"
+              >
+                Put on Hold
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1412,6 +1481,7 @@ export default function EngineeringTasksPage() {
   });
 
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
+  const [holdDialog, setHoldDialog] = useState<{ taskId: number; reason: string } | null>(null);
 
   const { data: tasks = [], isLoading } = useQuery<Task[]>({
     queryKey: ["eng-tasks"],
@@ -1460,8 +1530,8 @@ export default function EngineeringTasksPage() {
   });
 
   const updateStatusMutation = useMutation({
-    mutationFn: ({ taskId, status }: { taskId: number; status: string }) =>
-      engFetch(`/api/eng/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify({ status }) }),
+    mutationFn: ({ taskId, status, holdReason }: { taskId: number; status: string; holdReason?: string }) =>
+      engFetch(`/api/eng/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify({ status, ...(holdReason ? { holdReason } : {}) }) }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["eng-tasks"] });
       toast({ title: "Status updated" });
@@ -1479,11 +1549,27 @@ export default function EngineeringTasksPage() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  const requestStatusChange = useCallback((taskId: number, newStatus: string) => {
+    if (newStatus === "HOLD") {
+      setHoldDialog({ taskId, reason: "" });
+      return;
+    }
+    if (newStatus === "NEEDS APPROVAL") {
+      const task = tasks.find(t => t.id === taskId);
+      if (task && !task.approverUserId) {
+        setSelectedTask(task);
+        toast({ title: "Set an approver first", description: "Open the task and assign an approver before requesting approval.", variant: "destructive" });
+        return;
+      }
+    }
+    updateStatusMutation.mutate({ taskId, status: newStatus });
+  }, [tasks, updateStatusMutation, toast]);
+
   const handleDrop = useCallback((taskId: number, newStatus: string) => {
     const task = tasks.find(t => t.id === taskId);
     if (!task || task.status === newStatus) return;
-    updateStatusMutation.mutate({ taskId, status: newStatus });
-  }, [tasks, updateStatusMutation]);
+    requestStatusChange(taskId, newStatus);
+  }, [tasks, requestStatusChange]);
 
   const handleStatusChange = useCallback((taskId: number, newStatus: string) => {
     const task = tasks.find(t => t.id === taskId);
@@ -1491,8 +1577,8 @@ export default function EngineeringTasksPage() {
     if (newStatus === "COMPLETE" && (task.trackingRag === "Red" || task.priority === "Critical")) {
       if (!window.confirm("This task has high-severity warnings. Proceed with completion?")) return;
     }
-    updateStatusMutation.mutate({ taskId, status: newStatus });
-  }, [tasks, updateStatusMutation]);
+    requestStatusChange(taskId, newStatus);
+  }, [tasks, requestStatusChange]);
 
   const handlePriorityChange = useCallback((taskId: number, newPriority: string) => {
     updatePriorityMutation.mutate({ taskId, priority: newPriority });
@@ -1917,6 +2003,44 @@ export default function EngineeringTasksPage() {
           }}
         />
       )}
+
+      <Dialog open={!!holdDialog} onOpenChange={(open) => { if (!open) setHoldDialog(null); }}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <PauseCircle className="h-5 w-5 text-amber-500" />
+              Hold Reason Required
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 pt-2">
+            <p className="text-sm text-muted-foreground">Please provide a reason for putting this task on hold.</p>
+            <Textarea
+              value={holdDialog?.reason || ""}
+              onChange={(e) => setHoldDialog(prev => prev ? { ...prev, reason: e.target.value } : null)}
+              placeholder="e.g. Waiting for client approval, materials delayed..."
+              className="min-h-[80px]"
+              data-testid="input-hold-reason"
+            />
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setHoldDialog(null)} data-testid="btn-hold-cancel">Cancel</Button>
+              <Button
+                size="sm"
+                className="bg-amber-600 hover:bg-amber-700"
+                disabled={!holdDialog?.reason?.trim()}
+                onClick={() => {
+                  if (holdDialog && holdDialog.reason.trim()) {
+                    updateStatusMutation.mutate({ taskId: holdDialog.taskId, status: "HOLD", holdReason: holdDialog.reason.trim() });
+                    setHoldDialog(null);
+                  }
+                }}
+                data-testid="btn-hold-confirm"
+              >
+                Put on Hold
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
