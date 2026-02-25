@@ -15,8 +15,6 @@ import {
   type ProjectPhase,
 } from "@shared/schema";
 import { applyTemplate } from "./template-routes";
-import { generateEngStagesForProject } from "./eng-stage-routes";
-import { PHASE_TO_ENG_STAGES } from "@shared/schema";
 
 type AppUser = { id: number; email: string; name: string; role: string; };
 
@@ -1912,19 +1910,6 @@ export function registerEngineeringRoutes(app: Express) {
         }
       }
 
-      let engStagesResult: any = null;
-      const stageNames = PHASE_TO_ENG_STAGES[toPhase];
-      if (stageNames && stageNames.length > 0) {
-        try {
-          engStagesResult = await generateEngStagesForProject(projectId, user.id, stageNames);
-          if (engStagesResult.stagesCreated > 0) {
-            console.log(`[Phase] Auto-generated ${engStagesResult.stagesCreated} eng stages for project ${projectId}: ${engStagesResult.stageDetails.join(", ")}`);
-          }
-        } catch (err: any) {
-          console.warn("[Phase] Eng stage auto-generation error (non-fatal):", err.message);
-        }
-      }
-
       const [updated] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
       res.json({
         project: updated,
@@ -1932,7 +1917,6 @@ export function registerEngineeringRoutes(app: Express) {
         tasksCreated,
         templateApplied,
         templateResult,
-        engStagesResult,
       });
     } catch (err: any) {
       console.error("[Phase] Error:", err.message);
