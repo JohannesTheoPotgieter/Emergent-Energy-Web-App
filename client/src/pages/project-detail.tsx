@@ -896,7 +896,7 @@ export default function ProjectDetailPage() {
               <CreditCard className="h-3 w-3 mr-1" /> Expenditure
             </Button>
             <Button size="sm" variant={currentSubTab === "monthly-realisation" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("money", "monthly-realisation")} data-testid="subtab-monthly-realisation">
-              <TrendingUp className="h-3 w-3 mr-1" /> Monthly Summary
+              <TrendingUp className="h-3 w-3 mr-1" /> COS Tracker
             </Button>
             <Button size="sm" variant={currentSubTab === "cashflow" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("money", "cashflow")} data-testid="subtab-cashflow">
               <Activity className="h-3 w-3 mr-1" /> Cashflow
