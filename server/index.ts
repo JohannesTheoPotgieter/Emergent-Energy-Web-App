@@ -252,12 +252,24 @@ async function backfillPmUserIds() {
     }
     log(`Backfill pm_user_id: ${totalUpdated} rows updated`);
 
+    const unassignResult = await db.execute(sql.raw(`
+      UPDATE operational_tasks ot
+      SET owner_user_id = NULL
+      FROM project_info pi
+      WHERE ot.project_name = pi.project_name
+        AND pi.phase IN ('Compliance Handover', 'Commercial Close Out')
+        AND ot.owner_user_id IS NOT NULL
+    `));
+    const unassignCount = (unassignResult as any).rowCount || 0;
+    log(`Unassign tasks for Compliance Handover / Commercial Close Out: ${unassignCount} tasks cleared`);
+
     const taskResult = await db.execute(sql.raw(`
       UPDATE operational_tasks ot
       SET owner_user_id = pi.pm_user_id
       FROM project_info pi
       WHERE ot.project_name = pi.project_name
         AND pi.pm_user_id IS NOT NULL
+        AND pi.phase NOT IN ('Compliance Handover', 'Commercial Close Out')
         AND (ot.owner_user_id IS NULL OR ot.owner_user_id != pi.pm_user_id)
     `));
     const taskCount = (taskResult as any).rowCount || 0;
