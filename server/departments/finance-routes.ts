@@ -4,7 +4,8 @@ import { storage } from "../storage";
 import { db } from "../db";
 import { requirePermission } from "../permission-middleware";
 import { z } from "zod";
-import { insertBudgetSchema, OVERRIDE_CATEGORIES } from "@shared/schema";
+import { insertBudgetSchema, OVERRIDE_CATEGORIES, cosStatusOverrides } from "@shared/schema";
+import { eq } from "drizzle-orm";
 import { classifyExpenseState } from "../lib/calculations/stateClassifier";
 import { recordOverride } from "../lib/audit/diff-engine";
 
@@ -2199,12 +2200,16 @@ router.post("/api/expenses/insert-task-as-line", requireAuth, requireAdmin, asyn
 router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, res) => {
   try {
     const projectName = req.params.projectName;
-    const [expenses, taskLinks, opTasks, planTasks] = await Promise.all([
+    const [expenses, taskLinks, opTasks, planTasks, cosOverrides] = await Promise.all([
       storage.getProgramExpensesByProject(projectName),
       storage.getExpenseTaskLinks(projectName),
       storage.getOperationalTasksByProject(projectName),
       storage.getProjectPlansByProject(projectName),
+      db.select().from(cosStatusOverrides).where(eq(cosStatusOverrides.projectName, projectName)),
     ]);
+
+    const cosOverrideByExpenseId = new Map(cosOverrides.map(o => [o.expenseId, o]));
+    const cosOverrideByRow = new Map(cosOverrides.map(o => [`${o.projectName}:${o.rowNumber}`, o]));
 
     const linkMap = new Map(taskLinks.map(l => [l.expenseId, l]));
 
@@ -2277,15 +2282,19 @@ router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, r
         plannedMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
       }
 
+      const cosOverride = cosOverrideByExpenseId.get(exp.id) || cosOverrideByRow.get(`${exp.projectName}:${exp.rowNumber}`);
+
       return {
         ...exp,
         linkedTask,
-        cosStatus,
+        cosStatus: cosOverride ? cosOverride.overrideStatus : cosStatus,
+        computedCosStatus: cosStatus,
         paymentStatus,
         effectivePaymentDate,
         plannedMonth,
         hasDateOverride: !!link?.dateOverride,
         dateOverrideReason: link?.dateOverrideReason || null,
+        cosOverride: cosOverride ? { reason: cosOverride.reason, overriddenBy: cosOverride.overriddenBy, originalStatus: cosOverride.originalStatus, overrideStatus: cosOverride.overrideStatus } : null,
       };
     });
 

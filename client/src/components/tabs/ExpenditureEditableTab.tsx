@@ -65,11 +65,13 @@ interface EnrichedExpense {
   lineStatus: string | null;
   linkedTask: { id: number; title: string; status: string; dueDate: string | null; isBaseline: boolean } | null;
   cosStatus: string;
+  computedCosStatus?: string;
   paymentStatus: string;
   effectivePaymentDate: string | null;
   plannedMonth: string | null;
   hasDateOverride: boolean;
   dateOverrideReason: string | null;
+  cosOverride: { reason: string; overriddenBy: string | null; originalStatus: string; overrideStatus: string } | null;
 }
 
 interface CategoryGroup {
@@ -194,6 +196,9 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
   const [insertTaskCategory, setInsertTaskCategory] = useState("");
   const [insertTaskSearch, setInsertTaskSearch] = useState("");
   const [highlightedRowId, setHighlightedRowId] = useState<number | null>(highlightId ?? null);
+  const [cosOverrideTarget, setCosOverrideTarget] = useState<EnrichedExpense | null>(null);
+  const [cosOverrideStatus, setCosOverrideStatus] = useState("COS Realised");
+  const [cosOverrideReason, setCosOverrideReason] = useState("");
 
   const breakdownKey = ["expenditure-breakdown", projectName];
 
@@ -374,6 +379,40 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
       setInsertTaskSearch("");
       setInsertTaskCategory("");
       toast({ title: "Task inserted as line item" });
+    },
+  });
+
+  const cosOverrideMutation = useMutation({
+    mutationFn: async ({ expenseId, projectName: pn, rowNumber, originalStatus, overrideStatus, reason }: {
+      expenseId: number; projectName: string; rowNumber: number; originalStatus: string; overrideStatus: string; reason: string;
+    }) => {
+      const res = await authFetch("/api/cos-status-override", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expenseId, projectName: pn, rowNumber, originalStatus, overrideStatus, reason }),
+      });
+      if (!res.ok) throw new Error("Failed to save override");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: breakdownKey });
+      invalidateDashboardQueries(queryClient);
+      setCosOverrideTarget(null);
+      setCosOverrideReason("");
+      toast({ title: "COS status override saved" });
+    },
+  });
+
+  const removeCosOverrideMutation = useMutation({
+    mutationFn: async (expenseId: number) => {
+      const res = await authFetch(`/api/cos-status-override/${expenseId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to remove override");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: breakdownKey });
+      invalidateDashboardQueries(queryClient);
+      toast({ title: "COS override removed" });
     },
   });
 
@@ -777,8 +816,45 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
         );
       case "linkedTask":
         return renderLinkedTask(exp);
-      case "cosStatus":
-        return getCosStatusBadge(exp.cosStatus);
+      case "cosStatus": {
+        const computedStatus = exp.computedCosStatus || exp.cosStatus;
+        const isClickable = computedStatus === "Flagged" || !!exp.cosOverride;
+        const badge = getCosStatusBadge(exp.cosStatus);
+        if (!isClickable && !exp.cosOverride) return badge;
+        return (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  data-testid={`cos-override-btn-${exp.id}`}
+                  className="cursor-pointer inline-flex items-center gap-0.5"
+                  onClick={() => {
+                    setCosOverrideTarget(exp);
+                    setCosOverrideStatus(exp.cosOverride?.overrideStatus || "COS Realised");
+                    setCosOverrideReason(exp.cosOverride?.reason || "");
+                  }}
+                >
+                  {badge}
+                  {exp.cosOverride && <span className="text-amber-500 text-[10px] font-bold">*</span>}
+                </button>
+              </TooltipTrigger>
+              {exp.cosOverride ? (
+                <TooltipContent side="top" className="max-w-xs">
+                  <div className="text-xs space-y-1">
+                    <p className="font-semibold">Override: {exp.cosOverride.originalStatus} → {exp.cosOverride.overrideStatus}</p>
+                    <p>{exp.cosOverride.reason}</p>
+                    {exp.cosOverride.overriddenBy && <p className="text-muted-foreground">By: {exp.cosOverride.overriddenBy}</p>}
+                  </div>
+                </TooltipContent>
+              ) : (
+                <TooltipContent side="top">
+                  <span className="text-xs">Click to override status</span>
+                </TooltipContent>
+              )}
+            </Tooltip>
+          </TooltipProvider>
+        );
+      }
       case "paymentStatus":
         return getPaymentStatusBadge(exp.paymentStatus);
       case "plannedMonth":
@@ -1082,7 +1158,24 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
                     </div>
                     <div className="flex flex-wrap gap-1">
                       <Badge variant="outline" className="text-[8px] bg-slate-50">{item.expenseCategory}</Badge>
-                      {getCosStatusBadge(item.cosStatus)}
+                      <span className="inline-flex items-center gap-0.5">
+                        {getCosStatusBadge(item.cosStatus)}
+                        {item.cosOverride && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger>
+                                <span className="text-amber-500 text-[10px] font-bold">*</span>
+                              </TooltipTrigger>
+                              <TooltipContent side="top" className="max-w-xs">
+                                <div className="text-xs space-y-1">
+                                  <p className="font-semibold">Override: {item.cosOverride.originalStatus} → {item.cosOverride.overrideStatus}</p>
+                                  <p>{item.cosOverride.reason}</p>
+                                </div>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
+                      </span>
                       {getPaymentStatusBadge(item.paymentStatus)}
                       {item.plannedMonth && <Badge variant="outline" className="text-[8px]">{formatMonth(item.plannedMonth)}</Badge>}
                     </div>
@@ -1226,6 +1319,83 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
           </div>
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => setInsertTaskOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!cosOverrideTarget} onOpenChange={(open) => { if (!open) setCosOverrideTarget(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle data-testid="cos-override-dialog-title">Override COS Status</DialogTitle>
+          </DialogHeader>
+          {cosOverrideTarget && (
+            <div className="space-y-4">
+              <div className="text-sm text-muted-foreground">
+                <span className="font-medium text-foreground">{cosOverrideTarget.expenseLineItem}</span>
+                <br />
+                Computed status: <Badge className="text-[9px] ml-1" variant="outline">{cosOverrideTarget.computedCosStatus || cosOverrideTarget.cosStatus}</Badge>
+              </div>
+              <div className="space-y-2">
+                <Label>New Status</Label>
+                <Select value={cosOverrideStatus} onValueChange={setCosOverrideStatus}>
+                  <SelectTrigger data-testid="cos-override-status-select">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="COS Realised">COS Realised</SelectItem>
+                    <SelectItem value="Deferred">Deferred</SelectItem>
+                    <SelectItem value="Planned">Planned</SelectItem>
+                    <SelectItem value="Flagged">Flagged</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Reason for Override</Label>
+                <Input
+                  data-testid="cos-override-reason-input"
+                  placeholder="e.g. PO confirmed verbally, awaiting paperwork"
+                  value={cosOverrideReason}
+                  onChange={(e) => setCosOverrideReason(e.target.value)}
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter className="gap-2">
+            {cosOverrideTarget?.cosOverride && (
+              <Button
+                data-testid="cos-override-remove-btn"
+                variant="outline"
+                size="sm"
+                className="text-red-600 border-red-200 hover:bg-red-50 mr-auto"
+                disabled={removeCosOverrideMutation.isPending}
+                onClick={() => {
+                  if (cosOverrideTarget) removeCosOverrideMutation.mutate(cosOverrideTarget.id);
+                  setCosOverrideTarget(null);
+                }}
+              >
+                Remove Override
+              </Button>
+            )}
+            <Button variant="outline" size="sm" onClick={() => setCosOverrideTarget(null)}>Cancel</Button>
+            <Button
+              data-testid="cos-override-save-btn"
+              size="sm"
+              disabled={!cosOverrideReason.trim() || cosOverrideMutation.isPending}
+              onClick={() => {
+                if (!cosOverrideTarget) return;
+                cosOverrideMutation.mutate({
+                  expenseId: cosOverrideTarget.id,
+                  projectName: cosOverrideTarget.projectName,
+                  rowNumber: cosOverrideTarget.rowNumber,
+                  originalStatus: cosOverrideTarget.computedCosStatus || cosOverrideTarget.cosStatus,
+                  overrideStatus: cosOverrideStatus,
+                  reason: cosOverrideReason,
+                });
+              }}
+            >
+              {cosOverrideMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+              Save Override
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
