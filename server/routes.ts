@@ -10469,6 +10469,18 @@ function registerFeedbackRoutes(app: Express) {
       if (!tables) return res.status(400).json({ error: "Missing tables in request body" });
 
       const results: Record<string, number> = {};
+      const skippedCols: Record<string, string[]> = {};
+
+      const isoDateRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
+      const toSnake = (s: string) => s.replace(/([A-Z])/g, '_$1').toLowerCase();
+      const escVal = (v: any): string => {
+        if (v === null || v === undefined) return 'NULL';
+        if (typeof v === 'string' && isoDateRegex.test(v)) return `'${v}'`;
+        if (typeof v === 'boolean') return v ? 'TRUE' : 'FALSE';
+        if (typeof v === 'number') return String(v);
+        if (typeof v === 'object') return `'${JSON.stringify(v).replace(/'/g, "''")}'::jsonb`;
+        return `'${String(v).replace(/'/g, "''")}'`;
+      };
 
       await db.transaction(async (tx) => {
         await tx.execute(sql`SET CONSTRAINTS ALL DEFERRED`);
@@ -10480,64 +10492,62 @@ function registerFeedbackRoutes(app: Express) {
         ];
         await tx.execute(sql.raw(`TRUNCATE TABLE ${allSyncTables.join(', ')} CASCADE`));
 
-        const isoDateRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
-        const convertDates = (obj: any) => {
-          const result: any = {};
-          for (const [key, val] of Object.entries(obj)) {
-            if (typeof val === 'string' && isoDateRegex.test(val)) {
-              result[key] = new Date(val);
-            } else {
-              result[key] = val;
-            }
-          }
-          return result;
+        const getDbColumns = async (tableName: string): Promise<Set<string>> => {
+          const result = await tx.execute(sql.raw(
+            `SELECT column_name FROM information_schema.columns WHERE table_name = '${tableName}'`
+          ));
+          return new Set((result.rows as any[]).map((r: any) => r.column_name));
         };
 
-        const batchInsertWithIds = async (tableName: string, rows: any[]) => {
+        const batchInsert = async (tableName: string, rows: any[]) => {
           if (!rows || rows.length === 0) return;
-          const cols = Object.keys(rows[0]);
+          const dbCols = await getDbColumns(tableName);
+          const jsonCols = Object.keys(rows[0]);
+          const validPairs: { jsonKey: string; dbCol: string }[] = [];
+          const skipped: string[] = [];
+          for (const jk of jsonCols) {
+            const sc = toSnake(jk);
+            if (dbCols.has(sc)) {
+              validPairs.push({ jsonKey: jk, dbCol: sc });
+            } else {
+              skipped.push(`${jk} -> ${sc}`);
+            }
+          }
+          if (skipped.length > 0) skippedCols[tableName] = skipped;
+
+          const colList = validPairs.map(p => `"${p.dbCol}"`).join(', ');
           const batchSize = 50;
           for (let i = 0; i < rows.length; i += batchSize) {
             const batch = rows.slice(i, i + batchSize);
             const valueSets = batch.map(row => {
-              const converted = convertDates(row);
-              const vals = cols.map(c => {
-                const v = converted[c];
-                if (v === null || v === undefined) return 'NULL';
-                if (v instanceof Date) return `'${v.toISOString()}'`;
-                if (typeof v === 'boolean') return v ? 'TRUE' : 'FALSE';
-                if (typeof v === 'number') return String(v);
-                if (typeof v === 'object') return `'${JSON.stringify(v).replace(/'/g, "''")}'::jsonb`;
-                return `'${String(v).replace(/'/g, "''")}'`;
-              });
+              const vals = validPairs.map(p => escVal(row[p.jsonKey]));
               return `(${vals.join(', ')})`;
             });
-            const snakeCols = cols.map(c => `"${c.replace(/([A-Z])/g, '_$1').toLowerCase()}"`);
-            await tx.execute(sql.raw(`INSERT INTO ${tableName} (${snakeCols.join(', ')}) VALUES ${valueSets.join(', ')}`));
+            await tx.execute(sql.raw(`INSERT INTO ${tableName} (${colList}) VALUES ${valueSets.join(', ')}`));
           }
           results[tableName] = rows.length;
         };
 
         if (tables.project_info?.length > 0) {
-          await batchInsertWithIds('project_info', tables.project_info);
+          await batchInsert('project_info', tables.project_info);
         }
         if (tables.program_expense?.length > 0) {
-          await batchInsertWithIds('program_expense', tables.program_expense);
+          await batchInsert('program_expense', tables.program_expense);
         }
         if (tables.program_inflows?.length > 0) {
-          await batchInsertWithIds('program_inflows', tables.program_inflows);
+          await batchInsert('program_inflows', tables.program_inflows);
         }
         if (tables.project_plan?.length > 0) {
-          await batchInsertWithIds('project_plan', tables.project_plan);
+          await batchInsert('project_plan', tables.project_plan);
         }
         if (tables.normalized_cost_lines?.length > 0) {
-          await batchInsertWithIds('normalized_cost_lines', tables.normalized_cost_lines);
+          await batchInsert('normalized_cost_lines', tables.normalized_cost_lines);
         }
         if (tables.normalized_revenue_lines?.length > 0) {
-          await batchInsertWithIds('normalized_revenue_lines', tables.normalized_revenue_lines);
+          await batchInsert('normalized_revenue_lines', tables.normalized_revenue_lines);
         }
         if (tables.normalized_plan_tasks?.length > 0) {
-          await batchInsertWithIds('normalized_plan_tasks', tables.normalized_plan_tasks);
+          await batchInsert('normalized_plan_tasks', tables.normalized_plan_tasks);
         }
 
         const seqTables = [
@@ -10545,11 +10555,13 @@ function registerFeedbackRoutes(app: Express) {
           'normalized_cost_lines', 'normalized_revenue_lines', 'normalized_plan_tasks'
         ];
         for (const t of seqTables) {
-          await tx.execute(sql.raw(`SELECT setval(pg_get_serial_sequence('${t}', 'id'), COALESCE((SELECT MAX(id) FROM ${t}), 1))`));
+          try {
+            await tx.execute(sql.raw(`SELECT setval(pg_get_serial_sequence('${t}', 'id'), COALESCE((SELECT MAX(id) FROM ${t}), 1))`));
+          } catch (_) {}
         }
       });
 
-      res.json({ success: true, imported: results });
+      res.json({ success: true, imported: results, skippedColumns: skippedCols });
     } catch (err: any) {
       console.error('[Data Import]', err);
       res.status(500).json({ error: err.message });
