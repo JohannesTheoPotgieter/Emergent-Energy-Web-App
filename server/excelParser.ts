@@ -402,14 +402,22 @@ export async function parseTrackerFile(buffer: Buffer, fileName: string): Promis
       const { rowIdx: headerRowIdx, colMap: rawColMap } = expenseHeader;
       
       const colMap = new Map<string, number>();
+      const budgetColMap = new Map<string, number>();
       if (actualSectionStartCol >= 0) {
-        const entries = Array.from(rawColMap.entries());
-        for (const [header, colIdx] of entries) {
-          if (colIdx >= actualSectionStartCol) {
-            colMap.set(header, colIdx);
+        const headerRow = data[headerRowIdx];
+        if (headerRow) {
+          for (let ci = 0; ci < headerRow.length; ci++) {
+            const h = normalizeHeader(headerRow[ci]);
+            if (!h) continue;
+            if (ci >= actualSectionStartCol) {
+              if (!colMap.has(h)) colMap.set(h, ci);
+            } else {
+              if (!budgetColMap.has(h)) budgetColMap.set(h, ci);
+            }
           }
         }
         if (colMap.size < 4) {
+          const entries = Array.from(rawColMap.entries());
           for (const [header, colIdx] of entries) {
             if (!colMap.has(header)) colMap.set(header, colIdx);
           }
@@ -423,25 +431,41 @@ export async function parseTrackerFile(buffer: Buffer, fileName: string): Promis
       
       const categoryCol = getColumnIndex(colMap, ["product/ service", "product/service", "product", "category"]);
       const descCol = getColumnIndex(colMap, ["description of work", "description"]);
-      const budgetQtyCol = getColumnIndex(colMap, ["qty", "quantity"]);
-      const budgetRateCol = getColumnIndex(colMap, ["rate / unit", "rate"]);
-      const budgetTotalCol = getColumnIndex(colMap, ["budget total"]);
-      const forecastPayDateCol = getColumnIndex(colMap, ["forecasted payment date", "forecast payment date", "forecast pay date"]);
+      const actualQtyCol = getColumnIndex(colMap, ["qty", "quantity"]);
+      const actualRateCol = getColumnIndex(colMap, ["rate / unit", "rate"]);
+      const budgetQtyCol = budgetColMap.size > 0
+        ? getColumnIndex(budgetColMap, ["qty", "quantity"])
+        : actualQtyCol;
+      const budgetRateCol = budgetColMap.size > 0
+        ? getColumnIndex(budgetColMap, ["rate / unit", "rate"])
+        : actualRateCol;
+      const budgetTotalCol = budgetColMap.size > 0
+        ? getColumnIndex(budgetColMap, ["budget total"])
+        : getColumnIndex(colMap, ["budget total"]);
+      let forecastPayDateCol = getColumnIndex(colMap, ["forecasted payment date", "forecast payment date", "forecast pay date"]);
+      if (forecastPayDateCol < 0 && budgetColMap.size > 0) {
+        forecastPayDateCol = getColumnIndex(budgetColMap, ["forecasted payment date", "forecast payment date", "forecast pay date", "project related date"]);
+      }
       
       let budgetCosCol = -1;
       let actualCosCol = -1;
-      const cosMatches: number[] = [];
-      const colMapEntries = Array.from(colMap.entries());
-      for (const [key, idx] of colMapEntries) {
-        if (key.toLowerCase().includes("total cos") || key.toLowerCase() === "cos") {
-          cosMatches.push(idx);
+      if (budgetColMap.size > 0) {
+        budgetCosCol = getColumnIndex(budgetColMap, ["total cos", "cos"]);
+        actualCosCol = getColumnIndex(colMap, ["total cos", "cos"]);
+      } else {
+        const cosMatches: number[] = [];
+        const colMapEntries = Array.from(colMap.entries());
+        for (const [key, idx] of colMapEntries) {
+          if (key.toLowerCase().includes("total cos") || key.toLowerCase() === "cos") {
+            cosMatches.push(idx);
+          }
         }
-      }
-      if (cosMatches.length >= 2) {
-        budgetCosCol = Math.min(...cosMatches);
-        actualCosCol = Math.max(...cosMatches);
-      } else if (cosMatches.length === 1) {
-        actualCosCol = cosMatches[0];
+        if (cosMatches.length >= 2) {
+          budgetCosCol = Math.min(...cosMatches);
+          actualCosCol = Math.max(...cosMatches);
+        } else if (cosMatches.length === 1) {
+          actualCosCol = cosMatches[0];
+        }
       }
       
       const actualTotalCol = getColumnIndex(colMap, ["actual total"]);
@@ -449,6 +473,7 @@ export async function parseTrackerFile(buffer: Buffer, fileName: string): Promis
       const invoiceCol = getColumnIndex(colMap, ["invoice number"]);
       const invoiceDateCol = getColumnIndex(colMap, ["invoice raised date", "invoice date"]);
       const paymentDateCol = getColumnIndex(colMap, ["finance payment date", "payment date"]);
+      const revenueRecogCol = getColumnIndex(colMap, ["revenue recognition amount", "revenue recognition", "rev recognition"]);
       
       let dataStartRow = headerRowIdx + 1;
       if (data[headerRowIdx + 1]) {
@@ -636,8 +661,8 @@ export async function parseTrackerFile(buffer: Buffer, fileName: string): Promis
           ),
           forecastPaymentDate: forecastPayDateCol >= 0 ? parseDate(row[forecastPayDateCol]) : null,
           budgetCosTotal: budgetCosCol >= 0 ? parseNumber(row[budgetCosCol]) : null,
-          expenseQty: budgetQtyCol >= 0 ? parseNumber(row[budgetQtyCol]) : null,
-          expenseRateUnit: budgetRateCol >= 0 ? parseNumber(row[budgetRateCol]) : null,
+          expenseQty: actualQtyCol >= 0 ? parseNumber(row[actualQtyCol]) : null,
+          expenseRateUnit: actualRateCol >= 0 ? parseNumber(row[actualRateCol]) : null,
           expenseActualTotal: actualTotalCol >= 0 ? parseNumber(row[actualTotalCol]) : null,
           expensePoNumber: poNumber,
           expenseInvoiceNumber: invoiceNumber,
@@ -647,6 +672,7 @@ export async function parseTrackerFile(buffer: Buffer, fileName: string): Promis
           expensePaymentDate: paymentDate,
           paymentDateConfirmed,
           paymentDateFontColor,
+          revenueAmount: revenueRecogCol >= 0 ? parseNumber(row[revenueRecogCol]) : null,
           actualCosTotal: actualCosCol >= 0 ? parseNumber(row[actualCosCol]) : null,
           lineStatus,
         });

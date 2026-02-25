@@ -125,6 +125,7 @@ export const programExpense = pgTable("program_expense", {
   expensePaymentDate: text("expense_payment_date"),
   paymentDateConfirmed: boolean("payment_date_confirmed").default(false),
   paymentDateFontColor: text("payment_date_font_color"),
+  revenueAmount: decimal("revenue_amount", { precision: 15, scale: 2 }),
   actualCosTotal: decimal("actual_cos_total", { precision: 15, scale: 2 }),
   lineStatus: text("line_status"),
   expenseLineHash: text("expense_line_hash"),

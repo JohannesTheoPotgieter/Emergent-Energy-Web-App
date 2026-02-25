@@ -60,6 +60,7 @@ interface EnrichedExpense {
   expensePaymentDate: string | null;
   paymentDateConfirmed: boolean | null;
   paymentDateFontColor: string | null;
+  revenueAmount: string | null;
   actualCosTotal: string | null;
   lineStatus: string | null;
   linkedTask: { id: number; title: string; status: string; dueDate: string | null; isBaseline: boolean } | null;
@@ -76,6 +77,7 @@ interface CategoryGroup {
   items: EnrichedExpense[];
   budgetTotal: number;
   actualTotal: number;
+  revenueTotal: number;
   variance: number;
 }
 
@@ -87,7 +89,7 @@ interface ExpenditureEditableTabProps {
 type ColumnKey =
   | "description" | "actualTotal" | "poNumber" | "invoiceNo"
   | "invoiceDate" | "paymentDate" | "linkedTask" | "cosStatus"
-  | "paymentStatus" | "plannedMonth" | "budgetTotal" | "variance";
+  | "paymentStatus" | "plannedMonth" | "budgetTotal" | "variance" | "revenueAmount";
 
 interface ColumnDef {
   key: ColumnKey;
@@ -109,6 +111,7 @@ const COLUMNS: ColumnDef[] = [
   { key: "paymentStatus", label: "Payment Status", defaultVisible: true, align: "center", minWidth: "110px" },
   { key: "plannedMonth", label: "Planned Month", defaultVisible: true, align: "center", minWidth: "100px" },
   { key: "budgetTotal", label: "Budget Total", defaultVisible: false, align: "right", minWidth: "120px" },
+  { key: "revenueAmount", label: "Rev Recognition", defaultVisible: false, align: "right", minWidth: "130px" },
   { key: "variance", label: "Variance", defaultVisible: false, align: "right", minWidth: "110px" },
 ];
 
@@ -420,23 +423,24 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
     for (const row of filteredItems) {
       const cat = row.expenseCategory || "Uncategorized";
       if (!groupMap.has(cat)) {
-        groupMap.set(cat, { category: cat, items: [], budgetTotal: 0, actualTotal: 0, variance: 0 });
+        groupMap.set(cat, { category: cat, items: [], budgetTotal: 0, actualTotal: 0, revenueTotal: 0, variance: 0 });
         groupOrder.push(cat);
       }
       const group = groupMap.get(cat)!;
       group.items.push(row);
       const budget = parseFloat(row.budgetTotal || "0");
       const actual = parseFloat(row.expenseActualTotal || "0");
+      const revAmt = parseFloat(row.revenueAmount || "0");
       group.budgetTotal += budget;
       group.actualTotal += actual;
+      group.revenueTotal += revAmt;
       group.variance += budget - actual;
     }
     const groups = groupOrder.map(name => groupMap.get(name)!).filter(g => g.items.length > 0);
     groups.sort((a, b) => {
-      const numA = parseFloat(a.category) || Infinity;
-      const numB = parseFloat(b.category) || Infinity;
-      if (numA !== numB) return numA - numB;
-      return a.category.localeCompare(b.category);
+      const minRowA = Math.min(...a.items.map(i => i.rowNumber || Infinity));
+      const minRowB = Math.min(...b.items.map(i => i.rowNumber || Infinity));
+      return minRowA - minRowB;
     });
     return groups;
   }, [filteredItems]);
@@ -754,6 +758,8 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
         );
       case "budgetTotal":
         return <span className="text-xs font-mono">{formatCurrency(exp.budgetTotal)}</span>;
+      case "revenueAmount":
+        return <span className="text-xs font-mono">{formatCurrency(exp.revenueAmount)}</span>;
       case "actualTotal":
         return <span className="text-xs font-mono">{formatCurrency(exp.expenseActualTotal)}</span>;
       case "poNumber":
@@ -946,6 +952,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
                           <td key={col.key} className={`px-3 py-2.5 text-xs font-semibold text-slate-600 dark:text-slate-300
                             ${col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : ""}`}>
                             {col.key === "budgetTotal" && <span className="font-mono">{formatCurrency(group.budgetTotal)}</span>}
+                            {col.key === "revenueAmount" && <span className="font-mono">{formatCurrency(group.revenueTotal)}</span>}
                             {col.key === "actualTotal" && <span className="font-mono">{formatCurrency(group.actualTotal)}</span>}
                             {col.key === "variance" && (
                               <span className={`font-mono ${group.variance >= 0 ? "text-emerald-600" : "text-red-600"}`}>{formatCurrency(group.variance)}</span>
