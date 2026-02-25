@@ -3,9 +3,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { Download, Upload, Loader2, CheckCircle, AlertTriangle, Database } from "lucide-react";
+import { Download, Upload, Loader2, CheckCircle, AlertTriangle, Database, ShieldCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { Checkbox } from "@/components/ui/checkbox";
+
+const QM_PROJECTS = [
+  "25 Superior Road",
+  "De Drift",
+  "PnP Bethal",
+  "Swellengrebel",
+];
 
 export default function AdminDataSyncPage() {
   const { toast } = useToast();
@@ -13,6 +21,9 @@ export default function AdminDataSyncPage() {
   const [importing, setImporting] = useState(false);
   const [exportResult, setExportResult] = useState<any>(null);
   const [importResult, setImportResult] = useState<any>(null);
+  const [selectedQmProjects, setSelectedQmProjects] = useState<string[]>([...QM_PROJECTS]);
+  const [creatingChecklists, setCreatingChecklists] = useState(false);
+  const [checklistResult, setChecklistResult] = useState<{ project: string; status: string }[] | null>(null);
 
   const handleExport = async () => {
     setExporting(true);
@@ -36,6 +47,31 @@ export default function AdminDataSyncPage() {
     } finally {
       setExporting(false);
     }
+  };
+
+  const handleCreateChecklists = async () => {
+    if (selectedQmProjects.length === 0) {
+      toast({ title: "No projects selected", description: "Select at least one project.", variant: "destructive" });
+      return;
+    }
+    setCreatingChecklists(true);
+    setChecklistResult(null);
+    try {
+      const res = await apiRequest("POST", "/api/quality/admin/bulk-create-checklists", { projectNames: selectedQmProjects });
+      const data = await res.json();
+      setChecklistResult(data.results);
+      toast({ title: "Checklists created", description: `Processed ${data.results.length} projects.` });
+    } catch (err: any) {
+      toast({ title: "Failed to create checklists", description: err.message, variant: "destructive" });
+    } finally {
+      setCreatingChecklists(false);
+    }
+  };
+
+  const toggleQmProject = (name: string) => {
+    setSelectedQmProjects(prev =>
+      prev.includes(name) ? prev.filter(p => p !== name) : [...prev, name]
+    );
   };
 
   const handleImport = async () => {
@@ -179,6 +215,48 @@ export default function AdminDataSyncPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ShieldCheck className="h-5 w-5" />
+            Create Quality Checklists
+          </CardTitle>
+          <CardDescription>Initialize quality management checklists for selected projects. Safe to run multiple times — existing checklists are skipped.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            {QM_PROJECTS.map((name) => (
+              <label key={name} className="flex items-center gap-2 cursor-pointer" data-testid={`checkbox-qm-${name}`}>
+                <Checkbox
+                  checked={selectedQmProjects.includes(name)}
+                  onCheckedChange={() => toggleQmProject(name)}
+                />
+                <span className="text-sm">{name}</span>
+              </label>
+            ))}
+          </div>
+          <Button onClick={handleCreateChecklists} disabled={creatingChecklists || selectedQmProjects.length === 0} data-testid="button-create-checklists">
+            {creatingChecklists ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
+            {creatingChecklists ? "Creating..." : `Create Checklists (${selectedQmProjects.length})`}
+          </Button>
+          {checklistResult && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-green-600">
+                <CheckCircle className="h-4 w-4" />
+                <span className="text-sm font-medium">Done</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {checklistResult.map((r) => (
+                  <Badge key={r.project} variant={r.status === "created" ? "default" : "secondary"} data-testid={`badge-qm-${r.project}`}>
+                    {r.project}: {r.status}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
