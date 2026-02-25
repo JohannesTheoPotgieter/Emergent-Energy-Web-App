@@ -46,6 +46,7 @@ export const EXPENDITURE_SYNONYMS: Record<string, string[]> = {
   forecast_payment_date: ["forecasted payment date", "forecast payment date", "forecast pay date"],
   budget_cos: ["budget cos", "budget cost of sales"],
   actual_cos: ["actual cos", "total cos", "cost of sales"],
+  revenue_recognition_amount: ["revenue recognition amount", "revenue recognition", "rev recognition"],
 };
 
 export const SECTION_ANCHORS: Record<string, { sheetNames: string[]; anchorPhrases: string[]; requiredFields: string[] }> = {
