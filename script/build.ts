@@ -1,6 +1,7 @@
 import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
-import { rm, readFile } from "fs/promises";
+import { rm, readFile, writeFile } from "fs/promises";
+import crypto from "crypto";
 
 // server deps to bundle to reduce openat(2) syscalls
 // which helps cold start times
@@ -35,8 +36,15 @@ const allowlist = [
 async function buildAll() {
   await rm("dist", { recursive: true, force: true });
 
+  const buildId = crypto.randomUUID();
+  const buildTime = new Date().toISOString();
+  console.log(`Build ID: ${buildId}`);
+
   console.log("building client...");
   await viteBuild();
+
+  console.log("writing build version...");
+  await writeFile("dist/public/build-version.json", JSON.stringify({ buildId, buildTime }));
 
   console.log("building server...");
   const pkg = JSON.parse(await readFile("package.json", "utf-8"));
