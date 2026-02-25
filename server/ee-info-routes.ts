@@ -44,10 +44,13 @@ function categorizeNode(title: string, content: string | null): string {
   const roleKeywords = ["officer", "manager", "director", "head of", "engineer", "developer"];
   if (roleKeywords.some(k => t.includes(k))) return "role";
 
-  const processPatterns = [/\(p[dma]+\d*\)/i, /\(epm?\d*\)/i, /\(cpm\d*\)/i, /\(pdpm\d*\)/i, /process/i, /planning/i, /construction/i, /hand over/i, /commissioning/i, /close out/i, /engagement/i, /assessment/i, /procurement/i, /invoic/i, /payment/i, /inventory/i, /compliance/i, /hse/i, /red team/i, /research/i, /relationship/i, /deal/i, /tender/i, /site visit/i, /meter/i, /data tool/i, /engineering design/i, /engineering pack/i, /cost proposal/i, /final offer/i, /sseg/i];
+  const governanceKeywords = ["cos realisation", "revenue milestone", "vo approval", "cashflow forecast", "financial governance", "risk register", "safety governance", "qa governance", "quality assurance governance"];
+  if (governanceKeywords.some(k => t.includes(k))) return "governance";
+
+  const processPatterns = [/\(p[dma]+\d*\)/i, /\(epm?\d*\)/i, /\(cpm\d*\)/i, /\(pdpm\d*\)/i, /process/i, /planning/i, /construction/i, /hand over/i, /commissioning/i, /close out/i, /engagement/i, /assessment/i, /procurement/i, /invoic/i, /payment/i, /inventory/i, /compliance/i, /hse/i, /red team/i, /research/i, /relationship/i, /deal/i, /tender/i, /site visit/i, /meter/i, /data tool/i, /engineering design/i, /engineering pack/i, /cost proposal/i, /final offer/i, /sseg/i, /lifecycle phase/i, /execution phase/i, /handover/i, /o&m transfer/i];
   if (processPatterns.some(p => p.test(t))) return "process";
 
-  const toolKeywords = ["click up", "sharepoint", "ms teams", "matriarch"];
+  const toolKeywords = ["click up", "sharepoint", "ms teams", "matriarch", "web application", "emergent energy web"];
   if (toolKeywords.some(k => t.includes(k))) return "tool";
 
   const templateKeywords = ["template", "charter", "report", "agreement", "purchase order"];
@@ -94,7 +97,7 @@ function extractWikiLinks(content: string): { links: string[]; embeds: string[] 
 }
 
 export async function importObsidianZip(zipPath: string, importedBy: string = "system"): Promise<{ nodes: number; edges: number; assets: number }> {
-  const AdmZip = require("adm-zip");
+  const { default: AdmZip } = await import("adm-zip");
   const zip = new AdmZip(zipPath);
   const entries = zip.getEntries();
 
@@ -424,7 +427,7 @@ export function registerEeInfoRoutes(app: Express) {
 
   app.post("/api/ee-info/nodes", requireAuth, requireCOO, async (req, res) => {
     try {
-      const { title, contentMarkdown, category, tags, flowEnabled, flowLane, flowStepCode, nextSlugs, prevSlugs } = req.body;
+      const { title, contentMarkdown, category, tags, flowEnabled, flowLane, flowStepCode, nextSlugs, prevSlugs, gateConditions, blockingConditions, responsibleRole, escalationRole } = req.body;
       if (!title) return res.status(400).json({ error: "Title is required" });
 
       const slug = slugify(title);
@@ -442,6 +445,10 @@ export function registerEeInfoRoutes(app: Express) {
         flowStepCode: flowStepCode || null,
         nextSlugs: nextSlugs || [],
         prevSlugs: prevSlugs || [],
+        gateConditions: gateConditions || [],
+        blockingConditions: blockingConditions || [],
+        responsibleRole: responsibleRole || null,
+        escalationRole: escalationRole || null,
         createdBy: userId,
         updatedBy: userId,
       });
@@ -461,7 +468,7 @@ export function registerEeInfoRoutes(app: Express) {
       if (existing.length === 0) return res.status(404).json({ error: "Node not found" });
 
       const userId = String((req.user as any)?.id || "unknown");
-      const { title, contentMarkdown, category, tags, status, flowEnabled, flowLane, flowStepCode, nextSlugs, prevSlugs } = req.body;
+      const { title, contentMarkdown, category, tags, status, flowEnabled, flowLane, flowStepCode, nextSlugs, prevSlugs, gateConditions, blockingConditions, responsibleRole, escalationRole } = req.body;
 
       if (existing[0].contentMarkdown !== contentMarkdown) {
         await db.insert(eeInfoVersions).values({
@@ -484,6 +491,10 @@ export function registerEeInfoRoutes(app: Express) {
       if (flowStepCode !== undefined) updates.flowStepCode = flowStepCode;
       if (nextSlugs !== undefined) updates.nextSlugs = nextSlugs;
       if (prevSlugs !== undefined) updates.prevSlugs = prevSlugs;
+      if (gateConditions !== undefined) updates.gateConditions = gateConditions;
+      if (blockingConditions !== undefined) updates.blockingConditions = blockingConditions;
+      if (responsibleRole !== undefined) updates.responsibleRole = responsibleRole;
+      if (escalationRole !== undefined) updates.escalationRole = escalationRole;
 
       await db.update(eeInfoNodes).set(updates).where(eq(eeInfoNodes.id, id));
       const [updated] = await db.select().from(eeInfoNodes).where(eq(eeInfoNodes.id, id));
@@ -567,6 +578,228 @@ export function registerEeInfoRoutes(app: Express) {
     } catch (err) {
       console.error("[EE-Info] Error re-importing:", err);
       res.status(500).json({ error: "Failed to re-import" });
+    }
+  });
+
+  app.post("/api/ee-info/post-seed-align", requireAuth, requireCOO, async (req, res) => {
+    try {
+      const userId = String((req.user as any)?.id || "system");
+      const created: string[] = [];
+      const updated: string[] = [];
+      const skipped: string[] = [];
+
+      async function upsertNode(def: {
+        slug: string; title: string; category: string; contentMarkdown: string;
+        tags?: string[]; flowEnabled?: boolean; flowLane?: string; flowStepCode?: string;
+        gateConditions?: string[]; blockingConditions?: string[];
+        responsibleRole?: string; escalationRole?: string;
+        nextSlugs?: string[]; prevSlugs?: string[];
+      }) {
+        const existing = await db.select().from(eeInfoNodes).where(eq(eeInfoNodes.slug, def.slug));
+        if (existing.length > 0) {
+          await db.update(eeInfoNodes).set({
+            contentMarkdown: def.contentMarkdown,
+            category: def.category,
+            tags: def.tags || existing[0].tags || [],
+            flowEnabled: def.flowEnabled ?? existing[0].flowEnabled,
+            flowLane: def.flowLane ?? existing[0].flowLane,
+            flowStepCode: def.flowStepCode ?? existing[0].flowStepCode,
+            gateConditions: def.gateConditions || [],
+            blockingConditions: def.blockingConditions || [],
+            responsibleRole: def.responsibleRole || null,
+            escalationRole: def.escalationRole || null,
+            nextSlugs: def.nextSlugs || existing[0].nextSlugs || [],
+            prevSlugs: def.prevSlugs || existing[0].prevSlugs || [],
+            status: "published",
+            updatedAt: new Date(),
+            updatedBy: userId,
+          }).where(eq(eeInfoNodes.id, existing[0].id));
+          updated.push(def.title);
+        } else {
+          await db.insert(eeInfoNodes).values({
+            id: generateId(),
+            slug: def.slug,
+            title: def.title,
+            contentMarkdown: def.contentMarkdown,
+            status: "published",
+            category: def.category,
+            tags: def.tags || [],
+            flowEnabled: def.flowEnabled || false,
+            flowLane: def.flowLane || null,
+            flowStepCode: def.flowStepCode || null,
+            nextSlugs: def.nextSlugs || [],
+            prevSlugs: def.prevSlugs || [],
+            gateConditions: def.gateConditions || [],
+            blockingConditions: def.blockingConditions || [],
+            responsibleRole: def.responsibleRole || null,
+            escalationRole: def.escalationRole || null,
+            createdBy: userId,
+            updatedBy: userId,
+          });
+          created.push(def.title);
+        }
+      }
+
+      async function ensureEdge(fromSlug: string, toSlug: string, type: string = "link") {
+        const fromNodes = await db.select().from(eeInfoNodes).where(eq(eeInfoNodes.slug, fromSlug));
+        const toNodes = await db.select().from(eeInfoNodes).where(eq(eeInfoNodes.slug, toSlug));
+        if (!fromNodes[0] || !toNodes[0]) return;
+        const existing = await db.select().from(eeInfoEdges).where(
+          and(eq(eeInfoEdges.fromNodeId, fromNodes[0].id), eq(eeInfoEdges.toNodeId, toNodes[0].id), eq(eeInfoEdges.edgeType, type))
+        );
+        if (existing.length === 0) {
+          await db.insert(eeInfoEdges).values({
+            id: generateId(), fromNodeId: fromNodes[0].id, toNodeId: toNodes[0].id, edgeType: type,
+          });
+        }
+      }
+
+      await upsertNode({
+        slug: "construction-manager", title: "Construction Manager", category: "role",
+        contentMarkdown: "# Construction Manager\n\nThe Construction Manager oversees all on-site construction activities for Emergent Energy projects.\n\n## Responsibilities\n- Site management and daily construction oversight\n- Coordination of subcontractors and trades on site\n- Health, Safety and Environmental (HSE) compliance on site\n- Construction schedule management and progress reporting\n- Quality assurance of installed works\n- Interface management between design engineering and site execution\n- Punch list and defect tracking\n- Handover preparation and documentation\n\n## Reports To\n[[Project Manager]]\n\n## Interfaces With\n- [[Design Engineer]] — technical queries and RFIs\n- [[Project Engineer (Quality)]] — quality inspections and ITP compliance\n- [[HSE Officer]] — safety compliance and incident management\n- [[Procurement]] — material delivery coordination",
+        tags: ["role", "construction", "site"],
+        responsibleRole: "Construction Manager",
+      });
+
+      await upsertNode({
+        slug: "emergent-energy-web-application", title: "Emergent Energy Web Application", category: "tool",
+        contentMarkdown: "# Emergent Energy Web Application\n\nThe core project management and financial tracking platform for Emergent Energy.\n\n## Capabilities\n- **Smart Import** — Excel tracker ingestion with font-color-aware COS and cashflow status detection\n- **Execution Board** — Real-time project status dashboard with RAG indicators\n- **COS Tracker** — Cost of Sales tracking with Realised/Deferred/Flagged/Planned status classification\n- **Cashflow Management** — Payment tracking, forecasting, and bank reconciliation\n- **Revenue Tracker** — Milestone-based revenue recognition\n- **Engineering Dashboard** — Task management and phase tracking\n- **Quality Management** — QM dashboard and compliance tracking\n- **TR Register** — Cross-project action item tracking\n- **Weekly Reviews** — Structured weekly review wizard\n- **EE Info** — This knowledge base (Obsidian-sourced graph/detail/flow viewer)\n- **Subcontractor Dashboard** — Procurement and subcontractor management\n- **Admin** — Roles, permissions, audit trails, and system configuration\n\n## Technology Stack\n- React + TypeScript frontend with shadcn/ui\n- Express.js + PostgreSQL backend with Drizzle ORM\n- Hosted on Replit\n\n## Access\nRole-based access control with Permission Gate System. COO/CEO/Admin users have full access.",
+        tags: ["tool", "platform", "core"],
+      });
+
+      await upsertNode({
+        slug: "cos-realisation-logic", title: "COS Realisation Logic", category: "governance",
+        contentMarkdown: "# COS Realisation Logic\n\nDefines how Cost of Sales status is determined for each expenditure line item.\n\n## Status Definitions\n\n### Realised\nPO number present + Invoice number present + Invoice date font is BLACK\n- Logic: `hasPO && hasInvoice && (invoiceDateConfirmed === true || invoiceDateFontColor === 'black')`\n- NULL/empty font color does NOT default to confirmed\n\n### Deferred\nPO + Invoice present + Invoice date exists but font is RED\n- Cost is committed but not yet realised in the accounting period\n\n### Flagged\nInvoice date font IS black but missing either PO or Invoice number\n- Needs attention — data is incomplete\n- Users can override Flagged status via dialog with reason\n- Overrides stored in `cos_status_overrides` table\n\n### Planned\nDefault state for all other lines\n- No PO, no invoice, or insufficient data\n\n## Font Color Rule\nOnly explicit black font means confirmed. NULL or empty font color is treated as NOT confirmed.",
+        tags: ["governance", "financial", "cos"],
+        gateConditions: ["PO number present", "Invoice number present", "Invoice date font color is black"],
+        responsibleRole: "Financial Manager",
+        escalationRole: "COO",
+      });
+
+      await upsertNode({
+        slug: "revenue-milestone-logic", title: "Revenue Milestone Logic", category: "governance",
+        contentMarkdown: "# Revenue Milestone Logic\n\nDefines how revenue is recognised against project milestones.\n\n## Process\n1. Revenue Recognition Amount extracted from 'REVENUE RECOGNITION AMOUNT' column in Expenditure Breakdown sheet\n2. Stored in `program_expense.revenue_amount`\n3. Aggregated at project level for revenue tracking\n\n## Milestone Gates\n- Revenue can only be recognised when corresponding deliverables are certified\n- CP (Completion Point) triggers revenue milestone acceptance\n- VO (Variation Orders) require separate approval before revenue adjustment\n\n## Reporting\n- Revenue tracker shows project-level totals\n- Monthly revenue recognition aligned to COS realisation periods",
+        tags: ["governance", "financial", "revenue"],
+        gateConditions: ["Deliverable certified", "CP triggered", "Client acceptance received"],
+        responsibleRole: "Financial Manager",
+        escalationRole: "COO",
+      });
+
+      await upsertNode({
+        slug: "vo-approval-workflow", title: "VO Approval Workflow", category: "governance",
+        contentMarkdown: "# VO Approval Workflow\n\nVariation Order approval process for scope changes on active projects.\n\n## Workflow Steps\n1. **VO Identification** — PM identifies scope change requirement\n2. **Cost Estimation** — Engineering and procurement provide cost impact\n3. **Internal Review** — PM prepares VO package with technical justification\n4. **COO Approval** — COO reviews financial impact and approves/rejects\n5. **Client Submission** — VO submitted to client for approval\n6. **Client Approval** — Client signs off on VO\n7. **Budget Update** — Project budget updated via Smart Import re-run\n8. **Revenue Adjustment** — Revenue milestones updated if applicable\n\n## Blocking Conditions\n- No VO work may commence before internal COO approval\n- No revenue may be recognised on unapproved VOs\n- Budget must be updated before COS tracking applies to VO lines",
+        tags: ["governance", "financial", "variation"],
+        gateConditions: ["COO internal approval", "Client written approval", "Budget updated in system"],
+        blockingConditions: ["No work before COO approval", "No revenue on unapproved VOs"],
+        responsibleRole: "Project Manager",
+        escalationRole: "COO",
+      });
+
+      await upsertNode({
+        slug: "cashflow-forecasting-model", title: "Cashflow Forecasting Model", category: "governance",
+        contentMarkdown: "# Cashflow Forecasting Model\n\nCashflow projection and tracking model for Emergent Energy projects.\n\n## Outflow Classification\n\n### Out of Bank\nPayment date font is BLACK + has invoice number\n- `paymentDateBlack && hasInvoice`\n- Money has left the bank account\n\n### Payment Planned\nPayment date exists but font is RED\n- Payment scheduled but not yet executed\n\n### Planned\nNo payment date or insufficient data\n- Future obligation, not yet scheduled\n\n## Forecasting\n- Forecast payment dates extracted from budget section of Expenditure Breakdown\n- `computedForecastPaymentDate` derived from `forecast_payment_date` column\n- 30/60/90 day payment windows for cash planning\n\n## Font Color Rule\nSame as COS — only explicit BLACK font means confirmed payment. NULL/empty = not confirmed.",
+        tags: ["governance", "financial", "cashflow"],
+        responsibleRole: "Financial Manager",
+        escalationRole: "COO",
+      });
+
+      await upsertNode({
+        slug: "risk-register-governance", title: "Risk Register Governance", category: "governance",
+        contentMarkdown: "# Risk Register Governance\n\nRisk management framework aligned to Emergent Energy execution structure.\n\n## Risk Categories\n- **Financial** — Budget overruns, payment delays, currency exposure\n- **Schedule** — Programme delays, resource availability, long-lead items\n- **Technical** — Design errors, specification changes, integration issues\n- **HSE** — Safety incidents, environmental non-compliance\n- **Contractual** — Scope disputes, VO delays, penalty clauses\n- **Supply Chain** — Subcontractor performance, material shortages\n\n## Risk Assessment\n- Likelihood x Impact matrix (5x5)\n- RAG status assignment per risk\n- Monthly risk review in Weekly Review Wizard\n\n## Escalation\n- High/Critical risks escalated to COO within 24 hours\n- Risk mitigations tracked as TR Register items",
+        tags: ["governance", "risk"],
+        responsibleRole: "Project Manager",
+        escalationRole: "COO",
+      });
+
+      await upsertNode({
+        slug: "safety-governance", title: "Safety Governance", category: "governance",
+        contentMarkdown: "# Safety Governance\n\nHealth, Safety and Environmental governance for Emergent Energy projects.\n\n## Framework\n- HSE Plan required before site mobilisation\n- Daily toolbox talks and site safety briefings\n- Incident reporting within 24 hours\n- Near-miss reporting encouraged and tracked\n\n## Gate Conditions\n- HSE Plan approved before construction commencement\n- All personnel inducted before site access\n- PPE compliance verified daily\n- Emergency response plan in place\n\n## Reporting\n- Monthly HSE statistics (LTI, TRIR, near-miss rate)\n- Incident investigations with root cause analysis\n- Corrective actions tracked through TR Register",
+        tags: ["governance", "safety", "hse"],
+        gateConditions: ["HSE Plan approved", "Personnel inducted", "PPE compliance verified", "Emergency response plan active"],
+        blockingConditions: ["No site access without induction", "Stop work authority for safety violations"],
+        responsibleRole: "Construction Manager",
+        escalationRole: "COO",
+      });
+
+      await upsertNode({
+        slug: "qa-governance", title: "QA Governance", category: "governance",
+        contentMarkdown: "# QA Governance\n\nQuality Assurance governance aligned to current execution structure.\n\n## Quality Framework\n- Inspection and Test Plans (ITPs) for all critical activities\n- Hold points requiring witness/sign-off before proceeding\n- Non-Conformance Reports (NCRs) tracked and closed out\n- Quality Dashboard provides real-time compliance visibility\n\n## Role Split\n- **Design Engineer** — Technical quality of engineering deliverables\n- **Project Engineer (Quality)** — Execution quality, ITP management, site inspections\n- **Construction Manager** — Installation quality and workmanship\n\n## Gate Conditions\n- ITP approved before work commences\n- Hold points witnessed and signed off\n- All NCRs closed before handover\n- As-built documentation complete",
+        tags: ["governance", "quality"],
+        gateConditions: ["ITP approved", "Hold points witnessed", "NCRs closed", "As-built documentation complete"],
+        responsibleRole: "Project Engineer (Quality)",
+        escalationRole: "Engineering Manager",
+      });
+
+      await upsertNode({
+        slug: "company-lifecycle-phase", title: "Company Lifecycle Phase", category: "process",
+        contentMarkdown: "# Company Lifecycle Phase\n\nRestricted-visibility lifecycle phases that govern company-level project progression.\n\n## Phases\n1. **Opportunity** — Deal identification and initial assessment\n2. **Tender** — Formal tender preparation and submission\n3. **Award** — Contract award and negotiation\n4. **Execution** — Active project delivery (see [[Execution Phase]])\n5. **Close-out** — Project completion and financial close\n6. **O&M** — Operations and Maintenance transfer (see [[Matriarch O&M Transfer]])\n\n## Visibility\n- **Restricted** to COO, CEO, and Admin roles\n- PM-level users see only Execution Phase details\n- Lifecycle transitions require COO approval\n\n## Lifecycle Board\nManaged via the Company Lifecycle Dashboard in the Emergent Energy Web Application.",
+        tags: ["process", "lifecycle", "restricted"],
+        flowEnabled: true,
+        gateConditions: ["COO approval for phase transitions"],
+        responsibleRole: "COO",
+      });
+
+      await upsertNode({
+        slug: "execution-phase", title: "Execution Phase", category: "process",
+        contentMarkdown: "# Execution Phase\n\nPM-visible project execution phase covering active delivery.\n\n## Sub-phases\n1. **Mobilisation** — Site setup, team deployment, HSE plan activation\n2. **Engineering** — Design completion, CP-triggered execution release\n3. **Procurement** — Material ordering, subcontractor appointment\n4. **Construction** — On-site installation and build\n5. **Commissioning** — Testing, energisation, performance verification\n6. **Handover** — Client handover and documentation transfer (see [[Handover and Matriarch O&M Transfer]])\n\n## CP-Triggered Execution\n- Engineering design release gated by Completion Points (CPs)\n- Each CP validates that design deliverables meet quality requirements\n- Construction cannot commence on a work package until its CP is approved\n\n## Visibility\n- Visible to PM, Engineering, and Construction roles\n- Sub-phase transitions tracked on Execution Board",
+        tags: ["process", "execution", "pm-visible"],
+        flowEnabled: true,
+        gateConditions: ["CP approval before construction", "HSE plan active", "Procurement complete for work package"],
+        responsibleRole: "Project Manager",
+        escalationRole: "COO",
+      });
+
+      await upsertNode({
+        slug: "handover-and-matriarch-om-transfer", title: "Handover and Matriarch O&M Transfer", category: "process",
+        contentMarkdown: "# Handover and Matriarch O&M Transfer\n\nFormalised handover process and O&M system transfer requirements.\n\n## Handover Requirements\n1. **Documentation Package**\n   - As-built drawings signed off\n   - Test certificates and commissioning reports\n   - O&M manuals delivered\n   - Warranty certificates collated\n   - Training records for client personnel\n\n2. **Quality Sign-off**\n   - All NCRs closed out\n   - Punch list items complete (zero Category A items)\n   - Final ITP sign-off\n\n3. **Financial Close-out**\n   - Final account agreed with client\n   - All VOs settled\n   - Retention terms documented\n   - Final COS reconciliation complete\n\n## Matriarch O&M Transfer\n- Asset register exported to Matriarch system\n- Maintenance schedules configured\n- Spare parts inventory transferred\n- Monitoring system handover (if applicable)\n- O&M contract terms activated\n\n## Gate Conditions\n- Client acceptance certificate signed\n- All punch list items resolved\n- Financial reconciliation complete\n- Matriarch system configured and tested",
+        tags: ["process", "handover", "o&m"],
+        flowEnabled: true,
+        gateConditions: ["Client acceptance certificate", "Punch list complete", "Financial reconciliation done", "Matriarch O&M configured"],
+        blockingConditions: ["No handover with open Category A punch items", "No O&M transfer without Matriarch configuration"],
+        responsibleRole: "Project Manager",
+        escalationRole: "COO",
+      });
+
+      await upsertNode({
+        slug: "design-engineer", title: "Design Engineer", category: "role",
+        contentMarkdown: "# Design Engineer\n\nResponsible for technical design quality of engineering deliverables.\n\n## Responsibilities\n- Electrical and structural design calculations\n- Drawing production and review\n- Technical specification development\n- Design verification and CP preparation\n- RFI response and technical support to site\n- Interface with Design Review (Red Team) process\n\n## Reports To\n[[Engineering Manager]]\n\n## Interfaces With\n- [[Project Engineer (Quality)]] — design quality review\n- [[Construction Manager]] — technical queries from site\n- [[Procurement]] — technical specifications for materials",
+        tags: ["role", "engineering", "design"],
+        responsibleRole: "Design Engineer",
+      });
+
+      await upsertNode({
+        slug: "project-engineer-quality", title: "Project Engineer (Quality)", category: "role",
+        contentMarkdown: "# Project Engineer (Quality)\n\nResponsible for execution quality, ITP management, and site inspection oversight.\n\n## Responsibilities\n- Inspection and Test Plan (ITP) development and management\n- Quality inspection scheduling and execution\n- Non-Conformance Report (NCR) management\n- Hold point witness and sign-off coordination\n- Quality documentation for handover package\n- Supplier quality assessments\n\n## Reports To\n[[Engineering Manager]]\n\n## Interfaces With\n- [[Design Engineer]] — design quality inputs\n- [[Construction Manager]] — site quality inspections\n- [[QA Governance]] — quality framework compliance",
+        tags: ["role", "engineering", "quality"],
+        responsibleRole: "Project Engineer (Quality)",
+      });
+
+      const edgePairs = [
+        ["construction-manager", "handover-and-matriarch-om-transfer"],
+        ["construction-manager", "safety-governance"],
+        ["design-engineer", "project-engineer-quality"],
+        ["execution-phase", "handover-and-matriarch-om-transfer"],
+        ["company-lifecycle-phase", "execution-phase"],
+        ["cos-realisation-logic", "cashflow-forecasting-model"],
+        ["vo-approval-workflow", "revenue-milestone-logic"],
+        ["vo-approval-workflow", "cos-realisation-logic"],
+        ["qa-governance", "handover-and-matriarch-om-transfer"],
+        ["safety-governance", "execution-phase"],
+        ["risk-register-governance", "execution-phase"],
+        ["emergent-energy-web-application", "cos-realisation-logic"],
+        ["emergent-energy-web-application", "cashflow-forecasting-model"],
+        ["emergent-energy-web-application", "revenue-milestone-logic"],
+      ];
+
+      for (const [from, to] of edgePairs) {
+        await ensureEdge(from, to);
+      }
+
+      console.log(`[EE-Info] Post-seed alignment complete: ${created.length} created, ${updated.length} updated`);
+      res.json({ success: true, created, updated, skipped });
+    } catch (err) {
+      console.error("[EE-Info] Error in post-seed alignment:", err);
+      res.status(500).json({ error: "Failed to run post-seed alignment" });
     }
   });
 }

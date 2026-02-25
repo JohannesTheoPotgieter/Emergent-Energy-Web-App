@@ -75,6 +75,17 @@ Preferred communication style: Simple, everyday language.
 -   **@radix-ui/**: Accessible UI component primitives.
 -   **tailwindcss**: Utility-first CSS framework.
 
+### EE Info Knowledge Base
+-   **Module**: Obsidian-sourced knowledge base viewer at `/ee-info` (under Governance nav)
+-   **Backend**: `server/ee-info-routes.ts` — zip importer, CRUD API, graph/flow/detail routes, post-seed alignment endpoint
+-   **Frontend**: `client/src/pages/ee-info.tsx` — 3 tabs: Graph (force-directed canvas), Detail (wiki-link navigation, COO edit), Flow (process chain)
+-   **DB Tables**: `ee_info_nodes`, `ee_info_edges`, `ee_info_assets`, `ee_info_versions`, `ee_info_settings`
+-   **Seed**: `seed/ee-info/Emergent Energy.zip` — 57 Obsidian MD files auto-imported on boot
+-   **Categories**: role, process, governance, tool, template, other, unknown
+-   **Structured Metadata**: Process nodes support `gate_conditions`, `blocking_conditions`, `responsible_role`, `escalation_role` (JSONB/text columns)
+-   **Post-Seed Alignment**: COO users can click "Align Structure" to upsert governance nodes (COS Realisation Logic, Revenue Milestone Logic, VO Approval Workflow, Cashflow Forecasting Model, Risk/Safety/QA Governance), new roles (Construction Manager, Design Engineer, Project Engineer Quality), new tools (Emergent Energy Web Application), and lifecycle/execution/handover process nodes with full metadata
+-   **adm-zip**: Used for Obsidian zip parsing (dynamic import, not require)
+
 ### Third-Party Integrations
 -   **Microsoft Graph API**: For Outlook calendar integration.
 -   **Read.ai**: Meeting data ingestion via webhooks.

@@ -12,7 +12,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Search, Network, FileText, GitBranch, ChevronRight, ArrowRight,
   Edit2, Save, X, Plus, Trash2, Loader2, BookOpen, Users, Wrench,
-  FileCheck, HelpCircle, Circle, RefreshCw
+  FileCheck, HelpCircle, Circle, RefreshCw, Shield, Zap
 } from "lucide-react";
 
 interface EeNode {
@@ -28,6 +28,10 @@ interface EeNode {
   flowStepCode: string | null;
   nextSlugs: string[];
   prevSlugs: string[];
+  gateConditions: string[];
+  blockingConditions: string[];
+  responsibleRole: string | null;
+  escalationRole: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -50,6 +54,7 @@ const categoryIcons: Record<string, React.ReactNode> = {
   process: <GitBranch className="h-3.5 w-3.5" />,
   tool: <Wrench className="h-3.5 w-3.5" />,
   template: <FileCheck className="h-3.5 w-3.5" />,
+  governance: <Shield className="h-3.5 w-3.5" />,
   other: <BookOpen className="h-3.5 w-3.5" />,
   unknown: <HelpCircle className="h-3.5 w-3.5" />,
 };
@@ -59,6 +64,7 @@ const categoryColors: Record<string, string> = {
   process: "bg-green-100 text-green-700 border-green-200",
   tool: "bg-purple-100 text-purple-700 border-purple-200",
   template: "bg-amber-100 text-amber-700 border-amber-200",
+  governance: "bg-red-100 text-red-700 border-red-200",
   other: "bg-slate-100 text-slate-700 border-slate-200",
   unknown: "bg-gray-100 text-gray-500 border-gray-200",
 };
@@ -68,6 +74,7 @@ const graphNodeColors: Record<string, string> = {
   process: "#22c55e",
   tool: "#a855f7",
   template: "#f59e0b",
+  governance: "#ef4444",
   other: "#64748b",
   unknown: "#9ca3af",
 };
@@ -351,6 +358,10 @@ function DetailTab({ nodes, selectedSlug, onSelectNode, userRole }: { nodes: EeN
   const [editMode, setEditMode] = useState(false);
   const [editContent, setEditContent] = useState("");
   const [editCategory, setEditCategory] = useState("");
+  const [editResponsibleRole, setEditResponsibleRole] = useState("");
+  const [editEscalationRole, setEditEscalationRole] = useState("");
+  const [editGateConditions, setEditGateConditions] = useState("");
+  const [editBlockingConditions, setEditBlockingConditions] = useState("");
   const queryClient = useQueryClient();
   const isCOO = userRole === "COO_ADMIN" || userRole === "admin" || userRole === "CEO_ADMIN";
 
@@ -402,7 +413,14 @@ function DetailTab({ nodes, selectedSlug, onSelectNode, userRole }: { nodes: EeN
 
   const handleSave = () => {
     if (!nodeDetail) return;
-    updateMutation.mutate({ contentMarkdown: editContent, category: editCategory });
+    updateMutation.mutate({
+      contentMarkdown: editContent,
+      category: editCategory,
+      responsibleRole: editResponsibleRole || null,
+      escalationRole: editEscalationRole || null,
+      gateConditions: editGateConditions ? editGateConditions.split("\n").map(s => s.trim()).filter(Boolean) : [],
+      blockingConditions: editBlockingConditions ? editBlockingConditions.split("\n").map(s => s.trim()).filter(Boolean) : [],
+    });
   };
 
   const handleWikiClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
@@ -415,7 +433,7 @@ function DetailTab({ nodes, selectedSlug, onSelectNode, userRole }: { nodes: EeN
     }
   }, [onSelectNode]);
 
-  const categoryOrder = ["process", "role", "tool", "template", "other", "unknown"];
+  const categoryOrder = ["process", "role", "governance", "tool", "template", "other", "unknown"];
 
   return (
     <div className="flex gap-4" style={{ minHeight: 600 }} data-testid="detail-tab">
@@ -474,7 +492,7 @@ function DetailTab({ nodes, selectedSlug, onSelectNode, userRole }: { nodes: EeN
                   {nodeDetail.status === "stub" && <Badge variant="outline" className="text-[10px] text-gray-500">Stub</Badge>}
                 </div>
                 {isCOO && !editMode && (
-                  <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => { setEditMode(true); setEditContent(nodeDetail.contentMarkdown || ""); setEditCategory(nodeDetail.category); }} data-testid="detail-edit-btn">
+                  <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => { setEditMode(true); setEditContent(nodeDetail.contentMarkdown || ""); setEditCategory(nodeDetail.category); setEditResponsibleRole(nodeDetail.responsibleRole || ""); setEditEscalationRole(nodeDetail.escalationRole || ""); setEditGateConditions((nodeDetail.gateConditions || []).join("\n")); setEditBlockingConditions((nodeDetail.blockingConditions || []).join("\n")); }} data-testid="detail-edit-btn">
                     <Edit2 className="h-3 w-3" /> Edit
                   </Button>
                 )}
@@ -498,13 +516,34 @@ function DetailTab({ nodes, selectedSlug, onSelectNode, userRole }: { nodes: EeN
                     <Select value={editCategory} onValueChange={setEditCategory}>
                       <SelectTrigger className="w-[140px] h-7 text-xs"><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        {["role", "process", "tool", "template", "other", "unknown"].map(c => (
+                        {["role", "process", "governance", "tool", "template", "other", "unknown"].map(c => (
                           <SelectItem key={c} value={c}>{c}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
-                  <Textarea value={editContent} onChange={e => setEditContent(e.target.value)} className="min-h-[400px] font-mono text-xs" data-testid="detail-edit-content" />
+                  <Textarea value={editContent} onChange={e => setEditContent(e.target.value)} className="min-h-[300px] font-mono text-xs" data-testid="detail-edit-content" />
+                  <div className="border rounded-lg p-3 space-y-2 bg-muted/30">
+                    <h4 className="text-xs font-semibold text-muted-foreground">Structured Metadata</h4>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-xs text-muted-foreground">Responsible Role</label>
+                        <Input value={editResponsibleRole} onChange={e => setEditResponsibleRole(e.target.value)} className="h-7 text-xs" placeholder="e.g. Project Manager" data-testid="edit-responsible-role" />
+                      </div>
+                      <div>
+                        <label className="text-xs text-muted-foreground">Escalation Role</label>
+                        <Input value={editEscalationRole} onChange={e => setEditEscalationRole(e.target.value)} className="h-7 text-xs" placeholder="e.g. COO" data-testid="edit-escalation-role" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground">Gate Conditions (one per line)</label>
+                      <Textarea value={editGateConditions} onChange={e => setEditGateConditions(e.target.value)} className="min-h-[60px] font-mono text-xs" placeholder="PO number present&#10;Invoice number present" data-testid="edit-gate-conditions" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground">Blocking Conditions (one per line)</label>
+                      <Textarea value={editBlockingConditions} onChange={e => setEditBlockingConditions(e.target.value)} className="min-h-[60px] font-mono text-xs" placeholder="No work before COO approval" data-testid="edit-blocking-conditions" />
+                    </div>
+                  </div>
                 </div>
               ) : (
                 <div>
@@ -517,6 +556,55 @@ function DetailTab({ nodes, selectedSlug, onSelectNode, userRole }: { nodes: EeN
                     />
                   ) : (
                     <p className="text-muted-foreground text-sm italic">No content yet. {isCOO ? "Click Edit to add content." : ""}</p>
+                  )}
+
+                  {(nodeDetail.responsibleRole || nodeDetail.escalationRole || (nodeDetail.gateConditions && nodeDetail.gateConditions.length > 0) || (nodeDetail.blockingConditions && nodeDetail.blockingConditions.length > 0)) && (
+                    <div className="mt-4 pt-3 border-t space-y-2" data-testid="detail-metadata">
+                      {(nodeDetail.responsibleRole || nodeDetail.escalationRole) && (
+                        <div className="flex flex-wrap gap-3">
+                          {nodeDetail.responsibleRole && (
+                            <div className="flex items-center gap-1.5">
+                              <Users className="h-3 w-3 text-blue-600" />
+                              <span className="text-xs text-muted-foreground">Responsible:</span>
+                              <span className="text-xs font-medium">{nodeDetail.responsibleRole}</span>
+                            </div>
+                          )}
+                          {nodeDetail.escalationRole && (
+                            <div className="flex items-center gap-1.5">
+                              <Zap className="h-3 w-3 text-amber-600" />
+                              <span className="text-xs text-muted-foreground">Escalation:</span>
+                              <span className="text-xs font-medium">{nodeDetail.escalationRole}</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {nodeDetail.gateConditions && nodeDetail.gateConditions.length > 0 && (
+                        <div>
+                          <span className="text-xs font-semibold text-green-700">Gate Conditions</span>
+                          <ul className="mt-0.5 space-y-0.5">
+                            {nodeDetail.gateConditions.map((g, i) => (
+                              <li key={i} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />
+                                {g}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {nodeDetail.blockingConditions && nodeDetail.blockingConditions.length > 0 && (
+                        <div>
+                          <span className="text-xs font-semibold text-red-700">Blocking Conditions</span>
+                          <ul className="mt-0.5 space-y-0.5">
+                            {nodeDetail.blockingConditions.map((b, i) => (
+                              <li key={i} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
+                                {b}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
                   )}
 
                   {(nodeDetail.outboundEdges.length > 0 || nodeDetail.inboundEdges.length > 0) && (
@@ -708,6 +796,25 @@ export default function EeInfoPage() {
     },
   });
 
+  const queryClient = useQueryClient();
+  const isCOO = userRole === "COO_ADMIN" || userRole === "admin" || userRole === "CEO_ADMIN";
+
+  const alignMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/ee-info/post-seed-align", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to run alignment");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["ee-info-nodes"] });
+      queryClient.invalidateQueries({ queryKey: ["ee-info-graph"] });
+      queryClient.invalidateQueries({ queryKey: ["ee-info-flow"] });
+    },
+  });
+
   const handleSelectNode = useCallback((slug: string) => {
     setSelectedSlug(slug);
     setActiveTab("detail");
@@ -730,7 +837,25 @@ export default function EeInfoPage() {
           <h1 className="text-xl font-bold">Emergent Energy Info</h1>
           <p className="text-xs text-muted-foreground">{nodes.filter(n => n.status !== "stub").length} pages, {nodes.filter(n => n.status === "stub").length} stubs</p>
         </div>
+        {isCOO && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 text-xs gap-1.5"
+            onClick={() => alignMutation.mutate()}
+            disabled={alignMutation.isPending}
+            data-testid="btn-post-seed-align"
+          >
+            {alignMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            {alignMutation.isPending ? "Aligning..." : "Align Structure"}
+          </Button>
+        )}
       </div>
+      {alignMutation.isSuccess && alignMutation.data && (
+        <div className="bg-green-50 border border-green-200 rounded-md px-3 py-2 text-xs text-green-800" data-testid="align-result">
+          Alignment complete: {alignMutation.data.created?.length || 0} created, {alignMutation.data.updated?.length || 0} updated.
+        </div>
+      )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
