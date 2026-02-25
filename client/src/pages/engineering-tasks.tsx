@@ -928,17 +928,61 @@ function TaskDetailDrawer({
 
             {activeTab === "subtasks" && (
               <div className="space-y-2">
+                <form
+                  className="flex gap-2"
+                  data-testid="subtask-create-form"
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    const title = newSubtaskTitle.trim();
+                    if (!title) return;
+                    try {
+                      await engFetch(`/api/eng/tasks/${task.id}/subtasks`, {
+                        method: "POST",
+                        body: JSON.stringify({ title }),
+                      });
+                      setNewSubtaskTitle("");
+                      queryClient.invalidateQueries({ queryKey: ["task-subtasks", task.id] });
+                      queryClient.invalidateQueries({ queryKey: ["task-activity", task.id] });
+                    } catch {}
+                  }}
+                >
+                  <Input
+                    value={newSubtaskTitle}
+                    onChange={(e) => setNewSubtaskTitle(e.target.value)}
+                    placeholder="Add a subtask..."
+                    className="h-8 text-xs"
+                    data-testid="subtask-title-input"
+                  />
+                  <Button type="submit" size="sm" className="h-8 px-3" disabled={!newSubtaskTitle.trim()} data-testid="subtask-add-btn">
+                    <Plus className="h-3.5 w-3.5" />
+                  </Button>
+                </form>
                 {subtasks.length === 0 ? (
-                  <p className="text-xs text-muted-foreground text-center py-4">No subtasks</p>
+                  <p className="text-xs text-muted-foreground text-center py-4">No subtasks yet</p>
                 ) : (
                   subtasks.map(st => (
-                    <div key={st.id} className="flex items-center gap-2 p-2 border rounded-lg text-sm" data-testid={`subtask-${st.id}`}>
-                      {st.status === "COMPLETE" ? (
-                        <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
-                      ) : (
-                        <Clock className="h-4 w-4 text-muted-foreground shrink-0" />
-                      )}
-                      <span className="flex-1 truncate">{st.title}</span>
+                    <div key={st.id} className="flex items-center gap-2 p-2 border rounded-lg text-sm group" data-testid={`subtask-${st.id}`}>
+                      <button
+                        className="shrink-0"
+                        data-testid={`subtask-toggle-${st.id}`}
+                        onClick={async () => {
+                          const newStatus = st.status === "COMPLETE" ? "TO DO" : "COMPLETE";
+                          try {
+                            await engFetch(`/api/eng/tasks/${st.id}`, {
+                              method: "PATCH",
+                              body: JSON.stringify({ status: newStatus }),
+                            });
+                            queryClient.invalidateQueries({ queryKey: ["task-subtasks", task.id] });
+                          } catch {}
+                        }}
+                      >
+                        {st.status === "COMPLETE" ? (
+                          <CheckCircle2 className="h-4 w-4 text-green-500" />
+                        ) : (
+                          <Circle className="h-4 w-4 text-muted-foreground hover:text-primary" />
+                        )}
+                      </button>
+                      <span className={`flex-1 truncate ${st.status === "COMPLETE" ? "line-through text-muted-foreground" : ""}`}>{st.title}</span>
                       <Badge className={`text-[9px] ${statusColors[st.status] || "bg-gray-100"}`}>{st.status}</Badge>
                     </div>
                   ))
