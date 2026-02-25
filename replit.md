@@ -63,6 +63,7 @@ Preferred communication style: Simple, everyday language.
 -   **Frontend**: `EngineeringStagesTab.tsx` (sub-tab under Engineering on project detail), `eng-template-admin.tsx` (COO admin at `/admin/eng-templates`), `stage-export.ts` (File System Access API folder picker + JSZip fallback).
 -   **Seed**: `server/seed-eng-templates.ts` seeds 5 templates with 39 tasks on startup (idempotent).
 -   **Phase Integration**: `PHASE_TO_ENG_STAGES` mapping in `shared/schema.ts` maps project phases to engineering stage names. When a project phase changes via `PATCH /api/projects/:id/phase`, the corresponding engineering stages are auto-generated (idempotent, skips already-existing stages). The reusable `generateEngStagesForProject()` function is exported from `eng-stage-routes.ts`.
+-   **Lifecycle Board Integration**: When a project moves on the company lifecycle board (`PATCH /api/lifecycle-board/projects/:id/phase` or `POST /promote-engineering`), the corresponding engineering stages are auto-generated based on the `PHASE_TO_ENG_STAGES` mapping. E.g., moving to "Construction" auto-creates "IFC Planning" + "Construction Support" stages.
 -   **Project Phases**: `LIFECYCLE_PHASES` includes Hold, Closed, DLP, Financial Close, TBC. Engineering task creation (`engineering-tasks.tsx`) excludes Hold and Closed projects from the project picker.
 
 ### Deploy Cache & Session Clearing

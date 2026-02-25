@@ -2,7 +2,8 @@ import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, sql, inArray } from "drizzle-orm";
 import { verifyToken } from "./jwt";
-import { projectInfo, operationalTasks, projectPlan, executionGateLog, mergeAuditLog, programExpense, programInflows, qcChecklist, qcItemInstance } from "@shared/schema";
+import { projectInfo, operationalTasks, projectPlan, executionGateLog, mergeAuditLog, programExpense, programInflows, qcChecklist, qcItemInstance, PHASE_TO_ENG_STAGES } from "@shared/schema";
+import { generateEngStagesForProject } from "./eng-stage-routes";
 
 function jwtAuth(req: Request, _res: Response, next: NextFunction) {
   if ((req as any).user) return next();
@@ -379,12 +380,26 @@ export function registerLifecycleRoutes(app: Express) {
       const normTarget = normalizeName(cleanName);
       const existing = allProjects.find((p: any) => normalizeName(p.projectName) === normTarget);
       if (existing) {
+        const targetPhase = phase || "First Assessment";
         await db.update(projectInfo).set({
-          phase: phase || "First Assessment",
+          phase: targetPhase,
           isActive: true,
           phaseUpdatedAt: new Date(),
           phaseUpdatedByUserId: userId,
         }).where(eq(projectInfo.id, existing.id));
+
+        const promoteStageNames = PHASE_TO_ENG_STAGES[targetPhase];
+        if (promoteStageNames && promoteStageNames.length > 0 && userId) {
+          try {
+            const result = await generateEngStagesForProject(existing.id, userId, promoteStageNames);
+            if (result.stagesCreated > 0) {
+              console.log(`[lifecycle-board] Auto-generated eng stages for re-activated project ${existing.id}: ${result.stageDetails.join(", ")}`);
+            }
+          } catch (err: any) {
+            console.warn("[lifecycle-board] Eng stage auto-generation on promote error (non-fatal):", err.message);
+          }
+        }
+
         const [updated] = await db.select().from(projectInfo).where(eq(projectInfo.id, existing.id));
         return res.json(updated);
       }
@@ -396,6 +411,19 @@ export function registerLifecycleRoutes(app: Express) {
         phaseUpdatedAt: new Date(),
         phaseUpdatedByUserId: userId,
       }).returning();
+
+      const targetPhase = phase || "First Assessment";
+      const stageNames = PHASE_TO_ENG_STAGES[targetPhase];
+      if (stageNames && stageNames.length > 0 && userId) {
+        try {
+          const result = await generateEngStagesForProject(created.id, userId, stageNames);
+          if (result.stagesCreated > 0) {
+            console.log(`[lifecycle-board] Auto-generated eng stages for promoted project ${created.id}: ${result.stageDetails.join(", ")}`);
+          }
+        } catch (err: any) {
+          console.warn("[lifecycle-board] Eng stage auto-generation on promote error (non-fatal):", err.message);
+        }
+      }
 
       res.json(created);
     } catch (err: any) {
@@ -462,7 +490,20 @@ export function registerLifecycleRoutes(app: Express) {
         updatedAt: new Date(),
       }).where(eq(projectInfo.id, id)).returning();
 
-      res.json(updated);
+      let engStagesResult: any = null;
+      const stageNames = PHASE_TO_ENG_STAGES[phase.trim()];
+      if (stageNames && stageNames.length > 0 && userId) {
+        try {
+          engStagesResult = await generateEngStagesForProject(id, userId, stageNames);
+          if (engStagesResult.stagesCreated > 0) {
+            console.log(`[lifecycle-board] Auto-generated eng stages for project ${id}: ${engStagesResult.stageDetails.join(", ")}`);
+          }
+        } catch (err: any) {
+          console.warn("[lifecycle-board] Eng stage auto-generation error (non-fatal):", err.message);
+        }
+      }
+
+      res.json({ ...updated, engStagesResult });
     } catch (err: any) {
       console.error("[lifecycle-board] PATCH phase error:", err);
       res.status(500).json({ error: err.message });
