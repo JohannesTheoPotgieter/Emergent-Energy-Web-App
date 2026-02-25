@@ -2634,8 +2634,8 @@ export async function registerRoutes(
         const totalCOS = bucket?.total ?? 0;
 
         const realisedBucket = realisedByMonth.get(monthKey);
-        const realisedCOS = realisedBucket?.total ?? 0;
-        const unrealisedCOS = totalCOS - realisedCOS;
+        const realisedCOS = Math.min(realisedBucket?.total ?? 0, totalCOS);
+        const unrealisedCOS = Math.max(0, totalCOS - realisedCOS);
 
         const manual = manualMap.get(monthKey);
         const budget = manual?.budget ? parseFloat(manual.budget) : (staticCosBudget[monthKey] ?? 0);
@@ -2823,7 +2823,7 @@ export async function registerRoutes(
 
       const allExpenses = await storage.getAllProgramExpenses();
       const expense = allExpenses.find(e => e.id === id);
-      if (!expense) return res.status(404).json({ error: "Expense not found" });
+      if (!expense) return res.status(404).json({ error: "Expense not found", message: "This expense item could not be found. It may have been removed during a re-import. Try refreshing the page." });
 
       if (realised && !expense.expenseInvoiceNumber) {
         return res.status(400).json({ error: "Cannot mark as realised without an invoice number" });
@@ -4128,6 +4128,14 @@ export async function registerRoutes(
       const { startDate, endDate } = req.query;
       const projectName = (projectParam && typeof projectParam === 'string') ? projectParam : null;
 
+      if (!projectName) {
+        return res.status(400).json({
+          error: "Project filter required",
+          message: "Please select a specific project to view cashflow data. The full portfolio cashflow is available in the Cashflow 2026 view.",
+          hint: "Add ?project=ProjectName to filter by project"
+        });
+      }
+
       let points: any[];
       if (projectName) {
         points = await storage.getCashflowPointsByProject(projectName);
@@ -4279,10 +4287,18 @@ export async function registerRoutes(
         points = points.filter(p => p.pointDate <= endDate);
       }
 
+      if (points.length > 50000) {
+        console.warn(`[cashflow] Response too large (${points.length} points). Use ?project= to filter.`);
+        return res.status(400).json({ 
+          error: "Dataset too large", 
+          message: `The cashflow data contains ${points.length} data points across all projects. Please select a specific project to view cashflow data, or use the Cashflow 2026 view for portfolio-level analysis.`,
+          hint: "Add ?project=ProjectName to filter by project"
+        });
+      }
       res.json(points);
     } catch (error) {
       console.error("Cashflow API error:", error);
-      res.status(500).json({ error: "Failed to fetch cashflow data", message: error instanceof Error ? error.message : "Unknown error" });
+      res.status(500).json({ error: "Failed to fetch cashflow data", message: error instanceof Error ? error.message : "Please try selecting a specific project, or refresh the page. If the problem persists, contact support." });
     }
   });
 
@@ -5279,8 +5295,13 @@ export async function registerRoutes(
       }
       const overrides = await storage.getFinanceRevenueOverridesByProject(projectName);
       res.json(overrides);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch finance revenue overrides", message: "Failed to fetch finance revenue overrides" });
+    } catch (error: any) {
+      console.error("[finance/revenue/overrides] Error:", error?.message || error);
+      if (error?.message?.includes('does not exist') || error?.message?.includes('relation')) {
+        res.json([]);
+      } else {
+        res.status(500).json({ error: "Failed to fetch finance revenue overrides", message: error instanceof Error ? error.message : "An unexpected error occurred. Please try again or contact support." });
+      }
     }
   });
 
