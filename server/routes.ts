@@ -27,6 +27,29 @@ import { createNameResolver, fetchAllNormalized, mergeExpensesOnly, mergeInflows
 import { getFeatureFlag } from "./lib/feature-flags";
 import { derivedPortfolioKpis, derivedProjectKpis } from "@shared/schema";
 
+function isCosRealisedCheck(exp: any): boolean {
+  const hasInvoice = !!(exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim());
+  const hasInvDate = !!(exp.expenseInvoicedDate && String(exp.expenseInvoicedDate).trim());
+  if (!hasInvoice || !hasInvDate) return false;
+  const dateConfirmed =
+    exp.invoiceDateConfirmed === true ||
+    exp.invoiceDateFontColor === 'black' ||
+    (!exp.invoiceDateFontColor || exp.invoiceDateFontColor === '');
+  return dateConfirmed;
+}
+
+function isCashflowConfirmedCheck(exp: any): boolean {
+  const hasInvoice = !!(exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim());
+  const hasPO = !!(exp.expensePoNumber && String(exp.expensePoNumber).trim());
+  const hasPayDate = !!(exp.expensePaymentDate && String(exp.expensePaymentDate).trim());
+  if (!hasInvoice || !hasPO || !hasPayDate) return false;
+  const payDateConfirmed =
+    exp.paymentDateConfirmed === true ||
+    exp.paymentDateFontColor === 'black' ||
+    (!exp.paymentDateFontColor || exp.paymentDateFontColor === '');
+  return payDateConfirmed;
+}
+
 async function getMergedExpensesAndInflows(legacyExpenses: any[], legacyInflows: any[]) {
   const piRows = await db.select({ projectName: projectInfo.projectName }).from(projectInfo);
   const piNames = piRows.map((r: any) => r.projectName);
@@ -2528,9 +2551,7 @@ export async function registerRoutes(
         cosBucket.total += amount;
         cosBucket.projects.set(pName, (cosBucket.projects.get(pName) || 0) + amount);
 
-        const hasInvoice = !!exp.expenseInvoiceNumber;
-        const dateConfirmed = exp.invoiceDateConfirmed === true;
-        const isRealised = hasInvoice && dateConfirmed;
+        const isRealised = isCosRealisedCheck(exp);
 
         if (isRealised) {
           if (!realisedByMonth.has(monthKey)) {
@@ -2672,14 +2693,13 @@ export async function registerRoutes(
         const cosTotal = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
         if (isNaN(cosTotal) || cosTotal === 0) continue;
 
-        const hasInvoice = !!exp.expenseInvoiceNumber;
-        const dateConfirmed = exp.invoiceDateConfirmed === true;
-        const isRealised = hasInvoice && dateConfirmed;
+        const isRealised = isCosRealisedCheck(exp);
+        const isConfirmedPay = isCashflowConfirmedCheck(exp);
 
         let cosState = 'Planned';
-        if (exp.expensePaymentDate && exp.paymentDateConfirmed) {
+        if (isConfirmedPay) {
           cosState = 'Paid';
-        } else if (hasInvoice && dateConfirmed) {
+        } else if (isRealised) {
           cosState = 'Invoiced';
         } else if (exp.expensePoNumber) {
           cosState = 'Committed';
@@ -2839,9 +2859,7 @@ export async function registerRoutes(
         const monthKey = `${dateMatch[1]}-${dateMatch[2]}`;
         cosTotalByMonth.set(monthKey, (cosTotalByMonth.get(monthKey) || 0) + amount);
 
-        const hasInvoice = !!(exp.expenseInvoiceNumber && (exp.expenseInvoiceNumber as string).trim() !== '');
-        const dateConfirmed = exp.invoiceDateConfirmed === true;
-        if (hasInvoice && dateConfirmed) {
+        if (isCosRealisedCheck(exp)) {
           cosRealisedByMonth.set(monthKey, (cosRealisedByMonth.get(monthKey) || 0) + amount);
         }
       }
@@ -5075,35 +5093,26 @@ export async function registerRoutes(
         }
 
         const hasPO = !!(exp.expensePoNumber && exp.expensePoNumber.trim());
-        const hasInvoice = !!(exp.expenseInvoiceNumber && exp.expenseInvoiceNumber.trim());
-        const hasInvoiceDate = !!(exp.expenseInvoicedDate && exp.expenseInvoicedDate.trim());
-        const invoiceDateActual = hasInvoiceDate && (
-          exp.invoiceDateConfirmed === true ||
-          exp.invoiceDateFontColor === 'black' ||
-          (!exp.invoiceDateFontColor && exp.invoiceDateFontColor !== 'red')
-        );
-        const hasPaymentDate = !!(exp.expensePaymentDate && exp.expensePaymentDate.trim());
-        const paymentDateActual = hasPaymentDate && exp.paymentDateFontColor !== 'red';
+        const cosRealised = isCosRealisedCheck(exp);
+        const cashflowConf = isCashflowConfirmedCheck(exp);
 
-        // COS Recognition: requires BOTH Invoice Number AND actual Invoice Raised Date
         let cosStatus: string;
-        if (hasInvoice && invoiceDateActual) {
+        if (cosRealised) {
           cosStatus = 'COS Realised';
-        } else if (hasPO || hasInvoice) {
+        } else if (hasPO || !!(exp.expenseInvoiceNumber && exp.expenseInvoiceNumber.trim())) {
           cosStatus = 'Not Yet Realised';
         } else {
           cosStatus = 'Planned';
         }
 
-        // Payment Status: uses full state classifier logic
         let paymentStatus: string;
-        if (hasInvoice && paymentDateActual) {
+        if (cashflowConf) {
           paymentStatus = 'Paid';
-        } else if (hasInvoice && invoiceDateActual) {
+        } else if (cosRealised) {
           paymentStatus = 'Invoiced';
-        } else if (hasPaymentDate && !paymentDateActual) {
+        } else if (exp.expensePaymentDate && exp.paymentDateFontColor === 'red') {
           paymentStatus = 'Payment Planned';
-        } else if (hasPO || hasInvoice) {
+        } else if (hasPO || !!(exp.expenseInvoiceNumber && exp.expenseInvoiceNumber.trim())) {
           paymentStatus = 'Committed';
         } else {
           paymentStatus = 'Planned';
@@ -7326,10 +7335,7 @@ export async function registerRoutes(
         if (actualAmt !== 0) {
           bucket.planned += actualAmt;
 
-          const hasInvoice = !!e.expenseInvoiceNumber;
-          const dateConfirmed = e.invoiceDateConfirmed === true || e.invoiceDateFontColor === 'black';
-          const isRealised = hasInvoice && dateConfirmed;
-          if (isRealised) {
+          if (isCosRealisedCheck(e)) {
             bucket.realised += actualAmt;
           }
         }
@@ -7413,7 +7419,7 @@ export async function registerRoutes(
           bucket.outflows += amt;
         }
 
-        if (e.expenseInvoiceNumber && e.invoiceDateFontColor === 'black') {
+        if (isCosRealisedCheck(e)) {
           bucket.invoicedPayments += amt;
         }
       }
