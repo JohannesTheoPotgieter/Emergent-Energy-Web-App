@@ -251,6 +251,17 @@ async function backfillPmUserIds() {
       totalUpdated += count;
     }
     log(`Backfill pm_user_id: ${totalUpdated} rows updated`);
+
+    const taskResult = await db.execute(sql.raw(`
+      UPDATE operational_tasks ot
+      SET owner_user_id = pi.pm_user_id
+      FROM project_info pi
+      WHERE ot.project_name = pi.project_name
+        AND pi.pm_user_id IS NOT NULL
+        AND (ot.owner_user_id IS NULL OR ot.owner_user_id != pi.pm_user_id)
+    `));
+    const taskCount = (taskResult as any).rowCount || 0;
+    log(`Backfill task owner_user_id to PM: ${taskCount} tasks updated`);
   } catch (error) {
     log(`Backfill pm_user_id error: ${error}`);
   }
