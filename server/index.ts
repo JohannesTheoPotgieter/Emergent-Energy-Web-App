@@ -64,6 +64,11 @@ if (dbMode === 'postgres' && dbConfig.connectionString) {
     pool,
     createTableIfMissing: true,
   });
+  if (process.env.NODE_ENV === 'production') {
+    pool.query('DELETE FROM "session"').then(() => {
+      log('Cleared all sessions on deploy startup');
+    }).catch(() => {});
+  }
   log('Using PostgreSQL session store');
 } else {
   // Fallback to memory store for SQLite mode

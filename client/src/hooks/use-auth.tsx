@@ -23,8 +23,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
 
   useEffect(() => {
-    checkAuth();
+    checkBuildVersion().then(() => checkAuth());
   }, []);
+
+  const checkBuildVersion = async () => {
+    try {
+      const res = await fetch("/build-version.json", { cache: "no-store" });
+      if (res.ok) {
+        const { buildId } = await res.json();
+        const storedBuild = localStorage.getItem("app_build_id");
+        if (storedBuild && storedBuild !== buildId) {
+          localStorage.removeItem("auth_token");
+          localStorage.removeItem("company_role");
+          localStorage.setItem("app_build_id", buildId);
+          window.location.href = "/auth/login";
+          return;
+        }
+        localStorage.setItem("app_build_id", buildId);
+      }
+    } catch {
+    }
+  };
 
   const checkAuth = async () => {
     try {

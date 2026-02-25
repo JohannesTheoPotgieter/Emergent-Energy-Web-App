@@ -88,6 +88,16 @@ Preferred communication style: Simple, everyday language.
 -   **Post-Seed Alignment**: COO users can click "Align Structure" to upsert governance nodes (COS Realisation Logic, Revenue Milestone Logic, VO Approval Workflow, Cashflow Forecasting Model, Risk/Safety/QA Governance), new roles (Construction Manager, Design Engineer, Project Engineer Quality), new tools (Emergent Energy Web Application), and lifecycle/execution/handover process nodes with full metadata
 -   **adm-zip**: Used for Obsidian zip parsing (dynamic import, not require)
 
+### Deploy Cache & Session Clearing
+-   **Build Versioning**: `script/build.ts` generates a unique `buildId` (UUID) per build, written to `dist/public/build-version.json`.
+-   **Frontend Version Check**: `use-auth.tsx` fetches `/build-version.json` on load; if `buildId` differs from `localStorage.app_build_id`, it clears `auth_token` and `company_role` and redirects to login.
+-   **Server Session Clearing**: In production, `server/index.ts` runs `DELETE FROM "session"` on startup, clearing all PostgreSQL sessions on each deploy.
+-   **Cache Headers**: `server/static.ts` sets `no-cache` on HTML and `build-version.json`; hashed assets get `1y immutable`. HTML meta tags also set `Cache-Control: no-cache`.
+
+### Friday Dad Jokes
+-   **Home page greeting**: On Fridays (`getDay() === 5`), the welcome message uses a random dad joke from `DAD_JOKES` array instead of the usual `COMPLIMENTS`. Jokes are prefixed with a smiley emoji.
+-   **File**: `client/src/pages/home.tsx`
+
 ### Third-Party Integrations
 -   **Microsoft Graph API**: For Outlook calendar integration.
 -   **Read.ai**: Meeting data ingestion via webhooks.
