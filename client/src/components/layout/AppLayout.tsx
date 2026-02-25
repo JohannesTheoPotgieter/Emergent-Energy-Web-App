@@ -149,6 +149,7 @@ function getRedesignedNavGroups(): NavGroup[] {
       items: [
         { label: "Execution Board", icon: Gauge, path: "/dashboard" },
         { label: "Project Summary", icon: FolderKanban, path: "/projects" },
+        { label: "PM Dashboard", icon: Briefcase, path: "/pm-dashboard" },
         { label: "TR Register", icon: ClipboardList, path: "/tr-register" },
         { label: "Smart Import", icon: FileSpreadsheet, path: "/smart-import" },
       ],
@@ -299,17 +300,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           {sidebarShowLabels && <span className="text-sm">Home</span>}
         </Link>
 
-        {companyRole === "PROJECT_MANAGER_SITE" && (
-          <Link href="/pm-dashboard" className={cn(
-            "flex items-center gap-3 px-3 py-2 rounded-md transition-all duration-200 group",
-            location === "/pm-dashboard"
-              ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium shadow-md"
-              : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          )} data-testid="nav-pm-dashboard">
-            <Briefcase className="w-4.5 h-4.5 shrink-0" />
-            {sidebarShowLabels && <span className="text-sm">My Projects</span>}
-          </Link>
-        )}
 
         {navGroups.filter(group => {
           if (group.section === "FEEDBACK" || group.section === "INFORMATION") return true;
@@ -318,6 +308,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         }).map((group) => {
           let visibleItems = group.items.filter(item => {
             if (item.path === "/engineering/sync" && companyRole !== "COO_ADMIN") return false;
+            if (companyRole === "PROJECT_MANAGER_SITE") {
+              const pmVisiblePaths = ["/projects", "/pm-dashboard", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/cashflow", "/cos"];
+              return pmVisiblePaths.some(p => item.path === p);
+            }
             return true;
           });
           if (visibleItems.length === 0) return null;
