@@ -10417,4 +10417,146 @@ function registerFeedbackRoutes(app: Express) {
       res.status(500).json({ error: err.message });
     }
   });
+
+  app.get("/api/admin/data-export", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const [expenses, inflows, plans, projInfo, normCosts, normRevenue, normPlans] = await Promise.all([
+        db.select().from(programExpense),
+        db.select().from(programInflows),
+        db.select().from(projectPlan),
+        db.select().from(projectInfo),
+        db.select().from(normalizedCostLines),
+        db.select().from(normalizedRevenueLines),
+        db.select().from(normalizedPlanTasks),
+      ]);
+      res.json({
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        tables: {
+          program_expense: expenses,
+          program_inflows: inflows,
+          project_plan: plans,
+          project_info: projInfo,
+          normalized_cost_lines: normCosts,
+          normalized_revenue_lines: normRevenue,
+          normalized_plan_tasks: normPlans,
+        },
+        counts: {
+          program_expense: expenses.length,
+          program_inflows: inflows.length,
+          project_plan: plans.length,
+          project_info: projInfo.length,
+          normalized_cost_lines: normCosts.length,
+          normalized_revenue_lines: normRevenue.length,
+          normalized_plan_tasks: normPlans.length,
+        },
+      });
+    } catch (err: any) {
+      console.error('[Data Export]', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/admin/data-import", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { tables } = req.body;
+      if (!tables) return res.status(400).json({ error: "Missing tables in request body" });
+
+      const results: Record<string, number> = {};
+
+      await db.transaction(async (tx) => {
+        if (tables.project_info?.length > 0) {
+          await tx.delete(projectInfo);
+          for (const row of tables.project_info) {
+            const { id, ...rest } = row;
+            await tx.insert(projectInfo).values(rest).onConflictDoNothing();
+          }
+          results.project_info = tables.project_info.length;
+        }
+
+        if (tables.program_expense?.length > 0) {
+          await tx.delete(programExpense);
+          const batchSize = 100;
+          for (let i = 0; i < tables.program_expense.length; i += batchSize) {
+            const batch = tables.program_expense.slice(i, i + batchSize).map((row: any) => {
+              const { id, ...rest } = row;
+              return rest;
+            });
+            await tx.insert(programExpense).values(batch);
+          }
+          results.program_expense = tables.program_expense.length;
+        }
+
+        if (tables.program_inflows?.length > 0) {
+          await tx.delete(programInflows);
+          const batchSize = 100;
+          for (let i = 0; i < tables.program_inflows.length; i += batchSize) {
+            const batch = tables.program_inflows.slice(i, i + batchSize).map((row: any) => {
+              const { id, ...rest } = row;
+              return rest;
+            });
+            await tx.insert(programInflows).values(batch);
+          }
+          results.program_inflows = tables.program_inflows.length;
+        }
+
+        if (tables.project_plan?.length > 0) {
+          await tx.delete(projectPlan);
+          const batchSize = 100;
+          for (let i = 0; i < tables.project_plan.length; i += batchSize) {
+            const batch = tables.project_plan.slice(i, i + batchSize).map((row: any) => {
+              const { id, ...rest } = row;
+              return rest;
+            });
+            await tx.insert(projectPlan).values(batch);
+          }
+          results.project_plan = tables.project_plan.length;
+        }
+
+        if (tables.normalized_cost_lines?.length > 0) {
+          await tx.delete(normalizedCostLines);
+          const batchSize = 100;
+          for (let i = 0; i < tables.normalized_cost_lines.length; i += batchSize) {
+            const batch = tables.normalized_cost_lines.slice(i, i + batchSize).map((row: any) => {
+              const { id, ...rest } = row;
+              return rest;
+            });
+            await tx.insert(normalizedCostLines).values(batch);
+          }
+          results.normalized_cost_lines = tables.normalized_cost_lines.length;
+        }
+
+        if (tables.normalized_revenue_lines?.length > 0) {
+          await tx.delete(normalizedRevenueLines);
+          const batchSize = 100;
+          for (let i = 0; i < tables.normalized_revenue_lines.length; i += batchSize) {
+            const batch = tables.normalized_revenue_lines.slice(i, i + batchSize).map((row: any) => {
+              const { id, ...rest } = row;
+              return rest;
+            });
+            await tx.insert(normalizedRevenueLines).values(batch);
+          }
+          results.normalized_revenue_lines = tables.normalized_revenue_lines.length;
+        }
+
+        if (tables.normalized_plan_tasks?.length > 0) {
+          await tx.delete(normalizedPlanTasks);
+          const batchSize = 100;
+          for (let i = 0; i < tables.normalized_plan_tasks.length; i += batchSize) {
+            const batch = tables.normalized_plan_tasks.slice(i, i + batchSize).map((row: any) => {
+              const { id, ...rest } = row;
+              return rest;
+            });
+            await tx.insert(normalizedPlanTasks).values(batch);
+          }
+          results.normalized_plan_tasks = tables.normalized_plan_tasks.length;
+        }
+      });
+
+      res.json({ success: true, imported: results });
+    } catch (err: any) {
+      console.error('[Data Import]', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
 }

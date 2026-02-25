@@ -126,6 +126,7 @@ function getLegacyNavGroups(): NavGroup[] {
         { label: "Invoice Patterns", icon: FileSpreadsheet, path: "/invoice-patterns" },
         { label: "Weekly Reviews", icon: CalendarCheck, path: "/weekly-reviews" },
         { label: "Change Audit", icon: Activity, path: "/admin/activity-log" },
+        { label: "Database Sync", icon: Database, path: "/admin/data-sync" },
       ],
     },
   ];
@@ -195,6 +196,7 @@ function getRedesignedNavGroups(): NavGroup[] {
             { label: "Invoice Patterns", icon: FileSpreadsheet, path: "/invoice-patterns" },
             { label: "Weekly Reviews", icon: CalendarCheck, path: "/weekly-reviews" },
             { label: "Change Audit", icon: Activity, path: "/admin/activity-log" },
+            { label: "Database Sync", icon: Database, path: "/admin/data-sync" },
           ],
         },
       ],
