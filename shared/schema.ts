@@ -1622,6 +1622,7 @@ export const qcItemInstance = pgTable("qc_item_instance", {
   notApplicableReason: text("not_applicable_reason"),
   workingDays: integer("working_days"),
   allowedWorkingDays: integer("allowed_working_days"),
+  qmStatus: text("qm_status").notNull().default("not_started"),
   lastUpdatedAt: timestamp("last_updated_at").notNull().defaultNow(),
 });
 export const insertQcItemInstanceSchema = createInsertSchema(qcItemInstance).omit({ id: true, lastUpdatedAt: true });

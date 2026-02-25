@@ -324,7 +324,18 @@ export function registerQualityRoutes(app: Express) {
   app.post("/api/quality/project/:projectName/item/:itemInstanceId", requireAuth, requireAdminOrQm, async (req, res) => {
     try {
       const itemId = parseInt(req.params.itemInstanceId);
-      const { startDate, endDate, isApplicable, notApplicableReason, approvalComment, allowedWorkingDays } = req.body;
+      const { startDate, endDate, isApplicable, notApplicableReason, approvalComment, allowedWorkingDays, qmStatus } = req.body;
+
+      if (qmStatus === "pass") {
+        const [existing] = await db.select().from(qcItemInstance).where(eq(qcItemInstance.id, itemId));
+        if (existing && (existing.qmStatus === "review" || existing.qmStatus === "fail")) {
+          const role = getUserRole(req);
+          const isQmManager = isAdminRole(role) || role === "quality_manager" || role === "QUALITY_MANAGER";
+          if (!isQmManager) {
+            return res.status(403).json({ error: "forbidden", message: "Only QM Manager can move items from Review or Failed back to Pass" });
+          }
+        }
+      }
 
       const updates: any = { lastUpdatedAt: new Date() };
       if (startDate !== undefined) updates.startDate = startDate;
@@ -336,12 +347,34 @@ export function registerQualityRoutes(app: Express) {
       if (notApplicableReason !== undefined) updates.notApplicableReason = notApplicableReason;
       if (approvalComment !== undefined) updates.approvalComment = approvalComment;
 
+      if (qmStatus !== undefined) {
+        updates.qmStatus = qmStatus;
+        if (qmStatus === "pass") {
+          updates.approved = true;
+          updates.isApplicable = true;
+          updates.approvedByUserId = getUser(req).id;
+          updates.approvedAt = new Date();
+        } else if (qmStatus === "na") {
+          updates.isApplicable = false;
+          updates.approved = false;
+          updates.approvedByUserId = null;
+          updates.approvedAt = null;
+        } else {
+          updates.isApplicable = true;
+          updates.approved = false;
+          updates.approvedByUserId = null;
+          updates.approvedAt = null;
+        }
+      }
+
       if (startDate && endDate) {
         const holidays = await db.select().from(calendarHoliday);
         updates.workingDays = businessDaysBetween(startDate, endDate, holidays.map(h => h.date));
       }
 
       const [updated] = await db.update(qcItemInstance).set(updates).where(eq(qcItemInstance.id, itemId)).returning();
+      const pName = decodeURIComponent(req.params.projectName);
+      recalculateWarnings(pName).catch(() => {});
       res.json(updated);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -353,6 +386,17 @@ export function registerQualityRoutes(app: Express) {
       const itemId = parseInt(req.params.itemInstanceId);
       const { approved, comment } = req.body;
 
+      if (approved) {
+        const [existing] = await db.select().from(qcItemInstance).where(eq(qcItemInstance.id, itemId));
+        if (existing && (existing.qmStatus === "review" || existing.qmStatus === "fail")) {
+          const role = getUserRole(req);
+          const isQmManager = isAdminRole(role) || role === "quality_manager" || role === "QUALITY_MANAGER";
+          if (!isQmManager) {
+            return res.status(403).json({ error: "forbidden", message: "Only QM Manager can approve items in Review or Failed status" });
+          }
+        }
+      }
+
       const updates: any = {
         approved: !!approved,
         lastUpdatedAt: new Date(),
@@ -360,6 +404,7 @@ export function registerQualityRoutes(app: Express) {
       if (approved) {
         updates.approvedByUserId = getUser(req).id;
         updates.approvedAt = new Date();
+        updates.qmStatus = "pass";
         if (comment) updates.approvalComment = comment;
       } else {
         updates.approvedByUserId = null;
@@ -659,13 +704,17 @@ export function registerQualityRoutes(app: Express) {
           const phaseItemIds = phaseTemplateItems.map(ti => ti.id);
           const phaseInstances = clItems.filter(ii => phaseItemIds.includes(ii.templateItemId));
           const applicable = phaseInstances.filter(i => i.isApplicable);
-          const approved = applicable.filter(i => i.approved);
+          const passed = applicable.filter(i => i.qmStatus === "pass" || (i.qmStatus === "not_started" && i.approved));
+          const failed = applicable.filter(i => i.qmStatus === "fail");
+          const inReview = applicable.filter(i => i.qmStatus === "review");
 
           return {
             phaseId: phase.id,
             phaseName: phase.phaseName,
             total: applicable.length,
-            completed: approved.length,
+            completed: passed.length,
+            failed: failed.length,
+            inReview: inReview.length,
           };
         });
 
