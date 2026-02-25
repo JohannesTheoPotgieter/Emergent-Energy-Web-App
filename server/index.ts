@@ -10,7 +10,8 @@ import bcrypt from "bcryptjs";
 import connectPgSimple from "connect-pg-simple";
 import MemoryStore from "memorystore";
 import pg from "pg";
-import { dbMode, dbConfig, initializeDatabase } from "./db";
+import { dbMode, dbConfig, initializeDatabase, db } from "./db";
+import { sql } from "drizzle-orm";
 import { runBackfill } from "./lib/backfill";
 import { startScheduler } from "./importPipeline";
 
@@ -199,6 +200,11 @@ async function seedUsers() {
     { username: "mary", name: "Mary", role: "ENGINEER" as const, password: "2032" },
     { username: "gerhard", name: "Gerhard", role: "ENGINEER" as const, password: "2033" },
     { username: "brandon", name: "Brandon", role: "ENGINEER" as const, password: "2034" },
+    { username: "eon", name: "Eon Van Rensburg", role: "PROJECT_MANAGER_SITE" as const, password: "2035" },
+    { username: "shaun", name: "Shaun", role: "PROJECT_MANAGER_SITE" as const, password: "2036" },
+    { username: "jt", name: "JT Moorosi", role: "PROJECT_MANAGER_SITE" as const, password: "2037" },
+    { username: "lloyd", name: "Lloyd Brown", role: "PROJECT_MANAGER_SITE" as const, password: "2038" },
+    { username: "justin", name: "Justin Franke", role: "PROJECT_MANAGER_SITE" as const, password: "2039" },
   ];
 
   for (const u of usersToSeed) {
@@ -224,11 +230,38 @@ async function seedUsers() {
   }
 }
 
+async function backfillPmUserIds() {
+  try {
+    await db.execute(sql.raw(`ALTER TABLE project_info ADD COLUMN IF NOT EXISTS pm_user_id INTEGER REFERENCES users(id)`));
+
+    const mappings: [string, string[]][] = [
+      ["eon", ["Eon Van Rensburg", "Eon Van Rensberg"]],
+      ["jt", ["JT Moorosi", "JT"]],
+      ["lloyd", ["Lloyd Brown", "Lloyd"]],
+      ["justin", ["Justin Franke"]],
+    ];
+
+    let totalUpdated = 0;
+    for (const [username, pmNames] of mappings) {
+      const pmList = pmNames.map(n => `'${n.replace(/'/g, "''")}'`).join(",");
+      const result = await db.execute(sql.raw(
+        `UPDATE project_info SET pm_user_id = (SELECT id FROM users WHERE username = '${username}') WHERE pm = ANY(ARRAY[${pmList}])`
+      ));
+      const count = (result as any).rowCount || 0;
+      totalUpdated += count;
+    }
+    log(`Backfill pm_user_id: ${totalUpdated} rows updated`);
+  } catch (error) {
+    log(`Backfill pm_user_id error: ${error}`);
+  }
+}
+
 (async () => {
   // Initialize database FIRST before any storage operations
   await initializeDatabase();
   
   await seedUsers();
+  await backfillPmUserIds();
   
   const { seedQualityTemplate } = await import("./seed-quality-template");
   await seedQualityTemplate().catch(err => console.error('[Seed] Quality template error:', err));
@@ -272,6 +305,9 @@ async function seedUsers() {
 
   const { registerWeeklyReviewRoutes } = await import("./weekly-review-routes");
   registerWeeklyReviewRoutes(app);
+
+  const { registerPmRoutes } = await import("./pm-routes");
+  registerPmRoutes(app);
 
   const { registerTrRegisterRoutes, seedTrRegisterData } = await import("./tr-register-routes");
   registerTrRegisterRoutes(app);

@@ -50,6 +50,7 @@ import AdminRolesPage from "@/pages/admin-roles";
 import TrRegisterPage from "@/pages/tr-register";
 import FeedbackPage from "@/pages/feedback";
 import EeInfoPage from "@/pages/ee-info";
+import PMDashboard from "@/pages/pm-dashboard";
 import { useAuth } from "@/hooks/use-auth";
 import { useProgramData } from "@/hooks/use-program-data";
 import { TrackerTable } from "@/components/dashboard/TrackerTable";
@@ -58,10 +59,22 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 
 const EPM_ALLOWED_PATHS = ["/", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/projects", "/feedback"];
+const PM_ALLOWED_PATHS = ["/", "/pm-dashboard", "/projects", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/cashflow", "/cos", "/feedback"];
 
 function RoleGuard({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const [location] = useLocation();
+
+  const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
+
+  if (companyRole === "PROJECT_MANAGER_SITE") {
+    const allowed = PM_ALLOWED_PATHS.some(p =>
+      p === location || (p === "/projects" && location.startsWith("/project/"))
+    );
+    if (!allowed) {
+      return <Redirect to="/pm-dashboard" />;
+    }
+  }
 
   if (user?.role === "eng_program_manager") {
     const allowed = EPM_ALLOWED_PATHS.some(p => 
@@ -82,7 +95,6 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
   const ADMIN_COMPANY_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
   const hasAdminAccess = user?.role === "admin" || (companyRole && ADMIN_COMPANY_ROLES.includes(companyRole));
   if (!hasAdminAccess && location.startsWith("/admin")) {
@@ -205,7 +217,11 @@ function ProtectedPages() {
     <RoleGuard>
     <AppLayout>
       <Switch>
-        <Route path="/" component={Home} />
+        <Route path="/">{() => {
+          const role = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
+          if (role === "PROJECT_MANAGER_SITE") return <Redirect to="/pm-dashboard" />;
+          return <Home />;
+        }}</Route>
         <Route path="/dashboard" component={Dashboard} />
         <Route path="/projects" component={ProjectsSummary} />
         <Route path="/project/:projectName" component={ProjectDetailPage} />
@@ -246,6 +262,7 @@ function ProtectedPages() {
         <Route path="/tr-register" component={TrRegisterPage} />
         <Route path="/feedback" component={FeedbackPage} />
         <Route path="/ee-info" component={EeInfoPage} />
+        <Route path="/pm-dashboard" component={PMDashboard} />
 
         <Route component={NotFound} />
       </Switch>
