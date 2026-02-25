@@ -814,7 +814,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
       if (row == null) continue;
       const section = issue.section;
 
-      if (issue.resolution === "IGNORED") {
+      if (issue.resolution === "SKIP_ROW" || issue.resolution === "EXCLUDE") {
         if (!ignoredRows.has(section)) ignoredRows.set(section, new Set());
         ignoredRows.get(section)!.add(row);
       } else if (issue.resolution === "OVERRIDE" && issue.overrideData) {
