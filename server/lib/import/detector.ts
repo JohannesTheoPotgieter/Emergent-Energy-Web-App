@@ -149,37 +149,65 @@ function findHeaderRow(
   return { rowIndex: bestRowIndex, headers, budgetHeaders: budgetHeaders.length > 0 ? budgetHeaders : undefined };
 }
 
+function isTerminatorRow(row: any[]): boolean {
+  const firstCellStr = String(row[0] || "").toLowerCase().trim();
+  const joinedStr = row.slice(0, Math.min(5, row.length)).map(c => String(c || "").toLowerCase().trim()).join(" ");
+  return (
+    joinedStr.includes("end of sheet") ||
+    joinedStr.includes("sub total") ||
+    joinedStr.startsWith("total") ||
+    firstCellStr === "total" ||
+    firstCellStr.startsWith("key")
+  );
+}
+
+function hasDataAhead(data: any[][], fromRow: number, lookAhead: number): boolean {
+  const limit = Math.min(fromRow + lookAhead, data.length);
+  for (let j = fromRow; j < limit; j++) {
+    const r = data[j];
+    if (!r) continue;
+    const nonEmpty = r.filter(c => c != null && String(c).trim() !== "").length;
+    if (nonEmpty >= 2) return true;
+  }
+  return false;
+}
+
 function findDataEndRow(data: any[][], startRow: number, colCount: number): number {
   const MAX_EMPTY_ROWS = 3;
+  const LOOK_AHEAD = 50;
   let consecutiveEmpty = 0;
 
   for (let i = startRow; i < data.length; i++) {
     const row = data[i];
     if (!row) {
       consecutiveEmpty++;
-      if (consecutiveEmpty >= MAX_EMPTY_ROWS) return i - MAX_EMPTY_ROWS;
+      if (consecutiveEmpty >= MAX_EMPTY_ROWS) {
+        if (hasDataAhead(data, i + 1, LOOK_AHEAD)) {
+          continue;
+        }
+        return i - consecutiveEmpty + 1;
+      }
       continue;
     }
 
     const nonEmpty = row.filter(c => c != null && String(c).trim() !== "").length;
     if (nonEmpty === 0) {
       consecutiveEmpty++;
-      if (consecutiveEmpty >= MAX_EMPTY_ROWS) return i - MAX_EMPTY_ROWS;
+      if (consecutiveEmpty >= MAX_EMPTY_ROWS) {
+        if (hasDataAhead(data, i + 1, LOOK_AHEAD)) {
+          continue;
+        }
+        return i - consecutiveEmpty + 1;
+      }
       continue;
     }
 
     consecutiveEmpty = 0;
 
-    const firstCellStr = String(row[0] || "").toLowerCase().trim();
-    const joinedStr = row.slice(0, Math.min(5, row.length)).map(c => String(c || "").toLowerCase().trim()).join(" ");
-
-    if (
-      joinedStr.includes("end of sheet") ||
-      joinedStr.includes("sub total") ||
-      joinedStr.startsWith("total") ||
-      firstCellStr === "total" ||
-      firstCellStr.startsWith("key")
-    ) {
+    if (isTerminatorRow(row)) {
+      if (hasDataAhead(data, i + 1, LOOK_AHEAD)) {
+        continue;
+      }
       return i;
     }
   }
