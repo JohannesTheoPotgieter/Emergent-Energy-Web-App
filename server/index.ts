@@ -359,6 +359,9 @@ async function backfillPmUserIds() {
   registerEeInfoRoutes(app);
   await bootImportCheck().catch(err => console.error('[EE-Info] Boot import error:', err));
 
+  const { seedEeInfoUpdates } = await import("./seed-ee-info-updates");
+  await seedEeInfoUpdates().catch(err => console.error('[EE-Info-Update] Seed error:', err));
+
   const { backfillProjectIds } = await import("./lib/backfill-project-ids");
   await backfillProjectIds().catch(err => console.error('[Backfill] Project IDs error:', err));
 

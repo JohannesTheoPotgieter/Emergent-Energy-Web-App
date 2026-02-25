@@ -66,6 +66,12 @@ Preferred communication style: Simple, everyday language.
 -   **Lifecycle Board Integration**: When a project moves on the company lifecycle board (`PATCH /api/lifecycle-board/projects/:id/phase` or `POST /promote-engineering`), the corresponding engineering stages are auto-generated based on the `PHASE_TO_ENG_STAGES` mapping. E.g., moving to "Construction" auto-creates "IFC Planning" + "Construction Support" stages.
 -   **Project Phases**: `LIFECYCLE_PHASES` includes Hold, Closed, DLP, Financial Close, TBC. Engineering task creation (`engineering-tasks.tsx`) excludes Hold and Closed projects from the project picker.
 
+### Emergent Energy Info & Walkthroughs
+-   **Knowledge Base**: `client/src/pages/ee-info.tsx` — wiki-style knowledge base with Graph, Detail, Flow, and Walkthroughs tabs. Backed by `ee_info_nodes` / `ee_info_edges` / `ee_info_assets` tables.
+-   **Content Seed**: `seed/ee-info/Emergent Energy.zip` imported on boot via `server/ee-info-routes.ts`. Additional content updates seeded by `server/seed-ee-info-updates.ts` (idempotent).
+-   **Walkthroughs**: 9 interactive step-by-step guides defined in `client/src/data/walkthroughs.ts`. Categories: project-management, finance, engineering, governance, operations. Progress tracked in localStorage. Covers: Smart Import, COS Tracking, Cashflow, Weekly Review, Engineering Stages, Lifecycle Board, Quality, Engineering Tasks, Subcontractor Management.
+-   **Content Nodes**: 90 nodes covering roles, processes, tools, templates. Key additions: COS Tracking, Cashflow Management, Revenue Recognition, Smart Import Process, Weekly Review Process, Engineering Stage Gating, Permission & Access Control, Emergent Dashboard.
+
 ### Deploy Cache & Session Clearing
 -   **Build Versioning**: A unique `buildId` is generated per build, enabling the frontend to detect new deployments and clear client-side cache/session data, redirecting to login.
 -   **Server Session Clearing**: In production, all PostgreSQL sessions are cleared on each deploy.

@@ -10,10 +10,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
-  Search, Network, FileText, GitBranch, ChevronRight, ArrowRight,
+  Search, Network, FileText, GitBranch, ChevronRight, ChevronDown, ArrowRight,
   Edit2, Save, X, Plus, Trash2, Loader2, BookOpen, Users, Wrench,
-  FileCheck, HelpCircle, Circle, RefreshCw, Shield, Zap
+  FileCheck, HelpCircle, Circle, RefreshCw, Shield, Zap, GraduationCap,
+  Clock, ExternalLink, CheckCircle2, CircleDot, Lightbulb,
 } from "lucide-react";
+import { useLocation } from "wouter";
+import { WALKTHROUGHS, WALKTHROUGH_CATEGORIES, type Walkthrough } from "@/data/walkthroughs";
 
 interface EeNode {
   id: string;
@@ -1105,6 +1108,272 @@ function FlowTab({ nodes, onSelectNode }: { nodes: EeNode[]; onSelectNode: (slug
   );
 }
 
+function WalkthroughTab() {
+  const [, navigate] = useLocation();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [completedSteps, setCompletedSteps] = useState<Record<string, Set<number>>>(() => {
+    try {
+      const saved = localStorage.getItem("walkthrough-progress");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const result: Record<string, Set<number>> = {};
+        for (const [k, v] of Object.entries(parsed)) {
+          result[k] = new Set(v as number[]);
+        }
+        return result;
+      }
+    } catch {}
+    return {};
+  });
+  const [expandedTips, setExpandedTips] = useState<Set<string>>(new Set());
+
+  const saveProgress = useCallback((walkthroughId: string, stepNum: number, checked: boolean) => {
+    setCompletedSteps(prev => {
+      const next = { ...prev };
+      const steps = new Set(prev[walkthroughId] || []);
+      if (checked) steps.add(stepNum);
+      else steps.delete(stepNum);
+      next[walkthroughId] = steps;
+      const toSave: Record<string, number[]> = {};
+      for (const [k, v] of Object.entries(next)) {
+        toSave[k] = Array.from(v);
+      }
+      localStorage.setItem("walkthrough-progress", JSON.stringify(toSave));
+      return next;
+    });
+  }, []);
+
+  const filtered = useMemo(() => {
+    let items = WALKTHROUGHS;
+    if (categoryFilter !== "all") items = items.filter(w => w.category === categoryFilter);
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      items = items.filter(w =>
+        w.title.toLowerCase().includes(q) ||
+        w.description.toLowerCase().includes(q)
+      );
+    }
+    return items;
+  }, [categoryFilter, search]);
+
+  const selected = selectedId ? WALKTHROUGHS.find(w => w.id === selectedId) : null;
+
+  const toggleTip = (key: string) => {
+    setExpandedTips(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  if (selected) {
+    const stepsCompleted = completedSteps[selected.id]?.size || 0;
+    const totalSteps = selected.steps.length;
+    const pct = Math.round((stepsCompleted / totalSteps) * 100);
+    const catConfig = WALKTHROUGH_CATEGORIES[selected.category];
+
+    return (
+      <div className="space-y-4" data-testid="walkthrough-detail">
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="ghost" className="h-8 text-xs gap-1" onClick={() => setSelectedId(null)} data-testid="walkthrough-back">
+            <ChevronRight className="h-3.5 w-3.5 rotate-180" /> Back to all walkthroughs
+          </Button>
+        </div>
+
+        <Card className="shadow-sm overflow-hidden">
+          <CardHeader className="bg-gradient-to-r from-slate-50 to-white border-b px-6 py-5">
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <Badge variant="outline" className={`text-[10px] ${catConfig?.color || ""}`}>
+                    {catConfig?.label || selected.category}
+                  </Badge>
+                  <span className="flex items-center gap-1 text-xs text-slate-500">
+                    <Clock className="h-3 w-3" /> ~{selected.estimatedMinutes} min
+                  </span>
+                </div>
+                <CardTitle className="text-xl font-bold tracking-tight">{selected.title}</CardTitle>
+                <p className="text-sm text-slate-500 mt-1">{selected.description}</p>
+              </div>
+              <div className="text-right shrink-0 ml-4">
+                <p className="text-2xl font-bold font-mono text-slate-900">{pct}%</p>
+                <p className="text-xs text-slate-400">{stepsCompleted}/{totalSteps} steps</p>
+              </div>
+            </div>
+            <div className="mt-3 h-2 bg-slate-100 rounded-full overflow-hidden">
+              <div className="h-full bg-green-500 rounded-full transition-all duration-300" style={{ width: `${pct}%` }} />
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="divide-y divide-slate-100">
+              {selected.steps.map((step) => {
+                const isCompleted = completedSteps[selected.id]?.has(step.stepNumber) || false;
+                const tipKey = `${selected.id}-${step.stepNumber}`;
+                const tipExpanded = expandedTips.has(tipKey);
+
+                return (
+                  <div key={step.stepNumber} className={`px-6 py-4 transition-colors ${isCompleted ? "bg-green-50/30" : "bg-white"}`} data-testid={`walkthrough-step-${step.stepNumber}`}>
+                    <div className="flex items-start gap-4">
+                      <button
+                        type="button"
+                        className="mt-0.5 shrink-0"
+                        onClick={() => saveProgress(selected.id, step.stepNumber, !isCompleted)}
+                        data-testid={`walkthrough-check-${step.stepNumber}`}
+                      >
+                        {isCompleted ? (
+                          <CheckCircle2 className="h-6 w-6 text-green-600" />
+                        ) : (
+                          <CircleDot className="h-6 w-6 text-slate-300 hover:text-slate-400 transition-colors" />
+                        )}
+                      </button>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-slate-800 text-white text-[10px] font-bold shrink-0">
+                            {step.stepNumber}
+                          </span>
+                          <h4 className={`text-sm font-semibold ${isCompleted ? "text-green-700 line-through decoration-green-300" : "text-slate-900"}`}>
+                            {step.title}
+                          </h4>
+                        </div>
+                        <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line ml-7">{step.description}</p>
+
+                        {step.tip && (
+                          <div className="ml-7 mt-2">
+                            <button
+                              type="button"
+                              className="flex items-center gap-1 text-xs text-amber-600 hover:text-amber-700 transition-colors"
+                              onClick={() => toggleTip(tipKey)}
+                              data-testid={`walkthrough-tip-toggle-${step.stepNumber}`}
+                            >
+                              <Lightbulb className="h-3 w-3" />
+                              {tipExpanded ? "Hide tip" : "Show tip"}
+                            </button>
+                            {tipExpanded && (
+                              <div className="mt-1.5 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 leading-relaxed">
+                                {step.tip}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {step.targetPage && (
+                          <div className="ml-7 mt-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs gap-1 text-blue-600 border-blue-200 hover:bg-blue-50"
+                              onClick={() => navigate(step.targetPage!)}
+                              data-testid={`walkthrough-goto-${step.stepNumber}`}
+                            >
+                              <ExternalLink className="h-3 w-3" /> Go to page
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  const categories = ["all", ...Object.keys(WALKTHROUGH_CATEGORIES)];
+
+  return (
+    <div className="space-y-4" data-testid="walkthrough-tab">
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+          <Input
+            placeholder="Search walkthroughs..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="pl-9 h-9 text-sm"
+            data-testid="walkthrough-search"
+          />
+        </div>
+        <div className="flex gap-1.5">
+          {categories.map(cat => {
+            const config = cat === "all" ? null : WALKTHROUGH_CATEGORIES[cat];
+            const isActive = categoryFilter === cat;
+            return (
+              <Button
+                key={cat}
+                size="sm"
+                variant={isActive ? "default" : "outline"}
+                className={`h-8 text-xs ${!isActive && config ? config.color : ""}`}
+                onClick={() => setCategoryFilter(cat)}
+                data-testid={`walkthrough-filter-${cat}`}
+              >
+                {cat === "all" ? "All" : config?.label || cat}
+              </Button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        {filtered.map(w => {
+          const catConfig = WALKTHROUGH_CATEGORIES[w.category];
+          const stepsCompleted = completedSteps[w.id]?.size || 0;
+          const pct = Math.round((stepsCompleted / w.steps.length) * 100);
+          return (
+            <Card
+              key={w.id}
+              className="shadow-sm hover:shadow-md transition-all cursor-pointer group"
+              onClick={() => setSelectedId(w.id)}
+              data-testid={`walkthrough-card-${w.id}`}
+            >
+              <CardContent className="pt-5 pb-4 px-5">
+                <div className="flex items-start justify-between mb-3">
+                  <Badge variant="outline" className={`text-[10px] ${catConfig?.color || ""}`}>
+                    {catConfig?.label || w.category}
+                  </Badge>
+                  <span className="flex items-center gap-1 text-xs text-slate-400">
+                    <Clock className="h-3 w-3" /> {w.estimatedMinutes} min
+                  </span>
+                </div>
+                <h3 className="font-semibold text-sm text-slate-900 group-hover:text-blue-600 transition-colors mb-1.5">
+                  {w.title}
+                </h3>
+                <p className="text-xs text-slate-500 leading-relaxed line-clamp-2 mb-3">
+                  {w.description}
+                </p>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-slate-400">{w.steps.length} steps</span>
+                  {stepsCompleted > 0 && (
+                    <div className="flex items-center gap-2">
+                      <div className="h-1.5 w-16 bg-slate-100 rounded-full overflow-hidden">
+                        <div className="h-full bg-green-500 rounded-full" style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className="text-[10px] text-green-600 font-medium">{pct}%</span>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      {filtered.length === 0 && (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <p className="text-sm text-muted-foreground">No walkthroughs match your search.</p>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
 export default function EeInfoPage() {
   const [activeTab, setActiveTab] = useState("graph");
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
@@ -1209,6 +1478,9 @@ export default function EeInfoPage() {
           <TabsTrigger value="flow" className="gap-1 text-xs" data-testid="tab-flow">
             <GitBranch className="h-3.5 w-3.5" /> Flow
           </TabsTrigger>
+          <TabsTrigger value="walkthroughs" className="gap-1 text-xs" data-testid="tab-walkthroughs">
+            <GraduationCap className="h-3.5 w-3.5" /> Walkthroughs
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="graph" className="mt-3">
@@ -1225,6 +1497,10 @@ export default function EeInfoPage() {
 
         <TabsContent value="flow" className="mt-3">
           <FlowTab nodes={nodes} onSelectNode={handleSelectNode} />
+        </TabsContent>
+
+        <TabsContent value="walkthroughs" className="mt-3">
+          <WalkthroughTab />
         </TabsContent>
       </Tabs>
     </div>
