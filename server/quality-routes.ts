@@ -919,6 +919,65 @@ export function registerQualityRoutes(app: Express) {
       res.status(500).json({ error: err.message });
     }
   });
+
+  app.post("/api/quality/admin/bulk-create-checklists", requireAuth, async (req, res) => {
+    try {
+      const role = getUserRole(req);
+      if (!isAdminRole(role)) {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+
+      const { projectNames } = req.body;
+      if (!Array.isArray(projectNames) || projectNames.length === 0) {
+        return res.status(400).json({ error: "projectNames array is required" });
+      }
+
+      const [activeTemplate] = await db.select().from(qcTemplate).where(eq(qcTemplate.isActive, true));
+      if (!activeTemplate) {
+        return res.status(400).json({ error: "No active quality template found" });
+      }
+
+      const phases = await db.select().from(qcTemplatePhase).where(eq(qcTemplatePhase.templateId, activeTemplate.id));
+      const phaseIds = phases.map(p => p.id);
+      const groups = phaseIds.length ? await db.select().from(qcTemplateGroup).where(inArray(qcTemplateGroup.templatePhaseId, phaseIds)) : [];
+      const groupIds = groups.map(g => g.id);
+      const templateItems = groupIds.length ? await db.select().from(qcTemplateItem).where(inArray(qcTemplateItem.templateGroupId, groupIds)) : [];
+      const riskQuestions = phaseIds.length ? await db.select().from(qcTemplateRiskQuestion).where(inArray(qcTemplateRiskQuestion.templatePhaseId, phaseIds)) : [];
+
+      const results: { project: string; status: string }[] = [];
+
+      for (const projectName of projectNames) {
+        const [existing] = await db.select().from(qcChecklist).where(eq(qcChecklist.projectName, projectName));
+        if (existing) {
+          results.push({ project: projectName, status: "already exists" });
+          continue;
+        }
+
+        const [checklist] = await db.insert(qcChecklist).values({
+          projectName, templateId: activeTemplate.id, status: "active",
+        }).returning();
+
+        if (templateItems.length) {
+          await db.insert(qcItemInstance).values(
+            templateItems.map(ti => ({ checklistId: checklist.id, templateItemId: ti.id }))
+          );
+        }
+
+        if (riskQuestions.length) {
+          await db.insert(qcRiskAnswer).values(
+            riskQuestions.map(rq => ({ checklistId: checklist.id, templateRiskQuestionId: rq.id }))
+          );
+        }
+
+        results.push({ project: projectName, status: "created" });
+      }
+
+      res.json({ success: true, results });
+    } catch (err: any) {
+      console.error("[Bulk Create Checklists]", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
 }
 
 // ========== WARNING ENGINE (recalculate) ==========
