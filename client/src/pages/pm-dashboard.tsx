@@ -1,13 +1,32 @@
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useLocation } from "wouter";
+import {
+  startOfMonth,
+  endOfMonth,
+  eachDayOfInterval,
+  format,
+  addMonths,
+  subMonths,
+  isSameDay,
+  isToday,
+  startOfWeek,
+  endOfWeek,
+  isSameMonth,
+  parseISO,
+  isPast,
+  isThisWeek,
+  differenceInDays,
+} from "date-fns";
 import {
   Briefcase,
   DollarSign,
-  Calendar,
   AlertTriangle,
   CheckCircle2,
   Clock,
@@ -18,7 +37,20 @@ import {
   PauseCircle,
   TrendingUp,
   BarChart3,
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  Flag,
+  Target,
+  Shield,
+  CircleDot,
+  ExternalLink,
+  AlertCircle,
+  FileWarning,
+  Gauge,
+  Percent,
 } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 async function pmFetch(url: string) {
   const token = localStorage.getItem("auth_token");
@@ -88,7 +120,38 @@ interface PMDashboardData {
     activeTasks: number;
     overdueTasks: number;
     completedTasks: number;
+    grossProfit: number;
+    avgSpendPercent: number;
+    cosRealisedTotal: number;
+    cosFlaggedTotal: number;
   };
+}
+
+interface PriorityItem {
+  type: string;
+  severity: string;
+  projectName: string;
+  title: string;
+  detail: string;
+  taskId?: number;
+  expenseId?: number;
+  dueDate?: string;
+  priority?: string;
+  phase?: string;
+  link: string;
+}
+
+interface CalendarEvent {
+  type: string;
+  projectName: string;
+  title: string;
+  date: string;
+  isCompleted?: boolean;
+  taskId?: number;
+  status?: string;
+  priority?: string;
+  isOverdue?: boolean;
+  link: string;
 }
 
 const ragColors: Record<string, string> = {
@@ -105,7 +168,7 @@ function formatCurrency(val: number): string {
 }
 
 function formatDate(d: string | null): string {
-  if (!d) return "—";
+  if (!d) return "\u2014";
   try {
     const date = new Date(d);
     if (isNaN(date.getTime())) return d;
@@ -125,81 +188,88 @@ function DateRow({ label, planned, actual }: { label: string; planned: string | 
   );
 }
 
-export default function PMDashboard() {
-  const { user } = useAuth();
-  const [, navigate] = useLocation();
+const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-  const { data, isLoading, error } = useQuery<PMDashboardData>({
-    queryKey: ["pm-dashboard"],
-    queryFn: () => pmFetch("/api/pm/dashboard"),
-  });
+const typeIcons: Record<string, any> = {
+  overdue_task: AlertTriangle,
+  hold_task: PauseCircle,
+  approval_needed: Shield,
+  cos_flagged: FileWarning,
+  budget_overrun: TrendingUp,
+};
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]" data-testid="pm-loading">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
-  }
+const typeLabels: Record<string, string> = {
+  overdue_task: "Overdue Task",
+  hold_task: "On Hold",
+  approval_needed: "Needs Approval",
+  cos_flagged: "COS Flagged",
+  budget_overrun: "Budget Overrun",
+};
 
-  if (error) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh] text-destructive" data-testid="pm-error">
-        <AlertTriangle className="h-5 w-5 mr-2" />
-        Failed to load dashboard
-      </div>
-    );
-  }
+const severityColors: Record<string, string> = {
+  high: "bg-red-100 text-red-800 border-red-200",
+  medium: "bg-amber-100 text-amber-800 border-amber-200",
+  low: "bg-blue-100 text-blue-800 border-blue-200",
+};
 
-  const { projects, summary } = data!;
+const eventTypeColors: Record<string, string> = {
+  milestone: "bg-purple-500",
+  task_due: "bg-blue-500",
+};
+
+function KpiCard({ icon: Icon, label, value, sub, color }: {
+  icon: any; label: string; value: string | number; sub?: string; color?: string;
+}) {
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+          <Icon className={`h-3.5 w-3.5 ${color || ""}`} /> {label}
+        </div>
+        <p className="text-2xl font-bold">{value}</p>
+        {sub && <p className="text-[10px] text-muted-foreground mt-0.5">{sub}</p>}
+      </CardContent>
+    </Card>
+  );
+}
+
+function OverviewTab({ data, navigate }: { data: PMDashboardData; navigate: (path: string) => void }) {
+  const { projects, summary } = data;
 
   return (
-    <div className="space-y-6 p-4 md:p-6" data-testid="pm-dashboard">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight" data-testid="pm-title">
-            My Projects
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {user?.name ? `${user.name} — ` : ""}
-            {summary.totalProjects} project{summary.totalProjects !== 1 ? "s" : ""} assigned
-          </p>
-        </div>
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3" data-testid="pm-kpi-strip">
+        <KpiCard icon={Briefcase} label="Projects" value={summary.totalProjects} />
+        <KpiCard icon={DollarSign} label="Contract Value" value={formatCurrency(summary.totalContractValue)} />
+        <KpiCard icon={Gauge} label="Avg Spend" value={`${summary.avgSpendPercent}%`} sub="budget utilisation" />
+        <KpiCard icon={Percent} label="Gross Profit" value={`${summary.grossProfit}%`} sub="across portfolio" color={summary.grossProfit < 15 ? "text-red-500" : "text-green-500"} />
+        <KpiCard icon={Zap} label="Active Tasks" value={summary.activeTasks} />
+        <KpiCard icon={AlertTriangle} label="Overdue" value={summary.overdueTasks} color={summary.overdueTasks > 0 ? "text-red-500" : ""} />
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3" data-testid="pm-summary-cards">
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
-              <Briefcase className="h-3.5 w-3.5" /> Projects
-            </div>
-            <p className="text-2xl font-bold" data-testid="summary-total-projects">{summary.totalProjects}</p>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3" data-testid="pm-cos-kpis">
+        <Card className="border-green-200 bg-green-50/50">
+          <CardContent className="p-3">
+            <div className="text-[10px] text-green-700 font-medium uppercase">COS Realised</div>
+            <p className="text-xl font-bold text-green-800">{summary.cosRealisedTotal}</p>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
-              <DollarSign className="h-3.5 w-3.5" /> Contract Value
-            </div>
-            <p className="text-2xl font-bold" data-testid="summary-contract-value">{formatCurrency(summary.totalContractValue)}</p>
+        <Card className="border-red-200 bg-red-50/50">
+          <CardContent className="p-3">
+            <div className="text-[10px] text-red-700 font-medium uppercase">COS Flagged</div>
+            <p className="text-xl font-bold text-red-800">{summary.cosFlaggedTotal}</p>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
-              <Zap className="h-3.5 w-3.5" /> Active Tasks
-            </div>
-            <p className="text-2xl font-bold" data-testid="summary-active-tasks">{summary.activeTasks}</p>
+        <Card className="border-blue-200 bg-blue-50/50">
+          <CardContent className="p-3">
+            <div className="text-[10px] text-blue-700 font-medium uppercase">Tasks Completed</div>
+            <p className="text-xl font-bold text-blue-800">{summary.completedTasks}</p>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
-              <AlertTriangle className="h-3.5 w-3.5" /> Overdue
-            </div>
-            <p className={`text-2xl font-bold ${summary.overdueTasks > 0 ? "text-red-600" : ""}`} data-testid="summary-overdue">
-              {summary.overdueTasks}
-            </p>
+        <Card className="border-purple-200 bg-purple-50/50">
+          <CardContent className="p-3">
+            <div className="text-[10px] text-purple-700 font-medium uppercase">Total Budget</div>
+            <p className="text-xl font-bold text-purple-800">{formatCurrency(summary.totalBudget)}</p>
           </CardContent>
         </Card>
       </div>
@@ -337,6 +407,412 @@ export default function PMDashboard() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function PriorityTab({ navigate }: { navigate: (path: string) => void }) {
+  const [filterType, setFilterType] = useState<string>("all");
+
+  const { data, isLoading } = useQuery<{ items: PriorityItem[] }>({
+    queryKey: ["pm-priority"],
+    queryFn: () => pmFetch("/api/pm/priority-items"),
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  const items = data?.items || [];
+  const types = [...new Set(items.map(i => i.type))];
+  const filtered = filterType === "all" ? items : items.filter(i => i.type === filterType);
+
+  const highCount = items.filter(i => i.severity === "high").length;
+  const mediumCount = items.filter(i => i.severity === "medium").length;
+
+  return (
+    <div className="space-y-4" data-testid="pm-priority-tab">
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <Badge className="bg-red-100 text-red-800 hover:bg-red-100">{highCount} High</Badge>
+          <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">{mediumCount} Medium</Badge>
+          <span className="text-xs text-muted-foreground">{items.length} total items</span>
+        </div>
+        <div className="flex gap-1 ml-auto flex-wrap">
+          <Button
+            size="sm"
+            variant={filterType === "all" ? "default" : "outline"}
+            className="h-7 text-xs"
+            onClick={() => setFilterType("all")}
+            data-testid="filter-all"
+          >
+            All
+          </Button>
+          {types.map(t => (
+            <Button
+              key={t}
+              size="sm"
+              variant={filterType === t ? "default" : "outline"}
+              className="h-7 text-xs"
+              onClick={() => setFilterType(t)}
+              data-testid={`filter-${t}`}
+            >
+              {typeLabels[t] || t} ({items.filter(i => i.type === t).length})
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      {filtered.length === 0 ? (
+        <Card>
+          <CardContent className="p-8 text-center">
+            <CheckCircle2 className="h-10 w-10 mx-auto mb-3 text-green-500" />
+            <h3 className="font-medium">No priority items</h3>
+            <p className="text-sm text-muted-foreground mt-1">All clear across your projects.</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map((item, idx) => {
+            const TypeIcon = typeIcons[item.type] || AlertCircle;
+            return (
+              <Card
+                key={`${item.type}-${idx}`}
+                className={`cursor-pointer hover:shadow-md transition-shadow border ${severityColors[item.severity] || ""}`}
+                onClick={() => navigate(item.link)}
+                data-testid={`priority-item-${idx}`}
+              >
+                <CardContent className="p-3 flex items-start gap-3">
+                  <div className="mt-0.5 shrink-0">
+                    <TypeIcon className="h-4 w-4" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <span className="text-[10px] font-semibold uppercase tracking-wide opacity-70">
+                        {typeLabels[item.type] || item.type}
+                      </span>
+                      <Badge variant="outline" className="text-[9px] h-4">{item.projectName}</Badge>
+                      {item.priority && (
+                        <Badge variant="outline" className="text-[9px] h-4">{item.priority}</Badge>
+                      )}
+                    </div>
+                    <p className="text-sm font-medium truncate">{item.title}</p>
+                    <p className="text-xs text-muted-foreground truncate">{item.detail}</p>
+                    {item.dueDate && (
+                      <p className="text-[10px] text-muted-foreground mt-0.5">
+                        Due: {formatDate(item.dueDate)}
+                        {item.dueDate < new Date().toISOString().split("T")[0] && (
+                          <span className="text-red-600 font-medium ml-1">
+                            ({differenceInDays(new Date(), parseISO(item.dueDate))}d overdue)
+                          </span>
+                        )}
+                      </p>
+                    )}
+                  </div>
+                  <ArrowRight className="h-4 w-4 shrink-0 mt-1 opacity-40" />
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CalendarTab({ navigate }: { navigate: (path: string) => void }) {
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+
+  const { data, isLoading } = useQuery<{ events: CalendarEvent[] }>({
+    queryKey: ["pm-calendar"],
+    queryFn: () => pmFetch("/api/pm/calendar-events"),
+  });
+
+  const events = data?.events || [];
+
+  const monthStart = startOfMonth(currentMonth);
+  const monthEnd = endOfMonth(currentMonth);
+  const calStart = startOfWeek(monthStart, { weekStartsOn: 1 });
+  const calEnd = endOfWeek(monthEnd, { weekStartsOn: 1 });
+  const days = eachDayOfInterval({ start: calStart, end: calEnd });
+
+  const eventsByDate = useMemo(() => {
+    const map: Record<string, CalendarEvent[]> = {};
+    for (const ev of events) {
+      if (!ev.date) continue;
+      try {
+        const d = ev.date.split("T")[0];
+        if (!map[d]) map[d] = [];
+        map[d].push(ev);
+      } catch {}
+    }
+    return map;
+  }, [events]);
+
+  const thisMonthEvents = useMemo(() => {
+    return events.filter(ev => {
+      if (!ev.date) return false;
+      try {
+        const d = parseISO(ev.date);
+        return isSameMonth(d, currentMonth);
+      } catch {
+        return false;
+      }
+    });
+  }, [events, currentMonth]);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4" data-testid="pm-calendar-tab">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setCurrentMonth(m => subMonths(m, 1))} data-testid="cal-prev">
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <h3 className="text-lg font-semibold w-40 text-center">{format(currentMonth, "MMMM yyyy")}</h3>
+          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setCurrentMonth(m => addMonths(m, 1))} data-testid="cal-next">
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setCurrentMonth(new Date())} data-testid="cal-today">
+          Today
+        </Button>
+      </div>
+
+      <div className="flex items-center gap-3 text-[10px]">
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-purple-500 inline-block" /> Milestone</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500 inline-block" /> Task Due</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" /> Completed</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" /> Overdue</span>
+      </div>
+
+      <Card>
+        <CardContent className="p-2">
+          <div className="grid grid-cols-7 gap-0">
+            {WEEKDAYS.map(d => (
+              <div key={d} className="text-[10px] font-semibold text-center text-muted-foreground py-1 uppercase">
+                {d}
+              </div>
+            ))}
+            {days.map((day) => {
+              const key = format(day, "yyyy-MM-dd");
+              const dayEvents = eventsByDate[key] || [];
+              const inMonth = isSameMonth(day, currentMonth);
+              const today = isToday(day);
+
+              return (
+                <div
+                  key={key}
+                  className={`min-h-[72px] md:min-h-[80px] border border-border/30 p-1 transition-colors ${
+                    !inMonth ? "bg-muted/30 opacity-50" : ""
+                  } ${today ? "bg-primary/5 ring-1 ring-primary/20" : ""}`}
+                  data-testid={`cal-day-${key}`}
+                >
+                  <div className={`text-[11px] font-medium mb-0.5 ${today ? "text-primary font-bold" : "text-muted-foreground"}`}>
+                    {format(day, "d")}
+                  </div>
+                  <div className="space-y-0.5">
+                    {dayEvents.slice(0, 3).map((ev, i) => {
+                      const dotColor = ev.isCompleted
+                        ? "bg-green-500"
+                        : ev.isOverdue
+                        ? "bg-red-500"
+                        : ev.type === "milestone"
+                        ? "bg-purple-500"
+                        : "bg-blue-500";
+
+                      return (
+                        <Popover key={i}>
+                          <PopoverTrigger asChild>
+                            <button
+                              className="w-full text-left flex items-center gap-1 hover:bg-accent/50 rounded px-0.5 py-px"
+                              data-testid={`cal-event-${key}-${i}`}
+                            >
+                              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`} />
+                              <span className="text-[9px] truncate leading-tight">{ev.title}</span>
+                            </button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-64 p-3" side="top">
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-2">
+                                <span className={`w-2 h-2 rounded-full ${dotColor}`} />
+                                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                  {ev.type === "milestone" ? "Milestone" : "Task"}
+                                </span>
+                              </div>
+                              <p className="text-sm font-medium">{ev.title}</p>
+                              <Badge variant="outline" className="text-[9px]">{ev.projectName}</Badge>
+                              {ev.status && <p className="text-xs text-muted-foreground">Status: {ev.status}</p>}
+                              {ev.priority && <p className="text-xs text-muted-foreground">Priority: {ev.priority}</p>}
+                              <p className="text-xs text-muted-foreground">{formatDate(ev.date)}</p>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="w-full h-7 text-xs"
+                                onClick={() => navigate(ev.link)}
+                                data-testid={`cal-go-${key}-${i}`}
+                              >
+                                Go to project <ExternalLink className="h-3 w-3 ml-1" />
+                              </Button>
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                      );
+                    })}
+                    {dayEvents.length > 3 && (
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <button className="text-[9px] text-primary font-medium px-0.5" data-testid={`cal-more-${key}`}>
+                            +{dayEvents.length - 3} more
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-72 p-3 max-h-60 overflow-y-auto" side="top">
+                          <p className="text-xs font-semibold mb-2">{format(day, "dd MMM yyyy")} - All Events</p>
+                          <div className="space-y-2">
+                            {dayEvents.map((ev, i) => {
+                              const dotColor = ev.isCompleted ? "bg-green-500" : ev.isOverdue ? "bg-red-500" : ev.type === "milestone" ? "bg-purple-500" : "bg-blue-500";
+                              return (
+                                <div
+                                  key={i}
+                                  className="flex items-start gap-2 cursor-pointer hover:bg-accent/50 rounded p-1"
+                                  onClick={() => navigate(ev.link)}
+                                >
+                                  <span className={`w-2 h-2 rounded-full shrink-0 mt-1 ${dotColor}`} />
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-medium truncate">{ev.title}</p>
+                                    <p className="text-[10px] text-muted-foreground">{ev.projectName}</p>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-semibold">Events This Month ({thisMonthEvents.length})</CardTitle>
+        </CardHeader>
+        <CardContent className="p-3 pt-0">
+          {thisMonthEvents.length === 0 ? (
+            <p className="text-xs text-muted-foreground text-center py-4">No events this month</p>
+          ) : (
+            <div className="space-y-1.5 max-h-64 overflow-y-auto">
+              {thisMonthEvents.map((ev, i) => {
+                const dotColor = ev.isCompleted ? "bg-green-500" : ev.isOverdue ? "bg-red-500" : ev.type === "milestone" ? "bg-purple-500" : "bg-blue-500";
+                return (
+                  <div
+                    key={i}
+                    className="flex items-center gap-2 p-2 rounded hover:bg-accent/50 cursor-pointer text-xs"
+                    onClick={() => navigate(ev.link)}
+                    data-testid={`month-event-${i}`}
+                  >
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
+                    <span className="font-medium w-16 shrink-0">{formatDate(ev.date)}</span>
+                    <span className="truncate flex-1">{ev.title}</span>
+                    <Badge variant="outline" className="text-[9px] shrink-0">{ev.projectName}</Badge>
+                    {ev.isOverdue && <Badge className="text-[8px] bg-red-100 text-red-800 hover:bg-red-100 shrink-0">Overdue</Badge>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+export default function PMDashboard() {
+  const { user } = useAuth();
+  const [, navigate] = useLocation();
+  const [activeTab, setActiveTab] = useState("overview");
+
+  const { data, isLoading, error } = useQuery<PMDashboardData>({
+    queryKey: ["pm-dashboard"],
+    queryFn: () => pmFetch("/api/pm/dashboard"),
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]" data-testid="pm-loading">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh] text-destructive" data-testid="pm-error">
+        <AlertTriangle className="h-5 w-5 mr-2" />
+        Failed to load dashboard
+      </div>
+    );
+  }
+
+  const { summary } = data!;
+
+  return (
+    <div className="space-y-4 p-4 md:p-6" data-testid="pm-dashboard">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight" data-testid="pm-title">
+            My Projects
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {user?.name ? `${user.name} \u2014 ` : ""}
+            {summary.totalProjects} project{summary.totalProjects !== 1 ? "s" : ""} assigned
+          </p>
+        </div>
+      </div>
+
+      <Tabs value={activeTab} onValueChange={setActiveTab} data-testid="pm-tabs">
+        <TabsList className="grid w-full grid-cols-3 max-w-md">
+          <TabsTrigger value="overview" className="text-xs" data-testid="tab-overview">
+            <BarChart3 className="h-3.5 w-3.5 mr-1.5" /> Overview
+          </TabsTrigger>
+          <TabsTrigger value="priority" className="text-xs" data-testid="tab-priority">
+            <Flag className="h-3.5 w-3.5 mr-1.5" /> Priority Items
+            {summary.overdueTasks > 0 && (
+              <Badge className="ml-1.5 h-4 text-[9px] bg-red-500">{summary.overdueTasks}</Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="calendar" className="text-xs" data-testid="tab-calendar">
+            <CalendarDays className="h-3.5 w-3.5 mr-1.5" /> Calendar
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview" className="mt-4">
+          <OverviewTab data={data!} navigate={navigate} />
+        </TabsContent>
+
+        <TabsContent value="priority" className="mt-4">
+          <PriorityTab navigate={navigate} />
+        </TabsContent>
+
+        <TabsContent value="calendar" className="mt-4">
+          <CalendarTab navigate={navigate} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
