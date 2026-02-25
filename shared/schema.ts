@@ -948,25 +948,6 @@ export const PHASE_TEXT_TO_ENUM: Record<string, ProjectPhase> = {
   "dlp": "DLP",
 };
 
-export const PHASE_TO_ENG_STAGES: Record<string, string[]> = {
-  "First Assessment": ["First Assessment"],
-  "Cost Proposal": ["Cost Proposal"],
-  "Financial Close": ["Cost Proposal"],
-  "Planning": ["IFC Planning"],
-  "Construction": ["IFC Planning", "Construction Support"],
-  "QA": ["Handover Pack"],
-  "Handover": ["Handover Pack"],
-  "Compliance Handover": ["Handover Pack"],
-  "P0_FIRST_ASSESSMENT": ["First Assessment"],
-  "P1_COST_PROPOSAL_DESIGN": ["Cost Proposal"],
-  "P2_PD_PM_HANDOVER": ["IFC Planning"],
-  "P3_DETAILED_DESIGN_PROC_RELEASE": ["IFC Planning"],
-  "P4_CONSTRUCTION_INSTALLATION": ["Construction Support"],
-  "P5_COMMISSIONING_TESTING": ["Handover Pack"],
-  "P6_HANDOVER_CLIENT_MATRIARCH": ["Handover Pack"],
-  "P7_CLOSEOUT_POSTMORTEM": ["Handover Pack"],
-};
-
 export const operationalTasks = pgTable("operational_tasks", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").references(() => projectInfo.id),
