@@ -4312,12 +4312,8 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Overrides must be an array", message: "Overrides must be an array" });
       }
 
-      if (!overrideCategory || !OVERRIDE_CATEGORIES.includes(overrideCategory)) {
-        return res.status(400).json({ error: "Override category is required. Must be one of: " + OVERRIDE_CATEGORIES.join(", ") });
-      }
-      if (!overrideComment || typeof overrideComment !== "string" || overrideComment.trim().length < 3) {
-        return res.status(400).json({ error: "Override comment is required (min 3 characters)" });
-      }
+      const effectiveCategory = overrideCategory && OVERRIDE_CATEGORIES.includes(overrideCategory) ? overrideCategory : 'DATA_CORRECTION';
+      const effectiveComment = (overrideComment && typeof overrideComment === "string" && overrideComment.trim().length >= 3) ? overrideComment : "Inline edit";
 
       const userId = req.user?.id;
       const overridesWithUser = overrides.map((o: any) => {
@@ -4395,12 +4391,8 @@ export async function registerRoutes(
       if (!Array.isArray(overrides)) {
         return res.status(400).json({ error: "Overrides must be an array", message: "Overrides must be an array" });
       }
-      if (!overrideCategory || !OVERRIDE_CATEGORIES.includes(overrideCategory)) {
-        return res.status(400).json({ error: "Override category is required. Must be one of: " + OVERRIDE_CATEGORIES.join(", ") });
-      }
-      if (!overrideComment || typeof overrideComment !== "string" || overrideComment.trim().length < 3) {
-        return res.status(400).json({ error: "Override comment is required (min 3 characters)" });
-      }
+      const effectiveCategory = overrideCategory && OVERRIDE_CATEGORIES.includes(overrideCategory) ? overrideCategory : 'DATA_CORRECTION';
+      const effectiveComment = (overrideComment && typeof overrideComment === "string" && overrideComment.trim().length >= 3) ? overrideComment : "Inline edit";
       const userId = req.user?.id;
       const overridesWithUser = overrides.map((o: any) => ({ ...o, createdBy: userId }));
       const saved = await storage.upsertManyProjectPlanOverrides(overridesWithUser);
@@ -4463,12 +4455,8 @@ export async function registerRoutes(
       if (!Array.isArray(overrides)) {
         return res.status(400).json({ error: "Overrides must be an array", message: "Overrides must be an array" });
       }
-      if (!overrideCategory || !OVERRIDE_CATEGORIES.includes(overrideCategory)) {
-        return res.status(400).json({ error: "Override category is required. Must be one of: " + OVERRIDE_CATEGORIES.join(", ") });
-      }
-      if (!overrideComment || typeof overrideComment !== "string" || overrideComment.trim().length < 3) {
-        return res.status(400).json({ error: "Override comment is required (min 3 characters)" });
-      }
+      const effectiveCategory = overrideCategory && OVERRIDE_CATEGORIES.includes(overrideCategory) ? overrideCategory : 'DATA_CORRECTION';
+      const effectiveComment = (overrideComment && typeof overrideComment === "string" && overrideComment.trim().length >= 3) ? overrideComment : "Inline edit";
       const userId = req.user?.id;
       const overridesWithUser = overrides.map((o: any) => ({ ...o, createdBy: userId }));
       const saved = await storage.upsertManyRevenueTrackingOverrides(overridesWithUser);
@@ -4845,12 +4833,8 @@ export async function registerRoutes(
       if (!Array.isArray(overrides)) {
         return res.status(400).json({ error: "Overrides must be an array", message: "Overrides must be an array" });
       }
-      if (!overrideCategory || !OVERRIDE_CATEGORIES.includes(overrideCategory)) {
-        return res.status(400).json({ error: "Override category is required. Must be one of: " + OVERRIDE_CATEGORIES.join(", ") });
-      }
-      if (!overrideComment || typeof overrideComment !== "string" || overrideComment.trim().length < 3) {
-        return res.status(400).json({ error: "Override comment is required (min 3 characters)" });
-      }
+      const effectiveCategory = overrideCategory && OVERRIDE_CATEGORIES.includes(overrideCategory) ? overrideCategory : 'DATA_CORRECTION';
+      const effectiveComment = (overrideComment && typeof overrideComment === "string" && overrideComment.trim().length >= 3) ? overrideComment : "Inline edit";
       const userId = req.user?.id;
       const overridesWithUser = overrides.map((o: any) => ({ ...o, createdBy: userId }));
       const saved = await storage.upsertManyExpenditureOverrides(overridesWithUser);
@@ -5306,12 +5290,8 @@ export async function registerRoutes(
       if (!Array.isArray(overrides)) {
         return res.status(400).json({ error: "Overrides must be an array", message: "Overrides must be an array" });
       }
-      if (!overrideCategory || !OVERRIDE_CATEGORIES.includes(overrideCategory)) {
-        return res.status(400).json({ error: "Override category is required. Must be one of: " + OVERRIDE_CATEGORIES.join(", ") });
-      }
-      if (!overrideComment || typeof overrideComment !== "string" || overrideComment.trim().length < 3) {
-        return res.status(400).json({ error: "Override comment is required (min 3 characters)" });
-      }
+      const effectiveCategory = overrideCategory && OVERRIDE_CATEGORIES.includes(overrideCategory) ? overrideCategory : 'DATA_CORRECTION';
+      const effectiveComment = (overrideComment && typeof overrideComment === "string" && overrideComment.trim().length >= 3) ? overrideComment : "Inline edit";
       const userId = req.user?.id;
       const overridesWithUser = overrides.map((o: any) => ({ ...o, createdBy: userId }));
       const saved = await storage.upsertManyFinanceRevenueOverrides(overridesWithUser);
@@ -5367,12 +5347,8 @@ export async function registerRoutes(
       if (!Array.isArray(overrides)) {
         return res.status(400).json({ error: "Overrides must be an array", message: "Overrides must be an array" });
       }
-      if (!overrideCategory || !OVERRIDE_CATEGORIES.includes(overrideCategory)) {
-        return res.status(400).json({ error: "Override category is required. Must be one of: " + OVERRIDE_CATEGORIES.join(", ") });
-      }
-      if (!overrideComment || typeof overrideComment !== "string" || overrideComment.trim().length < 3) {
-        return res.status(400).json({ error: "Override comment is required (min 3 characters)" });
-      }
+      const effectiveCategory = overrideCategory && OVERRIDE_CATEGORIES.includes(overrideCategory) ? overrideCategory : 'DATA_CORRECTION';
+      const effectiveComment = (overrideComment && typeof overrideComment === "string" && overrideComment.trim().length >= 3) ? overrideComment : "Inline edit";
       const userId = req.user?.id;
       const overridesWithUser = overrides.map((o: any) => ({ ...o, createdBy: userId }));
       const saved = await storage.upsertManyFinanceCosOverrides(overridesWithUser);
