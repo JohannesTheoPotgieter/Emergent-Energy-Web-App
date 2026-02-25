@@ -8,6 +8,7 @@ const DONE_FLAG = path.join(SEED_DIR, ".migrated");
 
 const TABLE_ORDER = [
   "project_info",
+  "smart_import_runs",
   "program_expense",
   "program_inflows",
   "project_plan",
@@ -40,16 +41,12 @@ export async function runDataSeedMigration() {
     return;
   }
   if (fs.existsSync(DONE_FLAG)) {
-    console.log("[DataSeed] Already migrated, skipping");
-    return;
-  }
-
-  const existing = await db.execute(sql.raw("SELECT COUNT(*) as cnt FROM project_info"));
-  const count = parseInt((existing.rows as any[])[0]?.cnt ?? "0", 10);
-  if (count > 0) {
-    console.log(`[DataSeed] project_info already has ${count} rows, marking as done`);
-    fs.writeFileSync(DONE_FLAG, new Date().toISOString());
-    return;
+    const flagContent = fs.readFileSync(DONE_FLAG, "utf-8").trim();
+    if (flagContent === "v2") {
+      console.log("[DataSeed] Already migrated (v2), skipping");
+      return;
+    }
+    console.log("[DataSeed] Previous migration found but not v2, re-running...");
   }
 
   console.log("[DataSeed] Starting one-time data migration...");
@@ -79,6 +76,8 @@ export async function runDataSeedMigration() {
         continue;
       }
 
+      const nullifyFkCols = new Set(["template_profile_id"]);
+
       const dbCols = await getDbColumns(tableName);
       const jsonKeys = Object.keys(rows[0]);
       const validPairs: { jsonKey: string; dbCol: string }[] = [];
@@ -98,7 +97,10 @@ export async function runDataSeedMigration() {
       for (let i = 0; i < rows.length; i += batchSize) {
         const batch = rows.slice(i, i + batchSize);
         const valueSets = batch.map((row) => {
-          const vals = validPairs.map((p) => escVal(row[p.jsonKey]));
+          const vals = validPairs.map((p) => {
+            if (nullifyFkCols.has(p.dbCol)) return "NULL";
+            return escVal(row[p.jsonKey]);
+          });
           return `(${vals.join(", ")})`;
         });
         await tx.execute(sql.raw(`INSERT INTO ${tableName} (${colList}) VALUES ${valueSets.join(", ")}`));
@@ -117,7 +119,7 @@ export async function runDataSeedMigration() {
     }
   });
 
-  fs.writeFileSync(DONE_FLAG, new Date().toISOString());
+  fs.writeFileSync(DONE_FLAG, "v2");
   console.log("[DataSeed] Migration complete:", results);
   if (Object.keys(skipped).length > 0) {
     console.log("[DataSeed] Skipped columns:", skipped);
