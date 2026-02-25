@@ -10471,91 +10471,53 @@ function registerFeedbackRoutes(app: Express) {
       const results: Record<string, number> = {};
 
       await db.transaction(async (tx) => {
+        await tx.execute(sql`SET CONSTRAINTS ALL DEFERRED`);
+
+        const tablesToClear: string[] = [];
+        if (tables.normalized_plan_tasks?.length > 0) tablesToClear.push('normalized_plan_tasks');
+        if (tables.normalized_revenue_lines?.length > 0) tablesToClear.push('normalized_revenue_lines');
+        if (tables.normalized_cost_lines?.length > 0) tablesToClear.push('normalized_cost_lines');
+        if (tables.project_plan?.length > 0) tablesToClear.push('project_plan');
+        if (tables.program_inflows?.length > 0) tablesToClear.push('program_inflows');
+        if (tables.program_expense?.length > 0) tablesToClear.push('program_expense');
+        if (tables.project_info?.length > 0) tablesToClear.push('project_info');
+
+        if (tablesToClear.length > 0) {
+          await tx.execute(sql.raw(`TRUNCATE TABLE ${tablesToClear.join(', ')} CASCADE`));
+        }
+
+        const batchInsert = async (table: any, rows: any[], tableName: string) => {
+          const batchSize = 100;
+          for (let i = 0; i < rows.length; i += batchSize) {
+            const batch = rows.slice(i, i + batchSize).map((row: any) => {
+              const { id, ...rest } = row;
+              return rest;
+            });
+            await tx.insert(table).values(batch);
+          }
+          results[tableName] = rows.length;
+        };
+
         if (tables.project_info?.length > 0) {
-          await tx.delete(projectInfo);
-          for (const row of tables.project_info) {
-            const { id, ...rest } = row;
-            await tx.insert(projectInfo).values(rest).onConflictDoNothing();
-          }
-          results.project_info = tables.project_info.length;
+          await batchInsert(projectInfo, tables.project_info, 'project_info');
         }
-
         if (tables.program_expense?.length > 0) {
-          await tx.delete(programExpense);
-          const batchSize = 100;
-          for (let i = 0; i < tables.program_expense.length; i += batchSize) {
-            const batch = tables.program_expense.slice(i, i + batchSize).map((row: any) => {
-              const { id, ...rest } = row;
-              return rest;
-            });
-            await tx.insert(programExpense).values(batch);
-          }
-          results.program_expense = tables.program_expense.length;
+          await batchInsert(programExpense, tables.program_expense, 'program_expense');
         }
-
         if (tables.program_inflows?.length > 0) {
-          await tx.delete(programInflows);
-          const batchSize = 100;
-          for (let i = 0; i < tables.program_inflows.length; i += batchSize) {
-            const batch = tables.program_inflows.slice(i, i + batchSize).map((row: any) => {
-              const { id, ...rest } = row;
-              return rest;
-            });
-            await tx.insert(programInflows).values(batch);
-          }
-          results.program_inflows = tables.program_inflows.length;
+          await batchInsert(programInflows, tables.program_inflows, 'program_inflows');
         }
-
         if (tables.project_plan?.length > 0) {
-          await tx.delete(projectPlan);
-          const batchSize = 100;
-          for (let i = 0; i < tables.project_plan.length; i += batchSize) {
-            const batch = tables.project_plan.slice(i, i + batchSize).map((row: any) => {
-              const { id, ...rest } = row;
-              return rest;
-            });
-            await tx.insert(projectPlan).values(batch);
-          }
-          results.project_plan = tables.project_plan.length;
+          await batchInsert(projectPlan, tables.project_plan, 'project_plan');
         }
-
         if (tables.normalized_cost_lines?.length > 0) {
-          await tx.delete(normalizedCostLines);
-          const batchSize = 100;
-          for (let i = 0; i < tables.normalized_cost_lines.length; i += batchSize) {
-            const batch = tables.normalized_cost_lines.slice(i, i + batchSize).map((row: any) => {
-              const { id, ...rest } = row;
-              return rest;
-            });
-            await tx.insert(normalizedCostLines).values(batch);
-          }
-          results.normalized_cost_lines = tables.normalized_cost_lines.length;
+          await batchInsert(normalizedCostLines, tables.normalized_cost_lines, 'normalized_cost_lines');
         }
-
         if (tables.normalized_revenue_lines?.length > 0) {
-          await tx.delete(normalizedRevenueLines);
-          const batchSize = 100;
-          for (let i = 0; i < tables.normalized_revenue_lines.length; i += batchSize) {
-            const batch = tables.normalized_revenue_lines.slice(i, i + batchSize).map((row: any) => {
-              const { id, ...rest } = row;
-              return rest;
-            });
-            await tx.insert(normalizedRevenueLines).values(batch);
-          }
-          results.normalized_revenue_lines = tables.normalized_revenue_lines.length;
+          await batchInsert(normalizedRevenueLines, tables.normalized_revenue_lines, 'normalized_revenue_lines');
         }
-
         if (tables.normalized_plan_tasks?.length > 0) {
-          await tx.delete(normalizedPlanTasks);
-          const batchSize = 100;
-          for (let i = 0; i < tables.normalized_plan_tasks.length; i += batchSize) {
-            const batch = tables.normalized_plan_tasks.slice(i, i + batchSize).map((row: any) => {
-              const { id, ...rest } = row;
-              return rest;
-            });
-            await tx.insert(normalizedPlanTasks).values(batch);
-          }
-          results.normalized_plan_tasks = tables.normalized_plan_tasks.length;
+          await batchInsert(normalizedPlanTasks, tables.normalized_plan_tasks, 'normalized_plan_tasks');
         }
       });
 
