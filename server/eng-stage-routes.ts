@@ -183,6 +183,115 @@ export function registerEngStageRoutes(app: Express) {
     }
   });
 
+  app.post("/api/eng-stages/templates/:id/tasks", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = getUser(req);
+      if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required" });
+      const stageTemplateId = parseInt(req.params.id);
+      const { title, description, isRequired, sequence, defaultOwnerRole } = req.body;
+      if (!title) return res.status(400).json({ error: "Title is required" });
+      const maxSeq = await db.select({ max: sql<number>`COALESCE(MAX(sequence), 0)` }).from(engTaskTemplates).where(eq(engTaskTemplates.stageTemplateId, stageTemplateId));
+      const [task] = await db.insert(engTaskTemplates).values({
+        stageTemplateId,
+        title,
+        description: description || null,
+        isRequired: isRequired !== false,
+        sequence: sequence ?? (Number(maxSeq[0]?.max || 0) + 1),
+        defaultOwnerRole: defaultOwnerRole || null,
+      }).returning();
+      res.json(task);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/eng-stages/template-tasks/:taskId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = getUser(req);
+      if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required" });
+      const taskId = parseInt(req.params.taskId);
+      const { title, description, isRequired, sequence, defaultOwnerRole } = req.body;
+      const updates: any = {};
+      if (title !== undefined) updates.title = title;
+      if (description !== undefined) updates.description = description || null;
+      if (isRequired !== undefined) updates.isRequired = isRequired;
+      if (sequence !== undefined) updates.sequence = sequence;
+      if (defaultOwnerRole !== undefined) updates.defaultOwnerRole = defaultOwnerRole || null;
+      const [updated] = await db.update(engTaskTemplates).set(updates).where(eq(engTaskTemplates.id, taskId)).returning();
+      if (!updated) return res.status(404).json({ error: "Task template not found" });
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/eng-stages/template-tasks/:taskId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = getUser(req);
+      if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required" });
+      const taskId = parseInt(req.params.taskId);
+      const [deleted] = await db.delete(engTaskTemplates).where(eq(engTaskTemplates.id, taskId)).returning();
+      if (!deleted) return res.status(404).json({ error: "Task template not found" });
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/eng-stages/templates/:id/deliverables", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = getUser(req);
+      if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required" });
+      const stageTemplateId = parseInt(req.params.id);
+      const { name, description, isRequired, allowedFileTypes, requiredCount } = req.body;
+      if (!name) return res.status(400).json({ error: "Name is required" });
+      const [deliverable] = await db.insert(engDeliverableTemplates).values({
+        stageTemplateId,
+        name,
+        description: description || null,
+        isRequired: isRequired !== false,
+        allowedFileTypes: allowedFileTypes || null,
+        requiredCount: requiredCount || 1,
+      }).returning();
+      res.json(deliverable);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/eng-stages/template-deliverables/:delId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = getUser(req);
+      if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required" });
+      const delId = parseInt(req.params.delId);
+      const { name, description, isRequired, allowedFileTypes, requiredCount } = req.body;
+      const updates: any = {};
+      if (name !== undefined) updates.name = name;
+      if (description !== undefined) updates.description = description || null;
+      if (isRequired !== undefined) updates.isRequired = isRequired;
+      if (allowedFileTypes !== undefined) updates.allowedFileTypes = allowedFileTypes;
+      if (requiredCount !== undefined) updates.requiredCount = requiredCount;
+      const [updated] = await db.update(engDeliverableTemplates).set(updates).where(eq(engDeliverableTemplates.id, delId)).returning();
+      if (!updated) return res.status(404).json({ error: "Deliverable template not found" });
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/eng-stages/template-deliverables/:delId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = getUser(req);
+      if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required" });
+      const delId = parseInt(req.params.delId);
+      const [deleted] = await db.delete(engDeliverableTemplates).where(eq(engDeliverableTemplates.id, delId)).returning();
+      if (!deleted) return res.status(404).json({ error: "Deliverable template not found" });
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.post("/api/projects/:projectId/eng-stages/generate", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
