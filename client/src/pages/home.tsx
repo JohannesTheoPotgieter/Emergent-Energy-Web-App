@@ -1,3 +1,4 @@
+import { useState, useMemo } from "react";
 import { Link } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,24 @@ import {
   Calendar,
   Target,
 } from "lucide-react";
+
+const COMPLIMENTS = [
+  "You're making a real difference on these projects!",
+  "Your attention to detail keeps everything running smoothly.",
+  "The team is lucky to have you driving things forward.",
+  "Every project you touch gets better because of your effort.",
+  "Your dedication to quality really shows in the results.",
+  "You bring great energy to the work — keep it up!",
+  "The progress you're making is impressive, well done!",
+  "Your problem-solving skills are next level.",
+  "You make the complex look easy — that's a rare talent.",
+  "Your commitment to excellence inspires the whole team.",
+  "Today is going to be a great day — you've got this!",
+  "You're not just meeting expectations, you're exceeding them.",
+  "Your leadership on these projects is outstanding.",
+  "The way you handle challenges is truly impressive.",
+  "You're building something great — one step at a time.",
+];
 
 interface CompanyPriority {
   id: number;
@@ -205,6 +224,10 @@ export default function Home() {
   const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
   const canEdit = isAdmin || (companyRole && ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO"].includes(companyRole));
 
+  const compliment = useMemo(() => COMPLIMENTS[Math.floor(Math.random() * COMPLIMENTS.length)], []);
+
+  const firstName = user?.name ? user.name.split(" ")[0] : "there";
+
   const { data: priorities = [], isLoading: prioritiesLoading } = useQuery<CompanyPriority[]>({
     queryKey: ["/api/mytool/company-priorities"],
   });
@@ -213,8 +236,11 @@ export default function Home() {
     <div className="space-y-6" data-testid="home-page">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Execution Cockpit</h1>
-          <p className="text-sm text-muted-foreground">
+          <h1 className="text-2xl font-bold tracking-tight" data-testid="text-welcome">Welcome, {firstName}</h1>
+          <p className="text-sm text-muted-foreground italic" data-testid="text-compliment">
+            {compliment}
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
             {new Date().toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" })}
           </p>
         </div>
