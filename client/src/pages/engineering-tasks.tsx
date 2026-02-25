@@ -1216,7 +1216,13 @@ export default function EngineeringTasksPage() {
   const [showNamePicker, setShowNamePicker] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
-  const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
+  const [assigneeFilter, setAssigneeFilter] = useState<string>(() => {
+    const saved = getSavedMyName();
+    if (saved) return saved;
+    const fullName = user?.name || "";
+    const firstName = fullName.split(/\s+/)[0];
+    return firstName || "all";
+  });
   const [searchTerm, setSearchTerm] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     return params.get("project") || "";
@@ -1322,6 +1328,7 @@ export default function EngineeringTasksPage() {
     setPriorityFilter("all");
     setAssigneeFilter("all");
     setSearchTerm("");
+    setMyTasksOnly(false);
     if (preset.filter.status) setStatusFilter(preset.filter.status);
   };
 
@@ -1390,7 +1397,13 @@ export default function EngineeringTasksPage() {
                 if (!myName) {
                   setShowNamePicker(true);
                 } else {
-                  setMyTasksOnly(!myTasksOnly);
+                  const next = !myTasksOnly;
+                  setMyTasksOnly(next);
+                  if (next) {
+                    setAssigneeFilter(myName);
+                  } else {
+                    setAssigneeFilter("all");
+                  }
                 }
               }}
               data-testid="btn-my-tasks"
@@ -1429,6 +1442,7 @@ export default function EngineeringTasksPage() {
                       setMyName(name);
                       setSavedMyName(name);
                       setMyTasksOnly(true);
+                      setAssigneeFilter(name);
                       setShowNamePicker(false);
                     }}
                     data-testid={`pick-name-${name}`}
@@ -1557,7 +1571,16 @@ export default function EngineeringTasksPage() {
           </SelectContent>
         </Select>
         {uniqueAssignees.length > 0 && (
-          <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
+          <Select value={assigneeFilter} onValueChange={(val) => {
+            setAssigneeFilter(val);
+            if (val === "all") {
+              setMyTasksOnly(false);
+            } else if (myName && val.toLowerCase() === myName.toLowerCase()) {
+              setMyTasksOnly(true);
+            } else {
+              setMyTasksOnly(false);
+            }
+          }}>
             <SelectTrigger className="w-[120px] sm:w-[140px] h-8 text-xs" data-testid="filter-task-assignee">
               <User className="h-3 w-3 mr-1" /><SelectValue placeholder="Assignee" />
             </SelectTrigger>
