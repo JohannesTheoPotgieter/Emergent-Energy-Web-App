@@ -459,6 +459,23 @@ export const insertExpenditureOverrideSchema = createInsertSchema(expenditureOve
 export type InsertExpenditureOverride = z.infer<typeof insertExpenditureOverrideSchema>;
 export type ExpenditureOverride = typeof expenditureOverrides.$inferSelect;
 
+export const cosStatusOverrides = pgTable("cos_status_overrides", {
+  id: serial("id").primaryKey(),
+  expenseId: integer("expense_id").notNull(),
+  projectName: text("project_name").notNull(),
+  rowNumber: integer("row_number").notNull(),
+  originalStatus: text("original_status").notNull(),
+  overrideStatus: text("override_status").notNull(),
+  reason: text("reason").notNull(),
+  overriddenBy: text("overridden_by"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertCosStatusOverrideSchema = createInsertSchema(cosStatusOverrides).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertCosStatusOverride = z.infer<typeof insertCosStatusOverrideSchema>;
+export type CosStatusOverride = typeof cosStatusOverrides.$inferSelect;
+
 // Finance Revenue Overrides Table (user edits for monthly revenue)
 export const financeRevenueOverrides = pgTable("finance_revenue_overrides", {
   id: serial("id").primaryKey(),

@@ -1,7 +1,7 @@
 # Emergent Energy Dashboard
 
 ## Overview
-The Emergent Energy Dashboard is a full-stack web application designed to track and manage renewable energy projects. It ingests project data from Excel files to provide comprehensive views of project metrics, financial performance (cashflow, budget, cost of sales), and scheduling. The application aims to offer real-time insights into project progress and financial health for FY26, supporting decision-making and project oversight. Key capabilities include financial tracking, project and quality management, smart Excel import, and integration with subcontractor workflows. The project's ambition is to streamline renewable energy project oversight and financial planning, enhancing operational efficiency and strategic decision-making.
+The Emergent Energy Dashboard is a full-stack web application for tracking and managing renewable energy projects. Its primary purpose is to provide comprehensive, real-time insights into project metrics, financial performance (cashflow, budget, cost of sales), and scheduling by ingesting project data from Excel files. The application aims to streamline project oversight, enhance operational efficiency, and support strategic decision-making for FY26. Key capabilities include financial tracking, project and quality management, a smart Excel import system, and integration with subcontractor workflows.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
@@ -10,7 +10,7 @@ Preferred communication style: Simple, everyday language.
 - **Project Name Derivation**: The project name is ALWAYS derived from the Excel filename — specifically all alphanumeric characters (letters, numbers, spaces) before "_Tracker" or "_tracker" in the filename. E.g., `Coega_Steels_Phase_2_Tracker.xlsx` → project name "Coega Steels Phase 2". Underscores in the filename before "_Tracker" are replaced with spaces.
 - **COS Realised**: PO number + Invoice Number + Black invoice date font. Logic: hasPO + hasInvoice + (invoiceDateConfirmed === true OR invoiceDateFontColor === 'black'). NULL/empty font color does NOT default to confirmed.
 - **COS Deferred**: PO + Invoice present + invoice date exists but font is RED (not yet realised).
-- **COS Flagged**: Invoice date font IS black but missing either PO or Invoice number — needs attention.
+- **COS Flagged**: Invoice date font IS black but missing either PO or Invoice number — needs attention. Users can override Flagged status via a dialog (click the badge), providing a new status and reason. Overrides are stored in `cos_status_overrides` table, keyed by `expense_id` + `project_name:row_number` for re-import resilience. Override reason shown on hover.
 - **COS Planned**: Default state for all other lines.
 - **Cashflow Out of Bank**: Payment date font is BLACK + has invoice number. Logic: paymentDateBlack + hasInvoice.
 - **Cashflow Payment Planned**: Payment date exists but font is RED (planned, not yet out of bank).
@@ -27,75 +27,29 @@ Preferred communication style: Simple, everyday language.
 ## System Architecture
 
 ### Frontend
-- **Framework**: React 18 with TypeScript
-- **State Management**: TanStack React Query for server state, React Context for local state
-- **UI**: shadcn/ui (Radix UI-based) and Tailwind CSS v4 for a mobile-first responsive design.
-- **Data Visualization**: Recharts
-- **Forms**: React Hook Form with Zod validation
-- **Core Features**:
-    -   **Financial Tracking**: Expenditure breakdown, cashflow planning, COS tracking, and scenario-aware cashflow forecasting.
-    -   **Project Management**: Operational task management (ClickUp-style) and project creation with template application.
-    -   **Quality Management**: 4-phase checklist system, QM dashboard, post-mortem panels, and access control.
-    -   **Smart Excel Import**: 5-step wizard for data ingestion, normalization, template profile learning, counterparty master data matching, anomaly detection, and invoice pattern classification.
-    -   **Subcontractor Dashboard**: Aggregated view of installer/supplier accounts with KPIs and detailed spend analysis.
-    -   **SharePoint Proposals Pipeline**: Intake requests from SharePoint, task generation, and workflow management.
-    -   **UX Guidance System**: Reusable overlay system with action bars, inline tips, smart validation, micro-walkthroughs, and phase-aware micro-guidance prompts.
-    -   **Project Awareness Bar**: Sticky bar on project detail showing phase, execution phase, RAG indicators (Schedule/Cost/Quality), next milestone, revenue/COS realised %, margin delta, and context-sensitive primary CTA.
-    -   **Business Alert Engine**: Client-side alert rules (revenue milestones near due, COS exceeds revenue, overdue eng tasks, missing plan data) with collapsible panel and severity badges.
-    -   **5-Tab Navigation**: Project detail regrouped from 12 tabs into 5 super-tabs (Overview, Plan, Money, Quality, History) with sub-tab navigation preserving backward-compatible URL params.
-    -   **Weekly Review Wizard**: 6-step structured project review (Schedule, Budget, Risks, Quality, Actions, Summary) with snapshot metrics storage and past review history.
-    -   **Utilities & Admin**: SafeMoney utilities, and a COO Execution Cockpit ("My Tool") for task management, DoD enforcement, and Read.ai meeting integration.
-    -   **Redesigned Sidebar Navigation**: 6-group outcome-based layout (Cockpit, Projects, Money, Delivery, Governance, Admin) behind `UX_REDESIGN_ENABLED` feature flag, with legacy 5-group layout preserved. Groups map to role-based section permissions.
-    -   **Execution Cockpit Home**: Executive Health Strip (Revenue Realised %, COS Realised %, Behind Schedule, Projects At Risk), Company Priorities as strategic cards (sorted by severity/overdue), and Immediate Attention Panel (escalations, schedule drift, margin drift).
-    -   **Permission Gate System**: `<PermissionGate entity action>` component and `usePermission()` hook for role-aware UI rendering. Edit/approve/override buttons hidden for unpermitted roles.
-    -   **Weekly Reviews Page**: Standalone `/weekly-reviews` page listing all projects with review status, due dates, and navigation to individual project review wizards.
-    -   **Admin Roles & Permissions**: `/admin/roles` page for COO/CEO Admin to manage all role permissions — toggle section access, capabilities (canManageUsers, canManageRoles, canEditData), entity-level permissions grid (view/edit/approve/override per entity), and reassign user roles.
-    -   **TR Register (Program Manager Task Register)**: Full list+board module at `/tr-register` for tracking cross-project action items. Features: list view with filters (RAG, status, department, owner, overdue, linked), board view (Active/Completed kanban with drag-drop status changes and department badges), detail drawer with inline editing, project linking with auto-PM-task creation, auto-link suggestions with scoring algorithm, seed runner with 41 initial records, and completion rule enforcement. Default list view filters to Active status only.
-    -   **Smart Import Re-run Protection**: Procurement (expenditure) re-import warns when manual edits exist, requiring explicit acknowledgment before overwriting. Warning dialog shown in commit step.
-    -   **Smart Import as Sole Project Path**: Smart Import is the only way to create or update projects. It creates `project_info` when missing and updates existing projects. Font color extraction from Excel cells determines COS realised (invoice captured + black invoice date font) and cashflow confirmed (invoice + PO + black payment date font). Derived KPI tables rebuilt on demand. Feature flag `USE_NEW_DASHBOARD_ROLLUPS` enables fast dashboard reads from derived tables.
+-   **Framework**: React 18 with TypeScript
+-   **State Management**: TanStack React Query for server state, React Context for local state
+-   **UI**: shadcn/ui (Radix UI-based) and Tailwind CSS v4 for mobile-first responsive design.
+-   **Data Visualization**: Recharts
+-   **Forms**: React Hook Form with Zod validation
+-   **Core Features**: Financial tracking, project and quality management, a 5-step Smart Excel Import wizard, Subcontractor Dashboard, SharePoint Proposals Pipeline integration, a UX Guidance System, a Project Awareness Bar, a Business Alert Engine, a 5-Tab Navigation system, a Weekly Review Wizard, and Admin utilities including an Execution Cockpit. The application also features redesigned sidebar navigation, a comprehensive Permission Gate System for role-based access, a dedicated Weekly Reviews Page, and Admin Roles & Permissions management. The TR Register module provides tracking for cross-project action items with list and board views. Smart Import is the sole method for project creation/update, with re-run protection and font color extraction for COS/cashflow status.
 
 ### Backend
 -   **Framework**: Express.js with TypeScript
--   **Authentication**: Passport.js with local strategy and PostgreSQL-backed sessions, supporting role-based access control (10 company roles) and rate limiting.
--   **Permission Middleware**: `requirePermission(entity, action)` middleware enforcing per-entity role-based access at the API layer. Entities: projects, financials, quality, engineering, procurement, admin, governance. Actions: view, edit, approve, override.
+-   **Authentication**: Passport.js with local strategy and PostgreSQL-backed sessions, supporting role-based access control and rate limiting.
+-   **Permission Middleware**: `requirePermission(entity, action)` for API-level role-based access.
 -   **File Handling**: Multer for uploads, `exceljs` for parsing.
--   **Data Storage**: PostgreSQL (primary) with Drizzle ORM.
--   **Data Integrity**: Transactional safety and reprocessing for data modifications.
--   **Calculation Engine**: Pure-function modules for financial computations, data quality checks, and various data processing tasks.
--   **Backfill System**: Automated population of computed columns and projectId foreign keys on server startup.
--   **Audit Trails**: Immutable `change_sets` and `field_changes` for all data mutations, plus detailed logs for imports, SharePoint syncs, and system activities.
+-   **Data Storage**: PostgreSQL with Drizzle ORM.
+-   **Data Integrity**: Transactional safety and reprocessing.
+-   **Calculation Engine**: Pure-function modules for computations and data quality.
+-   **Backfill System**: Automated population of computed columns and foreign keys on server startup.
+-   **Audit Trails**: Immutable `change_sets` and `field_changes` for data mutations, plus detailed logs.
 
 ### Database Architecture
--   **Central spine**: `project_info` is the primary project table. All modules link to it via `project_id` FK.
--   **Normalized data**: `normalized_cost_lines`, `normalized_revenue_lines`, `normalized_plan_tasks` are the source of truth for imported financial/plan data.
--   **Legacy tables**: `program_expense`, `program_inflows`, `project_plan` still exist for backward compatibility but Smart Import writes to both normalized and legacy tables.
--   **Derived tables**: `derived_project_kpis`, `derived_portfolio_kpis`, `derived_rag_summary` are rebuilt on demand from normalized data.
--   **FK backfill**: On startup, `backfill-project-ids.ts` populates `projectId` on `operational_tasks`, `qc_checklist`, `deliverables`, `engineering_tasks` by matching `projectName` to `project_info`.
-
-### Key Database Tables (Examples)
--   `users`, `projectInfo`, `normalizedCostLines`, `normalizedRevenueLines`, `normalizedPlanTasks`
--   `programExpense` (legacy), `programInflows` (legacy), `projectPlan` (legacy)
--   `cashflowPlanningOverrides`, `scenarios`, `operationalTasks`, `mytool_tasks`
--   `meeting_summaries`, `meeting_action_items`, `change_sets`, `field_changes`
--   `uploadMetadata`, `sp_settings`, `import_runs`, `qm_templates`, `qm_checklists`
--   `phase_template`, `smart_import_runs`, `template_profiles`, `counterparties`
--   `intake_requests`, `intake_tasks`, `sync_audit_log`
--   `tr_items`, `tr_item_project_links`, `tr_item_suggestion_decisions`
-
-### API Endpoints (Examples)
--   `/api/cos-control/*`: COS KPI aggregation and scenario analysis.
--   `/api/cashflow-forecast/*`: Weekly cashflow grids and scenario overlays.
--   `/api/data-quality/scan`: Data quality rule engine.
--   `/api/operational-tasks/*`: CRUD for operational tasks.
--   `/api/mytool/*`: My Tool settings and task management.
--   `/api/quality/*`: Quality management endpoints.
--   `/api/phase-templates/*`: Phase template management.
--   `/api/smart-import/*`: Smart import lifecycle and data queries.
--   `/api/sp-sync/*`: SharePoint Proposals Pipeline management.
--   `/api/audit/*`: Comprehensive audit logs and change tracking.
--   `/api/weekly-reviews/*`: Weekly review wizard CRUD (create, update steps, complete).
--   `/api/tr-register/*`: TR Register CRUD, project linking, auto-link suggestions, seed runner.
--   `/api/roles/*`: Role permission management (CRUD, user role assignment).
+-   **Central Spine**: `project_info` is the primary table, with all modules linking via `project_id`.
+-   **Normalized Data**: `normalized_cost_lines`, `normalized_revenue_lines`, `normalized_plan_tasks` are the source of truth.
+-   **Derived Tables**: `derived_project_kpis`, `derived_portfolio_kpis`, `derived_rag_summary` are rebuilt on demand.
+-   **FK Backfill**: `backfill-project-ids.ts` populates `projectId` on related tables on startup.
 
 ## External Dependencies
 
@@ -122,5 +76,5 @@ Preferred communication style: Simple, everyday language.
 -   **tailwindcss**: Utility-first CSS framework.
 
 ### Third-Party Integrations
--   **Microsoft Graph API**: For Outlook calendar integration (via Replit Connector).
+-   **Microsoft Graph API**: For Outlook calendar integration.
 -   **Read.ai**: Meeting data ingestion via webhooks.

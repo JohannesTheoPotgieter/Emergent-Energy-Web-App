@@ -6,7 +6,7 @@ import fs from "fs";
 import path from "path";
 import { storage } from "./storage";
 import { parseTrackerFile, applyFontColors } from "./excelParser";
-import { insertBudgetSchema, programExpense, programInflows, projectInfo, projectPlan, normalizedCostLines, normalizedRevenueLines, normalizedPlanTasks, normalizedExecutionPhases, smartImportRuns } from "@shared/schema";
+import { insertBudgetSchema, programExpense, programInflows, projectInfo, projectPlan, normalizedCostLines, normalizedRevenueLines, normalizedPlanTasks, normalizedExecutionPhases, smartImportRuns, cosStatusOverrides } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, or, sql, isNull, asc, desc } from "drizzle-orm";
 import { runSmartImportPreview } from "./lib/import/index";
@@ -5051,12 +5051,16 @@ export async function registerRoutes(
   app.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, res) => {
     try {
       const projectName = req.params.projectName;
-      const [expenses, taskLinks, opTasks, planTasks] = await Promise.all([
+      const [expenses, taskLinks, opTasks, planTasks, cosOverrides] = await Promise.all([
         storage.getProgramExpensesByProject(projectName),
         storage.getExpenseTaskLinks(projectName),
         storage.getOperationalTasksByProject(projectName),
         storage.getProjectPlansByProject(projectName),
+        db.select().from(cosStatusOverrides).where(eq(cosStatusOverrides.projectName, projectName)),
       ]);
+
+      const cosOverrideByExpenseId = new Map(cosOverrides.map(o => [o.expenseId, o]));
+      const cosOverrideByRow = new Map(cosOverrides.map(o => [`${o.projectName}:${o.rowNumber}`, o]));
 
       const linkMap = new Map(taskLinks.map(l => [l.expenseId, l]));
 
@@ -5129,15 +5133,19 @@ export async function registerRoutes(
           plannedMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
         }
 
+        const cosOverride = cosOverrideByExpenseId.get(exp.id) || cosOverrideByRow.get(`${exp.projectName}:${exp.rowNumber}`);
+
         return {
           ...exp,
           linkedTask,
-          cosStatus,
+          cosStatus: cosOverride ? cosOverride.overrideStatus : cosStatus,
+          computedCosStatus: cosStatus,
           paymentStatus,
           effectivePaymentDate,
           plannedMonth,
           hasDateOverride: !!link?.dateOverride,
           dateOverrideReason: link?.dateOverrideReason || null,
+          cosOverride: cosOverride ? { reason: cosOverride.reason, overriddenBy: cosOverride.overriddenBy, originalStatus: cosOverride.originalStatus, overrideStatus: cosOverride.overrideStatus } : null,
         };
       });
 
@@ -5147,6 +5155,60 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Expenditure breakdown error:", error);
       res.status(500).json({ error: "Failed to fetch expenditure breakdown" });
+    }
+  });
+
+  // ==================== COS STATUS OVERRIDE API ====================
+
+  app.post("/api/cos-status-override", requireAuth, async (req, res) => {
+    try {
+      const { expenseId, projectName, rowNumber, originalStatus, overrideStatus, reason } = req.body;
+      if (!expenseId || !projectName || !overrideStatus || !reason) {
+        return res.status(400).json({ error: "Missing required fields: expenseId, projectName, overrideStatus, reason" });
+      }
+
+      const userName = (req.user as any)?.username || (req.user as any)?.fullName || 'Unknown';
+
+      const existing = await db.select().from(cosStatusOverrides)
+        .where(eq(cosStatusOverrides.expenseId, expenseId));
+
+      if (existing.length > 0) {
+        await db.update(cosStatusOverrides)
+          .set({
+            overrideStatus,
+            reason,
+            originalStatus: originalStatus || existing[0].originalStatus,
+            overriddenBy: userName,
+            updatedAt: new Date(),
+          })
+          .where(eq(cosStatusOverrides.expenseId, expenseId));
+      } else {
+        await db.insert(cosStatusOverrides).values({
+          expenseId,
+          projectName,
+          rowNumber: rowNumber || 0,
+          originalStatus: originalStatus || 'Flagged',
+          overrideStatus,
+          reason,
+          overriddenBy: userName,
+        });
+      }
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("COS override error:", error);
+      res.status(500).json({ error: "Failed to save COS status override" });
+    }
+  });
+
+  app.delete("/api/cos-status-override/:expenseId", requireAuth, async (req, res) => {
+    try {
+      const expenseId = parseInt(req.params.expenseId);
+      await db.delete(cosStatusOverrides).where(eq(cosStatusOverrides.expenseId, expenseId));
+      res.json({ success: true });
+    } catch (error) {
+      console.error("COS override delete error:", error);
+      res.status(500).json({ error: "Failed to remove COS status override" });
     }
   });
 
