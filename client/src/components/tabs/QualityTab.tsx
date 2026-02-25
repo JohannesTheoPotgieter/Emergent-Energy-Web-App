@@ -125,7 +125,10 @@ export function QualityTab({ projectName }: QualityTabProps) {
         method: "POST",
         body: JSON.stringify(updates),
       });
-      if (!res.ok) throw new Error("Failed to update item");
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.message || "Failed to update item");
+      }
       return res.json();
     },
     onSuccess: () => {
@@ -250,6 +253,13 @@ export function QualityTab({ projectName }: QualityTabProps) {
     setExpandedPhases(prev => ({ ...prev, [phaseId]: !prev[phaseId] }));
   };
 
+  const getItemQmStatus = (instance: any): string => {
+    if (instance.qmStatus && instance.qmStatus !== "not_started") return instance.qmStatus;
+    if (instance.isApplicable === false) return "na";
+    if (instance.approved) return "pass";
+    return "not_started";
+  };
+
   const getPhaseProgress = (phaseId: number) => {
     const phaseGroups = groups.filter((g: any) => g.templatePhaseId === phaseId);
     const phaseGroupIds = phaseGroups.map((g: any) => g.id);
@@ -259,13 +269,17 @@ export function QualityTab({ projectName }: QualityTabProps) {
     const phaseInstances = itemInstances.filter((ii: any) => phaseTemplateItemIds.includes(ii.templateItemId));
 
     const applicable = phaseInstances.filter((i: any) => i.isApplicable !== false);
-    const completed = applicable.filter((i: any) => i.approved);
+    const passed = applicable.filter((i: any) => getItemQmStatus(i) === "pass");
+    const failed = applicable.filter((i: any) => getItemQmStatus(i) === "fail");
+    const inReview = applicable.filter((i: any) => getItemQmStatus(i) === "review");
 
     return {
       total: phaseInstances.length,
       applicable: applicable.length,
-      completed: completed.length,
-      percent: applicable.length > 0 ? Math.round((completed.length / applicable.length) * 100) : 0,
+      completed: passed.length,
+      failed: failed.length,
+      inReview: inReview.length,
+      percent: applicable.length > 0 ? Math.round((passed.length / applicable.length) * 100) : 0,
     };
   };
 
@@ -350,9 +364,14 @@ export function QualityTab({ projectName }: QualityTabProps) {
                 <p className={`text-xs font-medium ${colors.text}`}>{phase.phaseName}</p>
                 <div className="flex items-end justify-between">
                   <span className="text-2xl font-bold">{progress.percent}%</span>
-                  <span className="text-xs text-muted-foreground">{progress.completed}/{progress.applicable}</span>
+                  <div className="flex flex-col items-end gap-0.5">
+                    <span className="text-xs text-muted-foreground">{progress.completed} passed</span>
+                    {progress.failed > 0 && <span className="text-[10px] text-red-500">{progress.failed} failed</span>}
+                    {progress.inReview > 0 && <span className="text-[10px] text-amber-500">{progress.inReview} review</span>}
+                  </div>
                 </div>
                 <Progress value={progress.percent} className="h-1.5" />
+                <p className="text-[10px] text-muted-foreground text-center">QM Score</p>
               </CardContent>
             </Card>
           );
@@ -387,6 +406,9 @@ export function QualityTab({ projectName }: QualityTabProps) {
                       </Badge>
                     </div>
                     <div className="flex items-center gap-3">
+                      {progress.failed > 0 && (
+                        <span className="text-xs text-red-500">{progress.failed} failed</span>
+                      )}
                       <span className="text-sm font-medium">{progress.percent}%</span>
                       <div className="w-24">
                         <Progress value={progress.percent} className="h-2" />
@@ -549,37 +571,48 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                   </div>
 
                                   <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-                                    <Select
-                                      disabled={!canEdit}
-                                      value={instance.isApplicable === false ? "na" : (instance.approved ? "pass" : "not_started")}
-                                      onValueChange={(val) => {
-                                        if (val === "na") {
-                                          handleItemStatusChange(instance.id, "isApplicable", false);
-                                          if (instance.approved) {
-                                            approveItemMutation.mutate({ itemInstanceId: instance.id, approved: false });
-                                          }
-                                        } else if (val === "pass") {
-                                          if (!instance.isApplicable) {
-                                            updateItemMutation.mutate({ itemInstanceId: instance.id, updates: { isApplicable: true } });
-                                          }
-                                          approveItemMutation.mutate({ itemInstanceId: instance.id, approved: true });
-                                        } else {
-                                          handleItemStatusChange(instance.id, "isApplicable", true);
-                                          if (instance.approved) {
-                                            approveItemMutation.mutate({ itemInstanceId: instance.id, approved: false });
-                                          }
-                                        }
-                                      }}
-                                    >
-                                      <SelectTrigger className="w-[120px] h-8 text-xs" data-testid={`select-status-${instance.id}`}>
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="not_started">Not Started</SelectItem>
-                                        <SelectItem value="pass">Pass</SelectItem>
-                                        <SelectItem value="na">N/A</SelectItem>
-                                      </SelectContent>
-                                    </Select>
+                                    {(() => {
+                                      const currentStatus = getItemQmStatus(instance);
+                                      const needsQmToPass = currentStatus === "review" || currentStatus === "fail";
+                                      const canSetPass = isQmOrAdmin || !needsQmToPass;
+                                      return (
+                                        <Select
+                                          disabled={!canEdit}
+                                          value={currentStatus}
+                                          onValueChange={(val) => {
+                                            if (val === "pass" && !canSetPass) return;
+                                            updateItemMutation.mutate({
+                                              itemInstanceId: instance.id,
+                                              updates: { qmStatus: val },
+                                            });
+                                          }}
+                                        >
+                                          <SelectTrigger
+                                            className={`w-[120px] h-8 text-xs ${
+                                              currentStatus === "fail" ? "border-red-400 text-red-600" :
+                                              currentStatus === "review" ? "border-amber-400 text-amber-600" :
+                                              currentStatus === "pass" ? "border-emerald-400 text-emerald-600" :
+                                              ""
+                                            }`}
+                                            data-testid={`select-status-${instance.id}`}
+                                          >
+                                            <SelectValue />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="not_started">Not Started</SelectItem>
+                                            {canSetPass && <SelectItem value="pass">Pass</SelectItem>}
+                                            <SelectItem value="review">Review</SelectItem>
+                                            <SelectItem value="fail">Failed</SelectItem>
+                                            <SelectItem value="na">N/A</SelectItem>
+                                            {!canSetPass && needsQmToPass && (
+                                              <div className="px-2 py-1.5 text-[10px] text-muted-foreground border-t">
+                                                QM Manager required to set Pass
+                                              </div>
+                                            )}
+                                          </SelectContent>
+                                        </Select>
+                                      );
+                                    })()}
 
                                     {itemEvidence.length > 0 && (
                                       <Badge variant="outline" className="text-xs gap-1">

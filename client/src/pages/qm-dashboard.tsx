@@ -48,6 +48,8 @@ interface ChecklistPhase {
   phaseName: string;
   total: number;
   completed: number;
+  failed?: number;
+  inReview?: number;
 }
 
 interface Checklist {
@@ -188,13 +190,13 @@ export default function QmDashboardPage() {
   const totalProjects = checklists.length;
   const completedChecklists = checklists.filter(c => c.status === "completed").length;
   const activeWarnings = warnings.length;
-  const avgCompletion = checklists.length > 0
+  const avgQmScore = checklists.length > 0
     ? Math.round(
         checklists.reduce((sum, c) => {
           if (!c.phases || c.phases.length === 0) return sum;
           const total = c.phases.reduce((t, p) => t + p.total, 0);
-          const completed = c.phases.reduce((t, p) => t + p.completed, 0);
-          return sum + (total > 0 ? (completed / total) * 100 : 0);
+          const passed = c.phases.reduce((t, p) => t + p.completed, 0);
+          return sum + (total > 0 ? (passed / total) * 100 : 0);
         }, 0) / checklists.length
       )
     : 0;
@@ -257,7 +259,7 @@ export default function QmDashboardPage() {
         </CardContent></Card>
         <Card><CardContent className="p-4 flex items-center gap-3">
           <div className="p-2 rounded-lg bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-400"><BarChart3 className="h-5 w-5" /></div>
-          <div><p className="text-2xl font-bold" data-testid="stat-avg-completion">{avgCompletion}%</p><p className="text-xs text-muted-foreground">Avg Completion</p></div>
+          <div><p className="text-2xl font-bold" data-testid="stat-avg-completion">{avgQmScore}%</p><p className="text-xs text-muted-foreground">Avg QM Score</p></div>
         </CardContent></Card>
       </div>
 
@@ -325,11 +327,11 @@ export default function QmDashboardPage() {
                           {checklist.phases && checklist.phases.length > 0 ? (
                             <div className="flex items-center gap-2 max-w-xs">
                               {checklist.phases.map((phase) => (
-                                <div key={phase.phaseId} className="flex-1 min-w-0" title={`${phase.phaseName}: ${phase.completed}/${phase.total}`}>
+                                <div key={phase.phaseId} className="flex-1 min-w-0" title={`${phase.phaseName}: ${phase.completed} passed${(phase.failed ?? 0) > 0 ? `, ${phase.failed} failed` : ''} / ${phase.total}`}>
                                   <div className="text-[10px] text-muted-foreground truncate mb-0.5">{phase.phaseName}</div>
                                   <Progress
                                     value={phase.total > 0 ? (phase.completed / phase.total) * 100 : 0}
-                                    className="h-1.5"
+                                    className={`h-1.5 ${(phase.failed ?? 0) > 0 ? '[&>div]:bg-amber-500' : ''}`}
                                   />
                                 </div>
                               ))}
