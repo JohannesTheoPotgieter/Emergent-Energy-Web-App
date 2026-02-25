@@ -263,7 +263,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
       const response = await authFetch("/api/expenditure/overrides", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ overrides }),
+        body: JSON.stringify({ overrides, overrideCategory: "DATA_CORRECTION", overrideComment: "Inline edit from Expenditure tab" }),
       });
       if (!response.ok) throw new Error("Failed to save overrides");
       return response.json();
