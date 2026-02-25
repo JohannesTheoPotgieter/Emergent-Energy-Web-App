@@ -37,6 +37,29 @@ const COMPLIMENTS = [
   "You're building something great — one step at a time.",
 ];
 
+const DAD_JOKES = [
+  "Why did the solar panel break up with the cloud? It needed more space.",
+  "I told my wife she was drawing her eyebrows too high. She looked surprised.",
+  "What do you call a fake noodle? An impasta.",
+  "Why don't skeletons fight each other? They don't have the guts.",
+  "I'm reading a book about anti-gravity. It's impossible to put down.",
+  "What did the ocean say to the beach? Nothing, it just waved.",
+  "Why did the scarecrow win an award? He was outstanding in his field.",
+  "I used to hate facial hair, but then it grew on me.",
+  "What do you call a bear with no teeth? A gummy bear.",
+  "Why don't eggs tell jokes? They'd crack each other up.",
+  "I only know 25 letters of the alphabet. I don't know y.",
+  "What do you call a dog that does magic tricks? A Labracadabrador.",
+  "Why did the bicycle fall over? Because it was two-tired.",
+  "What did the electrician say to his apprentice? You're grounded!",
+  "I'm on a seafood diet. I see food and I eat it.",
+  "Why do engineers prefer dark mode? Because light attracts bugs.",
+  "What's the best thing about Switzerland? I don't know, but the flag is a big plus.",
+  "Why did the project manager bring a ladder? To reach the next milestone.",
+  "I told a construction joke. I'm still working on it.",
+  "What did the roof say to the solar panel? You're really on top of things.",
+];
+
 interface CompanyPriority {
   id: number;
   title: string;
@@ -224,7 +247,9 @@ export default function Home() {
   const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
   const canEdit = isAdmin || (companyRole && ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO"].includes(companyRole));
 
-  const compliment = useMemo(() => COMPLIMENTS[Math.floor(Math.random() * COMPLIMENTS.length)], []);
+  const isFriday = new Date().getDay() === 5;
+  const greetingPool = isFriday ? DAD_JOKES : COMPLIMENTS;
+  const compliment = useMemo(() => greetingPool[Math.floor(Math.random() * greetingPool.length)], []);
 
   const firstName = user?.name ? user.name.split(" ")[0] : "there";
 
@@ -238,7 +263,7 @@ export default function Home() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight" data-testid="text-welcome">Welcome, {firstName}</h1>
           <p className="text-sm text-muted-foreground italic" data-testid="text-compliment">
-            {compliment}
+            {isFriday ? `\uD83D\uDE04 ${compliment}` : compliment}
           </p>
           <p className="text-xs text-muted-foreground mt-1">
             {new Date().toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" })}
