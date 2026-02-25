@@ -119,6 +119,7 @@ function renderMarkdown(content: string): string {
 
 function GraphTab({ nodes, edges, onSelectNode }: { nodes: EeNode[]; edges: EeEdge[]; onSelectNode: (slug: string) => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
@@ -126,7 +127,22 @@ function GraphTab({ nodes, edges, onSelectNode }: { nodes: EeNode[]; edges: EeEd
   const [dragNode, setDragNode] = useState<string | null>(null);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
+  const [canvasSize, setCanvasSize] = useState({ w: 900, h: 600 });
   const animRef = useRef<number>(0);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        const w = Math.round(entry.contentRect.width) || 900;
+        const h = 600;
+        setCanvasSize({ w, h });
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const filtered = useMemo(() => {
     let f = nodes;
@@ -144,8 +160,8 @@ function GraphTab({ nodes, edges, onSelectNode }: { nodes: EeNode[]; edges: EeEd
   useEffect(() => {
     if (filtered.length === 0) return;
     const pos = new Map<string, { x: number; y: number }>();
-    const width = 900;
-    const height = 600;
+    const width = canvasSize.w;
+    const height = canvasSize.h;
     const cats = [...new Set(filtered.map(n => n.category))];
 
     filtered.forEach((n, i) => {
@@ -154,8 +170,8 @@ function GraphTab({ nodes, edges, onSelectNode }: { nodes: EeNode[]; edges: EeEd
       const idxInCat = nodesInCat.indexOf(n);
       const angle = (2 * Math.PI * idxInCat) / Math.max(nodesInCat.length, 1);
       const catAngle = (2 * Math.PI * catIdx) / Math.max(cats.length, 1);
-      const catRadius = 180;
-      const nodeRadius = 60 + nodesInCat.length * 8;
+      const catRadius = Math.min(width, height) * 0.25;
+      const nodeRadius = 40 + nodesInCat.length * 10;
       const cx = width / 2 + Math.cos(catAngle) * catRadius;
       const cy = height / 2 + Math.sin(catAngle) * catRadius;
       pos.set(n.id, {
@@ -205,17 +221,19 @@ function GraphTab({ nodes, edges, onSelectNode }: { nodes: EeNode[]; edges: EeEd
         const f = forces.get(n.id)!;
         p.x += Math.max(-5, Math.min(5, f.fx));
         p.y += Math.max(-5, Math.min(5, f.fy));
-        p.x = Math.max(30, Math.min(width - 30, p.x));
-        p.y = Math.max(30, Math.min(height - 30, p.y));
+        p.x = Math.max(50, Math.min(width - 50, p.x));
+        p.y = Math.max(50, Math.min(height - 50, p.y));
       });
     }
 
     setPositions(pos);
-  }, [filtered, filteredEdges]);
+  }, [filtered, filteredEdges, canvasSize]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || positions.size === 0) return;
+    canvas.width = canvasSize.w;
+    canvas.height = canvasSize.h;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
@@ -269,7 +287,7 @@ function GraphTab({ nodes, edges, onSelectNode }: { nodes: EeNode[]; edges: EeEd
     draw();
     animRef.current = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(animRef.current);
-  }, [positions, filtered, filteredEdges, hoveredNode, offset, zoom]);
+  }, [positions, filtered, filteredEdges, hoveredNode, offset, zoom, canvasSize]);
 
   const handleCanvasClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
@@ -347,13 +365,13 @@ function GraphTab({ nodes, edges, onSelectNode }: { nodes: EeNode[]; edges: EeEd
         </div>
       </div>
       <Card>
-        <CardContent className="p-0">
+        <CardContent className="p-0" ref={containerRef}>
           <canvas
             ref={canvasRef}
-            width={900}
-            height={600}
+            width={canvasSize.w}
+            height={canvasSize.h}
             className="w-full border rounded-lg"
-            style={{ height: 600 }}
+            style={{ height: canvasSize.h }}
             onClick={handleCanvasClick}
             onMouseMove={handleCanvasMove}
             onWheel={handleWheel}
