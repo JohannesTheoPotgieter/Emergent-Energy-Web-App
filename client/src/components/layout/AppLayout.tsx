@@ -144,7 +144,7 @@ function getRedesignedNavGroups(): NavGroup[] {
       ],
     },
     {
-      heading: "PROJECTS",
+      heading: "PROJECT MANAGEMENT",
       section: "PROJECTS",
       items: [
         { label: "Execution Board", icon: Gauge, path: "/dashboard" },
@@ -154,7 +154,7 @@ function getRedesignedNavGroups(): NavGroup[] {
       ],
     },
     {
-      heading: "MONEY",
+      heading: "PROJECT FINANCE",
       section: "MONEY",
       items: [
         { label: "Cashflow", icon: Wallet, path: "/cashflow" },
@@ -163,7 +163,7 @@ function getRedesignedNavGroups(): NavGroup[] {
       ],
     },
     {
-      heading: "DELIVERY",
+      heading: "ENGINEERING",
       section: "DELIVERY",
       items: [
         { label: "Engineering", icon: HardHat, path: "/engineering" },
