@@ -2,11 +2,8 @@ import { db } from "./db";
 import { sql } from "drizzle-orm";
 import * as fs from "fs";
 import * as path from "path";
-import { fileURLToPath } from "url";
 
-const __filename_esm = fileURLToPath(import.meta.url);
-const __dirname_esm = path.dirname(__filename_esm);
-const SEED_DIR = path.join(__dirname_esm, "data-seed");
+const SEED_DIR = path.join(process.cwd(), "server", "data-seed");
 const DONE_FLAG = path.join(SEED_DIR, ".migrated");
 
 const TABLE_ORDER = [
