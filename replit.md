@@ -69,7 +69,7 @@ Preferred communication style: Simple, everyday language.
 ### Emergent Energy Info & Walkthroughs
 -   **Knowledge Base**: `client/src/pages/ee-info.tsx` — wiki-style knowledge base with Graph, Detail, Flow, and Walkthroughs tabs. Backed by `ee_info_nodes` / `ee_info_edges` / `ee_info_assets` tables.
 -   **Content Seed**: `seed/ee-info/Emergent Energy.zip` imported on boot via `server/ee-info-routes.ts`. Additional content updates seeded by `server/seed-ee-info-updates.ts` (idempotent).
--   **Walkthroughs**: 9 interactive step-by-step guides defined in `client/src/data/walkthroughs.ts`. Categories: project-management, finance, engineering, governance, operations. Progress tracked in localStorage. Covers: Smart Import, COS Tracking, Cashflow, Weekly Review, Engineering Stages, Lifecycle Board, Quality, Engineering Tasks, Subcontractor Management.
+-   **Walkthroughs**: 9 interactive step-by-step guides defined in `client/src/data/walkthroughs.ts`. Categories: project-management, finance, engineering, governance, operations. Progress tracked in localStorage. Covers: Smart Import, COS Tracking, Cashflow, Weekly Review, Lifecycle Board & Engineering Stages (merged), Quality, Engineering Tasks, Subcontractor Management.
 -   **Content Nodes**: 90 nodes covering roles, processes, tools, templates. Key additions: COS Tracking, Cashflow Management, Revenue Recognition, Smart Import Process, Weekly Review Process, Engineering Stage Gating, Permission & Access Control, Emergent Dashboard.
 
 ### Deploy Cache & Session Clearing

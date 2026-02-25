@@ -194,63 +194,11 @@ export const WALKTHROUGHS: Walkthrough[] = [
     ],
   },
   {
-    id: "engineering-stages",
-    title: "Engineering Stage Checklist",
-    description: "Learn how to use the 5-stage engineering checklist system — from generating stages through completing tasks, uploading deliverables, and getting approvals.",
+    id: "lifecycle-and-engineering",
+    title: "Lifecycle Board & Engineering Stages",
+    description: "Learn how to move projects through lifecycle phases on the Company Board, and how the 5-stage engineering checklist system works — from auto-generated stages through tasks, deliverables, approvals, and stage completion.",
     category: "engineering",
-    estimatedMinutes: 12,
-    steps: [
-      {
-        stepNumber: 1,
-        title: "Open a Project's Engineering Tab",
-        description: "Navigate to any project detail page and click the 'Engineering' tab. Then select the 'Stages' sub-tab to see the engineering checklist.",
-        targetPage: "/projects",
-      },
-      {
-        stepNumber: 2,
-        title: "Generate the Engineering Checklist",
-        description: "If no stages exist yet, click 'Generate Engineering Checklist'. This creates all 5 engineering stages for the project: First Assessment, Cost Proposal, IFC Planning, Construction Support, and Handover Pack.",
-        tip: "Stages can also be auto-generated when a project moves on the Company Lifecycle Board. For example, moving to 'Construction' auto-creates IFC Planning and Construction Support.",
-      },
-      {
-        stepNumber: 3,
-        title: "Select a Stage",
-        description: "The left panel shows all 5 stages with their status and progress bars (tasks completed out of total). Click a stage to see its full details in the right panel.",
-      },
-      {
-        stepNumber: 4,
-        title: "Review Stage Details",
-        description: "Each stage shows its purpose, required inputs, and RACI roles (Responsible, Accountable, Consulted, Informed). This tells you who needs to do what.",
-      },
-      {
-        stepNumber: 5,
-        title: "Work Through the Task Checklist",
-        description: "Check off tasks as you complete them. Each task can have notes and an assigned owner. Required tasks must be completed before the stage can be closed.",
-      },
-      {
-        stepNumber: 6,
-        title: "Upload Required Deliverables",
-        description: "Each stage has required deliverables (documents, reports, plans). Upload files using the deliverable section. Files are stored with version tags so you can track revisions.",
-      },
-      {
-        stepNumber: 7,
-        title: "Get Approvals (Handover Pack)",
-        description: "The Handover Pack stage requires two formal approvals before completion: QA Review from Dean (Quality Manager) and Technical Signoff from Tanaka (Engineer). Both must approve before the stage can be marked complete.",
-        tip: "The COO can override stage completion if needed, but must provide a mandatory reason that gets logged to the audit trail.",
-      },
-      {
-        stepNumber: 8,
-        title: "Complete the Stage",
-        description: "Once all required tasks are done, deliverables uploaded, and approvals obtained (where needed), click 'Complete Stage'. The system checks all gate rules — if anything is missing, it tells you exactly what's needed.",
-      },
-    ],
-  },
-  {
-    id: "lifecycle-board",
-    title: "Moving Projects on the Lifecycle Board",
-    description: "Learn how to use the Company Lifecycle Board to track project phases and trigger engineering stages automatically.",
-    category: "project-management",
-    estimatedMinutes: 5,
+    estimatedMinutes: 15,
     steps: [
       {
         stepNumber: 1,
@@ -265,8 +213,8 @@ export const WALKTHROUGHS: Walkthrough[] = [
       },
       {
         stepNumber: 3,
-        title: "Move a Project",
-        description: "Drag a project card from one phase column to another, or use the phase change controls. When you move a project, the system records the change.",
+        title: "Move a Project to a New Phase",
+        description: "Drag a project card from one phase column to another, or use the phase change controls. When you move a project, the system records the change and may auto-generate engineering stages.",
         tip: "Some phases have execution gates — the project must meet specific criteria (e.g., signed status, required documents) before it can be promoted.",
       },
       {
@@ -277,8 +225,35 @@ export const WALKTHROUGHS: Walkthrough[] = [
       },
       {
         stepNumber: 5,
-        title: "Check the Engineering Stages",
-        description: "After moving a project, open its detail page and go to Engineering > Stages to see the newly generated checklist. The stages will be in 'Not Started' status, ready for your team to begin working through.",
+        title: "Open the Project's Engineering Stages",
+        description: "After moving a project, open its detail page and click the 'Engineering' tab, then the 'Stages' sub-tab. You'll see the newly generated stages in 'Not Started' status, ready for your team to work through.",
+        targetPage: "/projects",
+      },
+      {
+        stepNumber: 6,
+        title: "Select a Stage and Review Details",
+        description: "The left panel shows all stages with their status and progress bars (tasks completed out of total). Click a stage to see its purpose, required inputs, and RACI roles (Responsible, Accountable, Consulted, Informed) — this tells you who needs to do what.",
+      },
+      {
+        stepNumber: 7,
+        title: "Work Through the Task Checklist",
+        description: "Check off tasks as you complete them. Each task can have notes and an assigned owner. Required tasks must be completed before the stage can be closed.",
+      },
+      {
+        stepNumber: 8,
+        title: "Upload Required Deliverables",
+        description: "Each stage has required deliverables (documents, reports, plans). Upload files using the deliverable section. Files are stored with version tags so you can track revisions.",
+      },
+      {
+        stepNumber: 9,
+        title: "Get Approvals (Handover Pack)",
+        description: "The Handover Pack stage requires two formal approvals before completion: QA Review from Dean (Quality Manager) and Technical Signoff from Tanaka (Engineer). Both must approve before the stage can be marked complete.",
+        tip: "The COO can override stage completion if needed, but must provide a mandatory reason that gets logged to the audit trail.",
+      },
+      {
+        stepNumber: 10,
+        title: "Complete the Stage",
+        description: "Once all required tasks are done, deliverables uploaded, and approvals obtained (where needed), click 'Complete Stage'. The system checks all gate rules — if anything is missing, it tells you exactly what's needed. Then move to the next stage or advance the project on the Lifecycle Board.",
       },
     ],
   },
