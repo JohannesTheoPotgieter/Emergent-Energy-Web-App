@@ -722,6 +722,7 @@ function UserManagementSection({ toast }: { toast: ReturnType<typeof useToast>["
   const [resetPasswordUser, setResetPasswordUser] = useState<UserRecord | null>(null);
   const [resetPassword, setResetPassword] = useState("");
   const [resettingPassword, setResettingPassword] = useState(false);
+  const [confirmDeleteUser, setConfirmDeleteUser] = useState<UserRecord | null>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -931,7 +932,7 @@ function UserManagementSection({ toast }: { toast: ReturnType<typeof useToast>["
                     size="sm"
                     variant="ghost"
                     className="h-8 w-8 p-0 shrink-0"
-                    onClick={() => handleDeleteUser(user.id)}
+                    onClick={() => setConfirmDeleteUser(user)}
                     disabled={deletingUserId === user.id}
                     title="Delete user"
                     data-testid={`btn-delete-user-${user.id}`}
@@ -1060,6 +1061,38 @@ function UserManagementSection({ toast }: { toast: ReturnType<typeof useToast>["
           >
             {resettingPassword ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <KeyRound className="h-4 w-4 mr-1" />}
             Update Password
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <Dialog open={!!confirmDeleteUser} onOpenChange={(open) => { if (!open) setConfirmDeleteUser(null); }}>
+      <DialogContent data-testid="dialog-confirm-delete-user">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-red-600">
+            <AlertTriangle className="h-5 w-5" />
+            Remove User
+          </DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-muted-foreground">
+          Are you sure you want to remove <strong>{confirmDeleteUser?.name}</strong> ({confirmDeleteUser?.email})?
+          This will permanently delete their account and they will no longer be able to log in.
+        </p>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => setConfirmDeleteUser(null)} data-testid="btn-cancel-delete-user">Cancel</Button>
+          <Button
+            variant="destructive"
+            onClick={() => {
+              if (confirmDeleteUser) {
+                handleDeleteUser(confirmDeleteUser.id);
+                setConfirmDeleteUser(null);
+              }
+            }}
+            disabled={deletingUserId !== null}
+            data-testid="btn-confirm-delete-user"
+          >
+            {deletingUserId !== null ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Trash2 className="h-4 w-4 mr-1" />}
+            Remove User
           </Button>
         </DialogFooter>
       </DialogContent>

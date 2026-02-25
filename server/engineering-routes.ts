@@ -149,6 +149,20 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
+  app.get("/api/eng/team-members", requireAuth, async (_req, res) => {
+    try {
+      const allUsers = await db.select({
+        id: users.id,
+        name: users.name,
+        email: users.email,
+        role: users.role,
+      }).from(users);
+      res.json(allUsers);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // ========== ENHANCED TASK OPERATIONS ==========
 
   app.get("/api/eng/tasks", requireAuth, async (req, res) => {

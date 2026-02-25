@@ -48,6 +48,11 @@ import {
   MoreVertical,
   ChevronsUpDown,
   Check,
+  ThumbsUp,
+  ThumbsDown,
+  RotateCcw,
+  ShieldCheck,
+  UserCheck,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { PROJECT_PHASE_LABELS, type ProjectPhase } from "@shared/schema";
@@ -416,6 +421,13 @@ function PostUpdateForm({ taskId, currentStatus, onDone }: { taskId: number; cur
   );
 }
 
+interface TeamMember {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+}
+
 function TaskDetailDrawer({
   task, onClose, onUpdate
 }: {
@@ -428,6 +440,8 @@ function TaskDetailDrawer({
   const [activeTab, setActiveTab] = useState<"updates" | "activity" | "subtasks">("updates");
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<Record<string, string>>({});
+  const [approvalComment, setApprovalComment] = useState("");
+  const [showApprovalActions, setShowApprovalActions] = useState(false);
 
   const { data: comments = [] } = useQuery<Comment[]>({
     queryKey: ["task-comments", task.id],
@@ -442,6 +456,11 @@ function TaskDetailDrawer({
   const { data: subtasks = [] } = useQuery<Task[]>({
     queryKey: ["task-subtasks", task.id],
     queryFn: () => engFetch(`/api/eng/tasks/${task.id}/subtasks`),
+  });
+
+  const { data: teamMembers = [] } = useQuery<TeamMember[]>({
+    queryKey: ["team-members"],
+    queryFn: () => engFetch("/api/eng/team-members"),
   });
 
   const updateMutation = useMutation({
@@ -582,6 +601,134 @@ function TaskDetailDrawer({
                 </div>
               </div>
             )}
+
+            <div className="space-y-3 p-3 bg-muted/20 rounded-lg border">
+              <div className="flex items-center justify-between">
+                <Label className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                  <ShieldCheck className="h-3.5 w-3.5" /> Approval
+                </Label>
+                {task.approverUserId && (
+                  <Badge variant="outline" className="text-[10px]">
+                    <UserCheck className="h-3 w-3 mr-1" />
+                    {teamMembers.find(m => m.id === task.approverUserId)?.name || `User #${task.approverUserId}`}
+                  </Badge>
+                )}
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-[10px] text-muted-foreground">Approver</Label>
+                <Select
+                  value={task.approverUserId ? String(task.approverUserId) : "none"}
+                  onValueChange={(v) => {
+                    const val = v === "none" ? null : parseInt(v);
+                    updateMutation.mutate({ approverUserId: val });
+                  }}
+                >
+                  <SelectTrigger className="h-8 text-xs" data-testid="select-approver">
+                    <SelectValue placeholder="Select approver" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No approver</SelectItem>
+                    {teamMembers.map(m => (
+                      <SelectItem key={m.id} value={String(m.id)}>
+                        {m.name} ({m.role.replace(/_/g, " ")})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {(task.status === "NEEDS APPROVAL" || task.status === "OPERATIONAL APPROVAL") && (
+                <div className="space-y-2 pt-1">
+                  <Textarea
+                    value={approvalComment}
+                    onChange={(e) => setApprovalComment(e.target.value)}
+                    placeholder="Add approval comment (optional)..."
+                    className="min-h-[60px] text-xs"
+                    data-testid="textarea-approval-comment"
+                  />
+                  <div className="flex gap-2 flex-wrap">
+                    <Button
+                      size="sm"
+                      className="h-7 text-xs bg-green-600 hover:bg-green-700 gap-1"
+                      onClick={() => {
+                        if (approvalComment.trim()) {
+                          addCommentMutation.mutate(`[Approved] ${approvalComment.trim()}`);
+                        }
+                        updateMutation.mutate({ status: "QC APPROVED" });
+                        setApprovalComment("");
+                        toast({ title: "Task approved", description: "Status set to QC Approved" });
+                      }}
+                      data-testid="btn-approve-task"
+                    >
+                      <ThumbsUp className="h-3.5 w-3.5" /> Approve
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs text-purple-600 border-purple-200 hover:bg-purple-50 gap-1"
+                      onClick={() => {
+                        if (!approvalComment.trim()) {
+                          toast({ title: "Feedback required", description: "Please add a comment explaining what needs to change", variant: "destructive" });
+                          return;
+                        }
+                        addCommentMutation.mutate(`[Feedback] ${approvalComment.trim()}`);
+                        updateMutation.mutate({ status: "PROVIDE FEEDBACK" });
+                        setApprovalComment("");
+                        toast({ title: "Feedback sent", description: "Task returned to assignee for changes" });
+                      }}
+                      data-testid="btn-request-changes"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" /> Request Changes
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50 gap-1"
+                      onClick={() => {
+                        if (!approvalComment.trim()) {
+                          toast({ title: "Reason required", description: "Please add a comment explaining the rejection", variant: "destructive" });
+                          return;
+                        }
+                        addCommentMutation.mutate(`[Rejected] ${approvalComment.trim()}`);
+                        updateMutation.mutate({ status: "TO DO" });
+                        setApprovalComment("");
+                        toast({ title: "Task rejected", description: "Task sent back to the queue" });
+                      }}
+                      data-testid="btn-reject-task"
+                    >
+                      <ThumbsDown className="h-3.5 w-3.5" /> Reject
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {task.status === "PROVIDE FEEDBACK" && (
+                <div className="p-2 bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800 rounded text-xs text-purple-700 dark:text-purple-300 flex items-center gap-2">
+                  <RotateCcw className="h-3.5 w-3.5 shrink-0" />
+                  Changes requested — address feedback and resubmit for approval
+                </div>
+              )}
+
+              {task.status === "QC APPROVED" && (
+                <div className="p-2 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 rounded text-xs text-emerald-700 dark:text-emerald-300 flex items-center gap-2">
+                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                  QC Approved — ready for operational sign-off or completion
+                </div>
+              )}
+
+              {task.status !== "NEEDS APPROVAL" && task.status !== "OPERATIONAL APPROVAL" && task.status !== "PROVIDE FEEDBACK" && task.status !== "QC APPROVED" && task.status !== "COMPLETE" && task.approverUserId && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs text-amber-600 border-amber-200 hover:bg-amber-50 gap-1 w-full"
+                  onClick={() => updateMutation.mutate({ status: "NEEDS APPROVAL" })}
+                  data-testid="btn-submit-for-approval"
+                >
+                  <ShieldCheck className="h-3.5 w-3.5" /> Submit for Approval
+                </Button>
+              )}
+            </div>
 
             {task.holdReason && (
               <div className="p-3 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-lg">
