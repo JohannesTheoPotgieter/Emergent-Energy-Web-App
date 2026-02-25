@@ -32,6 +32,7 @@ import TaskGridView from "@/components/TaskGridView";
 import KeyDatesPanel from "@/components/KeyDatesPanel";
 import { QualityTab } from "@/components/tabs/QualityTab";
 import { ProjectHistoryTab } from "@/components/tabs/ProjectHistoryTab";
+import EngineeringStagesTab from "@/components/tabs/EngineeringStagesTab";
 import { WeeklyReviewWizard } from "@/components/WeeklyReviewWizard";
 import { GuidancePrompt, getPhaseGuidance } from "@/components/MicroGuidance";
 import { useProgramData } from "@/hooks/use-program-data";
@@ -882,7 +883,18 @@ export default function ProjectDetailPage() {
 
         {canViewEngineering && (
         <TabsContent value="engineering" className="space-y-4">
-          <EngTasksTab projectInfoId={projectInfoId ?? null} isAdmin={isAdmin} />
+          <div className="flex gap-1 flex-wrap" data-testid="sub-tabs-engineering">
+            <Button size="sm" variant={currentSubTab === "eng-tasks" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("engineering", "eng-tasks")} data-testid="subtab-eng-tasks">
+              <ListTodo className="h-3 w-3 mr-1" /> Tasks
+            </Button>
+            <Button size="sm" variant={currentSubTab === "eng-stages" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("engineering", "eng-stages")} data-testid="subtab-eng-stages">
+              <Target className="h-3 w-3 mr-1" /> Stages
+            </Button>
+          </div>
+          {currentSubTab === "eng-tasks" && <EngTasksTab projectInfoId={projectInfoId ?? null} isAdmin={isAdmin} />}
+          {currentSubTab === "eng-stages" && projectInfoId && (
+            <EngineeringStagesTab projectId={projectInfoId} projectName={projectName} isAdmin={isAdmin} userRole={userRole} />
+          )}
         </TabsContent>
         )}
 

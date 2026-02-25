@@ -1,7 +1,7 @@
 # Emergent Energy Dashboard
 
 ## Overview
-The Emergent Energy Dashboard is a full-stack web application for tracking and managing renewable energy projects. Its primary purpose is to provide comprehensive, real-time insights into project metrics, financial performance (cashflow, budget, cost of sales), and scheduling by ingesting project data from Excel files. The application aims to streamline project oversight, enhance operational efficiency, and support strategic decision-making for FY26. Key capabilities include financial tracking, project and quality management, a smart Excel import system, and integration with subcontractor workflows.
+The Emergent Energy Dashboard is a full-stack web application designed for tracking and managing renewable energy projects. Its core purpose is to deliver real-time insights into project metrics, financial performance (cashflow, budget, cost of sales), and scheduling by processing project data from Excel files. The application aims to enhance operational efficiency, streamline project oversight, and support strategic decision-making for FY26. Key features include financial tracking, project and quality management, a smart Excel import system, and integration with subcontractor workflows. The project vision is to become the leading platform for renewable energy project management, offering unparalleled transparency and control to project stakeholders.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
@@ -29,17 +29,17 @@ Preferred communication style: Simple, everyday language.
 ## System Architecture
 
 ### Frontend
--   **Framework**: React 18 with TypeScript
--   **State Management**: TanStack React Query for server state, React Context for local state
+-   **Framework**: React 18 with TypeScript.
+-   **State Management**: TanStack React Query for server state, React Context for local state.
 -   **UI**: shadcn/ui (Radix UI-based) and Tailwind CSS v4 for mobile-first responsive design.
--   **Data Visualization**: Recharts
--   **Forms**: React Hook Form with Zod validation
--   **Core Features**: Financial tracking, project and quality management, a 5-step Smart Excel Import wizard, Subcontractor Dashboard, SharePoint Proposals Pipeline integration, a UX Guidance System, a Project Awareness Bar, a Business Alert Engine, a 5-Tab Navigation system, a Weekly Review Wizard, and Admin utilities including an Execution Cockpit. The application also features redesigned sidebar navigation, a comprehensive Permission Gate System for role-based access, a dedicated Weekly Reviews Page, and Admin Roles & Permissions management. The TR Register module provides tracking for cross-project action items with list and board views. Smart Import is the sole method for project creation/update, with re-run protection and font color extraction for COS/cashflow status. The Money tab includes a project-level **COS Tracker** sub-tab (formerly "Monthly Summary") showing expenditure items grouped by category with COS status (Realised/Deferred/Flagged/Planned), payment status, clickable summary cards for filtering, and search. A **PM Dashboard** (`/pm-dashboard`) provides `PROJECT_MANAGER_SITE` users with a view-only dashboard of their assigned projects, showing dates, financials (budget/actual/COS status), and engineering task summaries. PM users (eon, shaun, jt, lloyd, justin) are linked to projects via `project_info.pm_user_id`, backfilled on startup from the `pm` text column.
+-   **Data Visualization**: Recharts.
+-   **Forms**: React Hook Form with Zod validation.
+-   **Core Features**: Financial tracking, project and quality management, a 5-step Smart Excel Import wizard, Subcontractor Dashboard, SharePoint Proposals Pipeline integration, a UX Guidance System, a Project Awareness Bar, a Business Alert Engine, a 5-Tab Navigation system, a Weekly Review Wizard, Admin utilities including an Execution Cockpit, redesigned sidebar navigation, a comprehensive Permission Gate System for role-based access, a dedicated Weekly Reviews Page, and Admin Roles & Permissions management. The TR Register module tracks cross-project action items. Smart Import is the sole method for project creation/update, including re-run protection and font color extraction for COS/cashflow status. The Money tab includes a project-level **COS Tracker** sub-tab showing expenditure items grouped by category with COS status and payment status. A **PM Dashboard** (`/pm-dashboard`) provides view-only project oversight for assigned project managers.
 
 ### Backend
--   **Framework**: Express.js with TypeScript
+-   **Framework**: Express.js with TypeScript.
 -   **Authentication**: Passport.js with local strategy and PostgreSQL-backed sessions, supporting role-based access control and rate limiting.
--   **Permission Middleware**: `requirePermission(entity, action)` for API-level role-based access. Entity permissions (`projects`, `financials`, `engineering`, `quality`, `procurement`, `governance`, `admin`) control view/edit/approve/override per role. Section-level access uses 7 consolidated keys: `COCKPIT` (EXCO), `PROJECTS` (Project Management), `MONEY` (Project Finance), `DELIVERY` (Engineering), `GOVERNANCE`, `INFORMATION`, `ADMIN`. Old section keys are auto-migrated on startup via `role-management.ts`. Project detail tabs (Project Finance, Engineering, Quality) are conditionally rendered based on entity view permissions.
+-   **Permission Middleware**: `requirePermission(entity, action)` for API-level role-based access. Entity permissions (e.g., `projects`, `financials`) control view/edit/approve/override per role. Section-level access uses 7 consolidated keys: `COCKPIT`, `PROJECTS`, `MONEY`, `DELIVERY`, `GOVERNANCE`, `INFORMATION`, `ADMIN`.
 -   **File Handling**: Multer for uploads, `exceljs` for parsing.
 -   **Data Storage**: PostgreSQL with Drizzle ORM.
 -   **Data Integrity**: Transactional safety and reprocessing.
@@ -52,6 +52,16 @@ Preferred communication style: Simple, everyday language.
 -   **Normalized Data**: `normalized_cost_lines`, `normalized_revenue_lines`, `normalized_plan_tasks` are the source of truth.
 -   **Derived Tables**: `derived_project_kpis`, `derived_portfolio_kpis`, `derived_rag_summary` are rebuilt on demand.
 -   **FK Backfill**: `backfill-project-ids.ts` populates `projectId` on related tables on startup.
+
+### Engineering Stage Templates
+-   **Module**: Implements a 5-stage engineering checklist system (First Assessment, Cost Proposal, IFC Planning, Construction Support, Handover Pack) with CRUD for templates, project stage instantiation, task/deliverable/approval management, and stage gate completion logic.
+-   **Stage Gating**: Each template defines gate rules (e.g., `requireAllTasks`, `requireQaApproval`). COO can override stage completion with a mandatory reason.
+-   **File Uploads**: Deliverables are uploaded via multer to `uploads/eng-deliverables/`, tracked per stage with version tags.
+
+### Deploy Cache & Session Clearing
+-   **Build Versioning**: A unique `buildId` is generated per build, enabling the frontend to detect new deployments and clear client-side cache/session data, redirecting to login.
+-   **Server Session Clearing**: In production, all PostgreSQL sessions are cleared on each deploy.
+-   **Cache Headers**: `no-cache` for HTML and version files; hashed assets are cached for 1 year immutable.
 
 ## External Dependencies
 
@@ -72,31 +82,8 @@ Preferred communication style: Simple, everyday language.
 -   **recharts**: Declarative charting.
 -   **date-fns**: Date utility library.
 -   **zod**: Schema validation.
-
-### UI Libraries
 -   **@radix-ui/**: Accessible UI component primitives.
 -   **tailwindcss**: Utility-first CSS framework.
-
-### EE Info Knowledge Base
--   **Module**: Obsidian-sourced knowledge base viewer at `/ee-info` (under Governance nav)
--   **Backend**: `server/ee-info-routes.ts` — zip importer, CRUD API, graph/flow/detail routes, post-seed alignment endpoint
--   **Frontend**: `client/src/pages/ee-info.tsx` — 3 tabs: Graph (force-directed canvas), Detail (wiki-link navigation, COO edit), Flow (process chain)
--   **DB Tables**: `ee_info_nodes`, `ee_info_edges`, `ee_info_assets`, `ee_info_versions`, `ee_info_settings`
--   **Seed**: `seed/ee-info/Emergent Energy.zip` — 57 Obsidian MD files auto-imported on boot
--   **Categories**: role, process, governance, tool, template, other, unknown
--   **Structured Metadata**: Process nodes support `gate_conditions`, `blocking_conditions`, `responsible_role`, `escalation_role` (JSONB/text columns)
--   **Post-Seed Alignment**: COO users can click "Align Structure" to upsert governance nodes (COS Realisation Logic, Revenue Milestone Logic, VO Approval Workflow, Cashflow Forecasting Model, Risk/Safety/QA Governance), new roles (Construction Manager, Design Engineer, Project Engineer Quality), new tools (Emergent Energy Web Application), and lifecycle/execution/handover process nodes with full metadata
--   **adm-zip**: Used for Obsidian zip parsing (dynamic import, not require)
-
-### Deploy Cache & Session Clearing
--   **Build Versioning**: `script/build.ts` generates a unique `buildId` (UUID) per build, written to `dist/public/build-version.json`.
--   **Frontend Version Check**: `use-auth.tsx` fetches `/build-version.json` on load; if `buildId` differs from `localStorage.app_build_id`, it clears `auth_token` and `company_role` and redirects to login.
--   **Server Session Clearing**: In production, `server/index.ts` runs `DELETE FROM "session"` on startup, clearing all PostgreSQL sessions on each deploy.
--   **Cache Headers**: `server/static.ts` sets `no-cache` on HTML and `build-version.json`; hashed assets get `1y immutable`. HTML meta tags also set `Cache-Control: no-cache`.
-
-### Friday Dad Jokes
--   **Home page greeting**: On Fridays (`getDay() === 5`), the welcome message uses a random dad joke from `DAD_JOKES` array instead of the usual `COMPLIMENTS`. Jokes are prefixed with a smiley emoji.
--   **File**: `client/src/pages/home.tsx`
 
 ### Third-Party Integrations
 -   **Microsoft Graph API**: For Outlook calendar integration.
