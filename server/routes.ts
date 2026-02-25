@@ -2697,7 +2697,7 @@ export async function registerRoutes(
         if (isConfirmedPay) {
           cosState = 'Paid';
         } else if (isRealised) {
-          cosState = 'Invoiced';
+          cosState = 'Realised';
         } else if (exp.expensePoNumber) {
           cosState = 'Committed';
         }
