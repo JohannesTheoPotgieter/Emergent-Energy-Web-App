@@ -122,10 +122,9 @@ function GraphTab({ nodes, edges, onSelectNode }: { nodes: EeNode[]; edges: EeEd
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [positions, setPositions] = useState<Map<string, { x: number; y: number }>>(new Map());
-  const svgRef = useRef<SVGSVGElement>(null);
 
-  const VB_W = 900;
-  const VB_H = 600;
+  const VB_W = 1600;
+  const VB_H = 1200;
 
   const filtered = useMemo(() => {
     let f = nodes;
@@ -141,7 +140,7 @@ function GraphTab({ nodes, edges, onSelectNode }: { nodes: EeNode[]; edges: EeEd
   const filteredEdges = useMemo(() => edges.filter(e => filteredIds.has(e.fromNodeId) && filteredIds.has(e.toNodeId)), [edges, filteredIds]);
 
   useEffect(() => {
-    if (filtered.length === 0) return;
+    if (filtered.length === 0) { setPositions(new Map()); return; }
     const pos = new Map<string, { x: number; y: number }>();
     const width = VB_W;
     const height = VB_H;
@@ -153,8 +152,8 @@ function GraphTab({ nodes, edges, onSelectNode }: { nodes: EeNode[]; edges: EeEd
       const idxInCat = nodesInCat.indexOf(n);
       const angle = (2 * Math.PI * idxInCat) / Math.max(nodesInCat.length, 1);
       const catAngle = (2 * Math.PI * catIdx) / Math.max(cats.length, 1);
-      const catRadius = 150;
-      const nodeRadius = 40 + nodesInCat.length * 10;
+      const catRadius = Math.min(width, height) * 0.3;
+      const nodeRadius = 50 + nodesInCat.length * 12;
       const cx = width / 2 + Math.cos(catAngle) * catRadius;
       const cy = height / 2 + Math.sin(catAngle) * catRadius;
       pos.set(n.id, {
@@ -163,7 +162,7 @@ function GraphTab({ nodes, edges, onSelectNode }: { nodes: EeNode[]; edges: EeEd
       });
     });
 
-    for (let iter = 0; iter < 50; iter++) {
+    for (let iter = 0; iter < 80; iter++) {
       const forces = new Map<string, { fx: number; fy: number }>();
       filtered.forEach(n => forces.set(n.id, { fx: 0, fy: 0 }));
 
@@ -175,7 +174,7 @@ function GraphTab({ nodes, edges, onSelectNode }: { nodes: EeNode[]; edges: EeEd
           const dx = pb.x - pa.x;
           const dy = pb.y - pa.y;
           const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
-          const repulsion = 5000 / (dist * dist);
+          const repulsion = 20000 / (dist * dist);
           const fa = forces.get(a.id)!;
           const fb = forces.get(b.id)!;
           fa.fx -= (dx / dist) * repulsion;
@@ -192,7 +191,7 @@ function GraphTab({ nodes, edges, onSelectNode }: { nodes: EeNode[]; edges: EeEd
         const dx = pb.x - pa.x;
         const dy = pb.y - pa.y;
         const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
-        const spring = (dist - 120) * 0.01;
+        const spring = (dist - 200) * 0.005;
         const fa = forces.get(e.fromNodeId)!;
         const fb = forces.get(e.toNodeId)!;
         if (fa) { fa.fx += (dx / dist) * spring; fa.fy += (dy / dist) * spring; }
@@ -202,10 +201,10 @@ function GraphTab({ nodes, edges, onSelectNode }: { nodes: EeNode[]; edges: EeEd
       filtered.forEach(n => {
         const p = pos.get(n.id)!;
         const f = forces.get(n.id)!;
-        p.x += Math.max(-5, Math.min(5, f.fx));
-        p.y += Math.max(-5, Math.min(5, f.fy));
-        p.x = Math.max(50, Math.min(width - 50, p.x));
-        p.y = Math.max(50, Math.min(height - 50, p.y));
+        p.x += Math.max(-8, Math.min(8, f.fx));
+        p.y += Math.max(-8, Math.min(8, f.fy));
+        p.x = Math.max(80, Math.min(width - 80, p.x));
+        p.y = Math.max(80, Math.min(height - 80, p.y));
       });
     }
 
@@ -242,15 +241,14 @@ function GraphTab({ nodes, edges, onSelectNode }: { nodes: EeNode[]; edges: EeEd
         </div>
       </div>
       <Card>
-        <CardContent className="p-0">
+        <CardContent className="p-0 overflow-auto" style={{ maxHeight: 600 }}>
           <svg
-            ref={svgRef}
             viewBox={`0 0 ${VB_W} ${VB_H}`}
-            className="w-full border rounded-lg bg-white"
-            style={{ height: 500, minHeight: 400 }}
+            className="border rounded-lg bg-white"
+            style={{ width: VB_W, height: VB_H, minWidth: "100%" }}
             data-testid="graph-canvas"
           >
-            {filteredEdges.map(e => {
+            {positions.size > 0 && filteredEdges.map(e => {
               const from = positions.get(e.fromNodeId);
               const to = positions.get(e.toNodeId);
               if (!from || !to) return null;
@@ -258,18 +256,18 @@ function GraphTab({ nodes, edges, onSelectNode }: { nodes: EeNode[]; edges: EeEd
                 <line
                   key={e.id}
                   x1={from.x} y1={from.y} x2={to.x} y2={to.y}
-                  stroke={e.edgeType === "embed" ? "#f59e0b88" : "#94a3b844"}
-                  strokeWidth={e.edgeType === "embed" ? 2 : 1}
+                  stroke={e.edgeType === "embed" ? "#f59e0b66" : "#94a3b833"}
+                  strokeWidth={e.edgeType === "embed" ? 1.5 : 0.5}
                 />
               );
             })}
-            {filtered.map(n => {
+            {positions.size > 0 && filtered.map(n => {
               const p = positions.get(n.id);
               if (!p) return null;
               const color = graphNodeColors[n.category] || "#9ca3af";
               const isHovered = hoveredNode === n.id;
-              const radius = isHovered ? 10 : (n.status === "stub" ? 5 : 7);
-              const label = n.title.length > 20 ? n.title.slice(0, 18) + "..." : n.title;
+              const radius = isHovered ? 14 : (n.status === "stub" ? 6 : 9);
+              const label = n.title.length > 25 ? n.title.slice(0, 23) + "..." : n.title;
               return (
                 <g
                   key={n.id}
@@ -281,14 +279,14 @@ function GraphTab({ nodes, edges, onSelectNode }: { nodes: EeNode[]; edges: EeEd
                   <circle
                     cx={p.x} cy={p.y} r={radius}
                     fill={n.status === "stub" ? color + "44" : color}
-                    stroke={isHovered ? "#000" : "none"}
-                    strokeWidth={isHovered ? 2 : 0}
+                    stroke={isHovered ? "#000" : "white"}
+                    strokeWidth={isHovered ? 2 : 1}
                   />
                   <text
-                    x={p.x} y={p.y + radius + 12}
+                    x={p.x} y={p.y + radius + 14}
                     textAnchor="middle"
                     fill="#334155"
-                    fontSize={isHovered ? 11 : 9}
+                    fontSize={isHovered ? 13 : 11}
                     fontWeight={isHovered ? "bold" : "normal"}
                     fontFamily="sans-serif"
                   >
@@ -301,7 +299,7 @@ function GraphTab({ nodes, edges, onSelectNode }: { nodes: EeNode[]; edges: EeEd
         </CardContent>
       </Card>
       <p className="text-xs text-muted-foreground text-center">
-        {filtered.length} nodes, {filteredEdges.length} edges. Click a node to view details.
+        {filtered.length} nodes, {filteredEdges.length} edges. Click a node to view details. Scroll to pan.
       </p>
     </div>
   );
@@ -316,6 +314,11 @@ function DetailTab({ nodes, selectedSlug, onSelectNode, userRole }: { nodes: EeN
   const [editEscalationRole, setEditEscalationRole] = useState("");
   const [editGateConditions, setEditGateConditions] = useState("");
   const [editBlockingConditions, setEditBlockingConditions] = useState("");
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+  const [newCategory, setNewCategory] = useState("process");
+  const [newContent, setNewContent] = useState("");
   const queryClient = useQueryClient();
   const isCOO = userRole === "COO_ADMIN" || userRole === "admin" || userRole === "CEO_ADMIN";
 
@@ -342,7 +345,43 @@ function DetailTab({ nodes, selectedSlug, onSelectNode, userRole }: { nodes: EeN
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["ee-info-node", selectedSlug] });
       queryClient.invalidateQueries({ queryKey: ["ee-info-nodes"] });
+      queryClient.invalidateQueries({ queryKey: ["ee-info-graph"] });
       setEditMode(false);
+    },
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (data: { title: string; category: string; contentMarkdown: string }) => {
+      const res = await authFetch("/api/ee-info/nodes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Failed to create node");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["ee-info-nodes"] });
+      queryClient.invalidateQueries({ queryKey: ["ee-info-graph"] });
+      setShowCreateDialog(false);
+      setNewTitle("");
+      setNewCategory("process");
+      setNewContent("");
+      onSelectNode(data.slug);
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await authFetch(`/api/ee-info/nodes/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete node");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ee-info-nodes"] });
+      queryClient.invalidateQueries({ queryKey: ["ee-info-graph"] });
+      setShowDeleteDialog(false);
+      onSelectNode("");
     },
   });
 
@@ -391,9 +430,16 @@ function DetailTab({ nodes, selectedSlug, onSelectNode, userRole }: { nodes: EeN
   return (
     <div className="flex gap-4" style={{ minHeight: 600 }} data-testid="detail-tab">
       <div className="w-64 shrink-0">
-        <div className="relative mb-2">
-          <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-          <Input placeholder="Search pages..." value={search} onChange={e => setSearch(e.target.value)} className="pl-8 h-8 text-xs" data-testid="detail-search" />
+        <div className="flex gap-1 mb-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+            <Input placeholder="Search pages..." value={search} onChange={e => setSearch(e.target.value)} className="pl-8 h-8 text-xs" data-testid="detail-search" />
+          </div>
+          {isCOO && (
+            <Button size="sm" variant="outline" className="h-8 w-8 p-0 shrink-0" onClick={() => setShowCreateDialog(true)} title="Create new node" data-testid="btn-create-node">
+              <Plus className="h-3.5 w-3.5" />
+            </Button>
+          )}
         </div>
         <ScrollArea className="h-[560px]">
           {categoryOrder.filter(c => grouped[c]).map(cat => (
@@ -445,9 +491,14 @@ function DetailTab({ nodes, selectedSlug, onSelectNode, userRole }: { nodes: EeN
                   {nodeDetail.status === "stub" && <Badge variant="outline" className="text-[10px] text-gray-500">Stub</Badge>}
                 </div>
                 {isCOO && !editMode && (
-                  <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => { setEditMode(true); setEditContent(nodeDetail.contentMarkdown || ""); setEditCategory(nodeDetail.category); setEditResponsibleRole(nodeDetail.responsibleRole || ""); setEditEscalationRole(nodeDetail.escalationRole || ""); setEditGateConditions((nodeDetail.gateConditions || []).join("\n")); setEditBlockingConditions((nodeDetail.blockingConditions || []).join("\n")); }} data-testid="detail-edit-btn">
-                    <Edit2 className="h-3 w-3" /> Edit
-                  </Button>
+                  <div className="flex gap-1">
+                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => { setEditMode(true); setEditContent(nodeDetail.contentMarkdown || ""); setEditCategory(nodeDetail.category); setEditResponsibleRole(nodeDetail.responsibleRole || ""); setEditEscalationRole(nodeDetail.escalationRole || ""); setEditGateConditions((nodeDetail.gateConditions || []).join("\n")); setEditBlockingConditions((nodeDetail.blockingConditions || []).join("\n")); }} data-testid="detail-edit-btn">
+                      <Edit2 className="h-3 w-3" /> Edit
+                    </Button>
+                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1 text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => setShowDeleteDialog(true)} data-testid="detail-delete-btn">
+                      <Trash2 className="h-3 w-3" /> Delete
+                    </Button>
+                  </div>
                 )}
                 {editMode && (
                   <div className="flex gap-1">
@@ -608,6 +659,60 @@ function DetailTab({ nodes, selectedSlug, onSelectNode, userRole }: { nodes: EeN
           </Card>
         ) : null}
       </div>
+
+      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create New Node</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Title</label>
+              <Input value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="Node title..." className="h-8 text-sm" data-testid="create-node-title" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Category</label>
+              <Select value={newCategory} onValueChange={setNewCategory}>
+                <SelectTrigger className="h-8 text-sm" data-testid="create-node-category"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {["role", "process", "governance", "tool", "template", "other"].map(c => (
+                    <SelectItem key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Content (Markdown)</label>
+              <Textarea value={newContent} onChange={e => setNewContent(e.target.value)} placeholder="Enter content..." className="min-h-[120px] font-mono text-xs" data-testid="create-node-content" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" size="sm" onClick={() => setShowCreateDialog(false)}>Cancel</Button>
+            <Button size="sm" onClick={() => createMutation.mutate({ title: newTitle, category: newCategory, contentMarkdown: newContent })} disabled={!newTitle.trim() || createMutation.isPending} data-testid="create-node-submit">
+              {createMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Plus className="h-3.5 w-3.5 mr-1" />}
+              Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Node</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Are you sure you want to delete <strong>{nodeDetail?.title}</strong>? This will also remove all edges and assets linked to this node. This cannot be undone.
+          </p>
+          <DialogFooter>
+            <Button variant="ghost" size="sm" onClick={() => setShowDeleteDialog(false)}>Cancel</Button>
+            <Button size="sm" variant="destructive" onClick={() => nodeDetail && deleteMutation.mutate(nodeDetail.id)} disabled={deleteMutation.isPending} data-testid="delete-node-confirm">
+              {deleteMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Trash2 className="h-3.5 w-3.5 mr-1" />}
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
