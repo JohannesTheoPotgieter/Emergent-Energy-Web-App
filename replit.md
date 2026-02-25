@@ -62,6 +62,8 @@ Preferred communication style: Simple, everyday language.
 -   **File Uploads**: Deliverables are uploaded via multer to `uploads/eng-deliverables/`, tracked per stage with version tags.
 -   **Frontend**: `EngineeringStagesTab.tsx` (sub-tab under Engineering on project detail), `eng-template-admin.tsx` (COO admin at `/admin/eng-templates`), `stage-export.ts` (File System Access API folder picker + JSZip fallback).
 -   **Seed**: `server/seed-eng-templates.ts` seeds 5 templates with 39 tasks on startup (idempotent).
+-   **Phase Integration**: `PHASE_TO_ENG_STAGES` mapping in `shared/schema.ts` maps project phases to engineering stage names. When a project phase changes via `PATCH /api/projects/:id/phase`, the corresponding engineering stages are auto-generated (idempotent, skips already-existing stages). The reusable `generateEngStagesForProject()` function is exported from `eng-stage-routes.ts`.
+-   **Project Phases**: `LIFECYCLE_PHASES` includes Hold, Closed, DLP, Financial Close, TBC. Engineering task creation (`engineering-tasks.tsx`) excludes Hold and Closed projects from the project picker.
 
 ### Deploy Cache & Session Clearing
 -   **Build Versioning**: A unique `buildId` is generated per build, enabling the frontend to detect new deployments and clear client-side cache/session data, redirecting to login.

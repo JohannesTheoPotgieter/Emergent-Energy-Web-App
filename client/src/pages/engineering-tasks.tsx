@@ -1540,12 +1540,14 @@ export default function EngineeringTasksPage() {
     queryFn: () => engFetch("/api/eng/team-members"),
   });
 
+  const EXCLUDED_PHASES = ["Hold", "Closed"];
   const { data: allProjects = [] } = useQuery<{ id: number; project_name: string }[]>({
     queryKey: ["/api/projects-summary"],
     select: (data: any[]) => data.map((p: any) => ({
       id: p.project_info_id || p.id,
       project_name: p.project_name?.replace(/_Tracker.*$/, "").replace(/_/g, " ") || p.projectName || "",
-    })).filter((p: any) => p.project_name).sort((a: any, b: any) => a.project_name.localeCompare(b.project_name)),
+      phase: p.phase || "",
+    })).filter((p: any) => p.project_name && !EXCLUDED_PHASES.includes(p.phase)).sort((a: any, b: any) => a.project_name.localeCompare(b.project_name)),
   });
 
   const myTasks = useMemo(() => {

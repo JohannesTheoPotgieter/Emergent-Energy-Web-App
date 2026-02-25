@@ -844,13 +844,18 @@ export type TaskPriority = typeof TASK_PRIORITIES[number];
 export const LIFECYCLE_PHASES = [
   "First Assessment",
   "Cost Proposal",
+  "Financial Close",
   "Planning",
   "Construction",
   "QA",
   "Handover",
   "Compliance Handover",
   "Commercial Close Out",
+  "DLP",
   "Internal",
+  "Hold",
+  "Closed",
+  "TBC",
 ] as const;
 export type LifecyclePhase = typeof LIFECYCLE_PHASES[number];
 
@@ -870,13 +875,18 @@ export type ProjectPhase = typeof PROJECT_PHASES[number];
 export const PROJECT_PHASE_LABELS: Record<string, string> = {
   "First Assessment": "First Assessment",
   "Cost Proposal": "Cost Proposal",
+  "Financial Close": "Financial Close",
   "Planning": "Planning",
   "Construction": "Construction",
   "QA": "QA",
   "Handover": "Handover",
   "Compliance Handover": "Compliance Handover",
   "Commercial Close Out": "Commercial Close Out",
+  "DLP": "DLP",
   "Internal": "Internal",
+  "Hold": "Hold",
+  "Closed": "Closed",
+  "TBC": "TBC",
   P0_FIRST_ASSESSMENT: "First Assessment",
   P1_COST_PROPOSAL_DESIGN: "Cost Proposal",
   P2_PD_PM_HANDOVER: "Planning",
@@ -931,6 +941,30 @@ export const PHASE_TEXT_TO_ENUM: Record<string, ProjectPhase> = {
   "commercial close out": "Commercial Close Out",
   "post-mortem": "Commercial Close Out",
   "internal": "Internal",
+  "hold": "Hold",
+  "closed": "Closed",
+  "tbc": "TBC",
+  "financial close": "Financial Close",
+  "dlp": "DLP",
+};
+
+export const PHASE_TO_ENG_STAGES: Record<string, string[]> = {
+  "First Assessment": ["First Assessment"],
+  "Cost Proposal": ["Cost Proposal"],
+  "Financial Close": ["Cost Proposal"],
+  "Planning": ["IFC Planning"],
+  "Construction": ["IFC Planning", "Construction Support"],
+  "QA": ["Handover Pack"],
+  "Handover": ["Handover Pack"],
+  "Compliance Handover": ["Handover Pack"],
+  "P0_FIRST_ASSESSMENT": ["First Assessment"],
+  "P1_COST_PROPOSAL_DESIGN": ["Cost Proposal"],
+  "P2_PD_PM_HANDOVER": ["IFC Planning"],
+  "P3_DETAILED_DESIGN_PROC_RELEASE": ["IFC Planning"],
+  "P4_CONSTRUCTION_INSTALLATION": ["Construction Support"],
+  "P5_COMMISSIONING_TESTING": ["Handover Pack"],
+  "P6_HANDOVER_CLIENT_MATRIARCH": ["Handover Pack"],
+  "P7_CLOSEOUT_POSTMORTEM": ["Handover Pack"],
 };
 
 export const operationalTasks = pgTable("operational_tasks", {
