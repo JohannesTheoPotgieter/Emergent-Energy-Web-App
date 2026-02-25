@@ -6,6 +6,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as crypto from "crypto";
 import multer from "multer";
+import { verifyToken } from "./jwt";
 
 const SEED_ZIP_PATH = path.join(process.cwd(), "seed", "ee-info", "Emergent Energy.zip");
 const ASSETS_DIR = path.join(process.cwd(), "uploads", "ee-info-assets");
@@ -25,12 +26,29 @@ function slugify(name: string): string {
 
 function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (req.isAuthenticated?.() && req.user) return next();
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    const token = authHeader.substring(7);
+    const payload = verifyToken(token);
+    if (payload) {
+      (req as any).user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role };
+      return next();
+    }
+  }
   return res.status(401).json({ error: "auth_required", message: "Authentication required" });
 }
 
 function requireCOO(req: Request, res: Response, next: NextFunction) {
-  if (!req.isAuthenticated?.() || !req.user) {
-    return res.status(401).json({ error: "auth_required" });
+  if (!req.isAuthenticated?.() && !req.user) {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      const token = authHeader.substring(7);
+      const payload = verifyToken(token);
+      if (payload) {
+        (req as any).user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role };
+      }
+    }
+    if (!req.user) return res.status(401).json({ error: "auth_required" });
   }
   const role = (req.user as any).role || (req.user as any).companyRole;
   if (role === "COO_ADMIN" || role === "admin" || role === "CEO_ADMIN") {

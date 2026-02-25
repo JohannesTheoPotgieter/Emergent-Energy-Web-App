@@ -49,6 +49,21 @@ interface EeNodeDetail extends EeNode {
   inboundEdges: { id: string; fromNodeId: string; edgeType: string; sourceNode?: { slug: string; title: string; category: string } }[];
 }
 
+function authHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {};
+  const token = localStorage.getItem('auth_token');
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  return headers;
+}
+
+function authFetch(url: string, opts: RequestInit = {}): Promise<Response> {
+  return fetch(url, {
+    ...opts,
+    credentials: "include",
+    headers: { ...authHeaders(), ...(opts.headers || {}) },
+  });
+}
+
 const categoryIcons: Record<string, React.ReactNode> = {
   role: <Users className="h-3.5 w-3.5" />,
   process: <GitBranch className="h-3.5 w-3.5" />,
@@ -368,7 +383,7 @@ function DetailTab({ nodes, selectedSlug, onSelectNode, userRole }: { nodes: EeN
   const { data: nodeDetail, isLoading } = useQuery<EeNodeDetail>({
     queryKey: ["ee-info-node", selectedSlug],
     queryFn: async () => {
-      const res = await fetch(`/api/ee-info/nodes/${selectedSlug}`, { credentials: "include" });
+      const res = await authFetch(`/api/ee-info/nodes/${selectedSlug}`);
       if (!res.ok) throw new Error("Failed to fetch node");
       return res.json();
     },
@@ -377,10 +392,9 @@ function DetailTab({ nodes, selectedSlug, onSelectNode, userRole }: { nodes: EeN
 
   const updateMutation = useMutation({
     mutationFn: async (data: any) => {
-      const res = await fetch(`/api/ee-info/nodes/${nodeDetail!.id}`, {
+      const res = await authFetch(`/api/ee-info/nodes/${nodeDetail!.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify(data),
       });
       if (!res.ok) throw new Error("Failed to update");
@@ -663,7 +677,7 @@ function FlowTab({ nodes, onSelectNode }: { nodes: EeNode[]; onSelectNode: (slug
   const { data: flowNodes = [], isLoading } = useQuery<EeNode[]>({
     queryKey: ["ee-info-flow"],
     queryFn: async () => {
-      const res = await fetch("/api/ee-info/flow", { credentials: "include" });
+      const res = await authFetch("/api/ee-info/flow");
       if (!res.ok) throw new Error("Failed to fetch flow");
       return res.json();
     },
@@ -770,7 +784,7 @@ export default function EeInfoPage() {
   const { data: user } = useQuery({
     queryKey: ["current-user"],
     queryFn: async () => {
-      const res = await fetch("/api/auth/me", { credentials: "include" });
+      const res = await authFetch("/api/auth/me");
       if (!res.ok) return null;
       return res.json();
     },
@@ -781,7 +795,7 @@ export default function EeInfoPage() {
   const { data: nodes = [], isLoading: nodesLoading } = useQuery<EeNode[]>({
     queryKey: ["ee-info-nodes"],
     queryFn: async () => {
-      const res = await fetch("/api/ee-info/nodes", { credentials: "include" });
+      const res = await authFetch("/api/ee-info/nodes");
       if (!res.ok) throw new Error("Failed to fetch nodes");
       return res.json();
     },
@@ -790,7 +804,7 @@ export default function EeInfoPage() {
   const { data: graphData, isLoading: graphLoading } = useQuery<{ nodes: EeNode[]; edges: EeEdge[] }>({
     queryKey: ["ee-info-graph"],
     queryFn: async () => {
-      const res = await fetch("/api/ee-info/graph", { credentials: "include" });
+      const res = await authFetch("/api/ee-info/graph");
       if (!res.ok) throw new Error("Failed to fetch graph");
       return res.json();
     },
@@ -801,9 +815,8 @@ export default function EeInfoPage() {
 
   const alignMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch("/api/ee-info/post-seed-align", {
+      const res = await authFetch("/api/ee-info/post-seed-align", {
         method: "POST",
-        credentials: "include",
       });
       if (!res.ok) throw new Error("Failed to run alignment");
       return res.json();
