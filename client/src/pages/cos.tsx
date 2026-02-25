@@ -184,7 +184,8 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
   const stateBadgeColor = (state: string) => {
     switch (state) {
       case 'Paid': return 'bg-slate-200 text-slate-900 ring-1 ring-slate-400 font-bold';
-      case 'Invoiced': return 'bg-slate-100 text-slate-800 ring-1 ring-slate-300';
+      case 'Invoiced':
+      case 'Realised': return 'bg-slate-100 text-slate-800 ring-1 ring-slate-300';
       case 'Committed': return 'bg-red-50 text-red-600 ring-1 ring-red-200';
       default: return 'bg-red-100 text-red-700 ring-1 ring-red-200';
     }
