@@ -13,7 +13,7 @@ Preferred communication style: Simple, everyday language.
 - **Revenue Recognition Amount**: Extracted from "REVENUE RECOGNITION AMOUNT" column (col 21) in the Expenditure Breakdown sheet. Stored in `program_expense.revenue_amount`.
 - **Budget vs Actual Separation**: The Expenditure Breakdown sheet has dual sections — budget (left, cols 2-8) and actual (right, cols 13-26). The parser uses `actualSectionStartCol` detection to build separate `budgetColMap` and `colMap` for correct column resolution.
 - **Expenditure Sort Order**: Categories in the expenditure tab are sorted by minimum `row_number` from the original Excel, preserving the Excel's category order.
-- **Database Sync**: Dev and production have separate databases. Use `/admin/data-sync` page to export data from dev and import into production.
+- **Database Sync**: Dev and production have separate databases. Data is migrated via `server/seed-data-migration.ts` which runs on startup — it reads JSON seed files from `server/data-seed/` and imports them if the target database is empty. The `.migrated` flag file prevents re-runs.
 
 ## System Architecture
 

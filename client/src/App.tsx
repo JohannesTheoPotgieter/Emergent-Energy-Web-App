@@ -49,7 +49,6 @@ import WeeklyReviewsPage from "@/pages/weekly-reviews";
 import AdminRolesPage from "@/pages/admin-roles";
 import TrRegisterPage from "@/pages/tr-register";
 import FeedbackPage from "@/pages/feedback";
-import AdminDataSyncPage from "@/pages/admin-data-sync";
 import { useAuth } from "@/hooks/use-auth";
 import { useProgramData } from "@/hooks/use-program-data";
 import { TrackerTable } from "@/components/dashboard/TrackerTable";
@@ -243,7 +242,6 @@ function ProtectedPages() {
         <Route path="/admin/activity-log" component={SystemActivityLogPage} />
         <Route path="/weekly-reviews" component={WeeklyReviewsPage} />
         <Route path="/admin/roles" component={AdminRolesPage} />
-        <Route path="/admin/data-sync" component={AdminDataSyncPage} />
         <Route path="/tr-register" component={TrRegisterPage} />
         <Route path="/feedback" component={FeedbackPage} />
 
