@@ -9620,6 +9620,16 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/outlook/refresh", requireAuth, async (req, res) => {
+    try {
+      outlook.clearCachedToken();
+      const status = await outlook.getConnectionStatus();
+      res.json(status);
+    } catch (err: any) {
+      res.json({ configured: false, connected: false, error: err.message });
+    }
+  });
+
   app.get("/api/outlook/events", requireAuth, async (req, res) => {
     try {
       const { start, end } = req.query;

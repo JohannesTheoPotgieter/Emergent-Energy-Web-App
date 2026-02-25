@@ -33,6 +33,7 @@ import {
   X,
   Clock,
   Keyboard,
+  RefreshCw,
 } from "lucide-react";
 
 interface UserPreferences {
@@ -98,6 +99,26 @@ export default function MyToolSettingsPage() {
     queryKey: ["/api/outlook/status"],
     retry: false,
   });
+
+  const [refreshingOutlook, setRefreshingOutlook] = useState(false);
+  const handleRefreshOutlook = async () => {
+    setRefreshingOutlook(true);
+    try {
+      const res = await apiRequest("POST", "/api/outlook/refresh");
+      const result = await res.json();
+      queryClient.setQueryData(["/api/outlook/status"], result);
+      if (result.connected) {
+        toast({ title: "Outlook reconnected", description: result.email ? `Connected as ${result.email}` : "Connection restored successfully." });
+      } else {
+        toast({ title: "Still disconnected", description: "The Outlook connection could not be restored. The token may have expired and needs re-authorization from the platform.", variant: "destructive" });
+      }
+    } catch (err: any) {
+      toast({ title: "Refresh failed", description: err.message, variant: "destructive" });
+    } finally {
+      setRefreshingOutlook(false);
+      refetchOutlook();
+    }
+  };
 
   const { data: dodTemplates = [], isLoading: templatesLoading } = useQuery<DodTemplate[]>({
     queryKey: ["/api/mytool/dod-templates"],
@@ -424,8 +445,19 @@ export default function MyToolSettingsPage() {
                 <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
                 <span className="text-sm font-medium text-emerald-700 dark:text-emerald-400">Connected</span>
                 {outlookStatus.email && (
-                  <Badge variant="secondary" className="text-xs ml-auto">{outlookStatus.email}</Badge>
+                  <Badge variant="secondary" className="text-xs">{outlookStatus.email}</Badge>
                 )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="ml-auto h-7 px-2 text-xs"
+                  onClick={handleRefreshOutlook}
+                  disabled={refreshingOutlook}
+                  data-testid="button-refresh-outlook"
+                >
+                  {refreshingOutlook ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                  <span className="ml-1">Refresh</span>
+                </Button>
               </div>
             ) : outlookStatus?.configured === false ? (
               <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-900/30" data-testid="outlook-not-configured">
@@ -440,12 +472,23 @@ export default function MyToolSettingsPage() {
             ) : (
               <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-900/30" data-testid="outlook-issue">
                 <AlertCircle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
-                <div>
+                <div className="flex-1">
                   <span className="text-sm text-amber-600 dark:text-amber-400">Connection issue</span>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    The connection may need to be refreshed. Please ask your administrator to check it.
+                    The connection may need to be refreshed. Click the button to try reconnecting.
                   </p>
                 </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0 h-7 px-3 text-xs border-amber-300 text-amber-700 hover:bg-amber-50"
+                  onClick={handleRefreshOutlook}
+                  disabled={refreshingOutlook}
+                  data-testid="button-reconnect-outlook"
+                >
+                  {refreshingOutlook ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+                  Reconnect
+                </Button>
               </div>
             )}
           </div>
