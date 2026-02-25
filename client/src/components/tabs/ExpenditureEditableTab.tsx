@@ -145,7 +145,8 @@ const formatMonth = (value: string | null): string => {
 const getCosStatusBadge = (status: string) => {
   const colors: Record<string, string> = {
     "COS Realised": "bg-emerald-50 text-emerald-700 border-emerald-300",
-    "Not Yet Realised": "bg-amber-50 text-amber-700 border-amber-300",
+    "Deferred": "bg-amber-50 text-amber-700 border-amber-300",
+    "Flagged": "bg-red-50 text-red-700 border-red-300",
     "Planned": "bg-slate-100 text-slate-600 border-slate-200",
   };
   return (
@@ -157,10 +158,8 @@ const getCosStatusBadge = (status: string) => {
 
 const getPaymentStatusBadge = (status: string) => {
   const colors: Record<string, string> = {
-    "Paid": "bg-emerald-50 text-emerald-700 border-emerald-300",
+    "Out of Bank": "bg-emerald-50 text-emerald-700 border-emerald-300",
     "Payment Planned": "bg-blue-50 text-blue-600 border-blue-200",
-    "Invoiced": "bg-amber-50 text-amber-600 border-amber-200",
-    "Committed": "bg-purple-50 text-purple-600 border-purple-200",
     "Planned": "bg-slate-100 text-slate-600 border-slate-200",
   };
   return (
@@ -385,21 +384,20 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
     const totalBudget = items.reduce((sum, e) => sum + (parseFloat(e.budgetTotal || "0")), 0);
     const totalActual = items.reduce((sum, e) => sum + (parseFloat(e.expenseActualTotal || "0")), 0);
     const cosRealised = items.filter(e => e.cosStatus === "COS Realised").reduce((s, e) => s + (parseFloat(e.expenseActualTotal || "0")), 0);
-    const totalPaid = items.filter(e => e.paymentStatus === "Paid").reduce((s, e) => s + (parseFloat(e.expenseActualTotal || "0")), 0);
+    const totalOutOfBank = items.filter(e => e.paymentStatus === "Out of Bank").reduce((s, e) => s + (parseFloat(e.expenseActualTotal || "0")), 0);
     const variance = totalBudget - totalActual;
     const countByCos = {
       "COS Realised": items.filter(e => e.cosStatus === "COS Realised").length,
-      "Not Yet Realised": items.filter(e => e.cosStatus === "Not Yet Realised").length,
+      "Deferred": items.filter(e => e.cosStatus === "Deferred").length,
+      "Flagged": items.filter(e => e.cosStatus === "Flagged").length,
       "Planned": items.filter(e => e.cosStatus === "Planned").length,
     };
     const countByPayment = {
-      "Paid": items.filter(e => e.paymentStatus === "Paid").length,
+      "Out of Bank": items.filter(e => e.paymentStatus === "Out of Bank").length,
       "Payment Planned": items.filter(e => e.paymentStatus === "Payment Planned").length,
-      "Invoiced": items.filter(e => e.paymentStatus === "Invoiced").length,
-      "Committed": items.filter(e => e.paymentStatus === "Committed").length,
       "Planned": items.filter(e => e.paymentStatus === "Planned").length,
     };
-    return { totalBudget, totalActual, cosRealised, totalPaid, variance, countByCos, countByPayment, totalItems: items.length };
+    return { totalBudget, totalActual, cosRealised, totalOutOfBank, variance, countByCos, countByPayment, totalItems: items.length };
   }, [items]);
 
   const filteredItems = useMemo(() => {
@@ -826,9 +824,9 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
             <div className="text-[10px] text-gray-400 mt-0.5">{kpis.countByCos["COS Realised"]} lines</div>
           </div>
           <div className="p-3 sm:p-4">
-            <div className="text-[10px] uppercase tracking-wider font-medium text-gray-400">Paid</div>
-            <div className="text-base sm:text-lg font-bold text-emerald-600 font-mono" data-testid="text-kpi-paid">{formatCurrency(kpis.totalPaid)}</div>
-            <div className="text-[10px] text-gray-400 mt-0.5">{kpis.countByPayment.Paid} lines</div>
+            <div className="text-[10px] uppercase tracking-wider font-medium text-gray-400">Out of Bank</div>
+            <div className="text-base sm:text-lg font-bold text-emerald-600 font-mono" data-testid="text-kpi-paid">{formatCurrency(kpis.totalOutOfBank)}</div>
+            <div className="text-[10px] text-gray-400 mt-0.5">{kpis.countByPayment["Out of Bank"]} lines</div>
           </div>
           <div className="p-3 sm:p-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors" onClick={() => setDrawerOpen(true)}>
             <div className="text-[10px] uppercase tracking-wider font-medium text-gray-400">Lines</div>
@@ -869,10 +867,10 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
           <SelectContent>
             <SelectItem value="all">All ({kpis.totalItems})</SelectItem>
             <SelectItem value="COS Realised">COS Realised ({kpis.countByCos["COS Realised"]})</SelectItem>
-            <SelectItem value="Not Yet Realised">Not Yet Realised ({kpis.countByCos["Not Yet Realised"]})</SelectItem>
-            <SelectItem value="Paid">Paid ({kpis.countByPayment.Paid})</SelectItem>
+            <SelectItem value="Deferred">Deferred ({kpis.countByCos["Deferred"]})</SelectItem>
+            <SelectItem value="Flagged">Flagged ({kpis.countByCos["Flagged"]})</SelectItem>
+            <SelectItem value="Out of Bank">Out of Bank ({kpis.countByPayment["Out of Bank"]})</SelectItem>
             <SelectItem value="Payment Planned">Payment Planned ({kpis.countByPayment["Payment Planned"]})</SelectItem>
-            <SelectItem value="Committed">Committed ({kpis.countByPayment.Committed})</SelectItem>
             <SelectItem value="Planned">Planned ({kpis.countByCos.Planned})</SelectItem>
           </SelectContent>
         </Select>
@@ -1016,7 +1014,8 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
                   <SelectContent>
                     <SelectItem value="all">All</SelectItem>
                     <SelectItem value="COS Realised">COS Realised</SelectItem>
-                    <SelectItem value="Not Yet Realised">Not Yet Realised</SelectItem>
+                    <SelectItem value="Deferred">Deferred</SelectItem>
+                    <SelectItem value="Flagged">Flagged</SelectItem>
                     <SelectItem value="Planned">Planned</SelectItem>
                   </SelectContent>
                 </Select>
@@ -1027,10 +1026,8 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
                   <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All</SelectItem>
-                    <SelectItem value="Paid">Paid</SelectItem>
+                    <SelectItem value="Out of Bank">Out of Bank</SelectItem>
                     <SelectItem value="Payment Planned">Payment Planned</SelectItem>
-                    <SelectItem value="Invoiced">Invoiced</SelectItem>
-                    <SelectItem value="Committed">Committed</SelectItem>
                     <SelectItem value="Planned">Planned</SelectItem>
                   </SelectContent>
                 </Select>
