@@ -10473,18 +10473,12 @@ function registerFeedbackRoutes(app: Express) {
       await db.transaction(async (tx) => {
         await tx.execute(sql`SET CONSTRAINTS ALL DEFERRED`);
 
-        const tablesToClear: string[] = [];
-        if (tables.normalized_plan_tasks?.length > 0) tablesToClear.push('normalized_plan_tasks');
-        if (tables.normalized_revenue_lines?.length > 0) tablesToClear.push('normalized_revenue_lines');
-        if (tables.normalized_cost_lines?.length > 0) tablesToClear.push('normalized_cost_lines');
-        if (tables.project_plan?.length > 0) tablesToClear.push('project_plan');
-        if (tables.program_inflows?.length > 0) tablesToClear.push('program_inflows');
-        if (tables.program_expense?.length > 0) tablesToClear.push('program_expense');
-        if (tables.project_info?.length > 0) tablesToClear.push('project_info');
-
-        if (tablesToClear.length > 0) {
-          await tx.execute(sql.raw(`TRUNCATE TABLE ${tablesToClear.join(', ')} CASCADE`));
-        }
+        const allSyncTables = [
+          'normalized_plan_tasks', 'normalized_revenue_lines', 'normalized_cost_lines',
+          'normalized_execution_phases', 'smart_import_runs',
+          'project_plan', 'program_inflows', 'program_expense', 'project_info'
+        ];
+        await tx.execute(sql.raw(`TRUNCATE TABLE ${allSyncTables.join(', ')} CASCADE`));
 
         const isoDateRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
         const convertDates = (obj: any) => {
@@ -10499,38 +10493,59 @@ function registerFeedbackRoutes(app: Express) {
           return result;
         };
 
-        const batchInsert = async (table: any, rows: any[], tableName: string) => {
-          const batchSize = 100;
+        const batchInsertWithIds = async (tableName: string, rows: any[]) => {
+          if (!rows || rows.length === 0) return;
+          const cols = Object.keys(rows[0]);
+          const batchSize = 50;
           for (let i = 0; i < rows.length; i += batchSize) {
-            const batch = rows.slice(i, i + batchSize).map((row: any) => {
-              const { id, ...rest } = row;
-              return convertDates(rest);
+            const batch = rows.slice(i, i + batchSize);
+            const valueSets = batch.map(row => {
+              const converted = convertDates(row);
+              const vals = cols.map(c => {
+                const v = converted[c];
+                if (v === null || v === undefined) return 'NULL';
+                if (v instanceof Date) return `'${v.toISOString()}'`;
+                if (typeof v === 'boolean') return v ? 'TRUE' : 'FALSE';
+                if (typeof v === 'number') return String(v);
+                if (typeof v === 'object') return `'${JSON.stringify(v).replace(/'/g, "''")}'::jsonb`;
+                return `'${String(v).replace(/'/g, "''")}'`;
+              });
+              return `(${vals.join(', ')})`;
             });
-            await tx.insert(table).values(batch);
+            const snakeCols = cols.map(c => `"${c.replace(/([A-Z])/g, '_$1').toLowerCase()}"`);
+            await tx.execute(sql.raw(`INSERT INTO ${tableName} (${snakeCols.join(', ')}) VALUES ${valueSets.join(', ')}`));
           }
           results[tableName] = rows.length;
         };
 
         if (tables.project_info?.length > 0) {
-          await batchInsert(projectInfo, tables.project_info, 'project_info');
+          await batchInsertWithIds('project_info', tables.project_info);
         }
         if (tables.program_expense?.length > 0) {
-          await batchInsert(programExpense, tables.program_expense, 'program_expense');
+          await batchInsertWithIds('program_expense', tables.program_expense);
         }
         if (tables.program_inflows?.length > 0) {
-          await batchInsert(programInflows, tables.program_inflows, 'program_inflows');
+          await batchInsertWithIds('program_inflows', tables.program_inflows);
         }
         if (tables.project_plan?.length > 0) {
-          await batchInsert(projectPlan, tables.project_plan, 'project_plan');
+          await batchInsertWithIds('project_plan', tables.project_plan);
         }
         if (tables.normalized_cost_lines?.length > 0) {
-          await batchInsert(normalizedCostLines, tables.normalized_cost_lines, 'normalized_cost_lines');
+          await batchInsertWithIds('normalized_cost_lines', tables.normalized_cost_lines);
         }
         if (tables.normalized_revenue_lines?.length > 0) {
-          await batchInsert(normalizedRevenueLines, tables.normalized_revenue_lines, 'normalized_revenue_lines');
+          await batchInsertWithIds('normalized_revenue_lines', tables.normalized_revenue_lines);
         }
         if (tables.normalized_plan_tasks?.length > 0) {
-          await batchInsert(normalizedPlanTasks, tables.normalized_plan_tasks, 'normalized_plan_tasks');
+          await batchInsertWithIds('normalized_plan_tasks', tables.normalized_plan_tasks);
+        }
+
+        const seqTables = [
+          'project_info', 'program_expense', 'program_inflows', 'project_plan',
+          'normalized_cost_lines', 'normalized_revenue_lines', 'normalized_plan_tasks'
+        ];
+        for (const t of seqTables) {
+          await tx.execute(sql.raw(`SELECT setval(pg_get_serial_sequence('${t}', 'id'), COALESCE((SELECT MAX(id) FROM ${t}), 1))`));
         }
       });
 
