@@ -1,0 +1,177 @@
+You are working on the Emergent Energy web application.
+
+Objective:
+Add a new module called “Emergent Energy Info” that recreates our Obsidian knowledge base inside the app and provides:
+1) Graph/Network view: “what touches what”
+2) Detail view: “what’s captured within”
+3) Flow view: guided “what’s next” navigation driven by explicit metadata
+
+Non-negotiables:
+- This must be modular and must NOT break or change existing modules.
+- Only the COO role can create/edit/delete pages, upload assets, or import data.
+- All other roles are view-only (can read pages, use graph, use flow).
+- Enforce permissions server-side (RBAC). Frontend hiding buttons is not enough.
+
+ZERO-TO-USE requirement (no clicking, no manual seeding):
+- The user will provide “Emergent Energy.zip” together with this prompt.
+- You MUST add this zip into the repository (e.g. /seed/ee-info/Emergent Energy.zip).
+- On app startup, the backend MUST automatically import this zip if:
+  - ee_info_nodes is empty OR
+  - the stored seed_import_hash differs from the current zip hash.
+- This must happen automatically at boot. The user must be able to open the module and immediately see:
+  - all pages
+  - all attachments/images
+  - graph view populated
+  - detail pages viewable
+  - flow tab functional (where metadata exists)
+- The boot import must be idempotent (safe to run repeatedly without duplicates).
+
+Seeding implementation details:
+- Create an import service: importObsidianZip(zipPath, importedByUserIdOrSystem)
+- Create an app boot hook that runs once on server startup:
+  - compute hash of the zip file
+  - read ee_info_settings.seed_import_hash
+  - if nodes empty OR hash changed: run importer, update ee_info_settings (completed, hash, timestamps)
+- The importer must never crash the server on minor issues:
+  - log warnings, create stub nodes, continue
+  - only fatal errors should fail the boot with a clear error message
+
+Data model (new tables, do not reuse existing):
+1) ee_info_nodes
+   - id (uuid, PK)
+   - slug (unique)
+   - title
+   - content_markdown (nullable)
+   - status (enum: stub, draft, published)
+   - category (enum: role, process, tool, template, other, unknown)
+   - tags (json array)
+   - flow_enabled (boolean)  // true if node has next/prev info
+   - flow_lane (string)      // optional
+   - flow_step_code (string) // optional
+   - next_slugs (json array) // explicit next nodes in the flow (drives Flow tab)
+   - prev_slugs (json array) // optional convenience
+   - created_at, updated_at
+   - created_by, updated_by
+
+2) ee_info_edges
+   - id (uuid, PK)
+   - from_node_id (FK -> ee_info_nodes.id)
+   - to_node_id (FK -> ee_info_nodes.id)
+   - edge_type (enum: link, embed, reference)
+   - unique(from_node_id, to_node_id, edge_type)
+
+3) ee_info_assets
+   - id (uuid, PK)
+   - node_id (FK)
+   - filename
+   - mime_type
+   - storage_path (or blob ref)
+   - uploaded_at
+   - uploaded_by
+
+4) ee_info_versions (recommended)
+   - id (uuid, PK)
+   - node_id (FK)
+   - content_markdown
+   - changed_by
+   - changed_at
+   - change_note
+
+5) ee_info_settings
+   - id (single row)
+   - seed_import_completed (boolean)
+   - seed_import_hash (string)
+   - seed_imported_at (datetime)
+   - seed_imported_by (string) // “system” allowed
+
+Importer requirements:
+- Read the zip from /seed/ee-info/Emergent Energy.zip at boot.
+- Extract:
+  - Markdown pages (*.md)
+  - Images/attachments (png/jpg/jpeg/webp/pdf etc.)
+- Create/upsert nodes from markdown filenames:
+  - slug derived from filename (stable slugging rules)
+  - title from filename (or first H1 if present)
+  - content_markdown stored as-is
+- Parse Obsidian-style wiki links:
+  - [[Page Name]]
+  - ![[image.png]] (embed)
+- Create/upsert edges:
+  - link edges for [[...]]
+  - embed edges for ![[...]]
+- Stub nodes:
+  - If a page links to a missing page, create/upsert a node with:
+    status=stub, category=unknown, content_markdown=null
+- Assets:
+  - Store attachments and associate them to the node that references them.
+  - Ensure embedded images render correctly in the markdown viewer.
+- Idempotency rules:
+  - Nodes upsert by slug
+  - Edges enforced by unique constraint
+  - Assets dedupe by (node_id + filename) or content hash
+
+Flow rules:
+- Flow tab uses ONLY explicit metadata fields (next_slugs etc). Do NOT infer “next” from wiki links.
+- If a node has next_slugs populated, set flow_enabled=true automatically.
+- Provide COO-only UI to edit:
+  - flow_enabled
+  - flow_lane
+  - flow_step_code
+  - next_slugs
+  - prev_slugs
+- Validate next_slugs exist; auto-create stub nodes if missing.
+
+Backend API (new routes under /api/ee-info):
+READ (all roles):
+- GET /nodes?search=&category=&flow_enabled=
+- GET /nodes/:slug (node + assets + inbound/outbound link summary)
+- GET /graph (nodes + edges, supports filters)
+- GET /flow (flow_enabled nodes + next relationships)
+- GET /settings (seed status)
+
+WRITE (COO only):
+- POST /nodes
+- PUT /nodes/:id
+- DELETE /nodes/:id
+- POST /nodes/:id/assets
+- POST /import/obsidian-zip (manual re-import, optional for COO, but boot import is required regardless)
+
+Frontend:
+Add left nav item: “Emergent Energy Info”
+Tabs:
+1) Graph:
+   - vis-network or react-force-graph
+   - filters: category toggles + search + focus mode
+   - click node -> open Detail on that node
+2) Detail:
+   - left sidebar search + grouped list by category
+   - markdown renderer with embedded assets
+   - metadata panel
+   - COO-only edit mode (markdown editor + metadata)
+3) Flow:
+   - show only flow_enabled nodes
+   - lane view (by flow_lane if set) and fallback ordered list (flow_step_code if set)
+   - node card with “Next” buttons per next_slugs
+   - “Start Here” nodes are flow_enabled with empty prev_slugs
+
+Security:
+- Server-side RBAC on all write routes: COO only.
+
+Testing:
+- Boot import runs when DB empty and zip present.
+- Boot import idempotent (second boot does not duplicate).
+- Graph endpoint returns valid structure.
+- Flow endpoint driven by explicit next_slugs only.
+- Non-COO cannot write.
+
+Deliverables:
+- migrations
+- importer service
+- boot hook + seed zip included in repo
+- API routes
+- frontend UI
+- tests
+- zero regressions
+
+IMPORTANT:
+If the environment cannot access a local zip, you must still make it work by checking the zip into the repo under /seed/ee-info/ and referencing that file path at runtime.
