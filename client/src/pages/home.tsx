@@ -39,21 +39,6 @@ interface CompanyPriority {
   links?: { id: number; linkType: string; projectName: string | null; taskId: number | null }[];
 }
 
-interface ProjectReport {
-  project_name: string;
-  project_info_id: number;
-  phase: string | null;
-  size_kwp: number | null;
-  delta_vs_expected: number | null;
-  escalation_level: string | null;
-  actual_revenue: number;
-  actual_expenses: number;
-  gp_percent: number | null;
-  project_pct_complete: number | null;
-  expected_pct_complete: number | null;
-  is_active: boolean;
-}
-
 
 function severityOrder(s: string): number {
   if (s === "critical") return 0;
@@ -215,103 +200,10 @@ function CompanyPrioritiesCards({ isAdmin, priorities, isLoading }: { isAdmin: b
   );
 }
 
-function ImmediateAttentionPanel({ projects }: { projects: ProjectReport[] }) {
-  const activeProjects = projects.filter(p => p.is_active);
-
-  const attentionItems: { project: string; id: number; issue: string; severity: "high" | "medium" | "low"; borderColor: string }[] = [];
-
-  activeProjects.forEach(p => {
-    const name = p.project_name.replace(/_Tracker.*$/, "").replace(/_/g, " ");
-
-    if (p.escalation_level) {
-      attentionItems.push({
-        project: name,
-        id: p.project_info_id,
-        issue: `Escalation: ${p.escalation_level}`,
-        severity: p.escalation_level === "Highest" ? "high" : "medium",
-        borderColor: p.escalation_level === "Highest" ? "border-l-red-500" : "border-l-amber-500",
-      });
-    }
-
-    if (p.delta_vs_expected !== null && p.delta_vs_expected < -0.05) {
-      attentionItems.push({
-        project: name,
-        id: p.project_info_id,
-        issue: `Behind schedule by ${Math.abs(p.delta_vs_expected * 100).toFixed(1)}%`,
-        severity: p.delta_vs_expected < -0.1 ? "high" : "medium",
-        borderColor: p.delta_vs_expected < -0.1 ? "border-l-red-500" : "border-l-amber-500",
-      });
-    }
-
-    if (p.gp_percent !== null && p.gp_percent < 0.1 && p.actual_revenue > 500000) {
-      attentionItems.push({
-        project: name,
-        id: p.project_info_id,
-        issue: `Margin drift: GP ${(p.gp_percent * 100).toFixed(1)}%`,
-        severity: p.gp_percent < 0.05 ? "high" : "medium",
-        borderColor: p.gp_percent < 0.05 ? "border-l-red-500" : "border-l-amber-500",
-      });
-    }
-  });
-
-  attentionItems.sort((a, b) => {
-    const sevOrder = { high: 0, medium: 1, low: 2 };
-    return sevOrder[a.severity] - sevOrder[b.severity];
-  });
-
-  const display = attentionItems.slice(0, 8);
-
-  if (display.length === 0) return null;
-
-  return (
-    <div className="space-y-2" data-testid="attention-panel">
-      <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-        <AlertTriangle className="h-4 w-4 text-amber-500" />
-        Immediate Attention
-        <span className="text-xs font-normal normal-case tracking-normal text-muted-foreground/70">
-          {attentionItems.length} items
-        </span>
-      </h2>
-      <div className="space-y-1">
-        {display.map((item, i) => (
-          <Link key={`${item.id}-${i}`} href={`/projects/${item.id}`}>
-            <div
-              className={`border-l-4 ${item.borderColor} border rounded-md bg-card px-3 py-2 flex items-center justify-between gap-3 hover:bg-muted/30 transition-colors cursor-pointer group`}
-              data-testid={`attention-item-${i}`}
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <span className="font-medium text-sm truncate">{item.project}</span>
-                <span className="text-xs text-muted-foreground truncate hidden sm:inline">{item.issue}</span>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <Badge
-                  variant="secondary"
-                  className={`text-[10px] px-1.5 py-0 ${
-                    item.severity === "high"
-                      ? "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400"
-                      : "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400"
-                  }`}
-                >
-                  {item.severity}
-                </Badge>
-                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-              </div>
-            </div>
-          </Link>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 export default function Home() {
   const { user, isAdmin } = useAuth();
   const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
   const canEdit = isAdmin || (companyRole && ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO"].includes(companyRole));
-
-  const { data: projects = [] } = useQuery<ProjectReport[]>({
-    queryKey: ["/api/projects-summary"],
-  });
 
   const { data: priorities = [], isLoading: prioritiesLoading } = useQuery<CompanyPriority[]>({
     queryKey: ["/api/mytool/company-priorities"],
@@ -329,8 +221,6 @@ export default function Home() {
       </div>
 
       <CompanyPrioritiesCards isAdmin={!!canEdit} priorities={priorities} isLoading={prioritiesLoading} />
-
-      <ImmediateAttentionPanel projects={projects} />
     </div>
   );
 }
