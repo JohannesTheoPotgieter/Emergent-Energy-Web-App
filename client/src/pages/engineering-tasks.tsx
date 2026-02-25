@@ -465,6 +465,7 @@ function TaskDetailDrawer({
   const [showApprovalActions, setShowApprovalActions] = useState(false);
   const [drawerHoldDialog, setDrawerHoldDialog] = useState(false);
   const [drawerHoldReason, setDrawerHoldReason] = useState("");
+  const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
 
   const { data: comments = [] } = useQuery<Comment[]>({
     queryKey: ["task-comments", task.id],
