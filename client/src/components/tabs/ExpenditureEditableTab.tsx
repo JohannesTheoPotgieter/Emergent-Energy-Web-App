@@ -901,17 +901,10 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
     <div className="space-y-3">
       {/* KPI Summary Strip */}
       <div className="rounded-lg border bg-white dark:bg-gray-950 shadow-sm overflow-hidden">
-        <div className="grid grid-cols-3 sm:grid-cols-5 divide-x divide-gray-100 dark:divide-gray-800">
+        <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-gray-100 dark:divide-gray-800">
           <div className="p-3 sm:p-4">
             <div className="text-[10px] uppercase tracking-wider font-medium text-gray-400">Actual</div>
             <div className="text-base sm:text-lg font-bold font-mono" data-testid="text-kpi-actual">{formatCurrency(kpis.totalActual)}</div>
-            <div className="text-[10px] text-gray-400 mt-0.5">{pctUsed}% of budget</div>
-          </div>
-          <div className="p-3 sm:p-4">
-            <div className="text-[10px] uppercase tracking-wider font-medium text-gray-400">Variance</div>
-            <div className={`text-base sm:text-lg font-bold font-mono ${kpis.variance >= 0 ? "text-emerald-600" : "text-red-600"}`} data-testid="text-kpi-variance">
-              {formatCurrency(kpis.variance)}
-            </div>
           </div>
           <div className="p-3 sm:p-4">
             <div className="text-[10px] uppercase tracking-wider font-medium text-gray-400">COS Realised</div>
