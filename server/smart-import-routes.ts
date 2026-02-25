@@ -1046,6 +1046,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
               turnaroundDays: merged.turnaroundDays,
               _budgetQty: merged.budgetQty || null,
               _budgetRate: merged.budgetRate || null,
+              _budgetTotal: merged.budgetTotal || null,
               _budgetCos: merged.budgetCos || null,
               _actualCos: merged.actualCos || null,
               _revenueRecognitionAmount: merged.revenueRecognitionAmount || null,
@@ -1054,17 +1055,29 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
           });
         if (costValues.length > 0) {
           const normalizedInserts = costValues.map((c: any) => {
-            const { _budgetQty, _budgetRate, _budgetCos, _actualCos, _revenueRecognitionAmount, _forecastPaymentDate, ...normalized } = c;
+            const { _budgetQty, _budgetRate, _budgetTotal, _budgetCos, _actualCos, _revenueRecognitionAmount, _forecastPaymentDate, ...normalized } = c;
             return normalized;
           });
           await tx.insert(normalizedCostLines).values(normalizedInserts);
 
-          const legacyCostBatch = costValues.map((c: any, idx: number) => ({
+          const legacyCostBatch = costValues.map((c: any, idx: number) => {
+            let lineStatus = "Planned";
+            if (c.paidDate) {
+              lineStatus = "Paid";
+            } else if (c.invoiceNumber || c.invoiceDate) {
+              lineStatus = "Invoiced";
+            } else if (c.poNumber) {
+              lineStatus = "Committed";
+            }
+            return {
             projectName,
             rowNumber: c.sourceRow || (idx + 1),
             rowType: "item" as const,
             expenseCategory: c.costCategory || null,
             expenseLineItem: c.description || null,
+            budgetQty: c._budgetQty || null,
+            budgetRateUnit: c._budgetRate || null,
+            budgetTotal: c._budgetTotal || null,
             expenseQty: c._budgetQty || null,
             expenseRateUnit: c._budgetRate || null,
             expenseActualTotal: c.amountExVat || null,
@@ -1079,9 +1092,12 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
             revenueAmount: c._revenueRecognitionAmount || null,
             actualCosTotal: c._actualCos || null,
             budgetCosTotal: c._budgetCos || null,
+            forecastPaymentDate: c._forecastPaymentDate || null,
             computedForecastPaymentDate: c._forecastPaymentDate || null,
             supplierName: c.counterpartyName || null,
-          } as any));
+            lineStatus,
+          } as any;
+          });
           for (let i = 0; i < legacyCostBatch.length; i += 100) {
             await tx.insert(programExpense).values(legacyCostBatch.slice(i, i + 100));
           }

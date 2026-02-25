@@ -47,6 +47,7 @@ export interface NormalizationResult {
     amountExVat: string | null;
     budgetQty: string | null;
     budgetRate: string | null;
+    budgetTotal: string | null;
     budgetCos: string | null;
     actualCos: string | null;
     revenueRecognitionAmount: string | null;
@@ -400,6 +401,12 @@ function extractRevenueLines(
   return lines;
 }
 
+function getBudgetColIndex(budgetMappings: MappingResult["budgetMappings"], field: string): number {
+  if (!budgetMappings) return -1;
+  const m = budgetMappings.find(bm => bm.canonicalField === field);
+  return m ? m.colIndex : -1;
+}
+
 function extractCostLines(
   data: any[][],
   mapping: MappingResult,
@@ -422,12 +429,15 @@ function extractCostLines(
   const approvedDateCol = getColIndex(mapping, "approved_date");
   const paidDateCol = getColIndex(mapping, "payment_date");
   const poCol = getColIndex(mapping, "po_number");
-  const budgetQtyCol = getColIndex(mapping, "budget_qty");
-  const budgetRateCol = getColIndex(mapping, "budget_rate");
-  const budgetCosCol = getColIndex(mapping, "budget_cos");
   const actualCosCol = getColIndex(mapping, "actual_cos");
   const revenueRecogCol = getColIndex(mapping, "revenue_recognition_amount");
-  const forecastPayDateCol = getColIndex(mapping, "forecast_payment_date");
+
+  const bm = mapping.budgetMappings;
+  const budgetQtyCol = getBudgetColIndex(bm, "budget_qty") >= 0 ? getBudgetColIndex(bm, "budget_qty") : getColIndex(mapping, "budget_qty");
+  const budgetRateCol = getBudgetColIndex(bm, "budget_rate") >= 0 ? getBudgetColIndex(bm, "budget_rate") : getColIndex(mapping, "budget_rate");
+  const budgetTotalCol = getBudgetColIndex(bm, "budget_total") >= 0 ? getBudgetColIndex(bm, "budget_total") : getColIndex(mapping, "budget_total");
+  const budgetCosCol = getBudgetColIndex(bm, "budget_cos") >= 0 ? getBudgetColIndex(bm, "budget_cos") : getColIndex(mapping, "budget_cos");
+  const forecastPayDateCol = getBudgetColIndex(bm, "forecast_payment_date") >= 0 ? getBudgetColIndex(bm, "forecast_payment_date") : getColIndex(mapping, "forecast_payment_date");
 
   const effectiveAmountCol = amountCol >= 0 ? amountCol : actualTotalCol;
 
@@ -545,6 +555,12 @@ function extractCostLines(
 
     const budgetQty = budgetQtyCol >= 0 ? parseNumber(row[budgetQtyCol]) : null;
     const budgetRate = budgetRateCol >= 0 ? parseNumber(row[budgetRateCol]) : null;
+    let budgetTotal = budgetTotalCol >= 0 ? parseNumber(row[budgetTotalCol]) : null;
+    if (budgetTotal == null && budgetQty != null && budgetRate != null) {
+      const q = parseFloat(String(budgetQty));
+      const r = parseFloat(String(budgetRate));
+      if (!isNaN(q) && !isNaN(r)) budgetTotal = String(q * r);
+    }
     const budgetCos = budgetCosCol >= 0 ? parseNumber(row[budgetCosCol]) : null;
     const actualCos = actualCosCol >= 0 ? parseNumber(row[actualCosCol]) : null;
     const revenueRecognitionAmount = revenueRecogCol >= 0 ? parseNumber(row[revenueRecogCol]) : null;
@@ -557,6 +573,7 @@ function extractCostLines(
       amountExVat,
       budgetQty,
       budgetRate,
+      budgetTotal,
       budgetCos,
       actualCos,
       revenueRecognitionAmount,
