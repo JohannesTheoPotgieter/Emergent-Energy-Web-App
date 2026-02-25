@@ -233,6 +233,28 @@ export function registerRoleManagementRoutes(app: Express) {
     }
   });
 
+  app.patch("/api/admin/users/:userId/password", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const userId = parseInt(req.params.userId as string);
+      const { password } = req.body;
+      if (!password || password.length < 4) {
+        return res.status(400).json({ error: "Password must be at least 4 characters" });
+      }
+
+      const hashedPassword = await bcrypt.hash(password, 10);
+      const [updated] = await db.update(users)
+        .set({ password: hashedPassword })
+        .where(eq(users.id, userId))
+        .returning({ id: users.id, name: users.name });
+
+      if (!updated) return res.status(404).json({ error: "User not found" });
+
+      res.json({ success: true, message: `Password updated for ${updated.name}` });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.delete("/api/admin/users/:userId", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const userId = parseInt(req.params.userId as string);

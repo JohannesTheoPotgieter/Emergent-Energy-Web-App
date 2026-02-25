@@ -35,6 +35,7 @@ import {
   Pencil,
   Trash2,
   UserPlus,
+  KeyRound,
 } from "lucide-react";
 import {
   COMPANY_ROLE_LABELS,
@@ -640,6 +641,9 @@ function UserManagementSection({ toast }: { toast: ReturnType<typeof useToast>["
   const [showCreateUser, setShowCreateUser] = useState(false);
   const [newUser, setNewUser] = useState({ username: "", name: "", email: "", password: "", role: "PROGRAM_MANAGER" });
   const [creatingUser, setCreatingUser] = useState(false);
+  const [resetPasswordUser, setResetPasswordUser] = useState<UserRecord | null>(null);
+  const [resetPassword, setResetPassword] = useState("");
+  const [resettingPassword, setResettingPassword] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -706,6 +710,34 @@ function UserManagementSection({ toast }: { toast: ReturnType<typeof useToast>["
       toast({ title: "Error", description: "Failed to create user.", variant: "destructive" });
     } finally {
       setCreatingUser(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (!resetPasswordUser || !resetPassword) return;
+    if (resetPassword.length < 4) {
+      toast({ title: "Error", description: "Password must be at least 4 characters.", variant: "destructive" });
+      return;
+    }
+    setResettingPassword(true);
+    try {
+      const res = await fetch(`/api/admin/users/${resetPasswordUser.id}/password`, {
+        method: "PATCH",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ password: resetPassword }),
+      });
+      if (res.ok) {
+        toast({ title: "Password Updated", description: `Password has been reset for ${resetPasswordUser.name}.` });
+        setResetPasswordUser(null);
+        setResetPassword("");
+      } else {
+        const data = await res.json();
+        toast({ title: "Error", description: data.error || "Failed to reset password.", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Error", description: "Failed to reset password.", variant: "destructive" });
+    } finally {
+      setResettingPassword(false);
     }
   };
 
@@ -810,6 +842,17 @@ function UserManagementSection({ toast }: { toast: ReturnType<typeof useToast>["
                     size="sm"
                     variant="ghost"
                     className="h-8 w-8 p-0 shrink-0"
+                    onClick={() => { setResetPasswordUser(user); setResetPassword(""); }}
+                    title="Reset password"
+                    data-testid={`btn-reset-password-${user.id}`}
+                  >
+                    <KeyRound className="h-4 w-4 text-blue-500" />
+                  </Button>
+
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 w-8 p-0 shrink-0"
                     onClick={() => handleDeleteUser(user.id)}
                     disabled={deletingUserId === user.id}
                     title="Delete user"
@@ -903,6 +946,42 @@ function UserManagementSection({ toast }: { toast: ReturnType<typeof useToast>["
           >
             {creatingUser ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <UserPlus className="h-4 w-4 mr-1" />}
             Create User
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <Dialog open={!!resetPasswordUser} onOpenChange={(open) => { if (!open) { setResetPasswordUser(null); setResetPassword(""); } }}>
+      <DialogContent data-testid="dialog-reset-password">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <KeyRound className="h-4 w-4" />
+            Reset Password
+          </DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-muted-foreground">
+          Set a new password for <strong>{resetPasswordUser?.name}</strong> ({resetPasswordUser?.email})
+        </p>
+        <div>
+          <Label htmlFor="reset-password">New Password</Label>
+          <Input
+            id="reset-password"
+            type="password"
+            placeholder="Enter new password (min 4 characters)"
+            value={resetPassword}
+            onChange={(e) => setResetPassword(e.target.value)}
+            data-testid="input-reset-password"
+          />
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => { setResetPasswordUser(null); setResetPassword(""); }} data-testid="btn-cancel-reset-password">Cancel</Button>
+          <Button
+            onClick={handleResetPassword}
+            disabled={resettingPassword || resetPassword.length < 4}
+            data-testid="btn-confirm-reset-password"
+          >
+            {resettingPassword ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <KeyRound className="h-4 w-4 mr-1" />}
+            Update Password
           </Button>
         </DialogFooter>
       </DialogContent>
