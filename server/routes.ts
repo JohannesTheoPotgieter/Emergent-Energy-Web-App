@@ -30,8 +30,7 @@ import { derivedPortfolioKpis, derivedProjectKpis } from "@shared/schema";
 function isCosRealisedCheck(exp: any): boolean {
   const hasInvoice = !!(exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim());
   const hasInvDate = !!(exp.expenseInvoicedDate && String(exp.expenseInvoicedDate).trim());
-  const hasPO = !!(exp.expensePoNumber && String(exp.expensePoNumber).trim());
-  if (!hasPO || !hasInvoice || !hasInvDate) return false;
+  if (!hasInvoice || !hasInvDate) return false;
   const dateConfirmed =
     exp.invoiceDateConfirmed === true ||
     exp.invoiceDateFontColor === 'black';
@@ -5094,7 +5093,6 @@ export async function registerRoutes(
           }
         }
 
-        const hasPO = !!(exp.expensePoNumber && exp.expensePoNumber.trim());
         const hasInvoice = !!(exp.expenseInvoiceNumber && exp.expenseInvoiceNumber.trim());
         const hasInvDate = !!(exp.expenseInvoicedDate && String(exp.expenseInvoicedDate).trim());
         const invoiceDateBlack = hasInvDate && (
@@ -5102,11 +5100,11 @@ export async function registerRoutes(
         );
 
         let cosStatus: string;
-        if (hasPO && hasInvoice && invoiceDateBlack) {
+        if (hasInvoice && invoiceDateBlack) {
           cosStatus = 'COS Realised';
-        } else if (hasPO && hasInvoice && hasInvDate && !invoiceDateBlack) {
+        } else if (hasInvoice && hasInvDate && !invoiceDateBlack) {
           cosStatus = 'Deferred';
-        } else if (invoiceDateBlack && (!hasPO || !hasInvoice)) {
+        } else if (invoiceDateBlack && !hasInvoice) {
           cosStatus = 'Flagged';
         } else {
           cosStatus = 'Planned';

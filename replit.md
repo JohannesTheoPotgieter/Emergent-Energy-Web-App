@@ -8,9 +8,9 @@ Preferred communication style: Simple, everyday language.
 
 ### Data Import Rules
 - **Project Name Derivation**: The project name is ALWAYS derived from the Excel filename — specifically all alphanumeric characters (letters, numbers, spaces) before "_Tracker" or "_tracker" in the filename. E.g., `Coega_Steels_Phase_2_Tracker.xlsx` → project name "Coega Steels Phase 2". Underscores in the filename before "_Tracker" are replaced with spaces.
-- **COS Realised**: PO number + Invoice Number + Black invoice date font. Logic: hasPO + hasInvoice + (invoiceDateConfirmed === true OR invoiceDateFontColor === 'black'). NULL/empty font color does NOT default to confirmed.
-- **COS Deferred**: PO + Invoice present + invoice date exists but font is RED (not yet realised).
-- **COS Flagged**: Invoice date font IS black but missing either PO or Invoice number — needs attention. Users can override Flagged status via a dialog (click the badge), providing a new status and reason. Overrides are stored in `cos_status_overrides` table, keyed by `expense_id` + `project_name:row_number` for re-import resilience. Override reason shown on hover.
+- **COS Realised**: Invoice Number + Black invoice date font. Logic: hasInvoice + (invoiceDateConfirmed === true OR invoiceDateFontColor === 'black'). PO number is NOT required for realisation. NULL/empty font color does NOT default to confirmed.
+- **COS Deferred**: Invoice present + invoice date exists but font is RED (not yet realised).
+- **COS Flagged**: Invoice date font IS black but missing Invoice number — needs attention. Users can override Flagged status via a dialog (click the badge), providing a new status and reason. Overrides are stored in `cos_status_overrides` table, keyed by `expense_id` + `project_name:row_number` for re-import resilience. Override reason shown on hover.
 - **COS Planned**: Default state for all other lines.
 - **Cashflow Out of Bank**: Payment date font is BLACK + has invoice number. Logic: paymentDateBlack + hasInvoice.
 - **Cashflow Payment Planned**: Payment date exists but font is RED (planned, not yet out of bank).
