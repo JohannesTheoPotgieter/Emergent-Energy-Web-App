@@ -3054,6 +3054,73 @@ export const insertFeedbackTicketSchema = createInsertSchema(feedbackTickets).om
 export type InsertFeedbackTicket = z.infer<typeof insertFeedbackTicketSchema>;
 export type FeedbackTicket = typeof feedbackTickets.$inferSelect;
 
+export const eeInfoNodeStatusEnum = pgEnum('ee_info_node_status', ['stub', 'draft', 'published']);
+export const eeInfoNodeCategoryEnum = pgEnum('ee_info_node_category', ['role', 'process', 'tool', 'template', 'other', 'unknown']);
+export const eeInfoEdgeTypeEnum = pgEnum('ee_info_edge_type', ['link', 'embed', 'reference']);
+
+export const eeInfoNodes = pgTable("ee_info_nodes", {
+  id: text("id").primaryKey(),
+  slug: text("slug").notNull().unique(),
+  title: text("title").notNull(),
+  contentMarkdown: text("content_markdown"),
+  status: text("status").notNull().default("stub"),
+  category: text("category").notNull().default("unknown"),
+  tags: jsonb("tags").$type<string[]>().default([]),
+  flowEnabled: boolean("flow_enabled").default(false),
+  flowLane: text("flow_lane"),
+  flowStepCode: text("flow_step_code"),
+  nextSlugs: jsonb("next_slugs").$type<string[]>().default([]),
+  prevSlugs: jsonb("prev_slugs").$type<string[]>().default([]),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  createdBy: text("created_by"),
+  updatedBy: text("updated_by"),
+});
+
+export type EeInfoNode = typeof eeInfoNodes.$inferSelect;
+
+export const eeInfoEdges = pgTable("ee_info_edges", {
+  id: text("id").primaryKey(),
+  fromNodeId: text("from_node_id").notNull().references(() => eeInfoNodes.id, { onDelete: "cascade" }),
+  toNodeId: text("to_node_id").notNull().references(() => eeInfoNodes.id, { onDelete: "cascade" }),
+  edgeType: text("edge_type").notNull().default("link"),
+});
+
+export type EeInfoEdge = typeof eeInfoEdges.$inferSelect;
+
+export const eeInfoAssets = pgTable("ee_info_assets", {
+  id: text("id").primaryKey(),
+  nodeId: text("node_id").references(() => eeInfoNodes.id, { onDelete: "cascade" }),
+  filename: text("filename").notNull(),
+  mimeType: text("mime_type"),
+  storagePath: text("storage_path").notNull(),
+  uploadedAt: timestamp("uploaded_at").defaultNow(),
+  uploadedBy: text("uploaded_by"),
+});
+
+export type EeInfoAsset = typeof eeInfoAssets.$inferSelect;
+
+export const eeInfoVersions = pgTable("ee_info_versions", {
+  id: text("id").primaryKey(),
+  nodeId: text("node_id").notNull().references(() => eeInfoNodes.id, { onDelete: "cascade" }),
+  contentMarkdown: text("content_markdown"),
+  changedBy: text("changed_by"),
+  changedAt: timestamp("changed_at").defaultNow(),
+  changeNote: text("change_note"),
+});
+
+export type EeInfoVersion = typeof eeInfoVersions.$inferSelect;
+
+export const eeInfoSettings = pgTable("ee_info_settings", {
+  id: serial("id").primaryKey(),
+  seedImportCompleted: boolean("seed_import_completed").default(false),
+  seedImportHash: text("seed_import_hash"),
+  seedImportedAt: timestamp("seed_imported_at"),
+  seedImportedBy: text("seed_imported_by"),
+});
+
+export type EeInfoSettings = typeof eeInfoSettings.$inferSelect;
+
 export const DEFAULT_ROLE_PERMISSIONS: InsertRolePermission[] = [
   { role: "COO_ADMIN", label: "COO", description: "Full executive access, settings, user management", sections: ["EXCO", "PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "ADMIN", "MY_TOOL", "FINANCE", "PROJECTS", "OPERATIONS", "GOVERNANCE", "COCKPIT", "MONEY", "DELIVERY"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
   { role: "CEO_ADMIN", label: "CEO", description: "Full executive access, strategic oversight", sections: ["EXCO", "PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "ADMIN", "MY_TOOL", "FINANCE", "PROJECTS", "OPERATIONS", "GOVERNANCE", "COCKPIT", "MONEY", "DELIVERY"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },

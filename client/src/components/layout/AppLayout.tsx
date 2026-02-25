@@ -41,6 +41,7 @@ import {
   ShieldAlert,
   ClipboardList,
   MessageSquareText,
+  BookOpen,
 } from "lucide-react";
 import { UX_REDESIGN_ENABLED } from "@shared/schema";
 import { useProgramData } from "@/hooks/use-program-data";
@@ -174,6 +175,7 @@ function getRedesignedNavGroups(): NavGroup[] {
       section: "GOVERNANCE",
       items: [
         { label: "Quality Dashboard", icon: ShieldCheck, path: "/quality" },
+        { label: "Emergent Energy Info", icon: BookOpen, path: "/ee-info" },
       ],
     },
     {

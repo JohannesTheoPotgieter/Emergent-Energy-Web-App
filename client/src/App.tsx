@@ -49,6 +49,7 @@ import WeeklyReviewsPage from "@/pages/weekly-reviews";
 import AdminRolesPage from "@/pages/admin-roles";
 import TrRegisterPage from "@/pages/tr-register";
 import FeedbackPage from "@/pages/feedback";
+import EeInfoPage from "@/pages/ee-info";
 import { useAuth } from "@/hooks/use-auth";
 import { useProgramData } from "@/hooks/use-program-data";
 import { TrackerTable } from "@/components/dashboard/TrackerTable";
@@ -244,6 +245,7 @@ function ProtectedPages() {
         <Route path="/admin/roles" component={AdminRolesPage} />
         <Route path="/tr-register" component={TrRegisterPage} />
         <Route path="/feedback" component={FeedbackPage} />
+        <Route path="/ee-info" component={EeInfoPage} />
 
         <Route component={NotFound} />
       </Switch>
