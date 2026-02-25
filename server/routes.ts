@@ -368,6 +368,39 @@ function applyExpenditureOverrides(
   });
 }
 
+function applyExpenditureOverridesWithConfirmed(
+  baselineRows: any[],
+  overrides: any[]
+): any[] {
+  if (overrides.length === 0) return baselineRows;
+
+  const overrideMap = new Map<number, Map<string, any>>();
+  overrides.forEach((o: any) => {
+    if (!overrideMap.has(o.rowNumber)) {
+      overrideMap.set(o.rowNumber, new Map());
+    }
+    overrideMap.get(o.rowNumber)!.set(o.fieldName, o.overrideValue);
+  });
+
+  return baselineRows.map((row: any) => {
+    if (!row.rowNumber || !overrideMap.has(row.rowNumber)) {
+      return row;
+    }
+    const fieldOverrides = overrideMap.get(row.rowNumber)!;
+    const updatedRow = { ...row };
+    fieldOverrides.forEach((value, fieldName) => {
+      updatedRow[fieldName] = value === '__null__' ? null : value;
+    });
+    if (fieldOverrides.has('invoiceDateFontColor')) {
+      updatedRow.invoiceDateConfirmed = fieldOverrides.get('invoiceDateFontColor') === 'black';
+    }
+    if (fieldOverrides.has('paymentDateFontColor')) {
+      updatedRow.paymentDateConfirmed = fieldOverrides.get('paymentDateFontColor') === 'black';
+    }
+    return updatedRow;
+  });
+}
+
 // Apply finance revenue overrides
 function applyFinanceRevenueOverrides(
   baselineData: any[],
@@ -2495,15 +2528,19 @@ export async function registerRoutes(
 
   app.get("/api/cos-tracker", requireAuth, async (req, res) => {
     try {
-      const [legacyExpenses, manualEntries, legacyRawInflows, allTaskLinks, allOpTasks, allPlans] = await Promise.all([
+      const [legacyExpenses, manualEntries, legacyRawInflows, allTaskLinks, allOpTasks, allPlans, allOverrides] = await Promise.all([
         storage.getAllProgramExpenses(),
         storage.getTrackerMonthlyManual('COS'),
         storage.getAllProgramInflows(),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
         storage.getAllProjectPlans(),
+        storage.getAllExpenditureOverrides(),
       ]);
-      const mergedData = await getMergedExpensesAndInflows(legacyExpenses, legacyRawInflows);
+      const mergedData = await getMergedExpensesAndInflows(
+        applyExpenditureOverridesWithConfirmed(legacyExpenses, allOverrides),
+        legacyRawInflows
+      );
       const allProgramExpenses = mergedData.expenses;
       const allInflows = resolveInflowEffectiveDates(mergedData.inflows, allTaskLinks, allOpTasks, allPlans);
 
@@ -2662,8 +2699,13 @@ export async function registerRoutes(
       const match = monthKey.match(/^(\d{4})-(\d{2})$/);
       if (!match) return res.status(400).json({ error: "Invalid monthKey format" });
 
-      const legacyExp = await storage.getAllProgramExpenses();
-      const { expenses: allExpenses } = await getMergedExpensesAndInflows(legacyExp, []);
+      const [legacyExp, allOverrides] = await Promise.all([
+        storage.getAllProgramExpenses(),
+        storage.getAllExpenditureOverrides(),
+      ]);
+      const { expenses: allExpenses } = await getMergedExpensesAndInflows(
+        applyExpenditureOverridesWithConfirmed(legacyExp, allOverrides), []
+      );
 
       interface LineItem {
         id: number;
@@ -5047,16 +5089,50 @@ export async function registerRoutes(
 
   // ==================== EXPENDITURE BREAKDOWN COMPOSITE API ====================
 
+  app.patch("/api/expenditure/font-color-toggle", requireAuth, async (req, res) => {
+    try {
+      const { projectName, rowNumber, field, color } = req.body;
+      if (!projectName || rowNumber == null || !field || !color) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+
+      const confirmedField = field === 'invoiceDateFontColor' ? 'invoiceDateConfirmed'
+        : field === 'paymentDateFontColor' ? 'paymentDateConfirmed' : null;
+      const isBlack = color === 'black';
+
+      await storage.upsertManyExpenditureOverrides([
+        { projectName, rowNumber, fieldName: field, overrideValue: color },
+        ...(confirmedField ? [{ projectName, rowNumber, fieldName: confirmedField, overrideValue: isBlack ? 'true' : 'false' }] : []),
+      ]);
+
+      const expenses = await storage.getProgramExpensesByProject(projectName);
+      const expense = expenses.find((e: any) => e.rowNumber === rowNumber);
+      if (expense) {
+        const updateFields: Record<string, any> = { [field]: color };
+        if (confirmedField) updateFields[confirmedField] = isBlack;
+        await storage.updateProgramExpenseFields(expense.id, updateFields);
+      }
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Font color toggle error:", error);
+      res.status(500).json({ error: "Failed to toggle font color" });
+    }
+  });
+
   app.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, res) => {
     try {
       const projectName = req.params.projectName;
-      const [expenses, taskLinks, opTasks, planTasks, cosOverrides] = await Promise.all([
+      const [rawExpenses, taskLinks, opTasks, planTasks, cosOverrides, expenditureOverrides] = await Promise.all([
         storage.getProgramExpensesByProject(projectName),
         storage.getExpenseTaskLinks(projectName),
         storage.getOperationalTasksByProject(projectName),
         storage.getProjectPlansByProject(projectName),
         db.select().from(cosStatusOverrides).where(eq(cosStatusOverrides.projectName, projectName)),
+        storage.getExpenditureOverridesByProject(projectName),
       ]);
+
+      const expenses = applyExpenditureOverridesWithConfirmed(rawExpenses, expenditureOverrides);
 
       const cosOverrideByExpenseId = new Map(cosOverrides.map(o => [o.expenseId, o]));
       const cosOverrideByRow = new Map(cosOverrides.map(o => [`${o.projectName}:${o.rowNumber}`, o]));

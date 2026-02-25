@@ -658,10 +658,33 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
       handleCellEdit(rowId, field, "__null__");
     };
 
-    const toggleColor = (e: React.MouseEvent) => {
+    const toggleColor = async (e: React.MouseEvent) => {
       e.stopPropagation();
       const newColor = isRed ? "black" : "red";
       handleCellEdit(rowId, fontColorField, newColor);
+      const allItems = breakdownData?.items || [];
+      const originalRow = allItems.find((r) => r.id === rowId);
+      if (originalRow) {
+        try {
+          await authFetch("/api/expenditure/font-color-toggle", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              projectName,
+              rowNumber: originalRow.rowNumber || rowId,
+              field: fontColorField,
+              color: newColor,
+            }),
+          });
+          queryClient.invalidateQueries({ queryKey: breakdownKey });
+          queryClient.invalidateQueries({ predicate: (query) => {
+            const key = query.queryKey[0];
+            return typeof key === 'string' && (key.startsWith('/api/cos-tracker') || key.startsWith('/api/cashflow'));
+          }});
+        } catch (err) {
+          console.error("Font color toggle failed:", err);
+        }
+      }
     };
 
     if (!isAdmin) {

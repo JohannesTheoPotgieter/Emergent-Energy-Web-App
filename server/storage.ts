@@ -205,6 +205,7 @@ export interface IStorage {
 
   // Expenditure Overrides (user edits for expenses)
   getExpenditureOverridesByProject(projectName: string): Promise<ExpenditureOverride[]>;
+  getAllExpenditureOverrides(): Promise<ExpenditureOverride[]>;
   upsertExpenditureOverride(override: InsertExpenditureOverride): Promise<ExpenditureOverride>;
   upsertManyExpenditureOverrides(overrides: InsertExpenditureOverride[]): Promise<ExpenditureOverride[]>;
   deleteExpenditureOverridesByProject(projectName: string): Promise<void>;
@@ -1099,6 +1100,12 @@ export class DatabaseStorage implements IStorage {
       .from(expenditureOverrides)
       .where(eq(expenditureOverrides.projectName, projectName))
       .orderBy(expenditureOverrides.rowNumber);
+  }
+
+  async getAllExpenditureOverrides(): Promise<ExpenditureOverride[]> {
+    return this.dbInstance.select()
+      .from(expenditureOverrides)
+      .orderBy(expenditureOverrides.projectName, expenditureOverrides.rowNumber);
   }
 
   async upsertExpenditureOverride(override: InsertExpenditureOverride): Promise<ExpenditureOverride> {
