@@ -13,23 +13,21 @@ const router = Router();
 function isCosRealised(exp: any): boolean {
   const hasInvoice = !!(exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim());
   const hasInvDate = !!(exp.expenseInvoicedDate && String(exp.expenseInvoicedDate).trim());
-  if (!hasInvoice || !hasInvDate) return false;
+  const hasPO = !!(exp.expensePoNumber && String(exp.expensePoNumber).trim());
+  if (!hasPO || !hasInvoice || !hasInvDate) return false;
   const dateConfirmed =
     exp.invoiceDateConfirmed === true ||
-    exp.invoiceDateFontColor === 'black' ||
-    (!exp.invoiceDateFontColor || exp.invoiceDateFontColor === '');
+    exp.invoiceDateFontColor === 'black';
   return dateConfirmed;
 }
 
 function isCashflowConfirmed(exp: any): boolean {
   const hasInvoice = !!(exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim());
-  const hasPO = !!(exp.expensePoNumber && String(exp.expensePoNumber).trim());
   const hasPayDate = !!(exp.expensePaymentDate && String(exp.expensePaymentDate).trim());
-  if (!hasInvoice || !hasPO || !hasPayDate) return false;
+  if (!hasInvoice || !hasPayDate) return false;
   const payDateConfirmed =
     exp.paymentDateConfirmed === true ||
-    exp.paymentDateFontColor === 'black' ||
-    (!exp.paymentDateFontColor || exp.paymentDateFontColor === '');
+    exp.paymentDateFontColor === 'black';
   return payDateConfirmed;
 }
 
@@ -2242,27 +2240,32 @@ router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, r
 
       const hasPO = !!(exp.expensePoNumber && exp.expensePoNumber.trim());
       const hasInvoice = !!(exp.expenseInvoiceNumber && exp.expenseInvoiceNumber.trim());
-      const cosRealised = isCosRealised(exp);
-      const cashflowConfirmed = isCashflowConfirmed(exp);
+      const hasInvDate = !!(exp.expenseInvoicedDate && String(exp.expenseInvoicedDate).trim());
+      const invoiceDateBlack = hasInvDate && (
+        exp.invoiceDateConfirmed === true || exp.invoiceDateFontColor === 'black'
+      );
 
       let cosStatus: string;
-      if (cosRealised) {
+      if (hasPO && hasInvoice && invoiceDateBlack) {
         cosStatus = 'COS Realised';
-      } else if (hasPO || hasInvoice) {
-        cosStatus = 'Not Yet Realised';
+      } else if (hasPO && hasInvoice && hasInvDate && !invoiceDateBlack) {
+        cosStatus = 'Deferred';
+      } else if (invoiceDateBlack && (!hasPO || !hasInvoice)) {
+        cosStatus = 'Flagged';
       } else {
         cosStatus = 'Planned';
       }
 
+      const hasPayDate = !!(exp.expensePaymentDate && String(exp.expensePaymentDate).trim());
+      const paymentDateBlack = hasPayDate && (
+        exp.paymentDateConfirmed === true || exp.paymentDateFontColor === 'black'
+      );
+
       let paymentStatus: string;
-      if (cashflowConfirmed) {
-        paymentStatus = 'Paid';
-      } else if (cosRealised) {
-        paymentStatus = 'Invoiced';
-      } else if (exp.expensePaymentDate && exp.paymentDateFontColor === 'red') {
+      if (paymentDateBlack && hasInvoice) {
+        paymentStatus = 'Out of Bank';
+      } else if (hasPayDate && !paymentDateBlack) {
         paymentStatus = 'Payment Planned';
-      } else if (hasPO || hasInvoice) {
-        paymentStatus = 'Committed';
       } else {
         paymentStatus = 'Planned';
       }

@@ -8,8 +8,14 @@ Preferred communication style: Simple, everyday language.
 
 ### Data Import Rules
 - **Project Name Derivation**: The project name is ALWAYS derived from the Excel filename — specifically all alphanumeric characters (letters, numbers, spaces) before "_Tracker" or "_tracker" in the filename. E.g., `Coega_Steels_Phase_2_Tracker.xlsx` → project name "Coega Steels Phase 2". Underscores in the filename before "_Tracker" are replaced with spaces.
-- **COS Realized**: Invoice captured + invoice date font is black (confirmed/actual). Unified via `isCosRealised()` / `isCosRealisedCheck()` helper functions in `finance-routes.ts` and `routes.ts`. Logic: hasInvoice + hasInvoiceDate + (invoiceDateConfirmed === true OR invoiceDateFontColor === 'black' OR fontColor is null/empty). Also aligned in `stateClassifier.ts` and `data-merge.ts`.
-- **Cashflow Confirmed**: Invoice captured + PO captured + payment date font is black (confirmed). Unified via `isCashflowConfirmed()` / `isCashflowConfirmedCheck()` helpers.
+- **COS Realised**: PO number + Invoice Number + Black invoice date font. Logic: hasPO + hasInvoice + (invoiceDateConfirmed === true OR invoiceDateFontColor === 'black'). NULL/empty font color does NOT default to confirmed.
+- **COS Deferred**: PO + Invoice present + invoice date exists but font is RED (not yet realised).
+- **COS Flagged**: Invoice date font IS black but missing either PO or Invoice number — needs attention.
+- **COS Planned**: Default state for all other lines.
+- **Cashflow Out of Bank**: Payment date font is BLACK + has invoice number. Logic: paymentDateBlack + hasInvoice.
+- **Cashflow Payment Planned**: Payment date exists but font is RED (planned, not yet out of bank).
+- **Cashflow Planned**: No payment date or no relevant data.
+- **Font Color Rule**: Only explicit black font (invoiceDateFontColor === 'black' or invoiceDateConfirmed === true) means confirmed. NULL or empty font color is treated as NOT confirmed (changed from legacy behavior that defaulted null to confirmed).
 - **Revenue Recognition Amount**: Extracted from "REVENUE RECOGNITION AMOUNT" column in the Expenditure Breakdown sheet. Stored in `program_expense.revenue_amount`. Both the legacy excelParser and Smart Import normalizer extract this field.
 - **Budget vs Actual Separation**: The Expenditure Breakdown sheet has dual sections — budget (left, cols 2-8) and actual (right, cols 13-26). The parser uses `actualSectionStartCol` detection to build separate `budgetColMap` and `colMap` for correct column resolution.
 - **Smart Import Legacy Parity**: The Smart Import commit writes ALL fields to `program_expense` that the legacy excelParser writes, including: `revenueAmount` (from revenue_recognition_amount), `actualCosTotal` (from actual_cos), `budgetCosTotal` (from budget_cos), `budgetQty`, `budgetRateUnit`, `budgetTotal` (from budget section columns), `expenseQty` (from budget_qty), `expenseRateUnit` (from budget_rate), `forecastPaymentDate`, `computedForecastPaymentDate` (from forecast_payment_date), and `lineStatus` (derived: Planned/Committed/Invoiced/Paid). Without these, COS tracker and cashflow calculations produce wrong numbers after re-import.
