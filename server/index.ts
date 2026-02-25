@@ -285,6 +285,10 @@ async function seedUsers() {
   const { runDataSeedMigration } = await import("./seed-data-migration");
   await runDataSeedMigration().catch(err => console.error('[DataSeed] Migration error:', err));
 
+  const { registerEeInfoRoutes, bootImportCheck } = await import("./ee-info-routes");
+  registerEeInfoRoutes(app);
+  await bootImportCheck().catch(err => console.error('[EE-Info] Boot import error:', err));
+
   const { backfillProjectIds } = await import("./lib/backfill-project-ids");
   await backfillProjectIds().catch(err => console.error('[Backfill] Project IDs error:', err));
 
