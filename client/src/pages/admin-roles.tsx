@@ -66,6 +66,76 @@ const SECTION_LABELS: Record<string, string> = {
   ADMIN: "Admin",
 };
 
+const SECTION_CONFIG: {
+  key: string;
+  label: string;
+  description: string;
+  icon: string;
+  entities: { entity: PermissionEntity; entityLabel: string }[];
+}[] = [
+  {
+    key: "COCKPIT",
+    label: "EXCO",
+    description: "My Tool, Company Priorities, Lifecycle Dashboard",
+    icon: "📊",
+    entities: [],
+  },
+  {
+    key: "PROJECTS",
+    label: "Project Management",
+    description: "Execution Board, Project Summary, TR Register, Smart Import",
+    icon: "📋",
+    entities: [
+      { entity: "projects" as PermissionEntity, entityLabel: "Projects" },
+    ],
+  },
+  {
+    key: "MONEY",
+    label: "Project Finance",
+    description: "Cashflow, COS Tracker, Procurement",
+    icon: "💰",
+    entities: [
+      { entity: "financials" as PermissionEntity, entityLabel: "Financials" },
+      { entity: "procurement" as PermissionEntity, entityLabel: "Procurement" },
+    ],
+  },
+  {
+    key: "DELIVERY",
+    label: "Engineering",
+    description: "Engineering tasks, Task Board",
+    icon: "🔧",
+    entities: [
+      { entity: "engineering" as PermissionEntity, entityLabel: "Engineering" },
+    ],
+  },
+  {
+    key: "GOVERNANCE",
+    label: "Governance",
+    description: "Quality Dashboard",
+    icon: "🛡️",
+    entities: [
+      { entity: "quality" as PermissionEntity, entityLabel: "Quality" },
+      { entity: "governance" as PermissionEntity, entityLabel: "Governance" },
+    ],
+  },
+  {
+    key: "INFORMATION",
+    label: "Information",
+    description: "Feedback & Support, Emergent Energy Info",
+    icon: "📖",
+    entities: [],
+  },
+  {
+    key: "ADMIN",
+    label: "Admin",
+    description: "Settings, Roles & Permissions",
+    icon: "⚙️",
+    entities: [
+      { entity: "admin" as PermissionEntity, entityLabel: "Admin" },
+    ],
+  },
+];
+
 function getAuthHeaders(): HeadersInit {
   const token = localStorage.getItem("auth_token");
   return {
@@ -149,7 +219,9 @@ function RoleTableSection({ toast }: { toast: ReturnType<typeof useToast>["toast
   const toggleSection = (roleKey: string, section: string) => {
     const role = roles.find(r => r.role === roleKey);
     if (!role) return;
-    const current = (pendingChanges[roleKey]?.sections as string[] | undefined) || (role.sections as string[]) || [];
+    const validKeys = new Set(ALL_SECTIONS as readonly string[]);
+    const raw = (pendingChanges[roleKey]?.sections as string[] | undefined) || (role.sections as string[]) || [];
+    const current = raw.filter(s => validKeys.has(s));
     const next = current.includes(section)
       ? current.filter(s => s !== section)
       : [...current, section];
@@ -348,7 +420,9 @@ function RoleTableSection({ toast }: { toast: ReturnType<typeof useToast>["toast
           const isExpanded = expandedRole === role.role;
           const changes = pendingChanges[role.role];
           const hasChanges = !!changes;
-          const effectiveSections = (changes?.sections as string[] | undefined) || (role.sections as string[]) || [];
+          const rawSections = (changes?.sections as string[] | undefined) || (role.sections as string[]) || [];
+          const validSectionKeys = new Set(ALL_SECTIONS as readonly string[]);
+          const effectiveSections = rawSections.filter(s => validSectionKeys.has(s));
           const effectiveCanManageUsers = changes?.canManageUsers ?? role.canManageUsers;
           const effectiveCanManageRoles = changes?.canManageRoles ?? role.canManageRoles;
           const effectiveCanEditData = changes?.canEditData ?? role.canEditData;
@@ -401,7 +475,7 @@ function RoleTableSection({ toast }: { toast: ReturnType<typeof useToast>["toast
                     )}
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
-                    <Badge variant="outline" className="text-[10px]">{effectiveSections.length} sections</Badge>
+                    <Badge variant="outline" className="text-[10px]">{effectiveSections.length} of {ALL_SECTIONS.length} sections</Badge>
                   </div>
                 </button>
                 <div className="flex items-center gap-1 shrink-0">
@@ -434,114 +508,119 @@ function RoleTableSection({ toast }: { toast: ReturnType<typeof useToast>["toast
               {isExpanded && (
                 <div className="px-3 pb-3 space-y-4 border-t border-gray-100 pt-3" data-testid={`role-details-${role.role}`}>
                   <div>
-                    <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">Section Access</h4>
-                    <div className="flex flex-wrap gap-1.5">
-                      {ALL_SECTIONS.map((section) => {
-                        const isActive = effectiveSections.includes(section);
+                    <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-3">Sidebar Sections — What this role can see</h4>
+                    <div className="grid grid-cols-1 gap-2">
+                      {SECTION_CONFIG.map(({ key, label, description, icon, entities }) => {
+                        const isActive = effectiveSections.includes(key);
                         return (
-                          <Badge
-                            key={section}
-                            variant={isActive ? "default" : "outline"}
-                            className={`cursor-pointer select-none transition-colors text-xs ${
+                          <div
+                            key={key}
+                            className={`rounded-lg border transition-all ${
                               isActive
-                                ? "bg-green-600 hover:bg-green-700 text-white border-green-600"
-                                : "hover:bg-gray-100 text-gray-500 border-gray-300"
+                                ? "border-green-200 bg-green-50/50"
+                                : "border-gray-100 bg-gray-50/30 opacity-60"
                             }`}
-                            onClick={() => toggleSection(role.role, section)}
-                            data-testid={`badge-section-${role.role}-${section}`}
+                            data-testid={`section-card-${role.role}-${key}`}
                           >
-                            {SECTION_LABELS[section] || section}
-                          </Badge>
+                            <div className="flex items-center gap-3 px-3 py-2.5">
+                              <Switch
+                                checked={isActive}
+                                onCheckedChange={() => toggleSection(role.role, key)}
+                                data-testid={`badge-section-${role.role}-${key}`}
+                              />
+                              <div className="flex items-center gap-2 flex-1 min-w-0">
+                                <span className="text-base">{icon}</span>
+                                <div>
+                                  <span className="text-sm font-medium text-gray-800">{label}</span>
+                                  <p className="text-[11px] text-gray-500 leading-tight">{description}</p>
+                                </div>
+                              </div>
+                              {isActive && entities.length > 0 && (
+                                <div className="flex gap-0.5 shrink-0">
+                                  {(["view", "edit", "approve", "override"] as PermissionAction[]).map(action => (
+                                    <span key={action} className="text-[9px] text-gray-400 font-medium uppercase w-11 text-center">{action}</span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                            {isActive && entities.length > 0 && (
+                              <div className="px-3 pb-2.5 pt-0">
+                                <div className="ml-12 space-y-1">
+                                  {entities.map(({ entity, entityLabel }) => (
+                                    <div key={entity} className="flex items-center justify-between" data-testid={`entity-row-${role.role}-${entity}`}>
+                                      <span className="text-xs text-gray-600">{entityLabel}</span>
+                                      <div className="flex gap-0.5">
+                                        {(["view", "edit", "approve", "override"] as PermissionAction[]).map(action => {
+                                          const active = getEntityPerm(role.role, entity, action);
+                                          return (
+                                            <button
+                                              key={action}
+                                              className={`w-11 h-6 rounded border text-[10px] font-medium transition-colors ${
+                                                active
+                                                  ? "bg-green-600 border-green-600 text-white"
+                                                  : "bg-white border-gray-200 text-gray-300 hover:border-gray-400 hover:text-gray-400"
+                                              }`}
+                                              onClick={() => toggleEntityPerm(role.role, entity, action)}
+                                              data-testid={`entity-perm-${role.role}-${entity}-${action}`}
+                                            >
+                                              {active ? "Yes" : "No"}
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
                         );
                       })}
                     </div>
                   </div>
 
                   <div>
-                    <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">Capabilities</h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">Special Capabilities</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                       <label
-                        className="flex items-center justify-between gap-2 p-2 rounded-md border border-gray-100 hover:bg-gray-50 cursor-pointer"
+                        className="flex items-center justify-between gap-2 p-2.5 rounded-lg border border-gray-100 hover:bg-gray-50 cursor-pointer"
                         data-testid={`toggle-canManageUsers-${role.role}`}
                       >
-                        <span className="text-sm text-gray-700">Manage Users</span>
+                        <div>
+                          <span className="text-sm text-gray-700 font-medium block">Manage Users</span>
+                          <span className="text-[11px] text-gray-400">Create, edit, delete user accounts</span>
+                        </div>
                         <Switch
                           checked={!!effectiveCanManageUsers}
                           onCheckedChange={() => toggleCapability(role.role, "canManageUsers")}
                         />
                       </label>
                       <label
-                        className="flex items-center justify-between gap-2 p-2 rounded-md border border-gray-100 hover:bg-gray-50 cursor-pointer"
+                        className="flex items-center justify-between gap-2 p-2.5 rounded-lg border border-gray-100 hover:bg-gray-50 cursor-pointer"
                         data-testid={`toggle-canManageRoles-${role.role}`}
                       >
-                        <span className="text-sm text-gray-700">Manage Roles</span>
+                        <div>
+                          <span className="text-sm text-gray-700 font-medium block">Manage Roles</span>
+                          <span className="text-[11px] text-gray-400">Create, edit role permissions</span>
+                        </div>
                         <Switch
                           checked={!!effectiveCanManageRoles}
                           onCheckedChange={() => toggleCapability(role.role, "canManageRoles")}
                         />
                       </label>
                       <label
-                        className="flex items-center justify-between gap-2 p-2 rounded-md border border-gray-100 hover:bg-gray-50 cursor-pointer"
+                        className="flex items-center justify-between gap-2 p-2.5 rounded-lg border border-gray-100 hover:bg-gray-50 cursor-pointer"
                         data-testid={`toggle-canEditData-${role.role}`}
                       >
-                        <span className="text-sm text-gray-700">Edit Data</span>
+                        <div>
+                          <span className="text-sm text-gray-700 font-medium block">Edit Data</span>
+                          <span className="text-[11px] text-gray-400">Inline editing of project data</span>
+                        </div>
                         <Switch
                           checked={!!effectiveCanEditData}
                           onCheckedChange={() => toggleCapability(role.role, "canEditData")}
                         />
                       </label>
-                    </div>
-                  </div>
-
-                  <div>
-                    <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">Entity Permissions</h4>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-xs" data-testid={`entity-perms-${role.role}`}>
-                        <thead>
-                          <tr className="border-b border-gray-100">
-                            <th className="text-left py-1 pr-4 font-medium text-gray-500 w-28">Entity</th>
-                            {(["view", "edit", "approve", "override"] as PermissionAction[]).map(a => (
-                              <th key={a} className="text-center py-1 px-2 font-medium text-gray-500 capitalize w-16">{a}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {(["projects", "financials", "quality", "engineering", "procurement", "admin", "governance"] as PermissionEntity[]).map(entity => {
-                            const entityLabels: Record<string, string> = {
-                              projects: "Project Management",
-                              financials: "Project Finance",
-                              engineering: "Engineering",
-                              quality: "Quality",
-                              procurement: "Procurement",
-                              admin: "Admin",
-                              governance: "Governance",
-                            };
-                            return (
-                            <tr key={entity} className="border-b border-gray-50 hover:bg-gray-50/50">
-                              <td className="py-1.5 pr-4 font-medium text-gray-700">{entityLabels[entity] || entity}</td>
-                              {(["view", "edit", "approve", "override"] as PermissionAction[]).map(action => {
-                                const active = getEntityPerm(role.role, entity, action);
-                                return (
-                                  <td key={action} className="text-center py-1.5 px-2">
-                                    <button
-                                      className={`w-6 h-6 rounded-md border transition-colors ${
-                                        active
-                                          ? "bg-green-600 border-green-600 text-white"
-                                          : "bg-white border-gray-300 text-gray-300 hover:border-gray-400"
-                                      }`}
-                                      onClick={() => toggleEntityPerm(role.role, entity, action)}
-                                      data-testid={`entity-perm-${role.role}-${entity}-${action}`}
-                                    >
-                                      {active ? <Check className="h-3 w-3 mx-auto" /> : null}
-                                    </button>
-                                  </td>
-                                );
-                              })}
-                            </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
                     </div>
                   </div>
 
