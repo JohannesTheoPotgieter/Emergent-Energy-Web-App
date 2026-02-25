@@ -66,6 +66,72 @@ function isEngineer(role: string): boolean {
   return ENGINEER_ROLES.includes(role) || role === QA_ROLE;
 }
 
+export async function generateEngStagesForProject(
+  projectId: number,
+  userId: number,
+  stageNames?: string[]
+): Promise<{ stagesCreated: number; tasksCreated: number; stageDetails: string[] }> {
+  const existingStages = await db.select({ id: projectEngStages.id, stageTemplateId: projectEngStages.stageTemplateId })
+    .from(projectEngStages).where(eq(projectEngStages.projectId, projectId));
+  const existingTemplateIds = existingStages.map(s => s.stageTemplateId);
+
+  let templatesToGenerate = await db.select().from(engStageTemplates)
+    .where(eq(engStageTemplates.isActive, true))
+    .orderBy(engStageTemplates.sortOrder);
+
+  templatesToGenerate = templatesToGenerate.filter(t => !existingTemplateIds.includes(t.id));
+
+  if (stageNames && stageNames.length > 0) {
+    const namesLower = stageNames.map(n => n.toLowerCase());
+    templatesToGenerate = templatesToGenerate.filter(t => namesLower.includes(t.name.toLowerCase()));
+  }
+
+  let stagesCreated = 0;
+  let tasksCreated = 0;
+  const stageDetails: string[] = [];
+
+  for (const template of templatesToGenerate) {
+    const [stage] = await db.insert(projectEngStages).values({
+      projectId,
+      stageTemplateId: template.id,
+      status: "not_started",
+      createdBy: userId,
+    }).returning({ id: projectEngStages.id });
+
+    const taskTemplates = await db.select().from(engTaskTemplates)
+      .where(eq(engTaskTemplates.stageTemplateId, template.id))
+      .orderBy(engTaskTemplates.sequence);
+
+    for (const tt of taskTemplates) {
+      await db.insert(projectEngTasks).values({
+        projectEngStageId: stage.id,
+        taskTemplateId: tt.id,
+        status: "pending",
+      });
+      tasksCreated++;
+    }
+
+    const rules = template.stageGateRules as any;
+    if (rules?.requireQaApproval) {
+      await db.insert(projectEngApprovals).values({
+        projectEngStageId: stage.id,
+        approverRole: "QA_REVIEW",
+      });
+    }
+    if (rules?.requireTechnicalSignoff) {
+      await db.insert(projectEngApprovals).values({
+        projectEngStageId: stage.id,
+        approverRole: "TECHNICAL_SIGNOFF",
+      });
+    }
+
+    stagesCreated++;
+    stageDetails.push(template.name);
+  }
+
+  return { stagesCreated, tasksCreated, stageDetails };
+}
+
 export function registerEngStageRoutes(app: Express) {
   app.get("/api/eng-stages/templates", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
@@ -121,76 +187,28 @@ export function registerEngStageRoutes(app: Express) {
     try {
       const user = getUser(req);
       const projectId = parseInt(req.params.projectId);
-      const stageTemplateId = req.query.stageId ? parseInt(req.query.stageId as string) : null;
 
       const [project] = await db.select({ id: projectInfo.id, projectName: projectInfo.projectName })
         .from(projectInfo).where(eq(projectInfo.id, projectId));
       if (!project) return res.status(404).json({ error: "Project not found" });
 
-      const existingStages = await db.select({ id: projectEngStages.id, stageTemplateId: projectEngStages.stageTemplateId })
-        .from(projectEngStages).where(eq(projectEngStages.projectId, projectId));
+      const stageTemplateId = req.query.stageId ? parseInt(req.query.stageId as string) : null;
+      let stageNames: string[] | undefined;
 
-      let templatesToGenerate;
       if (stageTemplateId) {
-        if (existingStages.some(s => s.stageTemplateId === stageTemplateId)) {
-          return res.status(400).json({ error: "Stage already exists for this project" });
-        }
-        templatesToGenerate = await db.select().from(engStageTemplates)
+        const [tmpl] = await db.select({ name: engStageTemplates.name }).from(engStageTemplates)
           .where(and(eq(engStageTemplates.id, stageTemplateId), eq(engStageTemplates.isActive, true)));
-      } else {
-        const existingTemplateIds = existingStages.map(s => s.stageTemplateId);
-        templatesToGenerate = await db.select().from(engStageTemplates)
-          .where(eq(engStageTemplates.isActive, true))
-          .orderBy(engStageTemplates.sortOrder);
-        templatesToGenerate = templatesToGenerate.filter(t => !existingTemplateIds.includes(t.id));
+        if (!tmpl) return res.status(404).json({ error: "Template not found or inactive" });
+        stageNames = [tmpl.name];
       }
 
-      if (templatesToGenerate.length === 0) {
+      const result = await generateEngStagesForProject(projectId, user.id, stageNames);
+
+      if (result.stagesCreated === 0) {
         return res.status(400).json({ error: "All stages already generated or no active templates" });
       }
 
-      let stagesCreated = 0;
-      let tasksCreated = 0;
-
-      for (const template of templatesToGenerate) {
-        const [stage] = await db.insert(projectEngStages).values({
-          projectId,
-          stageTemplateId: template.id,
-          status: "not_started",
-          createdBy: user.id,
-        }).returning({ id: projectEngStages.id });
-
-        const taskTemplates = await db.select().from(engTaskTemplates)
-          .where(eq(engTaskTemplates.stageTemplateId, template.id))
-          .orderBy(engTaskTemplates.sequence);
-
-        for (const tt of taskTemplates) {
-          await db.insert(projectEngTasks).values({
-            projectEngStageId: stage.id,
-            taskTemplateId: tt.id,
-            status: "pending",
-          });
-          tasksCreated++;
-        }
-
-        const rules = template.stageGateRules as any;
-        if (rules?.requireQaApproval) {
-          await db.insert(projectEngApprovals).values({
-            projectEngStageId: stage.id,
-            approverRole: "QA_REVIEW",
-          });
-        }
-        if (rules?.requireTechnicalSignoff) {
-          await db.insert(projectEngApprovals).values({
-            projectEngStageId: stage.id,
-            approverRole: "TECHNICAL_SIGNOFF",
-          });
-        }
-
-        stagesCreated++;
-      }
-
-      res.json({ success: true, stagesCreated, tasksCreated });
+      res.json({ success: true, ...result });
     } catch (err: any) {
       console.error("[EngStages] Generate error:", err.message);
       res.status(500).json({ error: err.message });
