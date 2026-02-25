@@ -45,6 +45,12 @@ export interface NormalizationResult {
     counterpartyName: string | null;
     description: string | null;
     amountExVat: string | null;
+    budgetQty: string | null;
+    budgetRate: string | null;
+    budgetCos: string | null;
+    actualCos: string | null;
+    revenueRecognitionAmount: string | null;
+    forecastPaymentDate: string | null;
     invoiceNumber: string | null;
     invoiceDate: string | null;
     invoiceDateFontColor: string | null;
@@ -416,6 +422,12 @@ function extractCostLines(
   const approvedDateCol = getColIndex(mapping, "approved_date");
   const paidDateCol = getColIndex(mapping, "payment_date");
   const poCol = getColIndex(mapping, "po_number");
+  const budgetQtyCol = getColIndex(mapping, "budget_qty");
+  const budgetRateCol = getColIndex(mapping, "budget_rate");
+  const budgetCosCol = getColIndex(mapping, "budget_cos");
+  const actualCosCol = getColIndex(mapping, "actual_cos");
+  const revenueRecogCol = getColIndex(mapping, "revenue_recognition_amount");
+  const forecastPayDateCol = getColIndex(mapping, "forecast_payment_date");
 
   const effectiveAmountCol = amountCol >= 0 ? amountCol : actualTotalCol;
 
@@ -531,11 +543,24 @@ function extractCostLines(
     const cosRealised = !!(invoiceNumber && invoiceDateConfirmed);
     const cashflowConfirmed = !!(invoiceNumber && poNumber && paidDateConfirmed);
 
+    const budgetQty = budgetQtyCol >= 0 ? parseNumber(row[budgetQtyCol]) : null;
+    const budgetRate = budgetRateCol >= 0 ? parseNumber(row[budgetRateCol]) : null;
+    const budgetCos = budgetCosCol >= 0 ? parseNumber(row[budgetCosCol]) : null;
+    const actualCos = actualCosCol >= 0 ? parseNumber(row[actualCosCol]) : null;
+    const revenueRecognitionAmount = revenueRecogCol >= 0 ? parseNumber(row[revenueRecogCol]) : null;
+    const forecastPaymentDate = forecastPayDateCol >= 0 ? parseDate(row[forecastPayDateCol]) : null;
+
     lines.push({
       costCategory: category,
       counterpartyName: counterparty,
       description,
       amountExVat,
+      budgetQty,
+      budgetRate,
+      budgetCos,
+      actualCos,
+      revenueRecognitionAmount,
+      forecastPaymentDate,
       invoiceNumber,
       invoiceDate,
       invoiceDateFontColor,

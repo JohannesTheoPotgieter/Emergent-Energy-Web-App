@@ -1044,10 +1044,20 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
               sourceRow: c.sourceRow,
               importRunId: runId,
               turnaroundDays: merged.turnaroundDays,
+              _budgetQty: merged.budgetQty || null,
+              _budgetRate: merged.budgetRate || null,
+              _budgetCos: merged.budgetCos || null,
+              _actualCos: merged.actualCos || null,
+              _revenueRecognitionAmount: merged.revenueRecognitionAmount || null,
+              _forecastPaymentDate: merged.forecastPaymentDate || null,
             };
           });
         if (costValues.length > 0) {
-          await tx.insert(normalizedCostLines).values(costValues);
+          const normalizedInserts = costValues.map((c: any) => {
+            const { _budgetQty, _budgetRate, _budgetCos, _actualCos, _revenueRecognitionAmount, _forecastPaymentDate, ...normalized } = c;
+            return normalized;
+          });
+          await tx.insert(normalizedCostLines).values(normalizedInserts);
 
           const legacyCostBatch = costValues.map((c: any, idx: number) => ({
             projectName,
@@ -1055,6 +1065,8 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
             rowType: "item" as const,
             expenseCategory: c.costCategory || null,
             expenseLineItem: c.description || null,
+            expenseQty: c._budgetQty || null,
+            expenseRateUnit: c._budgetRate || null,
             expenseActualTotal: c.amountExVat || null,
             expensePoNumber: c.poNumber || null,
             expenseInvoiceNumber: c.invoiceNumber || null,
@@ -1064,6 +1076,10 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
             expensePaymentDate: c.paidDate || null,
             paymentDateConfirmed: c.paidDateConfirmed || false,
             paymentDateFontColor: c.paidDateFontColor || null,
+            revenueAmount: c._revenueRecognitionAmount || null,
+            actualCosTotal: c._actualCos || null,
+            budgetCosTotal: c._budgetCos || null,
+            computedForecastPaymentDate: c._forecastPaymentDate || null,
             supplierName: c.counterpartyName || null,
           } as any));
           for (let i = 0; i < legacyCostBatch.length; i += 100) {
