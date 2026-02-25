@@ -986,8 +986,13 @@ router.get("/api/program-dashboard", requireAuth, async (req, res) => {
       const monthKey = `${dateMatch[1]}-${dateMatch[2]}`;
       cosTotalByMonth.set(monthKey, (cosTotalByMonth.get(monthKey) || 0) + amount);
 
-      const hasInvoice = !!(exp.expenseInvoiceNumber && (exp.expenseInvoiceNumber as string).trim() !== '');
-      const dateConfirmed = exp.invoiceDateConfirmed === true;
+      const hasInvoice = !!(exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim());
+      const hasInvDate = !!(exp.expenseInvoicedDate && String(exp.expenseInvoicedDate).trim());
+      const dateConfirmed = hasInvDate && (
+        exp.invoiceDateConfirmed === true ||
+        (exp as any).invoiceDateFontColor === 'black' ||
+        (!(exp as any).invoiceDateFontColor || (exp as any).invoiceDateFontColor === '')
+      );
       if (hasInvoice && dateConfirmed) {
         cosRealisedByMonth.set(monthKey, (cosRealisedByMonth.get(monthKey) || 0) + amount);
       }

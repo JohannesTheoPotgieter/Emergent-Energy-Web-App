@@ -8,14 +8,14 @@ export interface ExpenseLineInput {
   invoiceDateFontColor?: string | null;
   paymentDateFontColor?: string | null;
   invoiceDateConfirmed?: boolean | null;
+  paymentDateConfirmed?: boolean | null;
 }
 
 function isDateActual(confirmed: boolean | null | undefined, fontColor: string | null | undefined): boolean {
-  if (confirmed) return true;
-  if (fontColor === 'red') return false;
+  if (confirmed === true) return true;
   if (fontColor === 'black') return true;
-  if (!fontColor) return true;
-  return fontColor !== 'red';
+  if (!fontColor || fontColor === '') return true;
+  return false;
 }
 
 export function classifyExpenseState(line: ExpenseLineInput): ExpenseState {
@@ -24,7 +24,7 @@ export function classifyExpenseState(line: ExpenseLineInput): ExpenseState {
   const hasInvoiceDate = !!(line.expenseInvoicedDate && line.expenseInvoicedDate.trim() !== '');
   const hasPO = !!(line.expensePoNumber && line.expensePoNumber.trim() !== '');
 
-  const paymentDateActual = hasPaymentDate && isDateActual(null, line.paymentDateFontColor);
+  const paymentDateActual = hasPaymentDate && isDateActual(line.paymentDateConfirmed, line.paymentDateFontColor);
   const invoiceDateActual = hasInvoiceDate && isDateActual(line.invoiceDateConfirmed, line.invoiceDateFontColor);
 
   if (hasInvoiceNumber && hasPaymentDate && paymentDateActual) {

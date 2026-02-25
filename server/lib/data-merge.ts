@@ -53,9 +53,14 @@ export function adaptCostToExpense(cost: NormalizedCostLine, resolvedName: strin
 
   const invoiceDateActual = hasInvoiceDate && (
     invoiceDateConfirmed === true ||
-    (invoiceDateConfirmed == null && invoiceDateFontColor !== 'red')
+    invoiceDateFontColor === 'black' ||
+    (!invoiceDateFontColor || invoiceDateFontColor === '')
   );
-  const paidDateActual = hasPaidDate && paymentDateFontColor !== 'red';
+  const paidDateActual = hasPaidDate && (
+    paidDateConfirmed === true ||
+    paymentDateFontColor === 'black' ||
+    (!paymentDateFontColor || paymentDateFontColor === '')
+  );
 
   let computedState = "Planned";
   if (hasInvoice && hasPaidDate && paidDateActual) computedState = "Paid";
