@@ -368,7 +368,7 @@ function DetailTab({ nodes, selectedSlug, onSelectNode, userRole }: { nodes: EeN
   const { data: nodeDetail, isLoading } = useQuery<EeNodeDetail>({
     queryKey: ["ee-info-node", selectedSlug],
     queryFn: async () => {
-      const res = await fetch(`/api/ee-info/nodes/${selectedSlug}`);
+      const res = await fetch(`/api/ee-info/nodes/${selectedSlug}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch node");
       return res.json();
     },
@@ -663,7 +663,7 @@ function FlowTab({ nodes, onSelectNode }: { nodes: EeNode[]; onSelectNode: (slug
   const { data: flowNodes = [], isLoading } = useQuery<EeNode[]>({
     queryKey: ["ee-info-flow"],
     queryFn: async () => {
-      const res = await fetch("/api/ee-info/flow");
+      const res = await fetch("/api/ee-info/flow", { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch flow");
       return res.json();
     },
@@ -781,7 +781,7 @@ export default function EeInfoPage() {
   const { data: nodes = [], isLoading: nodesLoading } = useQuery<EeNode[]>({
     queryKey: ["ee-info-nodes"],
     queryFn: async () => {
-      const res = await fetch("/api/ee-info/nodes");
+      const res = await fetch("/api/ee-info/nodes", { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch nodes");
       return res.json();
     },
@@ -790,7 +790,7 @@ export default function EeInfoPage() {
   const { data: graphData, isLoading: graphLoading } = useQuery<{ nodes: EeNode[]; edges: EeEdge[] }>({
     queryKey: ["ee-info-graph"],
     queryFn: async () => {
-      const res = await fetch("/api/ee-info/graph");
+      const res = await fetch("/api/ee-info/graph", { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch graph");
       return res.json();
     },
