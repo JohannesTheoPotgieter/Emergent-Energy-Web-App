@@ -52,6 +52,16 @@ app.use(
 
 app.use(express.urlencoded({ extended: false }));
 
+app.use((err: any, _req: any, res: any, next: any) => {
+  if (err.type === 'entity.parse.failed') {
+    return res.status(400).json({
+      error: "Invalid request format",
+      message: "The request data could not be read. Please check the data and try again."
+    });
+  }
+  next(err);
+});
+
 // Trust proxy for Replit deployment (needed for secure cookies)
 app.set('trust proxy', 1);
 
