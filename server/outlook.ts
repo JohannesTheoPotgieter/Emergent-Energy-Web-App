@@ -14,10 +14,11 @@ async function getAccessToken(): Promise<string> {
   if (
     connectionSettings &&
     connectionSettings.settings?.expires_at &&
-    new Date(connectionSettings.settings.expires_at).getTime() > Date.now()
+    new Date(connectionSettings.settings.expires_at).getTime() > Date.now() + 60000
   ) {
     return connectionSettings.settings.access_token;
   }
+  connectionSettings = null;
 
   const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
   const xReplitToken = process.env.REPL_IDENTITY
@@ -35,7 +36,7 @@ async function getAccessToken(): Promise<string> {
     {
       headers: {
         Accept: "application/json",
-        X_REPLIT_TOKEN: xReplitToken,
+        "X-Replit-Token": xReplitToken,
       },
     },
   );
