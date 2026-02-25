@@ -42,6 +42,30 @@ function requireAdmin(req: Request, res: Response, next: NextFunction) {
   res.status(403).json({ error: "Admin access required" });
 }
 
+const VALID_SECTIONS = new Set(["COCKPIT", "PROJECTS", "MONEY", "DELIVERY", "GOVERNANCE", "INFORMATION", "ADMIN"]);
+const SECTION_MIGRATION: Record<string, string> = {
+  EXCO: "COCKPIT",
+  MY_TOOL: "COCKPIT",
+  PROJECT_MANAGEMENT: "PROJECTS",
+  OPERATIONS: "PROJECTS",
+  FINANCE: "MONEY",
+  ENGINEERING: "DELIVERY",
+  QUALITY: "GOVERNANCE",
+  FEEDBACK: "INFORMATION",
+};
+
+function migrateSections(sections: string[]): string[] {
+  const migrated = new Set<string>();
+  for (const s of sections) {
+    if (VALID_SECTIONS.has(s)) {
+      migrated.add(s);
+    } else if (SECTION_MIGRATION[s]) {
+      migrated.add(SECTION_MIGRATION[s]);
+    }
+  }
+  return [...migrated];
+}
+
 export async function seedRolePermissions() {
   try {
     const existing = await db.select().from(rolePermissions);
@@ -52,10 +76,12 @@ export async function seedRolePermissions() {
         await db.insert(rolePermissions).values(perm);
       } else {
         const defaultSections = perm.sections as string[];
-        const currentSections = (exists.sections || []) as string[];
+        const currentSections = migrateSections((exists.sections || []) as string[]);
         const missingSections = defaultSections.filter(s => !currentSections.includes(s));
-        if (missingSections.length > 0) {
-          const merged = [...currentSections, ...missingSections];
+        const merged = [...new Set([...currentSections, ...missingSections])];
+        const needsUpdate = merged.length !== (exists.sections as string[]).length ||
+          merged.some(s => !(exists.sections as string[]).includes(s));
+        if (needsUpdate) {
           await db.update(rolePermissions)
             .set({ sections: merged, updatedAt: new Date() })
             .where(eq(rolePermissions.role, perm.role));
@@ -279,14 +305,14 @@ export function registerRoleManagementRoutes(app: Express) {
       const raw = companyRole || userRole;
 
       if (!raw) {
-        return res.json({ sections: ["PROJECT_MANAGEMENT"], canManageUsers: false, canManageRoles: false, canEditData: false });
+        return res.json({ sections: ["PROJECTS"], canManageUsers: false, canManageRoles: false, canEditData: false });
       }
 
       const activeRole = mapRole(raw);
 
       const [perm] = await db.select().from(rolePermissions).where(eq(rolePermissions.role, activeRole));
       if (!perm) {
-        return res.json({ sections: ["PROJECT_MANAGEMENT"], canManageUsers: false, canManageRoles: false, canEditData: false });
+        return res.json({ sections: ["PROJECTS"], canManageUsers: false, canManageRoles: false, canEditData: false });
       }
 
       res.json({
