@@ -14,8 +14,8 @@ interface MonthlyRealisationTabProps {
 interface ExpenseItem {
   id: number;
   expenseCategory: string | null;
-  expenseDescription: string | null;
-  expenseSupplier: string | null;
+  expenseLineItem: string | null;
+  supplierName: string | null;
   expensePoNumber: string | null;
   expenseInvoiceNumber: string | null;
   expenseInvoicedDate: string | null;
@@ -94,8 +94,8 @@ export function MonthlyRealisationTab({ projectName }: MonthlyRealisationTabProp
     if (search.trim()) {
       const q = search.toLowerCase();
       filtered = filtered.filter(i =>
-        (i.expenseDescription || "").toLowerCase().includes(q) ||
-        (i.expenseSupplier || "").toLowerCase().includes(q) ||
+        (i.expenseLineItem || "").toLowerCase().includes(q) ||
+        (i.supplierName || "").toLowerCase().includes(q) ||
         (i.expenseCategory || "").toLowerCase().includes(q) ||
         (i.expensePoNumber || "").toLowerCase().includes(q) ||
         (i.expenseInvoiceNumber || "").toLowerCase().includes(q)
@@ -252,10 +252,10 @@ export function MonthlyRealisationTab({ projectName }: MonthlyRealisationTabProp
                         const sc = statusConfig[item.cosStatus] || statusConfig["Planned"];
                         return (
                           <TableRow key={item.id} data-testid={`cos-item-${item.id}`}>
-                            <TableCell className="text-xs py-1.5 pl-8 max-w-[200px] truncate" title={item.expenseDescription || ""}>
-                              {item.expenseDescription || "-"}
+                            <TableCell className="text-xs py-1.5 pl-8 max-w-[200px] truncate" title={item.expenseLineItem || ""}>
+                              {item.expenseLineItem || "-"}
                             </TableCell>
-                            <TableCell className="text-xs py-1.5">{item.expenseSupplier || "-"}</TableCell>
+                            <TableCell className="text-xs py-1.5">{item.supplierName || "-"}</TableCell>
                             <TableCell className="text-xs py-1.5 font-mono">
                               {item.expensePoNumber ? (
                                 <Badge variant="outline" className="text-green-600 border-green-200 text-[10px] px-1 py-0">
