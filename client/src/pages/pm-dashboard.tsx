@@ -777,7 +777,14 @@ export default function PMDashboard() {
 
   const selectedPmName = pmUsers.find(u => String(u.id) === selectedPmId)?.name;
 
-  if (isCooView && !selectedPmId && pmUsers.length > 0) {
+  if (isCooView && !selectedPmId) {
+    if (pmUsers.length === 0) {
+      return (
+        <div className="flex items-center justify-center min-h-[60vh]" data-testid="pm-loading">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      );
+    }
     return (
       <div className="space-y-4 p-4 md:p-6" data-testid="pm-dashboard">
         <div>
@@ -819,7 +826,15 @@ export default function PMDashboard() {
     );
   }
 
-  const { summary } = data!;
+  if (!data) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]" data-testid="pm-loading">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  const { summary } = data;
 
   return (
     <div className="space-y-4 p-4 md:p-6" data-testid="pm-dashboard">
@@ -868,7 +883,7 @@ export default function PMDashboard() {
         </TabsList>
 
         <TabsContent value="overview" className="mt-4">
-          <OverviewTab data={data!} navigate={navigate} />
+          <OverviewTab data={data} navigate={navigate} />
         </TabsContent>
 
         <TabsContent value="priority" className="mt-4">
