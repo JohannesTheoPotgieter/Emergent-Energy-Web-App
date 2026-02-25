@@ -282,6 +282,9 @@ async function seedUsers() {
   registerRoleManagementRoutes(app);
   await seedRolePermissions().catch(err => console.error('[Seed] Role permissions error:', err));
 
+  const { runDataSeedMigration } = await import("./seed-data-migration");
+  await runDataSeedMigration().catch(err => console.error('[DataSeed] Migration error:', err));
+
   const { backfillProjectIds } = await import("./lib/backfill-project-ids");
   await backfillProjectIds().catch(err => console.error('[Backfill] Project IDs error:', err));
 
