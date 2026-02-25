@@ -6,6 +6,11 @@ import { Client } from "@microsoft/microsoft-graph-client";
 
 let connectionSettings: any;
 
+export function clearCachedToken() {
+  connectionSettings = null;
+  cachedCalendarId = null;
+}
+
 async function getAccessToken(): Promise<string> {
   if (!isOutlookConfigured()) {
     throw new Error("Outlook not available - connector not configured.");
