@@ -14,7 +14,20 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Shield, ShieldCheck, AlertTriangle, Search, ChevronRight, ClipboardCheck, BarChart3, CheckCircle2, Eye, X } from "lucide-react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { Shield, ShieldCheck, AlertTriangle, Search, ChevronRight, ClipboardCheck, BarChart3, CheckCircle2, Eye, X, Plus, ChevronsUpDown, Check, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ActionBar } from "@/components/guidance/ActionBar";
 import { MicroWalkthrough, ReplayWalkthrough } from "@/components/guidance/MicroWalkthrough";
@@ -68,6 +81,9 @@ export default function QmDashboardPage() {
   const [selectedWarning, setSelectedWarning] = useState<Warning | null>(null);
   const [actionType, setActionType] = useState<"override" | "resolve" | null>(null);
   const [reasonText, setReasonText] = useState("");
+  const [startQmOpen, setStartQmOpen] = useState(false);
+  const [startQmProject, setStartQmProject] = useState("");
+  const [startQmPopoverOpen, setStartQmPopoverOpen] = useState(false);
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -83,6 +99,37 @@ export default function QmDashboardPage() {
     queryFn: () => qFetch("/api/quality/warnings?status=open"),
     refetchOnMount: "always",
     staleTime: 0,
+  });
+
+  const { data: allProjects = [] } = useQuery<Array<{ project_name: string }>>({
+    queryKey: ["projects-summary-names"],
+    queryFn: () => qFetch("/api/projects-summary").then((data: any[]) =>
+      data.map((p: any) => ({ project_name: p.project_name }))
+        .sort((a: any, b: any) => a.project_name.localeCompare(b.project_name))
+    ),
+    enabled: startQmOpen,
+  });
+
+  const existingQmProjects = useMemo(() => {
+    return new Set(checklists.map(c => c.projectName));
+  }, [checklists]);
+
+  const availableProjects = useMemo(() => {
+    return allProjects.filter(p => !existingQmProjects.has(p.project_name));
+  }, [allProjects, existingQmProjects]);
+
+  const startQmMutation = useMutation({
+    mutationFn: (projectName: string) =>
+      qFetch(`/api/quality/project/${encodeURIComponent(projectName)}/checklist`),
+    onSuccess: (_data, projectName) => {
+      queryClient.invalidateQueries({ queryKey: ["quality-checklists"] });
+      toast({ title: "Quality process started", description: `Quality checklist created for ${projectName}.` });
+      setStartQmOpen(false);
+      setStartQmProject("");
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to start quality process.", variant: "destructive" });
+    },
   });
 
   const acknowledgeMutation = useMutation({
@@ -180,6 +227,16 @@ export default function QmDashboardPage() {
           <p className="text-sm text-muted-foreground">Overview of all project quality checklists</p>
         </div>
         <ReplayWalkthrough screenId="qm-dashboard" />
+        <div className="ml-auto">
+          <Button
+            onClick={() => setStartQmOpen(true)}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            data-testid="btn-start-quality-process"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Start Quality Process
+          </Button>
+        </div>
       </div>
 
       <MicroWalkthrough screenId="qm-dashboard" steps={qmWalkthroughSteps} />
@@ -501,6 +558,87 @@ export default function QmDashboardPage() {
               {(acknowledgeMutation.isPending || resolveMutation.isPending) ? "Saving..." :
                 actionType === "override" ? "Confirm Override" : "Confirm Resolve"
               }
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={startQmOpen} onOpenChange={(open) => { if (!open) { setStartQmOpen(false); setStartQmProject(""); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5 text-emerald-500" />
+              Start Quality Process
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Select a project to start the quality management process. Only projects without an existing quality checklist are shown.
+            </p>
+            <div>
+              <label className="text-sm font-medium block mb-1.5">Project</label>
+              <Popover open={startQmPopoverOpen} onOpenChange={setStartQmPopoverOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={startQmPopoverOpen}
+                    className="w-full justify-between font-normal"
+                    data-testid="select-qm-project"
+                  >
+                    {startQmProject || "Search and select a project..."}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Search projects..." data-testid="input-qm-project-search" />
+                    <CommandList>
+                      <CommandEmpty>No projects available</CommandEmpty>
+                      <CommandGroup>
+                        {availableProjects.map((project) => {
+                          const name = project.project_name;
+                          return (
+                            <CommandItem
+                              key={name}
+                              onSelect={() => {
+                                setStartQmProject(name);
+                                setStartQmPopoverOpen(false);
+                              }}
+                              data-testid={`qm-project-option-${name}`}
+                            >
+                              <Check className={`mr-2 h-4 w-4 ${startQmProject === name ? "opacity-100" : "opacity-0"}`} />
+                              {name}
+                            </CommandItem>
+                          );
+                        })}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
+            {availableProjects.length === 0 && allProjects.length > 0 && (
+              <p className="text-xs text-muted-foreground bg-muted/50 p-2 rounded">
+                All projects already have quality checklists.
+              </p>
+            )}
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => { setStartQmOpen(false); setStartQmProject(""); }} data-testid="btn-cancel-start-qm">
+              Cancel
+            </Button>
+            <Button
+              onClick={() => { if (startQmProject) startQmMutation.mutate(startQmProject); }}
+              disabled={!startQmProject || startQmMutation.isPending}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              data-testid="btn-confirm-start-qm"
+            >
+              {startQmMutation.isPending ? (
+                <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Starting...</>
+              ) : (
+                <><ShieldCheck className="h-4 w-4 mr-2" />Start Quality Process</>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
