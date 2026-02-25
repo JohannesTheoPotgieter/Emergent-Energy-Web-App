@@ -621,6 +621,45 @@ router.post("/api/smart-import/:runId/ignore-all-blockers", requireAuth, async (
   }
 });
 
+// POST /api/smart-import/:runId/allow-all
+router.post("/api/smart-import/:runId/allow-all", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const runId = parseInt(req.params.runId as string);
+    if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
+
+    const [run] = await db.select().from(smartImportRuns).where(eq(smartImportRuns.id, runId));
+    if (!run) return res.status(404).json({ error: "Import run not found" });
+
+    const userId = (req as any).user?.id || null;
+    const allIssues = await db.select().from(importIssues)
+      .where(eq(importIssues.importRunId, runId));
+
+    const unresolved = allIssues.filter((i: any) => !i.resolved);
+
+    let allowed = 0;
+    for (const issue of unresolved) {
+      await db.update(importIssues)
+        .set({
+          resolved: true,
+          resolution: "ALLOW_ALL",
+          resolutionNote: "Allowed as-is — import all data without filtering",
+          resolvedBy: userId,
+          resolvedAt: new Date(),
+        })
+        .where(eq(importIssues.id, issue.id));
+      allowed++;
+    }
+
+    const updatedIssues = await db.select().from(importIssues)
+      .where(eq(importIssues.importRunId, runId));
+
+    res.json({ allowed, issues: updatedIssues });
+  } catch (err: any) {
+    console.error("[smart-import] POST allow-all error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/smart-import/:runId/apply-prior-resolutions
 router.post("/api/smart-import/:runId/apply-prior-resolutions", requireAuth, async (req: Request, res: Response) => {
   try {
@@ -814,7 +853,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
       if (row == null) continue;
       const section = issue.section;
 
-      if (issue.resolution === "SKIP_ROW" || issue.resolution === "EXCLUDE") {
+      if (issue.resolution === "IGNORED" || issue.resolution === "SKIP_ROW" || issue.resolution === "EXCLUDE") {
         if (!ignoredRows.has(section)) ignoredRows.set(section, new Set());
         ignoredRows.get(section)!.add(row);
       } else if (issue.resolution === "OVERRIDE" && issue.overrideData) {
@@ -1554,8 +1593,8 @@ router.post("/api/smart-import/bulk-commit", requireAuth, async (req: Request, r
               await db.update(importIssues)
                 .set({
                   resolved: true,
-                  resolution: "IGNORED",
-                  resolutionNote: "Auto-ignored during bulk commit",
+                  resolution: "ALLOW_ALL",
+                  resolutionNote: "Auto-allowed during bulk commit",
                   resolvedBy: userId,
                   resolvedAt: new Date(),
                   autoResolved: true,

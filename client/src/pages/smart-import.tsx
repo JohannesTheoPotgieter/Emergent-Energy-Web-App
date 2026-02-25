@@ -1270,6 +1270,7 @@ function IssuesStep({
   const [creatingCp, setCreatingCp] = useState<number | null>(null);
   const [applyingPrior, setApplyingPrior] = useState(false);
   const [ignoringAll, setIgnoringAll] = useState(false);
+  const [allowingAll, setAllowingAll] = useState(false);
   const [editingOverride, setEditingOverride] = useState<number | null>(null);
   const [overrideFields, setOverrideFields] = useState<Record<string, string>>({});
   const { toast } = useToast();
@@ -1360,6 +1361,28 @@ function IssuesStep({
     }
   };
 
+  const handleAllowAll = async () => {
+    setAllowingAll(true);
+    try {
+      const res = await fetch(`/api/smart-import/${runId}/allow-all`, {
+        method: "POST",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        onIssuesUpdate(data.issues);
+        toast({ title: "All Allowed", description: `${data.allowed} issue(s) resolved — all data will be imported as-is` });
+      } else {
+        const err = await res.json().catch(() => ({ error: "Failed" }));
+        toast({ title: "Error", description: err.error || "Failed to allow all", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Error", description: "Network error", variant: "destructive" });
+    } finally {
+      setAllowingAll(false);
+    }
+  };
+
   const handleCreateCounterparty = async (issueId: number) => {
     if (!cpName.trim()) return;
     setCreatingCp(issueId);
@@ -1445,9 +1468,10 @@ function IssuesStep({
                         <Badge variant="outline" className={`text-[10px] h-5 ${
                           issue.resolution === "IGNORED" ? "border-slate-300 text-slate-600 bg-slate-50" :
                           issue.resolution === "OVERRIDE" ? "border-blue-300 text-blue-600 bg-blue-50" :
+                          issue.resolution === "ALLOW_ALL" ? "border-blue-300 text-blue-600 bg-blue-50" :
                           "border-emerald-300 text-emerald-600 bg-emerald-50"
                         }`}>
-                          {issue.resolution === "IGNORED" ? "Ignored" : issue.resolution === "OVERRIDE" ? "Overridden" : "Accepted"}
+                          {issue.resolution === "IGNORED" ? "Ignored" : issue.resolution === "OVERRIDE" ? "Overridden" : issue.resolution === "ALLOW_ALL" ? "Allowed" : "Accepted"}
                         </Badge>
                         <Button
                           size="sm"
@@ -1666,6 +1690,34 @@ function IssuesStep({
             >
               {applyingPrior ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
               Apply All Suggestions
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {issues.length > 0 && issues.some((i: any) => !i.resolved) && (
+        <Card className="bg-blue-50 border border-blue-200 rounded-xl shadow-sm" data-testid="allow-all-banner">
+          <CardContent className="p-3 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0" />
+              <div>
+                <p className="text-xs text-blue-700 font-medium">
+                  Allow All — import everything as-is
+                </p>
+                <p className="text-[10px] text-blue-500 mt-0.5">
+                  Resolves all issues and imports all data rows without skipping any
+                </p>
+              </div>
+            </div>
+            <Button
+              size="sm"
+              className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white"
+              disabled={allowingAll}
+              onClick={handleAllowAll}
+              data-testid="btn-allow-all"
+            >
+              {allowingAll ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <CheckCircle2 className="w-3 h-3 mr-1" />}
+              Allow All
             </Button>
           </CardContent>
         </Card>
