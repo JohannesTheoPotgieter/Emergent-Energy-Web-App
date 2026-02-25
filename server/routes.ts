@@ -10486,12 +10486,25 @@ function registerFeedbackRoutes(app: Express) {
           await tx.execute(sql.raw(`TRUNCATE TABLE ${tablesToClear.join(', ')} CASCADE`));
         }
 
+        const isoDateRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
+        const convertDates = (obj: any) => {
+          const result: any = {};
+          for (const [key, val] of Object.entries(obj)) {
+            if (typeof val === 'string' && isoDateRegex.test(val)) {
+              result[key] = new Date(val);
+            } else {
+              result[key] = val;
+            }
+          }
+          return result;
+        };
+
         const batchInsert = async (table: any, rows: any[], tableName: string) => {
           const batchSize = 100;
           for (let i = 0; i < rows.length; i += batchSize) {
             const batch = rows.slice(i, i + batchSize).map((row: any) => {
               const { id, ...rest } = row;
-              return rest;
+              return convertDates(rest);
             });
             await tx.insert(table).values(batch);
           }
