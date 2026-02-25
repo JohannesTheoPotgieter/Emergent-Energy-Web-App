@@ -10,6 +10,10 @@ Preferred communication style: Simple, everyday language.
 - **Project Name Derivation**: The project name is ALWAYS derived from the Excel filename — specifically all alphanumeric characters (letters, numbers, spaces) before "_Tracker" or "_tracker" in the filename. E.g., `Coega_Steels_Phase_2_Tracker.xlsx` → project name "Coega Steels Phase 2". Underscores in the filename before "_Tracker" are replaced with spaces.
 - **COS Realized**: Invoice captured + invoice date font is black (confirmed/actual).
 - **Cashflow Confirmed**: Invoice captured + PO captured + payment date font is black (confirmed).
+- **Revenue Recognition Amount**: Extracted from "REVENUE RECOGNITION AMOUNT" column (col 21) in the Expenditure Breakdown sheet. Stored in `program_expense.revenue_amount`.
+- **Budget vs Actual Separation**: The Expenditure Breakdown sheet has dual sections — budget (left, cols 2-8) and actual (right, cols 13-26). The parser uses `actualSectionStartCol` detection to build separate `budgetColMap` and `colMap` for correct column resolution.
+- **Expenditure Sort Order**: Categories in the expenditure tab are sorted by minimum `row_number` from the original Excel, preserving the Excel's category order.
+- **Database Sync**: Dev and production have separate databases. Use `/admin/data-sync` page to export data from dev and import into production.
 
 ## System Architecture
 
