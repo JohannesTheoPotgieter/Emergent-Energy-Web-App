@@ -32,30 +32,30 @@ const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } });
 
 function jwtAuth(req: Request, _res: Response, next: NextFunction) {
   if ((req as any).user) return next();
+  if (req.isAuthenticated?.()) return next();
   const authHeader = req.headers.authorization;
-  if (authHeader?.startsWith("Bearer ")) {
-    const payload = verifyToken(authHeader.substring(7));
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    const token = authHeader.substring(7);
+    const payload = verifyToken(token);
     if (payload) {
-      (req as any).user = payload;
+      (req as any).user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role };
     }
-  }
-  if ((req as any).session?.passport?.user) {
-    (req as any).user = (req as any).session.passport.user;
   }
   next();
 }
 
 function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if ((req as any).user) return next();
-  res.status(401).json({ error: "Authentication required" });
+  if (req.isAuthenticated?.() || (req as any).user) return next();
+  res.status(401).json({ error: "auth_required", message: "Authentication required" });
 }
 
 const COO_ROLES = ["COO_ADMIN", "CEO_ADMIN", "admin"];
 const ENGINEER_ROLES = ["ENGINEER", "COO_ADMIN", "CEO_ADMIN", "admin", "PROGRAM_MANAGER"];
 const QA_ROLE = "QUALITY_MANAGER";
 
-function getUser(req: Request): { userId: number; name: string; role: string } {
-  return (req as any).user;
+function getUser(req: Request): { id: number; name: string; role: string } {
+  const u = (req as any).user;
+  return { id: u.id || u.userId, name: u.name, role: u.role };
 }
 
 function isCoo(role: string): boolean {
@@ -157,7 +157,7 @@ export function registerEngStageRoutes(app: Express) {
           projectId,
           stageTemplateId: template.id,
           status: "not_started",
-          createdBy: user.userId,
+          createdBy: user.id,
         }).returning({ id: projectEngStages.id });
 
         const taskTemplates = await db.select().from(engTaskTemplates)
@@ -357,7 +357,7 @@ export function registerEngStageRoutes(app: Express) {
         updates.status = status;
         if (status === "complete") {
           updates.completedAt = new Date();
-          updates.completedBy = user.userId;
+          updates.completedBy = user.id;
         } else {
           updates.completedAt = null;
           updates.completedBy = null;
@@ -406,7 +406,7 @@ export function registerEngStageRoutes(app: Express) {
         fileSize: file.size,
         mimeType: file.mimetype,
         storageRef: file.filename,
-        uploadedBy: user.userId,
+        uploadedBy: user.id,
         versionTag,
         notes,
       }).returning();
@@ -466,7 +466,7 @@ export function registerEngStageRoutes(app: Express) {
       await db.update(projectEngApprovals).set({
         status,
         comments,
-        approverUserId: user.userId,
+        approverUserId: user.id,
         updatedAt: new Date(),
       }).where(eq(projectEngApprovals.id, id));
 
