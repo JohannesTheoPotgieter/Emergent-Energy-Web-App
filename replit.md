@@ -55,8 +55,13 @@ Preferred communication style: Simple, everyday language.
 
 ### Engineering Stage Templates
 -   **Module**: Implements a 5-stage engineering checklist system (First Assessment, Cost Proposal, IFC Planning, Construction Support, Handover Pack) with CRUD for templates, project stage instantiation, task/deliverable/approval management, and stage gate completion logic.
+-   **Tables**: `eng_stage_templates`, `eng_task_templates`, `eng_deliverable_templates` (template definitions); `project_eng_stages`, `project_eng_tasks`, `project_eng_deliverables`, `project_eng_approvals` (project instances). All link to `project_info` via `project_id`.
+-   **Routes**: `server/eng-stage-routes.ts` — `/api/eng-stages/templates` (list/detail/toggle), `/api/projects/:id/eng-stages` (generate/list/detail), task/deliverable/approval CRUD, stage completion + COO override. Auth: dual JWT+session matching `engineering-routes.ts` pattern.
 -   **Stage Gating**: Each template defines gate rules (e.g., `requireAllTasks`, `requireQaApproval`). COO can override stage completion with a mandatory reason.
+-   **Handover Pack**: Requires QA_REVIEW (Dean) + TECHNICAL_SIGNOFF (Tanaka) approvals — auto-created on stage generation.
 -   **File Uploads**: Deliverables are uploaded via multer to `uploads/eng-deliverables/`, tracked per stage with version tags.
+-   **Frontend**: `EngineeringStagesTab.tsx` (sub-tab under Engineering on project detail), `eng-template-admin.tsx` (COO admin at `/admin/eng-templates`), `stage-export.ts` (File System Access API folder picker + JSZip fallback).
+-   **Seed**: `server/seed-eng-templates.ts` seeds 5 templates with 39 tasks on startup (idempotent).
 
 ### Deploy Cache & Session Clearing
 -   **Build Versioning**: A unique `buildId` is generated per build, enabling the frontend to detect new deployments and clear client-side cache/session data, redirecting to login.
