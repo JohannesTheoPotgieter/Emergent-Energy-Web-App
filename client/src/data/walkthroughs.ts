@@ -370,6 +370,47 @@ export const WALKTHROUGHS: Walkthrough[] = [
       },
     ],
   },
+  {
+    id: "my-tool-productivity",
+    title: "Using My Tool (Personal Productivity)",
+    description: "Learn how to use the My Tool personal productivity hub to triage your inbox, manage daily tasks, plan your week, and track meetings.",
+    category: "productivity",
+    estimatedMinutes: 5,
+    steps: [
+      {
+        stepNumber: 1,
+        title: "Open My Tool — Today View",
+        description: "Click 'My Tool' in the sidebar to open your personal productivity dashboard. The Today view shows your tasks and priorities for the current day.",
+        targetPage: "/my-tool/today",
+      },
+      {
+        stepNumber: 2,
+        title: "Triage Your Inbox",
+        description: "Open the Triage Inbox to review new items that need attention. Items can be action items from meetings, flagged issues, or tasks assigned to you. Decide on each: accept, defer, or dismiss.",
+        targetPage: "/triage-inbox",
+        tip: "Process your inbox first thing each morning to keep on top of new items.",
+      },
+      {
+        stepNumber: 3,
+        title: "Set Your Priorities",
+        description: "Navigate to the Priorities view to rank your most important tasks. Drag and drop to reorder. Focus on the top 3 items — these are your must-do tasks for the day.",
+        targetPage: "/my-tool/priorities",
+      },
+      {
+        stepNumber: 4,
+        title: "Plan Your Week",
+        description: "Switch to the Week view to see your tasks and commitments across the full week. This helps you balance workload and spot upcoming deadlines before they arrive.",
+        targetPage: "/my-tool/week",
+        tip: "Use the Week view on Monday mornings to plan your week ahead.",
+      },
+      {
+        stepNumber: 5,
+        title: "Track Meetings & Action Items",
+        description: "Open the Meetings section to see upcoming and past meetings. Meeting notes and action items from Read.ai integrations appear here automatically. Review action items and mark them complete as you go.",
+        targetPage: "/my-tool/meetings",
+      },
+    ],
+  },
 ];
 
 export const WALKTHROUGH_CATEGORIES: Record<string, { label: string; color: string }> = {
@@ -378,4 +419,5 @@ export const WALKTHROUGH_CATEGORIES: Record<string, { label: string; color: stri
   "engineering": { label: "Engineering", color: "bg-purple-100 text-purple-700 border-purple-200" },
   "governance": { label: "Governance", color: "bg-red-100 text-red-700 border-red-200" },
   "operations": { label: "Operations", color: "bg-amber-100 text-amber-700 border-amber-200" },
+  "productivity": { label: "Productivity", color: "bg-teal-100 text-teal-700 border-teal-200" },
 };

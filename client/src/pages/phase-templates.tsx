@@ -328,9 +328,13 @@ export default function PhaseTemplatesPage() {
             <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide mb-3">Templates by Phase</h3>
             {(constants?.projectPhases || []).map((phase) => {
               const phaseTemplates = groupedByPhase[phase] || [];
+              const linkedNames = PHASE_TO_ENG_STAGES[phase] || [];
+              const linkedEng = engTemplates.filter((t: any) => linkedNames.includes(t.name));
+              const engTaskTotal = linkedEng.reduce((sum: number, t: any) => sum + (t.taskCount || 0), 0);
+              const totalCount = phaseTemplates.length + linkedEng.length;
               const expanded = expandedPhases.has(phase) || phaseTemplates.length > 0;
               return (
-                <div key={phase} className="border rounded-lg overflow-hidden">
+                <div key={phase} className={`border rounded-lg overflow-hidden ${selectedPhaseForEng === phase ? "ring-2 ring-primary/30" : ""}`}>
                   <button
                     className="w-full flex items-center justify-between px-3 py-2 bg-muted/50 hover:bg-muted text-sm font-medium"
                     onClick={() => { togglePhase(phase); setSelectedPhaseForEng(phase); }}
@@ -338,10 +342,11 @@ export default function PhaseTemplatesPage() {
                   >
                     <span className="truncate flex items-center gap-1.5">
                       {phaseLabels[phase] || phase}
-                      {PHASE_TO_ENG_STAGES[phase] && <Wrench className="h-3 w-3 text-purple-500" />}
+                      {linkedEng.length > 0 && <Wrench className="h-3 w-3 text-purple-500" />}
                     </span>
                     <span className="flex items-center gap-2">
-                      <Badge variant="secondary">{phaseTemplates.length}</Badge>
+                      {engTaskTotal > 0 && <Badge variant="outline" className="text-purple-600 border-purple-200 text-[10px]">{engTaskTotal} eng tasks</Badge>}
+                      <Badge variant="secondary">{totalCount}</Badge>
                       {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                     </span>
                   </button>
@@ -678,18 +683,90 @@ export default function PhaseTemplatesPage() {
 function EngStageInlineCard({ template, expanded, onToggleExpand, onToggleActive }: {
   template: any; expanded: boolean; onToggleExpand: () => void; onToggleActive: () => void;
 }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [editingTaskId, setEditingTaskId] = useState<number | null>(null);
+  const [editingDelId, setEditingDelId] = useState<number | null>(null);
+  const [showAddTask, setShowAddTask] = useState(false);
+  const [showAddDel, setShowAddDel] = useState(false);
+  const [taskForm, setTaskForm] = useState({ title: "", description: "", isRequired: true, defaultOwnerRole: "" });
+  const [delForm, setDelForm] = useState({ name: "", description: "", isRequired: true, requiredCount: 1 });
+
+  const engAuthFetch = async (url: string, opts: RequestInit = {}) => {
+    const token = localStorage.getItem("auth_token");
+    const headers: Record<string, string> = { "Content-Type": "application/json", ...(opts.headers as any || {}) };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    return fetch(url, { ...opts, headers, credentials: "include" });
+  };
+
   const { data: detail } = useQuery({
     queryKey: ["eng-stage-template-detail", template.id],
     queryFn: async () => {
-      const token = localStorage.getItem("auth_token");
-      const headers: Record<string, string> = {};
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-      const res = await fetch(`/api/eng-stages/templates/${template.id}`, { headers, credentials: "include" });
+      const res = await engAuthFetch(`/api/eng-stages/templates/${template.id}`);
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
     enabled: expanded,
   });
+
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ["eng-stage-template-detail", template.id] });
+    queryClient.invalidateQueries({ queryKey: ["eng-stage-templates"] });
+  };
+
+  const addTask = async () => {
+    if (!taskForm.title.trim()) return;
+    const res = await engAuthFetch(`/api/eng-stages/templates/${template.id}/tasks`, {
+      method: "POST", body: JSON.stringify(taskForm),
+    });
+    if (res.ok) { toast({ title: "Task added" }); setShowAddTask(false); setTaskForm({ title: "", description: "", isRequired: true, defaultOwnerRole: "" }); invalidate(); }
+    else { const err = await res.json(); toast({ title: "Error", description: err.error, variant: "destructive" }); }
+  };
+
+  const updateTask = async (taskId: number) => {
+    const res = await engAuthFetch(`/api/eng-stages/template-tasks/${taskId}`, {
+      method: "PATCH", body: JSON.stringify(taskForm),
+    });
+    if (res.ok) { toast({ title: "Task updated" }); setEditingTaskId(null); invalidate(); }
+    else { const err = await res.json(); toast({ title: "Error", description: err.error, variant: "destructive" }); }
+  };
+
+  const deleteTask = async (taskId: number) => {
+    const res = await engAuthFetch(`/api/eng-stages/template-tasks/${taskId}`, { method: "DELETE" });
+    if (res.ok) { toast({ title: "Task removed" }); invalidate(); }
+  };
+
+  const addDeliverable = async () => {
+    if (!delForm.name.trim()) return;
+    const res = await engAuthFetch(`/api/eng-stages/templates/${template.id}/deliverables`, {
+      method: "POST", body: JSON.stringify(delForm),
+    });
+    if (res.ok) { toast({ title: "Deliverable added" }); setShowAddDel(false); setDelForm({ name: "", description: "", isRequired: true, requiredCount: 1 }); invalidate(); }
+    else { const err = await res.json(); toast({ title: "Error", description: err.error, variant: "destructive" }); }
+  };
+
+  const updateDeliverable = async (delId: number) => {
+    const res = await engAuthFetch(`/api/eng-stages/template-deliverables/${delId}`, {
+      method: "PATCH", body: JSON.stringify(delForm),
+    });
+    if (res.ok) { toast({ title: "Deliverable updated" }); setEditingDelId(null); invalidate(); }
+    else { const err = await res.json(); toast({ title: "Error", description: err.error, variant: "destructive" }); }
+  };
+
+  const deleteDeliverable = async (delId: number) => {
+    const res = await engAuthFetch(`/api/eng-stages/template-deliverables/${delId}`, { method: "DELETE" });
+    if (res.ok) { toast({ title: "Deliverable removed" }); invalidate(); }
+  };
+
+  const startEditTask = (task: any) => {
+    setEditingTaskId(task.id);
+    setTaskForm({ title: task.title, description: task.description || "", isRequired: task.isRequired, defaultOwnerRole: task.defaultOwnerRole || "" });
+  };
+
+  const startEditDel = (del: any) => {
+    setEditingDelId(del.id);
+    setDelForm({ name: del.name, description: del.description || "", isRequired: del.isRequired, requiredCount: del.requiredCount || 1 });
+  };
 
   return (
     <div className={`border rounded-lg transition-all ${!template.isActive ? "opacity-60" : ""}`} data-testid={`eng-template-card-${template.id}`}>
@@ -735,34 +812,120 @@ function EngStageInlineCard({ template, expanded, onToggleExpand, onToggleActive
           </div>
 
           <div>
-            <h4 className="text-sm font-medium mb-2 flex items-center gap-1">
-              <ListChecks className="h-4 w-4" /> Tasks
-            </h4>
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="text-sm font-medium flex items-center gap-1">
+                <ListChecks className="h-4 w-4" /> Tasks ({detail.tasks.length})
+              </h4>
+              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setTaskForm({ title: "", description: "", isRequired: true, defaultOwnerRole: "" }); setShowAddTask(true); }} data-testid={`button-add-eng-task-${template.id}`}>
+                <Plus className="h-3 w-3 mr-1" /> Add Task
+              </Button>
+            </div>
             <div className="space-y-1">
               {detail.tasks.map((task: any) => (
-                <div key={task.id} className="flex items-center gap-2 text-xs p-1.5 bg-muted/30 rounded">
-                  <span className="text-muted-foreground w-5 text-right">{task.sequence}.</span>
-                  <span className="flex-1">{task.title}</span>
-                  {task.isRequired && <Badge variant="secondary" className="text-[10px]">Required</Badge>}
-                  <span className="text-muted-foreground text-[10px]">{task.defaultOwnerRole}</span>
-                </div>
+                editingTaskId === task.id ? (
+                  <div key={task.id} className="p-2 bg-muted/50 rounded border space-y-2">
+                    <Input value={taskForm.title} onChange={e => setTaskForm(f => ({ ...f, title: e.target.value }))} placeholder="Task title" className="h-7 text-xs" data-testid={`input-edit-task-title-${task.id}`} />
+                    <Input value={taskForm.description} onChange={e => setTaskForm(f => ({ ...f, description: e.target.value }))} placeholder="Description (optional)" className="h-7 text-xs" />
+                    <div className="flex gap-2 items-center">
+                      <Input value={taskForm.defaultOwnerRole} onChange={e => setTaskForm(f => ({ ...f, defaultOwnerRole: e.target.value }))} placeholder="Owner role" className="h-7 text-xs flex-1" />
+                      <label className="flex items-center gap-1 text-xs">
+                        <input type="checkbox" checked={taskForm.isRequired} onChange={e => setTaskForm(f => ({ ...f, isRequired: e.target.checked }))} /> Required
+                      </label>
+                      <Button size="sm" className="h-7 text-xs" onClick={() => updateTask(task.id)} data-testid={`button-save-task-${task.id}`}>Save</Button>
+                      <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setEditingTaskId(null)}>Cancel</Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div key={task.id} className="flex items-center gap-2 text-xs p-1.5 bg-muted/30 rounded group" data-testid={`eng-task-row-${task.id}`}>
+                    <span className="text-muted-foreground w-5 text-right">{task.sequence}.</span>
+                    <span className="flex-1">{task.title}</span>
+                    {task.isRequired && <Badge variant="secondary" className="text-[10px]">Required</Badge>}
+                    <span className="text-muted-foreground text-[10px]">{task.defaultOwnerRole}</span>
+                    <div className="opacity-0 group-hover:opacity-100 flex gap-0.5">
+                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => startEditTask(task)} data-testid={`button-edit-eng-task-${task.id}`}>
+                        <Edit className="h-3 w-3" />
+                      </Button>
+                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => deleteTask(task.id)} data-testid={`button-delete-eng-task-${task.id}`}>
+                        <Trash2 className="h-3 w-3 text-red-500" />
+                      </Button>
+                    </div>
+                  </div>
+                )
               ))}
+              {showAddTask && (
+                <div className="p-2 bg-blue-50/50 rounded border border-blue-200 space-y-2">
+                  <Input value={taskForm.title} onChange={e => setTaskForm(f => ({ ...f, title: e.target.value }))} placeholder="New task title" className="h-7 text-xs" data-testid={`input-new-task-title-${template.id}`} />
+                  <Input value={taskForm.description} onChange={e => setTaskForm(f => ({ ...f, description: e.target.value }))} placeholder="Description (optional)" className="h-7 text-xs" />
+                  <div className="flex gap-2 items-center">
+                    <Input value={taskForm.defaultOwnerRole} onChange={e => setTaskForm(f => ({ ...f, defaultOwnerRole: e.target.value }))} placeholder="Owner role" className="h-7 text-xs flex-1" />
+                    <label className="flex items-center gap-1 text-xs">
+                      <input type="checkbox" checked={taskForm.isRequired} onChange={e => setTaskForm(f => ({ ...f, isRequired: e.target.checked }))} /> Required
+                    </label>
+                    <Button size="sm" className="h-7 text-xs" onClick={addTask} data-testid={`button-save-new-task-${template.id}`}>Add</Button>
+                    <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setShowAddTask(false)}>Cancel</Button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
           <div>
-            <h4 className="text-sm font-medium mb-2 flex items-center gap-1">
-              <FileText className="h-4 w-4" /> Deliverables
-            </h4>
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="text-sm font-medium flex items-center gap-1">
+                <FileText className="h-4 w-4" /> Deliverables ({detail.deliverables.length})
+              </h4>
+              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setDelForm({ name: "", description: "", isRequired: true, requiredCount: 1 }); setShowAddDel(true); }} data-testid={`button-add-eng-del-${template.id}`}>
+                <Plus className="h-3 w-3 mr-1" /> Add Deliverable
+              </Button>
+            </div>
             <div className="space-y-1">
               {detail.deliverables.map((del: any) => (
-                <div key={del.id} className="flex items-center gap-2 text-xs p-1.5 bg-muted/30 rounded">
-                  <FileText className="h-3 w-3 text-muted-foreground" />
-                  <span className="flex-1">{del.name}</span>
-                  {del.isRequired && <Badge variant="secondary" className="text-[10px]">Required</Badge>}
-                  <span className="text-muted-foreground text-[10px]">x{del.requiredCount}</span>
-                </div>
+                editingDelId === del.id ? (
+                  <div key={del.id} className="p-2 bg-muted/50 rounded border space-y-2">
+                    <Input value={delForm.name} onChange={e => setDelForm(f => ({ ...f, name: e.target.value }))} placeholder="Deliverable name" className="h-7 text-xs" data-testid={`input-edit-del-name-${del.id}`} />
+                    <Input value={delForm.description} onChange={e => setDelForm(f => ({ ...f, description: e.target.value }))} placeholder="Description (optional)" className="h-7 text-xs" />
+                    <div className="flex gap-2 items-center">
+                      <label className="flex items-center gap-1 text-xs">
+                        <input type="checkbox" checked={delForm.isRequired} onChange={e => setDelForm(f => ({ ...f, isRequired: e.target.checked }))} /> Required
+                      </label>
+                      <Input type="number" value={delForm.requiredCount} onChange={e => setDelForm(f => ({ ...f, requiredCount: parseInt(e.target.value) || 1 }))} className="h-7 text-xs w-16" min={1} />
+                      <span className="text-xs text-muted-foreground">count</span>
+                      <Button size="sm" className="h-7 text-xs" onClick={() => updateDeliverable(del.id)} data-testid={`button-save-del-${del.id}`}>Save</Button>
+                      <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setEditingDelId(null)}>Cancel</Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div key={del.id} className="flex items-center gap-2 text-xs p-1.5 bg-muted/30 rounded group" data-testid={`eng-del-row-${del.id}`}>
+                    <FileText className="h-3 w-3 text-muted-foreground" />
+                    <span className="flex-1">{del.name}</span>
+                    {del.isRequired && <Badge variant="secondary" className="text-[10px]">Required</Badge>}
+                    <span className="text-muted-foreground text-[10px]">x{del.requiredCount}</span>
+                    <div className="opacity-0 group-hover:opacity-100 flex gap-0.5">
+                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => startEditDel(del)} data-testid={`button-edit-eng-del-${del.id}`}>
+                        <Edit className="h-3 w-3" />
+                      </Button>
+                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => deleteDeliverable(del.id)} data-testid={`button-delete-eng-del-${del.id}`}>
+                        <Trash2 className="h-3 w-3 text-red-500" />
+                      </Button>
+                    </div>
+                  </div>
+                )
               ))}
+              {showAddDel && (
+                <div className="p-2 bg-purple-50/50 rounded border border-purple-200 space-y-2">
+                  <Input value={delForm.name} onChange={e => setDelForm(f => ({ ...f, name: e.target.value }))} placeholder="Deliverable name" className="h-7 text-xs" data-testid={`input-new-del-name-${template.id}`} />
+                  <Input value={delForm.description} onChange={e => setDelForm(f => ({ ...f, description: e.target.value }))} placeholder="Description (optional)" className="h-7 text-xs" />
+                  <div className="flex gap-2 items-center">
+                    <label className="flex items-center gap-1 text-xs">
+                      <input type="checkbox" checked={delForm.isRequired} onChange={e => setDelForm(f => ({ ...f, isRequired: e.target.checked }))} /> Required
+                    </label>
+                    <Input type="number" value={delForm.requiredCount} onChange={e => setDelForm(f => ({ ...f, requiredCount: parseInt(e.target.value) || 1 }))} className="h-7 text-xs w-16" min={1} />
+                    <span className="text-xs text-muted-foreground">count</span>
+                    <Button size="sm" className="h-7 text-xs" onClick={addDeliverable} data-testid={`button-save-new-del-${template.id}`}>Add</Button>
+                    <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setShowAddDel(false)}>Cancel</Button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
