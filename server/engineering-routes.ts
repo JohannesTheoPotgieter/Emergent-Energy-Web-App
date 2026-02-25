@@ -163,6 +163,62 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
+  app.post("/api/eng/backfill-assignees", requireAuth, requireAdminOrEpm, async (_req, res) => {
+    try {
+      const allUsers = await db.select({ id: users.id, name: users.name }).from(users);
+      const allTasks = await db.select().from(operationalTasks);
+
+      const nameMap: Record<string, { id: number; name: string }> = {};
+      for (const u of allUsers) {
+        nameMap[u.name.toLowerCase()] = { id: u.id, name: u.name };
+        const first = u.name.split(/\s+/)[0].toLowerCase();
+        if (!nameMap[first]) nameMap[first] = { id: u.id, name: u.name };
+      }
+
+      let updated = 0;
+      let assigneesFixed = 0;
+
+      for (const task of allTasks) {
+        const assignees = (task.assignees as string[]) || [];
+        if (assignees.length === 0) continue;
+
+        let newAssignees = [...assignees];
+        let ownerUserId = task.ownerUserId;
+        let changed = false;
+
+        for (let i = 0; i < newAssignees.length; i++) {
+          const a = newAssignees[i];
+          const lower = a.toLowerCase();
+          const first = lower.split(/\s+/)[0];
+
+          const match = nameMap[lower] || nameMap[first];
+          if (match) {
+            if (newAssignees[i] !== match.name) {
+              newAssignees[i] = match.name;
+              changed = true;
+              assigneesFixed++;
+            }
+            if (i === 0 && !ownerUserId) {
+              ownerUserId = match.id;
+              changed = true;
+            }
+          }
+        }
+
+        if (changed) {
+          await db.update(operationalTasks)
+            .set({ assignees: newAssignees, ownerUserId })
+            .where(eq(operationalTasks.id, task.id));
+          updated++;
+        }
+      }
+
+      res.json({ message: `Backfill complete: ${updated} tasks updated, ${assigneesFixed} assignee names normalized` });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // ========== ENHANCED TASK OPERATIONS ==========
 
   app.get("/api/eng/tasks", requireAuth, async (req, res) => {

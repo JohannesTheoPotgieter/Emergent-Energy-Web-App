@@ -526,7 +526,7 @@ function TaskDetailDrawer({
             <div>
               <h2 className="text-xl font-bold leading-tight" data-testid="text-drawer-title">{task.title}</h2>
               {task.externalTaskId && (
-                <p className="text-[10px] text-muted-foreground mt-1">ClickUp: {task.externalTaskId}</p>
+                <p className="text-[10px] text-muted-foreground mt-1">Ref: {task.externalTaskId}</p>
               )}
             </div>
 
@@ -591,16 +591,34 @@ function TaskDetailDrawer({
               </div>
             </div>
 
-            {task.assignees && task.assignees.length > 0 && (
-              <div className="space-y-1">
-                <Label className="text-[10px] text-muted-foreground uppercase tracking-wider">Assignees</Label>
-                <div className="flex flex-wrap gap-1">
-                  {task.assignees.map((a, i) => (
+            <div className="space-y-1">
+              <Label className="text-[10px] text-muted-foreground uppercase tracking-wider">Assignee</Label>
+              <Select
+                value={task.assignees?.[0] || "none"}
+                onValueChange={(v) => {
+                  const newAssignees = v === "none" ? [] : [v];
+                  const matchedUser = v !== "none" ? teamMembers.find(m => m.name === v) : null;
+                  updateMutation.mutate({ assignees: newAssignees, ownerUserId: matchedUser?.id || null });
+                }}
+              >
+                <SelectTrigger className="h-8 text-xs" data-testid="select-drawer-assignee">
+                  <SelectValue placeholder="Select assignee" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Unassigned</SelectItem>
+                  {teamMembers.map(m => (
+                    <SelectItem key={m.id} value={m.name}>{m.name} ({m.role.replace(/_/g, " ")})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {task.assignees && task.assignees.length > 1 && (
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {task.assignees.slice(1).map((a, i) => (
                     <Badge key={i} variant="secondary" className="text-xs">{a}</Badge>
                   ))}
                 </div>
-              </div>
-            )}
+              )}
+            </div>
 
             <div className="space-y-3 p-3 bg-muted/20 rounded-lg border">
               <div className="flex items-center justify-between">
@@ -1389,6 +1407,8 @@ export default function EngineeringTasksPage() {
     phase: "",
     primaryWorkstream: "",
     dueDate: "",
+    assignees: [] as string[],
+    approverUserId: null as number | null,
   });
 
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
@@ -1398,6 +1418,11 @@ export default function EngineeringTasksPage() {
     queryFn: () => engFetch("/api/eng/tasks"),
     refetchOnMount: "always",
     staleTime: 0,
+  });
+
+  const { data: pageTeamMembers = [] } = useQuery<TeamMember[]>({
+    queryKey: ["team-members"],
+    queryFn: () => engFetch("/api/eng/team-members"),
   });
 
   const { data: allProjects = [] } = useQuery<{ id: number; project_name: string }[]>({
@@ -1417,14 +1442,18 @@ export default function EngineeringTasksPage() {
   }, [tasks, myName]);
 
   const createMutation = useMutation({
-    mutationFn: (task: typeof newTask) => engFetch("/api/eng/tasks", {
-      method: "POST",
-      body: JSON.stringify(task),
-    }),
+    mutationFn: (task: typeof newTask) => {
+      const assigneeName = task.assignees?.[0];
+      const matchedUser = assigneeName ? pageTeamMembers.find(m => m.name === assigneeName) : null;
+      return engFetch("/api/eng/tasks", {
+        method: "POST",
+        body: JSON.stringify({ ...task, ownerUserId: matchedUser?.id || null }),
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["eng-tasks"] });
       setCreateOpen(false);
-      setNewTask({ projectName: "", title: "", description: "", status: "TO DO", priority: "Medium", phase: "", primaryWorkstream: "", dueDate: "" });
+      setNewTask({ projectName: "", title: "", description: "", status: "TO DO", priority: "Medium", phase: "", primaryWorkstream: "", dueDate: "", assignees: [], approverUserId: null });
       toast({ title: "Task created" });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -1718,6 +1747,38 @@ export default function EngineeringTasksPage() {
                   <div className="space-y-2">
                     <Label>Due Date</Label>
                     <Input data-testid="input-task-due" type="date" value={newTask.dueDate} onChange={e => setNewTask(p => ({ ...p, dueDate: e.target.value }))} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Assign To</Label>
+                    <Select
+                      value={newTask.assignees[0] || "none"}
+                      onValueChange={v => setNewTask(p => ({ ...p, assignees: v === "none" ? [] : [v] }))}
+                    >
+                      <SelectTrigger data-testid="select-task-assignee"><SelectValue placeholder="Select assignee" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Unassigned</SelectItem>
+                        {pageTeamMembers.map(m => (
+                          <SelectItem key={m.id} value={m.name}>{m.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Approver</Label>
+                    <Select
+                      value={newTask.approverUserId ? String(newTask.approverUserId) : "none"}
+                      onValueChange={v => setNewTask(p => ({ ...p, approverUserId: v === "none" ? null : parseInt(v) }))}
+                    >
+                      <SelectTrigger data-testid="select-task-approver"><SelectValue placeholder="Select approver" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No approver</SelectItem>
+                        {pageTeamMembers.filter(m => ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER", "QUALITY_MANAGER", "CONSTRUCTION_MANAGER"].includes(m.role)).map(m => (
+                          <SelectItem key={m.id} value={String(m.id)}>{m.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
                 <Button
