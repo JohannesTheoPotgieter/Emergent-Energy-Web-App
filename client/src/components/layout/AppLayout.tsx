@@ -300,7 +300,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </Link>
 
         {navGroups.filter(group => {
-          if (group.section === "FEEDBACK") return true;
+          if (group.section === "FEEDBACK" || group.section === "INFORMATION") return true;
           if (allowedSections.length === 0 && !activeRole) return group.section === "PROJECT_MANAGEMENT";
           return allowedSections.includes(group.section);
         }).map((group) => {
