@@ -37,7 +37,7 @@ import { WeeklyReviewWizard } from "@/components/WeeklyReviewWizard";
 import { GuidancePrompt, getPhaseGuidance } from "@/components/MicroGuidance";
 import { useProgramData } from "@/hooks/use-program-data";
 import { useAuth } from "@/hooks/use-auth";
-import { PROJECT_PHASES, PROJECT_PHASE_LABELS, type ProjectPhase, checkPermission } from "@shared/schema";
+import { PROJECT_PHASES, LIFECYCLE_PHASES, PROJECT_PHASE_LABELS, type ProjectPhase, checkPermission } from "@shared/schema";
 
 const PHASE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   P0_FIRST_ASSESSMENT: { bg: "bg-slate-100", text: "text-slate-700", border: "border-slate-300" },
@@ -141,9 +141,9 @@ function PhaseChangeModal({ projectId, currentPhase, open, onClose }: {
                 <SelectValue placeholder="Select phase..." />
               </SelectTrigger>
               <SelectContent>
-                {PROJECT_PHASES.map(p => (
+                {LIFECYCLE_PHASES.map(p => (
                   <SelectItem key={p} value={p} disabled={p === currentPhase}>
-                    {PROJECT_PHASE_LABELS[p]}
+                    {PROJECT_PHASE_LABELS[p] || p}
                   </SelectItem>
                 ))}
               </SelectContent>
