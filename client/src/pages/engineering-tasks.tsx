@@ -15,6 +15,8 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -44,6 +46,8 @@ import {
   ArrowRight,
   PauseCircle,
   MoreVertical,
+  ChevronsUpDown,
+  Check,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { PROJECT_PHASE_LABELS, type ProjectPhase } from "@shared/schema";
@@ -1240,11 +1244,21 @@ export default function EngineeringTasksPage() {
     dueDate: "",
   });
 
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
+
   const { data: tasks = [], isLoading } = useQuery<Task[]>({
     queryKey: ["eng-tasks"],
     queryFn: () => engFetch("/api/eng/tasks"),
     refetchOnMount: "always",
     staleTime: 0,
+  });
+
+  const { data: allProjects = [] } = useQuery<{ id: number; project_name: string }[]>({
+    queryKey: ["/api/projects-summary"],
+    select: (data: any[]) => data.map((p: any) => ({
+      id: p.project_info_id || p.id,
+      project_name: p.project_name?.replace(/_Tracker.*$/, "").replace(/_/g, " ") || p.projectName || "",
+    })).filter((p: any) => p.project_name).sort((a: any, b: any) => a.project_name.localeCompare(b.project_name)),
   });
 
   const myTasks = useMemo(() => {
@@ -1499,7 +1513,44 @@ export default function EngineeringTasksPage() {
               <div className="space-y-4 pt-4">
                 <div className="space-y-2">
                   <Label>Project Name</Label>
-                  <Input data-testid="input-task-project" value={newTask.projectName} onChange={e => setNewTask(p => ({ ...p, projectName: e.target.value }))} placeholder="e.g. Riverside Mall" />
+                  <Popover open={projectPickerOpen} onOpenChange={setProjectPickerOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={projectPickerOpen}
+                        className="w-full justify-between font-normal"
+                        data-testid="input-task-project"
+                      >
+                        {newTask.projectName || "Select a project..."}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="Search projects..." />
+                        <CommandList>
+                          <CommandEmpty>No project found.</CommandEmpty>
+                          <CommandGroup>
+                            {allProjects.map((proj) => (
+                              <CommandItem
+                                key={proj.id}
+                                value={proj.project_name}
+                                onSelect={() => {
+                                  setNewTask(p => ({ ...p, projectName: proj.project_name }));
+                                  setProjectPickerOpen(false);
+                                }}
+                                data-testid={`option-project-${proj.id}`}
+                              >
+                                <Check className={`mr-2 h-4 w-4 ${newTask.projectName === proj.project_name ? "opacity-100" : "opacity-0"}`} />
+                                {proj.project_name}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                 </div>
                 <div className="space-y-2">
                   <Label>Title</Label>
