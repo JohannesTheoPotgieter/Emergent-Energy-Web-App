@@ -1,15 +1,17 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/hooks/use-auth";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Copy, CheckCircle, Loader2, Trash2, Edit, Eye, Power, History, ChevronDown, ChevronRight } from "lucide-react";
+import { Plus, Copy, CheckCircle, Loader2, Trash2, Edit, Eye, Power, History, ChevronDown, ChevronRight, Shield, ListChecks, FileText, AlertTriangle, Users, Wrench } from "lucide-react";
 
 interface PhaseTemplateData {
   id: number;
@@ -61,9 +63,21 @@ const authFetch = async (url: string, opts: RequestInit = {}) => {
   return fetch(url, { ...opts, headers, credentials: "include" });
 };
 
+const PHASE_TO_ENG_STAGES: Record<string, string[]> = {
+  "First Assessment": ["First Assessment"],
+  "Cost Proposal": ["Cost Proposal"],
+  "Financial Close": ["Cost Proposal"],
+  "Planning": ["IFC Planning"],
+  "Construction": ["IFC Planning", "Construction Support"],
+  "QA": ["Handover Pack"],
+  "Handover": ["Handover Pack"],
+  "Compliance Handover": ["Handover Pack"],
+};
+
 export default function PhaseTemplatesPage() {
   const { user, isAdmin } = useAuth();
   const { toast } = useToast();
+  const qc = useQueryClient();
   const [templates, setTemplates] = useState<PhaseTemplateData[]>([]);
   const [constants, setConstants] = useState<TemplateConstants | null>(null);
   const [loading, setLoading] = useState(true);
@@ -78,6 +92,32 @@ export default function PhaseTemplatesPage() {
   const [newTemplate, setNewTemplate] = useState({ phase: "", name: "" });
   const [cloneTarget, setCloneTarget] = useState("");
   const [expandedPhases, setExpandedPhases] = useState<Set<string>>(new Set());
+  const [selectedPhaseForEng, setSelectedPhaseForEng] = useState<string | null>(null);
+  const [expandedEngId, setExpandedEngId] = useState<number | null>(null);
+
+  const { data: engData } = useQuery({
+    queryKey: ["eng-stage-templates"],
+    queryFn: async () => {
+      const res = await authFetch("/api/eng-stages/templates");
+      if (!res.ok) throw new Error("Failed to fetch eng templates");
+      return res.json();
+    },
+  });
+  const engTemplates: any[] = engData?.templates || [];
+
+  const toggleEngActive = async (id: number, isActive: boolean) => {
+    try {
+      const res = await authFetch(`/api/eng-stages/templates/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ isActive: !isActive }),
+      });
+      if (!res.ok) throw new Error("Failed to update");
+      toast({ title: `Engineering template ${isActive ? "deactivated" : "activated"}` });
+      qc.invalidateQueries({ queryKey: ["eng-stage-templates"] });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+  };
 
   const [itemForm, setItemForm] = useState({
     itemKey: "", itemType: "TASK", title: "", description: "",
@@ -273,7 +313,7 @@ export default function PhaseTemplatesPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold" data-testid="text-page-title">Phase Templates</h1>
-          <p className="text-muted-foreground">Manage lifecycle phase templates that auto-generate tasks, deliverables, and quality items when projects advance</p>
+          <p className="text-muted-foreground">Manage lifecycle phase templates and engineering stage templates that auto-generate tasks, deliverables, and quality items when projects advance</p>
         </div>
         <Button onClick={() => setShowCreateDialog(true)} data-testid="button-create-template">
           <Plus className="w-4 h-4 mr-2" /> New Template
@@ -293,10 +333,13 @@ export default function PhaseTemplatesPage() {
                 <div key={phase} className="border rounded-lg overflow-hidden">
                   <button
                     className="w-full flex items-center justify-between px-3 py-2 bg-muted/50 hover:bg-muted text-sm font-medium"
-                    onClick={() => togglePhase(phase)}
+                    onClick={() => { togglePhase(phase); setSelectedPhaseForEng(phase); }}
                     data-testid={`button-phase-toggle-${phase}`}
                   >
-                    <span className="truncate">{phaseLabels[phase] || phase}</span>
+                    <span className="truncate flex items-center gap-1.5">
+                      {phaseLabels[phase] || phase}
+                      {PHASE_TO_ENG_STAGES[phase] && <Wrench className="h-3 w-3 text-purple-500" />}
+                    </span>
                     <span className="flex items-center gap-2">
                       <Badge variant="secondary">{phaseTemplates.length}</Badge>
                       {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
@@ -406,6 +449,47 @@ export default function PhaseTemplatesPage() {
             ) : (
               <Card><CardContent className="py-12 text-center text-muted-foreground">Select a template from the list to view and edit its items</CardContent></Card>
             )}
+
+            {(() => {
+              const currentPhase = selectedTemplate
+                ? (legacyToLifecycle[selectedTemplate.phase] || selectedTemplate.phase)
+                : selectedPhaseForEng;
+              const linkedStageNames = currentPhase ? (PHASE_TO_ENG_STAGES[currentPhase] || []) : [];
+              const linkedEngTemplates = engTemplates.filter((t: any) => linkedStageNames.includes(t.name));
+
+              if (linkedEngTemplates.length === 0 && !currentPhase) return null;
+
+              return (
+                <Card className="mt-4" data-testid="eng-stages-section">
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center gap-2">
+                      <Wrench className="h-4 w-4 text-purple-600" />
+                      <CardTitle className="text-base">Engineering Stage Templates</CardTitle>
+                    </div>
+                    <CardDescription>
+                      {currentPhase && linkedStageNames.length > 0
+                        ? `Engineering stages auto-generated when projects enter "${currentPhase}"`
+                        : "No engineering stages are linked to this phase"}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {linkedEngTemplates.length === 0 ? (
+                      <p className="text-xs text-muted-foreground italic py-2">No engineering stage templates are mapped to this phase.</p>
+                    ) : (
+                      linkedEngTemplates.map((et: any) => (
+                        <EngStageInlineCard
+                          key={et.id}
+                          template={et}
+                          expanded={expandedEngId === et.id}
+                          onToggleExpand={() => setExpandedEngId(expandedEngId === et.id ? null : et.id)}
+                          onToggleActive={() => toggleEngActive(et.id, et.isActive)}
+                        />
+                      ))
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })()}
           </div>
         </div>
       )}
@@ -587,6 +671,128 @@ export default function PhaseTemplatesPage() {
           )}
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+function EngStageInlineCard({ template, expanded, onToggleExpand, onToggleActive }: {
+  template: any; expanded: boolean; onToggleExpand: () => void; onToggleActive: () => void;
+}) {
+  const { data: detail } = useQuery({
+    queryKey: ["eng-stage-template-detail", template.id],
+    queryFn: async () => {
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`/api/eng-stages/templates/${template.id}`, { headers, credentials: "include" });
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    enabled: expanded,
+  });
+
+  return (
+    <div className={`border rounded-lg transition-all ${!template.isActive ? "opacity-60" : ""}`} data-testid={`eng-template-card-${template.id}`}>
+      <div className="flex items-center justify-between p-3">
+        <div className="flex items-center gap-3 cursor-pointer flex-1" onClick={onToggleExpand}>
+          {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          <div>
+            <div className="text-sm font-medium">{template.name}</div>
+            <p className="text-xs text-muted-foreground">{template.purpose}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-4 shrink-0">
+          <div className="flex gap-3 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1"><ListChecks className="h-3.5 w-3.5" /> {template.taskCount} tasks</span>
+            <span className="flex items-center gap-1"><FileText className="h-3.5 w-3.5" /> {template.deliverableCount} deliverables</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs">{template.isActive ? "Active" : "Inactive"}</span>
+            <Switch checked={template.isActive} onCheckedChange={onToggleActive} data-testid={`toggle-eng-active-${template.id}`} />
+          </div>
+        </div>
+      </div>
+
+      {expanded && detail && (
+        <div className="px-3 pb-3 space-y-3 border-t pt-3">
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="p-2 bg-blue-50 rounded">
+              <span className="font-medium text-blue-800">Responsible:</span>
+              <span className="ml-1 text-blue-600">{template.raciResponsible}</span>
+            </div>
+            <div className="p-2 bg-green-50 rounded">
+              <span className="font-medium text-green-800">Accountable:</span>
+              <span className="ml-1 text-green-600">{template.raciAccountable}</span>
+            </div>
+            <div className="p-2 bg-purple-50 rounded">
+              <span className="font-medium text-purple-800">Consulted:</span>
+              <span className="ml-1 text-purple-600">{template.raciConsulted}</span>
+            </div>
+            <div className="p-2 bg-gray-50 rounded">
+              <span className="font-medium text-gray-800">Informed:</span>
+              <span className="ml-1 text-gray-600">{template.raciInformed}</span>
+            </div>
+          </div>
+
+          <div>
+            <h4 className="text-sm font-medium mb-2 flex items-center gap-1">
+              <ListChecks className="h-4 w-4" /> Tasks
+            </h4>
+            <div className="space-y-1">
+              {detail.tasks.map((task: any) => (
+                <div key={task.id} className="flex items-center gap-2 text-xs p-1.5 bg-muted/30 rounded">
+                  <span className="text-muted-foreground w-5 text-right">{task.sequence}.</span>
+                  <span className="flex-1">{task.title}</span>
+                  {task.isRequired && <Badge variant="secondary" className="text-[10px]">Required</Badge>}
+                  <span className="text-muted-foreground text-[10px]">{task.defaultOwnerRole}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <h4 className="text-sm font-medium mb-2 flex items-center gap-1">
+              <FileText className="h-4 w-4" /> Deliverables
+            </h4>
+            <div className="space-y-1">
+              {detail.deliverables.map((del: any) => (
+                <div key={del.id} className="flex items-center gap-2 text-xs p-1.5 bg-muted/30 rounded">
+                  <FileText className="h-3 w-3 text-muted-foreground" />
+                  <span className="flex-1">{del.name}</span>
+                  {del.isRequired && <Badge variant="secondary" className="text-[10px]">Required</Badge>}
+                  <span className="text-muted-foreground text-[10px]">x{del.requiredCount}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {template.failureModes?.length > 0 && (
+            <div>
+              <h4 className="text-sm font-medium mb-2 flex items-center gap-1 text-orange-700">
+                <AlertTriangle className="h-4 w-4" /> Failure Modes
+              </h4>
+              <ul className="list-disc list-inside text-xs text-orange-600 space-y-0.5">
+                {template.failureModes.map((fm: string, i: number) => <li key={i}>{fm}</li>)}
+              </ul>
+            </div>
+          )}
+
+          {template.stageGateRules && (
+            <div>
+              <h4 className="text-sm font-medium mb-2 flex items-center gap-1">
+                <Shield className="h-4 w-4" /> Stage Gate Rules
+              </h4>
+              <div className="flex gap-2 flex-wrap">
+                {Object.entries(template.stageGateRules as Record<string, boolean>).map(([key, val]) => (
+                  <Badge key={key} variant={val ? "default" : "secondary"} className="text-[10px]">
+                    {key.replace(/([A-Z])/g, " $1").trim()}: {val ? "Yes" : "No"}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
