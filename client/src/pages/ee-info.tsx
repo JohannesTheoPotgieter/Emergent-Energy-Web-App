@@ -118,31 +118,14 @@ function renderMarkdown(content: string): string {
 }
 
 function GraphTab({ nodes, edges, onSelectNode }: { nodes: EeNode[]; edges: EeEdge[]; onSelectNode: (slug: string) => void }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [positions, setPositions] = useState<Map<string, { x: number; y: number }>>(new Map());
-  const [dragNode, setDragNode] = useState<string | null>(null);
-  const [offset, setOffset] = useState({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState(1);
-  const [canvasSize, setCanvasSize] = useState({ w: 900, h: 600 });
-  const animRef = useRef<number>(0);
+  const svgRef = useRef<SVGSVGElement>(null);
 
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(entries => {
-      for (const entry of entries) {
-        const w = Math.round(entry.contentRect.width) || 900;
-        const h = 600;
-        setCanvasSize({ w, h });
-      }
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
+  const VB_W = 900;
+  const VB_H = 600;
 
   const filtered = useMemo(() => {
     let f = nodes;
@@ -160,17 +143,17 @@ function GraphTab({ nodes, edges, onSelectNode }: { nodes: EeNode[]; edges: EeEd
   useEffect(() => {
     if (filtered.length === 0) return;
     const pos = new Map<string, { x: number; y: number }>();
-    const width = canvasSize.w;
-    const height = canvasSize.h;
+    const width = VB_W;
+    const height = VB_H;
     const cats = [...new Set(filtered.map(n => n.category))];
 
-    filtered.forEach((n, i) => {
+    filtered.forEach((n) => {
       const catIdx = cats.indexOf(n.category);
       const nodesInCat = filtered.filter(nn => nn.category === n.category);
       const idxInCat = nodesInCat.indexOf(n);
       const angle = (2 * Math.PI * idxInCat) / Math.max(nodesInCat.length, 1);
       const catAngle = (2 * Math.PI * catIdx) / Math.max(cats.length, 1);
-      const catRadius = Math.min(width, height) * 0.25;
+      const catRadius = 150;
       const nodeRadius = 40 + nodesInCat.length * 10;
       const cx = width / 2 + Math.cos(catAngle) * catRadius;
       const cy = height / 2 + Math.sin(catAngle) * catRadius;
@@ -208,7 +191,7 @@ function GraphTab({ nodes, edges, onSelectNode }: { nodes: EeNode[]; edges: EeEd
         if (!pa || !pb) return;
         const dx = pb.x - pa.x;
         const dy = pb.y - pa.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
+        const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
         const spring = (dist - 120) * 0.01;
         const fa = forces.get(e.fromNodeId)!;
         const fb = forces.get(e.toNodeId)!;
@@ -227,113 +210,7 @@ function GraphTab({ nodes, edges, onSelectNode }: { nodes: EeNode[]; edges: EeEd
     }
 
     setPositions(pos);
-  }, [filtered, filteredEdges, canvasSize]);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || positions.size === 0) return;
-    canvas.width = canvasSize.w;
-    canvas.height = canvasSize.h;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    const draw = () => {
-      const w = canvas.width;
-      const h = canvas.height;
-      ctx.clearRect(0, 0, w, h);
-      ctx.save();
-      ctx.translate(offset.x, offset.y);
-      ctx.scale(zoom, zoom);
-
-      filteredEdges.forEach(e => {
-        const from = positions.get(e.fromNodeId);
-        const to = positions.get(e.toNodeId);
-        if (!from || !to) return;
-        ctx.beginPath();
-        ctx.moveTo(from.x, from.y);
-        ctx.lineTo(to.x, to.y);
-        ctx.strokeStyle = e.edgeType === "embed" ? "#f59e0b88" : "#94a3b844";
-        ctx.lineWidth = e.edgeType === "embed" ? 2 : 1;
-        ctx.stroke();
-      });
-
-      filtered.forEach(n => {
-        const p = positions.get(n.id);
-        if (!p) return;
-        const color = graphNodeColors[n.category] || "#9ca3af";
-        const isHovered = hoveredNode === n.id;
-        const radius = isHovered ? 10 : (n.status === "stub" ? 5 : 7);
-
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
-        ctx.fillStyle = n.status === "stub" ? color + "44" : color;
-        ctx.fill();
-        if (isHovered) {
-          ctx.strokeStyle = "#000";
-          ctx.lineWidth = 2;
-          ctx.stroke();
-        }
-
-        ctx.fillStyle = "#334155";
-        ctx.font = isHovered ? "bold 11px sans-serif" : "10px sans-serif";
-        ctx.textAlign = "center";
-        const label = n.title.length > 20 ? n.title.slice(0, 18) + "..." : n.title;
-        ctx.fillText(label, p.x, p.y + radius + 12);
-      });
-
-      ctx.restore();
-    };
-
-    draw();
-    animRef.current = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(animRef.current);
-  }, [positions, filtered, filteredEdges, hoveredNode, offset, zoom, canvasSize]);
-
-  const handleCanvasClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const mx = (e.clientX - rect.left - offset.x) / zoom;
-    const my = (e.clientY - rect.top - offset.y) / zoom;
-
-    for (const n of filtered) {
-      const p = positions.get(n.id);
-      if (!p) continue;
-      const dx = mx - p.x;
-      const dy = my - p.y;
-      if (dx * dx + dy * dy < 200) {
-        onSelectNode(n.slug);
-        return;
-      }
-    }
-  }, [filtered, positions, offset, zoom, onSelectNode]);
-
-  const handleCanvasMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const mx = (e.clientX - rect.left - offset.x) / zoom;
-    const my = (e.clientY - rect.top - offset.y) / zoom;
-
-    let found: string | null = null;
-    for (const n of filtered) {
-      const p = positions.get(n.id);
-      if (!p) continue;
-      const dx = mx - p.x;
-      const dy = my - p.y;
-      if (dx * dx + dy * dy < 200) {
-        found = n.id;
-        break;
-      }
-    }
-    setHoveredNode(found);
-    canvas.style.cursor = found ? "pointer" : "default";
-  }, [filtered, positions, offset, zoom]);
-
-  const handleWheel = useCallback((e: React.WheelEvent<HTMLCanvasElement>) => {
-    e.preventDefault();
-    setZoom(z => Math.max(0.3, Math.min(3, z - e.deltaY * 0.001)));
-  }, []);
+  }, [filtered, filteredEdges]);
 
   const categories = useMemo(() => [...new Set(nodes.map(n => n.category))].sort(), [nodes]);
 
@@ -365,22 +242,66 @@ function GraphTab({ nodes, edges, onSelectNode }: { nodes: EeNode[]; edges: EeEd
         </div>
       </div>
       <Card>
-        <CardContent className="p-0" ref={containerRef}>
-          <canvas
-            ref={canvasRef}
-            width={canvasSize.w}
-            height={canvasSize.h}
-            className="w-full border rounded-lg"
-            style={{ height: canvasSize.h }}
-            onClick={handleCanvasClick}
-            onMouseMove={handleCanvasMove}
-            onWheel={handleWheel}
+        <CardContent className="p-0">
+          <svg
+            ref={svgRef}
+            viewBox={`0 0 ${VB_W} ${VB_H}`}
+            className="w-full border rounded-lg bg-white"
+            style={{ height: 500, minHeight: 400 }}
             data-testid="graph-canvas"
-          />
+          >
+            {filteredEdges.map(e => {
+              const from = positions.get(e.fromNodeId);
+              const to = positions.get(e.toNodeId);
+              if (!from || !to) return null;
+              return (
+                <line
+                  key={e.id}
+                  x1={from.x} y1={from.y} x2={to.x} y2={to.y}
+                  stroke={e.edgeType === "embed" ? "#f59e0b88" : "#94a3b844"}
+                  strokeWidth={e.edgeType === "embed" ? 2 : 1}
+                />
+              );
+            })}
+            {filtered.map(n => {
+              const p = positions.get(n.id);
+              if (!p) return null;
+              const color = graphNodeColors[n.category] || "#9ca3af";
+              const isHovered = hoveredNode === n.id;
+              const radius = isHovered ? 10 : (n.status === "stub" ? 5 : 7);
+              const label = n.title.length > 20 ? n.title.slice(0, 18) + "..." : n.title;
+              return (
+                <g
+                  key={n.id}
+                  onClick={() => onSelectNode(n.slug)}
+                  onMouseEnter={() => setHoveredNode(n.id)}
+                  onMouseLeave={() => setHoveredNode(null)}
+                  style={{ cursor: "pointer" }}
+                >
+                  <circle
+                    cx={p.x} cy={p.y} r={radius}
+                    fill={n.status === "stub" ? color + "44" : color}
+                    stroke={isHovered ? "#000" : "none"}
+                    strokeWidth={isHovered ? 2 : 0}
+                  />
+                  <text
+                    x={p.x} y={p.y + radius + 12}
+                    textAnchor="middle"
+                    fill="#334155"
+                    fontSize={isHovered ? 11 : 9}
+                    fontWeight={isHovered ? "bold" : "normal"}
+                    fontFamily="sans-serif"
+                  >
+                    {label}
+                  </text>
+                </g>
+              );
+            })}
+          </svg>
         </CardContent>
       </Card>
       <p className="text-xs text-muted-foreground text-center">
-        {filtered.length} nodes, {filteredEdges.length} edges. Click a node to view details. Scroll to zoom.
+        {filtered.length} nodes, {filteredEdges.length} edges. Click a node to view details.
       </p>
     </div>
   );
