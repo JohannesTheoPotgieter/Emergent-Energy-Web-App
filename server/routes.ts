@@ -2741,7 +2741,7 @@ export async function registerRoutes(
           invoiceNumber: exp.expenseInvoiceNumber || null,
           poNumber: exp.expensePoNumber || null,
           invoiceDate: invDate,
-          invoiceDateConfirmed: dateConfirmed,
+          invoiceDateConfirmed: exp.invoiceDateConfirmed === true || exp.invoiceDateFontColor === 'black',
           paymentDate: payDate,
           paymentDateConfirmed: exp.paymentDateConfirmed === true,
           supplier: exp.supplierName || null,
