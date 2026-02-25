@@ -47,35 +47,23 @@ import {
 } from "@shared/schema";
 
 const ALL_SECTIONS = [
-  "EXCO",
-  "PROJECT_MANAGEMENT",
-  "ENGINEERING",
-  "QUALITY",
-  "ADMIN",
-  "MY_TOOL",
-  "FINANCE",
-  "PROJECTS",
-  "OPERATIONS",
-  "GOVERNANCE",
   "COCKPIT",
+  "PROJECTS",
   "MONEY",
   "DELIVERY",
+  "GOVERNANCE",
+  "INFORMATION",
+  "ADMIN",
 ] as const;
 
 const SECTION_LABELS: Record<string, string> = {
-  EXCO: "EXCO",
-  PROJECT_MANAGEMENT: "Project Management",
-  ENGINEERING: "Engineering",
-  QUALITY: "Quality",
-  ADMIN: "Admin",
-  MY_TOOL: "My Tool",
-  FINANCE: "Finance",
-  PROJECTS: "Projects",
-  OPERATIONS: "Operations",
+  COCKPIT: "EXCO",
+  PROJECTS: "Project Management",
+  MONEY: "Project Finance",
+  DELIVERY: "Engineering",
   GOVERNANCE: "Governance",
-  COCKPIT: "Cockpit",
-  MONEY: "Money",
-  DELIVERY: "Delivery",
+  INFORMATION: "Information",
+  ADMIN: "Admin",
 };
 
 function getAuthHeaders(): HeadersInit {
@@ -518,9 +506,19 @@ function RoleTableSection({ toast }: { toast: ReturnType<typeof useToast>["toast
                           </tr>
                         </thead>
                         <tbody>
-                          {(["projects", "financials", "quality", "engineering", "procurement", "admin", "governance"] as PermissionEntity[]).map(entity => (
+                          {(["projects", "financials", "quality", "engineering", "procurement", "admin", "governance"] as PermissionEntity[]).map(entity => {
+                            const entityLabels: Record<string, string> = {
+                              projects: "Project Management",
+                              financials: "Project Finance",
+                              engineering: "Engineering",
+                              quality: "Quality",
+                              procurement: "Procurement",
+                              admin: "Admin",
+                              governance: "Governance",
+                            };
+                            return (
                             <tr key={entity} className="border-b border-gray-50 hover:bg-gray-50/50">
-                              <td className="py-1.5 pr-4 capitalize font-medium text-gray-700">{entity}</td>
+                              <td className="py-1.5 pr-4 font-medium text-gray-700">{entityLabels[entity] || entity}</td>
                               {(["view", "edit", "approve", "override"] as PermissionAction[]).map(action => {
                                 const active = getEntityPerm(role.role, entity, action);
                                 return (
@@ -540,7 +538,8 @@ function RoleTableSection({ toast }: { toast: ReturnType<typeof useToast>["toast
                                 );
                               })}
                             </tr>
-                          ))}
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>

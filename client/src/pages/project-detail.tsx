@@ -36,7 +36,7 @@ import { WeeklyReviewWizard } from "@/components/WeeklyReviewWizard";
 import { GuidancePrompt, getPhaseGuidance } from "@/components/MicroGuidance";
 import { useProgramData } from "@/hooks/use-program-data";
 import { useAuth } from "@/hooks/use-auth";
-import { PROJECT_PHASES, PROJECT_PHASE_LABELS, type ProjectPhase } from "@shared/schema";
+import { PROJECT_PHASES, PROJECT_PHASE_LABELS, type ProjectPhase, checkPermission } from "@shared/schema";
 
 const PHASE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   P0_FIRST_ASSESSMENT: { bg: "bg-slate-100", text: "text-slate-700", border: "border-slate-300" },
@@ -444,6 +444,10 @@ export default function ProjectDetailPage() {
   const projectName = params?.projectName ? decodeURIComponent(params.projectName) : "";
   const { projectsSummary } = useProgramData();
   const { user } = useAuth();
+  const userRole = user?.role || localStorage.getItem("company_role") || "";
+  const canViewFinance = checkPermission(userRole, "financials", "view");
+  const canViewEngineering = checkPermission(userRole, "engineering", "view");
+  const canViewQuality = checkPermission(userRole, "quality", "view");
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [phaseModalOpen, setPhaseModalOpen] = useState(false);
@@ -835,18 +839,24 @@ export default function ProjectDetailPage() {
             <FileText className="h-3.5 w-3.5" />
             <span>Plan</span>
           </TabsTrigger>
+          {canViewFinance && (
           <TabsTrigger value="money" className="flex items-center gap-1.5 text-xs" data-testid="tab-money">
             <DollarSign className="h-3.5 w-3.5" />
             <span>Project Finance</span>
           </TabsTrigger>
+          )}
+          {canViewEngineering && (
           <TabsTrigger value="engineering" className="flex items-center gap-1.5 text-xs" data-testid="tab-engineering">
             <Wrench className="h-3.5 w-3.5" />
             <span>Engineering</span>
           </TabsTrigger>
+          )}
+          {canViewQuality && (
           <TabsTrigger value="quality" className="flex items-center gap-1.5 text-xs" data-testid="tab-quality">
             <ShieldCheck className="h-3.5 w-3.5" />
             <span>Quality</span>
           </TabsTrigger>
+          )}
           <TabsTrigger value="history" className="flex items-center gap-1.5 text-xs" data-testid="tab-history">
             <History className="h-3.5 w-3.5" />
             <span>History</span>
@@ -870,9 +880,11 @@ export default function ProjectDetailPage() {
           {currentSubTab === "calendar" && <CalendarView projectName={projectName} onTaskClick={handleTaskClick} />}
         </TabsContent>
 
+        {canViewEngineering && (
         <TabsContent value="engineering" className="space-y-4">
           <EngTasksTab projectInfoId={projectInfoId ?? null} isAdmin={isAdmin} />
         </TabsContent>
+        )}
 
         <TabsContent value="plan" className="space-y-4">
           <div className="flex gap-1 flex-wrap" data-testid="sub-tabs-plan">
@@ -887,6 +899,7 @@ export default function ProjectDetailPage() {
           {currentSubTab === "key-dates" && <KeyDatesPanel projectName={projectName} />}
         </TabsContent>
 
+        {canViewFinance && (
         <TabsContent value="money" className="space-y-4">
           <div className="flex gap-1 flex-wrap" data-testid="sub-tabs-money">
             <Button size="sm" variant={currentSubTab === "revenue-tracking" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("money", "revenue-tracking")} data-testid="subtab-revenue">
@@ -911,10 +924,13 @@ export default function ProjectDetailPage() {
           {currentSubTab === "cashflow" && <CashflowTab projectName={projectName} />}
           {currentSubTab === "subcontractors" && <ProjectSubcontractorsTab projectName={projectName} />}
         </TabsContent>
+        )}
 
+        {canViewQuality && (
         <TabsContent value="quality" className="space-y-4">
           <QualityTab projectName={projectName} />
         </TabsContent>
+        )}
 
         <TabsContent value="history" className="space-y-4">
           <WeeklyReviewWizard

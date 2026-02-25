@@ -39,7 +39,7 @@ Preferred communication style: Simple, everyday language.
 ### Backend
 -   **Framework**: Express.js with TypeScript
 -   **Authentication**: Passport.js with local strategy and PostgreSQL-backed sessions, supporting role-based access control and rate limiting.
--   **Permission Middleware**: `requirePermission(entity, action)` for API-level role-based access.
+-   **Permission Middleware**: `requirePermission(entity, action)` for API-level role-based access. Entity permissions (`projects`, `financials`, `engineering`, `quality`, `procurement`, `governance`, `admin`) control view/edit/approve/override per role. Section-level access uses 7 consolidated keys: `COCKPIT` (EXCO), `PROJECTS` (Project Management), `MONEY` (Project Finance), `DELIVERY` (Engineering), `GOVERNANCE`, `INFORMATION`, `ADMIN`. Old section keys are auto-migrated on startup via `role-management.ts`. Project detail tabs (Project Finance, Engineering, Quality) are conditionally rendered based on entity view permissions.
 -   **File Handling**: Multer for uploads, `exceljs` for parsing.
 -   **Data Storage**: PostgreSQL with Drizzle ORM.
 -   **Data Integrity**: Transactional safety and reprocessing.
