@@ -117,11 +117,25 @@ function renderMarkdown(content: string): string {
   return html;
 }
 
-function GraphTab({ nodes, edges, onSelectNode }: { nodes: EeNode[]; edges: EeEdge[]; onSelectNode: (slug: string) => void }) {
+function GraphTab({ nodes, edges, onSelectNode, userRole }: { nodes: EeNode[]; edges: EeEdge[]; onSelectNode: (slug: string) => void; userRole: string | null }) {
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
+  const [selectedNode, setSelectedNode] = useState<EeNode | null>(null);
   const [positions, setPositions] = useState<Map<string, { x: number; y: number }>>(new Map());
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+  const [newCategory, setNewCategory] = useState("process");
+  const [newContent, setNewContent] = useState("");
+  const [editTitle, setEditTitle] = useState("");
+  const [editCategory, setEditCategory] = useState("");
+  const [editContent, setEditContent] = useState("");
+  const [editNodeDetail, setEditNodeDetail] = useState<EeNodeDetail | null>(null);
+  const queryClient = useQueryClient();
+
+  const isCOO = userRole === "COO_ADMIN" || userRole === "admin" || userRole === "CEO_ADMIN";
 
   const VB_W = 1600;
   const VB_H = 1200;
@@ -213,6 +227,103 @@ function GraphTab({ nodes, edges, onSelectNode }: { nodes: EeNode[]; edges: EeEd
 
   const categories = useMemo(() => [...new Set(nodes.map(n => n.category))].sort(), [nodes]);
 
+  const createMutation = useMutation({
+    mutationFn: async (data: { title: string; category: string; contentMarkdown: string }) => {
+      const res = await authFetch("/api/ee-info/nodes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Failed to create node");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["ee-info-nodes"] });
+      queryClient.invalidateQueries({ queryKey: ["ee-info-graph"] });
+      setShowCreateDialog(false);
+      setNewTitle("");
+      setNewCategory("process");
+      setNewContent("");
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      const res = await authFetch(`/api/ee-info/nodes/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Failed to update");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ee-info-nodes"] });
+      queryClient.invalidateQueries({ queryKey: ["ee-info-graph"] });
+      queryClient.invalidateQueries({ queryKey: ["ee-info-node"] });
+      setShowEditDialog(false);
+      setSelectedNode(null);
+      setEditNodeDetail(null);
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await authFetch(`/api/ee-info/nodes/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete node");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ee-info-nodes"] });
+      queryClient.invalidateQueries({ queryKey: ["ee-info-graph"] });
+      queryClient.invalidateQueries({ queryKey: ["ee-info-node"] });
+      setShowDeleteDialog(false);
+      setSelectedNode(null);
+    },
+  });
+
+  const handleNodeClick = (node: EeNode) => {
+    if (selectedNode?.id === node.id) {
+      setSelectedNode(null);
+    } else {
+      setSelectedNode(node);
+    }
+  };
+
+  const openEditDialog = async (node: EeNode) => {
+    try {
+      const res = await authFetch(`/api/ee-info/nodes/${node.slug}`);
+      if (!res.ok) throw new Error("Failed to fetch");
+      const detail = await res.json();
+      setEditNodeDetail(detail);
+      setEditTitle(detail.title);
+      setEditCategory(detail.category);
+      setEditContent(detail.contentMarkdown || "");
+      setShowEditDialog(true);
+    } catch {
+      setEditTitle(node.title);
+      setEditCategory(node.category);
+      setEditContent(node.contentMarkdown || "");
+      setEditNodeDetail(null);
+      setShowEditDialog(true);
+    }
+  };
+
+  const connectedEdges = useMemo(() => {
+    if (!selectedNode) return [];
+    return edges.filter(e => e.fromNodeId === selectedNode.id || e.toNodeId === selectedNode.id);
+  }, [selectedNode, edges]);
+
+  const connectedNodes = useMemo(() => {
+    if (!selectedNode) return [];
+    const ids = new Set<string>();
+    connectedEdges.forEach(e => {
+      if (e.fromNodeId !== selectedNode.id) ids.add(e.fromNodeId);
+      if (e.toNodeId !== selectedNode.id) ids.add(e.toNodeId);
+    });
+    return nodes.filter(n => ids.has(n.id));
+  }, [selectedNode, connectedEdges, nodes]);
+
   return (
     <div className="space-y-3" data-testid="graph-tab">
       <div className="flex items-center gap-2 flex-wrap">
@@ -231,6 +342,11 @@ function GraphTab({ nodes, edges, onSelectNode }: { nodes: EeNode[]; edges: EeEd
             ))}
           </SelectContent>
         </Select>
+        {isCOO && (
+          <Button size="sm" variant="outline" className="h-8 text-xs gap-1" onClick={() => setShowCreateDialog(true)} data-testid="graph-btn-create">
+            <Plus className="h-3.5 w-3.5" /> Add Node
+          </Button>
+        )}
         <div className="flex gap-1.5 ml-auto">
           {Object.entries(graphNodeColors).filter(([k]) => k !== "unknown").map(([cat, color]) => (
             <div key={cat} className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -240,67 +356,235 @@ function GraphTab({ nodes, edges, onSelectNode }: { nodes: EeNode[]; edges: EeEd
           ))}
         </div>
       </div>
-      <Card>
-        <CardContent className="p-0 overflow-auto" style={{ maxHeight: 600 }}>
-          <svg
-            viewBox={`0 0 ${VB_W} ${VB_H}`}
-            className="border rounded-lg bg-white"
-            style={{ width: VB_W, height: VB_H, minWidth: "100%" }}
-            data-testid="graph-canvas"
-          >
-            {positions.size > 0 && filteredEdges.map(e => {
-              const from = positions.get(e.fromNodeId);
-              const to = positions.get(e.toNodeId);
-              if (!from || !to) return null;
-              return (
-                <line
-                  key={e.id}
-                  x1={from.x} y1={from.y} x2={to.x} y2={to.y}
-                  stroke={e.edgeType === "embed" ? "#f59e0b66" : "#94a3b833"}
-                  strokeWidth={e.edgeType === "embed" ? 1.5 : 0.5}
-                />
-              );
-            })}
-            {positions.size > 0 && filtered.map(n => {
-              const p = positions.get(n.id);
-              if (!p) return null;
-              const color = graphNodeColors[n.category] || "#9ca3af";
-              const isHovered = hoveredNode === n.id;
-              const radius = isHovered ? 14 : (n.status === "stub" ? 6 : 9);
-              const label = n.title.length > 25 ? n.title.slice(0, 23) + "..." : n.title;
-              return (
-                <g
-                  key={n.id}
-                  onClick={() => onSelectNode(n.slug)}
-                  onMouseEnter={() => setHoveredNode(n.id)}
-                  onMouseLeave={() => setHoveredNode(null)}
-                  style={{ cursor: "pointer" }}
-                >
-                  <circle
-                    cx={p.x} cy={p.y} r={radius}
-                    fill={n.status === "stub" ? color + "44" : color}
-                    stroke={isHovered ? "#000" : "white"}
-                    strokeWidth={isHovered ? 2 : 1}
+      <div className="flex gap-3">
+        <Card className="flex-1 min-w-0">
+          <CardContent className="p-0 overflow-auto" style={{ maxHeight: 600 }}>
+            <svg
+              viewBox={`0 0 ${VB_W} ${VB_H}`}
+              className="border rounded-lg bg-white"
+              style={{ width: VB_W, height: VB_H, minWidth: "100%" }}
+              data-testid="graph-canvas"
+            >
+              {positions.size > 0 && filteredEdges.map(e => {
+                const from = positions.get(e.fromNodeId);
+                const to = positions.get(e.toNodeId);
+                if (!from || !to) return null;
+                const isHighlighted = selectedNode && (e.fromNodeId === selectedNode.id || e.toNodeId === selectedNode.id);
+                return (
+                  <line
+                    key={e.id}
+                    x1={from.x} y1={from.y} x2={to.x} y2={to.y}
+                    stroke={isHighlighted ? "#3b82f6" : (e.edgeType === "embed" ? "#f59e0b66" : "#94a3b833")}
+                    strokeWidth={isHighlighted ? 2 : (e.edgeType === "embed" ? 1.5 : 0.5)}
                   />
-                  <text
-                    x={p.x} y={p.y + radius + 14}
-                    textAnchor="middle"
-                    fill="#334155"
-                    fontSize={isHovered ? 13 : 11}
-                    fontWeight={isHovered ? "bold" : "normal"}
-                    fontFamily="sans-serif"
+                );
+              })}
+              {positions.size > 0 && filtered.map(n => {
+                const p = positions.get(n.id);
+                if (!p) return null;
+                const color = graphNodeColors[n.category] || "#9ca3af";
+                const isHovered = hoveredNode === n.id;
+                const isSelected = selectedNode?.id === n.id;
+                const isConnected = selectedNode && connectedNodes.some(cn => cn.id === n.id);
+                const dimmed = selectedNode && !isSelected && !isConnected;
+                const radius = isSelected ? 16 : (isHovered ? 14 : (n.status === "stub" ? 6 : 9));
+                const label = n.title.length > 25 ? n.title.slice(0, 23) + "..." : n.title;
+                return (
+                  <g
+                    key={n.id}
+                    onClick={() => handleNodeClick(n)}
+                    onMouseEnter={() => setHoveredNode(n.id)}
+                    onMouseLeave={() => setHoveredNode(null)}
+                    style={{ cursor: "pointer" }}
+                    opacity={dimmed ? 0.25 : 1}
                   >
-                    {label}
-                  </text>
-                </g>
-              );
-            })}
-          </svg>
-        </CardContent>
-      </Card>
+                    {isSelected && (
+                      <circle
+                        cx={p.x} cy={p.y} r={radius + 4}
+                        fill="none"
+                        stroke="#3b82f6"
+                        strokeWidth={2}
+                        strokeDasharray="4 2"
+                      />
+                    )}
+                    <circle
+                      cx={p.x} cy={p.y} r={radius}
+                      fill={n.status === "stub" ? color + "44" : color}
+                      stroke={isSelected ? "#1d4ed8" : (isHovered ? "#000" : "white")}
+                      strokeWidth={isSelected ? 3 : (isHovered ? 2 : 1)}
+                    />
+                    <text
+                      x={p.x} y={p.y + radius + 14}
+                      textAnchor="middle"
+                      fill={dimmed ? "#94a3b8" : "#334155"}
+                      fontSize={isSelected ? 13 : (isHovered ? 13 : 11)}
+                      fontWeight={isSelected || isHovered ? "bold" : "normal"}
+                      fontFamily="sans-serif"
+                    >
+                      {label}
+                    </text>
+                  </g>
+                );
+              })}
+            </svg>
+          </CardContent>
+        </Card>
+
+        {selectedNode && (
+          <Card className="w-72 shrink-0 self-start" data-testid="graph-node-panel">
+            <CardHeader className="pb-2 px-3 pt-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm truncate">{selectedNode.title}</CardTitle>
+                <Button size="sm" variant="ghost" className="h-6 w-6 p-0 shrink-0" onClick={() => setSelectedNode(null)} data-testid="graph-panel-close">
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              <Badge variant="outline" className={`text-[10px] w-fit ${categoryColors[selectedNode.category] || ""}`}>
+                {selectedNode.category}
+              </Badge>
+            </CardHeader>
+            <CardContent className="px-3 pb-3 space-y-2">
+              {selectedNode.contentMarkdown && (
+                <p className="text-xs text-muted-foreground line-clamp-4">
+                  {selectedNode.contentMarkdown.replace(/[#*\[\]]/g, "").slice(0, 200)}
+                </p>
+              )}
+              {!selectedNode.contentMarkdown && (
+                <p className="text-xs text-muted-foreground italic">No content yet.</p>
+              )}
+
+              {connectedNodes.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-1">{connectedNodes.length} connected node{connectedNodes.length !== 1 ? "s" : ""}</p>
+                  <div className="flex flex-wrap gap-1">
+                    {connectedNodes.slice(0, 6).map(cn => (
+                      <Badge key={cn.id} variant="outline" className={`text-[10px] cursor-pointer hover:bg-muted ${categoryColors[cn.category] || ""}`} onClick={() => handleNodeClick(cn)} data-testid={`graph-panel-link-${cn.slug}`}>
+                        {cn.title.length > 20 ? cn.title.slice(0, 18) + "..." : cn.title}
+                      </Badge>
+                    ))}
+                    {connectedNodes.length > 6 && (
+                      <Badge variant="outline" className="text-[10px] text-muted-foreground">+{connectedNodes.length - 6} more</Badge>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-1.5 pt-1 border-t">
+                <Button size="sm" variant="outline" className="flex-1 h-7 text-xs gap-1" onClick={() => onSelectNode(selectedNode.slug)} data-testid="graph-panel-view-detail">
+                  <FileText className="h-3 w-3" /> View
+                </Button>
+                {isCOO && (
+                  <>
+                    <Button size="sm" variant="outline" className="flex-1 h-7 text-xs gap-1" onClick={() => openEditDialog(selectedNode)} data-testid="graph-panel-edit">
+                      <Edit2 className="h-3 w-3" /> Edit
+                    </Button>
+                    <Button size="sm" variant="outline" className="h-7 w-7 p-0 text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => setShowDeleteDialog(true)} data-testid="graph-panel-delete">
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
       <p className="text-xs text-muted-foreground text-center">
-        {filtered.length} nodes, {filteredEdges.length} edges. Click a node to view details. Scroll to pan.
+        {filtered.length} nodes, {filteredEdges.length} edges. Click a node to select it. Scroll to pan.
       </p>
+
+      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create New Node</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Title</label>
+              <Input value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="Node title..." className="h-8 text-sm" data-testid="graph-create-title" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Category</label>
+              <Select value={newCategory} onValueChange={setNewCategory}>
+                <SelectTrigger className="h-8 text-sm" data-testid="graph-create-category"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {["role", "process", "governance", "tool", "template", "other"].map(c => (
+                    <SelectItem key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Content (Markdown)</label>
+              <Textarea value={newContent} onChange={e => setNewContent(e.target.value)} placeholder="Enter content..." className="min-h-[120px] font-mono text-xs" data-testid="graph-create-content" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" size="sm" onClick={() => setShowCreateDialog(false)}>Cancel</Button>
+            <Button size="sm" onClick={() => createMutation.mutate({ title: newTitle, category: newCategory, contentMarkdown: newContent })} disabled={!newTitle.trim() || createMutation.isPending} data-testid="graph-create-submit">
+              {createMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Plus className="h-3.5 w-3.5 mr-1" />}
+              Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showEditDialog} onOpenChange={(open) => { if (!open) { setShowEditDialog(false); setEditNodeDetail(null); } }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Edit Node</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Title</label>
+              <Input value={editTitle} onChange={e => setEditTitle(e.target.value)} className="h-8 text-sm" data-testid="graph-edit-title" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Category</label>
+              <Select value={editCategory} onValueChange={setEditCategory}>
+                <SelectTrigger className="h-8 text-sm" data-testid="graph-edit-category"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {["role", "process", "governance", "tool", "template", "other", "unknown"].map(c => (
+                    <SelectItem key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Content (Markdown)</label>
+              <Textarea value={editContent} onChange={e => setEditContent(e.target.value)} className="min-h-[200px] font-mono text-xs" data-testid="graph-edit-content" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" size="sm" onClick={() => { setShowEditDialog(false); setEditNodeDetail(null); }}>Cancel</Button>
+            <Button size="sm" onClick={() => {
+              const id = editNodeDetail?.id || selectedNode?.id;
+              if (!id) return;
+              updateMutation.mutate({ id, data: { title: editTitle, contentMarkdown: editContent, category: editCategory } });
+            }} disabled={!editTitle.trim() || updateMutation.isPending} data-testid="graph-edit-submit">
+              {updateMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Save className="h-3.5 w-3.5 mr-1" />}
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Node</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Are you sure you want to delete <strong>{selectedNode?.title}</strong>? This will also remove all edges and assets linked to this node. This cannot be undone.
+          </p>
+          <DialogFooter>
+            <Button variant="ghost" size="sm" onClick={() => setShowDeleteDialog(false)}>Cancel</Button>
+            <Button size="sm" variant="destructive" onClick={() => selectedNode && deleteMutation.mutate(selectedNode.id)} disabled={deleteMutation.isPending} data-testid="graph-delete-confirm">
+              {deleteMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Trash2 className="h-3.5 w-3.5 mr-1" />}
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -929,7 +1213,7 @@ export default function EeInfoPage() {
 
         <TabsContent value="graph" className="mt-3">
           {graphData && !graphLoading ? (
-            <GraphTab nodes={graphData.nodes} edges={graphData.edges} onSelectNode={handleSelectNode} />
+            <GraphTab nodes={graphData.nodes} edges={graphData.edges} onSelectNode={handleSelectNode} userRole={userRole} />
           ) : (
             <Card><CardContent className="flex items-center justify-center py-20"><Loader2 className="h-6 w-6 animate-spin" /></CardContent></Card>
           )}
