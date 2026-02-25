@@ -2218,6 +2218,121 @@ export const engineeringTemplateItems = pgTable("engineering_template_items", {
   sortOrder: integer("sort_order").notNull().default(0),
 });
 
+// ===================== ENGINEERING STAGE TEMPLATES (Part E2) =====================
+
+export const engStageStatusEnum = pgEnum('eng_stage_status', ['not_started', 'in_progress', 'blocked', 'ready_for_review', 'complete']);
+export const engTaskInstanceStatusEnum = pgEnum('eng_task_instance_status', ['pending', 'in_progress', 'complete', 'skipped']);
+export const engApprovalStatusEnum = pgEnum('eng_approval_status', ['pending', 'approved', 'rejected']);
+
+export const engStageTemplates = pgTable("eng_stage_templates", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  purpose: text("purpose"),
+  inputs: text("inputs").array(),
+  raciResponsible: text("raci_responsible"),
+  raciAccountable: text("raci_accountable"),
+  raciConsulted: text("raci_consulted"),
+  raciInformed: text("raci_informed"),
+  failureModes: text("failure_modes").array(),
+  stageGateRules: jsonb("stage_gate_rules"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  version: integer("version").notNull().default(1),
+  isActive: boolean("is_active").notNull().default(true),
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const insertEngStageTemplateSchema = createInsertSchema(engStageTemplates).omit({ id: true, createdAt: true });
+export type InsertEngStageTemplate = z.infer<typeof insertEngStageTemplateSchema>;
+export type EngStageTemplate = typeof engStageTemplates.$inferSelect;
+
+export const engTaskTemplates = pgTable("eng_task_templates", {
+  id: serial("id").primaryKey(),
+  stageTemplateId: integer("stage_template_id").notNull().references(() => engStageTemplates.id, { onDelete: 'cascade' }),
+  title: text("title").notNull(),
+  description: text("description"),
+  isRequired: boolean("is_required").notNull().default(true),
+  sequence: integer("sequence").notNull().default(0),
+  defaultOwnerRole: text("default_owner_role"),
+});
+export const insertEngTaskTemplateSchema = createInsertSchema(engTaskTemplates).omit({ id: true });
+export type InsertEngTaskTemplate = z.infer<typeof insertEngTaskTemplateSchema>;
+export type EngTaskTemplate = typeof engTaskTemplates.$inferSelect;
+
+export const engDeliverableTemplates = pgTable("eng_deliverable_templates", {
+  id: serial("id").primaryKey(),
+  stageTemplateId: integer("stage_template_id").notNull().references(() => engStageTemplates.id, { onDelete: 'cascade' }),
+  name: text("name").notNull(),
+  description: text("description"),
+  isRequired: boolean("is_required").notNull().default(true),
+  allowedFileTypes: text("allowed_file_types").array(),
+  requiredCount: integer("required_count").notNull().default(1),
+});
+export const insertEngDeliverableTemplateSchema = createInsertSchema(engDeliverableTemplates).omit({ id: true });
+export type InsertEngDeliverableTemplate = z.infer<typeof insertEngDeliverableTemplateSchema>;
+export type EngDeliverableTemplate = typeof engDeliverableTemplates.$inferSelect;
+
+export const projectEngStages = pgTable("project_eng_stages", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  stageTemplateId: integer("stage_template_id").notNull().references(() => engStageTemplates.id),
+  status: engStageStatusEnum("status").notNull().default('not_started'),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  overrideReason: text("override_reason"),
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const insertProjectEngStageSchema = createInsertSchema(projectEngStages).omit({ id: true, createdAt: true });
+export type InsertProjectEngStage = z.infer<typeof insertProjectEngStageSchema>;
+export type ProjectEngStage = typeof projectEngStages.$inferSelect;
+
+export const projectEngTasks = pgTable("project_eng_tasks", {
+  id: serial("id").primaryKey(),
+  projectEngStageId: integer("project_eng_stage_id").notNull().references(() => projectEngStages.id, { onDelete: 'cascade' }),
+  taskTemplateId: integer("task_template_id").notNull().references(() => engTaskTemplates.id),
+  status: engTaskInstanceStatusEnum("status").notNull().default('pending'),
+  ownerUserId: integer("owner_user_id").references(() => users.id),
+  notes: text("notes"),
+  dueDate: text("due_date"),
+  completedAt: timestamp("completed_at"),
+  completedBy: integer("completed_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const insertProjectEngTaskSchema = createInsertSchema(projectEngTasks).omit({ id: true, createdAt: true });
+export type InsertProjectEngTask = z.infer<typeof insertProjectEngTaskSchema>;
+export type ProjectEngTask = typeof projectEngTasks.$inferSelect;
+
+export const projectEngDeliverables = pgTable("project_eng_deliverables", {
+  id: serial("id").primaryKey(),
+  projectEngStageId: integer("project_eng_stage_id").notNull().references(() => projectEngStages.id, { onDelete: 'cascade' }),
+  deliverableTemplateId: integer("deliverable_template_id").references(() => engDeliverableTemplates.id),
+  fileName: text("file_name").notNull(),
+  fileSize: integer("file_size"),
+  mimeType: text("mime_type"),
+  storageRef: text("storage_ref").notNull(),
+  uploadedBy: integer("uploaded_by").references(() => users.id),
+  uploadedAt: timestamp("uploaded_at").notNull().defaultNow(),
+  versionTag: text("version_tag"),
+  notes: text("notes"),
+});
+export const insertProjectEngDeliverableSchema = createInsertSchema(projectEngDeliverables).omit({ id: true, uploadedAt: true });
+export type InsertProjectEngDeliverable = z.infer<typeof insertProjectEngDeliverableSchema>;
+export type ProjectEngDeliverable = typeof projectEngDeliverables.$inferSelect;
+
+export const projectEngApprovals = pgTable("project_eng_approvals", {
+  id: serial("id").primaryKey(),
+  projectEngStageId: integer("project_eng_stage_id").notNull().references(() => projectEngStages.id, { onDelete: 'cascade' }),
+  approverRole: text("approver_role").notNull(),
+  approverUserId: integer("approver_user_id").references(() => users.id),
+  status: engApprovalStatusEnum("status").notNull().default('pending'),
+  comments: text("comments"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertProjectEngApprovalSchema = createInsertSchema(projectEngApprovals).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertProjectEngApproval = z.infer<typeof insertProjectEngApprovalSchema>;
+export type ProjectEngApproval = typeof projectEngApprovals.$inferSelect;
+
 // ===================== GLOBAL AUDIT LOG (Part K) =====================
 
 export const auditSourceEnum = pgEnum('audit_source', ['UI', 'IMPORT', 'SETTINGS', 'DOCS', 'SYSTEM']);

@@ -288,12 +288,18 @@ async function backfillPmUserIds() {
   
   const { seedQualityTemplate } = await import("./seed-quality-template");
   await seedQualityTemplate().catch(err => console.error('[Seed] Quality template error:', err));
+
+  const { seedEngStageTemplates } = await import("./seed-eng-templates");
+  await seedEngStageTemplates().catch(err => console.error('[Seed] Eng stage templates error:', err));
   
   const { registerQualityRoutes } = await import("./quality-routes");
   registerQualityRoutes(app);
   
   const { registerEngineeringRoutes } = await import("./engineering-routes");
   registerEngineeringRoutes(app);
+
+  const { registerEngStageRoutes } = await import("./eng-stage-routes");
+  registerEngStageRoutes(app);
 
   const { registerReportRoutes } = await import("./report-routes");
   registerReportRoutes(app);
