@@ -595,8 +595,18 @@ export default function ProjectDetailPage() {
     setActiveSubTab(subTab || SECTION_DEFAULT_SUBTAB[section] || "");
   };
 
+  const queryClient = useQueryClient();
   const projectInfo = projectsSummary?.find((p: any) => p.project_name === projectName);
   const projectInfoId = projectInfo?.project_info_id;
+
+  const { data: pmAssignableUsers } = useQuery<{ id: number; name: string; username: string; role: string }[]>({
+    queryKey: ["/api/pm-assignable-users"],
+    queryFn: async () => {
+      const res = await engFetch("/api/pm-assignable-users");
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
 
   const handleTaskClick = (taskId: number) => {
     setSelectedTaskId(taskId);
@@ -810,8 +820,65 @@ export default function ProjectDetailPage() {
             <PhaseBadge phase={phase} />
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs sm:text-sm text-muted-foreground">
-            <span className="flex items-center gap-1"><User className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> PD: {pd}</span>
-            <span className="flex items-center gap-1"><User className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> PM: {pm}</span>
+            {isAdmin ? (
+              <span className="flex items-center gap-1">
+                <User className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> PD:
+                <Select
+                  value={pd === "—" ? "__unassigned" : pd}
+                  onValueChange={(val) => {
+                    const newPd = val === "__unassigned" ? "" : val;
+                    if (projectInfoId) {
+                      engFetch(`/api/lifecycle-board/projects/${projectInfoId}`, {
+                        method: "PATCH",
+                        body: JSON.stringify({ pd: newPd }),
+                      }).then(() => queryClient.invalidateQueries({ queryKey: ["projects-summary"] }));
+                    }
+                  }}
+                >
+                  <SelectTrigger className="h-6 text-xs w-auto min-w-[100px] border-dashed" data-testid="select-detail-pd">
+                    <SelectValue placeholder="Unassigned" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__unassigned" data-testid="select-detail-pd-unassigned">Unassigned</SelectItem>
+                    {(pmAssignableUsers || []).map((u: any) => (
+                      <SelectItem key={u.id} value={u.name} data-testid={`select-detail-pd-${u.id}`}>{u.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </span>
+            ) : (
+              <span className="flex items-center gap-1"><User className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> PD: {pd}</span>
+            )}
+            {isAdmin ? (
+              <span className="flex items-center gap-1">
+                <User className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> PM:
+                <Select
+                  value={pm === "—" ? "__unassigned" : pm}
+                  onValueChange={(val) => {
+                    const newPm = val === "__unassigned" ? "" : val;
+                    const matched = (pmAssignableUsers || []).find((u: any) => u.name === newPm);
+                    if (projectInfoId) {
+                      engFetch(`/api/lifecycle-board/projects/${projectInfoId}`, {
+                        method: "PATCH",
+                        body: JSON.stringify({ pm: newPm, pmUserId: matched?.id ?? null }),
+                      }).then(() => queryClient.invalidateQueries({ queryKey: ["projects-summary"] }));
+                    }
+                  }}
+                >
+                  <SelectTrigger className="h-6 text-xs w-auto min-w-[100px] border-dashed" data-testid="select-detail-pm">
+                    <SelectValue placeholder="Unassigned" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__unassigned" data-testid="select-detail-pm-unassigned">Unassigned</SelectItem>
+                    {(pmAssignableUsers || []).map((u: any) => (
+                      <SelectItem key={u.id} value={u.name} data-testid={`select-detail-pm-${u.id}`}>{u.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </span>
+            ) : (
+              <span className="flex items-center gap-1"><User className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> PM: {pm}</span>
+            )}
             <span className="flex items-center gap-1"><Activity className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> {sizeKwp}</span>
             <span className="flex items-center gap-1"><TrendingUp className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> {completion} complete</span>
           </div>

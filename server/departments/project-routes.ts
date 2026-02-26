@@ -1603,13 +1603,13 @@ router.get("/api/project-info", async (req, res) => {
 
 router.get("/api/pm-assignable-users", requireAuth, async (_req, res) => {
   try {
-    const allUsers = await db.select({
+    const pmUsers = await db.select({
       id: users.id,
       name: users.name,
       username: users.username,
       role: users.role,
-    }).from(users);
-    res.json(allUsers.map(u => ({ id: u.id, name: u.name, username: u.username, role: u.role })));
+    }).from(users).where(eq(users.role, "PROJECT_MANAGER_SITE"));
+    res.json(pmUsers.map(u => ({ id: u.id, name: u.name, username: u.username, role: u.role })));
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch users" });
   }
