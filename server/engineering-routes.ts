@@ -15,6 +15,7 @@ import {
   type ProjectPhase,
 } from "@shared/schema";
 import { applyTemplate } from "./template-routes";
+import { requirePermission } from "./permission-middleware";
 
 type AppUser = { id: number; email: string; name: string; role: string; };
 
@@ -343,6 +344,25 @@ export function registerEngineeringRoutes(app: Express) {
       }
 
       res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/eng/tasks/:id", requireAuth, requirePermission('eng_tasks', 'delete'), async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const [existing] = await db.select().from(operationalTasks).where(eq(operationalTasks.id, id));
+      if (!existing) return res.status(404).json({ error: "Task not found" });
+
+      await db.transaction(async (tx) => {
+        await tx.delete(taskWatchers).where(eq(taskWatchers.taskId, id));
+        await tx.delete(taskComments).where(eq(taskComments.taskId, id));
+        await tx.delete(taskActivityLog).where(eq(taskActivityLog.taskId, id));
+        await tx.delete(operationalTasks).where(eq(operationalTasks.id, id));
+      });
+
+      res.json({ success: true, message: `Task "${existing.title}" deleted` });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

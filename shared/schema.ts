@@ -2437,7 +2437,7 @@ export type PermissionEntity = 'projects' | 'financials' | 'quality' | 'engineer
   | 'pd_overview' | 'pd_plan' | 'pd_finance' | 'pd_engineering' | 'pd_quality' | 'pd_history'
   | 'pd_revenue' | 'pd_expenditure' | 'pd_cos_tracker' | 'pd_cashflow' | 'pd_subcontractors'
   | 'pd_eng_tasks' | 'pd_eng_stages' | 'pd_gantt' | 'pd_key_dates';
-export type PermissionAction = 'view' | 'edit' | 'approve' | 'override';
+export type PermissionAction = 'view' | 'edit' | 'approve' | 'override' | 'delete';
 
 export interface EntityPermissionRule {
   entity: PermissionEntity;
@@ -2445,6 +2445,7 @@ export interface EntityPermissionRule {
   edit_roles: string[];
   approve_roles: string[];
   override_roles: string[];
+  delete_roles: string[];
 }
 
 export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
@@ -2454,6 +2455,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
     entity: 'financials',
@@ -2461,6 +2463,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO', 'PROGRAM_FINANCE_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
     entity: 'cos',
@@ -2468,6 +2471,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO', 'PROGRAM_FINANCE_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
     entity: 'cashflow',
@@ -2475,6 +2479,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO', 'PROGRAM_FINANCE_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
     entity: 'quality',
@@ -2482,6 +2487,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'QUALITY_MANAGER', 'CONSTRUCTION_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'QUALITY_MANAGER'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
     entity: 'engineering',
@@ -2489,6 +2495,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
     entity: 'eng_stages',
@@ -2496,6 +2503,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER', 'CONSTRUCTION_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER', 'QUALITY_MANAGER'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
     entity: 'eng_tasks',
@@ -2503,6 +2511,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER'],
   },
   {
     entity: 'procurement',
@@ -2510,6 +2519,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_FINANCE_MANAGER', 'PROGRAM_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
     entity: 'admin',
@@ -2517,6 +2527,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     override_roles: ['COO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
     entity: 'governance',
@@ -2524,6 +2535,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'QUALITY_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
     entity: 'weekly_reviews',
@@ -2531,6 +2543,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROJECT_MANAGER_SITE'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
     entity: 'smart_import',
@@ -2538,6 +2551,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
     entity: 'tr_register',
@@ -2545,6 +2559,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
     entity: 'pm_dashboard',
@@ -2552,6 +2567,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
     entity: 'lifecycle',
@@ -2559,6 +2575,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
     entity: 'create_project',
@@ -2566,6 +2583,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
     entity: 'my_tool',
@@ -2573,6 +2591,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
     entity: 'ee_info',
@@ -2580,6 +2599,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
     entity: 'pd_overview',
@@ -2587,6 +2607,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
     entity: 'pd_plan',
@@ -2594,6 +2615,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
     entity: 'pd_finance',
@@ -2601,6 +2623,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO', 'PROGRAM_FINANCE_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
     entity: 'pd_engineering',
@@ -2608,6 +2631,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER', 'CONSTRUCTION_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
     entity: 'pd_quality',
@@ -2615,6 +2639,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'QUALITY_MANAGER', 'CONSTRUCTION_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'QUALITY_MANAGER'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
     entity: 'pd_history',
@@ -2622,6 +2647,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROJECT_MANAGER_SITE'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
     entity: 'pd_revenue',
@@ -2629,6 +2655,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO', 'PROGRAM_FINANCE_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
     entity: 'pd_expenditure',
@@ -2636,6 +2663,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO', 'PROGRAM_FINANCE_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
     entity: 'pd_cos_tracker',
@@ -2643,6 +2671,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO', 'PROGRAM_FINANCE_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
     entity: 'pd_cashflow',
@@ -2650,6 +2679,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO', 'PROGRAM_FINANCE_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
     entity: 'pd_subcontractors',
@@ -2657,6 +2687,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_FINANCE_MANAGER', 'PROGRAM_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
     entity: 'pd_eng_tasks',
@@ -2664,6 +2695,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER', 'CONSTRUCTION_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
     entity: 'pd_eng_stages',
@@ -2671,6 +2703,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER', 'CONSTRUCTION_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER', 'QUALITY_MANAGER'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
     entity: 'pd_gantt',
@@ -2678,6 +2711,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
     entity: 'pd_key_dates',
@@ -2685,6 +2719,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
 ];
 

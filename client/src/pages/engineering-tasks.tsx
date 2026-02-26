@@ -53,8 +53,10 @@ import {
   RotateCcw,
   ShieldCheck,
   UserCheck,
+  Trash2,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { usePermission } from "@/hooks/use-permissions";
 import { PROJECT_PHASE_LABELS, type ProjectPhase } from "@shared/schema";
 import { ActionBar } from "@/components/guidance/ActionBar";
 import { InlineTip } from "@/components/guidance/InlineTip";
@@ -466,6 +468,8 @@ function TaskDetailDrawer({
   const [drawerHoldDialog, setDrawerHoldDialog] = useState(false);
   const [drawerHoldReason, setDrawerHoldReason] = useState("");
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const { allowed: canDelete } = usePermission('eng_tasks', 'delete');
 
   const { data: comments = [] } = useQuery<Comment[]>({
     queryKey: ["task-comments", task.id],
@@ -510,6 +514,18 @@ function TaskDetailDrawer({
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: () =>
+      engFetch(`/api/eng/tasks/${task.id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["eng-tasks"] });
+      onClose();
+      onUpdate();
+      toast({ title: "Task deleted" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
   const handleStatusChange = (newStatus: string) => {
     if (newStatus === "HOLD") {
       setDrawerHoldDialog(true);
@@ -549,10 +565,32 @@ function TaskDetailDrawer({
             <span className="text-sm text-muted-foreground truncate">{projectDisplay}</span>
             {task.taskTypeTag === "PROJECT" && <Badge variant="outline" className="text-[9px]">Project</Badge>}
           </div>
-          <Button variant="ghost" size="icon" onClick={onClose} data-testid="btn-close-drawer">
-            <X className="h-5 w-5" />
-          </Button>
+          <div className="flex items-center gap-1">
+            {canDelete && (
+              <Button variant="ghost" size="icon" onClick={() => setShowDeleteConfirm(true)} className="text-red-500 hover:text-red-600 hover:bg-red-50" data-testid="btn-delete-task">
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            )}
+            <Button variant="ghost" size="icon" onClick={onClose} data-testid="btn-close-drawer">
+              <X className="h-5 w-5" />
+            </Button>
+          </div>
         </div>
+
+        {showDeleteConfirm && (
+          <div className="px-4 py-3 bg-red-50 border-b border-red-200">
+            <p className="text-sm text-red-800 font-medium mb-2">Delete this task permanently?</p>
+            <p className="text-xs text-red-600 mb-3">This will remove the task, all comments, and activity history. This cannot be undone.</p>
+            <div className="flex gap-2">
+              <Button size="sm" variant="destructive" onClick={() => deleteMutation.mutate()} disabled={deleteMutation.isPending} data-testid="btn-confirm-delete-task">
+                {deleteMutation.isPending ? "Deleting..." : "Yes, delete"}
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setShowDeleteConfirm(false)} data-testid="btn-cancel-delete-task">
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
 
         <ScrollArea className="flex-1">
           <div className="p-4 space-y-5">
