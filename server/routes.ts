@@ -3425,7 +3425,7 @@ export async function registerRoutes(
         if (plan.actualEnd && /^\d{4}-\d{2}-\d{2}/.test(plan.actualEnd)) {
           const endDate = plan.actualEnd.substring(0, 10);
           if (endDate < today) {
-            if (endDate < fyStart || endDate > fyEnd) continue;
+            if (endDate < fyStart) continue;
             const pctComplete = plan.actualPctComplete != null ? Number(plan.actualPctComplete) : 0;
             if (pctComplete < 1.0) {
               overdueTasks.push({

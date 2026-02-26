@@ -21,7 +21,7 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
   res.status(401).json({ error: "Authentication required" });
 }
 
-const PM_ALLOWED_ROLES = ["PROJECT_MANAGER_SITE", "COO_ADMIN", "CEO_ADMIN", "admin"];
+const PM_ALLOWED_ROLES = ["PROJECT_MANAGER_SITE", "PROJECT_DEVELOPER", "COO_ADMIN", "CEO_ADMIN", "admin"];
 
 function requirePmRole(req: Request, res: Response, next: NextFunction) {
   const user = (req as any).user;
