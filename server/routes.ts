@@ -3395,15 +3395,17 @@ export async function registerRoutes(
 
   app.get("/api/dashboard/high-priority", requireAuth, async (req, res) => {
     try {
-      const [allProjectInfo, allExpenses, rawInflows, allPlans, allTaskLinks, allOpTasks, inBankOverrides] = await Promise.all([
+      const [allProjectInfo, allExpenses, rawInflows, rawPlans, allPlanOverrides, allTaskLinks, allOpTasks, inBankOverrides] = await Promise.all([
         storage.getAllProjectInfo(),
         storage.getAllProgramExpenses(),
         storage.getAllProgramInflows(),
         storage.getAllProjectPlans(),
+        storage.getAllProjectPlanOverrides(),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
         db.select().from(revenueTrackingOverrides).where(eq(revenueTrackingOverrides.fieldName, "inBank")),
       ]);
+      const allPlans = applyProjectPlanOverrides(rawPlans, allPlanOverrides);
 
       const inBankOverrideSet = new Set(
         inBankOverrides
@@ -3507,25 +3509,61 @@ export async function registerRoutes(
 
       const plansByProject = new Map<string, typeof allPlans>();
       for (const plan of allPlans) {
+        if ((plan as any).rowNumber < 0 && (plan as any).isVirtual) continue;
         if (!plansByProject.has(plan.projectName)) plansByProject.set(plan.projectName, []);
         plansByProject.get(plan.projectName)!.push(plan);
       }
 
+      const todayDate = new Date().toISOString().split("T")[0];
       for (const [projectName, plans] of Array.from(plansByProject.entries())) {
-        const completions = plans.filter((p: any) => p.percentComplete != null && p.expectedProgress != null);
-        if (completions.length > 0) {
-          let totalW = 0, wActual = 0, wExpected = 0;
-          for (const p of completions as any[]) {
+        const info = projectInfoMap.get(projectName);
+        if (info && (info as any).isActive === false) continue;
+        let totalW = 0, wActual = 0, wExpected = 0;
+        let hasSummaryRow = false;
+        for (const p of plans as any[]) {
+          const taskNo2 = (p.taskNo || '').toString().toLowerCase().trim();
+          if (taskNo2 === 'no.' || taskNo2 === 'no' || taskNo2 === '#') {
+            const act = p.actualPctComplete != null ? Number(p.actualPctComplete) : 0;
+            const exp = p.expectedPctComplete != null ? Number(p.expectedPctComplete) : 0;
+            wActual = act;
+            wExpected = exp;
+            totalW = 1;
+            hasSummaryRow = true;
+            break;
+          }
+        }
+        if (!hasSummaryRow) {
+          for (const p of plans as any[]) {
+            const taskNo2 = (p.taskNo || '').toString().toLowerCase().trim();
+            if (taskNo2 === 'no.' || taskNo2 === 'no' || taskNo2 === '#') continue;
             const dur = p.durationDays && p.durationDays > 0 ? p.durationDays : 1;
-            wActual += (parseFloat(p.percentComplete) || 0) * dur;
-            wExpected += (parseFloat(p.expectedProgress) || 0) * dur;
+            const act = p.actualPctComplete != null ? Number(p.actualPctComplete) : 0;
+            let exp = p.expectedPctComplete != null ? Number(p.expectedPctComplete) : null;
+            if (exp == null && p.actualStart && p.actualEnd) {
+              const tStart = (p.actualStart || '').substring(0, 10);
+              const tEnd = (p.actualEnd || '').substring(0, 10);
+              if (tStart && tEnd && /^\d{4}-\d{2}-\d{2}/.test(tStart) && /^\d{4}-\d{2}-\d{2}/.test(tEnd)) {
+                if (todayDate >= tEnd) { exp = 1.0; }
+                else if (todayDate <= tStart) { exp = 0; }
+                else {
+                  const totalWd = saWorkingDays(tStart, tEnd);
+                  const elapsedWd = saWorkingDays(tStart, todayDate);
+                  if (totalWd && totalWd > 0 && elapsedWd != null) {
+                    exp = Math.min(1, elapsedWd / totalWd);
+                  }
+                }
+              }
+            }
+            wActual += act * dur;
+            wExpected += (exp ?? 0) * dur;
             totalW += dur;
           }
-          const avgActual = totalW > 0 ? wActual / totalW : 0;
-          const avgExpected = totalW > 0 ? wExpected / totalW : 0;
+        }
+        if (totalW > 0) {
+          const avgActual = hasSummaryRow ? wActual : wActual / totalW;
+          const avgExpected = hasSummaryRow ? wExpected : wExpected / totalW;
           const delta = avgActual - avgExpected;
           if (delta < -0.05) {
-            const info = projectInfoMap.get(projectName);
             projectsBehindPlan.push({
               projectName,
               phase: info?.phase || null,
@@ -3548,6 +3586,10 @@ export async function registerRoutes(
         amount: number;
       }> = [];
 
+      const threeWeeksFromNow = new Date();
+      threeWeeksFromNow.setDate(threeWeeksFromNow.getDate() + 21);
+      const threeWeeksCutoff = threeWeeksFromNow.toISOString().split("T")[0];
+
       for (const inflow of allInflows) {
         const amt = inflow.milestoneAmount ? parseFloat(inflow.milestoneAmount) : 0;
         if (amt <= 0) continue;
@@ -3556,6 +3598,7 @@ export async function registerRoutes(
         const effectiveDate = (inflow as any).effectiveDate || inflow.plannedPaymentDate;
         if (!effectiveDate || !/^\d{4}-\d{2}-\d{2}/.test(effectiveDate)) continue;
         if (effectiveDate < today) continue;
+        if (effectiveDate > threeWeeksCutoff) continue;
         const info = projectInfoMap.get(inflow.projectName);
         upcomingMilestones.push({
           projectName: inflow.projectName,

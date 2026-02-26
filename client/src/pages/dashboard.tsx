@@ -791,7 +791,7 @@ export default function Dashboard() {
               />
 
               <PrioritySection
-                title="Upcoming Revenue Milestones"
+                title="Upcoming Revenue Milestones (3 Weeks)"
                 icon={Clock}
                 iconColor="text-blue-600"
                 accentBorder="border-l-blue-400"
