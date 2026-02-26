@@ -197,11 +197,35 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
 
   const deleteMutation = useMutation({
     mutationFn: async (ids: number[]) => {
-      for (const id of ids) await apiRequest("DELETE", `/api/operational-tasks/${id}`);
+      const opsIds = ids.filter(id => id > 0);
+      const baselineIds = ids.filter(id => id < 0);
+
+      if (opsIds.length > 0) {
+        for (const id of opsIds) await apiRequest("DELETE", `/api/operational-tasks/${id}`);
+      }
+
+      if (baselineIds.length > 0) {
+        const baselineTasks = tasks.filter(t => baselineIds.includes(t.id) && t.isBaseline && t.rowNumber);
+        if (baselineTasks.length > 0) {
+          const byPlanProject = new Map<string, number[]>();
+          for (const t of baselineTasks) {
+            const pName = (t as any).planProjectName || projectName;
+            if (!byPlanProject.has(pName)) byPlanProject.set(pName, []);
+            byPlanProject.get(pName)!.push(t.rowNumber);
+          }
+          for (const [pName, rowNumbers] of byPlanProject) {
+            await apiRequest("POST", "/api/project-plan/delete-tasks", {
+              projectName: pName,
+              rowNumbers,
+            });
+          }
+        }
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["planning-tasks", projectName] });
       qc.invalidateQueries({ queryKey: ["operational-tasks", projectName] });
+      qc.invalidateQueries({ queryKey: ["/api/projects-summary"] });
       setSelectedIds(new Set());
     },
   });

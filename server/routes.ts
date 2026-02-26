@@ -222,25 +222,36 @@ function applyProjectPlanOverrides(
 ): any[] {
   if (overrides.length === 0) return baselineRows;
 
-  const overrideMap = new Map<number, Map<string, any>>();
+  const deletedRows = new Set<string>();
+  const overrideMap = new Map<string, Map<string, any>>();
   overrides.forEach((o: any) => {
-    if (!overrideMap.has(o.rowNumber)) {
-      overrideMap.set(o.rowNumber, new Map());
+    const key = `${o.projectName}::${o.rowNumber}`;
+    if (o.fieldName === "isDeleted" && o.overrideValue === "true") {
+      deletedRows.add(key);
+      return;
     }
-    overrideMap.get(o.rowNumber)!.set(o.fieldName, coercePlanOverride(o.fieldName, o.overrideValue));
+    if (!overrideMap.has(key)) {
+      overrideMap.set(key, new Map());
+    }
+    overrideMap.get(key)!.set(o.fieldName, coercePlanOverride(o.fieldName, o.overrideValue));
   });
 
-  return baselineRows.map((row: any) => {
-    if (!row.rowNumber || !overrideMap.has(row.rowNumber)) {
-      return row;
-    }
-    const fieldOverrides = overrideMap.get(row.rowNumber)!;
-    const updatedRow = { ...row };
-    fieldOverrides.forEach((value, fieldName) => {
-      updatedRow[fieldName] = value;
+  return baselineRows
+    .filter((row: any) => {
+      if (!row.rowNumber || !row.projectName) return true;
+      return !deletedRows.has(`${row.projectName}::${row.rowNumber}`);
+    })
+    .map((row: any) => {
+      if (!row.rowNumber || !row.projectName) return row;
+      const key = `${row.projectName}::${row.rowNumber}`;
+      if (!overrideMap.has(key)) return row;
+      const fieldOverrides = overrideMap.get(key)!;
+      const updatedRow = { ...row };
+      fieldOverrides.forEach((value, fieldName) => {
+        updatedRow[fieldName] = value;
+      });
+      return updatedRow;
     });
-    return updatedRow;
-  });
 }
 
 // Apply revenue tracking overrides with type coercion
@@ -4563,6 +4574,28 @@ export async function registerRoutes(
       res.json({ message: `Project plan overrides deleted for project: ${projectName}` });
     } catch (error) {
       res.status(500).json({ error: "Failed to delete project plan overrides", message: "Failed to delete project plan overrides" });
+    }
+  });
+
+  app.post("/api/project-plan/delete-tasks", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { projectName, rowNumbers } = req.body;
+      if (!projectName || !Array.isArray(rowNumbers) || rowNumbers.length === 0) {
+        return res.status(400).json({ error: "projectName and rowNumbers[] required" });
+      }
+      const userId = (req as any).user?.id || (req as any).jwtPayload?.userId || null;
+      const overrides = rowNumbers.map((rn: number) => ({
+        projectName,
+        rowNumber: rn,
+        fieldName: "isDeleted",
+        overrideValue: "true",
+        createdBy: userId,
+      }));
+      await storage.upsertManyProjectPlanOverrides(overrides);
+      res.json({ message: `Deleted ${rowNumbers.length} task(s)` });
+    } catch (error) {
+      console.error("[PlanDelete] Error:", error);
+      res.status(500).json({ error: "Failed to delete plan tasks" });
     }
   });
 
@@ -8908,13 +8941,25 @@ export async function registerRoutes(
       const projectName = decodeURIComponent(req.params.projectName);
       const trackerName = projectName.endsWith("_Tracker") ? projectName : projectName + "_Tracker";
 
-      const [operationalTasks, planTasksDirect, planTasksTracker] = await Promise.all([
+      const [allOperationalTasks, planTasksDirect, planTasksTracker, planOverridesDirect, planOverridesTracker] = await Promise.all([
         storage.getOperationalTasksByProject(projectName),
         storage.getProjectPlansByProject(projectName),
         projectName !== trackerName ? storage.getProjectPlansByProject(trackerName) : Promise.resolve([]),
+        storage.getProjectPlanOverridesByProject(projectName),
+        projectName !== trackerName ? storage.getProjectPlanOverridesByProject(trackerName) : Promise.resolve([]),
       ]);
 
+      const operationalTasks = allOperationalTasks.filter((t: any) => t.externalSource !== "clickup");
+
       const planTasks = planTasksDirect.length > 0 ? planTasksDirect : planTasksTracker;
+      const planOverrides = planTasksDirect.length > 0 ? planOverridesDirect : planOverridesTracker;
+
+      const deletedRowNumbers = new Set<number>();
+      for (const o of planOverrides) {
+        if (o.fieldName === "isDeleted" && o.overrideValue === "true") {
+          deletedRowNumbers.add(o.rowNumber);
+        }
+      }
 
       const linkedImportedIds = new Set(
         operationalTasks
@@ -8925,6 +8970,7 @@ export async function registerRoutes(
       const SECTION_HEADER_TITLES = ["high level programme", "programme", "high level program"];
       const baselineTasks = planTasks
         .filter((pt: any) => !linkedImportedIds.has(pt.id))
+        .filter((pt: any) => !deletedRowNumbers.has(pt.rowNumber))
         .filter((pt: any) => {
           const title = (pt.highLevelProgramme || "").trim().toLowerCase();
           return title && !SECTION_HEADER_TITLES.includes(title);
@@ -8938,6 +8984,7 @@ export async function registerRoutes(
           return {
             id: -pt.id,
             projectName: projectName,
+            planProjectName: pt.projectName,
             importedTaskId: pt.id,
             taskNumber: pt.taskNo || String(pt.rowNumber || ""),
             parentTaskId: null as number | null,
@@ -8962,6 +9009,7 @@ export async function registerRoutes(
             comment: null as string | null,
             sortOrder: pt.rowNumber || 0,
             isBaseline: true,
+            rowNumber: pt.rowNumber,
             createdBy: null,
             createdAt: pt.createdAt,
             updatedAt: pt.createdAt,

@@ -88,8 +88,13 @@ export function registerLifecycleRoutes(app: Express) {
       }).from(projectPlan);
 
       const allPlanOverrides = await db.select().from(projectPlanOverrides);
+      const deletedKeys = new Set<string>();
       const overrideMap = new Map<string, Map<number, Map<string, any>>>();
       for (const o of allPlanOverrides) {
+        if (o.fieldName === "isDeleted" && o.overrideValue === "true") {
+          deletedKeys.add(`${o.projectName}::${o.rowNumber}`);
+          continue;
+        }
         if (!overrideMap.has(o.projectName)) overrideMap.set(o.projectName, new Map());
         const projMap = overrideMap.get(o.projectName)!;
         if (!projMap.has(o.rowNumber)) projMap.set(o.rowNumber, new Map());
@@ -107,16 +112,21 @@ export function registerLifecycleRoutes(app: Express) {
         projMap.get(o.rowNumber)!.set(fieldName, coerced);
       }
 
-      const allPlanTasks = rawPlanTasks.map(row => {
-        const projOverrides = overrideMap.get(row.projectName);
-        if (!projOverrides || !row.rowNumber || !projOverrides.has(row.rowNumber)) return row;
-        const fieldOverrides = projOverrides.get(row.rowNumber)!;
-        const updated = { ...row };
-        fieldOverrides.forEach((value, fieldName) => {
-          (updated as any)[fieldName] = value;
+      const allPlanTasks = rawPlanTasks
+        .filter(row => {
+          if (!row.rowNumber) return true;
+          return !deletedKeys.has(`${row.projectName}::${row.rowNumber}`);
+        })
+        .map(row => {
+          const projOverrides = overrideMap.get(row.projectName);
+          if (!projOverrides || !row.rowNumber || !projOverrides.has(row.rowNumber)) return row;
+          const fieldOverrides = projOverrides.get(row.rowNumber)!;
+          const updated = { ...row };
+          fieldOverrides.forEach((value, fieldName) => {
+            (updated as any)[fieldName] = value;
+          });
+          return updated;
         });
-        return updated;
-      });
 
       const allQmData = await db.select({
         projectName: qcChecklist.projectName,
