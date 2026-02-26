@@ -42,7 +42,7 @@ Preferred communication style: Simple, everyday language.
 -   **Lifecycle Board Integration**: Engineering stages are auto-generated based on `PHASE_TO_ENG_STAGES` mapping when a project moves on the company lifecycle board. The board includes a **"Gone" phase** column for lost deals — Gone projects are marked inactive, excluded from active project lists/dropdowns/weekly reviews, and rendered as non-draggable cards with reduced opacity. Phase comparisons are case-insensitive.
 
 ### Emergent Energy Info & Walkthroughs
--   **Knowledge Base**: Wiki-style knowledge base with Graph, Detail, Flow, and Walkthroughs tabs, backed by `ee_info_nodes` / `ee_info_edges` / `ee_info_assets` tables.
+-   **Knowledge Base**: Wiki-style knowledge base with Graph, Detail, Flow, and Walkthroughs tabs, backed by `ee_info_nodes` / `ee_info_edges` / `ee_info_assets` tables. SOP-enriched nodes include detailed DoR/DoD, RACI matrices, quality gates, SLAs, and artefact definitions for FA, CP, EP, Commissioning, PD→PM Handover, COS, Construction QA, and Platform Process Alignment.
 -   **Walkthroughs**: 37 interactive step-by-step guides covering all app functionality across various categories.
 -   **Home Greeting System**: Role-based greetings that randomize between complimentary and sarcastic messages, with dad jokes on Fridays.
 
