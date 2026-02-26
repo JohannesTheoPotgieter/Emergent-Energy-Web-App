@@ -15,7 +15,6 @@ import {
   ResponsiveContainer,
   ComposedChart,
   Line,
-  LabelList,
 } from "recharts";
 import {
   DollarSign,
@@ -516,17 +515,6 @@ export default function CosTracker() {
     [months],
   );
 
-  const forecastVsActualData = useMemo(
-    () =>
-      months.map((m) => ({
-        month: m.monthLabel,
-        "YTD Costed": m.ytdBudget,
-        "YTD Realised": m.ytdRealised,
-        "YTD Rev Realised": m.ytdRevRealised,
-      })),
-    [months],
-  );
-
   const getCellColor = (val: number) => (val > 0 ? "text-red-600" : "text-green-600");
 
   const formatCell = (row: (typeof ROW_DEFS)[number], val: number) => {
@@ -672,37 +660,6 @@ export default function CosTracker() {
                   <Bar dataKey="Planned COS" fill="#4472C4" radius={[2, 2, 0, 0]} />
                   <Bar dataKey="Realised COS" fill="#ED7D31" radius={[2, 2, 0, 0]} />
                   <Bar dataKey="Outstanding COS" fill="#FFC000" radius={[2, 2, 0, 0]} />
-                </ComposedChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-sm overflow-hidden" data-testid="card-forecast-vs-actual">
-          <CardHeader className="bg-gradient-to-r from-slate-50 to-white border-b px-6 py-4">
-            <CardTitle className="text-lg font-semibold tracking-tight">2026 Forecast vs Actual COS YTD & REV YTD</CardTitle>
-          </CardHeader>
-          <CardContent className="p-6">
-            <div className="h-[420px]" data-testid="chart-forecast-vs-actual">
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={forecastVsActualData} margin={{ top: 8, right: 16, left: 8, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} />
-                  <YAxis tickFormatter={(v: number) => formatRand(v)} tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                  <Tooltip
-                    formatter={(value: number) => formatRand(value)}
-                    contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', fontSize: '12px' }}
-                  />
-                  <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '12px' }} />
-                  <Line type="monotone" dataKey="YTD Costed" stroke="#4472C4" strokeWidth={2.5} dot={{ r: 4, fill: '#4472C4' }}>
-                    <LabelList dataKey="YTD Costed" position="top" fontSize={10} fill="#4472C4" formatter={(v: number) => formatRand(v)} />
-                  </Line>
-                  <Line type="monotone" dataKey="YTD Realised" stroke="#ED7D31" strokeWidth={2.5} dot={{ r: 4, fill: '#ED7D31' }}>
-                    <LabelList dataKey="YTD Realised" position="bottom" fontSize={10} fill="#ED7D31" formatter={(v: number) => formatRand(v)} />
-                  </Line>
-                  <Line type="monotone" dataKey="YTD Rev Realised" stroke="#70AD47" strokeWidth={2.5} dot={{ r: 4, fill: '#70AD47' }}>
-                    <LabelList dataKey="YTD Rev Realised" position="top" fontSize={10} fill="#70AD47" formatter={(v: number) => formatRand(v)} />
-                  </Line>
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
