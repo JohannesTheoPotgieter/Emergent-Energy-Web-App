@@ -47,6 +47,7 @@ import SubcontractorDashboardPage from "@/pages/subcontractor-dashboard";
 import SystemActivityLogPage from "@/pages/system-activity-log";
 import WeeklyReviewsPage from "@/pages/weekly-reviews";
 import AdminRolesPage from "@/pages/admin-roles";
+import AdminApprovalsPage from "@/pages/admin-approvals";
 import TrRegisterPage from "@/pages/tr-register";
 import FeedbackPage from "@/pages/feedback";
 import EeInfoPage from "@/pages/ee-info";
@@ -259,6 +260,7 @@ function ProtectedPages() {
         <Route path="/admin/activity-log" component={SystemActivityLogPage} />
         <Route path="/weekly-reviews" component={WeeklyReviewsPage} />
         <Route path="/admin/roles" component={AdminRolesPage} />
+        <Route path="/admin/approvals" component={AdminApprovalsPage} />
         <Route path="/tr-register" component={TrRegisterPage} />
         <Route path="/feedback" component={FeedbackPage} />
         <Route path="/ee-info" component={EeInfoPage} />
