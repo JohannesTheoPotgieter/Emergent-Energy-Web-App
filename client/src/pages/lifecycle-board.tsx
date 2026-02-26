@@ -1168,6 +1168,20 @@ export default function LifecycleBoardPage() {
 
                         <div className="border-t pt-3 space-y-2">
                           <div className="text-xs font-medium text-muted-foreground">View Details</div>
+                          <Button
+                            variant="default"
+                            size="sm"
+                            className="w-full text-xs justify-start mb-1"
+                            onClick={() => {
+                              setProjectDialogOpen(false);
+                              navigate(`/project/${encodeURIComponent(cleanProjectName(p.projectName))}`);
+                            }}
+                            data-testid="link-project-home"
+                          >
+                            <ClipboardList className="w-3.5 h-3.5 mr-1.5" />
+                            Project Home
+                            <ExternalLink className="w-3 h-3 ml-auto opacity-70" />
+                          </Button>
                           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                             <Button
                               variant="outline"
