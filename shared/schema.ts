@@ -3633,4 +3633,9 @@ export const BADGE_DEFINITIONS: Record<string, { name: string; description: stri
   streak_30: { name: "Unstoppable", description: "30-day activity streak", icon: "💎", threshold: 30, category: "streaks" },
   quality_champion_5: { name: "Quality First", description: "Approved 5 quality checklist items", icon: "✨", threshold: 5, category: "quality" },
   eng_milestone_3: { name: "Engineering Star", description: "Completed 3 engineering stages", icon: "⭐", threshold: 3, category: "engineering" },
+  eng_task_owner_3: { name: "Engineer Rising", description: "Assigned to 3 engineering tasks", icon: "🔧", threshold: 3, category: "engineering" },
+  eng_task_owner_10: { name: "Engineering Ace", description: "Assigned to 10 engineering tasks", icon: "🛠️", threshold: 10, category: "engineering" },
+  ops_contributor_3: { name: "Ops Starter", description: "Assigned to 3 operational tasks", icon: "📌", threshold: 3, category: "tasks" },
+  ops_contributor_10: { name: "Ops Veteran", description: "Assigned to 10 operational tasks", icon: "🎯", threshold: 10, category: "tasks" },
+  deliverable_pro_5: { name: "Deliverable Pro", description: "Uploaded 5 deliverables", icon: "📎", threshold: 5, category: "engineering" },
 };

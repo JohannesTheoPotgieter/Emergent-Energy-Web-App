@@ -37,10 +37,15 @@ const POINT_VALUES: Record<string, number> = {
   project_update: 3,
   quality_approve: 15,
   eng_stage_complete: 30,
+  eng_task_owned: 5,
+  ops_task_assigned: 5,
+  deliverable_uploaded: 8,
+  participation: 10,
 };
 
 interface UserActivityCounts {
   userId: number;
+  userName: string;
   tasksCompleted: number;
   approvalsGiven: number;
   weeklyReviews: number;
@@ -49,14 +54,19 @@ interface UserActivityCounts {
   projectUpdates: number;
   qualityApprovals: number;
   engStagesCompleted: number;
+  engTasksOwned: number;
+  opsTasksAssigned: number;
+  deliverablesUploaded: number;
+  participation: number;
 }
 
 async function computeUserActivities(): Promise<UserActivityCounts[]> {
-  const allUsers = await db.select({ id: users.id }).from(users);
+  const allUsers = await db.select({ id: users.id, name: users.name }).from(users);
   const results: UserActivityCounts[] = [];
 
   for (const u of allUsers) {
     const uid = u.id;
+    const userName = u.name || "";
 
     const execCount = async (query: ReturnType<typeof sql>) => {
       try {
@@ -68,7 +78,7 @@ async function computeUserActivities(): Promise<UserActivityCounts[]> {
     };
 
     const tasksCompleted = await execCount(
-      sql`SELECT COUNT(*)::int as cnt FROM normalized_plan_tasks WHERE owner_user_id = ${uid} AND actual_pct_complete >= 1`
+      sql`SELECT COUNT(*)::int as cnt FROM normalized_plan_tasks WHERE LOWER(TRIM(owner)) = LOWER(TRIM(${userName})) AND pct_complete >= 1`
     );
     const approvalsGiven = await execCount(
       sql`SELECT COUNT(*)::int as cnt FROM project_eng_approvals WHERE approver_user_id = ${uid} AND status = 'approved'`
@@ -88,9 +98,19 @@ async function computeUserActivities(): Promise<UserActivityCounts[]> {
     const engStagesCompleted = await execCount(
       sql`SELECT COUNT(*)::int as cnt FROM project_eng_stages WHERE created_by = ${uid} AND status = 'complete'`
     );
+    const engTasksOwned = await execCount(
+      sql`SELECT COUNT(*)::int as cnt FROM project_eng_tasks WHERE owner_user_id = ${uid}`
+    );
+    const opsTasksAssigned = await execCount(
+      sql`SELECT COUNT(*)::int as cnt FROM operational_tasks WHERE owner_user_id = ${uid}`
+    );
+    const deliverablesUploaded = await execCount(
+      sql`SELECT COUNT(*)::int as cnt FROM deliverable_files WHERE uploaded_by_user_id = ${uid}`
+    );
 
     results.push({
       userId: uid,
+      userName,
       tasksCompleted,
       approvalsGiven,
       weeklyReviews,
@@ -99,6 +119,10 @@ async function computeUserActivities(): Promise<UserActivityCounts[]> {
       projectUpdates,
       qualityApprovals,
       engStagesCompleted,
+      engTasksOwned,
+      opsTasksAssigned,
+      deliverablesUploaded,
+      participation: 1,
     });
   }
 
@@ -114,7 +138,11 @@ function computePoints(act: UserActivityCounts): number {
     act.dataFixes * POINT_VALUES.data_fix +
     act.projectUpdates * POINT_VALUES.project_update +
     act.qualityApprovals * POINT_VALUES.quality_approve +
-    act.engStagesCompleted * POINT_VALUES.eng_stage_complete
+    act.engStagesCompleted * POINT_VALUES.eng_stage_complete +
+    act.engTasksOwned * POINT_VALUES.eng_task_owned +
+    act.opsTasksAssigned * POINT_VALUES.ops_task_assigned +
+    act.deliverablesUploaded * POINT_VALUES.deliverable_uploaded +
+    act.participation * POINT_VALUES.participation
   );
 }
 
@@ -144,6 +172,14 @@ function computeEarnedBadges(act: UserActivityCounts): string[] {
   if (act.qualityApprovals >= 5) badges.push("quality_champion_5");
 
   if (act.engStagesCompleted >= 3) badges.push("eng_milestone_3");
+
+  if (act.engTasksOwned >= 10) badges.push("eng_task_owner_10");
+  else if (act.engTasksOwned >= 3) badges.push("eng_task_owner_3");
+
+  if (act.opsTasksAssigned >= 10) badges.push("ops_contributor_10");
+  else if (act.opsTasksAssigned >= 3) badges.push("ops_contributor_3");
+
+  if (act.deliverablesUploaded >= 5) badges.push("deliverable_pro_5");
 
   return badges;
 }
@@ -214,6 +250,9 @@ export function registerGamificationRoutes(app: Express) {
             projectUpdates: act.projectUpdates,
             qualityApprovals: act.qualityApprovals,
             engStagesCompleted: act.engStagesCompleted,
+            engTasksOwned: act.engTasksOwned,
+            opsTasksAssigned: act.opsTasksAssigned,
+            deliverablesUploaded: act.deliverablesUploaded,
           },
         };
       }).filter(Boolean);
@@ -285,6 +324,9 @@ export function registerGamificationRoutes(app: Express) {
           projectUpdates: act.projectUpdates,
           qualityApprovals: act.qualityApprovals,
           engStagesCompleted: act.engStagesCompleted,
+          engTasksOwned: act.engTasksOwned,
+          opsTasksAssigned: act.opsTasksAssigned,
+          deliverablesUploaded: act.deliverablesUploaded,
         },
       });
     } catch (err: any) {
