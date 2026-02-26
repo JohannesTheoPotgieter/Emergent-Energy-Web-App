@@ -78,7 +78,10 @@ const SECTION_CONFIG: {
     label: "EXCO",
     description: "My Tool, Company Priorities, Lifecycle Dashboard",
     icon: "📊",
-    entities: [],
+    entities: [
+      { entity: "my_tool" as PermissionEntity, entityLabel: "My Tool" },
+      { entity: "lifecycle" as PermissionEntity, entityLabel: "Lifecycle Board" },
+    ],
   },
   {
     key: "PROJECTS",
@@ -87,6 +90,9 @@ const SECTION_CONFIG: {
     icon: "📋",
     entities: [
       { entity: "projects" as PermissionEntity, entityLabel: "Projects" },
+      { entity: "pm_dashboard" as PermissionEntity, entityLabel: "PM Dashboard" },
+      { entity: "smart_import" as PermissionEntity, entityLabel: "Smart Import" },
+      { entity: "tr_register" as PermissionEntity, entityLabel: "TR Register" },
     ],
   },
   {
@@ -96,26 +102,31 @@ const SECTION_CONFIG: {
     icon: "💰",
     entities: [
       { entity: "financials" as PermissionEntity, entityLabel: "Financials" },
+      { entity: "cos" as PermissionEntity, entityLabel: "COS Tracker" },
+      { entity: "cashflow" as PermissionEntity, entityLabel: "Cashflow" },
       { entity: "procurement" as PermissionEntity, entityLabel: "Procurement" },
     ],
   },
   {
     key: "DELIVERY",
     label: "Engineering",
-    description: "Engineering tasks, Task Board",
+    description: "Engineering Dashboard, Task Board, Stage Checklists",
     icon: "🔧",
     entities: [
       { entity: "engineering" as PermissionEntity, entityLabel: "Engineering" },
+      { entity: "eng_tasks" as PermissionEntity, entityLabel: "Task Board" },
+      { entity: "eng_stages" as PermissionEntity, entityLabel: "Stage Checklists" },
     ],
   },
   {
     key: "GOVERNANCE",
     label: "Governance",
-    description: "Quality Dashboard",
+    description: "Quality Dashboard, Weekly Reviews",
     icon: "🛡️",
     entities: [
       { entity: "quality" as PermissionEntity, entityLabel: "Quality" },
       { entity: "governance" as PermissionEntity, entityLabel: "Governance" },
+      { entity: "weekly_reviews" as PermissionEntity, entityLabel: "Weekly Reviews" },
     ],
   },
   {
@@ -123,7 +134,9 @@ const SECTION_CONFIG: {
     label: "Information",
     description: "Feedback & Support, Emergent Energy Info",
     icon: "📖",
-    entities: [],
+    entities: [
+      { entity: "ee_info" as PermissionEntity, entityLabel: "EE Info & Walkthroughs" },
+    ],
   },
   {
     key: "ADMIN",
