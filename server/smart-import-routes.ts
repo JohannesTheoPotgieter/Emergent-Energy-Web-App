@@ -27,6 +27,10 @@ import {
   projectPlan,
   programExpense,
   programInflows,
+  workingPlanScenario,
+  workingPlanTaskOverride,
+  workingPlanDependencyOverride,
+  projectPlanDependency,
 } from "@shared/schema";
 import { recordImportChange, recordSystemEvent } from "./lib/audit/diff-engine";
 import { eq, desc, and, or, sql, inArray, isNull } from "drizzle-orm";
@@ -888,6 +892,20 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
         await tx.delete(normalizedCostLines).where(eq(normalizedCostLines.projectName, projectName));
         await tx.delete(normalizedExecutionPhases).where(eq(normalizedExecutionPhases.projectName, projectName));
       }
+      const scenarioIds = await tx
+        .select({ id: workingPlanScenario.id })
+        .from(workingPlanScenario)
+        .where(eq(workingPlanScenario.projectName, projectName));
+      if (scenarioIds.length > 0) {
+        const sIds = scenarioIds.map(s => s.id);
+        await tx.update(workingPlanTaskOverride)
+          .set({ importedTaskId: null })
+          .where(inArray(workingPlanTaskOverride.scenarioId, sIds));
+        await tx.update(workingPlanDependencyOverride)
+          .set({ importedDependencyId: null })
+          .where(inArray(workingPlanDependencyOverride.scenarioId, sIds));
+      }
+      await tx.delete(projectPlanDependency).where(eq(projectPlanDependency.projectName, projectName));
       await tx.delete(projectPlan).where(eq(projectPlan.projectName, projectName));
       await tx.delete(programExpense).where(
         and(

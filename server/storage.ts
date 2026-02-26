@@ -840,6 +840,20 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteProjectPlansByProject(projectName: string): Promise<void> {
+    const scenarioIds = await this.dbInstance
+      .select({ id: workingPlanScenario.id })
+      .from(workingPlanScenario)
+      .where(eq(workingPlanScenario.projectName, projectName));
+    if (scenarioIds.length > 0) {
+      const sIds = scenarioIds.map(s => s.id);
+      await this.dbInstance.update(workingPlanTaskOverride)
+        .set({ importedTaskId: null })
+        .where(inArray(workingPlanTaskOverride.scenarioId, sIds));
+      await this.dbInstance.update(workingPlanDependencyOverride)
+        .set({ importedDependencyId: null })
+        .where(inArray(workingPlanDependencyOverride.scenarioId, sIds));
+    }
+    await this.dbInstance.delete(projectPlanDependency).where(eq(projectPlanDependency.projectName, projectName));
     await this.dbInstance.delete(projectPlan).where(eq(projectPlan.projectName, projectName));
   }
 
