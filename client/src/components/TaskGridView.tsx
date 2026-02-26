@@ -24,7 +24,11 @@ import {
   ChevronDown, ChevronRight, Columns, ListFilter,
   AlertTriangle, TrendingUp, TrendingDown, Minus,
   CheckCircle2, Clock, Circle, Ban, Loader2,
+  Milestone, FolderPlus, Ungroup, X,
 } from "lucide-react";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
 
 interface TaskGridViewProps {
   projectName: string;
@@ -146,6 +150,9 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
   const [groupBy, setGroupBy] = useState<GroupBy>("none");
   const [collapsedParents, setCollapsedParents] = useState<Set<number>>(new Set());
   const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [milestoneDialogOpen, setMilestoneDialogOpen] = useState(false);
+  const [milestoneTitle, setMilestoneTitle] = useState("");
+  const [groupDialogOpen, setGroupDialogOpen] = useState(false);
   const [visibleColumns, setVisibleColumns] = useState<Set<ColumnKey>>(() =>
     new Set(ALL_COLUMNS.filter(c => c.defaultVisible).map(c => c.key))
   );
@@ -229,6 +236,58 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
       setSelectedIds(new Set());
     },
   });
+
+  const structureMutation = useMutation({
+    mutationFn: async ({ operation, data }: { operation: string; data: any }) => {
+      await apiRequest("POST", "/api/project-plan/structure", { operation, projectName, data });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["planning-tasks", projectName] });
+      qc.invalidateQueries({ queryKey: ["/api/projects-summary"] });
+      setSelectedIds(new Set());
+    },
+  });
+
+  const handleCreateMilestone = () => {
+    if (!milestoneTitle.trim()) return;
+    structureMutation.mutate(
+      { operation: "createMilestone", data: { title: milestoneTitle.trim() } },
+      { onSuccess: () => { setMilestoneDialogOpen(false); setMilestoneTitle(""); } }
+    );
+  };
+
+  const milestones = useMemo(() => {
+    return tasks.filter((t: any) => t.isVirtualMilestone || t.isMilestone);
+  }, [tasks]);
+
+  const handleGroupUnderMilestone = (milestoneRowNumber: number) => {
+    const selected = Array.from(selectedIds);
+    const rowNumbers = selected
+      .map(id => tasks.find((t: any) => t.id === id))
+      .filter(Boolean)
+      .map((t: any) => t.rowNumber)
+      .filter((rn: any) => rn != null);
+    if (rowNumbers.length === 0) return;
+    structureMutation.mutate(
+      { operation: "setParent", data: { taskRowNumbers: rowNumbers, parentRowNumber: milestoneRowNumber } },
+      { onSuccess: () => setGroupDialogOpen(false) }
+    );
+  };
+
+  const handleUngroupTasks = () => {
+    const selected = Array.from(selectedIds);
+    const rowNumbers = selected
+      .map(id => tasks.find((t: any) => t.id === id))
+      .filter(Boolean)
+      .map((t: any) => t.rowNumber)
+      .filter((rn: any) => rn != null);
+    if (rowNumbers.length === 0) return;
+    structureMutation.mutate({ operation: "removeMilestone", data: { taskRowNumbers: rowNumbers } });
+  };
+
+  const handleDeleteMilestone = (milestoneRowNumber: number) => {
+    structureMutation.mutate({ operation: "deleteMilestone", data: { milestoneRowNumber } });
+  };
 
   const taskMap = useMemo(() => {
     const map = new Map<number, any>();
@@ -561,7 +620,23 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
         );
 
       case "source":
-        return task.isBaseline ? (
+        return task.isVirtualMilestone ? (
+          <div className="flex items-center gap-1">
+            <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[9px] font-bold tracking-wider bg-indigo-100 text-indigo-700">
+              MS
+            </span>
+            {isAdmin && (
+              <button
+                className="opacity-0 group-hover:opacity-100 transition-opacity text-red-400 hover:text-red-600"
+                onClick={(e) => { e.stopPropagation(); handleDeleteMilestone(task.rowNumber); }}
+                title="Delete milestone"
+                data-testid={`button-delete-milestone-${task.id}`}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
+          </div>
+        ) : task.isBaseline ? (
           <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[9px] font-bold tracking-wider bg-blue-100 text-blue-700">
             BASE
           </span>
@@ -687,10 +762,29 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
         </DropdownMenu>
       </div>
 
+      {isAdmin && (
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" data-testid="button-create-milestone"
+            onClick={() => setMilestoneDialogOpen(true)}>
+            <Milestone className="h-3.5 w-3.5" /> Create Milestone
+          </Button>
+        </div>
+      )}
+
       {isAdmin && selectedIds.size > 0 && (
         <div data-testid="bulk-actions-bar" className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-sm">
           <span className="font-semibold text-blue-700">{selectedIds.size} selected</span>
           <div className="flex-1" />
+          {milestones.length > 0 && (
+            <Button variant="outline" size="sm" className="h-7 text-xs gap-1" data-testid="button-group-tasks"
+              onClick={() => setGroupDialogOpen(true)}>
+              <FolderPlus className="h-3 w-3" /> Group
+            </Button>
+          )}
+          <Button variant="outline" size="sm" className="h-7 text-xs gap-1" data-testid="button-ungroup-tasks"
+            onClick={handleUngroupTasks}>
+            <Ungroup className="h-3 w-3" /> Ungroup
+          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="h-7 text-xs" data-testid="button-bulk-status">Status <ChevronDown className="ml-1 h-3 w-3" /></Button>
@@ -746,13 +840,15 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
               ) : (
                 visibleTasks.map(task => {
                   const hasChildren = task.isParent || task.childCount > 0;
+                  const isVMs = task.isVirtualMilestone;
                   const isBehind = task.planStatus === "behind" && !hasChildren;
                   return (
                     <TableRow key={task.id} data-testid={`row-task-${task.id}`}
                       className={[
                         "group transition-colors",
+                        isVMs ? "bg-indigo-50/60 hover:bg-indigo-100/60 border-l-[3px] border-l-indigo-400" :
                         hasChildren ? "bg-slate-50/60 hover:bg-slate-100/80" : "hover:bg-slate-50/80",
-                        isBehind ? "border-l-[3px] border-l-red-400" : task.planStatus === "ahead" && !hasChildren ? "border-l-[3px] border-l-emerald-400" : "border-l-[3px] border-l-transparent",
+                        !isVMs && isBehind ? "border-l-[3px] border-l-red-400" : !isVMs && task.planStatus === "ahead" && !hasChildren ? "border-l-[3px] border-l-emerald-400" : !isVMs && !hasChildren ? "border-l-[3px] border-l-transparent" : "",
                       ].join(" ")}>
                       <TableCell className="w-9 px-2">
                         <Checkbox data-testid={`checkbox-task-${task.id}`} checked={selectedIds.has(task.id)} onCheckedChange={() => toggleOne(task.id)} />
@@ -791,6 +887,66 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
           </Table>
         </div>
       </div>
+
+      <Dialog open={milestoneDialogOpen} onOpenChange={setMilestoneDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create Milestone</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <Input
+              placeholder="e.g. DC Scope - Ground Mount"
+              value={milestoneTitle}
+              onChange={e => setMilestoneTitle(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") handleCreateMilestone(); }}
+              data-testid="input-milestone-title"
+              autoFocus
+            />
+            <p className="text-xs text-slate-500">
+              Milestones group related tasks together. Dates and progress are rolled up automatically from subtasks.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setMilestoneDialogOpen(false)}>Cancel</Button>
+            <Button size="sm" onClick={handleCreateMilestone}
+              disabled={!milestoneTitle.trim() || structureMutation.isPending}
+              data-testid="button-save-milestone">
+              {structureMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Milestone className="h-3 w-3 mr-1" />}
+              Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={groupDialogOpen} onOpenChange={setGroupDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Group Under Milestone</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <p className="text-xs text-slate-500 mb-3">
+              Select a milestone to group the {selectedIds.size} selected task{selectedIds.size !== 1 ? "s" : ""} under:
+            </p>
+            {milestones.map((ms: any) => (
+              <button
+                key={ms.id}
+                className="w-full text-left px-3 py-2.5 rounded-lg border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/50 transition-colors flex items-center gap-2"
+                onClick={() => handleGroupUnderMilestone(ms.rowNumber)}
+                data-testid={`button-group-under-${ms.id}`}
+              >
+                <Milestone className="h-4 w-4 text-indigo-500 shrink-0" />
+                <span className="font-medium text-sm text-slate-700">{ms.title}</span>
+                {ms.childCount > 0 && (
+                  <span className="ml-auto text-[10px] text-slate-400">{ms.childCount} tasks</span>
+                )}
+              </button>
+            ))}
+            {milestones.length === 0 && (
+              <p className="text-sm text-slate-400 text-center py-4">No milestones yet. Create one first.</p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
