@@ -77,6 +77,15 @@ export default function ProjectCreatePage() {
                 {" "}{result.applyResult?.deliverablesCreated || 0} deliverables created
               </div>
             )}
+            {result.engStagesGenerated && (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-sm text-emerald-800">
+                Engineering stages generated: {result.engStagesResult?.stagesCreated || 0} stage(s),
+                {" "}{result.engStagesResult?.tasksCreated || 0} engineering task(s) created
+                {result.engStagesResult?.stageDetails?.length > 0 && (
+                  <span> — {result.engStagesResult.stageDetails.join(", ")}</span>
+                )}
+              </div>
+            )}
             <div className="flex gap-3 justify-center pt-4">
               <Button onClick={() => { setResult(null); setForm({ projectName: "", clientName: "", projectCode: "", location: "", initialPhase: "P0_FIRST_ASSESSMENT" }); }} data-testid="button-create-another">
                 <Plus className="w-4 h-4 mr-2" /> Create Another
