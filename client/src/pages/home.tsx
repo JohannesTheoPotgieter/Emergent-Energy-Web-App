@@ -1,10 +1,11 @@
 import { useState, useMemo } from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
+import { checkPermission } from "@shared/schema";
 import {
   Flag,
   Loader2,
@@ -17,6 +18,20 @@ import {
   Users,
   Calendar,
   Target,
+  FolderPlus,
+  ShieldAlert,
+  Layers,
+  FileSpreadsheet,
+  CalendarCheck,
+  Activity,
+  Settings,
+  Cog,
+  BarChart3,
+  Gauge,
+  Wallet,
+  TrendingUp,
+  Briefcase,
+  FolderKanban,
 } from "lucide-react";
 
 const ROLE_COMPLIMENTS: Record<string, string[]> = {
@@ -396,6 +411,123 @@ function CompanyPrioritiesCards({ isAdmin, priorities, isLoading }: { isAdmin: b
   );
 }
 
+interface QuickAccessItem {
+  label: string;
+  description: string;
+  icon: React.ReactNode;
+  path: string;
+  color: string;
+  bgColor: string;
+}
+
+const QUICK_ACCESS_ITEMS: QuickAccessItem[] = [
+  { label: "Execution Board", description: "Milestones & portfolio KPIs", icon: <Gauge className="h-5 w-5" />, path: "/dashboard", color: "text-blue-600", bgColor: "bg-blue-100" },
+  { label: "Project Summary", description: "All projects at a glance", icon: <FolderKanban className="h-5 w-5" />, path: "/projects", color: "text-indigo-600", bgColor: "bg-indigo-100" },
+  { label: "Lifecycle Board", description: "Project phase pipeline", icon: <Layers className="h-5 w-5" />, path: "/lifecycle-board", color: "text-violet-600", bgColor: "bg-violet-100" },
+  { label: "Cashflow", description: "Payment tracking", icon: <Wallet className="h-5 w-5" />, path: "/cashflow", color: "text-emerald-600", bgColor: "bg-emerald-100" },
+  { label: "COS Tracker", description: "Cost of sales overview", icon: <TrendingUp className="h-5 w-5" />, path: "/cos", color: "text-amber-600", bgColor: "bg-amber-100" },
+  { label: "PM Dashboard", description: "Project manager view", icon: <Briefcase className="h-5 w-5" />, path: "/pm-dashboard", color: "text-teal-600", bgColor: "bg-teal-100" },
+];
+
+interface AdminItem {
+  label: string;
+  description: string;
+  icon: React.ReactNode;
+  path: string;
+  color: string;
+  bgColor: string;
+  permEntity?: string;
+  permAction?: string;
+}
+
+const ADMIN_ITEMS: AdminItem[] = [
+  { label: "New Project", description: "Create a new project", icon: <FolderPlus className="h-5 w-5" />, path: "/project-create", color: "text-emerald-600", bgColor: "bg-emerald-100", permEntity: "create_project", permAction: "edit" },
+  { label: "Smart Import", description: "Import Excel tracker data", icon: <FileSpreadsheet className="h-5 w-5" />, path: "/smart-import", color: "text-blue-600", bgColor: "bg-blue-100", permEntity: "admin", permAction: "view" },
+  { label: "Roles & Permissions", description: "Manage user access", icon: <ShieldAlert className="h-5 w-5" />, path: "/admin/roles", color: "text-red-600", bgColor: "bg-red-100", permEntity: "admin", permAction: "view" },
+  { label: "Phase Templates", description: "Configure phase task templates", icon: <Layers className="h-5 w-5" />, path: "/admin/phase-templates", color: "text-violet-600", bgColor: "bg-violet-100", permEntity: "admin", permAction: "view" },
+  { label: "Invoice Patterns", description: "Manage invoice recognition", icon: <FileSpreadsheet className="h-5 w-5" />, path: "/invoice-patterns", color: "text-amber-600", bgColor: "bg-amber-100", permEntity: "admin", permAction: "view" },
+  { label: "Weekly Reviews", description: "Review & manage weekly sessions", icon: <CalendarCheck className="h-5 w-5" />, path: "/weekly-reviews", color: "text-teal-600", bgColor: "bg-teal-100", permEntity: "admin", permAction: "view" },
+  { label: "Change Audit", description: "View all data changes", icon: <Activity className="h-5 w-5" />, path: "/admin/activity-log", color: "text-slate-600", bgColor: "bg-slate-100", permEntity: "admin", permAction: "view" },
+  { label: "Settings", description: "App configuration", icon: <Cog className="h-5 w-5" />, path: "/admin/settings", color: "text-gray-600", bgColor: "bg-gray-100", permEntity: "admin", permAction: "view" },
+];
+
+function AdminBlock({ userRole }: { userRole: string }) {
+  const [, setLocation] = useLocation();
+  const { user } = useAuth();
+  const effectiveRole = user?.role || userRole;
+
+  const visibleItems = ADMIN_ITEMS.filter(item => {
+    if (!item.permEntity) return true;
+    return checkPermission(effectiveRole, item.permEntity as any, (item.permAction || "view") as any);
+  });
+
+  if (visibleItems.length === 0) return null;
+
+  return (
+    <div className="space-y-3" data-testid="admin-block">
+      <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+        <Settings className="h-4 w-4 text-slate-500" />
+        Admin
+      </h2>
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        {visibleItems.map(item => (
+          <Card
+            key={item.path}
+            className="group cursor-pointer hover:shadow-md hover:border-slate-300 transition-all duration-200"
+            onClick={() => setLocation(item.path)}
+            data-testid={`admin-card-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
+          >
+            <CardContent className="p-3 flex items-center gap-3">
+              <div className={`w-9 h-9 rounded-lg ${item.bgColor} flex items-center justify-center shrink-0`}>
+                <span className={item.color}>{item.icon}</span>
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold truncate">{item.label}</p>
+                <p className="text-[11px] text-muted-foreground truncate">{item.description}</p>
+              </div>
+              <ChevronRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors shrink-0" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function QuickAccessBlock() {
+  const [, setLocation] = useLocation();
+
+  return (
+    <div className="space-y-3" data-testid="quick-access-block">
+      <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+        <BarChart3 className="h-4 w-4 text-blue-500" />
+        Quick Access
+      </h2>
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {QUICK_ACCESS_ITEMS.map(item => (
+          <Card
+            key={item.path}
+            className="group cursor-pointer hover:shadow-md hover:border-slate-300 transition-all duration-200"
+            onClick={() => setLocation(item.path)}
+            data-testid={`quick-access-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
+          >
+            <CardContent className="p-3 flex items-center gap-3">
+              <div className={`w-9 h-9 rounded-lg ${item.bgColor} flex items-center justify-center shrink-0`}>
+                <span className={item.color}>{item.icon}</span>
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold truncate">{item.label}</p>
+                <p className="text-[11px] text-muted-foreground truncate">{item.description}</p>
+              </div>
+              <ChevronRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors shrink-0" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
   const { user, isAdmin } = useAuth();
   const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
@@ -430,7 +562,11 @@ export default function Home() {
         </div>
       </div>
 
+      <QuickAccessBlock />
+
       <CompanyPrioritiesCards isAdmin={!!canEdit} priorities={priorities} isLoading={prioritiesLoading} />
+
+      <AdminBlock userRole={userRole} />
     </div>
   );
 }

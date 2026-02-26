@@ -44,7 +44,7 @@ import {
   BookOpen,
   ListChecks,
 } from "lucide-react";
-import { UX_REDESIGN_ENABLED } from "@shared/schema";
+import { UX_REDESIGN_ENABLED, checkPermission } from "@shared/schema";
 import { useProgramData } from "@/hooks/use-program-data";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
@@ -124,7 +124,7 @@ function getLegacyNavGroups(): NavGroup[] {
         { label: "Settings", icon: Settings, path: "/admin/settings" },
         { label: "Roles & Permissions", icon: ShieldAlert, path: "/admin/roles" },
         { label: "Phase Templates", icon: Layers, path: "/admin/phase-templates" },
-        { label: "New Project", icon: FolderPlus, path: "/project-create" },
+        { label: "New Project", icon: FolderPlus, path: "/project-create", requiredPermission: { entity: "create_project", action: "edit" } },
         { label: "Smart Import", icon: FileSpreadsheet, path: "/smart-import" },
         { label: "Invoice Patterns", icon: FileSpreadsheet, path: "/invoice-patterns" },
         { label: "Weekly Reviews", icon: CalendarCheck, path: "/weekly-reviews" },
@@ -154,6 +154,7 @@ function getRedesignedNavGroups(): NavGroup[] {
         { label: "PM Dashboard", icon: Briefcase, path: "/pm-dashboard" },
         { label: "TR Register", icon: ClipboardList, path: "/tr-register" },
         { label: "Smart Import", icon: FileSpreadsheet, path: "/smart-import" },
+        { label: "New Project", icon: FolderPlus, path: "/project-create", requiredPermission: { entity: "create_project", action: "edit" } },
       ],
     },
     {
@@ -309,6 +310,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           return allowedSections.includes(group.section);
         }).map((group) => {
           let visibleItems = group.items.filter(item => {
+            if (item.requiredPermission && activeRole) {
+              if (!checkPermission(activeRole, item.requiredPermission.entity as any, item.requiredPermission.action as any)) return false;
+            }
             if (item.path === "/engineering/sync" && companyRole !== "COO_ADMIN") return false;
             if (companyRole === "PROJECT_MANAGER_SITE") {
               const pmVisiblePaths = ["/projects", "/pm-dashboard", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/cashflow", "/cos"];

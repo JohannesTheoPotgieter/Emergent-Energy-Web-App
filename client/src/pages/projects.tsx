@@ -43,10 +43,12 @@ import {
   EyeOff,
   Save,
   Trash2,
+  FolderPlus,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { apiRequest, invalidateDashboardQueries } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
+import { usePermission } from "@/hooks/use-permissions";
 import { PROJECT_PHASES, PROJECT_PHASE_LABELS, type ProjectPhase } from "@shared/schema";
 import {
   Dialog,
@@ -843,6 +845,7 @@ export default function ProjectsSummary() {
   const [sortKey, setSortKey] = useState<SortKey>("phase");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const { isAdmin } = useAuth();
+  const { allowed: canCreateProject } = usePermission("create_project", "edit");
   const [editProject, setEditProject] = useState<ProjectSummary | null>(null);
   const [viewTab, setViewTab] = useState<"active" | "archived">("active");
   const [writebackPromptProject, setWritebackPromptProject] = useState<string | null>(null);
@@ -1508,16 +1511,29 @@ export default function ProjectsSummary() {
             </p>
           </div>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleExport}
-          data-testid="button-export"
-          className="h-8 sm:h-9 gap-1 sm:gap-1.5 text-slate-600 border-slate-200 hover:bg-slate-50 shrink-0"
-        >
-          <Download className="w-4 h-4" />
-          <span className="hidden sm:inline">Export</span>
-        </Button>
+        <div className="flex items-center gap-2 shrink-0">
+          {canCreateProject && (
+            <Button
+              size="sm"
+              onClick={() => setLocation("/project-create")}
+              data-testid="button-new-project"
+              className="h-8 sm:h-9 gap-1 sm:gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
+            >
+              <FolderPlus className="w-4 h-4" />
+              <span className="hidden sm:inline">New Project</span>
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExport}
+            data-testid="button-export"
+            className="h-8 sm:h-9 gap-1 sm:gap-1.5 text-slate-600 border-slate-200 hover:bg-slate-50"
+          >
+            <Download className="w-4 h-4" />
+            <span className="hidden sm:inline">Export</span>
+          </Button>
+        </div>
       </div>
 
       <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5 w-fit">
