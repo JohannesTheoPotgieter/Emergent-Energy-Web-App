@@ -491,6 +491,17 @@ function TaskDetailDrawer({
     queryFn: () => engFetch("/api/eng/team-members"),
   });
 
+  const EXCLUDED_PHASES_DRAWER = ["Hold", "Closed"];
+  const { data: drawerProjects = [] } = useQuery<{ id: number; project_name: string; raw: string }[]>({
+    queryKey: ["/api/projects-summary"],
+    select: (data: any[]) => data.map((p: any) => ({
+      id: p.project_info_id || p.id,
+      project_name: p.project_name?.replace(/_Tracker.*$/, "").replace(/_/g, " ") || p.projectName || "",
+      raw: p.project_name || "",
+      phase: p.phase || "",
+    })).filter((p: any) => p.project_name && !EXCLUDED_PHASES_DRAWER.includes(p.phase)).sort((a: any, b: any) => a.project_name.localeCompare(b.project_name)),
+  });
+
   const updateMutation = useMutation({
     mutationFn: (updates: Record<string, any>) =>
       engFetch(`/api/eng/tasks/${task.id}`, { method: "PATCH", body: JSON.stringify(updates) }),
@@ -689,6 +700,38 @@ function TaskDetailDrawer({
                   ))}
                 </div>
               )}
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-[10px] text-muted-foreground uppercase tracking-wider">Linked Project</Label>
+              {(() => {
+                const currentRaw = task.projectName || "";
+                const matchesExisting = !currentRaw || drawerProjects.some(p => (p.raw || p.project_name) === currentRaw);
+                return (
+                  <Select
+                    value={currentRaw || "none"}
+                    onValueChange={(v) => {
+                      const newName = v === "none" ? null : v;
+                      updateMutation.mutate({ projectName: newName });
+                    }}
+                  >
+                    <SelectTrigger className="h-8 text-xs" data-testid="select-drawer-project">
+                      <SelectValue placeholder="Select project">
+                        {currentRaw ? projectDisplay : "No project"}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No project</SelectItem>
+                      {!matchesExisting && currentRaw && (
+                        <SelectItem value={currentRaw}>{projectDisplay} (current)</SelectItem>
+                      )}
+                      {drawerProjects.map(p => (
+                        <SelectItem key={p.id} value={p.raw || p.project_name}>{p.project_name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                );
+              })()}
             </div>
 
             <div className="space-y-3 p-3 bg-muted/20 rounded-lg border">
