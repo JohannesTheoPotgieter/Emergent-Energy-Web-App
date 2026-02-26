@@ -193,6 +193,7 @@ export interface IStorage {
 
   // Project Plan Overrides (user edits for tasks/milestones)
   getProjectPlanOverridesByProject(projectName: string): Promise<ProjectPlanOverride[]>;
+  getAllProjectPlanOverrides(): Promise<ProjectPlanOverride[]>;
   upsertProjectPlanOverride(override: InsertProjectPlanOverride): Promise<ProjectPlanOverride>;
   upsertManyProjectPlanOverrides(overrides: InsertProjectPlanOverride[]): Promise<ProjectPlanOverride[]>;
   deleteProjectPlanOverridesByProject(projectName: string): Promise<void>;
@@ -998,6 +999,12 @@ export class DatabaseStorage implements IStorage {
       .from(projectPlanOverrides)
       .where(eq(projectPlanOverrides.projectName, projectName))
       .orderBy(projectPlanOverrides.rowNumber);
+  }
+
+  async getAllProjectPlanOverrides(): Promise<ProjectPlanOverride[]> {
+    return this.dbInstance.select()
+      .from(projectPlanOverrides)
+      .orderBy(projectPlanOverrides.projectName, projectPlanOverrides.rowNumber);
   }
 
   async upsertProjectPlanOverride(override: InsertProjectPlanOverride): Promise<ProjectPlanOverride> {

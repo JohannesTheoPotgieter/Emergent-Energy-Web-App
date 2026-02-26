@@ -11,6 +11,17 @@ import { recordOverride } from "../lib/audit/diff-engine";
 
 const router = Router();
 
+const NUMERIC_PLAN_FIELDS = new Set(["actualPctComplete", "expectedPctComplete", "durationDays"]);
+
+function coercePlanOverride(fieldName: string, value: any): any {
+  if (value === null || value === undefined || value === "") return null;
+  if (NUMERIC_PLAN_FIELDS.has(fieldName)) {
+    const num = Number(value);
+    return isNaN(num) ? null : num;
+  }
+  return value;
+}
+
 function applyProjectPlanOverrides(
   baselineRows: any[],
   overrides: any[]
@@ -22,7 +33,7 @@ function applyProjectPlanOverrides(
     if (!overrideMap.has(o.rowNumber)) {
       overrideMap.set(o.rowNumber, new Map());
     }
-    overrideMap.get(o.rowNumber)!.set(o.fieldName, o.overrideValue);
+    overrideMap.get(o.rowNumber)!.set(o.fieldName, coercePlanOverride(o.fieldName, o.overrideValue));
   });
 
   return baselineRows.map((row: any) => {

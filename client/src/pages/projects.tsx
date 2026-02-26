@@ -181,15 +181,21 @@ function progressColor(pct: number): string {
   return "bg-slate-400";
 }
 
+interface TaskEdits {
+  [rowNumber: number]: { [field: string]: string | number | null };
+}
+
 function TaskCompletionPopover({ projectName, currentPct }: { projectName: string; currentPct: number }) {
   const [open, setOpen] = useState(false);
-  const [edits, setEdits] = useState<Record<number, number>>({});
+  const [edits, setEdits] = useState<TaskEdits>({});
+  const [editingRow, setEditingRow] = useState<number | null>(null);
+  const [searchQ, setSearchQ] = useState("");
   const queryClient = useQueryClient();
 
   const { data: tasks, isLoading } = useQuery({
     queryKey: ["/api/project-plan", projectName],
     queryFn: async () => {
-      const res = await fetch(`/api/project-plan/${encodeURIComponent(projectName)}?applyOverrides=true`);
+      const res = await fetch(`/api/project-plan/${encodeURIComponent(projectName)}`);
       if (!res.ok) return [];
       const data = await res.json();
       return (data || []).filter((t: any) => {
@@ -201,16 +207,24 @@ function TaskCompletionPopover({ projectName, currentPct }: { projectName: strin
   });
 
   const saveMutation = useMutation({
-    mutationFn: async (overrides: { rowNumber: number; value: number }[]) => {
+    mutationFn: async (allEdits: TaskEdits) => {
+      const overrides: any[] = [];
+      for (const [rowStr, fields] of Object.entries(allEdits)) {
+        const rowNumber = parseInt(rowStr);
+        for (const [fieldName, value] of Object.entries(fields)) {
+          let overrideValue: string;
+          if (fieldName === "actualPctComplete" || fieldName === "expectedPctComplete") {
+            overrideValue = String(Number(value) / 100);
+          } else {
+            overrideValue = value === null ? "" : String(value);
+          }
+          overrides.push({ projectName, rowNumber, fieldName, overrideValue });
+        }
+      }
       await apiRequest("POST", "/api/project-plan/overrides", {
-        overrides: overrides.map(o => ({
-          projectName,
-          rowNumber: o.rowNumber,
-          fieldName: "actualPctComplete",
-          overrideValue: String(o.value / 100),
-        })),
+        overrides,
         overrideCategory: "DATA_CORRECTION",
-        overrideComment: "Adjusted via project list",
+        overrideComment: "Edited via project list task editor",
       });
     },
     onSuccess: () => {
@@ -218,34 +232,42 @@ function TaskCompletionPopover({ projectName, currentPct }: { projectName: strin
       queryClient.invalidateQueries({ queryKey: ["/api/project-plan", projectName] });
       invalidateDashboardQueries(queryClient);
       setEdits({});
+      setEditingRow(null);
       setOpen(false);
     },
   });
 
-  const handleSave = () => {
-    const changes = Object.entries(edits).map(([row, val]) => ({
-      rowNumber: parseInt(row),
-      value: val,
+  const getField = (task: any, field: string) => {
+    const rowEdits = edits[task.rowNumber];
+    if (rowEdits && field in rowEdits) return rowEdits[field];
+    return task[field];
+  };
+
+  const setField = (rowNumber: number, field: string, value: any) => {
+    setEdits(prev => ({
+      ...prev,
+      [rowNumber]: { ...(prev[rowNumber] || {}), [field]: value },
     }));
-    if (changes.length > 0) saveMutation.mutate(changes);
   };
 
-  const getVal = (task: any) => {
-    if (edits[task.rowNumber] !== undefined) return edits[task.rowNumber];
-    return task.actualPctComplete != null ? Math.round(task.actualPctComplete * 100) : 0;
+  const getActPct = (task: any) => {
+    const rowEdits = edits[task.rowNumber];
+    if (rowEdits && "actualPctComplete" in rowEdits) return Math.round(Number(rowEdits.actualPctComplete));
+    return task.actualPctComplete != null ? Math.round(Number(task.actualPctComplete) * 100) : 0;
   };
 
-  const setVal = (rowNumber: number, val: number) => {
-    setEdits(prev => ({ ...prev, [rowNumber]: Math.max(0, Math.min(100, val)) }));
+  const setActPct = (rowNumber: number, pctVal: number) => {
+    setField(rowNumber, "actualPctComplete", Math.max(0, Math.min(100, pctVal)));
   };
 
   const weightedPct = useMemo(() => {
     if (!tasks || tasks.length === 0) return currentPct;
     let totalW = 0, wSum = 0;
     for (const t of tasks as any[]) {
-      const dur = t.durationDays && t.durationDays > 0 ? t.durationDays : 1;
-      const val = getVal(t) / 100;
-      wSum += val * dur;
+      const durVal = getField(t, "durationDays");
+      const dur = durVal && Number(durVal) > 0 ? Number(durVal) : 1;
+      const pct = getActPct(t) / 100;
+      wSum += pct * dur;
       totalW += dur;
     }
     return totalW > 0 ? (wSum / totalW) * 100 : 0;
@@ -253,85 +275,184 @@ function TaskCompletionPopover({ projectName, currentPct }: { projectName: strin
 
   const hasEdits = Object.keys(edits).length > 0;
 
+  const filtered = useMemo(() => {
+    if (!tasks) return [];
+    if (!searchQ) return tasks as any[];
+    const q = searchQ.toLowerCase();
+    return (tasks as any[]).filter((t: any) =>
+      (t.highLevelProgramme || '').toLowerCase().includes(q) ||
+      (t.taskNo || '').toString().toLowerCase().includes(q)
+    );
+  }, [tasks, searchQ]);
+
   return (
-    <Popover open={open} onOpenChange={(v) => { setOpen(v); if (!v) setEdits({}); }}>
+    <Popover open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setEdits({}); setEditingRow(null); setSearchQ(""); } }}>
       <PopoverTrigger asChild>
         <button className="flex items-center gap-1 min-w-[60px] w-full cursor-pointer hover:opacity-80 transition-opacity" data-testid={`btn-act-pct-${projectName}`}>
           <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
             <div
-              className={`h-full rounded-full transition-all duration-500 ${progressColor(hasEdits ? weightedPct : currentPct)}`}
-              style={{ width: `${Math.min(hasEdits ? weightedPct : currentPct, 100)}%` }}
+              className={`h-full rounded-full transition-all duration-500 ${progressColor(currentPct)}`}
+              style={{ width: `${Math.min(currentPct, 100)}%` }}
             />
           </div>
-          <span className="font-mono text-[10px] w-8 text-right font-medium text-slate-700">{(hasEdits ? weightedPct : currentPct).toFixed(0)}%</span>
+          <span className="font-mono text-[10px] w-8 text-right font-medium text-slate-700">{currentPct.toFixed(0)}%</span>
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-[380px] p-0 max-h-[400px] overflow-hidden" align="start" data-testid={`popover-tasks-${projectName}`}>
-        <div className="p-3 border-b bg-slate-50 flex items-center justify-between">
-          <div>
-            <p className="text-sm font-semibold text-slate-800">Adjust Task Completion</p>
-            <p className="text-[11px] text-slate-500">{projectName.replace("_Tracker", "")}</p>
-          </div>
-          {hasEdits && (
-            <div className="flex items-center gap-1.5">
-              <span className="text-[11px] font-mono font-semibold text-blue-600">New: {weightedPct.toFixed(0)}%</span>
-              <Button size="sm" className="h-7 text-xs px-2" onClick={handleSave} disabled={saveMutation.isPending} data-testid="btn-save-task-pct">
-                {saveMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3 mr-1" />}
-                Save
-              </Button>
+      <PopoverContent className="w-[520px] p-0 max-h-[500px] overflow-hidden" align="start" side="bottom" data-testid={`popover-tasks-${projectName}`}>
+        <div className="p-3 border-b bg-slate-50">
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <p className="text-sm font-semibold text-slate-800">Edit Tasks</p>
+              <p className="text-[11px] text-slate-500">{projectName.replace(/_Tracker$/i, "").replace(/_/g, " ")} — {(tasks as any[])?.length || 0} tasks</p>
             </div>
-          )}
+            {hasEdits && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-mono font-semibold text-blue-600">Act%: {weightedPct.toFixed(0)}%</span>
+                <Button size="sm" className="h-7 text-xs px-2" onClick={() => saveMutation.mutate(edits)} disabled={saveMutation.isPending} data-testid="btn-save-task-edits">
+                  {saveMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3 mr-1" />}
+                  Save All
+                </Button>
+              </div>
+            )}
+          </div>
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search tasks..."
+              value={searchQ}
+              onChange={(e) => setSearchQ(e.target.value)}
+              className="w-full h-7 text-xs pl-7 pr-2 border rounded bg-white"
+              data-testid="input-search-tasks"
+            />
+          </div>
         </div>
-        <div className="overflow-y-auto max-h-[320px] divide-y divide-slate-100">
+        <div className="overflow-y-auto max-h-[400px]">
           {isLoading ? (
-            <div className="p-4 text-center text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin mx-auto" /></div>
-          ) : tasks && tasks.length > 0 ? (
-            (tasks as any[]).map((task: any) => {
-              const val = getVal(task);
-              const dur = task.durationDays || 1;
-              return (
-                <div key={task.rowNumber} className="px-3 py-2 flex items-center gap-2 hover:bg-slate-50/50" data-testid={`task-row-${task.rowNumber}`}>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[11px] font-medium text-slate-700 truncate">{task.highLevelProgramme || task.taskNo}</p>
-                    <p className="text-[9px] text-slate-400">{dur}d</p>
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <div
-                      className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden cursor-pointer relative"
-                      onClick={(e) => {
-                        const rect = e.currentTarget.getBoundingClientRect();
-                        const x = e.clientX - rect.left;
-                        const pctVal = Math.round((x / rect.width) * 100);
-                        setVal(task.rowNumber, pctVal);
-                      }}
-                      data-testid={`bar-task-${task.rowNumber}`}
+            <div className="p-6 text-center"><Loader2 className="h-4 w-4 animate-spin mx-auto text-slate-400" /></div>
+          ) : filtered.length > 0 ? (
+            <table className="w-full text-[11px]">
+              <thead className="sticky top-0 bg-slate-50 z-10">
+                <tr className="text-slate-500 font-medium border-b">
+                  <th className="text-left px-2 py-1.5 w-8">#</th>
+                  <th className="text-left px-2 py-1.5">Task</th>
+                  <th className="text-left px-2 py-1.5 w-20">Start</th>
+                  <th className="text-left px-2 py-1.5 w-20">End</th>
+                  <th className="text-center px-2 py-1.5 w-12">Days</th>
+                  <th className="text-center px-2 py-1.5 w-14">Act%</th>
+                  <th className="w-7"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((task: any) => {
+                  const isEditing = editingRow === task.rowNumber;
+                  const actPct = getActPct(task);
+                  return (
+                    <tr
+                      key={task.rowNumber}
+                      className={`border-b border-slate-50 hover:bg-blue-50/30 transition-colors ${isEditing ? 'bg-blue-50/50' : ''}`}
+                      data-testid={`task-row-${task.rowNumber}`}
                     >
-                      <div className={`h-full rounded-full ${progressColor(val)}`} style={{ width: `${val}%` }} />
-                    </div>
-                    <input
-                      type="number"
-                      min={0}
-                      max={100}
-                      value={val}
-                      onChange={(e) => setVal(task.rowNumber, parseInt(e.target.value) || 0)}
-                      className="w-10 h-6 text-[10px] font-mono text-center border rounded px-0.5"
-                      data-testid={`input-task-pct-${task.rowNumber}`}
-                    />
-                    <button
-                      onClick={() => setVal(task.rowNumber, 100)}
-                      className={`text-[9px] px-1.5 py-0.5 rounded font-bold transition-colors ${val === 100 ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500 hover:bg-emerald-50 hover:text-emerald-600'}`}
-                      data-testid={`btn-complete-${task.rowNumber}`}
-                    >
-                      100%
-                    </button>
-                  </div>
-                </div>
-              );
-            })
+                      <td className="px-2 py-1.5 text-slate-400 font-mono">{task.taskNo || "-"}</td>
+                      <td className="px-2 py-1.5">
+                        {isEditing ? (
+                          <input
+                            type="text"
+                            value={getField(task, "highLevelProgramme") || ""}
+                            onChange={(e) => setField(task.rowNumber, "highLevelProgramme", e.target.value)}
+                            className="w-full h-6 text-[11px] border rounded px-1"
+                            data-testid={`input-task-name-${task.rowNumber}`}
+                          />
+                        ) : (
+                          <span className="truncate block max-w-[160px] font-medium text-slate-700" title={task.highLevelProgramme}>
+                            {getField(task, "highLevelProgramme") || "-"}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-2 py-1.5">
+                        {isEditing ? (
+                          <input
+                            type="date"
+                            value={getField(task, "actualStart") || ""}
+                            onChange={(e) => setField(task.rowNumber, "actualStart", e.target.value)}
+                            className="w-full h-6 text-[10px] border rounded px-0.5"
+                            data-testid={`input-task-start-${task.rowNumber}`}
+                          />
+                        ) : (
+                          <span className="text-slate-500 font-mono text-[10px]">{(getField(task, "actualStart") || "-").toString().substring(0, 10)}</span>
+                        )}
+                      </td>
+                      <td className="px-2 py-1.5">
+                        {isEditing ? (
+                          <input
+                            type="date"
+                            value={getField(task, "actualEnd") || ""}
+                            onChange={(e) => setField(task.rowNumber, "actualEnd", e.target.value)}
+                            className="w-full h-6 text-[10px] border rounded px-0.5"
+                            data-testid={`input-task-end-${task.rowNumber}`}
+                          />
+                        ) : (
+                          <span className="text-slate-500 font-mono text-[10px]">{(getField(task, "actualEnd") || "-").toString().substring(0, 10)}</span>
+                        )}
+                      </td>
+                      <td className="px-2 py-1.5 text-center">
+                        {isEditing ? (
+                          <input
+                            type="number"
+                            min={0}
+                            value={getField(task, "durationDays") ?? ""}
+                            onChange={(e) => setField(task.rowNumber, "durationDays", e.target.value ? parseInt(e.target.value) : null)}
+                            className="w-12 h-6 text-[10px] font-mono text-center border rounded"
+                            data-testid={`input-task-dur-${task.rowNumber}`}
+                          />
+                        ) : (
+                          <span className="text-slate-600 font-mono">{getField(task, "durationDays") ?? "-"}</span>
+                        )}
+                      </td>
+                      <td className="px-2 py-1.5 text-center">
+                        <div className="flex items-center gap-1">
+                          <div className="w-8 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                            <div className={`h-full rounded-full ${progressColor(actPct)}`} style={{ width: `${actPct}%` }} />
+                          </div>
+                          {isEditing ? (
+                            <input
+                              type="number"
+                              min={0}
+                              max={100}
+                              value={actPct}
+                              onChange={(e) => setActPct(task.rowNumber, parseInt(e.target.value) || 0)}
+                              className="w-9 h-6 text-[10px] font-mono text-center border rounded"
+                              data-testid={`input-task-pct-${task.rowNumber}`}
+                            />
+                          ) : (
+                            <span className="font-mono text-slate-600 w-7 text-right">{actPct}%</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-1 py-1.5">
+                        <button
+                          onClick={() => setEditingRow(isEditing ? null : task.rowNumber)}
+                          className={`p-0.5 rounded transition-colors ${isEditing ? 'text-blue-600 bg-blue-100' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}
+                          title={isEditing ? "Done editing" : "Edit task"}
+                          data-testid={`btn-edit-task-${task.rowNumber}`}
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           ) : (
-            <div className="p-4 text-center text-sm text-slate-400">No tasks found</div>
+            <div className="p-6 text-center text-sm text-slate-400">No tasks found</div>
           )}
         </div>
+        {hasEdits && (
+          <div className="p-2 border-t bg-slate-50 text-[10px] text-slate-500 text-center">
+            {Object.keys(edits).length} task(s) modified — edits are saved as overrides and preserved across imports
+          </div>
+        )}
       </PopoverContent>
     </Popover>
   );

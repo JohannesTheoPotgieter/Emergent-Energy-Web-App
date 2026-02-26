@@ -2,7 +2,7 @@ import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, sql, inArray } from "drizzle-orm";
 import { verifyToken } from "./jwt";
-import { projectInfo, operationalTasks, projectPlan, executionGateLog, mergeAuditLog, programExpense, programInflows, qcChecklist, qcItemInstance, PHASE_TO_ENG_STAGES } from "@shared/schema";
+import { projectInfo, operationalTasks, projectPlan, projectPlanOverrides, executionGateLog, mergeAuditLog, programExpense, programInflows, qcChecklist, qcItemInstance, PHASE_TO_ENG_STAGES } from "@shared/schema";
 import { generateEngStagesForProject } from "./eng-stage-routes";
 
 function jwtAuth(req: Request, _res: Response, next: NextFunction) {
@@ -78,13 +78,45 @@ export function registerLifecycleRoutes(app: Express) {
         assignees: operationalTasks.assignees,
       }).from(operationalTasks);
 
-      const allPlanTasks = await db.select({
+      const rawPlanTasks = await db.select({
         projectName: projectPlan.projectName,
         actualPctComplete: projectPlan.actualPctComplete,
         expectedPctComplete: projectPlan.expectedPctComplete,
         durationDays: projectPlan.durationDays,
         taskNo: projectPlan.taskNo,
+        rowNumber: projectPlan.rowNumber,
       }).from(projectPlan);
+
+      const allPlanOverrides = await db.select().from(projectPlanOverrides);
+      const overrideMap = new Map<string, Map<number, Map<string, any>>>();
+      for (const o of allPlanOverrides) {
+        if (!overrideMap.has(o.projectName)) overrideMap.set(o.projectName, new Map());
+        const projMap = overrideMap.get(o.projectName)!;
+        if (!projMap.has(o.rowNumber)) projMap.set(o.rowNumber, new Map());
+        const val = o.overrideValue;
+        const fieldName = o.fieldName;
+        let coerced: any = val;
+        if (val !== null && val !== undefined && val !== "") {
+          if (fieldName === "actualPctComplete" || fieldName === "expectedPctComplete" || fieldName === "durationDays") {
+            const num = Number(val);
+            coerced = isNaN(num) ? null : num;
+          }
+        } else {
+          coerced = null;
+        }
+        projMap.get(o.rowNumber)!.set(fieldName, coerced);
+      }
+
+      const allPlanTasks = rawPlanTasks.map(row => {
+        const projOverrides = overrideMap.get(row.projectName);
+        if (!projOverrides || !row.rowNumber || !projOverrides.has(row.rowNumber)) return row;
+        const fieldOverrides = projOverrides.get(row.rowNumber)!;
+        const updated = { ...row };
+        fieldOverrides.forEach((value, fieldName) => {
+          (updated as any)[fieldName] = value;
+        });
+        return updated;
+      });
 
       const allQmData = await db.select({
         projectName: qcChecklist.projectName,
