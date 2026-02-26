@@ -6,12 +6,13 @@ import {
   users, projectInfo, projectPhaseHistory, operationalTasks,
   deliverables, taskActivityLog,
   phaseTemplate, phaseTemplateItem, phaseTemplateItemHistory, phaseTemplateApplication,
-  PROJECT_PHASES, PROJECT_PHASE_LABELS, LIFECYCLE_PHASES,
+  PROJECT_PHASES, PROJECT_PHASE_LABELS, LIFECYCLE_PHASES, PHASE_TO_ENG_STAGES,
   type ProjectPhase,
   TEMPLATE_ITEM_TYPES, TEMPLATE_WORKSTREAMS, TEMPLATE_LINK_TARGET_TYPES,
   qcWarning,
 } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
+import { generateEngStagesForProject } from "./eng-stage-routes";
 import { createHash } from "crypto";
 
 function getUser(req: Request) {
@@ -708,11 +709,24 @@ export function registerTemplateRoutes(app: Express) {
         applyResult = await applyTemplate(created.id, phase, activeTemplate.id, activeTemplate.version, user.id);
       }
 
+      let engStagesResult = null;
+      const phaseLabel = PROJECT_PHASE_LABELS[phase as ProjectPhase] || phase;
+      const stageNames = PHASE_TO_ENG_STAGES[phaseLabel];
+      if (stageNames && stageNames.length > 0) {
+        try {
+          engStagesResult = await generateEngStagesForProject(created.id, user.id, stageNames);
+        } catch (engErr: any) {
+          console.error("Engineering stage generation failed for new project:", engErr.message);
+        }
+      }
+
       res.json({
         project: created,
-        phaseLabel: PROJECT_PHASE_LABELS[phase as ProjectPhase] || phase,
+        phaseLabel,
         templateApplied: !!applyResult,
         applyResult,
+        engStagesGenerated: !!engStagesResult,
+        engStagesResult,
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
