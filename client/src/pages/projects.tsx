@@ -564,6 +564,7 @@ const COLUMN_GROUPS_META: { label: string; keys: string[]; color: string; sticky
   { label: "Financial Close", keys: ["cost_proposal_signed", "funding_signed", "epc_contract_signed", "financial_close"], color: "bg-emerald-50 text-emerald-700" },
   { label: "Phase & Schedule", keys: ["phase", "task_counts", "escalation_level", "pd_handover_date", "construction_start_date", "commissioning_date", "om_handover_date", "client_handover_date", "duration", "kw_per_week"], color: "bg-blue-50 text-blue-700" },
   { label: "Progress", keys: ["project_pct_complete", "expected_pct_complete", "delta_vs_expected"], color: "bg-violet-50 text-violet-700" },
+  { label: "Financials", keys: ["actual_revenue", "actual_expenses", "gp_percent", "revenue_outstanding", "expenses_due"], color: "bg-green-50 text-green-700" },
   { label: "Updates", keys: ["latest_update"], color: "bg-amber-50 text-amber-700" },
 ];
 
@@ -1159,7 +1160,7 @@ export default function ProjectsSummary() {
         <button
           data-testid={`link-project-${p.project_name}`}
           className="text-left font-semibold text-blue-700 hover:text-blue-900 hover:underline truncate max-w-[130px] block text-[10px]"
-          onClick={() => setLocation(`/project/${encodeURIComponent(p.project_name)}`)}
+          onClick={() => setLocation(`/project/${encodeURIComponent(p.project_name)}?tab=task-grid`)}
           title={cleanName(p.project_name)}
         >
           {cleanName(p.project_name)}
@@ -1395,6 +1396,57 @@ export default function ProjectsSummary() {
             {sign}{val.toFixed(1)}%
           </span>
         );
+      },
+    },
+    {
+      key: "actual_revenue",
+      header: "Revenue",
+      align: "right",
+      render: (p) => {
+        const val = p.actual_revenue;
+        if (val == null || val === 0) return <span className="text-slate-400 text-[10px]">—</span>;
+        return <span className="font-mono text-slate-700 text-[10px]">R{val.toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>;
+      },
+    },
+    {
+      key: "actual_expenses",
+      header: "Expenses",
+      align: "right",
+      render: (p) => {
+        const val = p.actual_expenses;
+        if (val == null || val === 0) return <span className="text-slate-400 text-[10px]">—</span>;
+        return <span className="font-mono text-slate-700 text-[10px]">R{val.toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>;
+      },
+    },
+    {
+      key: "gp_percent",
+      header: "GP%",
+      align: "right",
+      render: (p) => {
+        if (p.gp_percent == null) return <span className="text-slate-400 text-[10px]">—</span>;
+        const val = p.gp_percent * 100;
+        const color = val >= 20 ? "text-emerald-600" : val >= 0 ? "text-amber-600" : "text-red-600";
+        return <span className={`font-mono text-[10px] font-semibold ${color}`}>{val.toFixed(1)}%</span>;
+      },
+    },
+    {
+      key: "revenue_outstanding",
+      header: "Rev. O/S",
+      align: "right",
+      render: (p) => {
+        const val = p.revenue_outstanding;
+        if (val == null || val === 0) return <span className="text-slate-400 text-[10px]">—</span>;
+        return <span className="font-mono text-amber-600 text-[10px]">R{val.toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>;
+      },
+    },
+    {
+      key: "expenses_due",
+      header: "Exp. Due",
+      align: "right",
+      render: (p) => {
+        const val = p.expenses_due;
+        if (val == null || val === 0) return <span className="text-slate-400 text-[10px]">—</span>;
+        return <span className="font-mono text-red-600 text-[10px]">R{val.toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>;
       },
     },
     {
