@@ -24,7 +24,7 @@ import {
   ChevronDown, ChevronRight, Columns, ListFilter,
   AlertTriangle, TrendingUp, TrendingDown, Minus,
   CheckCircle2, Clock, Circle, Ban, Loader2,
-  Milestone, FolderPlus, Ungroup, X,
+  Milestone, FolderPlus, Ungroup, X, ArrowUpDown,
 } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -153,6 +153,8 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
   const [milestoneDialogOpen, setMilestoneDialogOpen] = useState(false);
   const [milestoneTitle, setMilestoneTitle] = useState("");
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
+  const [convertDialogOpen, setConvertDialogOpen] = useState(false);
+  const [chosenMilestoneId, setChosenMilestoneId] = useState<number | null>(null);
   const [visibleColumns, setVisibleColumns] = useState<Set<ColumnKey>>(() =>
     new Set(ALL_COLUMNS.filter(c => c.defaultVisible).map(c => c.key))
   );
@@ -287,6 +289,27 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
 
   const handleDeleteMilestone = (milestoneRowNumber: number) => {
     structureMutation.mutate({ operation: "deleteMilestone", data: { milestoneRowNumber } });
+  };
+
+  const selectedTasksForConvert = useMemo(() => {
+    if (!convertDialogOpen) return [];
+    return Array.from(selectedIds)
+      .map(id => tasks.find((t: any) => t.id === id))
+      .filter((t: any) => t && t.rowNumber != null);
+  }, [convertDialogOpen, selectedIds, tasks]);
+
+  const handleConvertToMilestone = () => {
+    if (chosenMilestoneId == null) return;
+    const chosen = tasks.find((t: any) => t.id === chosenMilestoneId);
+    if (!chosen || chosen.rowNumber == null) return;
+    const subtaskRowNumbers = selectedTasksForConvert
+      .filter((t: any) => t.id !== chosenMilestoneId)
+      .map((t: any) => t.rowNumber);
+    if (subtaskRowNumbers.length === 0) return;
+    structureMutation.mutate(
+      { operation: "convertToMilestone", data: { milestoneRowNumber: chosen.rowNumber, subtaskRowNumbers } },
+      { onSuccess: () => { setConvertDialogOpen(false); setChosenMilestoneId(null); } }
+    );
   };
 
   const taskMap = useMemo(() => {
@@ -785,6 +808,12 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
             onClick={handleUngroupTasks}>
             <Ungroup className="h-3 w-3" /> Ungroup
           </Button>
+          {selectedIds.size >= 2 && (
+            <Button variant="outline" size="sm" className="h-7 text-xs gap-1" data-testid="button-convert-milestone"
+              onClick={() => { setConvertDialogOpen(true); setChosenMilestoneId(null); }}>
+              <ArrowUpDown className="h-3 w-3" /> Convert to Milestone
+            </Button>
+          )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="h-7 text-xs" data-testid="button-bulk-status">Status <ChevronDown className="ml-1 h-3 w-3" /></Button>
@@ -945,6 +974,67 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
               <p className="text-sm text-slate-400 text-center py-4">No milestones yet. Create one first.</p>
             )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={convertDialogOpen} onOpenChange={(open) => { setConvertDialogOpen(open); if (!open) setChosenMilestoneId(null); }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Convert to Milestone</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-xs text-slate-500">
+              Choose which task becomes the <strong>milestone</strong> (parent). The remaining {selectedTasksForConvert.length > 1 ? `${selectedTasksForConvert.length - 1} tasks` : "task"} will become its subtasks.
+            </p>
+            <div className="space-y-1.5 max-h-[320px] overflow-y-auto">
+              {selectedTasksForConvert.map((t: any) => {
+                const isChosen = chosenMilestoneId === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    className={`w-full text-left px-3 py-2.5 rounded-lg border transition-colors flex items-center gap-2 ${
+                      isChosen
+                        ? "border-indigo-400 bg-indigo-50 ring-1 ring-indigo-300"
+                        : "border-slate-200 hover:border-slate-300 hover:bg-slate-50/50"
+                    }`}
+                    onClick={() => setChosenMilestoneId(t.id)}
+                    data-testid={`button-choose-milestone-${t.id}`}
+                  >
+                    {isChosen ? (
+                      <Milestone className="h-4 w-4 text-indigo-600 shrink-0" />
+                    ) : (
+                      <Circle className="h-4 w-4 text-slate-300 shrink-0" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <span className={`text-sm font-medium truncate block ${isChosen ? "text-indigo-700" : "text-slate-700"}`}>
+                        {t.title || t.taskName || `Task #${t.id}`}
+                      </span>
+                      {t.taskNumber && <span className="text-[10px] text-slate-400">#{t.taskNumber}</span>}
+                    </div>
+                    {isChosen && (
+                      <Badge className="bg-indigo-100 text-indigo-700 text-[10px] px-1.5 shrink-0">Milestone</Badge>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            {chosenMilestoneId != null && (
+              <div className="bg-slate-50 rounded-lg px-3 py-2 text-xs text-slate-600 border border-slate-100">
+                <strong>{tasks.find((t: any) => t.id === chosenMilestoneId)?.title || "Selected task"}</strong> will become a milestone.
+                The other {selectedTasksForConvert.length - 1} task{selectedTasksForConvert.length - 1 !== 1 ? "s" : ""} will be grouped as subtasks underneath.
+                Dates and progress will roll up automatically.
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setConvertDialogOpen(false)}>Cancel</Button>
+            <Button size="sm" onClick={handleConvertToMilestone}
+              disabled={chosenMilestoneId == null || structureMutation.isPending}
+              data-testid="button-confirm-convert">
+              {structureMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Milestone className="h-3 w-3 mr-1" />}
+              Convert
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
