@@ -43,6 +43,14 @@ const POINT_VALUES: Record<string, number> = {
   participation: 10,
 };
 
+const PENALTY_VALUES: Record<string, number> = {
+  overdue_task: -5,
+  plan_behind: -3,
+  quality_failure: -8,
+  rejected_deliverable: -6,
+  open_quality_warning: -4,
+};
+
 interface UserActivityCounts {
   userId: number;
   userName: string;
@@ -58,6 +66,11 @@ interface UserActivityCounts {
   opsTasksAssigned: number;
   deliverablesUploaded: number;
   participation: number;
+  overdueTasks: number;
+  plansBehind: number;
+  qualityFailures: number;
+  rejectedDeliverables: number;
+  openQualityWarnings: number;
 }
 
 async function computeUserActivities(): Promise<UserActivityCounts[]> {
@@ -108,6 +121,46 @@ async function computeUserActivities(): Promise<UserActivityCounts[]> {
       sql`SELECT COUNT(*)::int as cnt FROM deliverable_files WHERE uploaded_by_user_id = ${uid}`
     );
 
+    const overdueTasks = await execCount(
+      sql`SELECT COUNT(*)::int as cnt FROM operational_tasks 
+          WHERE owner_user_id = ${uid} 
+          AND due_date IS NOT NULL AND due_date != '' 
+          AND due_date < CURRENT_DATE::text 
+          AND status NOT IN ('COMPLETE', 'QC APPROVED', 'DONE')`
+    );
+
+    const plansBehind = await execCount(
+      sql`SELECT COUNT(*)::int as cnt FROM project_plan 
+          WHERE LOWER(TRIM(COALESCE(high_level_programme, ''))) != '' 
+          AND actual_pct_complete IS NOT NULL 
+          AND expected_pct_complete IS NOT NULL 
+          AND actual_pct_complete < 1 
+          AND (expected_pct_complete - actual_pct_complete) > 0.15 
+          AND project_name IN (
+            SELECT DISTINCT project_name FROM project_info WHERE LOWER(TRIM(pm)) = LOWER(TRIM(${userName}))
+          )`
+    );
+
+    const qualityFailures = await execCount(
+      sql`SELECT COUNT(*)::int as cnt FROM qc_item_instance qi
+          JOIN qc_checklist qc ON qi.checklist_id = qc.id
+          JOIN project_info pi ON qc.project_name = pi.project_name
+          WHERE pi.pm_user_id = ${uid}
+          AND qi.qm_status = 'fail'`
+    );
+
+    const rejectedDeliverables = await execCount(
+      sql`SELECT COUNT(*)::int as cnt FROM project_eng_deliverables 
+          WHERE uploaded_by = ${uid} 
+          AND approval_status = 'rejected'`
+    );
+
+    const openQualityWarnings = await execCount(
+      sql`SELECT COUNT(*)::int as cnt FROM qc_warning 
+          WHERE owner_user_id = ${uid} 
+          AND status IN ('open', 'in_progress')`
+    );
+
     results.push({
       userId: uid,
       userName,
@@ -123,14 +176,19 @@ async function computeUserActivities(): Promise<UserActivityCounts[]> {
       opsTasksAssigned,
       deliverablesUploaded,
       participation: 1,
+      overdueTasks,
+      plansBehind,
+      qualityFailures,
+      rejectedDeliverables,
+      openQualityWarnings,
     });
   }
 
   return results;
 }
 
-function computePoints(act: UserActivityCounts): number {
-  return (
+function computePoints(act: UserActivityCounts): { earned: number; penalties: number; total: number } {
+  const earned =
     act.tasksCompleted * POINT_VALUES.task_complete +
     act.approvalsGiven * POINT_VALUES.approval_given +
     act.weeklyReviews * POINT_VALUES.weekly_review +
@@ -142,8 +200,16 @@ function computePoints(act: UserActivityCounts): number {
     act.engTasksOwned * POINT_VALUES.eng_task_owned +
     act.opsTasksAssigned * POINT_VALUES.ops_task_assigned +
     act.deliverablesUploaded * POINT_VALUES.deliverable_uploaded +
-    act.participation * POINT_VALUES.participation
-  );
+    act.participation * POINT_VALUES.participation;
+
+  const penalties =
+    act.overdueTasks * PENALTY_VALUES.overdue_task +
+    act.plansBehind * PENALTY_VALUES.plan_behind +
+    act.qualityFailures * PENALTY_VALUES.quality_failure +
+    act.rejectedDeliverables * PENALTY_VALUES.rejected_deliverable +
+    act.openQualityWarnings * PENALTY_VALUES.open_quality_warning;
+
+  return { earned, penalties, total: Math.max(0, earned + penalties) };
 }
 
 function computeEarnedBadges(act: UserActivityCounts): string[] {
@@ -180,6 +246,17 @@ function computeEarnedBadges(act: UserActivityCounts): string[] {
   else if (act.opsTasksAssigned >= 3) badges.push("ops_contributor_3");
 
   if (act.deliverablesUploaded >= 5) badges.push("deliverable_pro_5");
+
+  if (act.overdueTasks >= 10) badges.push("penalty_overdue_chronic");
+  else if (act.overdueTasks >= 5) badges.push("penalty_overdue_repeat");
+
+  if (act.qualityFailures >= 5) badges.push("penalty_quality_concern");
+
+  if (act.overdueTasks === 0 && act.plansBehind === 0 && act.qualityFailures === 0 &&
+      act.rejectedDeliverables === 0 && act.openQualityWarnings === 0 &&
+      act.tasksCompleted >= 5) {
+    badges.push("clean_record");
+  }
 
   return badges;
 }
@@ -228,15 +305,17 @@ export function registerGamificationRoutes(app: Express) {
       const leaderboard = activities.map(act => {
         const u = userMap[act.userId];
         if (!u) return null;
-        const points = computePoints(act);
+        const { earned, penalties, total } = computePoints(act);
         const earnedBadgeKeys = computeEarnedBadges(act);
-        const level = getUserLevel(points);
+        const level = getUserLevel(total);
 
         return {
           userId: act.userId,
           name: u.name,
           role: u.role,
-          points,
+          points: total,
+          pointsEarned: earned,
+          pointsPenalty: penalties,
           level,
           badges: earnedBadgeKeys.map(key => ({
             key,
@@ -253,6 +332,13 @@ export function registerGamificationRoutes(app: Express) {
             engTasksOwned: act.engTasksOwned,
             opsTasksAssigned: act.opsTasksAssigned,
             deliverablesUploaded: act.deliverablesUploaded,
+          },
+          penalties: {
+            overdueTasks: act.overdueTasks,
+            plansBehind: act.plansBehind,
+            qualityFailures: act.qualityFailures,
+            rejectedDeliverables: act.rejectedDeliverables,
+            openQualityWarnings: act.openQualityWarnings,
           },
         };
       }).filter(Boolean);
@@ -281,6 +367,7 @@ export function registerGamificationRoutes(app: Express) {
       res.json({
         leaderboard,
         pointValues: POINT_VALUES,
+        penaltyValues: PENALTY_VALUES,
         badgeDefinitions: BADGE_DEFINITIONS,
       });
     } catch (err: any) {
@@ -299,9 +386,9 @@ export function registerGamificationRoutes(app: Express) {
       const act = activities.find(a => a.userId === userId);
       if (!act) return res.status(404).json({ error: "No activity data" });
 
-      const points = computePoints(act);
+      const { earned, penalties, total } = computePoints(act);
       const earnedBadgeKeys = computeEarnedBadges(act);
-      const level = getUserLevel(points);
+      const level = getUserLevel(total);
 
       const allBadges = Object.entries(BADGE_DEFINITIONS).map(([key, def]) => ({
         key,
@@ -313,7 +400,9 @@ export function registerGamificationRoutes(app: Express) {
         userId,
         name: u.name,
         role: u.role,
-        points,
+        points: total,
+        pointsEarned: earned,
+        pointsPenalty: penalties,
         level,
         badges: allBadges,
         stats: {
@@ -327,6 +416,13 @@ export function registerGamificationRoutes(app: Express) {
           engTasksOwned: act.engTasksOwned,
           opsTasksAssigned: act.opsTasksAssigned,
           deliverablesUploaded: act.deliverablesUploaded,
+        },
+        penalties: {
+          overdueTasks: act.overdueTasks,
+          plansBehind: act.plansBehind,
+          qualityFailures: act.qualityFailures,
+          rejectedDeliverables: act.rejectedDeliverables,
+          openQualityWarnings: act.openQualityWarnings,
         },
       });
     } catch (err: any) {
