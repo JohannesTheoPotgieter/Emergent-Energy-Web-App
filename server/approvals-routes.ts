@@ -52,11 +52,6 @@ export function registerApprovalsRoutes(app: Express) {
       const isAdmin = ADMIN_ROLES.includes(userRole);
       const showAll = isAdmin && req.query.showAll === "true";
 
-      const qmUsers = await db.select({ id: users.id, name: users.name })
-        .from(users)
-        .where(eq(users.role, "QUALITY_MANAGER"));
-      const qmDisplayName = qmUsers.length > 0 ? qmUsers.map(u => u.name).join(", ") : "Quality Manager";
-
       const engApprovals = await db.select({
         id: projectEngApprovals.id,
         status: projectEngApprovals.status,
@@ -118,10 +113,13 @@ export function registerApprovalsRoutes(app: Express) {
         projectName: qcChecklist.projectName,
         projectId: qcChecklist.projectId,
         checklistId: qcChecklist.id,
+        pmUserId: projectInfo.pmUserId,
+        pm: projectInfo.pm,
       })
         .from(qcItemInstance)
         .innerJoin(qcChecklist, eq(qcItemInstance.checklistId, qcChecklist.id))
         .innerJoin(qcTemplateItem, eq(qcItemInstance.templateItemId, qcTemplateItem.id))
+        .innerJoin(projectInfo, eq(qcChecklist.projectId, projectInfo.id))
         .where(
           and(
             eq(qcItemInstance.qmStatus, "review"),
@@ -129,21 +127,40 @@ export function registerApprovalsRoutes(app: Express) {
           )
         );
 
-      const userCanSeeQuality = isAdmin || showAll || userRole === "QUALITY_MANAGER";
-      const filteredQcItems = userCanSeeQuality ? qcItems : [];
+      const pmUserIds = [...new Set(qcItems.map(q => q.pmUserId).filter(Boolean))] as number[];
+      let pmUserMap: Record<number, string> = {};
+      if (pmUserIds.length > 0) {
+        const pmUsers = await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, pmUserIds));
+        pmUserMap = Object.fromEntries(pmUsers.map(u => [u.id, u.name]));
+      }
 
-      const qualityItems = filteredQcItems.map(q => ({
-        id: `qc-${q.id}`,
-        type: "quality" as const,
-        title: q.itemName,
-        projectName: q.projectName,
-        projectId: q.projectId,
-        status: "review",
-        assignee: qmDisplayName,
-        createdAt: q.lastUpdatedAt,
-        updatedAt: q.lastUpdatedAt,
-        meta: { itemInstanceId: q.id, checklistId: q.checklistId },
-      }));
+      let filteredQcItems = qcItems;
+      if (!isAdmin && !showAll) {
+        if (userRole === "QUALITY_MANAGER") {
+          filteredQcItems = qcItems;
+        } else {
+          filteredQcItems = qcItems.filter(q => q.pmUserId === userId);
+        }
+      }
+
+      const qualityItems = filteredQcItems.map(q => {
+        const assigneeName = q.pmUserId
+          ? (pmUserMap[q.pmUserId] || q.pm || "Unassigned PM")
+          : (q.pm || "Unassigned PM");
+
+        return {
+          id: `qc-${q.id}`,
+          type: "quality" as const,
+          title: q.itemName,
+          projectName: q.projectName,
+          projectId: q.projectId,
+          status: "review",
+          assignee: assigneeName,
+          createdAt: q.lastUpdatedAt,
+          updatedAt: q.lastUpdatedAt,
+          meta: { itemInstanceId: q.id, checklistId: q.checklistId },
+        };
+      });
 
       const deliverableItems = await db.select({
         id: deliverables.id,
