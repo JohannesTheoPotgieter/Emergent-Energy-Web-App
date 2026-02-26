@@ -295,12 +295,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </button>
       </div>
 
-      <nav className="flex-1 overflow-y-auto py-2 px-2 space-y-0.5">
+      <nav className="flex-1 overflow-y-auto py-2 px-2 space-y-0.5 overscroll-contain">
         <Link href="/" className={cn(
-          "flex items-center gap-3 px-3 py-2 rounded-md transition-all duration-200 group",
+          "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-150 group select-none",
           location === "/" 
             ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium shadow-md" 
-            : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:scale-[0.98]"
         )}>
           <Home className="w-4.5 h-4.5 shrink-0" />
           {sidebarShowLabels && <span className="text-sm">Home</span>}
@@ -362,26 +362,26 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   <button
                     onClick={() => setExpandedParents(prev => ({ ...prev, [item.path]: !isParentExpanded }))}
                     className={cn(
-                      "w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all duration-200 group text-[13px]",
+                      "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-150 group text-[13px] select-none",
                       isActive || childActive
                         ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium shadow-md"
-                        : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                        : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:scale-[0.98]"
                     )}
                   >
                     <item.icon className={cn("w-4 h-4 shrink-0", item.className)} />
                     {sidebarShowLabels && (
                       <>
                         <span className="flex-1 text-left">{item.label}</span>
-                        {isParentExpanded ? <ChevronDown className="w-3 h-3 shrink-0" /> : <ChevronRight className="w-3 h-3 shrink-0" />}
+                        {isParentExpanded ? <ChevronDown className="w-3 h-3 shrink-0 transition-transform duration-200" /> : <ChevronRight className="w-3 h-3 shrink-0 transition-transform duration-200" />}
                       </>
                     )}
                   </button>
                 ) : (
                   <Link href={item.path} className={cn(
-                    "flex items-center gap-3 px-3 py-2 rounded-md transition-all duration-200 group text-[13px]",
+                    "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-150 group text-[13px] select-none",
                     isActive
                       ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium shadow-md"
-                      : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                      : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:scale-[0.98]"
                   )}>
                     <item.icon className={cn("w-4 h-4 shrink-0", item.className)} />
                     {sidebarShowLabels && <span>{item.label}</span>}
@@ -391,10 +391,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   const isChildActive = location === child.path || location.startsWith(child.path);
                   return (
                     <Link key={child.path} href={child.path} className={cn(
-                      "flex items-center gap-3 pl-7 pr-3 py-1.5 rounded-md transition-all duration-200 text-[12px]",
+                      "flex items-center gap-3 pl-7 pr-3 py-2 rounded-lg transition-all duration-150 text-[12px] select-none",
                       isChildActive
                         ? "bg-sidebar-primary/80 text-sidebar-primary-foreground font-medium"
-                        : "text-sidebar-foreground/55 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                        : "text-sidebar-foreground/55 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:scale-[0.98]"
                     )}>
                       <child.icon className="w-3.5 h-3.5 shrink-0" />
                       <span>{child.label}</span>
@@ -452,17 +452,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background flex overflow-hidden">
-      {mobileOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 md:hidden"
-          onClick={() => setMobileOpen(false)}
-          aria-hidden="true"
-        />
-      )}
+      <div
+        className={cn(
+          "fixed inset-0 bg-black/40 backdrop-blur-sm z-40 md:hidden transition-opacity duration-300",
+          mobileOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+        )}
+        onClick={() => setMobileOpen(false)}
+        aria-hidden="true"
+      />
 
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 bg-sidebar text-sidebar-foreground flex flex-col border-r border-sidebar-border shadow-xl transition-transform duration-300 ease-in-out w-64 md:hidden",
+          "fixed inset-y-0 left-0 z-50 bg-sidebar text-sidebar-foreground flex flex-col border-r border-sidebar-border shadow-2xl transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] w-[280px] md:hidden will-change-transform",
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
@@ -471,7 +472,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       <aside 
         className={cn(
-          "hidden md:flex bg-sidebar text-sidebar-foreground flex-col transition-all duration-300 border-r border-sidebar-border shadow-xl z-20",
+          "hidden md:flex bg-sidebar text-sidebar-foreground flex-col transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] border-r border-sidebar-border shadow-xl z-20 will-change-[width]",
           desktopCollapsed ? "w-20" : "w-64"
         )}
       >
@@ -479,7 +480,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </aside>
 
       <main className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden bg-background/50">
-        <header className="h-14 md:h-16 border-b bg-background flex items-center justify-between px-3 md:px-6 sticky top-0 z-10">
+        <header className="h-14 md:h-16 border-b bg-background/95 backdrop-blur-sm flex items-center justify-between px-3 md:px-6 sticky top-0 z-10">
           <div className="flex items-center gap-2 md:gap-4 min-w-0">
             <Button 
               variant="ghost" 
@@ -535,8 +536,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <div className="flex-1 overflow-auto p-3 sm:p-4 md:p-6 scroll-smooth">
-          <div className="max-w-[1600px] mx-auto animate-in fade-in slide-in-from-bottom-2 duration-500 space-y-4">
+        <div className="flex-1 overflow-auto p-3 sm:p-4 md:p-6 scroll-smooth overscroll-contain -webkit-overflow-scrolling-touch">
+          <div className="max-w-[1600px] mx-auto animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-4">
             <DatabaseStatusBanner />
             {showValidationReport && lastUploadResult && (
               <UploadValidationReport 

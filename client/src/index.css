@@ -51,9 +51,8 @@
 }
 
 :root {
-  /* Emergent Energy - Professional Green & Slate Control Room Theme */
-  --background: 210 20% 98%; /* Clean light background */
-  --foreground: 220 25% 15%; /* Professional dark text */
+  --background: 210 20% 98%;
+  --foreground: 220 25% 15%;
 
   --card: 0 0% 100%;
   --card-foreground: 220 25% 15%;
@@ -61,19 +60,15 @@
   --popover: 0 0% 100%;
   --popover-foreground: 220 25% 15%;
 
-  /* Primary Action: Emergent Green */
-  --primary: 152 76% 36%; /* #0E9F6E - Emerald green, energy/sustainability feel */
+  --primary: 152 76% 36%;
   --primary-foreground: 0 0% 100%;
 
-  /* Secondary: Professional Slate */
   --secondary: 215 20% 95%;
   --secondary-foreground: 220 25% 15%;
 
-  /* Muted */
   --muted: 215 20% 95%;
   --muted-foreground: 220 15% 50%;
 
-  /* Accent: Light green tint for highlights */
   --accent: 152 50% 95%;
   --accent-foreground: 152 76% 28%;
 
@@ -86,7 +81,6 @@
 
   --radius: 0.5rem;
 
-  /* Sidebar: Deep Professional Navy */
   --sidebar: 220 30% 12%;
   --sidebar-foreground: 210 40% 98%;
   --sidebar-primary: 152 76% 42%;
@@ -140,27 +134,44 @@
   * {
     @apply border-border;
   }
+  html {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+    touch-action: manipulation;
+  }
   body {
     @apply font-sans antialiased bg-background text-foreground;
+    overscroll-behavior: none;
   }
   h1, h2, h3, h4, h5, h6 {
     @apply font-heading font-semibold tracking-tight;
   }
 }
 
-/* Custom Scrollbar for heavy data tables */
+@layer utilities {
+  .transition-gpu {
+    will-change: transform, opacity;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+  }
+}
+
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  @apply bg-muted-foreground/30 rounded-full hover:bg-muted-foreground/50 transition-colors;
+  @apply bg-muted-foreground/20 rounded-full;
+  transition: background-color 0.2s;
+}
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-muted-foreground/40;
 }
 
-/* Hide scrollbar utility */
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
@@ -169,14 +180,93 @@
   scrollbar-width: none;
 }
 
-/* Touch-friendly tap targets */
 @media (max-width: 640px) {
   button, a, [role="button"] {
-    min-height: 36px;
+    min-height: 40px;
+    min-width: 40px;
+  }
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+  ::-webkit-scrollbar {
+    width: 3px;
+    height: 3px;
   }
 }
 
-/* Table styles */
 .data-table-row {
-  @apply hover:bg-muted/50 transition-colors;
+  @apply hover:bg-muted/50 transition-colors duration-150;
+}
+
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+@keyframes subtle-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+
+@keyframes count-up {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-up-fade {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-down-fade {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-slide-up-fade {
+  animation: slide-up-fade 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.animate-slide-down-fade {
+  animation: slide-down-fade 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.animate-scale-in {
+  animation: scale-in 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.animate-count-up {
+  animation: count-up 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.stagger-1 { animation-delay: 0.05s; animation-fill-mode: both; }
+.stagger-2 { animation-delay: 0.1s; animation-fill-mode: both; }
+.stagger-3 { animation-delay: 0.15s; animation-fill-mode: both; }
+.stagger-4 { animation-delay: 0.2s; animation-fill-mode: both; }
+.stagger-5 { animation-delay: 0.25s; animation-fill-mode: both; }
+.stagger-6 { animation-delay: 0.3s; animation-fill-mode: both; }
+
+.loading-shimmer {
+  background: linear-gradient(90deg, transparent 25%, hsl(var(--muted-foreground) / 0.08) 50%, transparent 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
