@@ -1321,13 +1321,27 @@ export default function LifecycleBoardPage() {
                   <div className="grid gap-3 grid-cols-2">
                     <div>
                       <Label className="text-xs">Project Developer (PD)</Label>
-                      <Input
-                        value={editForm.pd}
-                        onChange={(e) => setEditForm(f => ({ ...f, pd: e.target.value }))}
-                        placeholder="PD name"
+                      <Select
+                        value={editForm.pd || "__unassigned"}
+                        onValueChange={(val) => {
+                          if (val === "__unassigned") {
+                            setEditForm(f => ({ ...f, pd: "" }));
+                          } else {
+                            setEditForm(f => ({ ...f, pd: val }));
+                          }
+                        }}
                         disabled={!selectedProject.id || selectedProject.id <= 0}
-                        data-testid="input-edit-pd"
-                      />
+                      >
+                        <SelectTrigger data-testid="select-edit-pd">
+                          <SelectValue placeholder="Unassigned" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__unassigned" data-testid="select-pd-unassigned">Unassigned</SelectItem>
+                          {pmUsers.map((u) => (
+                            <SelectItem key={u.id} value={u.name} data-testid={`select-pd-${u.id}`}>{u.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div>
                       <Label className="text-xs">Project Manager (PM)</Label>
