@@ -755,52 +755,52 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
     <div data-testid="task-grid-view" className="space-y-3">
       {/* KPI Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-        <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg border bg-white">
+        <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg border bg-white card-hover animate-float-in stagger-1">
           <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-slate-100">
             <Clock className="h-4 w-4 text-slate-600" />
           </div>
           <div>
             <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Total</p>
-            <p className="text-lg font-bold text-slate-800 leading-none">{kpis.total}</p>
+            <p className="text-lg font-bold text-slate-800 leading-none animate-number-pop">{kpis.total}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg border bg-white">
+        <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg border bg-white card-hover animate-float-in stagger-2">
           <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-50">
             <CheckCircle2 className="h-4 w-4 text-emerald-600" />
           </div>
           <div>
             <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Done</p>
-            <p className="text-lg font-bold text-emerald-700 leading-none">{kpis.done}</p>
+            <p className="text-lg font-bold text-emerald-700 leading-none animate-number-pop">{kpis.done}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg border bg-white">
+        <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg border bg-white card-hover animate-float-in stagger-3">
           <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-50">
             <Loader2 className="h-4 w-4 text-blue-600" />
           </div>
           <div>
             <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Avg %</p>
-            <p className="text-lg font-bold text-blue-700 leading-none">{kpis.avgPct}%</p>
+            <p className="text-lg font-bold text-blue-700 leading-none animate-number-pop">{kpis.avgPct}%</p>
           </div>
         </div>
         {kpis.behind > 0 && (
-          <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-red-200 bg-red-50/50">
+          <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-red-200 bg-red-50/50 card-hover animate-float-in stagger-4">
             <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-red-100">
               <AlertTriangle className="h-4 w-4 text-red-600" />
             </div>
             <div>
               <p className="text-[10px] text-red-600 font-medium uppercase tracking-wider">Behind</p>
-              <p className="text-lg font-bold text-red-700 leading-none">{kpis.behind}</p>
+              <p className="text-lg font-bold text-red-700 leading-none animate-number-pop">{kpis.behind}</p>
             </div>
           </div>
         )}
         {kpis.ahead > 0 && (
-          <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-emerald-200 bg-emerald-50/50">
+          <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-emerald-200 bg-emerald-50/50 card-hover animate-float-in stagger-5">
             <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-100">
               <TrendingUp className="h-4 w-4 text-emerald-600" />
             </div>
             <div>
               <p className="text-[10px] text-emerald-600 font-medium uppercase tracking-wider">Ahead</p>
-              <p className="text-lg font-bold text-emerald-700 leading-none">{kpis.ahead}</p>
+              <p className="text-lg font-bold text-emerald-700 leading-none animate-number-pop">{kpis.ahead}</p>
             </div>
           </div>
         )}
@@ -865,7 +865,7 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
       )}
 
       {isAdmin && selectedIds.size > 0 && (
-        <div data-testid="bulk-actions-bar" className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-sm">
+        <div data-testid="bulk-actions-bar" className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-sm animate-slide-up-fade">
           <span className="font-semibold text-blue-700">{selectedIds.size} selected</span>
           <div className="flex-1" />
           <Button variant="outline" size="sm" className="h-7 text-xs gap-1" data-testid="button-group-tasks"
@@ -906,7 +906,7 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
       )}
 
       {/* Table */}
-      <div className="border rounded-lg overflow-hidden bg-white shadow-sm">
+      <div className="border rounded-lg overflow-hidden bg-white shadow-sm animate-fade-in stagger-3">
         <div className="overflow-auto" style={{ maxHeight: "calc(100vh - 380px)" }}>
           <Table>
             <TableHeader>

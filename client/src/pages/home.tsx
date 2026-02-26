@@ -328,13 +328,13 @@ function CompanyPrioritiesCards({ isAdmin, priorities, isLoading }: { isAdmin: b
         <p className="text-sm text-muted-foreground py-4">No active company priorities.</p>
       ) : (
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {sorted.map(p => {
+          {sorted.map((p, idx) => {
             const overdue = isOverdue(p.dueDate);
             const linkedCount = (p.links?.length ?? 0) + (p.linkedProjectName ? 1 : 0);
             return (
               <div
                 key={p.id}
-                className={`border-l-4 ${severityBorder(p.severity)} border rounded-lg bg-card p-3 space-y-2 ${overdue ? "ring-1 ring-red-300 dark:ring-red-800" : ""}`}
+                className={`border-l-4 ${severityBorder(p.severity)} border rounded-lg bg-card p-3 space-y-2 card-hover animate-float-in ${overdue ? "ring-1 ring-red-300 dark:ring-red-800" : ""} stagger-${Math.min(idx + 1, 8)}`}
                 data-testid={`priority-card-${p.id}`}
               >
                 <div className="flex items-start justify-between gap-2">
@@ -418,19 +418,21 @@ export default function Home() {
 
   return (
     <div className="space-y-6" data-testid="home-page">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between animate-fade-in">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight" data-testid="text-welcome">Welcome, {firstName}</h1>
-          <p className="text-sm text-muted-foreground italic" data-testid="text-compliment">
+          <h1 className="text-2xl font-bold tracking-tight animate-slide-up-fade" data-testid="text-welcome">Welcome, {firstName}</h1>
+          <p className="text-sm text-muted-foreground italic animate-slide-up-fade stagger-2" data-testid="text-compliment">
             {isFriday ? `\uD83D\uDE04 ${compliment}` : compliment}
           </p>
-          <p className="text-xs text-muted-foreground mt-1">
+          <p className="text-xs text-muted-foreground mt-1 animate-slide-up-fade stagger-3">
             {new Date().toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" })}
           </p>
         </div>
       </div>
 
-      <CompanyPrioritiesCards isAdmin={!!canEdit} priorities={priorities} isLoading={prioritiesLoading} />
+      <div className="animate-float-in stagger-4">
+        <CompanyPrioritiesCards isAdmin={!!canEdit} priorities={priorities} isLoading={prioritiesLoading} />
+      </div>
     </div>
   );
 }
