@@ -1615,6 +1615,20 @@ router.get("/api/pm-assignable-users", requireAuth, async (_req, res) => {
   }
 });
 
+router.get("/api/pd-assignable-users", requireAuth, async (_req, res) => {
+  try {
+    const pdUsers = await db.select({
+      id: users.id,
+      name: users.name,
+      username: users.username,
+      role: users.role,
+    }).from(users).where(eq(users.role, "PROJECT_DEVELOPER"));
+    res.json(pdUsers.map(u => ({ id: u.id, name: u.name, username: u.username, role: u.role })));
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch users" });
+  }
+});
+
 router.patch("/api/project-info/:id/assign-pm", requireAuth, async (req, res) => {
   try {
     const id = parseInt(req.params.id);

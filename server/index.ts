@@ -215,6 +215,10 @@ async function seedUsers() {
     { username: "jt", name: "JT Moorosi", role: "PROJECT_MANAGER_SITE" as const, password: "2037" },
     { username: "lloyd", name: "Lloyd Brown", role: "PROJECT_MANAGER_SITE" as const, password: "2038" },
     { username: "justin", name: "Justin Franke", role: "PROJECT_MANAGER_SITE" as const, password: "2039" },
+    { username: "cole", name: "Cole Bisset", role: "PROJECT_DEVELOPER" as const, password: "2040" },
+    { username: "gordon", name: "Gordon Upton", role: "PROJECT_DEVELOPER" as const, password: "2041" },
+    { username: "megan", name: "Megan Moore", role: "PROJECT_DEVELOPER" as const, password: "2042" },
+    { username: "kirsten", name: "Kirsten Marwick", role: "PROJECT_DEVELOPER" as const, password: "2043" },
   ];
 
   for (const u of usersToSeed) {

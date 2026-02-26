@@ -607,6 +607,14 @@ export default function ProjectDetailPage() {
       return res.json();
     },
   });
+  const { data: pdAssignableUsers } = useQuery<{ id: number; name: string; username: string; role: string }[]>({
+    queryKey: ["/api/pd-assignable-users"],
+    queryFn: async () => {
+      const res = await engFetch("/api/pd-assignable-users");
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
 
   const handleTaskClick = (taskId: number) => {
     setSelectedTaskId(taskId);
@@ -840,7 +848,7 @@ export default function ProjectDetailPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__unassigned" data-testid="select-detail-pd-unassigned">Unassigned</SelectItem>
-                    {(pmAssignableUsers || []).map((u: any) => (
+                    {(pdAssignableUsers || []).map((u: any) => (
                       <SelectItem key={u.id} value={u.name} data-testid={`select-detail-pd-${u.id}`}>{u.name}</SelectItem>
                     ))}
                   </SelectContent>

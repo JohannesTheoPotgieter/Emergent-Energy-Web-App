@@ -286,6 +286,14 @@ export default function LifecycleBoardPage() {
       return res.json();
     },
   });
+  const { data: pdUsers = [] } = useQuery<{ id: number; name: string; username: string; role: string }[]>({
+    queryKey: ["/api/pd-assignable-users"],
+    queryFn: async () => {
+      const res = await fetch("/api/pd-assignable-users", { credentials: "include", headers: getAuthHeaders() });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
   const [searchTerm, setSearchTerm] = useState("");
   const [showActiveOnly, setShowActiveOnly] = useState(false);
   const [draggedProject, setDraggedProject] = useState<ProjectInfo | null>(null);
@@ -1337,7 +1345,7 @@ export default function LifecycleBoardPage() {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="__unassigned" data-testid="select-pd-unassigned">Unassigned</SelectItem>
-                          {pmUsers.map((u) => (
+                          {pdUsers.map((u) => (
                             <SelectItem key={u.id} value={u.name} data-testid={`select-pd-${u.id}`}>{u.name}</SelectItem>
                           ))}
                         </SelectContent>

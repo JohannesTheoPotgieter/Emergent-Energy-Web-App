@@ -23,7 +23,8 @@ Preferred communication style: Simple, everyday language.
 ### Backend
 -   **Framework**: Express.js with TypeScript.
 -   **Authentication**: Passport.js with local strategy and PostgreSQL-backed sessions, supporting role-based access control and rate limiting.
--   **Permission Middleware**: `requirePermission(entity, action)` for API-level role-based access with 43 granular permission entities covering all screens and MAD process. Section-level access uses 7 consolidated keys, and project detail tab visibility is controlled by 15 `pd_` entities. Includes ENGINEER and ACCOUNTANT roles with appropriate default permissions.
+-   **Permission Middleware**: `requirePermission(entity, action)` for API-level role-based access with 43 granular permission entities covering all screens and MAD process. Section-level access uses 7 consolidated keys, and project detail tab visibility is controlled by 15 `pd_` entities. Includes ENGINEER, ACCOUNTANT, and PROJECT_DEVELOPER roles with appropriate default permissions.
+-   **Role System**: Includes `PROJECT_DEVELOPER` (PD) role separate from `PROJECT_MANAGER_SITE` (PM). PD dropdown uses `/api/pd-assignable-users`, PM dropdown uses `/api/pm-assignable-users`. PD users: Cole Bisset, Gordon Upton, Megan Moore, Kirsten Marwick. PM and PD are editable dropdowns on lifecycle board and project detail page (admin only).
 -   **File Handling**: Multer for uploads, `exceljs` for parsing.
 -   **Data Storage**: PostgreSQL with Drizzle ORM.
 -   **Data Integrity**: Transactional safety and reprocessing.
