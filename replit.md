@@ -46,8 +46,9 @@ Preferred communication style: Simple, everyday language.
 
 ### Gamification System
 -   **Module**: Badge and leaderboard system tracking user activity across the platform, awarding points and badges for various actions (task completion, approvals, reviews, imports, etc.).
+-   **Penalty System**: Users lose points for negative behaviors: overdue tasks (-5/ea), plans behind >15% (-3/ea, scoped to PM's projects), quality failures (-8/ea, scoped to PM's projects), rejected deliverables (-6/ea), open quality warnings (-4/ea). Points floor at 0. Penalty badges: "Deadline Dodger" (5+ overdue), "Chronic Overdue" (10+ overdue), "Quality Concern" (5+ QC failures). "Clean Record" badge awarded for zero penalties with 5+ tasks completed.
 -   **Levels**: 8 progression levels from Rookie to Titan.
--   **Frontend**: Dedicated `/leaderboard` page with rankings, badge display, and activity breakdown.
+-   **Frontend**: Dedicated `/leaderboard` page with rankings, badge display, activity breakdown, and penalty breakdown. Penalty indicators shown on leaderboard rows, podium cards, user detail dialog, and "How Points Work" section.
 
 ### Approvals Screen
 -   **Module**: Consolidated view of user-specific pending approvals from engineering gates, quality reviews, and deliverables.

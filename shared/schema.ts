@@ -3648,4 +3648,8 @@ export const BADGE_DEFINITIONS: Record<string, { name: string; description: stri
   ops_contributor_3: { name: "Ops Starter", description: "Assigned to 3 operational tasks", icon: "📌", threshold: 3, category: "tasks" },
   ops_contributor_10: { name: "Ops Veteran", description: "Assigned to 10 operational tasks", icon: "🎯", threshold: 10, category: "tasks" },
   deliverable_pro_5: { name: "Deliverable Pro", description: "Uploaded 5 deliverables", icon: "📎", threshold: 5, category: "engineering" },
+  penalty_overdue_repeat: { name: "Deadline Dodger", description: "5+ overdue tasks — time to catch up!", icon: "⏰", threshold: 5, category: "penalties" },
+  penalty_overdue_chronic: { name: "Chronic Overdue", description: "10+ overdue tasks — needs urgent attention", icon: "🚨", threshold: 10, category: "penalties" },
+  penalty_quality_concern: { name: "Quality Concern", description: "5+ quality failures recorded", icon: "⚠️", threshold: 5, category: "penalties" },
+  clean_record: { name: "Clean Record", description: "No penalties — zero overdue, behind, or quality issues", icon: "🌟", threshold: 0, category: "excellence" },
 };

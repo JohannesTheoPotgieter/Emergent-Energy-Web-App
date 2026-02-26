@@ -20,6 +20,7 @@ import {
   Star,
   Zap,
   TrendingUp,
+  TrendingDown,
   Crown,
   Target,
   Award,
@@ -35,6 +36,11 @@ import {
   Hammer,
   ClipboardCheck,
   Paperclip,
+  Clock,
+  BarChart3,
+  XCircle,
+  FileX,
+  ShieldAlert,
 } from "lucide-react";
 
 interface BadgeInfo {
@@ -52,6 +58,8 @@ interface LeaderboardEntry {
   name: string;
   role: string;
   points: number;
+  pointsEarned: number;
+  pointsPenalty: number;
   level: {
     level: number;
     title: string;
@@ -71,11 +79,19 @@ interface LeaderboardEntry {
     opsTasksAssigned: number;
     deliverablesUploaded: number;
   };
+  penalties: {
+    overdueTasks: number;
+    plansBehind: number;
+    qualityFailures: number;
+    rejectedDeliverables: number;
+    openQualityWarnings: number;
+  };
 }
 
 interface LeaderboardResponse {
   leaderboard: LeaderboardEntry[];
   pointValues: Record<string, number>;
+  penaltyValues: Record<string, number>;
   badgeDefinitions: Record<string, BadgeInfo>;
 }
 
@@ -128,6 +144,14 @@ const STAT_CONFIG = [
   { key: "qualityApprovals", label: "QC Items", icon: Target, color: "text-pink-600" },
   { key: "engStagesCompleted", label: "Eng Stages", icon: Wrench, color: "text-indigo-600" },
   { key: "deliverablesUploaded", label: "Deliverables", icon: Paperclip, color: "text-rose-600" },
+];
+
+const PENALTY_STAT_CONFIG = [
+  { key: "overdueTasks", label: "Overdue Tasks", icon: Clock, color: "text-red-500" },
+  { key: "plansBehind", label: "Plans Behind", icon: BarChart3, color: "text-orange-500" },
+  { key: "qualityFailures", label: "QC Failures", icon: XCircle, color: "text-red-600" },
+  { key: "rejectedDeliverables", label: "Rejected Docs", icon: FileX, color: "text-amber-600" },
+  { key: "openQualityWarnings", label: "Open Warnings", icon: ShieldAlert, color: "text-yellow-600" },
 ];
 
 export default function LeaderboardPage() {
@@ -203,6 +227,12 @@ export default function LeaderboardPage() {
                 </div>
                 <div className="flex items-center gap-3 mt-1">
                   <span className="text-sm font-medium">{myEntry.points} pts</span>
+                  {myEntry.pointsPenalty < 0 && (
+                    <span className="text-xs text-red-500 flex items-center gap-0.5">
+                      <TrendingDown className="w-3 h-3" />
+                      {myEntry.pointsPenalty}
+                    </span>
+                  )}
                   <div className="flex-1 max-w-[200px]">
                     <Progress
                       value={myEntry.level.nextThreshold > myEntry.level.currentThreshold
@@ -263,7 +293,14 @@ export default function LeaderboardPage() {
                       <div className="text-2xl font-bold mt-2 bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
                         {entry.points}
                       </div>
-                      <div className="text-[10px] text-muted-foreground">points</div>
+                      <div className="text-[10px] text-muted-foreground flex items-center justify-center gap-1">
+                        points
+                        {entry.pointsPenalty < 0 && (
+                          <span className="text-red-500 flex items-center gap-0.5">
+                            ({entry.pointsPenalty})
+                          </span>
+                        )}
+                      </div>
                       <div className="flex justify-center gap-0.5 mt-2">
                         {entry.badges.slice(0, 4).map(b => (
                           <span key={b.key} className="text-sm" title={b.name}>{b.icon}</span>
@@ -307,7 +344,15 @@ export default function LeaderboardPage() {
                           <span key={b.key} className="text-sm">{b.icon}</span>
                         ))}
                       </div>
-                      <span className="font-bold text-sm w-16 text-right">{entry.points} pts</span>
+                      <div className="text-right">
+                        <span className="font-bold text-sm">{entry.points} pts</span>
+                        {entry.pointsPenalty < 0 && (
+                          <div className="text-[10px] text-red-500 flex items-center justify-end gap-0.5">
+                            <TrendingDown className="w-2.5 h-2.5" />
+                            {entry.pointsPenalty}
+                          </div>
+                        )}
+                      </div>
                       <ChevronRight className="w-4 h-4 text-muted-foreground" />
                     </div>
                   </CardContent>
@@ -376,8 +421,16 @@ export default function LeaderboardPage() {
 
               <div className="space-y-4 py-2">
                 <div className="flex items-center gap-3">
-                  <div className="text-3xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
-                    {selectedUser.points}
+                  <div>
+                    <div className="text-3xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
+                      {selectedUser.points}
+                    </div>
+                    {selectedUser.pointsPenalty < 0 && (
+                      <div className="flex items-center gap-1 text-xs text-red-500 mt-0.5">
+                        <TrendingDown className="w-3 h-3" />
+                        <span>{selectedUser.pointsPenalty} penalty</span>
+                      </div>
+                    )}
                   </div>
                   <div className="flex-1">
                     <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
@@ -390,6 +443,14 @@ export default function LeaderboardPage() {
                         : 100}
                       className="h-2"
                     />
+                    {selectedUser.pointsEarned > 0 && (
+                      <div className="flex items-center justify-between text-[10px] text-muted-foreground mt-1">
+                        <span className="text-green-600">+{selectedUser.pointsEarned} earned</span>
+                        {selectedUser.pointsPenalty < 0 && (
+                          <span className="text-red-500">{selectedUser.pointsPenalty} deducted</span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -430,6 +491,31 @@ export default function LeaderboardPage() {
                     })}
                   </div>
                 </div>
+
+                {selectedUser.penalties && Object.values(selectedUser.penalties).some(v => v > 0) && (
+                  <div>
+                    <h4 className="text-sm font-medium mb-2 flex items-center gap-1.5 text-red-600">
+                      <AlertTriangle className="w-4 h-4" />
+                      Penalties
+                    </h4>
+                    <div className="grid grid-cols-2 gap-2">
+                      {PENALTY_STAT_CONFIG.map(stat => {
+                        const Icon = stat.icon;
+                        const val = (selectedUser.penalties as any)[stat.key] || 0;
+                        if (val === 0) return null;
+                        return (
+                          <div key={stat.key} className="flex items-center gap-2 p-2 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/30" data-testid={`penalty-${stat.key}`}>
+                            <Icon className={`w-4 h-4 ${stat.color}`} />
+                            <div>
+                              <div className="text-sm font-bold text-red-700 dark:text-red-400">{val}</div>
+                              <div className="text-[10px] text-red-500/70">{stat.label}</div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             </>
           )}
@@ -444,15 +530,37 @@ export default function LeaderboardPage() {
               How Points Work
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {Object.entries(data.pointValues).map(([key, pts]) => (
-                <div key={key} className="text-center p-2 rounded-lg bg-muted/50">
-                  <div className="text-lg font-bold text-primary">+{pts}</div>
-                  <div className="text-[10px] text-muted-foreground capitalize">{key.replace(/_/g, " ")}</div>
-                </div>
-              ))}
+          <CardContent className="space-y-3">
+            <div>
+              <div className="text-xs font-medium text-green-600 mb-1.5 flex items-center gap-1">
+                <TrendingUp className="w-3 h-3" />
+                Earn Points
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {Object.entries(data.pointValues).map(([key, pts]) => (
+                  <div key={key} className="text-center p-2 rounded-lg bg-muted/50">
+                    <div className="text-lg font-bold text-green-600">+{pts}</div>
+                    <div className="text-[10px] text-muted-foreground capitalize">{key.replace(/_/g, " ")}</div>
+                  </div>
+                ))}
+              </div>
             </div>
+            {data.penaltyValues && (
+              <div>
+                <div className="text-xs font-medium text-red-500 mb-1.5 flex items-center gap-1">
+                  <TrendingDown className="w-3 h-3" />
+                  Lose Points
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {Object.entries(data.penaltyValues).map(([key, pts]) => (
+                    <div key={key} className="text-center p-2 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/30">
+                      <div className="text-lg font-bold text-red-500">{pts}</div>
+                      <div className="text-[10px] text-red-400/80 capitalize">{key.replace(/_/g, " ")}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
