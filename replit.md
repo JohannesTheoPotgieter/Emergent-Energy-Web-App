@@ -51,7 +51,7 @@ Preferred communication style: Simple, everyday language.
 
 ### Approvals Screen
 -   **Module**: Consolidated view of user-specific pending approvals from engineering gates, quality reviews, and deliverables.
--   **Filtering**: Approvals are filtered by assigned user or role. Admin roles can view all approvals.
+-   **Filtering**: Each user sees only their applicable approvals — engineering gates by `approverUserId` or role match, quality reviews assigned to the project's PM (via `pmUserId` on `project_info`) with Quality Managers also seeing all, deliverables by `reviewerUserId` or `ownerUserId`. Admins (COO/CEO) see everything with a "Show All / Show Mine" toggle.
 -   **Actions**: Approve/reject functionality directly updates underlying records.
 
 ### Plan Change Tracker Confirmation
