@@ -68,6 +68,13 @@ Preferred communication style: Simple, everyday language.
 -   **Frontend**: `/admin/approvals` page with filter cards, approve/reject buttons, and confirmation dialog with reason field.
 -   **Actions**: Approve/reject directly updates the underlying record via existing endpoints (eng-stage, quality, deliverable APIs).
 
+### Plan Change Tracker Confirmation
+-   **Module**: When plan task data is edited (via overrides or structure operations), notifications are sent to Program Manager, Program Finance Manager, and Construction Manager asking them to confirm the change has been captured in the Excel tracker.
+-   **Notifications Table**: Extended with `requires_confirmation`, `confirmed_by_user_id`, `confirmed_at`, and `change_details` columns.
+-   **Confirmation Flow**: Any recipient can click "Confirm saved in Excel tracker" to acknowledge. When one confirms, all related notifications for the same change are auto-confirmed. Only the notification recipient can confirm their own notification.
+-   **Frontend**: NotificationBell shows confirmation notifications with amber styling, expandable change details (project, who changed, fields, timestamp), and a confirm button.
+-   **Triggers**: `POST /api/project-plan/overrides` (field edits) and `POST /api/project-plan/structure` (create/group/ungroup/convert/delete milestone operations).
+
 ### Deploy Cache & Session Clearing
 -   **Build Versioning**: Unique `buildId` enables frontend to detect new deployments and clear client-side cache/session data.
 -   **Server Session Clearing**: In production, all PostgreSQL sessions are cleared on each deploy.

@@ -2001,6 +2001,10 @@ export const notifications = pgTable("notifications", {
   linkedPlanItemId: integer("linked_plan_item_id"),
   isRead: boolean("is_read").notNull().default(false),
   readAt: timestamp("read_at"),
+  requiresConfirmation: boolean("requires_confirmation").notNull().default(false),
+  confirmedByUserId: integer("confirmed_by_user_id"),
+  confirmedAt: timestamp("confirmed_at"),
+  changeDetails: text("change_details"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 export const insertNotificationSchema = createInsertSchema(notifications).omit({ id: true, createdAt: true });

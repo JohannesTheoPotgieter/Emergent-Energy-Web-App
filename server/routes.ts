@@ -6,9 +6,9 @@ import fs from "fs";
 import path from "path";
 import { storage } from "./storage";
 import { parseTrackerFile, applyFontColors } from "./excelParser";
-import { insertBudgetSchema, programExpense, programInflows, projectInfo, projectPlan, normalizedCostLines, normalizedRevenueLines, normalizedPlanTasks, normalizedExecutionPhases, smartImportRuns, cosStatusOverrides, revenueTrackingOverrides, users } from "@shared/schema";
+import { insertBudgetSchema, programExpense, programInflows, projectInfo, projectPlan, normalizedCostLines, normalizedRevenueLines, normalizedPlanTasks, normalizedExecutionPhases, smartImportRuns, cosStatusOverrides, revenueTrackingOverrides, users, notifications, notificationThrottle } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, or, sql, isNull, asc, desc } from "drizzle-orm";
+import { eq, and, or, sql, isNull, asc, desc, inArray } from "drizzle-orm";
 import { runSmartImportPreview } from "./lib/import/index";
 import { z } from "zod";
 import { format } from "date-fns";
@@ -576,6 +576,44 @@ function requireAdminOrEpm(req: Request, res: Response, next: NextFunction) {
   const role = req.user?.role;
   if (role === "admin" || role === "COO_ADMIN" || role === "CEO_ADMIN" || role === "eng_program_manager" || role === "ENGINEERING_MANAGER") return next();
   res.status(403).json({ error: "forbidden", message: "Admin or Engineering Program Manager access required", code: "ROLE_REQUIRED" });
+}
+
+const PLAN_CHANGE_NOTIFY_ROLES = ['PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER'];
+
+async function sendPlanChangeNotifications(
+  projectName: string,
+  changedByUserId: number | undefined,
+  changeDescription: string,
+  changeDetails: { field?: string; oldValue?: string; newValue?: string; tasks?: string[]; operation?: string }[]
+) {
+  try {
+    const recipients = await db.select({ id: users.id, name: users.name, role: users.role })
+      .from(users)
+      .where(inArray(users.role, PLAN_CHANGE_NOTIFY_ROLES));
+
+    if (recipients.length === 0) return;
+
+    const [changedByUser] = changedByUserId
+      ? await db.select({ name: users.name }).from(users).where(eq(users.id, changedByUserId))
+      : [{ name: "System" }];
+
+    const detailsJson = JSON.stringify({ projectName, changedBy: changedByUser?.name || "Unknown", changes: changeDetails, timestamp: new Date().toISOString() });
+
+    for (const recipient of recipients) {
+      if (recipient.id === changedByUserId) continue;
+      await db.insert(notifications).values({
+        recipientUserId: recipient.id,
+        eventType: "plan.change_confirmation",
+        title: `Plan updated: ${projectName}`,
+        body: `${changedByUser?.name || "Someone"} made changes to the project plan. ${changeDescription} Please confirm you have captured this in the Excel tracker.`,
+        projectName,
+        requiresConfirmation: true,
+        changeDetails: detailsJson,
+      });
+    }
+  } catch (err: any) {
+    console.warn("[plan-notify] Failed to send plan change notifications:", err.message);
+  }
 }
 
 export async function registerRoutes(
@@ -4695,6 +4733,22 @@ export async function registerRoutes(
         console.warn("[audit] Project plan override audit failed:", auditErr.message);
       }
 
+      const projectNameForNotif = overrides[0]?.projectName;
+      if (projectNameForNotif) {
+        const changeDetails = overrides.map((o: any) => ({
+          field: o.fieldName,
+          newValue: o.overrideValue,
+          tasks: [`Row ${o.rowNumber}`],
+        }));
+        const fieldNames = [...new Set(overrides.map((o: any) => o.fieldName))].join(", ");
+        sendPlanChangeNotifications(
+          projectNameForNotif,
+          req.user?.id,
+          `Fields updated: ${fieldNames}.`,
+          changeDetails
+        );
+      }
+
       res.json({ message: "Project plan overrides saved", count: saved.length, overrides: saved });
     } catch (error) {
       res.status(500).json({ error: "Failed to save project plan overrides", message: error instanceof Error ? error.message : "Failed to save project plan overrides" });
@@ -4722,6 +4776,10 @@ export async function registerRoutes(
       }
       const userId = (req as any).user?.id || null;
 
+      const notifyStructureChange = (desc: string) => {
+        sendPlanChangeNotifications(projectName, userId, desc, [{ operation, tasks: data?.taskRowNumbers || [] }]);
+      };
+
       if (operation === "createMilestone") {
         const { title } = data || {};
         if (!title) return res.status(400).json({ error: "title required" });
@@ -4739,6 +4797,7 @@ export async function registerRoutes(
           { projectName, rowNumber: newRowNumber, fieldName: "sortOrder", overrideValue: String(newRowNumber), createdBy: userId },
         ];
         await storage.upsertManyProjectPlanOverrides(milestoneOverrides);
+        notifyStructureChange(`New milestone created: "${title}".`);
         return res.json({ message: "Milestone created", rowNumber: newRowNumber });
       }
 
@@ -4759,6 +4818,7 @@ export async function registerRoutes(
           });
         }
         await storage.upsertManyProjectPlanOverrides(overridesToSave);
+        notifyStructureChange(`${taskRowNumbers.length} task(s) grouped under a milestone.`);
         return res.json({ message: `${taskRowNumbers.length} tasks grouped under milestone` });
       }
 
@@ -4779,6 +4839,7 @@ export async function registerRoutes(
           });
         }
         await storage.upsertManyProjectPlanOverrides(overridesToSave);
+        notifyStructureChange(`${taskRowNumbers.length} task(s) ungrouped from milestone.`);
         return res.json({ message: `${taskRowNumbers.length} tasks ungrouped` });
       }
 
@@ -4819,6 +4880,7 @@ export async function registerRoutes(
           });
         }
         await storage.upsertManyProjectPlanOverrides(overridesToSave);
+        notifyStructureChange(`Task converted to milestone with ${subtaskRowNumbers.length} subtask(s).`);
         return res.json({ message: `Task converted to milestone with ${subtaskRowNumbers.length} subtasks` });
       }
 
@@ -4847,6 +4909,7 @@ export async function registerRoutes(
           fieldName: "isDeleted", overrideValue: "true", createdBy: userId,
         });
         await storage.upsertManyProjectPlanOverrides(ungroupOverrides);
+        notifyStructureChange(`Milestone deleted, ${childOverrides.length} task(s) ungrouped.`);
         return res.json({ message: "Milestone deleted and children ungrouped" });
       }
 
