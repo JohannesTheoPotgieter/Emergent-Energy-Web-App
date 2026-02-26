@@ -399,35 +399,39 @@ router.get("/api/home/summary", async (req, res) => {
       phaseDistribution[phase].kw += safeNum(p.sizeKwp);
     }
 
-    const projectDeltas = new Map<string, { actual: number; expected: number; count: number }>();
+    const projectDeltas = new Map<string, { weightedActual: number; weightedExpected: number; totalWeight: number; hasSummary: boolean }>();
     for (const plan of allPlans) {
       const taskNo = (plan.taskNo || '').toString().toLowerCase().trim();
       const isSummary = taskNo === 'no.' || taskNo === 'no' || taskNo === '#';
       if (isSummary && plan.actualPctComplete !== null && plan.expectedPctComplete !== null) {
         projectDeltas.set(plan.projectName, { 
-          actual: plan.actualPctComplete, 
-          expected: plan.expectedPctComplete, 
-          count: 1 
+          weightedActual: plan.actualPctComplete, 
+          weightedExpected: plan.expectedPctComplete, 
+          totalWeight: 1,
+          hasSummary: true 
         });
       }
     }
     for (const plan of allPlans) {
       if (!projectDeltas.has(plan.projectName) && plan.actualPctComplete !== null && plan.expectedPctComplete !== null) {
         if (!projectDeltas.has(plan.projectName)) {
-          projectDeltas.set(plan.projectName, { actual: 0, expected: 0, count: 0 });
+          projectDeltas.set(plan.projectName, { weightedActual: 0, weightedExpected: 0, totalWeight: 0, hasSummary: false });
         }
         const pd = projectDeltas.get(plan.projectName)!;
-        pd.actual += plan.actualPctComplete;
-        pd.expected += plan.expectedPctComplete;
-        pd.count++;
+        if (!pd.hasSummary) {
+          const dur = plan.durationDays && plan.durationDays > 0 ? plan.durationDays : 1;
+          pd.weightedActual += plan.actualPctComplete * dur;
+          pd.weightedExpected += plan.expectedPctComplete * dur;
+          pd.totalWeight += dur;
+        }
       }
     }
 
     const projectDeltaValues: { projectName: string; delta: number; avgActual: number; avgExpected: number }[] = [];
     for (const [projectName, pd] of Array.from(projectDeltas.entries())) {
-      if (pd.count > 0) {
-        const avgActual = pd.actual / pd.count;
-        const avgExpected = pd.expected / pd.count;
+      if (pd.totalWeight > 0) {
+        const avgActual = pd.hasSummary ? pd.weightedActual : pd.weightedActual / pd.totalWeight;
+        const avgExpected = pd.hasSummary ? pd.weightedExpected : pd.weightedExpected / pd.totalWeight;
         const delta = (avgActual - avgExpected) * 100;
         projectDeltaValues.push({ projectName, delta, avgActual: avgActual * 100, avgExpected: avgExpected * 100 });
       }
@@ -748,37 +752,46 @@ router.get("/api/projects-summary", async (req, res) => {
         expectedPctComplete = summaryRow.expectedPctComplete ?? null;
       }
       if (projectPctComplete === null) {
-        const validActualPcts = projectPlans.filter(p => p.actualPctComplete !== null);
-        projectPctComplete = validActualPcts.length > 0
-          ? validActualPcts.reduce((sum, p) => sum + (p.actualPctComplete || 0), 0) / validActualPcts.length
-          : null;
+        const validTasks = projectPlans.filter(p => p.actualPctComplete !== null);
+        let totalWeight = 0;
+        let weightedSum = 0;
+        for (const p of validTasks) {
+          const dur = p.durationDays && p.durationDays > 0 ? p.durationDays : 1;
+          weightedSum += (p.actualPctComplete || 0) * dur;
+          totalWeight += dur;
+        }
+        projectPctComplete = totalWeight > 0 ? weightedSum / totalWeight : null;
       }
       if (expectedPctComplete === null) {
         const todayDate = today;
-        const tasksWithExpected: number[] = [];
+        let totalExpWeight = 0;
+        let weightedExpSum = 0;
         for (const task of projectPlans) {
+          const dur = task.durationDays && task.durationDays > 0 ? task.durationDays : 1;
           if (task.expectedPctComplete !== null && task.expectedPctComplete !== undefined) {
-            tasksWithExpected.push(task.expectedPctComplete);
+            weightedExpSum += task.expectedPctComplete * dur;
+            totalExpWeight += dur;
             continue;
           }
           const tStart = task.actualStart?.substring(0, 10);
           const tEnd = task.actualEnd?.substring(0, 10);
           if (!tStart || !tEnd || !/^\d{4}-\d{2}-\d{2}/.test(tStart) || !/^\d{4}-\d{2}-\d{2}/.test(tEnd)) continue;
+          let exp = 0;
           if (todayDate >= tEnd) {
-            tasksWithExpected.push(1.0);
+            exp = 1.0;
           } else if (todayDate <= tStart) {
-            tasksWithExpected.push(0.0);
+            exp = 0.0;
           } else {
             const totalWd = saWorkingDays(tStart, tEnd);
             const elapsedWd = saWorkingDays(tStart, todayDate);
             if (totalWd && totalWd > 0 && elapsedWd !== null) {
-              tasksWithExpected.push(Math.min(elapsedWd / totalWd, 1.0));
+              exp = Math.min(elapsedWd / totalWd, 1.0);
             }
           }
+          weightedExpSum += exp * dur;
+          totalExpWeight += dur;
         }
-        expectedPctComplete = tasksWithExpected.length > 0
-          ? tasksWithExpected.reduce((a, b) => a + b, 0) / tasksWithExpected.length
-          : null;
+        expectedPctComplete = totalExpWeight > 0 ? weightedExpSum / totalExpWeight : null;
       }
       const deltaVsExpected = (projectPctComplete !== null && expectedPctComplete !== null)
         ? projectPctComplete - expectedPctComplete : null;
@@ -1406,8 +1419,15 @@ router.get("/api/dashboard/high-priority", requireAuth, async (req, res) => {
     for (const [projectName, plans] of Array.from(plansByProject.entries())) {
       const completions = plans.filter((p: any) => p.percentComplete != null && p.expectedProgress != null);
       if (completions.length > 0) {
-        const avgActual = completions.reduce((sum: number, p: any) => sum + (parseFloat(p.percentComplete) || 0), 0) / completions.length;
-        const avgExpected = completions.reduce((sum: number, p: any) => sum + (parseFloat(p.expectedProgress) || 0), 0) / completions.length;
+        let totalW = 0, wActual = 0, wExpected = 0;
+        for (const p of completions as any[]) {
+          const dur = p.durationDays && p.durationDays > 0 ? p.durationDays : 1;
+          wActual += (parseFloat(p.percentComplete) || 0) * dur;
+          wExpected += (parseFloat(p.expectedProgress) || 0) * dur;
+          totalW += dur;
+        }
+        const avgActual = totalW > 0 ? wActual / totalW : 0;
+        const avgExpected = totalW > 0 ? wExpected / totalW : 0;
         const delta = avgActual - avgExpected;
         if (delta < -0.05) {
           const info = projectInfoMap.get(projectName);
