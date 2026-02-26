@@ -676,30 +676,41 @@ export default function EngineeringDashboard() {
           </div>
           <CardContent className="p-4">
             <div className="space-y-2">
-              {Object.entries(data.statusPipeline)
-                .sort(([, a], [, b]) => b - a)
-                .map(([status, count]) => {
-                  const total = summary.totalTasks || 1;
-                  const pct = Math.round((count / total) * 100);
-                  return (
-                    <div key={status} className="flex items-center gap-2 text-xs">
-                      <span className="w-[90px] sm:w-[130px] truncate text-muted-foreground">{status}</span>
-                      <div className="flex-1 h-3 bg-muted rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all ${
-                            status === "COMPLETE" ? "bg-emerald-400" :
-                            status === "HOLD" ? "bg-red-400" :
-                            status === "IN PROGRESS" ? "bg-blue-400" :
-                            status === "NEEDS APPROVAL" ? "bg-amber-400" :
-                            "bg-slate-300"
-                          }`}
-                          style={{ width: `${pct}%` }}
-                        />
+              {(() => {
+                const statusOrder = ["TO DO", "IN PROGRESS", "NEEDS APPROVAL", "QC APPROVED", "PROVIDE FEEDBACK", "PROJECTS ASSISTANCE", "HOLD", "COMPLETE"];
+                const statusColors: Record<string, string> = {
+                  "COMPLETE": "bg-emerald-400",
+                  "HOLD": "bg-red-400",
+                  "IN PROGRESS": "bg-blue-400",
+                  "NEEDS APPROVAL": "bg-amber-400",
+                  "QC APPROVED": "bg-teal-400",
+                  "PROVIDE FEEDBACK": "bg-orange-400",
+                  "TO DO": "bg-slate-400",
+                  "PROJECTS ASSISTANCE": "bg-purple-400",
+                };
+                return Object.entries(data.statusPipeline)
+                  .sort(([a], [b]) => {
+                    const ai = statusOrder.indexOf(a);
+                    const bi = statusOrder.indexOf(b);
+                    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+                  })
+                  .map(([status, count]) => {
+                    const total = summary.totalTasks || 1;
+                    const pct = Math.round((count / total) * 100);
+                    return (
+                      <div key={status} className="flex items-center gap-2 text-xs">
+                        <span className="w-[90px] sm:w-[130px] truncate text-muted-foreground">{status}</span>
+                        <div className="flex-1 h-3 bg-muted rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all ${statusColors[status] || "bg-slate-300"}`}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                        <span className="font-mono w-8 text-right font-semibold">{count}</span>
                       </div>
-                      <span className="font-mono w-8 text-right font-semibold">{count}</span>
-                    </div>
-                  );
-                })}
+                    );
+                  });
+              })()}
             </div>
           </CardContent>
         </Card>

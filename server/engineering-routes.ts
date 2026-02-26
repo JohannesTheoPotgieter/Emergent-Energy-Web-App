@@ -1210,9 +1210,27 @@ export function registerEngineeringRoutes(app: Express) {
         return (ragOrder[a.rag] - ragOrder[b.rag]) || (b.overdue - a.overdue);
       });
 
+      const STATUS_NORMALIZE: Record<string, string> = {
+        "in progress": "IN PROGRESS",
+        "to do": "TO DO",
+        "todo": "TO DO",
+        "not started": "TO DO",
+        "complete": "COMPLETE",
+        "completed": "COMPLETE",
+        "done": "COMPLETE",
+        "hold": "HOLD",
+        "on hold": "HOLD",
+        "needs approval": "NEEDS APPROVAL",
+        "provide feedback": "PROVIDE FEEDBACK",
+        "qc approved": "QC APPROVED",
+        "projects assistance": "PROJECTS ASSISTANCE",
+      };
+      const normalizeStatus = (s: string) => STATUS_NORMALIZE[s.toLowerCase().trim()] || s.toUpperCase().trim();
+
       const statusPipeline: Record<string, number> = {};
       for (const t of allTasks) {
-        statusPipeline[t.status] = (statusPipeline[t.status] || 0) + 1;
+        const normalized = normalizeStatus(t.status);
+        statusPipeline[normalized] = (statusPipeline[normalized] || 0) + 1;
       }
 
       const mapTask = (t: typeof allTasks[0]) => ({
