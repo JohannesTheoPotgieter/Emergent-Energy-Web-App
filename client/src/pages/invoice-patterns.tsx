@@ -150,6 +150,7 @@ export default function InvoicePatternsPage() {
       setLastRunResult(data);
       queryClient.invalidateQueries({ queryKey: ["/api/invoice-patterns"] });
       queryClient.invalidateQueries({ queryKey: ["/api/procurement-analysis/pattern-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/subcontractor-dashboard/summary"] });
       toast({
         title: "Pattern Analysis Complete",
         description: data.message,
