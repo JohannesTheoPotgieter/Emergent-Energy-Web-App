@@ -390,10 +390,10 @@ function OpexBudgetModal({ open, onClose }: { open: boolean; onClose: () => void
       queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026"] });
       invalidateDashboardQueries(queryClient);
       setEditedValues({});
-      toast({ title: "OPEX Budget Saved", description: "Budget values updated successfully." });
+      toast({ title: "OPEX Costed Saved", description: "Costed values updated successfully." });
     },
     onError: () => {
-      toast({ title: "Save Failed", description: "Failed to save OPEX budget.", variant: "destructive" });
+      toast({ title: "Save Failed", description: "Failed to save OPEX costed amounts.", variant: "destructive" });
     },
   });
 
@@ -413,7 +413,7 @@ function OpexBudgetModal({ open, onClose }: { open: boolean; onClose: () => void
       .map(([monthKey, val]) => ({ monthKey, amount: parseFloat(val) || 0 }));
 
     if (entries.length === 0) {
-      toast({ title: "No Changes", description: "No OPEX budget values changed." });
+      toast({ title: "No Changes", description: "No OPEX costed values changed." });
       return;
     }
     saveMutation.mutate(entries);
@@ -430,9 +430,9 @@ function OpexBudgetModal({ open, onClose }: { open: boolean; onClose: () => void
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="max-w-lg" data-testid="dialog-opex-budget">
         <DialogHeader>
-          <DialogTitle className="text-lg font-semibold">OPEX Monthly Budget — FY26</DialogTitle>
+          <DialogTitle className="text-lg font-semibold">OPEX Monthly Costed — FY26</DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground mt-1">
-            Set monthly operating expense budgets for Sep 2025 – Aug 2026
+            Set monthly operating expense costed amounts for Sep 2025 – Aug 2026
           </DialogDescription>
         </DialogHeader>
         {isLoading ? (
@@ -485,7 +485,7 @@ function OpexBudgetModal({ open, onClose }: { open: boolean; onClose: () => void
                 Saving...
               </>
             ) : (
-              "Save Budget"
+              "Save Costed"
             )}
           </Button>
         </DialogFooter>
@@ -618,7 +618,7 @@ export default function CashflowPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026"] });
       invalidateDashboardQueries(queryClient);
-      toast({ title: "OPEX Override Cleared", description: "Using monthly budget split value" });
+      toast({ title: "OPEX Override Cleared", description: "Using monthly costed split value" });
     },
     onError: () => {
       toast({ title: "Clear Failed", variant: "destructive" });
@@ -792,7 +792,7 @@ export default function CashflowPage() {
                   data-testid="button-opex-budget"
                 >
                   <DollarSign className="h-3.5 w-3.5" />
-                  OPEX Budget
+                  OPEX Costed
                 </Button>
               )}
             </div>
@@ -1130,7 +1130,7 @@ export default function CashflowPage() {
                                         <>
                                           <span
                                             className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-50 text-orange-700"
-                                            title={`Manual override. Budget split: ${formatRand(week.computedOpex)}`}
+                                            title={`Manual override. Costed split: ${formatRand(week.computedOpex)}`}
                                           >
                                             <ArrowRight className="h-3 w-3" />
                                           </span>
@@ -1141,7 +1141,7 @@ export default function CashflowPage() {
                                                 e.stopPropagation();
                                                 clearOpexMutation.mutate(week.weekStart);
                                               }}
-                                              title="Clear OPEX override — use monthly budget split"
+                                              title="Clear OPEX override — use monthly costed split"
                                               data-testid={`button-clear-opex-${week.weekStart}`}
                                             >
                                               <X className="h-3 w-3" />

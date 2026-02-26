@@ -45,8 +45,8 @@ export const WALKTHROUGHS: Walkthrough[] = [
       {
         stepNumber: 4,
         title: "Map Columns to System Fields",
-        description: "The wizard maps your Excel columns to the system's standard fields. Budget columns (left side of Expenditure Breakdown) and Actual columns (right side) are mapped separately. Review and correct any mappings that look wrong.",
-        tip: "The Expenditure Breakdown sheet has two sections: budget data on the left (columns 2-8) and actual/realised data on the right (columns 13-26).",
+        description: "The wizard maps your Excel columns to the system's standard fields. Costed columns (left side of Expenditure Breakdown) and Actual columns (right side) are mapped separately. Review and correct any mappings that look wrong.",
+        tip: "The Expenditure Breakdown sheet has two sections: costed data on the left (columns 2-8) and actual/realised data on the right (columns 13-26).",
       },
       {
         stepNumber: 5,
@@ -84,7 +84,7 @@ export const WALKTHROUGHS: Walkthrough[] = [
       {
         stepNumber: 3,
         title: "Read the KPI Cards",
-        description: "The top row shows 6 summary cards: YTD COS, YTD Realised (Paid), YTD Unrealised, YTD Budget, YTD Variance, and YTD Variance %. Green variance means under budget, red means over.",
+        description: "The top row shows 6 summary cards: YTD COS, YTD Realised (Paid), YTD Unrealised, YTD Costed, YTD Variance, and YTD Variance %. Green variance means under costed, red means over.",
       },
       {
         stepNumber: 4,
@@ -171,8 +171,8 @@ export const WALKTHROUGHS: Walkthrough[] = [
       },
       {
         stepNumber: 4,
-        title: "Step 2 — Budget Status",
-        description: "Review budget variances and flag any financial concerns. The system shows current spend vs budget data from the imported tracker.",
+        title: "Step 2 — Costed Status",
+        description: "Review costed variances and flag any financial concerns. The system shows current actual spend vs costed data from the imported tracker.",
       },
       {
         stepNumber: 5,
@@ -487,7 +487,7 @@ export const WALKTHROUGHS: Walkthrough[] = [
       {
         stepNumber: 2,
         title: "View Your Assigned Projects",
-        description: "The dashboard shows only projects assigned to you as PM. Each project card displays key metrics: phase, schedule status, budget health, and upcoming deadlines.",
+        description: "The dashboard shows only projects assigned to you as PM. Each project card displays key metrics: phase, schedule status, costed health, and upcoming deadlines.",
       },
       {
         stepNumber: 3,
@@ -667,7 +667,7 @@ export const WALKTHROUGHS: Walkthrough[] = [
       {
         stepNumber: 2,
         title: "Understand the Layout",
-        description: "The expenditure breakdown has two sections mirroring the Excel: Budget columns on the left (quantity, rate, total) and Actual columns on the right (description, PO, invoice, payment info, COS).",
+        description: "The expenditure breakdown has two sections mirroring the Excel: Costed columns on the left (quantity, rate, total) and Actual columns on the right (description, PO, invoice, payment info, COS).",
       },
       {
         stepNumber: 3,
@@ -1231,7 +1231,7 @@ export const WALKTHROUGHS: Walkthrough[] = [
       {
         stepNumber: 3,
         title: "Read Review Summaries",
-        description: "Click on any review to read the full report including schedule status, budget assessment, risks, quality notes, and the PM's summary message.",
+        description: "Click on any review to read the full report including schedule status, costed assessment, risks, quality notes, and the PM's summary message.",
       },
       {
         stepNumber: 4,
@@ -1322,12 +1322,12 @@ export const WALKTHROUGHS: Walkthrough[] = [
       {
         stepNumber: 2,
         title: "Review Portfolio KPIs",
-        description: "The top section shows aggregated KPIs across all projects: total contract value, total COS, budget variance, schedule performance, and project count by phase.",
+        description: "The top section shows aggregated KPIs across all projects: total contract value, total COS, costed variance, schedule performance, and project count by phase.",
       },
       {
         stepNumber: 3,
         title: "Identify At-Risk Projects",
-        description: "The dashboard highlights projects with red RAG status, budget overruns, or schedule delays. These need immediate management attention.",
+        description: "The dashboard highlights projects with red RAG status, cost overruns, or schedule delays. These need immediate management attention.",
       },
       {
         stepNumber: 4,

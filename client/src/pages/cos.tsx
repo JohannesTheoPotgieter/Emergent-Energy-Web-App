@@ -117,13 +117,13 @@ const ROW_DEFS: {
   { key: "totalCOS", label: "COS (Finance)", dataKey: "totalCOS", editable: false, colorClass: "text-foreground font-bold", group: "monthly", expandable: true, projectsKey: "cosProjects" },
   { key: "realisedCOS", label: "Realised COS", dataKey: "realisedCOS", editable: false, colorClass: "text-slate-900 font-bold", group: "monthly", expandable: true, projectsKey: "realisedProjects" },
   { key: "unrealisedCOS", label: "Unrealised COS", dataKey: "unrealisedCOS", editable: false, colorClass: "text-red-600 font-semibold", group: "monthly", expandable: true, projectsKey: "unrealisedProjects" },
-  { key: "budget", label: "Budget", dataKey: "budget", editable: true, colorClass: "text-purple-600", group: "monthly" },
+  { key: "budget", label: "Costed", dataKey: "budget", editable: true, colorClass: "text-purple-600", group: "monthly" },
   { key: "variance", label: "Variance", dataKey: "variance", editable: false, colorClass: "", group: "monthly", colorCoded: true },
   { key: "variancePct", label: "Variance %", dataKey: "variancePct", editable: false, colorClass: "", group: "monthly", colorCoded: true },
   { key: "ytdCOS", label: "YTD COS", dataKey: "ytdCOS", editable: false, colorClass: "text-foreground font-bold", group: "ytd" },
   { key: "ytdRealised", label: "YTD Realised", dataKey: "ytdRealised", editable: false, colorClass: "text-slate-900 font-bold", group: "ytd" },
   { key: "ytdUnrealised", label: "YTD Unrealised", dataKey: "ytdUnrealised", editable: false, colorClass: "text-red-600", group: "ytd" },
-  { key: "ytdBudget", label: "YTD Budget", dataKey: "ytdBudget", editable: false, colorClass: "text-purple-600", group: "ytd" },
+  { key: "ytdBudget", label: "YTD Costed", dataKey: "ytdBudget", editable: false, colorClass: "text-purple-600", group: "ytd" },
   { key: "ytdVariance", label: "YTD Variance", dataKey: "ytdVariance", editable: false, colorClass: "", group: "ytd", colorCoded: true },
   { key: "ytdVariancePct", label: "YTD Variance %", dataKey: "ytdVariancePct", editable: false, colorClass: "", group: "ytd", colorCoded: true },
 ];
@@ -498,7 +498,7 @@ export default function CosTracker() {
         month: m.monthLabel,
         "Realised": m.realisedCOS,
         "Unrealised": m.unrealisedCOS,
-        Budget: m.budget,
+        Costed: m.budget,
         "YTD Variance": m.ytdVariance,
       })),
     [months],
@@ -508,7 +508,7 @@ export default function CosTracker() {
     () =>
       months.map((m) => ({
         month: m.monthLabel,
-        "Budget COS": m.budget,
+        "Costed COS": m.budget,
         "Planned COS": m.totalCOS,
         "Realised COS": m.realisedCOS,
         "Outstanding COS": m.unrealisedCOS,
@@ -520,7 +520,7 @@ export default function CosTracker() {
     () =>
       months.map((m) => ({
         month: m.monthLabel,
-        "YTD Budget": m.ytdBudget,
+        "YTD Costed": m.ytdBudget,
         "YTD Realised": m.ytdRealised,
         "YTD Rev Realised": m.ytdRevRealised,
       })),
@@ -549,7 +549,7 @@ export default function CosTracker() {
     { id: "ytd-total-cos", label: "YTD COS (Finance)", value: formatRand(lastMonth?.ytdCOS ?? 0), icon: DollarSign, iconBg: "bg-slate-100", iconColor: "text-slate-600", valueColor: "text-slate-900", borderColor: "" },
     { id: "ytd-realised", label: "YTD Realised (Paid)", value: formatRand(lastMonth?.ytdRealised ?? 0), icon: TrendingDown, iconBg: "bg-slate-100", iconColor: "text-slate-800", valueColor: "text-slate-900 font-black", borderColor: "border-slate-300" },
     { id: "ytd-unrealised", label: "YTD Unrealised (Not Paid)", value: formatRand(lastMonth?.ytdUnrealised ?? 0), icon: Activity, iconBg: "bg-red-100", iconColor: "text-red-600", valueColor: "text-red-600", borderColor: "border-red-200" },
-    { id: "ytd-budget", label: "YTD Budget", value: formatRand(lastMonth?.ytdBudget ?? 0), icon: Target, iconBg: "bg-purple-100", iconColor: "text-purple-600", valueColor: "text-purple-700", borderColor: "" },
+    { id: "ytd-budget", label: "YTD Costed", value: formatRand(lastMonth?.ytdBudget ?? 0), icon: Target, iconBg: "bg-purple-100", iconColor: "text-purple-600", valueColor: "text-purple-700", borderColor: "" },
     {
       id: "ytd-variance", label: "YTD Variance", value: formatRand(lastMonth?.ytdVariance ?? 0),
       icon: TrendingDown,
@@ -577,7 +577,7 @@ export default function CosTracker() {
               Cost of Sales Tracker FY26
             </h2>
             <p className="text-slate-500 mt-1 sm:mt-1.5 text-xs sm:text-sm" data-testid="text-page-subtitle">
-              Monthly COS tracking with planned vs budget analysis. Click any month cell to see contributing line items.
+              Monthly COS tracking with planned vs costed analysis. Click any month cell to see contributing line items.
             </p>
           </div>
         </div>
@@ -637,7 +637,7 @@ export default function CosTracker() {
                   <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '12px' }} />
                   <Bar dataKey="Realised" stackId="cos" fill="#1e293b" radius={[0, 0, 0, 0]} />
                   <Bar dataKey="Unrealised" stackId="cos" fill="#dc2626" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="Budget" fill="#a855f7" opacity={0.3} radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Costed" fill="#a855f7" opacity={0.3} radius={[4, 4, 0, 0]} />
                   <Line
                     type="monotone"
                     dataKey="YTD Variance"
@@ -668,7 +668,7 @@ export default function CosTracker() {
                     contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', fontSize: '12px' }}
                   />
                   <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '12px' }} />
-                  <Bar dataKey="Budget COS" fill="#a6a6a6" radius={[2, 2, 0, 0]} />
+                  <Bar dataKey="Costed COS" fill="#a6a6a6" radius={[2, 2, 0, 0]} />
                   <Bar dataKey="Planned COS" fill="#4472C4" radius={[2, 2, 0, 0]} />
                   <Bar dataKey="Realised COS" fill="#ED7D31" radius={[2, 2, 0, 0]} />
                   <Bar dataKey="Outstanding COS" fill="#FFC000" radius={[2, 2, 0, 0]} />
@@ -694,8 +694,8 @@ export default function CosTracker() {
                     contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', fontSize: '12px' }}
                   />
                   <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '12px' }} />
-                  <Line type="monotone" dataKey="YTD Budget" stroke="#4472C4" strokeWidth={2.5} dot={{ r: 4, fill: '#4472C4' }}>
-                    <LabelList dataKey="YTD Budget" position="top" fontSize={10} fill="#4472C4" formatter={(v: number) => formatRand(v)} />
+                  <Line type="monotone" dataKey="YTD Costed" stroke="#4472C4" strokeWidth={2.5} dot={{ r: 4, fill: '#4472C4' }}>
+                    <LabelList dataKey="YTD Costed" position="top" fontSize={10} fill="#4472C4" formatter={(v: number) => formatRand(v)} />
                   </Line>
                   <Line type="monotone" dataKey="YTD Realised" stroke="#ED7D31" strokeWidth={2.5} dot={{ r: 4, fill: '#ED7D31' }}>
                     <LabelList dataKey="YTD Realised" position="bottom" fontSize={10} fill="#ED7D31" formatter={(v: number) => formatRand(v)} />

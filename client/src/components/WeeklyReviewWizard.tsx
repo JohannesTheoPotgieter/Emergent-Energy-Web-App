@@ -15,7 +15,7 @@ import { format, startOfWeek, addDays } from "date-fns";
 
 const STEPS = [
   { key: "schedule", label: "Schedule", icon: Calendar, description: "Review schedule progress and timeline risks" },
-  { key: "budget", label: "Budget", icon: DollarSign, description: "Check budget health and cost variances" },
+  { key: "budget", label: "Costed", icon: DollarSign, description: "Check costed health and cost variances" },
   { key: "risks", label: "Risks", icon: AlertTriangle, description: "Identify and assess current risks" },
   { key: "quality", label: "Quality", icon: ShieldCheck, description: "Review quality gates and compliance" },
   { key: "actions", label: "Actions", icon: ListTodo, description: "Define action items for next week" },
@@ -312,15 +312,15 @@ export function WeeklyReviewWizard({ projectName, snapshotMetrics }: WeeklyRevie
           {currentStep === 1 && (
             <>
               <div className="space-y-1.5">
-                <label className="text-xs font-medium">Is the project within budget?</label>
+                <label className="text-xs font-medium">Is the project within costed amounts?</label>
                 <Select value={budget.withinBudget} onValueChange={(v) => setBudget({ ...budget, withinBudget: v })}>
                   <SelectTrigger className="h-8 text-xs" data-testid="select-budget-track">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="yes">Within Budget</SelectItem>
+                    <SelectItem value="yes">Within Costed</SelectItem>
                     <SelectItem value="at_risk">At Risk</SelectItem>
-                    <SelectItem value="over_budget">Over Budget</SelectItem>
+                    <SelectItem value="over_budget">Over Costed</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -341,7 +341,7 @@ export function WeeklyReviewWizard({ projectName, snapshotMetrics }: WeeklyRevie
                 </div>
               )}
               <div className="space-y-1.5">
-                <label className="text-xs font-medium">Budget notes</label>
+                <label className="text-xs font-medium">Costed notes</label>
                 <Textarea
                   className="text-xs min-h-[60px]"
                   value={budget.notes}

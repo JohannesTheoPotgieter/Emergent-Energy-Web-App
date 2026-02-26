@@ -67,9 +67,9 @@ export default function BudgetPage() {
     return (
       <div className="max-w-2xl mx-auto space-y-6">
         <div className="flex flex-col gap-2">
-          <h2 className="text-3xl font-heading font-bold text-foreground">Manual Budget Entry</h2>
+          <h2 className="text-3xl font-heading font-bold text-foreground">Manual Costed Entry</h2>
           <p className="text-muted-foreground">
-            Admin-only interface for adjusting monthly budget forecasts.
+            Admin-only interface for adjusting monthly costed forecasts.
           </p>
         </div>
         <Card>
@@ -84,15 +84,15 @@ export default function BudgetPage() {
   return (
     <div className="max-w-2xl mx-auto space-y-6">
        <div className="flex flex-col gap-2">
-        <h2 className="text-3xl font-heading font-bold text-foreground">Manual Budget Entry</h2>
+        <h2 className="text-3xl font-heading font-bold text-foreground">Manual Costed Entry</h2>
         <p className="text-muted-foreground">
-           Admin-only interface for adjusting monthly budget forecasts.
+           Admin-only interface for adjusting monthly costed forecasts.
         </p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Add Budget Record</CardTitle>
+          <CardTitle>Add Costed Record</CardTitle>
           <CardDescription>All fields are required. Records are saved to the database immediately.</CardDescription>
         </CardHeader>
         <CardContent>
@@ -167,7 +167,7 @@ export default function BudgetPage() {
                 name="amount"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Budget Amount (R)</FormLabel>
+                    <FormLabel>Costed Amount (R)</FormLabel>
                     <FormControl>
                       <Input type="number" {...field} />
                     </FormControl>

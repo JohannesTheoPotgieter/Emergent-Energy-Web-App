@@ -101,14 +101,14 @@ export function ProgramProvider({ children }: { children: ReactNode }) {
     onSuccess: () => {
       invalidateDashboardQueries(queryClient);
       toast({
-        title: "Budget Entry Saved",
-        description: "Manual budget entry has been recorded.",
+        title: "Costed Entry Saved",
+        description: "Manual costed entry has been recorded.",
       });
     },
     onError: (error) => {
       toast({
         title: "Save Failed",
-        description: getErrorMessage(error, "Failed to save budget entry"),
+        description: getErrorMessage(error, "Failed to save costed entry"),
         variant: "destructive",
       });
     },

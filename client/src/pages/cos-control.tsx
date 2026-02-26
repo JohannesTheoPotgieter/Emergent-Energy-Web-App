@@ -155,7 +155,7 @@ function TrackerView({ data }: { data: TrackerData | undefined }) {
         </Card>
         <Card>
           <CardContent className="p-3">
-            <p className="text-xs text-muted-foreground">Budget COS {selectedFY !== 'All' ? `(${selectedFY})` : ''}</p>
+            <p className="text-xs text-muted-foreground">Costed COS {selectedFY !== 'All' ? `(${selectedFY})` : ''}</p>
             <p className="text-lg font-bold text-blue-600" data-testid="text-total-budget">{formatRand(displayTotals.budget)}</p>
           </CardContent>
         </Card>
@@ -185,7 +185,7 @@ function TrackerView({ data }: { data: TrackerData | undefined }) {
               <Legend />
               <Bar dataKey="realised" fill="#22c55e" name="Realised COS" />
               <Bar dataKey="outstanding" fill="#f59e0b" name="Outstanding COS" />
-              <Line type="monotone" dataKey="budget" stroke="#3b82f6" strokeWidth={2} name="Budget COS" dot={false} />
+              <Line type="monotone" dataKey="budget" stroke="#3b82f6" strokeWidth={2} name="Costed COS" dot={false} />
             </ComposedChart>
           </ResponsiveContainer>
         </CardContent>
@@ -230,7 +230,7 @@ function TrackerView({ data }: { data: TrackerData | undefined }) {
                   <td className="p-2 text-right font-mono text-xs font-bold text-amber-700">{formatRandExact(displayTotals.outstanding)}</td>
                 </tr>
                 <tr className="border-b hover:bg-muted/30 bg-blue-50/50">
-                  <td className="p-2 font-medium text-blue-700 sticky left-0 bg-blue-50/50">Budget COS</td>
+                  <td className="p-2 font-medium text-blue-700 sticky left-0 bg-blue-50/50">Costed COS</td>
                   {displayData.map(d => (
                     <td key={d.label} className="p-2 text-right font-mono text-xs text-blue-700">{formatRandExact(d.budget)}</td>
                   ))}

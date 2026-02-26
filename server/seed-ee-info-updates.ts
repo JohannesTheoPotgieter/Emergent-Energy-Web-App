@@ -131,7 +131,7 @@ Smart Import is the **sole method** for creating and updating project data in th
 
 1. **Upload** — Drag and drop Excel tracker files. Multiple files can be uploaded at once.
 2. **Section Detection** — The system automatically detects Plan, Revenue, and Expenditure Breakdown sections in each file.
-3. **Column Mapping** — Excel columns are mapped to standard system fields. Budget columns (left side) and Actual columns (right side) are mapped separately.
+3. **Column Mapping** — Excel columns are mapped to standard system fields. Costed columns (left side) and Actual columns (right side) are mapped separately.
 4. **Issue Resolution** — Data validation highlights problems. Users can Accept, Ignore, or fix issues.
 5. **Commit** — Validated data is saved to the database.
 
@@ -146,10 +146,10 @@ The project name comes from the Excel filename:
 
 Re-importing the same file updates existing data rather than creating duplicates. Font colour overrides (for COS/cashflow status) persist across re-imports.
 
-### Budget vs Actual Detection
+### Costed vs Actual Detection
 
 The Expenditure Breakdown sheet has dual sections:
-- **Budget** (left, columns 2-8): budget_qty, budget_rate, budget_total, budget_cos
+- **Costed** (left, columns 2-8): costed qty, costed rate, costed total, costed COS
 - **Actual** (right, columns 13-26): actual quantities, rates, invoice data, payment data
 
 ### Data End Detection
@@ -174,7 +174,7 @@ A structured 6-step process for Project Managers to report weekly on project sta
 ### The 6 Steps
 
 1. **Schedule** — Is the project on track, delayed, or ahead?
-2. **Budget** — Any variances or financial concerns?
+2. **Costed** — Any variances or financial concerns?
 3. **Risks** — Active risk assessment and mitigation
 4. **Quality** — Inspection and quality status
 5. **Actions** — Next week's tasks and deliverables
@@ -353,7 +353,7 @@ const STUB_UPDATES: { slug: string; contentMarkdown: string; responsibleRole?: s
 
 - Day-to-day management of assigned projects on site
 - Completes Weekly Reviews (6-step wizard) for each managed project
-- Tracks project schedule, budget, risks, and quality
+- Tracks project schedule, costed amounts, risks, and quality
 - Manages subcontractor activities on site
 - Updates project status and phase progression
 
@@ -433,7 +433,7 @@ The tracker filename determines the project name:
 ### Key Sheets
 
 1. **Expenditure Breakdown** — The main data sheet with two sections:
-   - **Budget section** (left, columns 2-8): Budget quantities, rates, totals
+   - **Costed section** (left, columns 2-8): Costed quantities, rates, totals
    - **Actual section** (right, columns 13-26): Actual costs, invoices, payments, supplier info
 2. **Plan** — Project schedule and milestones
 3. **Revenue** — Revenue recognition and client billing
@@ -460,9 +460,9 @@ Use the [[Smart Import Process]] to upload tracker files into the system. This i
 
 The Expenditure Breakdown sheet is the most important sheet in the project tracker. It must follow this structure:
 
-**Budget Section (Left Side)**
-- Column headers: Description, Qty, Rate/Unit, Total, Budget COS
-- Contains planned/budgeted values
+**Costed Section (Left Side)**
+- Column headers: Description, Qty, Rate/Unit, Total, Costed COS
+- Contains costed/quoted values
 
 **Actual Section (Right Side)**  
 - Column headers: Description, Supplier, PO Number, Invoice Number, Invoice Date, Payment Date, Actual COS, Revenue Recognition Amount
@@ -470,7 +470,7 @@ The Expenditure Breakdown sheet is the most important sheet in the project track
 
 ### Column Detection
 
-The Smart Import system automatically detects both budget and actual section headers. If headers don't match expected patterns, the mapping step allows manual correction.
+The Smart Import system automatically detects both costed and actual section headers. If headers don't match expected patterns, the mapping step allows manual correction.
 
 ### Related Tools
 - [[Excel Project Tracker]]

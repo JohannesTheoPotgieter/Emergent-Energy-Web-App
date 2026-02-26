@@ -162,7 +162,7 @@ const ROLE_SARCASM: Record<string, string[]> = {
     "The numbers are looking... numerical. That's a start.",
     "COS realisation is at whatever percent it is. Deep breaths.",
     "Cashflow is a bit like the weather — everyone talks about it, nobody controls it.",
-    "Budget variance is just a fancy way of saying 'surprise spending'.",
+    "Cost variance is just a fancy way of saying 'surprise spending'.",
     "You keep the money straight. Everyone else keeps spending it. Classic teamwork.",
   ],
   default: [
