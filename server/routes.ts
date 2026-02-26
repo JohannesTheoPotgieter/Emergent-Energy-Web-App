@@ -6,7 +6,7 @@ import fs from "fs";
 import path from "path";
 import { storage } from "./storage";
 import { parseTrackerFile, applyFontColors } from "./excelParser";
-import { insertBudgetSchema, programExpense, programInflows, projectInfo, projectPlan, normalizedCostLines, normalizedRevenueLines, normalizedPlanTasks, normalizedExecutionPhases, smartImportRuns, cosStatusOverrides } from "@shared/schema";
+import { insertBudgetSchema, programExpense, programInflows, projectInfo, projectPlan, normalizedCostLines, normalizedRevenueLines, normalizedPlanTasks, normalizedExecutionPhases, smartImportRuns, cosStatusOverrides, revenueTrackingOverrides } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, or, sql, isNull, asc, desc } from "drizzle-orm";
 import { runSmartImportPreview } from "./lib/import/index";
@@ -3244,14 +3244,21 @@ export async function registerRoutes(
 
   app.get("/api/dashboard/high-priority", requireAuth, async (req, res) => {
     try {
-      const [allProjectInfo, allExpenses, rawInflows, allPlans, allTaskLinks, allOpTasks] = await Promise.all([
+      const [allProjectInfo, allExpenses, rawInflows, allPlans, allTaskLinks, allOpTasks, inBankOverrides] = await Promise.all([
         storage.getAllProjectInfo(),
         storage.getAllProgramExpenses(),
         storage.getAllProgramInflows(),
         storage.getAllProjectPlans(),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
+        db.select().from(revenueTrackingOverrides).where(eq(revenueTrackingOverrides.fieldName, "inBank")),
       ]);
+
+      const inBankOverrideSet = new Set(
+        inBankOverrides
+          .filter(o => o.overrideValue === "1")
+          .map(o => `${o.projectName}::${o.rowNumber}`)
+      );
 
       const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
 
@@ -3316,9 +3323,12 @@ export async function registerRoutes(
           const amt = parseFloat(inflow.milestoneAmount);
           const hasInvoiceNum = inflow.milestoneInvoiceNumber && inflow.milestoneInvoiceNumber.trim() !== '';
           const paymentNotReceived = !inflow.paymentReceivedDate || inflow.paymentReceivedDate.trim() === '';
+          const rawInBank = (inflow as any).inBank === 1 || (inflow as any).inBank === '1' || (inflow as any).inBank === true;
+          const overrideInBank = inBankOverrideSet.has(`${inflow.projectName}::${inflow.rowNumber}`);
+          const markedInBank = rawInBank || overrideInBank;
           const dateToCheck = inflow.effectiveDate || inflow.invoiceRaisedDate;
           const dateInPast = dateToCheck && /^\d{4}-\d{2}-\d{2}/.test(dateToCheck) && dateToCheck < today;
-          if (amt > 0 && hasInvoiceNum && paymentNotReceived && dateInPast) {
+          if (amt > 0 && hasInvoiceNum && paymentNotReceived && !markedInBank && dateInPast) {
             if (dateToCheck && isMegaParkOutsideFY(inflow.projectName, dateToCheck)) continue;
             revenueOutstanding.push({
               id: inflow.id,
