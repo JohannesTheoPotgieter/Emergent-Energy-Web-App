@@ -640,7 +640,7 @@ function TaskDetailDrawer({
                 <SelectContent>
                   <SelectItem value="none">Unassigned</SelectItem>
                   {teamMembers.map(m => (
-                    <SelectItem key={m.id} value={m.name}>{m.name} ({m.role.replace(/_/g, " ")})</SelectItem>
+                    <SelectItem key={m.id} value={m.name}>{m.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -682,7 +682,7 @@ function TaskDetailDrawer({
                     <SelectItem value="none">No approver</SelectItem>
                     {teamMembers.map(m => (
                       <SelectItem key={m.id} value={String(m.id)}>
-                        {m.name} ({m.role.replace(/_/g, " ")})
+                        {m.name}
                       </SelectItem>
                     ))}
                   </SelectContent>

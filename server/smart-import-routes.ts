@@ -865,6 +865,18 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
     const counts = { planTasks: 0, revenueLines: 0, costLines: 0, executionPhases: 0, counterparties: 0 };
 
     await db.transaction(async (tx: any) => {
+      const existingTaskOwners = new Map<string, string>();
+      {
+        const existingTasks = projectId
+          ? await tx.select({ taskName: normalizedPlanTasks.taskName, owner: normalizedPlanTasks.owner }).from(normalizedPlanTasks).where(eq(normalizedPlanTasks.projectId, projectId))
+          : await tx.select({ taskName: normalizedPlanTasks.taskName, owner: normalizedPlanTasks.owner }).from(normalizedPlanTasks).where(eq(normalizedPlanTasks.projectName, projectName));
+        for (const t of existingTasks) {
+          if (t.owner && t.owner.trim()) {
+            existingTaskOwners.set(t.taskName, t.owner);
+          }
+        }
+      }
+
       if (projectId) {
         await tx.delete(normalizedPlanTasks).where(eq(normalizedPlanTasks.projectId, projectId));
         await tx.delete(normalizedRevenueLines).where(eq(normalizedRevenueLines.projectId, projectId));
@@ -900,7 +912,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
               actualStartDate: merged.actualStartDate,
               actualEndDate: merged.actualEndDate,
               actualDurationDays: merged.actualDurationDays,
-              owner: merged.owner,
+              owner: existingTaskOwners.get(merged.taskName) || merged.owner,
               status: merged.status,
               pctComplete: merged.pctComplete,
               comment: merged.comment,
@@ -1222,10 +1234,12 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
             "handover", "commercial close out",
             "compliance handover", "hold"
           ];
+          const [existingProject] = await tx.select({ pm: projectInfo.pm, pd: projectInfo.pd }).from(projectInfo)
+            .where(eq(projectInfo.id, resolvedProjectId));
           const updates: Record<string, any> = {};
           if (detectedInfo.sizeKwp) updates.sizeKwp = String(detectedInfo.sizeKwp);
-          if (detectedInfo.pd) updates.pd = String(detectedInfo.pd);
-          if (detectedInfo.pm) updates.pm = String(detectedInfo.pm);
+          if (detectedInfo.pd && (!existingProject?.pd || !existingProject.pd.trim())) updates.pd = String(detectedInfo.pd);
+          if (detectedInfo.pm && (!existingProject?.pm || !existingProject.pm.trim())) updates.pm = String(detectedInfo.pm);
           if (detectedInfo.contractValue) updates.contractValue = String(detectedInfo.contractValue);
           const rawPhase = detectedInfo.phase ? String(detectedInfo.phase).trim() : null;
           if (rawPhase && VALID_PHASES.includes(rawPhase.toLowerCase())) {

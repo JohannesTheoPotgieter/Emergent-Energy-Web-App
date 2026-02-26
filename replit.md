@@ -25,6 +25,8 @@ Preferred communication style: Simple, everyday language.
 - **Smart Import Issue Resolution**: Three resolution types control row import behavior: "IGNORED" skips the row (user chose to ignore/exclude it), "SKIP_ROW"/"EXCLUDE" also skip the row, and "ALLOW_ALL"/"ACCEPTED"/"OVERRIDE" import the row as-is. The "Allow All" button in the issues step resolves all unresolved issues as "ALLOW_ALL", importing every data row without filtering. Bulk commit auto-resolves non-blocker warnings as "ALLOW_ALL" so data is not silently dropped.
 - **Expenditure Sort Order**: Categories in the expenditure tab are sorted by minimum `row_number` from the original Excel, preserving the Excel's category order.
 - **Database Sync**: Dev and production have separate databases. Data is migrated via `server/seed-data-migration.ts` which runs on startup — it reads JSON seed files from `server/data-seed/` and imports them if the target database is empty. The `.migrated` flag file prevents re-runs.
+- **Smart Import User Data Protection**: Re-importing a project via Smart Import does NOT overwrite user-assigned data. PM and PD fields on `project_info` are only populated from Excel if the project doesn't already have them set. Task owner assignments in `normalized_plan_tasks` are preserved across re-imports — existing owners are captured before deletion and restored by task name on re-insert, with the Excel value used only as fallback for tasks with no prior owner.
+- **User Display Convention**: User assignment dropdowns throughout the app show names only (no role labels). Role information is not appended to user names in Select components.
 
 ## System Architecture
 
