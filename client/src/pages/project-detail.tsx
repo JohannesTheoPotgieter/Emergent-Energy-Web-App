@@ -748,21 +748,37 @@ export default function ProjectDetailPage() {
 
   const nextMilestone = useMemo(() => {
     const now = new Date();
-    const future = planTasks
-      .filter((t: any) => {
-        const endDate = t.endDate || t.actualEnd;
-        return endDate && new Date(endDate) >= now;
+    const futureRevMilestones = (revenueData as any[])
+      .filter((r: any) => {
+        const dateStr = r.plannedPaymentDate || r.paymentReceivedDate;
+        if (!dateStr) return false;
+        if (r.paymentReceivedDate) return false;
+        return new Date(dateStr) >= now;
       })
-      .sort((a: any, b: any) => new Date(a.endDate || a.actualEnd).getTime() - new Date(b.endDate || b.actualEnd).getTime());
-    return future[0] || null;
-  }, [planTasks]);
+      .sort((a: any, b: any) => new Date(a.plannedPaymentDate).getTime() - new Date(b.plannedPaymentDate).getTime());
+    if (futureRevMilestones.length > 0) {
+      const m = futureRevMilestones[0];
+      return { name: m.milestoneName || "Revenue Milestone", date: m.plannedPaymentDate };
+    }
+    return null;
+  }, [revenueData]);
 
   const totalPaidInflows = (revenueData as any[]).reduce((s: number, r: any) => {
     if (r.paymentReceivedDate) return s + (Number(r.milestoneAmount) || 0);
     return s;
   }, 0);
   const revenueRealisedPct = contractValue > 0 ? (totalPaidInflows / contractValue) * 100 : 0;
-  const cosRealisedPct = budgetTotal > 0 ? (totalExpenses / budgetTotal) * 100 : 0;
+
+  const cosRealisedTotal = (expenseData as any[]).reduce((s: number, e: any) => {
+    const hasInvoice = !!(e.expenseInvoiceNumber && String(e.expenseInvoiceNumber).trim());
+    const hasInvDate = !!(e.expenseInvoicedDate && String(e.expenseInvoicedDate).trim());
+    const hasPO = !!(e.expensePoNumber && String(e.expensePoNumber).trim());
+    if (!hasPO || !hasInvoice || !hasInvDate) return s;
+    const dateConfirmed = e.invoiceDateConfirmed === true || e.invoiceDateFontColor === 'black';
+    if (!dateConfirmed) return s;
+    return s + (Number(e.expenseActualTotal) || 0);
+  }, 0);
+  const cosRealisedPct = budgetTotal > 0 ? (cosRealisedTotal / budgetTotal) * 100 : 0;
   const marginDelta = revenueRealisedPct - cosRealisedPct;
 
   const hasRedRag = scheduleRag === "red" || costRag === "red" || qualityRag === "red";
@@ -929,7 +945,7 @@ export default function ProjectDetailPage() {
             <div className="flex flex-col gap-1" data-testid="awareness-milestone">
               <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Next Milestone</span>
               <span className="text-xs font-medium truncate">
-                {nextMilestone ? `${nextMilestone.taskName || nextMilestone.task_name || nextMilestone.highLevelProgramme || "Task"} (${new Date(nextMilestone.endDate || nextMilestone.actualEnd || nextMilestone.end_date).toLocaleDateString("en-ZA", { day: "2-digit", month: "short" })})` : "—"}
+                {nextMilestone ? `${nextMilestone.name} (${new Date(nextMilestone.date).toLocaleDateString("en-ZA", { day: "2-digit", month: "short" })})` : "—"}
               </span>
             </div>
 
