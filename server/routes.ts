@@ -1832,6 +1832,19 @@ export async function registerRoutes(
           expectedPctComplete: null as number | null,
         })) : projectPlans.filter((p: any) => !(p.rowNumber < 0 && p.isVirtual));
 
+        const milestoneRowNumbers = new Set<number>();
+        for (const p of (planLikeRows as any[])) {
+          if (p.parentRowNumber != null && p.parentRowNumber !== 0 && p.parentRowNumber !== "") {
+            milestoneRowNumbers.add(Number(p.parentRowNumber));
+          }
+        }
+        for (const p of (planLikeRows as any[])) {
+          if (p.isMilestone === true || (p.indentLevel === 0 && milestoneRowNumbers.has(p.rowNumber))) {
+            milestoneRowNumbers.add(p.rowNumber);
+          }
+        }
+        const leafPlanRows = (planLikeRows as any[]).filter((p: any) => !milestoneRowNumbers.has(p.rowNumber));
+
         // Compute milestone dates from plan tasks (Excel spec: max ActualEndDate matching descriptions)
         const pdFromPlan = findMaxEndDate(planLikeRows as any, ['bd handover', 'project charter handover']);
         const csFromPlan = findMinStartDate(planLikeRows as any, ['site establishment']);
@@ -1902,7 +1915,7 @@ export async function registerRoutes(
         }
         if (projectPctComplete === null) {
           let totalWeight = 0, weightedSum = 0;
-          for (const p of (planLikeRows as any[])) {
+          for (const p of leafPlanRows) {
             const dur = p.durationDays && p.durationDays > 0 ? p.durationDays : 1;
             weightedSum += (p.actualPctComplete ?? 0) * dur;
             totalWeight += dur;
@@ -1912,7 +1925,7 @@ export async function registerRoutes(
         if (expectedPctComplete === null) {
           const todayDate = today;
           let totalExpWeight = 0, weightedExpSum = 0;
-          for (const task of (planLikeRows as any[])) {
+          for (const task of leafPlanRows) {
             const dur = task.durationDays && task.durationDays > 0 ? task.durationDays : 1;
             totalExpWeight += dur;
             if (task.expectedPctComplete !== null && task.expectedPctComplete !== undefined) {

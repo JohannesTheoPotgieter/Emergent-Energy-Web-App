@@ -255,6 +255,24 @@ export function registerLifecycleRoutes(app: Express) {
       }
 
       const todayDate = new Date().toISOString().split("T")[0];
+
+      const milestoneKeys = new Set<string>();
+      for (const o of allPlanOverrides) {
+        if (o.fieldName === "parentRowNumber" && o.overrideValue && o.overrideValue !== "" && o.overrideValue !== "0") {
+          milestoneKeys.add(`${o.projectName}::${o.overrideValue}`);
+        }
+      }
+      for (const o of allPlanOverrides) {
+        if (o.fieldName === "indentLevel" && o.overrideValue === "0" && milestoneKeys.has(`${o.projectName}::${o.rowNumber}`)) {
+          milestoneKeys.add(`${o.projectName}::${o.rowNumber}`);
+        }
+      }
+      for (const o of allPlanOverrides) {
+        if (o.rowNumber < 0) {
+          milestoneKeys.add(`${o.projectName}::${o.rowNumber}`);
+        }
+      }
+
       const planByNorm = new Map<string, { total: number; weightedPct: number; totalWeight: number; weightedExpPct: number; totalExpWeight: number }>();
       for (const p of allPlanTasks) {
         const name = p.projectName;
@@ -262,6 +280,7 @@ export function registerLifecycleRoutes(app: Express) {
         const taskNo = (p.taskNo || '').toString().toLowerCase().trim();
         const isSummary = taskNo === 'no.' || taskNo === 'no' || taskNo === '#';
         if (isSummary) continue;
+        if (p.rowNumber && milestoneKeys.has(`${name}::${p.rowNumber}`)) continue;
         const norm = normalizeName(name);
         if (!planByNorm.has(norm)) planByNorm.set(norm, { total: 0, weightedPct: 0, totalWeight: 0, weightedExpPct: 0, totalExpWeight: 0 });
         const entry = planByNorm.get(norm)!;

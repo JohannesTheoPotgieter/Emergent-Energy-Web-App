@@ -364,7 +364,7 @@ function StageDetail({ stageId, projectId, projectName, isCoo, userRole }: {
       {expandedSections.tasks && (
         <div className="space-y-1">
           {tasks.map((task: any) => (
-            <TaskRow key={task.id} task={task} projectId={projectId} stageId={stageId} />
+            <TaskRow key={task.id} task={task} projectId={projectId} stageId={stageId} allDeliverables={uploadedDeliverables} isCoo={isCoo} userRole={userRole} />
           ))}
         </div>
       )}
@@ -407,17 +407,40 @@ function SectionHeader({ title, icon, expanded, onToggle }: {
   );
 }
 
-function TaskRow({ task, projectId, stageId }: { task: any; projectId: number; stageId: number }) {
+function TaskRow({ task, projectId, stageId, allDeliverables, isCoo, userRole }: {
+  task: any; projectId: number; stageId: number; allDeliverables: any[]; isCoo: boolean; userRole: string;
+}) {
   const [expanded, setExpanded] = useState(false);
   const [notes, setNotes] = useState(task.notes || "");
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [spDialogOpen, setSpDialogOpen] = useState(false);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [spPath, setSpPath] = useState("");
+  const [customPath, setCustomPath] = useState("");
+  const [savedPaths, setSavedPaths] = useState<string[]>(getSavedFolderPaths);
+  const fileRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const qc = useQueryClient();
 
   const cfg = TASK_STATUS_CONFIG[task.status] || TASK_STATUS_CONFIG.pending;
+  const taskDeliverables = allDeliverables.filter((d: any) => d.projectEngTaskId === task.id);
+  const hasApprovedDeliverable = taskDeliverables.some((d: any) => d.approvalStatus === "approved");
+  const hasPendingDeliverable = taskDeliverables.some((d: any) => d.approvalStatus === "pending");
+  const completionBlocked = task.hasDeliverable && !hasApprovedDeliverable && task.status !== "complete";
 
   async function toggleStatus() {
     const newStatus = task.status === "complete" ? "pending" : "complete";
+
+    if (newStatus === "complete" && task.hasDeliverable && !hasApprovedDeliverable) {
+      if (taskDeliverables.length === 0) {
+        toast({ title: "Deliverable required", description: "Upload a deliverable before completing this task.", variant: "destructive" });
+      } else {
+        toast({ title: "Approval required", description: "The deliverable must be approved before this task can be completed.", variant: "destructive" });
+      }
+      return;
+    }
+
     setSaving(true);
     try {
       const res = await engFetch(`/api/eng-stages/tasks/${task.id}`, {
@@ -425,9 +448,29 @@ function TaskRow({ task, projectId, stageId }: { task: any; projectId: number; s
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus }),
       });
-      if (!res.ok) throw new Error("Failed to update");
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to update");
+      }
       qc.invalidateQueries({ queryKey: ["eng-stage-detail", stageId] });
       qc.invalidateQueries({ queryKey: ["eng-stages", projectId] });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function toggleHasDeliverable() {
+    setSaving(true);
+    try {
+      const res = await engFetch(`/api/eng-stages/tasks/${task.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hasDeliverable: !task.hasDeliverable }),
+      });
+      if (!res.ok) throw new Error("Failed to update");
+      qc.invalidateQueries({ queryKey: ["eng-stage-detail", stageId] });
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     } finally {
@@ -453,15 +496,86 @@ function TaskRow({ task, projectId, stageId }: { task: any; projectId: number; s
     }
   }
 
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPendingFile(file);
+    setSpPath(savedPaths[0] || "");
+    setCustomPath("");
+    setSpDialogOpen(true);
+    if (fileRef.current) fileRef.current.value = "";
+  }
+
+  async function handleConfirmUpload() {
+    if (!pendingFile) return;
+    const folderPath = spPath === "__custom__" ? customPath.trim() : spPath;
+
+    if (folderPath && spPath === "__custom__" && customPath.trim()) {
+      if (!savedPaths.includes(customPath.trim())) {
+        const updated = [...savedPaths, customPath.trim()];
+        setSavedPaths(updated);
+        saveFolderPaths(updated);
+      }
+    }
+
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", pendingFile);
+      if (folderPath) formData.append("sharepointFolderPath", folderPath);
+
+      const res = await engFetch(`/api/eng-stages/tasks/${task.id}/deliverables`, {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) throw new Error("Upload failed");
+      toast({ title: "Deliverable uploaded", description: "Pending approval before task can be completed." });
+      qc.invalidateQueries({ queryKey: ["eng-stage-detail", stageId] });
+      setSpDialogOpen(false);
+      setPendingFile(null);
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleApprove(deliverableId: number, status: "approved" | "rejected") {
+    try {
+      const res = await engFetch(`/api/eng-stages/deliverables/${deliverableId}/approve`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to update");
+      }
+      toast({ title: status === "approved" ? "Deliverable approved" : "Deliverable rejected" });
+      qc.invalidateQueries({ queryKey: ["eng-stage-detail", stageId] });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+  }
+
+  const approvalBadge = (status: string) => {
+    if (status === "approved") return <Badge className="bg-green-100 text-green-700 text-[9px] px-1">Approved</Badge>;
+    if (status === "rejected") return <Badge className="bg-red-100 text-red-700 text-[9px] px-1">Rejected</Badge>;
+    return <Badge className="bg-amber-100 text-amber-700 text-[9px] px-1">Pending Approval</Badge>;
+  };
+
   return (
     <Card className="border-l-2" style={{ borderLeftColor: task.status === "complete" ? "#22c55e" : task.isRequired ? "#3b82f6" : "#9ca3af" }}>
       <CardContent className="p-2">
         <div className="flex items-center gap-2">
-          <button onClick={toggleStatus} disabled={saving} className="shrink-0" data-testid={`task-check-${task.id}`}>
+          <button onClick={toggleStatus} disabled={saving || (completionBlocked && task.status !== "complete")} className="shrink-0" data-testid={`task-check-${task.id}`}
+            title={completionBlocked ? "Deliverable must be approved first" : undefined}>
             {saving ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : task.status === "complete" ? (
               <CheckCircle2 className="h-4 w-4 text-green-600" />
+            ) : completionBlocked ? (
+              <Lock className="h-4 w-4 text-amber-500" />
             ) : (
               <Circle className="h-4 w-4 text-gray-400" />
             )}
@@ -473,14 +587,108 @@ function TaskRow({ task, projectId, stageId }: { task: any; projectId: number; s
               </span>
               {!task.isRequired && <span className="ml-1 text-[10px] text-muted-foreground">(optional)</span>}
             </button>
+            {task.hasDeliverable && (
+              <div className="flex items-center gap-1 mt-0.5">
+                <FileText className="h-3 w-3 text-blue-500" />
+                <span className="text-[10px] text-blue-600 font-medium">Deliverable required</span>
+                {hasApprovedDeliverable && <CheckCircle2 className="h-3 w-3 text-green-500" />}
+                {!hasApprovedDeliverable && hasPendingDeliverable && <Clock className="h-3 w-3 text-amber-500" />}
+                {!hasApprovedDeliverable && !hasPendingDeliverable && taskDeliverables.length === 0 && (
+                  <AlertTriangle className="h-3 w-3 text-red-400" />
+                )}
+              </div>
+            )}
           </div>
           <Badge className={`${cfg.color} text-[10px] px-1.5 py-0`}>{cfg.label}</Badge>
         </div>
         {expanded && (
-          <div className="mt-2 pl-6 space-y-2">
+          <div className="mt-2 pl-6 space-y-3">
             {task.templateDescription && (
               <p className="text-xs text-muted-foreground">{task.templateDescription}</p>
             )}
+
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={task.hasDeliverable}
+                  onChange={toggleHasDeliverable}
+                  className="h-3.5 w-3.5 rounded border-gray-300"
+                  data-testid={`toggle-deliverable-${task.id}`}
+                />
+                <span className="text-[11px] font-medium text-slate-700">Has Deliverable</span>
+              </label>
+              {task.hasDeliverable && (
+                <span className="text-[10px] text-amber-600">
+                  Task cannot be completed until deliverable is approved
+                </span>
+              )}
+            </div>
+
+            {task.hasDeliverable && (
+              <div className="border rounded-lg p-2 bg-slate-50/50 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-slate-700 flex items-center gap-1">
+                    <FileText className="h-3 w-3" /> Task Deliverables
+                  </span>
+                  <Button
+                    size="sm" variant="outline" className="h-6 text-[10px] gap-1"
+                    onClick={() => fileRef.current?.click()}
+                    disabled={uploading}
+                    data-testid={`btn-task-upload-${task.id}`}
+                  >
+                    <Upload className="h-3 w-3" /> Upload
+                  </Button>
+                </div>
+
+                {taskDeliverables.length === 0 && (
+                  <p className="text-[10px] text-muted-foreground italic">No deliverables uploaded yet. Upload a file to proceed.</p>
+                )}
+
+                {taskDeliverables.map((d: any) => (
+                  <div key={d.id} className="border rounded p-2 bg-white space-y-1">
+                    <div className="flex items-center gap-2 text-xs">
+                      <FileText className="h-3 w-3 text-blue-500 shrink-0" />
+                      <span className="flex-1 truncate font-medium">{d.fileName}</span>
+                      {approvalBadge(d.approvalStatus)}
+                      <Button size="sm" variant="ghost" className="h-5 w-5 p-0"
+                        onClick={() => window.open(`/api/eng-stages/deliverables/${d.id}/download`, "_blank")}
+                        data-testid={`btn-dl-task-del-${d.id}`}>
+                        <Download className="h-3 w-3" />
+                      </Button>
+                    </div>
+                    {d.sharepointFolderPath && (
+                      <div className="flex items-center gap-1 text-[10px] text-blue-600">
+                        <FolderOpen className="h-2.5 w-2.5" />
+                        <span className="truncate">{d.sharepointFolderPath}</span>
+                      </div>
+                    )}
+                    {d.approvalStatus === "pending" && (isCoo || userRole === "PROGRAM_MANAGER" || userRole === "ENGINEER") && (
+                      <div className="flex items-center gap-1.5 mt-1">
+                        <Button size="sm" variant="outline" className="h-6 text-[10px] gap-1 text-green-700 border-green-300 hover:bg-green-50"
+                          onClick={() => handleApprove(d.id, "approved")}
+                          data-testid={`btn-approve-${d.id}`}>
+                          <CheckCircle2 className="h-3 w-3" /> Approve
+                        </Button>
+                        <Button size="sm" variant="outline" className="h-6 text-[10px] gap-1 text-red-700 border-red-300 hover:bg-red-50"
+                          onClick={() => handleApprove(d.id, "rejected")}
+                          data-testid={`btn-reject-${d.id}`}>
+                          <AlertTriangle className="h-3 w-3" /> Reject
+                        </Button>
+                      </div>
+                    )}
+                    {d.approvalStatus === "approved" && (
+                      <p className="text-[10px] text-green-600">Approved — task can now be completed</p>
+                    )}
+                    {d.approvalStatus === "rejected" && (
+                      <p className="text-[10px] text-red-500">Rejected — upload a new version</p>
+                    )}
+                  </div>
+                ))}
+                <input ref={fileRef} type="file" className="hidden" onChange={handleFileSelect} />
+              </div>
+            )}
+
             <div className="flex gap-2 items-end">
               <Textarea
                 value={notes}
@@ -496,6 +704,72 @@ function TaskRow({ task, projectId, stageId }: { task: any; projectId: number; s
           </div>
         )}
       </CardContent>
+
+      <Dialog open={spDialogOpen} onOpenChange={(open) => {
+        if (!open) { setSpDialogOpen(false); setPendingFile(null); }
+      }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Upload className="h-5 w-5 text-blue-600" />
+              Upload Task Deliverable
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {pendingFile && (
+              <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border">
+                <FileText className="h-8 w-8 text-blue-500 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{pendingFile.name}</p>
+                  <p className="text-[11px] text-muted-foreground">{(pendingFile.size / 1024).toFixed(1)} KB</p>
+                </div>
+              </div>
+            )}
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold flex items-center gap-1.5">
+                <HardDrive className="h-3.5 w-3.5 text-blue-600" />
+                Local SharePoint Sync Folder
+              </Label>
+              <Select value={spPath} onValueChange={setSpPath}>
+                <SelectTrigger className="h-9 text-xs" data-testid="select-task-sp-folder">
+                  <SelectValue placeholder="Select a folder path..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {savedPaths.map((p, i) => (
+                    <SelectItem key={i} value={p}>
+                      <span className="truncate text-xs">{p}</span>
+                    </SelectItem>
+                  ))}
+                  <SelectItem value="__custom__">
+                    <span className="text-xs text-blue-600 font-medium">Enter custom path...</span>
+                  </SelectItem>
+                  <SelectItem value="">
+                    <span className="text-xs text-muted-foreground">Skip (no SharePoint path)</span>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              {spPath === "__custom__" && (
+                <Input className="h-8 text-xs font-mono" placeholder="e.g. S:\Emergent Energy\Projects\..." value={customPath}
+                  onChange={e => setCustomPath(e.target.value)} data-testid="input-task-custom-sp" autoFocus />
+              )}
+            </div>
+            <div className="bg-amber-50 border border-amber-200 rounded p-2">
+              <p className="text-[11px] text-amber-700">
+                This deliverable will require approval before the task can be marked as complete.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => { setSpDialogOpen(false); setPendingFile(null); }}>Cancel</Button>
+            <Button size="sm" onClick={handleConfirmUpload}
+              disabled={uploading || !pendingFile || (spPath === "__custom__" && !customPath.trim())}
+              data-testid="btn-confirm-task-upload">
+              {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Upload className="h-3.5 w-3.5 mr-1" />}
+              Upload & Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

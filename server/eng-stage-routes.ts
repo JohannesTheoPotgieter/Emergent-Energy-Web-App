@@ -438,6 +438,7 @@ export function registerEngStageRoutes(app: Express) {
         dueDate: projectEngTasks.dueDate,
         completedAt: projectEngTasks.completedAt,
         completedBy: projectEngTasks.completedBy,
+        hasDeliverable: projectEngTasks.hasDeliverable,
         templateTitle: engTaskTemplates.title,
         templateDescription: engTaskTemplates.description,
         isRequired: engTaskTemplates.isRequired,
@@ -477,7 +478,41 @@ export function registerEngStageRoutes(app: Express) {
     try {
       const taskId = parseInt(req.params.taskId);
       const user = getUser(req);
-      const { status, notes, ownerUserId } = req.body;
+      const { status, notes, ownerUserId, hasDeliverable } = req.body;
+
+      const [existingTask] = await db.select().from(projectEngTasks).where(eq(projectEngTasks.id, taskId));
+      if (!existingTask) return res.status(404).json({ error: "Task not found" });
+
+      const effectiveHasDeliverable = hasDeliverable !== undefined ? hasDeliverable : existingTask.hasDeliverable;
+      const effectiveStatus = status !== undefined ? status : existingTask.status;
+
+      if (effectiveStatus === "complete" && effectiveHasDeliverable) {
+        const taskDeliverables = await db.select()
+          .from(projectEngDeliverables)
+          .where(eq(projectEngDeliverables.projectEngTaskId, taskId));
+        if (taskDeliverables.length === 0) {
+          if (status === "complete") {
+            return res.status(400).json({ error: "This task requires a deliverable to be uploaded before it can be completed." });
+          }
+          if (hasDeliverable === true && existingTask.status === "complete") {
+            const revertUpdates: any = { hasDeliverable: true, status: "pending", completedAt: null, completedBy: null };
+            await db.update(projectEngTasks).set(revertUpdates).where(eq(projectEngTasks.id, taskId));
+            return res.json({ success: true, reverted: true, message: "Task reverted to pending because it now requires an approved deliverable." });
+          }
+        } else {
+          const hasApproved = taskDeliverables.some((d: any) => d.approvalStatus === "approved");
+          if (!hasApproved) {
+            if (status === "complete") {
+              return res.status(400).json({ error: "The deliverable for this task must be approved before it can be completed." });
+            }
+            if (hasDeliverable === true && existingTask.status === "complete") {
+              const revertUpdates: any = { hasDeliverable: true, status: "pending", completedAt: null, completedBy: null };
+              await db.update(projectEngTasks).set(revertUpdates).where(eq(projectEngTasks.id, taskId));
+              return res.json({ success: true, reverted: true, message: "Task reverted to pending because deliverable is not yet approved." });
+            }
+          }
+        }
+      }
 
       const updates: any = {};
       if (status !== undefined) {
@@ -492,6 +527,7 @@ export function registerEngStageRoutes(app: Express) {
       }
       if (notes !== undefined) updates.notes = notes;
       if (ownerUserId !== undefined) updates.ownerUserId = ownerUserId;
+      if (hasDeliverable !== undefined) updates.hasDeliverable = hasDeliverable;
 
       await db.update(projectEngTasks).set(updates).where(eq(projectEngTasks.id, taskId));
 
@@ -510,6 +546,71 @@ export function registerEngStageRoutes(app: Express) {
       }
 
       res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/eng-stages/tasks/:taskId/deliverables", jwtAuth, requireAuth, upload.single("file"), async (req: Request, res: Response) => {
+    try {
+      const taskId = parseInt(req.params.taskId);
+      const user = getUser(req);
+      const file = req.file;
+      if (!file) return res.status(400).json({ error: "No file uploaded" });
+
+      const [task] = await db.select().from(projectEngTasks).where(eq(projectEngTasks.id, taskId));
+      if (!task) return res.status(404).json({ error: "Task not found" });
+
+      const sharepointFolderPath = req.body.sharepointFolderPath || null;
+      const versionTag = req.body.versionTag || "v1";
+
+      const [deliverable] = await db.insert(projectEngDeliverables).values({
+        projectEngStageId: task.projectEngStageId,
+        projectEngTaskId: taskId,
+        fileName: file.originalname,
+        fileSize: file.size,
+        mimeType: file.mimetype,
+        storageRef: file.filename,
+        uploadedBy: user.id,
+        versionTag,
+        sharepointFolderPath,
+        approvalStatus: "pending",
+      }).returning();
+
+      res.json({ deliverable });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/eng-stages/deliverables/:id/approve", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const user = getUser(req);
+      const { status } = req.body;
+
+      if (!["approved", "rejected"].includes(status)) {
+        return res.status(400).json({ error: "Status must be 'approved' or 'rejected'" });
+      }
+
+      if (!isCoo(user.role) && !isEngineer(user.role) && user.role !== "PROGRAM_MANAGER") {
+        return res.status(403).json({ error: "Only COO, engineers, or program managers can approve deliverables" });
+      }
+
+      const [deliverable] = await db.select().from(projectEngDeliverables).where(eq(projectEngDeliverables.id, id));
+      if (!deliverable) return res.status(404).json({ error: "Deliverable not found" });
+
+      if (deliverable.uploadedBy === user.id) {
+        return res.status(403).json({ error: "You cannot approve your own deliverable" });
+      }
+
+      await db.update(projectEngDeliverables).set({
+        approvalStatus: status,
+        approvedBy: user.id,
+        approvedAt: new Date(),
+      }).where(eq(projectEngDeliverables.id, id));
+
+      res.json({ success: true, status });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

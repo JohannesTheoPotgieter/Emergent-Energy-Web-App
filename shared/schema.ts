@@ -2329,6 +2329,7 @@ export const projectEngTasks = pgTable("project_eng_tasks", {
   dueDate: text("due_date"),
   completedAt: timestamp("completed_at"),
   completedBy: integer("completed_by").references(() => users.id),
+  hasDeliverable: boolean("has_deliverable").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 export const insertProjectEngTaskSchema = createInsertSchema(projectEngTasks).omit({ id: true, createdAt: true });
@@ -2339,6 +2340,7 @@ export const projectEngDeliverables = pgTable("project_eng_deliverables", {
   id: serial("id").primaryKey(),
   projectEngStageId: integer("project_eng_stage_id").notNull().references(() => projectEngStages.id, { onDelete: 'cascade' }),
   deliverableTemplateId: integer("deliverable_template_id").references(() => engDeliverableTemplates.id),
+  projectEngTaskId: integer("project_eng_task_id").references(() => projectEngTasks.id, { onDelete: 'set null' }),
   fileName: text("file_name").notNull(),
   fileSize: integer("file_size"),
   mimeType: text("mime_type"),
@@ -2348,6 +2350,9 @@ export const projectEngDeliverables = pgTable("project_eng_deliverables", {
   versionTag: text("version_tag"),
   notes: text("notes"),
   sharepointFolderPath: text("sharepoint_folder_path"),
+  approvalStatus: text("approval_status").default("pending"),
+  approvedBy: integer("approved_by").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
 });
 export const insertProjectEngDeliverableSchema = createInsertSchema(projectEngDeliverables).omit({ id: true, uploadedAt: true });
 export type InsertProjectEngDeliverable = z.infer<typeof insertProjectEngDeliverableSchema>;
