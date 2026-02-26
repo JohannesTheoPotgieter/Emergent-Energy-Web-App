@@ -277,6 +277,15 @@ export default function LifecycleBoardPage() {
     },
     refetchInterval: 30_000,
   });
+
+  const { data: pmUsers = [] } = useQuery<{ id: number; name: string; username: string; role: string }[]>({
+    queryKey: ["/api/pm-assignable-users"],
+    queryFn: async () => {
+      const res = await fetch("/api/pm-assignable-users", { credentials: "include", headers: getAuthHeaders() });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
   const [searchTerm, setSearchTerm] = useState("");
   const [showActiveOnly, setShowActiveOnly] = useState(false);
   const [draggedProject, setDraggedProject] = useState<ProjectInfo | null>(null);
@@ -292,11 +301,12 @@ export default function LifecycleBoardPage() {
     sizeKwp: string;
     pd: string;
     pm: string;
+    pmUserId: number | null;
     contractValue: string;
     phase: string;
     escalationLevel: string;
     ragStatus: string;
-  }>({ projectName: "", sizeKwp: "", pd: "", pm: "", contractValue: "", phase: "", escalationLevel: "", ragStatus: "" });
+  }>({ projectName: "", sizeKwp: "", pd: "", pm: "", pmUserId: null, contractValue: "", phase: "", escalationLevel: "", ragStatus: "" });
   const [editSaving, setEditSaving] = useState(false);
   const [gateData, setGateData] = useState<{
     signedStatus: string;
@@ -359,11 +369,13 @@ export default function LifecycleBoardPage() {
 
   const openProjectDialog = (p: ProjectInfo) => {
     setSelectedProject(p);
+    const matchedPm = p.pm ? pmUsers.find(u => u.name === p.pm) : null;
     setEditForm({
       projectName: p.projectName || "",
       sizeKwp: p.sizeKwp || "",
       pd: p.pd || "",
       pm: p.pm || "",
+      pmUserId: matchedPm?.id ?? null,
       contractValue: p.contractValue || "",
       phase: p.phase || "",
       escalationLevel: p.escalationLevel || "",
@@ -442,7 +454,10 @@ export default function LifecycleBoardPage() {
       if (editForm.projectName.trim() !== (selectedProject.projectName || "")) body.projectName = editForm.projectName.trim();
       if (editForm.sizeKwp !== (selectedProject.sizeKwp || "")) body.sizeKwp = editForm.sizeKwp;
       if (editForm.pd !== (selectedProject.pd || "")) body.pd = editForm.pd;
-      if (editForm.pm !== (selectedProject.pm || "")) body.pm = editForm.pm;
+      if (editForm.pm !== (selectedProject.pm || "")) {
+        body.pm = editForm.pm;
+        body.pmUserId = editForm.pmUserId;
+      }
       if (editForm.contractValue !== (selectedProject.contractValue || "")) body.contractValue = editForm.contractValue;
       if (editForm.phase !== (selectedProject.phase || "")) body.phase = editForm.phase;
       if (editForm.escalationLevel !== (selectedProject.escalationLevel || "")) body.escalationLevel = editForm.escalationLevel || "none";
@@ -1316,13 +1331,28 @@ export default function LifecycleBoardPage() {
                     </div>
                     <div>
                       <Label className="text-xs">Project Manager (PM)</Label>
-                      <Input
-                        value={editForm.pm}
-                        onChange={(e) => setEditForm(f => ({ ...f, pm: e.target.value }))}
-                        placeholder="PM name"
+                      <Select
+                        value={editForm.pm || "__unassigned"}
+                        onValueChange={(val) => {
+                          if (val === "__unassigned") {
+                            setEditForm(f => ({ ...f, pm: "", pmUserId: null }));
+                          } else {
+                            const matched = pmUsers.find(u => u.name === val);
+                            setEditForm(f => ({ ...f, pm: val, pmUserId: matched?.id ?? null }));
+                          }
+                        }}
                         disabled={!selectedProject.id || selectedProject.id <= 0}
-                        data-testid="input-edit-pm"
-                      />
+                      >
+                        <SelectTrigger data-testid="select-edit-pm">
+                          <SelectValue placeholder="Unassigned" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__unassigned" data-testid="select-pm-unassigned">Unassigned</SelectItem>
+                          {pmUsers.map((u) => (
+                            <SelectItem key={u.id} value={u.name} data-testid={`select-pm-${u.id}`}>{u.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
                   <div className="grid gap-3 grid-cols-2">

@@ -441,7 +441,7 @@ export function registerLifecycleRoutes(app: Express) {
       const [existing] = await db.select().from(projectInfo).where(eq(projectInfo.id, id));
       if (!existing) return res.status(404).json({ error: "Project not found" });
 
-      const { sizeKwp, pd, pm, contractValue, escalationLevel, phase, ragStatus, projectName: newName } = req.body;
+      const { sizeKwp, pd, pm, pmUserId, contractValue, escalationLevel, phase, ragStatus, projectName: newName } = req.body;
       const updates: Record<string, any> = { updatedAt: new Date() };
 
       if (newName !== undefined && newName.trim() && newName.trim() !== existing.projectName) {
@@ -449,7 +449,10 @@ export function registerLifecycleRoutes(app: Express) {
       }
       if (sizeKwp !== undefined) updates.sizeKwp = sizeKwp || null;
       if (pd !== undefined) updates.pd = pd || null;
-      if (pm !== undefined) updates.pm = pm || null;
+      if (pm !== undefined) {
+        updates.pm = pm || null;
+        updates.pmUserId = pmUserId ?? null;
+      }
       if (contractValue !== undefined) updates.contractValue = contractValue || null;
       if (escalationLevel !== undefined) updates.escalationLevel = (escalationLevel && escalationLevel !== "none") ? escalationLevel : null;
       if (ragStatus !== undefined) updates.ragStatus = (ragStatus && ragStatus !== "none") ? ragStatus : null;
