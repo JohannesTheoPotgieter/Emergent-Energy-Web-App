@@ -32,9 +32,23 @@ router.get("/api/subcontractor-dashboard/summary", requireAuth, async (req: Requ
     const projectFilter = req.query.project as string | undefined;
     const coreOnly = req.query.coreOnly === "true";
 
-    const allLines = await db.select().from(normalizedCostLines);
+    const [allLines, counterpartyList, patternRules] = await Promise.all([
+      db.select().from(normalizedCostLines),
+      db.select().from(counterparties),
+      db.select().from(invoicePatternRules),
+    ]);
 
-    let lines = allLines;
+    const patternCounterpartyNames = new Set(
+      patternRules
+        .filter(r => r.isActive && r.counterpartyName)
+        .map(r => r.counterpartyName!.trim().toLowerCase())
+    );
+
+    let lines = allLines.filter(l => {
+      const cpName = (l.counterpartyName || "").trim().toLowerCase();
+      return cpName && patternCounterpartyNames.has(cpName);
+    });
+
     if (typeFilter && typeFilter !== "all") {
       lines = lines.filter(l => l.counterpartyType === typeFilter);
     }
@@ -42,7 +56,6 @@ router.get("/api/subcontractor-dashboard/summary", requireAuth, async (req: Requ
       lines = lines.filter(l => l.projectName === projectFilter);
     }
 
-    const counterpartyList = await db.select().from(counterparties);
     const cpMap = new Map(counterpartyList.map(c => [c.id, c]));
 
     if (coreOnly) {
@@ -797,10 +810,24 @@ router.post("/api/subcontractor-dashboard/link-counterparty", requireAuth, async
 
 router.get("/api/subcontractor-dashboard/overdue", requireAuth, async (req: Request, res: Response) => {
   try {
-    const allLines = await db.select().from(normalizedCostLines);
+    const [allLines, patternRules] = await Promise.all([
+      db.select().from(normalizedCostLines),
+      db.select().from(invoicePatternRules),
+    ]);
     const now = new Date();
 
-    const overdueLines = allLines.filter(l => {
+    const patternCpNames = new Set(
+      patternRules
+        .filter(r => r.isActive && r.counterpartyName)
+        .map(r => r.counterpartyName!.trim().toLowerCase())
+    );
+
+    const filteredLines = allLines.filter(l => {
+      const cpName = (l.counterpartyName || "").trim().toLowerCase();
+      return cpName && patternCpNames.has(cpName);
+    });
+
+    const overdueLines = filteredLines.filter(l => {
       if (l.status === "PAID") return false;
       const amt = parseFloat(l.amountExVat || "0") || 0;
       if (amt <= 0) return false;
