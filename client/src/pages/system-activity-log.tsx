@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { usePermission } from "@/hooks/use-permissions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   Activity, FileUp, Edit, Shield, GitMerge, Cpu, Users, Settings,
-  ChevronLeft, ChevronRight, Loader2, Search, ArrowRight, Filter,
+  ChevronLeft, ChevronRight, Loader2, Search, ArrowRight, Filter, AlertTriangle,
 } from "lucide-react";
 
 const SOURCE_ICONS: Record<string, any> = {
@@ -39,6 +40,7 @@ function formatDate(dateStr: string) {
 }
 
 export default function SystemActivityLogPage() {
+  const { allowed: canView } = usePermission('activity_log', 'view');
   const [page, setPage] = useState(1);
   const [sourceFilter, setSourceFilter] = useState<string>("all");
   const [entityTypeFilter, setEntityTypeFilter] = useState<string>("all");
@@ -74,6 +76,20 @@ export default function SystemActivityLogPage() {
   const items = data?.items || [];
   const pagination = data?.pagination || { page: 1, totalPages: 1, total: 0 };
   const filters = data?.filters || { sources: [], entityTypes: [], actions: [], projectNames: [] };
+
+  if (!canView) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]" data-testid="access-denied-container">
+        <Card className="max-w-md w-full">
+          <CardContent className="py-12 text-center">
+            <AlertTriangle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
+            <h2 className="text-xl font-semibold mb-2" data-testid="text-access-denied">Access Denied</h2>
+            <p className="text-muted-foreground">You don't have permission to view this page.</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto p-6 max-w-7xl space-y-6">

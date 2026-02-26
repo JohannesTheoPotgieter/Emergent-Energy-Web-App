@@ -10,6 +10,7 @@ import {
   ChevronDown, ChevronRight, X, Loader2, Target, BarChart3, RefreshCw,
 } from "lucide-react";
 import { useLocation, Link } from "wouter";
+import { usePermission } from "@/hooks/use-permissions";
 import { format } from "date-fns";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -393,6 +394,7 @@ function GanttTooltip({ active, payload }: any) {
 }
 
 export default function Dashboard() {
+  const { allowed: canView } = usePermission('execution_board', 'view');
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});

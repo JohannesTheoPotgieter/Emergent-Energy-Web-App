@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
+import { usePermission } from "@/hooks/use-permissions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,6 +31,7 @@ import {
   ShieldCheck,
   Upload,
   Users,
+  AlertTriangle,
 } from "lucide-react";
 
 interface BadgeInfo {
@@ -121,6 +123,7 @@ const STAT_CONFIG = [
 
 export default function LeaderboardPage() {
   const { user } = useAuth();
+  const { allowed: canView } = usePermission('leaderboard', 'view');
   const [selectedUser, setSelectedUser] = useState<LeaderboardEntry | null>(null);
   const [tab, setTab] = useState<"leaderboard" | "badges">("leaderboard");
 
@@ -140,6 +143,20 @@ export default function LeaderboardPage() {
   const rest = activeEntries.slice(3);
   const myEntry = entries.find(e => e.userId === (user as any)?.id);
   const myRank = activeEntries.findIndex(e => e.userId === (user as any)?.id) + 1;
+
+  if (!canView) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]" data-testid="access-denied-container">
+        <Card className="max-w-md w-full">
+          <CardContent className="py-12 text-center">
+            <AlertTriangle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
+            <h2 className="text-xl font-semibold mb-2" data-testid="text-access-denied">Access Denied</h2>
+            <p className="text-muted-foreground">You don't have permission to view this page.</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-5xl mx-auto p-4 sm:p-6 space-y-6">

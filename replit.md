@@ -21,7 +21,7 @@ Preferred communication style: Simple, everyday language.
 ### Backend
 -   **Framework**: Express.js with TypeScript.
 -   **Authentication**: Passport.js with local strategy and PostgreSQL-backed sessions, supporting role-based access control and rate limiting.
--   **Permission Middleware**: `requirePermission(entity, action)` for API-level role-based access with 33 granular permission entities. Section-level access uses 7 consolidated keys, and project detail tab visibility is controlled by 15 `pd_` entities.
+-   **Permission Middleware**: `requirePermission(entity, action)` for API-level role-based access with 43 granular permission entities covering all screens and MAD process. Section-level access uses 7 consolidated keys, and project detail tab visibility is controlled by 15 `pd_` entities. Includes ENGINEER and ACCOUNTANT roles with appropriate default permissions.
 -   **File Handling**: Multer for uploads, `exceljs` for parsing.
 -   **Data Storage**: PostgreSQL with Drizzle ORM.
 -   **Data Integrity**: Transactional safety and reprocessing.
