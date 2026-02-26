@@ -8981,6 +8981,26 @@ export async function registerRoutes(
           if (pctComplete >= 100) status = "Done";
           else if (pctComplete > 0) status = "In Progress";
 
+          let computedExpPct: number | null = pt.expectedPctComplete != null ? Math.round(pt.expectedPctComplete * 100) : null;
+          if (computedExpPct === null) {
+            const tStart = (pt.actualStart || "").substring(0, 10);
+            const tEnd = (pt.actualEnd || "").substring(0, 10);
+            if (tStart && tEnd && /^\d{4}-\d{2}-\d{2}/.test(tStart) && /^\d{4}-\d{2}-\d{2}/.test(tEnd)) {
+              const todayStr = new Date().toISOString().split("T")[0];
+              if (todayStr >= tEnd) {
+                computedExpPct = 100;
+              } else if (todayStr <= tStart) {
+                computedExpPct = 0;
+              } else {
+                const totalWd = saWorkingDays(tStart, tEnd);
+                const elapsedWd = saWorkingDays(tStart, todayStr);
+                if (totalWd && totalWd > 0 && elapsedWd !== null) {
+                  computedExpPct = Math.round(Math.min(elapsedWd / totalWd, 1.0) * 100);
+                }
+              }
+            }
+          }
+
           return {
             id: -pt.id,
             projectName: projectName,
@@ -8996,7 +9016,7 @@ export async function registerRoutes(
             dueDate: pt.actualEnd || null,
             durationDays: pt.durationDays || null,
             percentComplete: pctComplete,
-            expectedPercentComplete: pt.expectedPctComplete != null ? Math.round(pt.expectedPctComplete * 100) : null,
+            expectedPercentComplete: computedExpPct,
             storedActualPct: pt.actualPctComplete != null ? Math.round(pt.actualPctComplete * 100) : null,
             assignees: null,
             tags: null,
