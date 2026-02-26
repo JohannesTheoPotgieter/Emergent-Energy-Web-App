@@ -1225,7 +1225,6 @@ export async function registerRoutes(
         filtered = filtered.filter(e => e.projectName === projectName);
       }
 
-      // Total COS (Realised) = sum where invoice_raised_date exists within range
       let totalCosRealised = 0;
       let totalCashPaid = 0;
       let outstandingCos = 0;
@@ -1234,6 +1233,9 @@ export async function registerRoutes(
       const supplierMap = new Map<string, number>();
       const projectCosMap = new Map<string, number>();
       const monthlyCategoryMap = new Map<string, Map<string, number>>();
+
+      const _nowCos = new Date();
+      const _curMonthEnd = `${_nowCos.getFullYear()}-${String(_nowCos.getMonth() + 1).padStart(2, '0')}-31`;
 
       for (const exp of filtered) {
         const invoiceDate = exp.expenseInvoicedDate;
@@ -1245,8 +1247,7 @@ export async function registerRoutes(
 
         totalBudget += budgetAmount;
 
-        // COS Realised = has invoice date within range (and invoice number per requirement)
-        if (invoiceDate && exp.expenseInvoiceNumber && invoiceDate >= filterStart && invoiceDate <= filterEnd) {
+        if (invoiceDate && exp.expenseInvoiceNumber && invoiceDate >= filterStart && invoiceDate <= filterEnd && invoiceDate <= _curMonthEnd) {
           totalCosRealised += cosAmount;
 
           // Monthly COS by category
@@ -1278,8 +1279,7 @@ export async function registerRoutes(
           totalCashPaid += amount;
         }
 
-        // Outstanding COS = invoiced but not paid, invoice within range
-        if (invoiceDate && exp.expenseInvoiceNumber && invoiceDate >= filterStart && invoiceDate <= filterEnd && !paymentDate) {
+        if (invoiceDate && exp.expenseInvoiceNumber && invoiceDate >= filterStart && invoiceDate <= filterEnd && invoiceDate <= _curMonthEnd && !paymentDate) {
           outstandingCos += cosAmount;
 
           // At-risk = invoice older than X days and not paid
@@ -2582,6 +2582,8 @@ export async function registerRoutes(
 
       const cosByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
       const realisedByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
+      const _nowR = new Date();
+      const _currentMK = `${_nowR.getFullYear()}-${String(_nowR.getMonth() + 1).padStart(2, '0')}`;
 
       for (const exp of allProgramExpenses) {
         if (exp.rowType !== 'item') continue;
@@ -2603,7 +2605,7 @@ export async function registerRoutes(
         cosBucket.total += amount;
         cosBucket.projects.set(pName, (cosBucket.projects.get(pName) || 0) + amount);
 
-        const isRealised = isCosRealisedCheck(exp);
+        const isRealised = isCosRealisedCheck(exp) && monthKey <= _currentMK;
 
         if (isRealised) {
           if (!realisedByMonth.has(monthKey)) {
@@ -2750,18 +2752,6 @@ export async function registerRoutes(
         const cosTotal = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
         if (isNaN(cosTotal) || cosTotal === 0) continue;
 
-        const isRealised = isCosRealisedCheck(exp);
-        const isConfirmedPay = isCashflowConfirmedCheck(exp);
-
-        let cosState = 'Planned';
-        if (isConfirmedPay) {
-          cosState = 'Paid';
-        } else if (isRealised) {
-          cosState = 'Realised';
-        } else if (exp.expensePoNumber) {
-          cosState = 'Committed';
-        }
-
         const invDate = exp.expenseInvoicedDate as string | null;
         const payDate = exp.expensePaymentDate as string | null;
         const forecastDate = exp.forecastPaymentDate as string | null;
@@ -2773,6 +2763,22 @@ export async function registerRoutes(
         } else if (forecastDate) {
           const dm = forecastDate.match(/^(\d{4})-(\d{2})/);
           if (dm) itemMonthKey = `${dm[1]}-${dm[2]}`;
+        }
+
+        const _nR = new Date();
+        const _cMK = `${_nR.getFullYear()}-${String(_nR.getMonth() + 1).padStart(2, '0')}`;
+        const _isFuture = itemMonthKey ? itemMonthKey > _cMK : false;
+
+        const isRealised = isCosRealisedCheck(exp) && !_isFuture;
+        const isConfirmedPay = isCashflowConfirmedCheck(exp) && !_isFuture;
+
+        let cosState = 'Planned';
+        if (isConfirmedPay) {
+          cosState = 'Paid';
+        } else if (isRealised) {
+          cosState = 'Realised';
+        } else if (exp.expensePoNumber) {
+          cosState = 'Committed';
         }
 
         if (itemMonthKey !== monthKey) continue;
@@ -2920,6 +2926,9 @@ export async function registerRoutes(
       const cosRealisedByMonth = new Map<string, number>();
       const cosTotalByMonth = new Map<string, number>();
 
+      const nowDate = new Date();
+      const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, '0')}`;
+
       for (const exp of allExpenses) {
         if (exp.rowType !== 'item') continue;
         const amount = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
@@ -2932,13 +2941,10 @@ export async function registerRoutes(
         const monthKey = `${dateMatch[1]}-${dateMatch[2]}`;
         cosTotalByMonth.set(monthKey, (cosTotalByMonth.get(monthKey) || 0) + amount);
 
-        if (isCosRealisedCheck(exp)) {
+        if (isCosRealisedCheck(exp) && monthKey <= currentMonthKey) {
           cosRealisedByMonth.set(monthKey, (cosRealisedByMonth.get(monthKey) || 0) + amount);
         }
       }
-
-      const nowDate = new Date();
-      const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, '0')}`;
       const cosStartMonth = new Date(Date.UTC(2025, 8, 1));
 
       let cosYtdTarget = 0;
@@ -7671,7 +7677,9 @@ export async function registerRoutes(
         if (actualAmt !== 0) {
           bucket.planned += actualAmt;
 
-          if (isCosRealisedCheck(e)) {
+          const _nw = new Date();
+          const _cmk = `${_nw.getFullYear()}-${String(_nw.getMonth() + 1).padStart(2, '0')}`;
+          if (isCosRealisedCheck(e) && monthKey <= _cmk) {
             bucket.realised += actualAmt;
           }
         }
@@ -7755,7 +7763,10 @@ export async function registerRoutes(
           bucket.outflows += amt;
         }
 
-        if (isCosRealisedCheck(e)) {
+        const _nw2 = new Date();
+        const _cmk2 = `${_nw2.getFullYear()}-${String(_nw2.getMonth() + 1).padStart(2, '0')}`;
+        const _wkMonth = wk.substring(0, 7);
+        if (isCosRealisedCheck(e) && _wkMonth <= _cmk2) {
           bucket.invoicedPayments += amt;
         }
       }

@@ -332,6 +332,9 @@ router.get("/api/program/cos", async (req, res) => {
     const projectCosMap = new Map<string, number>();
     const monthlyCategoryMap = new Map<string, Map<string, number>>();
 
+    const nowCos = new Date();
+    const currentMonthEnd = `${nowCos.getFullYear()}-${String(nowCos.getMonth() + 1).padStart(2, '0')}-31`;
+
     for (const exp of filtered) {
       const invoiceDate = exp.expenseInvoicedDate;
       const paymentDate = exp.expensePaymentDate;
@@ -342,7 +345,7 @@ router.get("/api/program/cos", async (req, res) => {
 
       totalBudget += budgetAmount;
 
-      if (invoiceDate && exp.expenseInvoiceNumber && invoiceDate >= filterStart && invoiceDate <= filterEnd) {
+      if (invoiceDate && exp.expenseInvoiceNumber && invoiceDate >= filterStart && invoiceDate <= filterEnd && invoiceDate <= currentMonthEnd) {
         totalCosRealised += cosAmount;
 
         const monthKey = invoiceDate.substring(0, 7);
@@ -370,7 +373,7 @@ router.get("/api/program/cos", async (req, res) => {
         totalCashPaid += amount;
       }
 
-      if (invoiceDate && exp.expenseInvoiceNumber && invoiceDate >= filterStart && invoiceDate <= filterEnd && !paymentDate) {
+      if (invoiceDate && exp.expenseInvoiceNumber && invoiceDate >= filterStart && invoiceDate <= filterEnd && invoiceDate <= currentMonthEnd && !paymentDate) {
         outstandingCos += cosAmount;
 
         const invoiceDateObj = new Date(invoiceDate);
@@ -904,6 +907,9 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
     const cosByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
     const realisedByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
 
+    const nowDate = new Date();
+    const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, '0')}`;
+
     for (const exp of allProgramExpenses) {
       if (exp.rowType !== 'item') continue;
       const amount = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
@@ -924,7 +930,7 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       cosBucket.total += amount;
       cosBucket.projects.set(pName, (cosBucket.projects.get(pName) || 0) + amount);
 
-      const isRealised = isCosRealised(exp);
+      const isRealised = isCosRealised(exp) && monthKey <= currentMonthKey;
 
       if (isRealised) {
         if (!realisedByMonth.has(monthKey)) {
@@ -1065,18 +1071,6 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       const cosTotal = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
       if (isNaN(cosTotal) || cosTotal === 0) continue;
 
-      const isRealised = isCosRealised(exp);
-      const isConfirmedPayment = isCashflowConfirmed(exp);
-
-      let cosState = 'Planned';
-      if (isConfirmedPayment) {
-        cosState = 'Paid';
-      } else if (isRealised) {
-        cosState = 'Invoiced';
-      } else if (exp.expensePoNumber) {
-        cosState = 'Committed';
-      }
-
       const invDate = exp.expenseInvoicedDate as string | null;
       const payDate = exp.expensePaymentDate as string | null;
       const forecastDate = exp.forecastPaymentDate as string | null;
@@ -1088,6 +1082,22 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       } else if (forecastDate) {
         const dm = forecastDate.match(/^(\d{4})-(\d{2})/);
         if (dm) itemMonthKey = `${dm[1]}-${dm[2]}`;
+      }
+
+      const nowD = new Date();
+      const curMK = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, '0')}`;
+      const isFutureMonth = itemMonthKey ? itemMonthKey > curMK : false;
+
+      const isRealised = isCosRealised(exp) && !isFutureMonth;
+      const isConfirmedPayment = isCashflowConfirmed(exp) && !isFutureMonth;
+
+      let cosState = 'Planned';
+      if (isConfirmedPayment) {
+        cosState = 'Paid';
+      } else if (isRealised) {
+        cosState = 'Invoiced';
+      } else if (exp.expensePoNumber) {
+        cosState = 'Committed';
       }
 
       if (itemMonthKey !== monthKey) continue;
