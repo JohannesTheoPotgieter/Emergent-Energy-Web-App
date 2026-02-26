@@ -75,6 +75,9 @@ export default function SubcontractorDashboardPage() {
   const [linkCreatePattern, setLinkCreatePattern] = useState(true);
   const [linkLoading, setLinkLoading] = useState(false);
   const [linkError, setLinkError] = useState("");
+  const [linkIsNew, setLinkIsNew] = useState(false);
+  const [linkNewName, setLinkNewName] = useState("");
+  const [linkNewType, setLinkNewType] = useState("OTHER");
   const handleStartRename = () => {
     setRenameValue(selectedCp || "");
     setRenameError("");
@@ -206,12 +209,14 @@ export default function SubcontractorDashboardPage() {
   };
 
   const handleLinkCounterparty = async () => {
-    if (linkingLineIds.length === 0 || !linkTarget) return;
+    const targetName = linkIsNew ? linkNewName.trim() : linkTarget;
+    const targetType = linkIsNew ? linkNewType : null;
+    if (linkingLineIds.length === 0 || !targetName) return;
     setLinkLoading(true);
     setLinkError("");
     try {
       const allCps = data?.counterparties || [];
-      const targetCp = allCps.find((c: any) => c.counterpartyName === linkTarget);
+      const targetCp = linkIsNew ? null : allCps.find((c: any) => c.counterpartyName === linkTarget);
       const res = await fetch("/api/subcontractor-dashboard/link-counterparty", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
@@ -219,16 +224,19 @@ export default function SubcontractorDashboardPage() {
         body: JSON.stringify({
           costLineIds: linkingLineIds,
           counterpartyId: targetCp?.counterpartyId || null,
-          counterpartyName: linkTarget,
-          counterpartyType: targetCp?.counterpartyType || null,
+          counterpartyName: targetName,
+          counterpartyType: targetType || targetCp?.counterpartyType || null,
           createPattern: linkCreatePattern,
         }),
       });
       if (!res.ok) { const d = await res.json(); setLinkError(d.error || "Link failed"); return; }
       setLinkingLineIds([]);
       setLinkTarget("");
+      setLinkNewName("");
+      setLinkIsNew(false);
       queryClient.invalidateQueries({ queryKey: ["/api/subcontractor-dashboard/summary"] });
       queryClient.invalidateQueries({ queryKey: ["/api/subcontractor-dashboard/detail"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/invoice-patterns"] });
     } catch (err: any) {
       setLinkError(err.message || "Link failed");
     } finally {
@@ -700,7 +708,7 @@ export default function SubcontractorDashboardPage() {
         </div>
       )}
 
-      <Dialog open={!!selectedCp} onOpenChange={(open) => { if (!open) { setSelectedCp(null); setInvoiceStatusFilter("all"); setIsRenaming(false); setDeleteConfirm(false); setLinkingLineIds([]); setLinkTarget(""); setLinkError(""); } }}>
+      <Dialog open={!!selectedCp} onOpenChange={(open) => { if (!open) { setSelectedCp(null); setInvoiceStatusFilter("all"); setIsRenaming(false); setDeleteConfirm(false); setLinkingLineIds([]); setLinkTarget(""); setLinkError(""); setLinkIsNew(false); setLinkNewName(""); } }}>
         <DialogContent className="max-w-[95vw] w-[95vw] h-[90vh] overflow-y-auto p-0" data-testid="cp-detail-fullscreen">
           <div className="sticky top-0 z-10 bg-white border-b border-slate-200 px-6 py-4">
             <DialogHeader className="space-y-0">
@@ -980,24 +988,62 @@ export default function SubcontractorDashboardPage() {
                     })()})
                   </p>
                   {linkingLineIds.length > 0 && (
-                    <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2" data-testid="link-panel">
-                      <Link2 className="w-4 h-4 text-blue-600" />
-                      <span className="text-xs font-medium text-blue-800">{linkingLineIds.length} line{linkingLineIds.length > 1 ? "s" : ""} selected</span>
-                      <Select value={linkTarget} onValueChange={setLinkTarget}>
-                        <SelectTrigger className="h-7 w-48 text-xs" data-testid="select-link-target">
-                          <SelectValue placeholder="Link to counterparty..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {(data?.counterparties || [])
-                            .filter((c: any) => c.counterpartyName !== selectedCp)
-                            .map((c: any) => (
-                              <SelectItem key={c.counterpartyName} value={c.counterpartyName}>
-                                {c.counterpartyName} ({c.counterpartyType || "Other"})
-                              </SelectItem>
-                            ))}
-                        </SelectContent>
-                      </Select>
-                      <label className="flex items-center gap-1.5 text-[10px] text-slate-600 cursor-pointer">
+                    <div className="flex flex-wrap items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2" data-testid="link-panel">
+                      <Link2 className="w-4 h-4 text-blue-600 shrink-0" />
+                      <span className="text-xs font-medium text-blue-800 shrink-0">{linkingLineIds.length} line{linkingLineIds.length > 1 ? "s" : ""} selected</span>
+                      <div className="flex items-center gap-1 border border-blue-200 rounded bg-white p-0.5 shrink-0">
+                        <button
+                          className={`text-[10px] px-2 py-0.5 rounded transition-colors ${!linkIsNew ? "bg-blue-600 text-white" : "text-slate-500 hover:text-slate-700"}`}
+                          onClick={() => setLinkIsNew(false)}
+                          data-testid="btn-link-existing"
+                        >
+                          Existing
+                        </button>
+                        <button
+                          className={`text-[10px] px-2 py-0.5 rounded transition-colors ${linkIsNew ? "bg-blue-600 text-white" : "text-slate-500 hover:text-slate-700"}`}
+                          onClick={() => setLinkIsNew(true)}
+                          data-testid="btn-link-new"
+                        >
+                          + New
+                        </button>
+                      </div>
+                      {!linkIsNew ? (
+                        <Select value={linkTarget} onValueChange={setLinkTarget}>
+                          <SelectTrigger className="h-7 w-48 text-xs" data-testid="select-link-target">
+                            <SelectValue placeholder="Link to counterparty..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {(data?.counterparties || [])
+                              .filter((c: any) => c.counterpartyName !== selectedCp)
+                              .map((c: any) => (
+                                <SelectItem key={c.counterpartyName} value={c.counterpartyName}>
+                                  {c.counterpartyName} ({c.counterpartyType || "Other"})
+                                </SelectItem>
+                              ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <div className="flex items-center gap-1.5">
+                          <Input
+                            value={linkNewName}
+                            onChange={(e) => setLinkNewName(e.target.value)}
+                            placeholder="New counterparty name..."
+                            className="h-7 w-48 text-xs"
+                            data-testid="input-new-counterparty"
+                          />
+                          <Select value={linkNewType} onValueChange={setLinkNewType}>
+                            <SelectTrigger className="h-7 w-28 text-xs" data-testid="select-new-cp-type">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="INSTALLER">Installer</SelectItem>
+                              <SelectItem value="SUPPLIER">Supplier</SelectItem>
+                              <SelectItem value="OTHER">Other</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+                      <label className="flex items-center gap-1.5 text-[10px] text-slate-600 cursor-pointer shrink-0">
                         <Checkbox
                           checked={linkCreatePattern}
                           onCheckedChange={(v) => setLinkCreatePattern(!!v)}
@@ -1006,12 +1052,12 @@ export default function SubcontractorDashboardPage() {
                         />
                         Create pattern
                       </label>
-                      <Button size="sm" className="h-7 text-xs" onClick={handleLinkCounterparty}
-                        disabled={linkLoading || !linkTarget} data-testid="btn-confirm-link">
+                      <Button size="sm" className="h-7 text-xs shrink-0" onClick={handleLinkCounterparty}
+                        disabled={linkLoading || (linkIsNew ? !linkNewName.trim() : !linkTarget)} data-testid="btn-confirm-link">
                         {linkLoading ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Check className="w-3 h-3 mr-1" />}
                         Link
                       </Button>
-                      <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => { setLinkingLineIds([]); setLinkTarget(""); setLinkError(""); }}
+                      <Button size="sm" variant="ghost" className="h-7 text-xs shrink-0" onClick={() => { setLinkingLineIds([]); setLinkTarget(""); setLinkNewName(""); setLinkIsNew(false); setLinkError(""); }}
                         data-testid="btn-cancel-link">
                         <X className="w-3 h-3" />
                       </Button>
