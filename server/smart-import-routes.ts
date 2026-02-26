@@ -1302,6 +1302,52 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
       console.warn("[smart-import] Audit logging failed (non-blocking):", auditErr.message);
     }
 
+    // Auto-archive projects whose last committed import is stale (>90 days old)
+    try {
+      const STALE_DAYS = 90;
+      const cutoff = new Date(Date.now() - STALE_DAYS * 24 * 60 * 60 * 1000);
+
+      const allCommittedRuns = await db
+        .select({
+          projectName: smartImportRuns.projectName,
+          committedAt: smartImportRuns.committedAt,
+          projectId: smartImportRuns.projectId,
+        })
+        .from(smartImportRuns)
+        .where(eq(smartImportRuns.status, "COMMITTED"));
+
+      const latestByProject = new Map<number, { projectName: string; latestCommit: Date }>();
+      for (const r of allCommittedRuns) {
+        if (!r.projectId || !r.committedAt) continue;
+        const commitDate = new Date(r.committedAt);
+        const existing = latestByProject.get(r.projectId);
+        if (!existing || commitDate > existing.latestCommit) {
+          latestByProject.set(r.projectId, { projectName: r.projectName || '', latestCommit: commitDate });
+        }
+      }
+
+      const activeProjects = await db
+        .select({ id: projectInfo.id, projectName: projectInfo.projectName })
+        .from(projectInfo)
+        .where(eq(projectInfo.archivedStatus, "ACTIVE"));
+
+      const toArchive = activeProjects.filter(p => {
+        const importRecord = latestByProject.get(p.id);
+        if (!importRecord) return false;
+        return importRecord.latestCommit < cutoff;
+      });
+
+      if (toArchive.length > 0) {
+        const archiveIds = toArchive.map(p => p.id);
+        await db.update(projectInfo)
+          .set({ archivedStatus: "ARCHIVED", executionPhase: "Completed", isActive: false, updatedAt: new Date() })
+          .where(inArray(projectInfo.id, archiveIds));
+        console.log(`[SmartImport] Auto-archived ${toArchive.length} projects with stale imports (>${STALE_DAYS} days): ${toArchive.map(p => p.projectName).join(", ")}`);
+      }
+    } catch (archiveErr: any) {
+      console.warn("[SmartImport] Auto-archive check failed (non-blocking):", archiveErr.message);
+    }
+
     res.json({ success: true, runId, counts });
   } catch (err: any) {
     console.error("[smart-import] POST commit error:", err);
