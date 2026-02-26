@@ -61,6 +61,7 @@ interface NavItem {
   icon: any;
   path: string;
   className?: string;
+  requiredPermission?: { entity: string; action: string };
   children?: { label: string; icon: any; path: string }[];
 }
 

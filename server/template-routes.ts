@@ -11,6 +11,7 @@ import {
   TEMPLATE_ITEM_TYPES, TEMPLATE_WORKSTREAMS, TEMPLATE_LINK_TARGET_TYPES,
   qcWarning,
 } from "@shared/schema";
+import { requirePermission } from "./permission-middleware";
 import { createHash } from "crypto";
 
 function getUser(req: Request) {
@@ -665,7 +666,7 @@ export function registerTemplateRoutes(app: Express) {
 
   // ========== PROJECT CREATION (exec-only) ==========
 
-  app.post("/api/projects", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/projects", jwtAuth, requireAuth, requirePermission('create_project', 'edit'), async (req, res) => {
     try {
       const user = getUser(req);
       const { projectName, clientName, projectCode, location, initialPhase } = req.body;
