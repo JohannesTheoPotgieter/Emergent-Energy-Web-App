@@ -420,6 +420,7 @@ router.get("/api/home/summary", async (req, res) => {
       phaseDistribution[phase].kw += safeNum(p.sizeKwp);
     }
 
+    const todayDate = new Date().toISOString().split("T")[0];
     const projectDeltas = new Map<string, { weightedActual: number; weightedExpected: number; totalWeight: number; hasSummary: boolean }>();
     for (const plan of allPlans) {
       const taskNo = (plan.taskNo || '').toString().toLowerCase().trim();
@@ -444,8 +445,28 @@ router.get("/api/home/summary", async (req, res) => {
       if (!pd.hasSummary) {
         const dur = plan.durationDays && plan.durationDays > 0 ? plan.durationDays : 1;
         pd.weightedActual += (plan.actualPctComplete ?? 0) * dur;
-        pd.weightedExpected += (plan.expectedPctComplete ?? 0) * dur;
         pd.totalWeight += dur;
+        if (plan.expectedPctComplete !== null && plan.expectedPctComplete !== undefined) {
+          pd.weightedExpected += plan.expectedPctComplete * dur;
+        } else {
+          const tStart = plan.actualStart?.substring(0, 10);
+          const tEnd = plan.actualEnd?.substring(0, 10);
+          if (tStart && tEnd && /^\d{4}-\d{2}-\d{2}/.test(tStart) && /^\d{4}-\d{2}-\d{2}/.test(tEnd)) {
+            let exp = 0;
+            if (todayDate >= tEnd) {
+              exp = 1.0;
+            } else if (todayDate <= tStart) {
+              exp = 0.0;
+            } else {
+              const totalWd = saWorkingDays(tStart, tEnd);
+              const elapsedWd = saWorkingDays(tStart, todayDate);
+              if (totalWd && totalWd > 0 && elapsedWd !== null) {
+                exp = Math.min(elapsedWd / totalWd, 1.0);
+              }
+            }
+            pd.weightedExpected += exp * dur;
+          }
+        }
       }
     }
 

@@ -40,6 +40,84 @@ function normalizeName(name: string): string {
     .trim();
 }
 
+function formatDateKey(y: number, m: number, d: number): string {
+  return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+
+function parseDateParts(dateStr: string): { year: number; month: number; day: number } {
+  const [y, m, d] = dateStr.substring(0, 10).split('-').map(Number);
+  return { year: y, month: m, day: d };
+}
+
+function computeEaster(year: number): { year: number; month: number; day: number } {
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31);
+  const day = ((h + l - 7 * m + 114) % 31) + 1;
+  return { year, month, day };
+}
+
+function getSAPublicHolidays(year: number): Set<string> {
+  const holidays = new Set<string>();
+  const add = (m: number, d: number) => {
+    holidays.add(formatDateKey(year, m, d));
+    const dt = new Date(Date.UTC(year, m - 1, d));
+    if (dt.getUTCDay() === 0) {
+      const next = new Date(dt);
+      next.setUTCDate(next.getUTCDate() + 1);
+      holidays.add(formatDateKey(next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate()));
+    }
+  };
+  add(1, 1); add(3, 21); add(4, 27); add(5, 1); add(6, 16); add(8, 9); add(9, 24); add(12, 16); add(12, 25); add(12, 26);
+  const easter = computeEaster(year);
+  const goodFriday = new Date(Date.UTC(easter.year, easter.month - 1, easter.day));
+  goodFriday.setUTCDate(goodFriday.getUTCDate() - 2);
+  holidays.add(formatDateKey(goodFriday.getUTCFullYear(), goodFriday.getUTCMonth() + 1, goodFriday.getUTCDate()));
+  const familyDay = new Date(Date.UTC(easter.year, easter.month - 1, easter.day));
+  familyDay.setUTCDate(familyDay.getUTCDate() + 1);
+  holidays.add(formatDateKey(familyDay.getUTCFullYear(), familyDay.getUTCMonth() + 1, familyDay.getUTCDate()));
+  return holidays;
+}
+
+const lcHolidayCacheByYear = new Map<number, Set<string>>();
+function isHoliday(dateStr: string): boolean {
+  const year = parseInt(dateStr.substring(0, 4));
+  if (!lcHolidayCacheByYear.has(year)) {
+    lcHolidayCacheByYear.set(year, getSAPublicHolidays(year));
+  }
+  return lcHolidayCacheByYear.get(year)!.has(dateStr);
+}
+
+function saWorkingDays(startDateStr: string | null, endDateStr: string | null): number | null {
+  if (!startDateStr || !endDateStr || !/^\d{4}-\d{2}-\d{2}/.test(startDateStr) || !/^\d{4}-\d{2}-\d{2}/.test(endDateStr)) return null;
+  const s = parseDateParts(startDateStr);
+  const e = parseDateParts(endDateStr);
+  const start = new Date(Date.UTC(s.year, s.month - 1, s.day));
+  const end = new Date(Date.UTC(e.year, e.month - 1, e.day));
+  if (end < start) return 0;
+  let count = 0;
+  const cursor = new Date(start);
+  while (cursor <= end) {
+    const dow = cursor.getUTCDay();
+    const ds = formatDateKey(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, cursor.getUTCDate());
+    if (dow !== 0 && dow !== 6 && !isHoliday(ds)) {
+      count++;
+    }
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return count;
+}
+
 export function registerLifecycleRoutes(app: Express) {
   app.use("/api/lifecycle-board", jwtAuth);
 
@@ -85,6 +163,8 @@ export function registerLifecycleRoutes(app: Express) {
         durationDays: projectPlan.durationDays,
         taskNo: projectPlan.taskNo,
         rowNumber: projectPlan.rowNumber,
+        actualStart: projectPlan.actualStart,
+        actualEnd: projectPlan.actualEnd,
       }).from(projectPlan);
 
       const allPlanOverrides = await db.select().from(projectPlanOverrides);
@@ -174,6 +254,7 @@ export function registerLifecycleRoutes(app: Express) {
         }
       }
 
+      const todayDate = new Date().toISOString().split("T")[0];
       const planByNorm = new Map<string, { total: number; weightedPct: number; totalWeight: number; weightedExpPct: number; totalExpWeight: number }>();
       for (const p of allPlanTasks) {
         const name = p.projectName;
@@ -188,8 +269,28 @@ export function registerLifecycleRoutes(app: Express) {
         const dur = p.durationDays && p.durationDays > 0 ? Number(p.durationDays) : 1;
         entry.weightedPct += Number(p.actualPctComplete ?? 0) * dur;
         entry.totalWeight += dur;
-        entry.weightedExpPct += Number(p.expectedPctComplete ?? 0) * dur;
         entry.totalExpWeight += dur;
+        if (p.expectedPctComplete !== null && p.expectedPctComplete !== undefined) {
+          entry.weightedExpPct += Number(p.expectedPctComplete) * dur;
+        } else {
+          const tStart = (p as any).actualStart?.substring(0, 10);
+          const tEnd = (p as any).actualEnd?.substring(0, 10);
+          if (tStart && tEnd && /^\d{4}-\d{2}-\d{2}/.test(tStart) && /^\d{4}-\d{2}-\d{2}/.test(tEnd)) {
+            let exp = 0;
+            if (todayDate >= tEnd) {
+              exp = 1.0;
+            } else if (todayDate <= tStart) {
+              exp = 0.0;
+            } else {
+              const totalWd = saWorkingDays(tStart, tEnd);
+              const elapsedWd = saWorkingDays(tStart, todayDate);
+              if (totalWd && totalWd > 0 && elapsedWd !== null) {
+                exp = Math.min(elapsedWd / totalWd, 1.0);
+              }
+            }
+            entry.weightedExpPct += exp * dur;
+          }
+        }
       }
 
       const qmByNorm = new Map<string, { total: number; approved: number }>();
