@@ -3441,6 +3441,9 @@ export async function registerRoutes(
   app.get("/api/projects/:id", async (req, res) => {
     try {
       const id = parseInt(String(req.params.id));
+      if (isNaN(id)) {
+        return res.status(400).json({ error: "Invalid project ID", message: "Project ID must be a number" });
+      }
       const project = await storage.getProject(id);
       if (!project) {
         return res.status(404).json({ error: "Project not found", message: "Project not found" });
