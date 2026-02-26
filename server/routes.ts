@@ -6,7 +6,7 @@ import fs from "fs";
 import path from "path";
 import { storage } from "./storage";
 import { parseTrackerFile, applyFontColors } from "./excelParser";
-import { insertBudgetSchema, programExpense, programInflows, projectInfo, projectPlan, normalizedCostLines, normalizedRevenueLines, normalizedPlanTasks, normalizedExecutionPhases, smartImportRuns, cosStatusOverrides, revenueTrackingOverrides } from "@shared/schema";
+import { insertBudgetSchema, programExpense, programInflows, projectInfo, projectPlan, normalizedCostLines, normalizedRevenueLines, normalizedPlanTasks, normalizedExecutionPhases, smartImportRuns, cosStatusOverrides, revenueTrackingOverrides, users } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, or, sql, isNull, asc, desc } from "drizzle-orm";
 import { runSmartImportPreview } from "./lib/import/index";
@@ -720,6 +720,33 @@ export async function registerRoutes(
     res.status(401).json({ error: "Not authenticated", message: "Not authenticated" });
   });
 
+  app.get("/api/pm-assignable-users", async (req, res) => {
+    try {
+      const pmUsers = await db.select({
+        id: users.id,
+        name: users.name,
+        username: users.username,
+        role: users.role,
+      }).from(users).where(eq(users.role, "PROJECT_MANAGER_SITE"));
+      res.json(pmUsers.map(u => ({ id: u.id, name: u.name, username: u.username, role: u.role })));
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch PM users" });
+    }
+  });
+
+  app.get("/api/pd-assignable-users", async (req, res) => {
+    try {
+      const pdUsers = await db.select({
+        id: users.id,
+        name: users.name,
+        username: users.username,
+        role: users.role,
+      }).from(users).where(eq(users.role, "PROJECT_DEVELOPER"));
+      res.json(pdUsers.map(u => ({ id: u.id, name: u.name, username: u.username, role: u.role })));
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch PD users" });
+    }
+  });
 
   // ==================== OVERVIEW API ====================
 
