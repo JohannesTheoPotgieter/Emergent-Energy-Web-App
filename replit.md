@@ -1,7 +1,7 @@
 # Emergent Energy Dashboard
 
 ## Overview
-The Emergent Energy Dashboard is a full-stack web application for tracking and managing renewable energy projects. It provides real-time insights into project metrics, financial performance (cashflow, budget, cost of sales), and scheduling by processing project data from Excel files. The application aims to enhance operational efficiency, streamline project oversight, and support strategic decision-making. Key capabilities include financial tracking, project and quality management, a smart Excel import system, and integration with subcontractor workflows. The project envisions becoming a leading platform for renewable energy project management, offering transparency and control to stakeholders.
+The Emergent Energy Dashboard is a full-stack web application designed for tracking and managing renewable energy projects. It provides real-time insights into project metrics, financial performance (cashflow, budget, cost of sales), and scheduling by processing project data from Excel files. The application aims to enhance operational efficiency, streamline project oversight, and support strategic decision-making, aspiring to be a leading platform for renewable energy project management.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
@@ -37,12 +37,14 @@ Preferred communication style: Simple, everyday language.
 -   **UI**: shadcn/ui (Radix UI-based) and Tailwind CSS v4 for mobile-first responsive design.
 -   **Data Visualization**: Recharts.
 -   **Forms**: React Hook Form with Zod validation.
--   **Core Features**: Financial tracking, project and quality management, a 5-step Smart Excel Import wizard, Subcontractor Dashboard, SharePoint Proposals Pipeline integration, UX Guidance System, Project Awareness Bar, Business Alert Engine, 5-Tab Navigation, Weekly Review Wizard, Admin utilities including Execution Cockpit, redesigned sidebar, Permission Gate System for role-based access, Weekly Reviews Page, and Admin Roles & Permissions management. TR Register module tracks cross-project action items. Smart Import is the sole method for project creation/update, including re-run protection and font color extraction for COS/cashflow status. The Money tab includes a project-level **COS Tracker** showing expenditure items grouped by category with COS status and payment status. A **PM Dashboard** (`/pm-dashboard`) provides view-only project oversight for assigned project managers.
+-   **Core Features**: Financial tracking, project and quality management, 5-step Smart Excel Import wizard, Subcontractor Dashboard, SharePoint Proposals Pipeline integration, UX Guidance System, Project Awareness Bar, Business Alert Engine, Weekly Review Wizard, Admin utilities (Execution Cockpit, redesigned sidebar, Permission Gate System for role-based access, Weekly Reviews Page, Admin Roles & Permissions management). TR Register module tracks cross-project action items. Smart Import is the sole method for project creation/update, including re-run protection and font color extraction for COS/cashflow status. The Money tab includes a project-level **COS Tracker** showing expenditure items grouped by category with COS status and payment status. A **PM Dashboard** (`/pm-dashboard`) provides view-only project oversight for assigned project managers.
+-   **Project Detail Page Architecture**: Uses a section-based navigation pattern with three pillars (Project Management, Engineering, Quality) on an Overview landing page. Clicking a pillar navigates to its dedicated section. **Project Management** section consolidates Tasks, Plan, Finance, and History. **Engineering** section has Tasks and Stages sub-tabs. **Quality** section shows the quality checklist. Engineering and Quality sections are accessed from overview pillar cards, not the main tab bar.
+-   **Project Creation**: COO/CEO can create projects via `/project-create`, which auto-generates engineering stage templates based on `PHASE_TO_ENG_STAGES` mapping.
 
 ### Backend
 -   **Framework**: Express.js with TypeScript.
 -   **Authentication**: Passport.js with local strategy and PostgreSQL-backed sessions, supporting role-based access control and rate limiting.
--   **Permission Middleware**: `requirePermission(entity, action)` for API-level role-based access with 33 granular permission entities (7 original + 11 section-level + 15 pd_ project detail tabs). Section-level access uses 7 consolidated keys: `COCKPIT`, `PROJECTS`, `MONEY`, `DELIVERY`, `GOVERNANCE`, `INFORMATION`, `ADMIN`. Project detail tab visibility is controlled by 15 `pd_` entities (pd_overview, pd_plan, pd_finance, pd_engineering, pd_quality, pd_history, pd_revenue, pd_expenditure, pd_cos_tracker, pd_cashflow, pd_subcontractors, pd_eng_tasks, pd_eng_stages, pd_gantt, pd_key_dates) which are enforced client-side in `project-detail.tsx` via `canViewTab` / `canViewSubTab` objects that check both DB overrides (fetched from `/api/roles/:role`) and schema defaults.
+-   **Permission Middleware**: `requirePermission(entity, action)` for API-level role-based access with 33 granular permission entities. Section-level access uses 7 consolidated keys, and project detail tab visibility is controlled by 15 `pd_` entities.
 -   **File Handling**: Multer for uploads, `exceljs` for parsing.
 -   **Data Storage**: PostgreSQL with Drizzle ORM.
 -   **Data Integrity**: Transactional safety and reprocessing.
@@ -59,13 +61,13 @@ Preferred communication style: Simple, everyday language.
 ### Engineering Stage Templates
 -   **Module**: Implements a 5-stage engineering checklist system (First Assessment, Cost Proposal, IFC Planning, Construction Support, Handover Pack) with CRUD for templates, project stage instantiation, task/deliverable/approval management, and stage gate completion logic.
 -   **Tables**: `eng_stage_templates`, `eng_task_templates`, `eng_deliverable_templates` (template definitions); `project_eng_stages`, `project_eng_tasks`, `project_eng_deliverables`, `project_eng_approvals` (project instances). All link to `project_info` via `project_id`.
--   **Stage Gating**: Each template defines gate rules (e.g., `requireAllTasks`, `requireQaApproval`). COO can override stage completion with a mandatory reason.
--   **Lifecycle Board Integration**: When a project moves on the company lifecycle board, the corresponding engineering stages are auto-generated based on the `PHASE_TO_ENG_STAGES` mapping.
+-   **Stage Gating**: Each template defines gate rules. COO can override stage completion with a mandatory reason.
+-   **Lifecycle Board Integration**: Engineering stages are auto-generated based on `PHASE_TO_ENG_STAGES` mapping when a project moves on the company lifecycle board.
 
 ### Emergent Energy Info & Walkthroughs
--   **Knowledge Base**: Wiki-style knowledge base with Graph, Detail, Flow, and Walkthroughs tabs. Backed by `ee_info_nodes` / `ee_info_edges` / `ee_info_assets` tables.
--   **Walkthroughs**: 37 interactive step-by-step guides covering all app functionality across 7 categories (Project Management, Finance, Engineering, Governance, Operations, Productivity, Admin). Covers every page, tab, sub-tab, and workflow including: Smart Import, COS Tracking, Cashflow, Weekly Review, Lifecycle Board & Engineering Stages, Quality, Engineering Tasks, Subcontractor Management, My Tool, Home Dashboard, Project Summary, PM Dashboard, TR Register, Project Detail tabs (Overview, Plan/Gantt, Revenue, Expenditure, Cashflow, Quality, History, Subcontractors, Engineering Tasks, Key Dates), Engineering Dashboard/Standup, Pipeline Inbox, COS Control, Revenue Page, Admin Roles & Permissions, Phase Templates, Data Import, Invoice Patterns, Change Audit, Execution Board, Email-to-Task, EE Info Knowledge Base.
--   **Home Greeting System**: Role-based greetings that randomize 50/50 between complimentary and sarcastic messages tailored to the logged-in user's role (CEO, COO, PM, Engineer, QM, CFO, Construction Manager, etc.). Fridays show dad jokes instead. Messages are selected once per page load via `useMemo`.
+-   **Knowledge Base**: Wiki-style knowledge base with Graph, Detail, Flow, and Walkthroughs tabs, backed by `ee_info_nodes` / `ee_info_edges` / `ee_info_assets` tables.
+-   **Walkthroughs**: 37 interactive step-by-step guides covering all app functionality across various categories.
+-   **Home Greeting System**: Role-based greetings that randomize between complimentary and sarcastic messages, with dad jokes on Fridays.
 
 ### Deploy Cache & Session Clearing
 -   **Build Versioning**: Unique `buildId` enables frontend to detect new deployments and clear client-side cache/session data.
