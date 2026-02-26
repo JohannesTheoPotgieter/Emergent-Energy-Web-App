@@ -1,45 +1,37 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Lock, User, Info, X, Sparkles, Shield, BookOpen, Bug } from "lucide-react";
-
-const VERSION = "0.001";
-const VERSION_DATE = "26 Feb 2026";
+import { Lock, User, Info, X, Sparkles, Shield, BookOpen, Bug, Trophy, CheckCircle } from "lucide-react";
 
 const CHANGELOG = [
   {
-    icon: Shield,
-    title: "We Now Remember What You Did",
-    description: "Every single edit you make — plan changes, revenue tweaks, expense overrides, font colour toggles — is now permanently recorded in the audit trail. Yes, we're watching. No, you can't hide. Your future self will thank us when someone asks 'who changed that number?'",
+    icon: Trophy,
+    title: "Gamification: Badges & Leaderboard",
+    description: "Compete with your team! We track your tasks, approvals, imports, reviews, and project updates — then award you points and badges. 18 badges across 8 categories, 8 levels from Rookie to Titan, and a leaderboard with a podium for the top 3. May the best engineer win.",
+  },
+  {
+    icon: CheckCircle,
+    title: "Approvals Screen — One Place to Rule Them All",
+    description: "No more hunting for pending approvals across engineering gates, quality reviews, and deliverables. The new Admin Approvals screen shows everything in one place with Approve/Reject buttons and a confirmation dialog. Reject requires a reason — accountability still has a seat at the table.",
   },
   {
     icon: Sparkles,
-    title: "Smart Import Got Smarter (Finally)",
-    description: "Manually added expense rows now survive re-imports. We taught Smart Import not to eat your hand-crafted data like a hungry Pac-Man. Your custom lines are safe. You're welcome.",
+    title: "Project Home from Lifecycle Board",
+    description: "You can now jump straight from any project card on the Lifecycle Board to its full Project Home page — the one with the PM, Engineering, and Quality pillar cards. No more digging through menus.",
   },
   {
-    icon: BookOpen,
-    title: "37 Walkthroughs. Thirty. Seven.",
-    description: "We wrote step-by-step guides for literally everything in this app. COS tracking, cashflow, engineering stages, weekly reviews, admin tools — the whole lot. If you still can't find something, that's a you problem now.",
+    icon: Shield,
+    title: "Project Data Accuracy Overhaul",
+    description: "Plan progress, task counts, contract values, budget totals, and quality gates on the Project Detail overview now pull from the correct data sources. No more phantom 0% stats or missing financials. The numbers actually mean something now.",
   },
   {
     icon: Bug,
-    title: "The Knowledge Base Actually Has Knowledge",
-    description: "EE Info now has real content about COS rules, cashflow logic, revenue recognition, Smart Import, and permission controls. The stubs are gone. The excuses are gone. Read it before you Slack someone.",
-  },
-  {
-    icon: Sparkles,
-    title: "Role-Based Home Greetings",
-    description: "The home page now greets you based on your role. 50% chance it's a compliment, 50% chance it roasts you. On Fridays you get dad jokes instead because apparently that's what peak productivity looks like.",
-  },
-  {
-    icon: Shield,
-    title: "Font Colour Toggles Are Tracked",
-    description: "Toggling invoice/payment date colours between black and red now logs who did it, when, and what it was before. COS status changes, realisation toggles — all tracked. Accountability has entered the chat.",
+    title: "Engineering Tasks Filter Fixed",
+    description: "The task board no longer defaults to filtering by one person's name. It starts showing all tasks, and the filter pill now actually clears when you click the X. Revolutionary, we know.",
   },
 ];
 
@@ -51,6 +43,19 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [showVersion, setShowVersion] = useState(false);
+  const [versionInfo, setVersionInfo] = useState({ version: "0.0.002", buildTime: "" });
+
+  useEffect(() => {
+    fetch("/api/version")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.version) {
+          const date = data.buildTime ? new Date(data.buildTime).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "";
+          setVersionInfo({ version: data.version, buildTime: date });
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -146,7 +151,7 @@ export default function LoginPage() {
             data-testid="button-version-info"
           >
             <Info className="w-3.5 h-3.5" />
-            v{VERSION} — What broke this time?
+            v{versionInfo.version} — What broke this time?
           </button>
         </div>
       </div>
@@ -160,10 +165,10 @@ export default function LoginPage() {
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
               <div>
                 <h2 className="text-lg font-bold text-gray-900">
-                  Version {VERSION} Release Notes
+                  Version {versionInfo.version} Release Notes
                 </h2>
                 <p className="text-xs text-gray-400 mt-0.5">
-                  {VERSION_DATE} — Another round of "improvements" nobody asked for
+                  {versionInfo.buildTime || "Latest"} — Another round of "improvements" nobody asked for
                 </p>
               </div>
               <button

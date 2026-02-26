@@ -38,13 +38,24 @@ async function buildAll() {
 
   const buildId = crypto.randomUUID();
   const buildTime = new Date().toISOString();
+
+  let versionData = { major: 0, minor: 0, patch: 1, lastUpdated: buildTime };
+  try {
+    versionData = JSON.parse(await readFile("version.json", "utf-8"));
+    versionData.patch += 1;
+    versionData.lastUpdated = buildTime;
+  } catch {}
+  const versionString = `${versionData.major}.${versionData.minor}.${String(versionData.patch).padStart(3, "0")}`;
   console.log(`Build ID: ${buildId}`);
+  console.log(`Version: ${versionString}`);
+
+  await writeFile("version.json", JSON.stringify(versionData, null, 2));
 
   console.log("building client...");
   await viteBuild();
 
   console.log("writing build version...");
-  await writeFile("dist/public/build-version.json", JSON.stringify({ buildId, buildTime }));
+  await writeFile("dist/public/build-version.json", JSON.stringify({ buildId, buildTime, version: versionString }));
 
   console.log("building server...");
   const pkg = JSON.parse(await readFile("package.json", "utf-8"));
