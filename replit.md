@@ -1,33 +1,10 @@
 # Emergent Energy Dashboard
 
 ## Overview
-The Emergent Energy Dashboard is a full-stack web application designed for tracking and managing renewable energy projects. It provides real-time insights into project metrics, financial performance (cashflow, budget, cost of sales), and scheduling by processing project data from Excel files. The application aims to enhance operational efficiency, streamline project oversight, and support strategic decision-making, aspiring to be a leading platform for renewable energy project management.
+The Emergent Energy Dashboard is a full-stack web application designed for tracking and managing renewable energy projects. It provides real-time insights into project metrics, financial performance, and scheduling by processing project data from Excel files. The application aims to enhance operational efficiency, streamline project oversight, and support strategic decision-making, aspiring to be a leading platform for renewable energy project management.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
-
-### Data Import Rules
-- **Project Name Derivation**: The project name is ALWAYS derived from the Excel filename — specifically all alphanumeric characters (letters, numbers, spaces) before "_Tracker" or "_tracker" in the filename. E.g., `Coega_Steels_Phase_2_Tracker.xlsx` → project name "Coega Steels Phase 2". Underscores in the filename before "_Tracker" are replaced with spaces.
-- **COS Realised**: Invoice Number + Black invoice date font. Logic: hasInvoice + (invoiceDateConfirmed === true OR invoiceDateFontColor === 'black'). PO number is NOT required for realisation. NULL/empty font color does NOT default to confirmed.
-- **COS Deferred**: Invoice present + invoice date exists but font is RED (not yet realised).
-- **COS Flagged**: Invoice date font IS black but missing Invoice number — needs attention. Users can override Flagged status via a dialog (click the badge), providing a new status and reason. Overrides are stored in `cos_status_overrides` table, keyed by `expense_id` + `project_name:row_number` for re-import resilience. Override reason shown on hover.
-- **COS Planned**: Default state for all other lines.
-- **Cashflow Out of Bank**: Payment date font is BLACK + has invoice number. Logic: paymentDateBlack + hasInvoice.
-- **Cashflow Payment Planned**: Payment date exists but font is RED (planned, not yet out of bank).
-- **Cashflow Planned**: No payment date or no relevant data.
-- **Font Color Rule**: Only explicit black font (invoiceDateFontColor === 'black' or invoiceDateConfirmed === true) means confirmed. NULL or empty font color is treated as NOT confirmed (changed from legacy behavior that defaulted null to confirmed).
-- **Font Color Override**: Users can click the color dot next to invoice/payment dates in the Expenditure Breakdown to toggle between black (confirmed) and red (forecast). This saves an override in `expenditure_overrides` table (keyed by `project_name` + `row_number`) which persists across re-imports. The override is applied on-read in expenditure-breakdown, COS tracker, and month-detail endpoints via `applyExpenditureOverridesWithConfirmed()`. The toggle endpoint is `PATCH /api/expenditure/font-color-toggle`.
-- **Revenue Recognition Amount**: Extracted from "REVENUE RECOGNITION AMOUNT" column in the Expenditure Breakdown sheet. Stored in `program_expense.revenue_amount`. Both the legacy excelParser and Smart Import normalizer extract this field.
-- **Budget vs Actual Separation**: The Expenditure Breakdown sheet has dual sections — budget (left, cols 2-8) and actual (right, cols 13-26). The parser uses `actualSectionStartCol` detection to build separate `budgetColMap` and `colMap` for correct column resolution.
-- **Smart Import Legacy Parity**: The Smart Import commit writes ALL fields to `program_expense` that the legacy excelParser writes, including: `revenueAmount` (from revenue_recognition_amount), `actualCosTotal` (from actual_cos), `budgetCosTotal` (from budget_cos), `budgetQty`, `budgetRateUnit`, `budgetTotal` (from budget section columns), `expenseQty` (from budget_qty), `expenseRateUnit` (from budget_rate), `forecastPaymentDate`, `computedForecastPaymentDate` (from forecast_payment_date), and `lineStatus` (derived: Planned/Committed/Invoiced/Paid). Without these, COS tracker and cashflow calculations produce wrong numbers after re-import.
-- **Budget Section Detection**: The Smart Import detector now captures both budget section headers (left side of Expenditure Breakdown) and actual section headers (right side). Budget headers are stored in `DetectedSection.budgetHeaders` and mapped via `MappingResult.budgetMappings`. The normalizer uses budget mappings for `budget_qty`, `budget_rate`, `budget_total`, `budget_cos`, and `forecast_payment_date`, falling back to actual section mappings if budget mappings aren't available.
-- **Data End Detection**: The Smart Import detector scans up to 50 rows ahead past empty gaps to check for more data. This prevents premature cutoff when Excel files have large empty row gaps between expenditure categories (e.g., Mondi Tracker has 30+ empty rows between General Expenses and Service Add On). The `findDataEndRow` function uses a look-ahead mechanism instead of the rigid 3-consecutive-empty-rows rule.
-- **Smart Import Issue Resolution**: Three resolution types control row import behavior: "IGNORED" skips the row (user chose to ignore/exclude it), "SKIP_ROW"/"EXCLUDE" also skip the row, and "ALLOW_ALL"/"ACCEPTED"/"OVERRIDE" import the row as-is. The "Allow All" button in the issues step resolves all unresolved issues as "ALLOW_ALL", importing every data row without filtering. Bulk commit auto-resolves non-blocker warnings as "ALLOW_ALL" so data is not silently dropped.
-- **Expenditure Sort Order**: Categories in the expenditure tab are sorted by minimum `row_number` from the original Excel, preserving the Excel's category order.
-- **Database Sync**: Dev and production have separate databases. Data is migrated via `server/seed-data-migration.ts` which runs on startup — it reads JSON seed files from `server/data-seed/` and imports them if the target database is empty. The `.migrated` flag file prevents re-runs.
-- **Smart Import User Data Protection**: Re-importing a project via Smart Import does NOT overwrite user-assigned data. PM and PD fields on `project_info` are only populated from Excel if the project doesn't already have them set. Task owner assignments in `normalized_plan_tasks` are preserved across re-imports — existing owners are captured before deletion and restored by task name on re-insert, with the Excel value used only as fallback for tasks with no prior owner. Manually added expense rows (`is_manual = true` on `program_expense`) are preserved during re-import — Smart Import only deletes imported (non-manual) rows.
-- **Comprehensive Audit Trail**: ALL frontend edits are logged to the `change_sets` + `field_changes` audit trail. Tracked actions include: project plan overrides, revenue tracking overrides, expenditure overrides, cashflow planning overrides, finance revenue/COS overrides, font color toggles, COS realisation toggles, manual expense additions, milestone task links, milestone/expense date overrides, and revenue summary updates. Each audit entry records the actor, role, action type, project, old/new values, and timestamp.
-- **User Display Convention**: User assignment dropdowns throughout the app show names only (no role labels). Role information is not appended to user names in Select components.
 
 ## System Architecture
 
@@ -56,7 +33,6 @@ Preferred communication style: Simple, everyday language.
 -   **Central Spine**: `project_info` is the primary table, with all modules linking via `project_id`.
 -   **Normalized Data**: `normalized_cost_lines`, `normalized_revenue_lines`, `normalized_plan_tasks` are the source of truth.
 -   **Derived Tables**: `derived_project_kpis`, `derived_portfolio_kpis`, `derived_rag_summary` are rebuilt on demand.
--   **FK Backfill**: `backfill-project-ids.ts` populates `projectId` on related tables on startup.
 
 ### Engineering Stage Templates
 -   **Module**: Implements a 5-stage engineering checklist system (First Assessment, Cost Proposal, IFC Planning, Construction Support, Handover Pack) with CRUD for templates, project stage instantiation, task/deliverable/approval management, and stage gate completion logic.
@@ -68,6 +44,20 @@ Preferred communication style: Simple, everyday language.
 -   **Knowledge Base**: Wiki-style knowledge base with Graph, Detail, Flow, and Walkthroughs tabs, backed by `ee_info_nodes` / `ee_info_edges` / `ee_info_assets` tables.
 -   **Walkthroughs**: 37 interactive step-by-step guides covering all app functionality across various categories.
 -   **Home Greeting System**: Role-based greetings that randomize between complimentary and sarcastic messages, with dad jokes on Fridays.
+
+### Gamification System
+-   **Module**: Badge and leaderboard system that tracks user activity across the platform and awards points and badges.
+-   **Tables**: `user_badges` (earned badges with unique constraint on user_id + badge_key), `user_points` (activity point ledger).
+-   **Points**: Computed from existing activity tables — `normalized_plan_tasks` (task completion), `project_eng_approvals` (approvals), `weekly_reviews`, `smart_import_runs`, `change_sets` (project updates), `qc_item_instance` (quality approvals), `project_eng_stages` (engineering stages).
+-   **Badges**: 18 badge definitions in `BADGE_DEFINITIONS` across 8 categories (onboarding, tasks, approvals, reviews, data, imports, collaboration, streaks, quality, engineering). Badges auto-awarded on leaderboard fetch.
+-   **Levels**: 8 levels from Rookie (0 pts) to Titan (6000 pts) with progress tracking.
+-   **Frontend**: `/leaderboard` page with Rankings tab (top-3 podium + ranked list), Badges tab (all badges with earned state), and user detail dialog showing activity breakdown.
+
+### Approvals Screen
+-   **Module**: Consolidated admin view of all pending approvals across engineering gates, quality reviews, and deliverables.
+-   **Tables**: Reads from `project_eng_approvals`, `qc_item_instance`, `deliverables`.
+-   **Frontend**: `/admin/approvals` page with filter cards, approve/reject buttons, and confirmation dialog with reason field.
+-   **Actions**: Approve/reject directly updates the underlying record via existing endpoints (eng-stage, quality, deliverable APIs).
 
 ### Deploy Cache & Session Clearing
 -   **Build Versioning**: Unique `buildId` enables frontend to detect new deployments and clear client-side cache/session data.

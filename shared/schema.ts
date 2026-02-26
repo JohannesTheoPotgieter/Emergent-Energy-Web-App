@@ -3478,3 +3478,45 @@ export const DEFAULT_ROLE_PERMISSIONS: InsertRolePermission[] = [
   { role: "KEY_ACCOUNTS_MANAGER", label: "Key Accounts Manager", description: "Client relations, account management", sections: ["COCKPIT", "PROJECTS", "INFORMATION"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
   { role: "PROJECT_MANAGER_SITE", label: "Project Manager", description: "Site project manager — view-only access to assigned projects, dates, financials, quality, engineering", sections: ["PROJECTS", "MONEY", "DELIVERY", "GOVERNANCE"], canManageUsers: false, canManageRoles: false, canEditData: false, isSystem: true },
 ];
+
+// ===================== GAMIFICATION (Part N) =====================
+
+export const userBadges = pgTable("user_badges", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  badgeKey: text("badge_key").notNull(),
+  awardedAt: timestamp("awarded_at").notNull().defaultNow(),
+  meta: jsonb("meta"),
+});
+export type UserBadge = typeof userBadges.$inferSelect;
+
+export const userPoints = pgTable("user_points", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  points: integer("points").notNull().default(0),
+  category: text("category").notNull(),
+  description: text("description"),
+  awardedAt: timestamp("awarded_at").notNull().defaultNow(),
+});
+export type UserPoint = typeof userPoints.$inferSelect;
+
+export const BADGE_DEFINITIONS: Record<string, { name: string; description: string; icon: string; threshold: number; category: string }> = {
+  first_login: { name: "Welcome Aboard", description: "Logged into the platform", icon: "🚀", threshold: 1, category: "onboarding" },
+  task_completer_10: { name: "Task Tackler", description: "Completed 10 tasks", icon: "✅", threshold: 10, category: "tasks" },
+  task_completer_50: { name: "Task Machine", description: "Completed 50 tasks", icon: "⚡", threshold: 50, category: "tasks" },
+  task_completer_100: { name: "Task Legend", description: "Completed 100 tasks", icon: "🏆", threshold: 100, category: "tasks" },
+  approver_5: { name: "Gatekeeper", description: "Approved 5 items", icon: "🛡️", threshold: 5, category: "approvals" },
+  approver_25: { name: "Chief Approver", description: "Approved 25 items", icon: "👑", threshold: 25, category: "approvals" },
+  reviewer_3: { name: "Weekly Warrior", description: "Completed 3 weekly reviews", icon: "📋", threshold: 3, category: "reviews" },
+  reviewer_10: { name: "Review Champion", description: "Completed 10 weekly reviews", icon: "🏅", threshold: 10, category: "reviews" },
+  data_quality_5: { name: "Data Steward", description: "Resolved 5 data quality issues", icon: "🔍", threshold: 5, category: "data" },
+  data_quality_20: { name: "Data Guardian", description: "Resolved 20 data quality issues", icon: "🛡️", threshold: 20, category: "data" },
+  importer_3: { name: "Import Pro", description: "Completed 3 successful imports", icon: "📥", threshold: 3, category: "imports" },
+  importer_10: { name: "Import Master", description: "Completed 10 successful imports", icon: "📊", threshold: 10, category: "imports" },
+  collaborator_10: { name: "Team Player", description: "Made 10 project updates", icon: "🤝", threshold: 10, category: "collaboration" },
+  collaborator_50: { name: "Collaboration King", description: "Made 50 project updates", icon: "👥", threshold: 50, category: "collaboration" },
+  streak_7: { name: "On Fire", description: "7-day activity streak", icon: "🔥", threshold: 7, category: "streaks" },
+  streak_30: { name: "Unstoppable", description: "30-day activity streak", icon: "💎", threshold: 30, category: "streaks" },
+  quality_champion_5: { name: "Quality First", description: "Approved 5 quality checklist items", icon: "✨", threshold: 5, category: "quality" },
+  eng_milestone_3: { name: "Engineering Star", description: "Completed 3 engineering stages", icon: "⭐", threshold: 3, category: "engineering" },
+};
