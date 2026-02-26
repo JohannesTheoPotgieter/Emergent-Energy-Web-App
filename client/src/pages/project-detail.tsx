@@ -446,9 +446,58 @@ export default function ProjectDetailPage() {
   const { projectsSummary } = useProgramData();
   const { user } = useAuth();
   const userRole = user?.role || localStorage.getItem("company_role") || "";
-  const canViewFinance = checkPermission(userRole, "financials", "view");
-  const canViewEngineering = checkPermission(userRole, "engineering", "view");
-  const canViewQuality = checkPermission(userRole, "quality", "view");
+
+  const { data: rolePermsData, isLoading: rolePermsLoading } = useQuery({
+    queryKey: ["role-perms", userRole],
+    queryFn: async () => {
+      if (!userRole) return null;
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`/api/roles/${encodeURIComponent(userRole)}`, { headers, credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!userRole,
+    staleTime: 60_000,
+  });
+
+  const rolePermsReady = !userRole || !rolePermsLoading;
+
+  const canViewPerm = (entity: string): boolean => {
+    if (!rolePermsReady) return false;
+    const dbPerms = rolePermsData?.entityPermissions as Record<string, Record<string, boolean>> | null;
+    if (dbPerms && dbPerms[entity]) {
+      if (dbPerms[entity]["view"] === true) return true;
+      if (dbPerms[entity]["view"] === false) return false;
+    }
+    return checkPermission(userRole, entity as any, "view");
+  };
+
+  const canViewFinance = canViewPerm("financials");
+  const canViewEngineering = canViewPerm("engineering");
+  const canViewQuality = canViewPerm("quality");
+
+  const canViewTab = {
+    overview: canViewPerm("pd_overview"),
+    plan: canViewPerm("pd_plan"),
+    finance: canViewPerm("pd_finance") && canViewFinance,
+    engineering: canViewPerm("pd_engineering") && canViewEngineering,
+    quality: canViewPerm("pd_quality") && canViewQuality,
+    history: canViewPerm("pd_history"),
+  };
+
+  const canViewSubTab = {
+    revenue: canViewPerm("pd_revenue"),
+    expenditure: canViewPerm("pd_expenditure"),
+    cosTracker: canViewPerm("pd_cos_tracker"),
+    cashflow: canViewPerm("pd_cashflow"),
+    subcontractors: canViewPerm("pd_subcontractors"),
+    engTasks: canViewPerm("pd_eng_tasks"),
+    engStages: canViewPerm("pd_eng_stages"),
+    gantt: canViewPerm("pd_gantt"),
+    keyDates: canViewPerm("pd_key_dates"),
+  };
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [phaseModalOpen, setPhaseModalOpen] = useState(false);
@@ -832,38 +881,45 @@ export default function ProjectDetailPage() {
 
       <Tabs value={activeSuperTab} onValueChange={setActiveSuperTab} className="w-full">
         <TabsList className="flex gap-1 h-auto p-1 w-full" data-testid="super-tabs">
+          {canViewTab.overview && (
           <TabsTrigger value="overview" className="flex items-center gap-1.5 text-xs" data-testid="tab-overview">
             <ListTodo className="h-3.5 w-3.5" />
             <span>Overview</span>
           </TabsTrigger>
+          )}
+          {canViewTab.plan && (
           <TabsTrigger value="plan" className="flex items-center gap-1.5 text-xs" data-testid="tab-plan">
             <FileText className="h-3.5 w-3.5" />
             <span>Plan</span>
           </TabsTrigger>
-          {canViewFinance && (
+          )}
+          {canViewTab.finance && (
           <TabsTrigger value="money" className="flex items-center gap-1.5 text-xs" data-testid="tab-money">
             <DollarSign className="h-3.5 w-3.5" />
             <span>Project Finance</span>
           </TabsTrigger>
           )}
-          {canViewEngineering && (
+          {canViewTab.engineering && (
           <TabsTrigger value="engineering" className="flex items-center gap-1.5 text-xs" data-testid="tab-engineering">
             <Wrench className="h-3.5 w-3.5" />
             <span>Engineering</span>
           </TabsTrigger>
           )}
-          {canViewQuality && (
+          {canViewTab.quality && (
           <TabsTrigger value="quality" className="flex items-center gap-1.5 text-xs" data-testid="tab-quality">
             <ShieldCheck className="h-3.5 w-3.5" />
             <span>Quality</span>
           </TabsTrigger>
           )}
+          {canViewTab.history && (
           <TabsTrigger value="history" className="flex items-center gap-1.5 text-xs" data-testid="tab-history">
             <History className="h-3.5 w-3.5" />
             <span>History</span>
           </TabsTrigger>
+          )}
         </TabsList>
 
+        {canViewTab.overview && (
         <TabsContent value="overview" className="space-y-4">
           <div className="flex gap-1 flex-wrap" data-testid="sub-tabs-overview">
             <Button size="sm" variant={currentSubTab === "task-grid" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("overview", "task-grid")} data-testid="subtab-task-grid">
@@ -880,70 +936,92 @@ export default function ProjectDetailPage() {
           {currentSubTab === "board" && <BoardView projectName={projectName} onTaskClick={handleTaskClick} />}
           {currentSubTab === "calendar" && <CalendarView projectName={projectName} onTaskClick={handleTaskClick} />}
         </TabsContent>
+        )}
 
-        {canViewEngineering && (
+        {canViewTab.engineering && (
         <TabsContent value="engineering" className="space-y-4">
           <div className="flex gap-1 flex-wrap" data-testid="sub-tabs-engineering">
+            {canViewSubTab.engTasks && (
             <Button size="sm" variant={currentSubTab === "eng-tasks" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("engineering", "eng-tasks")} data-testid="subtab-eng-tasks">
               <ListTodo className="h-3 w-3 mr-1" /> Tasks
             </Button>
+            )}
+            {canViewSubTab.engStages && (
             <Button size="sm" variant={currentSubTab === "eng-stages" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("engineering", "eng-stages")} data-testid="subtab-eng-stages">
               <Target className="h-3 w-3 mr-1" /> Stages
             </Button>
+            )}
           </div>
-          {currentSubTab === "eng-tasks" && <EngTasksTab projectInfoId={projectInfoId ?? null} isAdmin={isAdmin} />}
-          {currentSubTab === "eng-stages" && projectInfoId && (
+          {currentSubTab === "eng-tasks" && canViewSubTab.engTasks && <EngTasksTab projectInfoId={projectInfoId ?? null} isAdmin={isAdmin} />}
+          {currentSubTab === "eng-stages" && canViewSubTab.engStages && projectInfoId && (
             <EngineeringStagesTab projectId={projectInfoId} projectName={projectName} isAdmin={isAdmin} userRole={userRole} />
           )}
         </TabsContent>
         )}
 
+        {canViewTab.plan && (
         <TabsContent value="plan" className="space-y-4">
           <div className="flex gap-1 flex-wrap" data-testid="sub-tabs-plan">
+            {canViewSubTab.gantt && (
             <Button size="sm" variant={currentSubTab === "gantt" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("plan", "gantt")} data-testid="subtab-gantt">
               <FileText className="h-3 w-3 mr-1" /> Gantt
             </Button>
+            )}
+            {canViewSubTab.keyDates && (
             <Button size="sm" variant={currentSubTab === "key-dates" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("plan", "key-dates")} data-testid="subtab-key-dates">
               <Calendar className="h-3 w-3 mr-1" /> Key Dates
             </Button>
+            )}
           </div>
-          {currentSubTab === "gantt" && <ProjectPlanTab projectName={projectName} />}
-          {currentSubTab === "key-dates" && <KeyDatesPanel projectName={projectName} />}
-        </TabsContent>
-
-        {canViewFinance && (
-        <TabsContent value="money" className="space-y-4">
-          <div className="flex gap-1 flex-wrap" data-testid="sub-tabs-money">
-            <Button size="sm" variant={currentSubTab === "revenue-tracking" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("money", "revenue-tracking")} data-testid="subtab-revenue">
-              <DollarSign className="h-3 w-3 mr-1" /> Revenue
-            </Button>
-            <Button size="sm" variant={currentSubTab === "expenditure" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("money", "expenditure")} data-testid="subtab-expenditure">
-              <CreditCard className="h-3 w-3 mr-1" /> Expenditure
-            </Button>
-            <Button size="sm" variant={currentSubTab === "monthly-realisation" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("money", "monthly-realisation")} data-testid="subtab-monthly-realisation">
-              <TrendingUp className="h-3 w-3 mr-1" /> COS Tracker
-            </Button>
-            <Button size="sm" variant={currentSubTab === "cashflow" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("money", "cashflow")} data-testid="subtab-cashflow">
-              <Activity className="h-3 w-3 mr-1" /> Cashflow
-            </Button>
-            <Button size="sm" variant={currentSubTab === "subcontractors" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("money", "subcontractors")} data-testid="subtab-subcontractors">
-              <Users className="h-3 w-3 mr-1" /> Subcontractors
-            </Button>
-          </div>
-          {currentSubTab === "revenue-tracking" && <RevenueTrackingTab projectName={projectName} highlightId={highlightType === 'revenue' ? highlightId : null} />}
-          {currentSubTab === "expenditure" && <ExpenditureEditableTab projectName={projectName} highlightId={highlightType === 'expense' ? highlightId : null} />}
-          {currentSubTab === "monthly-realisation" && <MonthlyRealisationTab projectName={projectName} />}
-          {currentSubTab === "cashflow" && <CashflowTab projectName={projectName} />}
-          {currentSubTab === "subcontractors" && <ProjectSubcontractorsTab projectName={projectName} />}
+          {currentSubTab === "gantt" && canViewSubTab.gantt && <ProjectPlanTab projectName={projectName} />}
+          {currentSubTab === "key-dates" && canViewSubTab.keyDates && <KeyDatesPanel projectName={projectName} />}
         </TabsContent>
         )}
 
-        {canViewQuality && (
+        {canViewTab.finance && (
+        <TabsContent value="money" className="space-y-4">
+          <div className="flex gap-1 flex-wrap" data-testid="sub-tabs-money">
+            {canViewSubTab.revenue && (
+            <Button size="sm" variant={currentSubTab === "revenue-tracking" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("money", "revenue-tracking")} data-testid="subtab-revenue">
+              <DollarSign className="h-3 w-3 mr-1" /> Revenue
+            </Button>
+            )}
+            {canViewSubTab.expenditure && (
+            <Button size="sm" variant={currentSubTab === "expenditure" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("money", "expenditure")} data-testid="subtab-expenditure">
+              <CreditCard className="h-3 w-3 mr-1" /> Expenditure
+            </Button>
+            )}
+            {canViewSubTab.cosTracker && (
+            <Button size="sm" variant={currentSubTab === "monthly-realisation" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("money", "monthly-realisation")} data-testid="subtab-monthly-realisation">
+              <TrendingUp className="h-3 w-3 mr-1" /> COS Tracker
+            </Button>
+            )}
+            {canViewSubTab.cashflow && (
+            <Button size="sm" variant={currentSubTab === "cashflow" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("money", "cashflow")} data-testid="subtab-cashflow">
+              <Activity className="h-3 w-3 mr-1" /> Cashflow
+            </Button>
+            )}
+            {canViewSubTab.subcontractors && (
+            <Button size="sm" variant={currentSubTab === "subcontractors" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("money", "subcontractors")} data-testid="subtab-subcontractors">
+              <Users className="h-3 w-3 mr-1" /> Subcontractors
+            </Button>
+            )}
+          </div>
+          {currentSubTab === "revenue-tracking" && canViewSubTab.revenue && <RevenueTrackingTab projectName={projectName} highlightId={highlightType === 'revenue' ? highlightId : null} />}
+          {currentSubTab === "expenditure" && canViewSubTab.expenditure && <ExpenditureEditableTab projectName={projectName} highlightId={highlightType === 'expense' ? highlightId : null} />}
+          {currentSubTab === "monthly-realisation" && canViewSubTab.cosTracker && <MonthlyRealisationTab projectName={projectName} />}
+          {currentSubTab === "cashflow" && canViewSubTab.cashflow && <CashflowTab projectName={projectName} />}
+          {currentSubTab === "subcontractors" && canViewSubTab.subcontractors && <ProjectSubcontractorsTab projectName={projectName} />}
+        </TabsContent>
+        )}
+
+        {canViewTab.quality && (
         <TabsContent value="quality" className="space-y-4">
           <QualityTab projectName={projectName} />
         </TabsContent>
         )}
 
+        {canViewTab.history && (
         <TabsContent value="history" className="space-y-4">
           <WeeklyReviewWizard
             projectName={projectName}
@@ -958,6 +1036,7 @@ export default function ProjectDetailPage() {
           />
           <ProjectHistoryTab projectName={projectName} />
         </TabsContent>
+        )}
       </Tabs>
 
       <TaskDetailDrawer

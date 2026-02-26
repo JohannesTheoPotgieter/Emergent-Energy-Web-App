@@ -39,7 +39,7 @@ Preferred communication style: Simple, everyday language.
 ### Backend
 -   **Framework**: Express.js with TypeScript.
 -   **Authentication**: Passport.js with local strategy and PostgreSQL-backed sessions, supporting role-based access control and rate limiting.
--   **Permission Middleware**: `requirePermission(entity, action)` for API-level role-based access with 18 granular permission entities. Section-level access uses 7 consolidated keys: `COCKPIT`, `PROJECTS`, `MONEY`, `DELIVERY`, `GOVERNANCE`, `INFORMATION`, `ADMIN`.
+-   **Permission Middleware**: `requirePermission(entity, action)` for API-level role-based access with 33 granular permission entities (7 original + 11 section-level + 15 pd_ project detail tabs). Section-level access uses 7 consolidated keys: `COCKPIT`, `PROJECTS`, `MONEY`, `DELIVERY`, `GOVERNANCE`, `INFORMATION`, `ADMIN`. Project detail tab visibility is controlled by 15 `pd_` entities (pd_overview, pd_plan, pd_finance, pd_engineering, pd_quality, pd_history, pd_revenue, pd_expenditure, pd_cos_tracker, pd_cashflow, pd_subcontractors, pd_eng_tasks, pd_eng_stages, pd_gantt, pd_key_dates) which are enforced client-side in `project-detail.tsx` via `canViewTab` / `canViewSubTab` objects that check both DB overrides (fetched from `/api/roles/:role`) and schema defaults.
 -   **File Handling**: Multer for uploads, `exceljs` for parsing.
 -   **Data Storage**: PostgreSQL with Drizzle ORM.
 -   **Data Integrity**: Transactional safety and reprocessing.

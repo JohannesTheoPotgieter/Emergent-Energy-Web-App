@@ -149,6 +149,57 @@ const SECTION_CONFIG: {
   },
 ];
 
+const PROJECT_DETAIL_TAB_CONFIG: {
+  group: string;
+  groupLabel: string;
+  icon: string;
+  items: { entity: PermissionEntity; label: string }[];
+}[] = [
+  {
+    group: "main_tabs",
+    groupLabel: "Main Tabs",
+    icon: "📑",
+    items: [
+      { entity: "pd_overview" as PermissionEntity, label: "Overview" },
+      { entity: "pd_plan" as PermissionEntity, label: "Plan" },
+      { entity: "pd_finance" as PermissionEntity, label: "Project Finance" },
+      { entity: "pd_engineering" as PermissionEntity, label: "Engineering" },
+      { entity: "pd_quality" as PermissionEntity, label: "Quality" },
+      { entity: "pd_history" as PermissionEntity, label: "History / Weekly Reviews" },
+    ],
+  },
+  {
+    group: "plan_subtabs",
+    groupLabel: "Plan Sub-tabs",
+    icon: "📅",
+    items: [
+      { entity: "pd_gantt" as PermissionEntity, label: "Gantt Chart" },
+      { entity: "pd_key_dates" as PermissionEntity, label: "Key Dates" },
+    ],
+  },
+  {
+    group: "finance_subtabs",
+    groupLabel: "Finance Sub-tabs",
+    icon: "💵",
+    items: [
+      { entity: "pd_revenue" as PermissionEntity, label: "Revenue" },
+      { entity: "pd_expenditure" as PermissionEntity, label: "Expenditure" },
+      { entity: "pd_cos_tracker" as PermissionEntity, label: "COS Tracker" },
+      { entity: "pd_cashflow" as PermissionEntity, label: "Cashflow" },
+      { entity: "pd_subcontractors" as PermissionEntity, label: "Subcontractors" },
+    ],
+  },
+  {
+    group: "engineering_subtabs",
+    groupLabel: "Engineering Sub-tabs",
+    icon: "🔩",
+    items: [
+      { entity: "pd_eng_tasks" as PermissionEntity, label: "Engineering Tasks" },
+      { entity: "pd_eng_stages" as PermissionEntity, label: "Engineering Stages" },
+    ],
+  },
+];
+
 function getAuthHeaders(): HeadersInit {
   const token = localStorage.getItem("auth_token");
   return {
@@ -589,6 +640,53 @@ function RoleTableSection({ toast }: { toast: ReturnType<typeof useToast>["toast
                           </div>
                         );
                       })}
+                    </div>
+                  </div>
+
+                  <div>
+                    <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-3">Project Detail Tabs — What this role sees on each project</h4>
+                    <div className="grid grid-cols-1 gap-2">
+                      {PROJECT_DETAIL_TAB_CONFIG.map(({ group, groupLabel, icon, items }) => (
+                        <div key={group} className="rounded-lg border border-gray-100 bg-gray-50/30" data-testid={`pd-group-${role.role}-${group}`}>
+                          <div className="flex items-center gap-3 px-3 py-2">
+                            <span className="text-base">{icon}</span>
+                            <span className="text-sm font-medium text-gray-700 flex-1">{groupLabel}</span>
+                            <div className="flex gap-0.5 shrink-0">
+                              {(["view", "edit"] as PermissionAction[]).map(action => (
+                                <span key={action} className="text-[9px] text-gray-400 font-medium uppercase w-11 text-center">{action}</span>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="px-3 pb-2.5 pt-0">
+                            <div className="ml-9 space-y-1">
+                              {items.map(({ entity, label }) => (
+                                <div key={entity} className="flex items-center justify-between" data-testid={`pd-entity-row-${role.role}-${entity}`}>
+                                  <span className="text-xs text-gray-600">{label}</span>
+                                  <div className="flex gap-0.5">
+                                    {(["view", "edit"] as PermissionAction[]).map(action => {
+                                      const active = getEntityPerm(role.role, entity, action);
+                                      return (
+                                        <button
+                                          key={action}
+                                          className={`w-11 h-6 rounded border text-[10px] font-medium transition-colors ${
+                                            active
+                                              ? "bg-green-600 border-green-600 text-white"
+                                              : "bg-white border-gray-200 text-gray-300 hover:border-gray-400 hover:text-gray-400"
+                                          }`}
+                                          onClick={() => toggleEntityPerm(role.role, entity, action)}
+                                          data-testid={`pd-perm-${role.role}-${entity}-${action}`}
+                                        >
+                                          {active ? "Yes" : "No"}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
 
