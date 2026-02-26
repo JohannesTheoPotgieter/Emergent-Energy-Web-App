@@ -204,7 +204,7 @@ const typeLabels: Record<string, string> = {
   hold_task: "On Hold",
   approval_needed: "Needs Approval",
   cos_flagged: "COS Flagged",
-  budget_overrun: "Budget Overrun",
+  budget_overrun: "Cost Overrun",
 };
 
 const severityColors: Record<string, string> = {
@@ -242,7 +242,7 @@ function OverviewTab({ data, navigate }: { data: PMDashboardData; navigate: (pat
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3" data-testid="pm-kpi-strip">
         <KpiCard icon={Briefcase} label="Projects" value={summary.totalProjects} />
         <KpiCard icon={DollarSign} label="Contract Value" value={formatCurrency(summary.totalContractValue)} />
-        <KpiCard icon={Gauge} label="Avg Spend" value={`${summary.avgSpendPercent}%`} sub="budget utilisation" />
+        <KpiCard icon={Gauge} label="Avg Spend" value={`${summary.avgSpendPercent}%`} sub="costed utilisation" />
         <KpiCard icon={Percent} label="Gross Profit" value={`${summary.grossProfit}%`} sub="across portfolio" color={summary.grossProfit < 15 ? "text-red-500" : "text-green-500"} />
         <KpiCard icon={Zap} label="Active Tasks" value={summary.activeTasks} />
         <KpiCard icon={AlertTriangle} label="Overdue" value={summary.overdueTasks} color={summary.overdueTasks > 0 ? "text-red-500" : ""} />
@@ -269,7 +269,7 @@ function OverviewTab({ data, navigate }: { data: PMDashboardData; navigate: (pat
         </Card>
         <Card className="border-purple-200 bg-purple-50/50">
           <CardContent className="p-3">
-            <div className="text-[10px] text-purple-700 font-medium uppercase">Total Budget</div>
+            <div className="text-[10px] text-purple-700 font-medium uppercase">Total Costed</div>
             <p className="text-xl font-bold text-purple-800">{formatCurrency(summary.totalBudget)}</p>
           </CardContent>
         </Card>
@@ -325,7 +325,7 @@ function OverviewTab({ data, navigate }: { data: PMDashboardData; navigate: (pat
                 <div data-testid={`financials-${project.id}`}>
                   <div className="flex justify-between text-xs mb-1">
                     <span className="text-muted-foreground flex items-center gap-1">
-                      <BarChart3 className="h-3 w-3" /> Budget vs Actual
+                      <BarChart3 className="h-3 w-3" /> Costed vs Actual
                     </span>
                     <span className="font-medium">{project.financials.spendPercent}%</span>
                   </div>
@@ -340,7 +340,7 @@ function OverviewTab({ data, navigate }: { data: PMDashboardData; navigate: (pat
                   </div>
                   <div className="flex justify-between text-[10px] text-muted-foreground mt-0.5">
                     <span>{formatCurrency(project.financials.totalActual)} spent</span>
-                    <span>{formatCurrency(project.financials.totalBudget)} budget</span>
+                    <span>{formatCurrency(project.financials.totalBudget)} costed</span>
                   </div>
                 </div>
 

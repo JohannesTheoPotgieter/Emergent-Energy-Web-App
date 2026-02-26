@@ -395,8 +395,8 @@ export function registerPmRoutes(app: Express) {
           type: "budget_overrun",
           severity: overrun > 20 ? "high" : "medium",
           projectName: b.project_name,
-          title: `Budget overrun: ${overrun}%`,
-          detail: `Actual R${actual.toLocaleString()} vs Budget R${budget.toLocaleString()}`,
+          title: `Cost overrun: ${overrun}%`,
+          detail: `Actual R${actual.toLocaleString()} vs Costed R${budget.toLocaleString()}`,
           link: `/project/${encodeURIComponent(b.project_name)}?tab=money`,
         });
       }
