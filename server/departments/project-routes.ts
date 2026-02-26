@@ -676,7 +676,7 @@ router.post("/api/home/notes", requireAuth, requireAdmin, async (req, res) => {
 
 router.get("/api/projects-summary", async (req, res) => {
   try {
-    const [allProjectInfo, allExpenses, rawInflows, allPlans, allEditableFields, allTaskLinks, allOpTasks, uploadMetaRows] = await Promise.all([
+    const [allProjectInfo, allExpenses, rawInflows, allPlans, allEditableFields, allTaskLinks, allOpTasks, uploadMetaRows, allPlanOverrides] = await Promise.all([
       storage.getAllProjectInfo(),
       storage.getAllProgramExpenses(),
       storage.getAllProgramInflows(),
@@ -685,8 +685,26 @@ router.get("/api/projects-summary", async (req, res) => {
       storage.getAllMilestoneTaskLinks(),
       storage.getAllOperationalTasks(),
       db.execute(sql`SELECT DISTINCT file_name FROM upload_metadata`),
+      storage.getAllProjectPlanOverrides(),
     ]);
     const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
+
+    const milestoneKeys = new Set<string>();
+    for (const o of allPlanOverrides) {
+      if (o.fieldName === "parentRowNumber" && o.overrideValue && o.overrideValue !== "" && o.overrideValue !== "0") {
+        milestoneKeys.add(`${o.projectName}::${o.overrideValue}`);
+      }
+    }
+    for (const o of allPlanOverrides) {
+      if (o.fieldName === "indentLevel" && o.overrideValue === "0" && milestoneKeys.has(`${o.projectName}::${o.rowNumber}`)) {
+        milestoneKeys.add(`${o.projectName}::${o.rowNumber}`);
+      }
+    }
+    for (const o of allPlanOverrides) {
+      if (o.rowNumber < 0) {
+        milestoneKeys.add(`${o.projectName}::${o.rowNumber}`);
+      }
+    }
 
     const importedProjectNames = new Set<string>();
     for (const row of uploadMetaRows.rows) {
@@ -798,6 +816,7 @@ router.get("/api/projects-summary", async (req, res) => {
         let totalWeight = 0;
         let weightedSum = 0;
         for (const p of projectPlans) {
+          if (p.rowNumber && milestoneKeys.has(`${projectName}::${p.rowNumber}`)) continue;
           const dur = p.durationDays && p.durationDays > 0 ? p.durationDays : 1;
           weightedSum += (p.actualPctComplete ?? 0) * dur;
           totalWeight += dur;
@@ -809,6 +828,7 @@ router.get("/api/projects-summary", async (req, res) => {
         let totalExpWeight = 0;
         let weightedExpSum = 0;
         for (const task of projectPlans) {
+          if (task.rowNumber && milestoneKeys.has(`${projectName}::${task.rowNumber}`)) continue;
           const dur = task.durationDays && task.durationDays > 0 ? task.durationDays : 1;
           totalExpWeight += dur;
           if (task.expectedPctComplete !== null && task.expectedPctComplete !== undefined) {
