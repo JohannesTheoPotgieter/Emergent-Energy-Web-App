@@ -381,7 +381,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-150 group text-[13px] select-none",
                     isActive
                       ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium shadow-md"
-                      : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:scale-[0.98]"
+                      : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:scale-[0.98] nav-item-glow"
                   )}>
                     <item.icon className={cn("w-4 h-4 shrink-0", item.className)} />
                     {sidebarShowLabels && <span>{item.label}</span>}

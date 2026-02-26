@@ -243,16 +243,16 @@ function KpiCard({
   return (
     <div className="relative">
       <button
-        className={`w-full text-left rounded-xl border ${c.card} p-3 sm:p-5 cursor-pointer hover:shadow-lg active:scale-[0.98] sm:hover:scale-[1.02] transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-400`}
+        className={`w-full text-left rounded-xl border ${c.card} p-3 sm:p-5 cursor-pointer card-hover active:scale-[0.98] transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-400`}
         onClick={() => onToggle(drilldownKey)}
         data-testid={testId}
       >
         <div className="flex items-start gap-3 sm:gap-4">
-          <div className={`p-2 sm:p-3 rounded-xl ${c.iconBg} shrink-0`}>
+          <div className={`p-2 sm:p-3 rounded-xl ${c.iconBg} shrink-0 transition-transform duration-300 group-hover:scale-110`}>
             <Icon className={`w-4 h-4 sm:w-5 sm:h-5 ${c.icon}`} />
           </div>
           <div className="min-w-0 flex-1">
-            <p className={`text-xl sm:text-2xl font-bold tracking-tight ${c.value}`} data-testid={valueTestId}>
+            <p className={`text-xl sm:text-2xl font-bold tracking-tight ${c.value} animate-number-pop`} data-testid={valueTestId}>
               {value}
             </p>
             <p className={`text-xs sm:text-sm font-medium mt-0.5 ${c.label}`}>{label}</p>
@@ -547,21 +547,21 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-8 max-w-[1400px] mx-auto">
-      <header className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
+      <header className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 animate-fade-in">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-50" data-testid="text-page-title">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-50 animate-slide-up-fade" data-testid="text-page-title">
             Program Dashboard
           </h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 animate-slide-up-fade stagger-1">
             FY26: 1 Sep 2025 – 31 Aug 2026
           </p>
         </div>
-        <time className="text-sm font-medium text-gray-400 dark:text-gray-500 tabular-nums" data-testid="text-today-date">
+        <time className="text-sm font-medium text-gray-400 dark:text-gray-500 tabular-nums animate-slide-in-right stagger-2" data-testid="text-today-date">
           {format(new Date(), "EEEE, d MMMM yyyy")}
         </time>
       </header>
 
-      <section aria-label="Milestone KPIs">
+      <section aria-label="Milestone KPIs" className="animate-float-in stagger-2">
         <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-3">Milestones</p>
         <div className="grid gap-3 sm:gap-4 grid-cols-1 xs:grid-cols-2 lg:grid-cols-4">
           <KpiCard
@@ -631,7 +631,7 @@ export default function Dashboard() {
         </div>
       </section>
 
-      <section aria-label="Financial KPIs">
+      <section aria-label="Financial KPIs" className="animate-float-in stagger-4">
         <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-3">Financial</p>
         <div className="grid gap-3 sm:gap-4 grid-cols-1 xs:grid-cols-2 lg:grid-cols-4">
           <KpiCard
@@ -701,7 +701,7 @@ export default function Dashboard() {
         </div>
       </section>
 
-      <Card className="border-l-4 border-l-red-500 shadow-sm" data-testid="card-high-priority">
+      <Card className="border-l-4 border-l-red-500 shadow-sm animate-float-in stagger-6" data-testid="card-high-priority">
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between w-full">
             <div className="flex items-center gap-3">
@@ -869,7 +869,7 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 sm:gap-6 grid-cols-1 xl:grid-cols-5">
+      <div className="grid gap-4 sm:gap-6 grid-cols-1 xl:grid-cols-5 animate-fade-in stagger-7">
         <Card className="xl:col-span-2 shadow-sm" data-testid="card-pm-summary">
           <CardHeader className="pb-2">
             <CardTitle className="text-base font-bold text-gray-900 dark:text-gray-50">PM Summary</CardTitle>
@@ -982,7 +982,7 @@ export default function Dashboard() {
       </div>
 
       {projectsByPhase.length > 0 && (
-        <Card className="shadow-sm" data-testid="card-projects-by-phase">
+        <Card className="shadow-sm animate-float-in stagger-8" data-testid="card-projects-by-phase">
           <CardHeader className="pb-2">
             <CardTitle className="text-base font-bold text-gray-900 dark:text-gray-50">Count of Projects by Phase</CardTitle>
           </CardHeader>
@@ -1047,7 +1047,7 @@ export default function Dashboard() {
       )}
 
       {ganttData.length > 0 && (
-        <Card className="shadow-sm" data-testid="card-portfolio-gantt">
+        <Card className="shadow-sm animate-fade-in" data-testid="card-portfolio-gantt">
           <CardHeader className="pb-2">
             <CardTitle className="text-base font-bold text-gray-900 dark:text-gray-50">Portfolio Gantt Chart</CardTitle>
           </CardHeader>

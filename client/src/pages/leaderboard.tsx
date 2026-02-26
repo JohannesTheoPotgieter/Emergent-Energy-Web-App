@@ -188,7 +188,7 @@ export default function LeaderboardPage() {
       </div>
 
       {myEntry && (
-        <Card className="border-2 border-primary/20 bg-primary/5" data-testid="card-my-stats">
+        <Card className="border-2 border-primary/20 bg-primary/5 animate-float-in" data-testid="card-my-stats">
           <CardContent className="p-4">
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center text-white font-bold text-lg">
@@ -248,7 +248,7 @@ export default function LeaderboardPage() {
                 return (
                   <Card
                     key={entry.userId}
-                    className={`cursor-pointer transition-all hover:shadow-lg ${isFirst ? "ring-2 ring-yellow-400 -mt-2" : ""}`}
+                    className={`cursor-pointer transition-all hover:shadow-lg card-hover animate-float-in stagger-${rank} ${isFirst ? "ring-2 ring-yellow-400 -mt-2" : ""}`}
                     onClick={() => setSelectedUser(entry)}
                     data-testid={`card-rank-${rank}`}
                   >
@@ -281,7 +281,8 @@ export default function LeaderboardPage() {
               {rest.map((entry, i) => (
                 <Card
                   key={entry.userId}
-                  className="cursor-pointer hover:shadow-sm transition-shadow"
+                  className="cursor-pointer hover:shadow-sm transition-shadow animate-slide-up-fade"
+                  style={{ animationDelay: `${Math.min(i * 0.03, 0.3)}s`, animationFillMode: 'both' }}
                   onClick={() => setSelectedUser(entry)}
                   data-testid={`card-rank-${i + 4}`}
                 >
@@ -331,12 +332,13 @@ export default function LeaderboardPage() {
 
       {tab === "badges" && !isLoading && data?.badgeDefinitions && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {Object.entries(data.badgeDefinitions).map(([key, badge]) => {
+          {Object.entries(data.badgeDefinitions).map(([key, badge], idx) => {
             const earned = myEntry?.badges.some(b => b.key === key);
             return (
               <Card
                 key={key}
-                className={`transition-all ${earned ? "ring-2 ring-primary/30 bg-primary/5" : "opacity-60"}`}
+                className={`transition-all animate-scale-in ${earned ? "ring-2 ring-primary/30 bg-primary/5" : "opacity-60"}`}
+                style={{ animationDelay: `${Math.min(idx * 0.04, 0.4)}s`, animationFillMode: 'both' }}
                 data-testid={`badge-card-${key}`}
               >
                 <CardContent className="p-4 flex items-center gap-3">

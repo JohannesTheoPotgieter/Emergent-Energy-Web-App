@@ -1869,7 +1869,7 @@ export default function ProjectsSummary() {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Card className="border-slate-200 shadow-sm overflow-hidden">
+        <Card className="border-slate-200 shadow-sm overflow-hidden card-hover animate-float-in stagger-1">
           <CardContent className="p-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">Total Projects</span>
@@ -1877,12 +1877,12 @@ export default function ProjectsSummary() {
                 <BarChart3 className="w-4 h-4 text-blue-600" />
               </div>
             </div>
-            <div className="text-2xl font-bold text-slate-900" data-testid="stat-total-projects">{stats.total}</div>
+            <div className="text-2xl font-bold text-slate-900 animate-number-pop" data-testid="stat-total-projects">{stats.total}</div>
             <div className="text-xs text-slate-500 mt-1">{stats.totalKwp.toLocaleString()} kWp total capacity</div>
           </CardContent>
         </Card>
 
-        <Card className="border-slate-200 shadow-sm overflow-hidden">
+        <Card className="border-slate-200 shadow-sm overflow-hidden card-hover animate-float-in stagger-2">
           <CardContent className="p-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">Avg. Completion</span>
@@ -1890,14 +1890,14 @@ export default function ProjectsSummary() {
                 <Activity className="w-4 h-4 text-emerald-600" />
               </div>
             </div>
-            <div className="text-2xl font-bold text-slate-900" data-testid="stat-avg-completion">{stats.avgCompletion.toFixed(0)}%</div>
+            <div className="text-2xl font-bold text-slate-900 animate-number-pop" data-testid="stat-avg-completion">{stats.avgCompletion.toFixed(0)}%</div>
             <div className="w-full h-1.5 bg-slate-100 rounded-full mt-2 overflow-hidden">
-              <div className={`h-full rounded-full ${progressColor(stats.avgCompletion)}`} style={{ width: `${Math.min(stats.avgCompletion, 100)}%` }} />
+              <div className={`h-full rounded-full animate-progress-fill ${progressColor(stats.avgCompletion)}`} style={{ width: `${Math.min(stats.avgCompletion, 100)}%` }} />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border-slate-200 shadow-sm overflow-hidden">
+        <Card className="border-slate-200 shadow-sm overflow-hidden card-hover animate-float-in stagger-3">
           <CardContent className="p-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">Behind Schedule</span>
@@ -1905,14 +1905,14 @@ export default function ProjectsSummary() {
                 <TrendingDown className={`w-4 h-4 ${stats.behindSchedule > 0 ? "text-rose-600" : "text-emerald-600"}`} />
               </div>
             </div>
-            <div className={`text-2xl font-bold ${stats.behindSchedule > 0 ? "text-rose-600" : "text-emerald-600"}`} data-testid="stat-behind-schedule">
+            <div className={`text-2xl font-bold animate-number-pop ${stats.behindSchedule > 0 ? "text-rose-600" : "text-emerald-600"}`} data-testid="stat-behind-schedule">
               {stats.behindSchedule}
             </div>
             <div className="text-xs text-slate-500 mt-1">of {stats.total} projects ({stats.total > 0 ? ((stats.behindSchedule / stats.total) * 100).toFixed(0) : 0}%)</div>
           </CardContent>
         </Card>
 
-        <Card className="border-slate-200 shadow-sm overflow-hidden">
+        <Card className="border-slate-200 shadow-sm overflow-hidden card-hover animate-float-in stagger-4">
           <CardContent className="p-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">Financial Close</span>
@@ -1920,7 +1920,7 @@ export default function ProjectsSummary() {
                 <Zap className="w-4 h-4 text-violet-600" />
               </div>
             </div>
-            <div className="text-2xl font-bold text-slate-900" data-testid="stat-fin-close">{stats.finCloseCount}</div>
+            <div className="text-2xl font-bold text-slate-900 animate-number-pop" data-testid="stat-fin-close">{stats.finCloseCount}</div>
             <div className="text-xs text-slate-500 mt-1">of {stats.total} achieved ({stats.total > 0 ? ((stats.finCloseCount / stats.total) * 100).toFixed(0) : 0}%)</div>
           </CardContent>
         </Card>
