@@ -58,44 +58,47 @@ async function computeUserActivities(): Promise<UserActivityCounts[]> {
   for (const u of allUsers) {
     const uid = u.id;
 
-    const [taskRow] = await db.execute(
+    const execCount = async (query: ReturnType<typeof sql>) => {
+      try {
+        const result = await db.execute(query);
+        const rows = (result as any).rows || result;
+        const row = Array.isArray(rows) ? rows[0] : null;
+        return Number(row?.cnt || 0);
+      } catch { return 0; }
+    };
+
+    const tasksCompleted = await execCount(
       sql`SELECT COUNT(*)::int as cnt FROM normalized_plan_tasks WHERE owner_user_id = ${uid} AND actual_pct_complete >= 1`
-    ).catch(() => [{ cnt: 0 }]);
-
-    const [approvalRow] = await db.execute(
+    );
+    const approvalsGiven = await execCount(
       sql`SELECT COUNT(*)::int as cnt FROM project_eng_approvals WHERE approver_user_id = ${uid} AND status = 'approved'`
-    ).catch(() => [{ cnt: 0 }]);
-
-    const [reviewRow] = await db.execute(
+    );
+    const weeklyReviews = await execCount(
       sql`SELECT COUNT(*)::int as cnt FROM weekly_reviews WHERE reviewed_by = ${uid} AND status = 'completed'`
-    ).catch(() => [{ cnt: 0 }]);
-
-    const [importRow] = await db.execute(
+    );
+    const importsCompleted = await execCount(
       sql`SELECT COUNT(*)::int as cnt FROM smart_import_runs WHERE committed_by = ${uid} AND status = 'COMMITTED'`
-    ).catch(() => [{ cnt: 0 }]);
-
-    const [changeRow] = await db.execute(
+    );
+    const projectUpdates = await execCount(
       sql`SELECT COUNT(*)::int as cnt FROM change_sets WHERE actor_user_id = ${uid}`
-    ).catch(() => [{ cnt: 0 }]);
-
-    const [qcRow] = await db.execute(
+    );
+    const qualityApprovals = await execCount(
       sql`SELECT COUNT(*)::int as cnt FROM qc_item_instance WHERE approved_by_user_id = ${uid} AND approved = true`
-    ).catch(() => [{ cnt: 0 }]);
-
-    const [engRow] = await db.execute(
+    );
+    const engStagesCompleted = await execCount(
       sql`SELECT COUNT(*)::int as cnt FROM project_eng_stages WHERE created_by = ${uid} AND status = 'complete'`
-    ).catch(() => [{ cnt: 0 }]);
+    );
 
     results.push({
       userId: uid,
-      tasksCompleted: Number((taskRow as any)?.cnt || 0),
-      approvalsGiven: Number((approvalRow as any)?.cnt || 0),
-      weeklyReviews: Number((reviewRow as any)?.cnt || 0),
-      importsCompleted: Number((importRow as any)?.cnt || 0),
+      tasksCompleted,
+      approvalsGiven,
+      weeklyReviews,
+      importsCompleted,
       dataFixes: 0,
-      projectUpdates: Number((changeRow as any)?.cnt || 0),
-      qualityApprovals: Number((qcRow as any)?.cnt || 0),
-      engStagesCompleted: Number((engRow as any)?.cnt || 0),
+      projectUpdates,
+      qualityApprovals,
+      engStagesCompleted,
     });
   }
 
