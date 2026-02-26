@@ -46,7 +46,9 @@ router.get("/api/subcontractor-dashboard/summary", requireAuth, async (req: Requ
 
     let lines = allLines.filter(l => {
       const cpName = (l.counterpartyName || "").trim().toLowerCase();
-      return cpName && patternCounterpartyNames.has(cpName);
+      if (!cpName) return false;
+      if (patternCounterpartyNames.size > 0) return patternCounterpartyNames.has(cpName);
+      return true;
     });
 
     if (typeFilter && typeFilter !== "all") {
