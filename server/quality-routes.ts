@@ -444,6 +444,80 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
+  // ========== QC ITEM CREATE/DELETE ==========
+
+  app.post("/api/quality/project/:projectName/items", requireAuth, requireAdminOrQm, requirePermission('pd_quality', 'edit'), async (req, res) => {
+    try {
+      const pName = decodeURIComponent(req.params.projectName);
+      const { itemName, groupId } = req.body;
+      if (!itemName) return res.status(400).json({ error: "itemName required" });
+
+      const [checklist] = await db.select().from(qcChecklist).where(eq(qcChecklist.projectName, pName));
+      if (!checklist) return res.status(404).json({ error: "No checklist found for this project" });
+
+      let templateItemId: number;
+      if (groupId) {
+        const [templateItem] = await db.insert(qcTemplateItem).values({
+          templateGroupId: groupId,
+          itemName,
+          sortOrder: 999,
+          isEvidenceRequired: false,
+          defaultSeverity: "Medium",
+        }).returning();
+        templateItemId = templateItem.id;
+      } else {
+        const [groups] = await db.select().from(qcTemplateGroup).limit(1);
+        if (!groups) return res.status(400).json({ error: "No template groups exist" });
+        const [templateItem] = await db.insert(qcTemplateItem).values({
+          templateGroupId: groups.id,
+          itemName,
+          sortOrder: 999,
+          isEvidenceRequired: false,
+          defaultSeverity: "Medium",
+        }).returning();
+        templateItemId = templateItem.id;
+      }
+
+      const [item] = await db.insert(qcItemInstance).values({
+        checklistId: checklist.id,
+        templateItemId,
+        isApplicable: true,
+        qmStatus: "not_started",
+      }).returning();
+
+      res.json(item);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/quality/project/:projectName/item/:itemInstanceId", requireAuth, requireAdminOrQm, requirePermission('pd_quality', 'delete'), async (req, res) => {
+    try {
+      const pName = decodeURIComponent(req.params.projectName);
+      const itemId = parseInt(req.params.itemInstanceId);
+
+      const [checklist] = await db.select().from(qcChecklist).where(eq(qcChecklist.projectName, pName));
+      if (!checklist) return res.status(404).json({ error: "No checklist found for this project" });
+
+      const [instance] = await db.select().from(qcItemInstance).where(
+        and(eq(qcItemInstance.id, itemId), eq(qcItemInstance.checklistId, checklist.id))
+      );
+      if (!instance) return res.status(404).json({ error: "Item not found in this project's checklist" });
+
+      await db.transaction(async (tx) => {
+        await tx.delete(qcItemEvidence).where(eq(qcItemEvidence.itemInstanceId, itemId));
+        await tx.delete(qcPlanLink).where(eq(qcPlanLink.itemInstanceId, itemId));
+        await tx.delete(qcItemInstance).where(eq(qcItemInstance.id, itemId));
+      });
+
+      recalculateWarnings(pName).catch(() => {});
+
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // ========== RISK ANSWERS ==========
 
   app.post("/api/quality/project/:projectName/risk-answer", requireAuth, requireAdminOrQm, async (req, res) => {

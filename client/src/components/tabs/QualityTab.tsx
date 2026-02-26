@@ -8,8 +8,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Progress } from "@/components/ui/progress";
-import { AlertCircle, CheckCircle, ChevronDown, ChevronRight, FileText, Shield, AlertTriangle, Clock, User, Lock, Link2, X, Plus } from "lucide-react";
+import { AlertCircle, CheckCircle, ChevronDown, ChevronRight, FileText, Shield, AlertTriangle, Clock, User, Lock, Link2, X, Plus, Trash2 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { usePermission } from "@/hooks/use-permissions";
 
 function qFetch(url: string, options?: RequestInit) {
   const token = localStorage.getItem('auth_token');
@@ -68,8 +69,13 @@ export function QualityTab({ projectName }: QualityTabProps) {
   const [itemEdits, setItemEdits] = useState<Record<string, any>>({});
   const [linkingPhaseId, setLinkingPhaseId] = useState<number | null>(null);
   const [linkingItemId, setLinkingItemId] = useState<number | null>(null);
+  const [showAddItem, setShowAddItem] = useState<number | null>(null);
+  const [newItemName, setNewItemName] = useState("");
+  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const isQmOrAdmin = ['admin', 'COO_ADMIN', 'CEO_ADMIN'].includes(user?.role || '') || ['quality_manager', 'QUALITY_MANAGER'].includes(user?.role || '');
   const canEdit = isQmOrAdmin;
+  const { allowed: canDeleteQc } = usePermission('pd_quality', 'delete');
+  const { allowed: canEditQc } = usePermission('pd_quality', 'edit');
 
   const { data: checklistData, isLoading, error } = useQuery({
     queryKey: ["quality-checklist", projectName],
@@ -170,6 +176,45 @@ export function QualityTab({ projectName }: QualityTabProps) {
       queryClient.invalidateQueries({ queryKey: ["quality-warnings", projectName] });
       queryClient.invalidateQueries({ queryKey: ["quality-warnings-all"] });
       queryClient.invalidateQueries({ queryKey: ["quality-checklists"] });
+    },
+  });
+
+  const createItemMutation = useMutation({
+    mutationFn: async ({ itemName, groupId }: { itemName: string; groupId?: number }) => {
+      const res = await qFetch(`/api/quality/project/${encodeURIComponent(projectName)}/items`, {
+        method: "POST",
+        body: JSON.stringify({ itemName, groupId }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to create item");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["quality-checklist", projectName] });
+      setNewItemName("");
+      setShowAddItem(null);
+    },
+  });
+
+  const deleteItemMutation = useMutation({
+    mutationFn: async (itemInstanceId: number) => {
+      const res = await qFetch(`/api/quality/project/${encodeURIComponent(projectName)}/item/${itemInstanceId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to delete item");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["quality-checklist", projectName] });
+      queryClient.invalidateQueries({ queryKey: ["quality-warnings", projectName] });
+      queryClient.invalidateQueries({ queryKey: ["quality-warnings-all"] });
+      queryClient.invalidateQueries({ queryKey: ["quality-checklists"] });
+      setDeleteConfirmId(null);
     },
   });
 
@@ -643,6 +688,24 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                     >
                                       {isEditing ? "Close" : "Details"}
                                     </Button>
+
+                                    {canDeleteQc && deleteConfirmId !== instance.id && (
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); setDeleteConfirmId(instance.id); }}
+                                        className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
+                                        data-testid={`btn-delete-qc-item-${instance.id}`}
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </button>
+                                    )}
+                                    {deleteConfirmId === instance.id && (
+                                      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                                        <Button size="sm" variant="destructive" className="h-6 text-[10px] px-2" onClick={() => deleteItemMutation.mutate(instance.id)} disabled={deleteItemMutation.isPending} data-testid={`btn-confirm-delete-qc-${instance.id}`}>
+                                          {deleteItemMutation.isPending ? "..." : "Delete"}
+                                        </Button>
+                                        <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2" onClick={() => setDeleteConfirmId(null)} data-testid={`btn-cancel-delete-qc-${instance.id}`}>No</Button>
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
 
@@ -814,6 +877,33 @@ export function QualityTab({ projectName }: QualityTabProps) {
                               </div>
                             );
                           })}
+
+                          {canEditQc && showAddItem !== group.id && (
+                            <button
+                              onClick={() => { setShowAddItem(group.id); setNewItemName(""); }}
+                              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors mt-1"
+                              data-testid={`btn-add-qc-item-${group.id}`}
+                            >
+                              <Plus className="w-3 h-3" /> Add item
+                            </button>
+                          )}
+                          {showAddItem === group.id && (
+                            <div className="flex items-center gap-2 mt-1">
+                              <input
+                                autoFocus
+                                className="flex-1 h-7 text-xs border rounded px-2"
+                                placeholder="Item name..."
+                                value={newItemName}
+                                onChange={(e) => setNewItemName(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === 'Enter' && newItemName.trim()) createItemMutation.mutate({ itemName: newItemName.trim(), groupId: group.id }); if (e.key === 'Escape') setShowAddItem(null); }}
+                                data-testid={`input-new-qc-item-${group.id}`}
+                              />
+                              <Button size="sm" className="h-7 text-xs px-2" onClick={() => { if (newItemName.trim()) createItemMutation.mutate({ itemName: newItemName.trim(), groupId: group.id }); }} disabled={!newItemName.trim() || createItemMutation.isPending} data-testid={`btn-save-qc-item-${group.id}`}>
+                                {createItemMutation.isPending ? "..." : "Add"}
+                              </Button>
+                              <Button size="sm" variant="ghost" className="h-7 text-xs px-2" onClick={() => setShowAddItem(null)}>Cancel</Button>
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
