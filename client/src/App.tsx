@@ -53,6 +53,7 @@ import TrRegisterPage from "@/pages/tr-register";
 import FeedbackPage from "@/pages/feedback";
 import EeInfoPage from "@/pages/ee-info";
 import PMDashboard from "@/pages/pm-dashboard";
+import NotificationCenterPage from "@/pages/notification-center";
 import { useAuth } from "@/hooks/use-auth";
 import { useProgramData } from "@/hooks/use-program-data";
 import { TrackerTable } from "@/components/dashboard/TrackerTable";
@@ -267,6 +268,7 @@ function ProtectedPages() {
         <Route path="/feedback" component={FeedbackPage} />
         <Route path="/ee-info" component={EeInfoPage} />
         <Route path="/pm-dashboard" component={PMDashboard} />
+        <Route path="/notifications" component={NotificationCenterPage} />
         <Route path="/admin/eng-templates">{() => <Redirect to="/admin/phase-templates" />}</Route>
 
         <Route component={NotFound} />

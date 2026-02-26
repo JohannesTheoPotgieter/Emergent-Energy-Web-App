@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Bell, Check, CheckCheck, FileSpreadsheet, Loader2 } from "lucide-react";
+import { Bell, Check, CheckCheck, FileSpreadsheet, Loader2, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
+import { Link } from "wouter";
 
 function authHeaders() {
   const token = localStorage.getItem("auth_token");
@@ -34,15 +35,16 @@ export function NotificationBell() {
     refetchInterval: 30000,
   });
 
-  const { data: notifs = [] } = useQuery({
+  const { data: notifsData } = useQuery({
     queryKey: ["notifications-list"],
     queryFn: async () => {
-      const res = await fetch("/api/notifications?unreadOnly=false", { headers: authHeaders(), credentials: "include" });
+      const res = await fetch("/api/notifications?unreadOnly=false&limit=50", { headers: authHeaders(), credentials: "include" });
       return res.json();
     },
     enabled: open,
     refetchOnMount: "always" as const,
   });
+  const notifs = notifsData?.items ?? (Array.isArray(notifsData) ? notifsData : []);
 
   const markReadMutation = useMutation({
     mutationFn: async (ids: number[]) => {
@@ -217,6 +219,14 @@ export function NotificationBell() {
             </div>
           )}
         </ScrollArea>
+        <div className="border-t p-2">
+          <Link href="/notifications" onClick={() => setOpen(false)}>
+            <Button variant="ghost" size="sm" className="w-full text-xs h-8 text-primary" data-testid="link-view-all-notifications">
+              <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
+              View all notifications
+            </Button>
+          </Link>
+        </div>
       </PopoverContent>
     </Popover>
   );

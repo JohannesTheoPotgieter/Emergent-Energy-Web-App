@@ -44,6 +44,7 @@ import {
   BookOpen,
   ListChecks,
   Trophy,
+  Bell,
 } from "lucide-react";
 import { UX_REDESIGN_ENABLED } from "@shared/schema";
 import { useProgramData } from "@/hooks/use-program-data";
@@ -117,6 +118,7 @@ function getLegacyNavGroups(): NavGroup[] {
       items: [
         { label: "Feedback & Support", icon: MessageSquareText, path: "/feedback" },
         { label: "Leaderboard", icon: Trophy, path: "/leaderboard" },
+        { label: "Notifications", icon: Bell, path: "/notifications" },
       ],
     },
     {
@@ -190,6 +192,7 @@ function getRedesignedNavGroups(): NavGroup[] {
         { label: "Feedback & Support", icon: MessageSquareText, path: "/feedback" },
         { label: "Emergent Energy Info", icon: BookOpen, path: "/ee-info" },
         { label: "Leaderboard", icon: Trophy, path: "/leaderboard" },
+        { label: "Notifications", icon: Bell, path: "/notifications" },
       ],
     },
     {

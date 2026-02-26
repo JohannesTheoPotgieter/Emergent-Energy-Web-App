@@ -798,15 +798,42 @@ export function registerEngineeringRoutes(app: Express) {
   app.get("/api/notifications", requireAuth, async (req, res) => {
     try {
       const userId = getUser(req).id;
-      const { unreadOnly } = req.query;
+      const { unreadOnly, eventType, search, limit: rawLimit, offset: rawOffset } = req.query;
       const conditions = [eq(notifications.recipientUserId, userId)];
       if (unreadOnly === "true") conditions.push(eq(notifications.isRead, false));
+      if (typeof eventType === "string" && eventType) conditions.push(eq(notifications.eventType, eventType));
+      if (typeof search === "string" && search.trim()) {
+        const term = `%${search.trim().toLowerCase()}%`;
+        conditions.push(sql`(LOWER(${notifications.title}) LIKE ${term} OR LOWER(COALESCE(${notifications.body},'')) LIKE ${term} OR LOWER(COALESCE(${notifications.projectName},'')) LIKE ${term})`);
+      }
+
+      const pageLimit = Math.min(parseInt(rawLimit as string) || 100, 200);
+      const pageOffset = parseInt(rawOffset as string) || 0;
 
       const result = await db.select().from(notifications)
         .where(and(...conditions))
         .orderBy(desc(notifications.createdAt))
-        .limit(100);
-      res.json(result);
+        .limit(pageLimit)
+        .offset(pageOffset);
+
+      const [countResult] = await db.select({ total: sql<number>`count(*)::int` })
+        .from(notifications)
+        .where(and(...conditions));
+
+      res.json({ items: result, total: countResult?.total || 0 });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/notifications/event-types", requireAuth, async (req, res) => {
+    try {
+      const userId = getUser(req).id;
+      const result = await db.selectDistinct({ eventType: notifications.eventType })
+        .from(notifications)
+        .where(eq(notifications.recipientUserId, userId))
+        .orderBy(notifications.eventType);
+      res.json(result.map(r => r.eventType).filter(Boolean));
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
