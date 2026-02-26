@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -15,11 +15,12 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
 import { useLocation } from "wouter";
-import { Loader2, Search, Zap, User, Wrench, FileSpreadsheet, GripVertical, CheckCircle2, ClipboardList, Link2, Merge, ArrowRight, X, Save, AlertTriangle, ShieldCheck, ExternalLink, Calendar, Clock, AlertCircle, Users, Trash2 } from "lucide-react";
+import { Loader2, Search, Zap, User, Wrench, FileSpreadsheet, GripVertical, CheckCircle2, ClipboardList, Link2, Merge, ArrowRight, X, Save, AlertTriangle, ShieldCheck, ExternalLink, Calendar, Clock, AlertCircle, Users, Trash2, Plus } from "lucide-react";
 import { ActionBar } from "@/components/guidance/ActionBar";
 import { InlineTip } from "@/components/guidance/InlineTip";
 import { MicroWalkthrough, ReplayWalkthrough } from "@/components/guidance/MicroWalkthrough";
 import type { NextAction, BlockerInfo, OwnerInfo } from "@/hooks/use-guidance";
+import { usePermission } from "@/hooks/use-permissions";
 
 interface ProjectInfo {
   id: number | null;
@@ -312,7 +313,27 @@ export default function LifecycleBoardPage() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ProjectInfo | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [addProjectOpen, setAddProjectOpen] = useState(false);
+  const [addProjectSaving, setAddProjectSaving] = useState(false);
+  const [addProjectForm, setAddProjectForm] = useState({
+    projectName: "",
+    clientName: "",
+    projectCode: "",
+    location: "",
+    initialPhase: "P0_FIRST_ASSESSMENT",
+  });
+  const [addProjectResult, setAddProjectResult] = useState<any>(null);
+  const [phaseConstants, setPhaseConstants] = useState<{ projectPhases: string[]; projectPhaseLabels: Record<string, string> } | null>(null);
+  const { allowed: canCreateProject } = usePermission('create_project', 'edit');
   const { toast } = useToast();
+
+  useEffect(() => {
+    if (addProjectOpen && !phaseConstants) {
+      fetch("/api/template-constants", { credentials: "include", headers: getAuthHeaders() })
+        .then(r => r.ok ? r.json() : null)
+        .then(d => d && setPhaseConstants(d));
+    }
+  }, [addProjectOpen]);
 
   const role = localStorage.getItem("company_role") || "";
   const isExec = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER"].includes(role);
@@ -633,6 +654,39 @@ export default function LifecycleBoardPage() {
     }
   };
 
+  const handleAddProject = async () => {
+    if (!addProjectForm.projectName.trim()) {
+      toast({ title: "Project name is required", variant: "destructive" });
+      return;
+    }
+    setAddProjectSaving(true);
+    try {
+      const res = await fetch("/api/projects", {
+        method: "POST",
+        credentials: "include",
+        headers: getAuthHeaders(),
+        body: JSON.stringify(addProjectForm),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setAddProjectResult(data);
+        invalidateProjects();
+        toast({ title: "Project created", description: `${data.project?.projectName || addProjectForm.projectName} has been added` });
+      } else {
+        toast({ title: "Error", description: data.error || "Failed to create project", variant: "destructive" });
+      }
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+    setAddProjectSaving(false);
+  };
+
+  const resetAddProjectDialog = () => {
+    setAddProjectForm({ projectName: "", clientName: "", projectCode: "", location: "", initialPhase: "P0_FIRST_ASSESSMENT" });
+    setAddProjectResult(null);
+    setAddProjectOpen(false);
+  };
+
   const filtered = projects.filter((p) => {
     if (p.archivedStatus === 'ARCHIVED_MERGED') return false;
     if (p.archivedStatus && p.archivedStatus !== 'ACTIVE') return false;
@@ -734,8 +788,19 @@ export default function LifecycleBoardPage() {
           />
           <span className="text-sm text-muted-foreground">Active only</span>
         </div>
-        <div className="ml-auto text-sm text-muted-foreground" data-testid="text-project-count">
-          {filtered.length} project{filtered.length !== 1 ? "s" : ""}
+        <div className="ml-auto flex items-center gap-3">
+          <span className="text-sm text-muted-foreground" data-testid="text-project-count">
+            {filtered.length} project{filtered.length !== 1 ? "s" : ""}
+          </span>
+          {canCreateProject && (
+            <Button
+              size="sm"
+              onClick={() => { setAddProjectResult(null); setAddProjectForm({ projectName: "", clientName: "", projectCode: "", location: "", initialPhase: "P0_FIRST_ASSESSMENT" }); setAddProjectOpen(true); }}
+              data-testid="button-add-project"
+            >
+              <Plus className="w-4 h-4 mr-1" /> Add Project
+            </Button>
+          )}
         </div>
       </div>
 
@@ -1588,6 +1653,121 @@ export default function LifecycleBoardPage() {
               Delete Project
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={addProjectOpen} onOpenChange={(open) => { if (!open) resetAddProjectDialog(); else setAddProjectOpen(true); }}>
+        <DialogContent className="max-w-md" data-testid="dialog-add-project">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2" data-testid="text-add-project-title">
+              <Plus className="w-5 h-5 text-[#16a34a]" />
+              {addProjectResult ? "Project Created" : "Add Project"}
+            </DialogTitle>
+            <DialogDescription>
+              {addProjectResult
+                ? "Your new project has been added to the lifecycle board."
+                : "Create a new project and place it on the lifecycle board. Phase templates will be applied automatically."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {addProjectResult ? (
+            <div className="space-y-4 py-2">
+              <div className="flex items-center justify-center">
+                <CheckCircle2 className="w-12 h-12 text-green-500" />
+              </div>
+              <p className="text-center text-sm">
+                <strong>{addProjectResult.project?.projectName}</strong> has been created at <strong>{addProjectResult.phaseLabel}</strong>
+              </p>
+              {addProjectResult.templateApplied && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800" data-testid="text-template-applied">
+                  Phase template applied: {addProjectResult.applyResult?.tasksCreated || 0} tasks,
+                  {" "}{addProjectResult.applyResult?.deliverablesCreated || 0} deliverables
+                </div>
+              )}
+              {addProjectResult.engStagesGenerated && (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-sm text-emerald-800" data-testid="text-eng-stages-generated">
+                  Engineering stages: {addProjectResult.engStagesResult?.stagesCreated || 0} stage(s),
+                  {" "}{addProjectResult.engStagesResult?.tasksCreated || 0} task(s)
+                  {addProjectResult.engStagesResult?.stageDetails?.length > 0 && (
+                    <span> — {addProjectResult.engStagesResult.stageDetails.join(", ")}</span>
+                  )}
+                </div>
+              )}
+              <DialogFooter className="gap-2 pt-2">
+                <Button variant="outline" onClick={() => { setAddProjectResult(null); setAddProjectForm({ projectName: "", clientName: "", projectCode: "", location: "", initialPhase: "P0_FIRST_ASSESSMENT" }); }} data-testid="button-add-another">
+                  <Plus className="w-4 h-4 mr-1" /> Add Another
+                </Button>
+                <Button onClick={resetAddProjectDialog} data-testid="button-close-add-dialog">
+                  Done
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : (
+            <div className="space-y-4 py-2">
+              <div>
+                <Label className="text-sm font-medium">Project Name *</Label>
+                <Input
+                  value={addProjectForm.projectName}
+                  onChange={(e) => setAddProjectForm(f => ({ ...f, projectName: e.target.value }))}
+                  placeholder="e.g. Acme Solar Park"
+                  data-testid="input-add-project-name"
+                />
+              </div>
+              <div>
+                <Label className="text-sm font-medium">Client Name</Label>
+                <Input
+                  value={addProjectForm.clientName}
+                  onChange={(e) => setAddProjectForm(f => ({ ...f, clientName: e.target.value }))}
+                  placeholder="e.g. Acme Corp"
+                  data-testid="input-add-client-name"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-sm font-medium">Project Code</Label>
+                  <Input
+                    value={addProjectForm.projectCode}
+                    onChange={(e) => setAddProjectForm(f => ({ ...f, projectCode: e.target.value }))}
+                    placeholder="e.g. PRJ-042"
+                    data-testid="input-add-project-code"
+                  />
+                </div>
+                <div>
+                  <Label className="text-sm font-medium">Location</Label>
+                  <Input
+                    value={addProjectForm.location}
+                    onChange={(e) => setAddProjectForm(f => ({ ...f, location: e.target.value }))}
+                    placeholder="e.g. Gauteng"
+                    data-testid="input-add-location"
+                  />
+                </div>
+              </div>
+              <div>
+                <Label className="text-sm font-medium">Initial Phase</Label>
+                <Select value={addProjectForm.initialPhase} onValueChange={(v) => setAddProjectForm(f => ({ ...f, initialPhase: v }))}>
+                  <SelectTrigger data-testid="select-add-initial-phase"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {(phaseConstants?.projectPhases || ["P0_FIRST_ASSESSMENT"]).map((p) => (
+                      <SelectItem key={p} value={p}>{phaseConstants?.projectPhaseLabels?.[p] || p}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <DialogFooter className="gap-2 pt-2">
+                <Button variant="outline" onClick={resetAddProjectDialog} data-testid="button-cancel-add">
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleAddProject}
+                  disabled={addProjectSaving || !addProjectForm.projectName.trim()}
+                  data-testid="button-submit-add-project"
+                >
+                  {addProjectSaving ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Plus className="w-4 h-4 mr-1" />}
+                  Create Project
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
