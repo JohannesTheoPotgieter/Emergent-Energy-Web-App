@@ -66,6 +66,7 @@ interface HighPriority {
     milestoneType: string;
     date: string;
     pm: string | null;
+    amount: number;
   }>;
   overdueTasks: Array<{
     id: number;
@@ -790,7 +791,7 @@ export default function Dashboard() {
               />
 
               <PrioritySection
-                title="Upcoming Milestones"
+                title="Upcoming Revenue Milestones"
                 icon={Clock}
                 iconColor="text-blue-600"
                 accentBorder="border-l-blue-400"
@@ -798,12 +799,13 @@ export default function Dashboard() {
                 expanded={!!expanded.milestones}
                 onToggle={() => toggle("milestones")}
                 renderItem={(item, i) => (
-                  <Link key={i} href={`/project/${encodeURIComponent(item.projectName)}?tab=plan`}>
+                  <Link key={i} href={`/project/${encodeURIComponent(item.projectName)}?tab=finance`}>
                     <div className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-blue-50/60 dark:hover:bg-blue-900/10 cursor-pointer group transition-colors" data-testid={`item-milestone-${i}`}>
                       <Badge className="bg-blue-50 text-blue-700 border-blue-200 text-[10px] font-bold px-1.5" variant="outline">{item.milestoneType}</Badge>
                       <span className="text-sm truncate flex-1 text-gray-700 dark:text-gray-300 group-hover:text-blue-700 dark:group-hover:text-blue-400 transition-colors font-medium">
                         {item.projectName.replace("_Tracker", "")}
                       </span>
+                      <span className="text-[11px] font-semibold text-emerald-600 whitespace-nowrap">R {(item.amount / 1000000).toFixed(2)}M</span>
                       <span className="text-[11px] font-mono text-gray-400 whitespace-nowrap">{item.date}</span>
                       {item.pm && <span className="text-[11px] text-gray-400 whitespace-nowrap">{item.pm}</span>}
                     </div>

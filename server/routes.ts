@@ -3393,28 +3393,25 @@ export async function registerRoutes(
         milestoneType: string;
         date: string;
         pm: string | null;
+        amount: number;
       }> = [];
 
-      const milestoneTypes = [
-        { patterns: ['site establishment'], label: 'Site Establishment' },
-        { patterns: ['commissioning'], label: 'Commissioning' },
-        { patterns: ['handover to matriarch', 'o&m handover'], label: 'O&M Handover' },
-        { patterns: ['handover to client', 'client handover'], label: 'Client Handover' },
-      ];
-
-      for (const [projectName, plans] of Array.from(plansByProject.entries())) {
-        const info = projectInfoMap.get(projectName);
-        for (const mt of milestoneTypes) {
-          const endDate = findMaxEndDate(plans, mt.patterns);
-          if (endDate && isWithinDays(endDate, 10)) {
-            upcomingMilestones.push({
-              projectName,
-              milestoneType: mt.label,
-              date: endDate,
-              pm: info?.pm || null,
-            });
-          }
-        }
+      for (const inflow of allInflows) {
+        const amt = inflow.milestoneAmount ? parseFloat(inflow.milestoneAmount) : 0;
+        if (amt <= 0) continue;
+        const paymentReceived = inflow.paymentReceivedDate && inflow.paymentReceivedDate.trim() !== '';
+        if (paymentReceived) continue;
+        const effectiveDate = (inflow as any).effectiveDate || inflow.plannedPaymentDate;
+        if (!effectiveDate || !/^\d{4}-\d{2}-\d{2}/.test(effectiveDate)) continue;
+        if (effectiveDate < today) continue;
+        const info = projectInfoMap.get(inflow.projectName);
+        upcomingMilestones.push({
+          projectName: inflow.projectName,
+          milestoneType: inflow.milestoneName || `Milestone ${inflow.milestoneNo || ''}`.trim(),
+          date: effectiveDate,
+          pm: info?.pm || null,
+          amount: amt,
+        });
       }
       upcomingMilestones.sort((a, b) => a.date.localeCompare(b.date));
 
