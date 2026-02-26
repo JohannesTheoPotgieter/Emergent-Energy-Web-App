@@ -28,25 +28,35 @@ function applyProjectPlanOverrides(
 ): any[] {
   if (overrides.length === 0) return baselineRows;
 
+  const deletedRows = new Set<number>();
   const overrideMap = new Map<number, Map<string, any>>();
   overrides.forEach((o: any) => {
+    if (o.fieldName === "isDeleted" && o.overrideValue === "true") {
+      deletedRows.add(o.rowNumber);
+      return;
+    }
     if (!overrideMap.has(o.rowNumber)) {
       overrideMap.set(o.rowNumber, new Map());
     }
     overrideMap.get(o.rowNumber)!.set(o.fieldName, coercePlanOverride(o.fieldName, o.overrideValue));
   });
 
-  return baselineRows.map((row: any) => {
-    if (!row.rowNumber || !overrideMap.has(row.rowNumber)) {
-      return row;
-    }
-    const fieldOverrides = overrideMap.get(row.rowNumber)!;
-    const updatedRow = { ...row };
-    fieldOverrides.forEach((value, fieldName) => {
-      updatedRow[fieldName] = value;
+  return baselineRows
+    .filter((row: any) => {
+      if (!row.rowNumber) return true;
+      return !deletedRows.has(row.rowNumber);
+    })
+    .map((row: any) => {
+      if (!row.rowNumber || !overrideMap.has(row.rowNumber)) {
+        return row;
+      }
+      const fieldOverrides = overrideMap.get(row.rowNumber)!;
+      const updatedRow = { ...row };
+      fieldOverrides.forEach((value, fieldName) => {
+        updatedRow[fieldName] = value;
+      });
+      return updatedRow;
     });
-    return updatedRow;
-  });
 }
 
 function resolveInflowEffectiveDates(
