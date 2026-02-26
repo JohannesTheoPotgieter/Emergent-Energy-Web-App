@@ -30,7 +30,8 @@ import { derivedPortfolioKpis, derivedProjectKpis } from "@shared/schema";
 function isCosRealisedCheck(exp: any): boolean {
   const hasInvoice = !!(exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim());
   const hasInvDate = !!(exp.expenseInvoicedDate && String(exp.expenseInvoicedDate).trim());
-  if (!hasInvoice || !hasInvDate) return false;
+  const hasPO = !!(exp.expensePoNumber && String(exp.expensePoNumber).trim());
+  if (!hasInvoice || !hasInvDate || !hasPO) return false;
   const dateConfirmed =
     exp.invoiceDateConfirmed === true ||
     exp.invoiceDateFontColor === 'black';
@@ -3090,11 +3091,24 @@ export async function registerRoutes(
 
       const projectInfoMap = new Map(allProjectInfo.map(info => [info.projectName, info]));
 
+      const activeProjectInfo = allProjectInfo.filter(info =>
+        info.isActive !== false &&
+        info.archivedStatus !== 'ARCHIVED' &&
+        info.phase?.toLowerCase() !== 'gone'
+      );
+      const activeProjectNames = new Set(activeProjectInfo.map(info => info.projectName));
+
       const allProjectNames = new Set<string>();
-      for (const info of allProjectInfo) allProjectNames.add(info.projectName);
-      for (const expense of allExpenses) allProjectNames.add(expense.projectName);
-      for (const inflow of allInflows) allProjectNames.add(inflow.projectName);
-      for (const plan of allPlans) allProjectNames.add(plan.projectName);
+      for (const info of activeProjectInfo) allProjectNames.add(info.projectName);
+      for (const expense of allExpenses) {
+        if (activeProjectNames.has(expense.projectName)) allProjectNames.add(expense.projectName);
+      }
+      for (const inflow of allInflows) {
+        if (activeProjectNames.has(inflow.projectName)) allProjectNames.add(inflow.projectName);
+      }
+      for (const plan of allPlans) {
+        if (activeProjectNames.has(plan.projectName)) allProjectNames.add(plan.projectName);
+      }
 
       let siteEstablishmentNext10 = 0;
       let commissioningNext10 = 0;
@@ -3205,12 +3219,10 @@ export async function registerRoutes(
         }
 
         const pm = info?.pm;
-        if (pm) {
+        if (pm && pm.trim()) {
           if (!pmStats.has(pm)) pmStats.set(pm, { activeProjects: 0, commissioningThisMonth: 0, clientHandoverThisMonth: 0 });
           const stats = pmStats.get(pm)!;
-          if (clientHandoverDate && clientHandoverDate >= today) {
-            stats.activeProjects++;
-          }
+          stats.activeProjects++;
           if (isThisMonth(commissioningDate)) {
             stats.commissioningThisMonth++;
           }
@@ -3220,15 +3232,18 @@ export async function registerRoutes(
         }
       }
 
-      const pmTable = Array.from(pmStats.entries()).map(([pm, stats]) => ({
-        pm,
-        ...stats,
-      }));
+      const pmTable = Array.from(pmStats.entries())
+        .map(([pm, stats]) => ({ pm, ...stats }))
+        .filter(row => row.activeProjects > 0 || row.commissioningThisMonth > 0 || row.clientHandoverThisMonth > 0);
 
       const phaseCountMap = new Map<string, number>();
-      for (const info of allProjectInfo) {
-        const phase = info.phase && info.phase.trim() !== '' ? info.phase : '(blank)';
-        phaseCountMap.set(phase, (phaseCountMap.get(phase) || 0) + 1);
+      const phaseCanonicalMap = new Map<string, string>();
+      for (const info of activeProjectInfo) {
+        const rawPhase = info.phase && info.phase.trim() !== '' ? info.phase.trim() : '(blank)';
+        const key = rawPhase.toLowerCase();
+        if (!phaseCanonicalMap.has(key)) phaseCanonicalMap.set(key, rawPhase);
+        const canonical = phaseCanonicalMap.get(key)!;
+        phaseCountMap.set(canonical, (phaseCountMap.get(canonical) || 0) + 1);
       }
       const PHASE_LIFECYCLE_ORDER = [
         "DLP", "Financial Close", "Planning", "Construction", "QA",
@@ -3259,12 +3274,47 @@ export async function registerRoutes(
 
       const completionCompare: Array<{ projectName: string; actualPct: number; expectedPct: number }> = [];
       for (const [projectName, plans] of Array.from(plansByProject.entries())) {
+        if (!activeProjectNames.has(projectName)) continue;
         if (hasPhaseData && !constructionQAPhases.has(projectName)) continue;
-        const withData = plans.filter((p: any) => p.percentComplete != null && p.expectedProgress != null);
-        if (withData.length === 0) continue;
-        const actualPct = withData.reduce((sum: number, p: any) => sum + (parseFloat(p.percentComplete) || 0), 0) / withData.length;
-        const expectedPct = withData.reduce((sum: number, p: any) => sum + (parseFloat(p.expectedProgress) || 0), 0) / withData.length;
-        completionCompare.push({ projectName, actualPct, expectedPct });
+        const validPlans = plans.filter((p: any) => {
+          const act = p.actualPctComplete ?? p.percentComplete;
+          return act != null;
+        });
+        if (validPlans.length === 0) continue;
+        let totalWeight = 0, weightedActual = 0, weightedExpected = 0;
+        const todayStr = today;
+        for (const p of validPlans as any[]) {
+          const dur = (p.durationDays && p.durationDays > 0) ? p.durationDays : 1;
+          const act = p.actualPctComplete ?? p.percentComplete ?? 0;
+          weightedActual += (parseFloat(act) || 0) * dur;
+          let exp = p.expectedPctComplete ?? p.expectedProgress ?? null;
+          if (exp == null) {
+            const tStart = p.actualStart?.substring(0, 10);
+            const tEnd = p.actualEnd?.substring(0, 10);
+            if (tStart && tEnd && /^\d{4}-\d{2}-\d{2}/.test(tStart) && /^\d{4}-\d{2}-\d{2}/.test(tEnd)) {
+              if (todayStr >= tEnd) exp = 1.0;
+              else if (todayStr <= tStart) exp = 0.0;
+              else {
+                const totalDays = Math.max(1, (new Date(tEnd).getTime() - new Date(tStart).getTime()) / 86400000);
+                const elapsedDays = (new Date(todayStr).getTime() - new Date(tStart).getTime()) / 86400000;
+                exp = Math.min(elapsedDays / totalDays, 1.0);
+              }
+            } else {
+              exp = 0;
+            }
+          }
+          weightedExpected += (parseFloat(exp) || 0) * dur;
+          totalWeight += dur;
+        }
+        if (totalWeight > 0) {
+          const rawActual = weightedActual / totalWeight;
+          const rawExpected = weightedExpected / totalWeight;
+          completionCompare.push({
+            projectName,
+            actualPct: rawActual <= 1.0 ? rawActual * 100 : rawActual,
+            expectedPct: rawExpected <= 1.0 ? rawExpected * 100 : rawExpected,
+          });
+        }
       }
       completionCompare.sort((a, b) => b.actualPct - a.actualPct);
 
