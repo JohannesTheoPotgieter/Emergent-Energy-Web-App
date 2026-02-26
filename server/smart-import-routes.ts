@@ -29,7 +29,7 @@ import {
   programInflows,
 } from "@shared/schema";
 import { recordImportChange, recordSystemEvent } from "./lib/audit/diff-engine";
-import { eq, desc, and, sql, inArray } from "drizzle-orm";
+import { eq, desc, and, or, sql, inArray, isNull } from "drizzle-orm";
 
 function extractProjectNameFromFilename(fileName: string): string {
   let name = fileName.replace(/\.(xlsx|xlsm|xls)$/i, "");
@@ -889,7 +889,12 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
         await tx.delete(normalizedExecutionPhases).where(eq(normalizedExecutionPhases.projectName, projectName));
       }
       await tx.delete(projectPlan).where(eq(projectPlan.projectName, projectName));
-      await tx.delete(programExpense).where(eq(programExpense.projectName, projectName));
+      await tx.delete(programExpense).where(
+        and(
+          eq(programExpense.projectName, projectName),
+          or(eq(programExpense.isManual, false), isNull(programExpense.isManual))
+        )
+      );
       await tx.delete(programInflows).where(eq(programInflows.projectName, projectName));
 
       if (norm.planTasks && norm.planTasks.length > 0) {

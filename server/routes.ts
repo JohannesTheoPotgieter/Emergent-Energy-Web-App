@@ -20,7 +20,7 @@ import { aggregateCOS, aggregateCOSByProject } from "./lib/calculations/cosAggre
 import { computeWeeklyCashflow, getLinesForWeek, type CashflowLineItem } from "./lib/calculations/cashflow";
 import { runDataQualityChecks } from "./lib/calculations/dataQuality";
 import { buildOverrideMap, applyOverridesToCashflowLines, applyOverridesToCOSLines, computeMonthlyBuckets, getEffectiveDate } from "./lib/calculations/scenarioResolver";
-import { recordOverride } from "./lib/audit/diff-engine";
+import { recordOverride, recordManualEdit } from "./lib/audit/diff-engine";
 import { OVERRIDE_CATEGORIES } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
 import { createNameResolver, fetchAllNormalized, mergeExpensesOnly, mergeInflowsOnly, mergePlansOnly } from "./lib/data-merge";
@@ -2842,6 +2842,22 @@ export async function registerRoutes(
         });
       }
 
+      try {
+        await recordManualEdit({
+          actorUserId: req.user?.id,
+          actorRole: (req as any).user?.role,
+          entityType: "cos_realisation",
+          entityId: `expense_${id}`,
+          projectName: expense.projectName,
+          action: "COS_REALISATION_TOGGLE",
+          summary: `${realised ? 'Marked' : 'Unmarked'} expense ${id} as realised (${expense.expenseLineItem || expense.expenseCategory})`,
+          oldRecord: { invoiceDateConfirmed: !realised },
+          newRecord: { invoiceDateConfirmed: realised },
+        });
+      } catch (auditErr: any) {
+        console.warn("[audit] COS realisation toggle audit failed:", auditErr.message);
+      }
+
       res.json({ success: true, id, realised });
     } catch (error) {
       console.error("Toggle realised error:", error);
@@ -4737,6 +4753,23 @@ export async function registerRoutes(
         voPmLimit: null,
         currentVoTotal: null,
       });
+
+      try {
+        await recordManualEdit({
+          actorUserId: req.user?.id,
+          actorRole: (req as any).user?.role,
+          entityType: "revenue_summary",
+          entityId: projectName,
+          projectName,
+          action: "REVENUE_SUMMARY_UPDATED",
+          summary: `Updated revenue summary: revenue=${revenue}, expenditure=${expenditure}`,
+          oldRecord: {},
+          newRecord: { plannedRevenue: revenue, plannedExpenditure: expenditure },
+        });
+      } catch (auditErr: any) {
+        console.warn("[audit] Revenue summary audit failed:", auditErr.message);
+      }
+
       res.json(saved);
     } catch (error) {
       console.error("Save costed error:", error);
@@ -4789,6 +4822,23 @@ export async function registerRoutes(
         return res.status(400).json({ error: "milestoneRowNumber and taskId are required" });
       }
       const link = await storage.upsertMilestoneTaskLink(projectName, milestoneRowNumber, taskId);
+
+      try {
+        await recordManualEdit({
+          actorUserId: req.user?.id,
+          actorRole: (req as any).user?.role,
+          entityType: "milestone_task_link",
+          entityId: `${projectName}|milestone${milestoneRowNumber}`,
+          projectName,
+          action: "MILESTONE_TASK_LINKED",
+          summary: `Linked milestone row ${milestoneRowNumber} to task ${taskId}`,
+          oldRecord: {},
+          newRecord: { milestoneRowNumber, taskId },
+        });
+      } catch (auditErr: any) {
+        console.warn("[audit] Milestone task link audit failed:", auditErr.message);
+      }
+
       res.json(link);
     } catch (error) {
       console.error("Link task error:", error);
@@ -4808,12 +4858,28 @@ export async function registerRoutes(
       if (link) {
         const updated = await storage.upsertMilestoneTaskLink(projectName, milestoneRowNumber, link.taskId);
         await storage.updateMilestoneDateOverride(projectName, milestoneRowNumber, dateOverride, reason || null);
-        res.json({ success: true });
       } else {
         await storage.upsertMilestoneTaskLink(projectName, milestoneRowNumber, 0);
         await storage.updateMilestoneDateOverride(projectName, milestoneRowNumber, dateOverride, reason || null);
-        res.json({ success: true });
       }
+
+      try {
+        await recordManualEdit({
+          actorUserId: req.user?.id,
+          actorRole: (req as any).user?.role,
+          entityType: "milestone_date_override",
+          entityId: `${projectName}|milestone${milestoneRowNumber}`,
+          projectName,
+          action: "MILESTONE_DATE_OVERRIDDEN",
+          summary: `Overrode milestone ${milestoneRowNumber} date to ${dateOverride}${reason ? ` (${reason})` : ''}`,
+          oldRecord: {},
+          newRecord: { milestoneRowNumber, dateOverride, reason },
+        });
+      } catch (auditErr: any) {
+        console.warn("[audit] Milestone date override audit failed:", auditErr.message);
+      }
+
+      res.json({ success: true });
     } catch (error) {
       console.error("Date override error:", error);
       res.status(500).json({ error: "Failed to save date override" });
@@ -4993,7 +5059,26 @@ export async function registerRoutes(
   app.post("/api/expense-task-links/:projectName/:expenseId/date-override", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { dateOverride, reason } = req.body;
-      await storage.updateExpenseTaskLinkDateOverride(req.params.projectName, parseInt(req.params.expenseId), dateOverride, reason);
+      const projectName = req.params.projectName;
+      const expenseId = parseInt(req.params.expenseId);
+      await storage.updateExpenseTaskLinkDateOverride(projectName, expenseId, dateOverride, reason);
+
+      try {
+        await recordManualEdit({
+          actorUserId: req.user?.id,
+          actorRole: (req as any).user?.role,
+          entityType: "expense_date_override",
+          entityId: `${projectName}|expense${expenseId}`,
+          projectName,
+          action: "EXPENSE_DATE_OVERRIDDEN",
+          summary: `Overrode expense ${expenseId} date to ${dateOverride}${reason ? ` (${reason})` : ''}`,
+          oldRecord: {},
+          newRecord: { expenseId, dateOverride, reason },
+        });
+      } catch (auditErr: any) {
+        console.warn("[audit] Expense date override audit failed:", auditErr.message);
+      }
+
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: "Failed to save date override" });
@@ -5022,7 +5107,25 @@ export async function registerRoutes(
         expenseInvoicedDate: expenseInvoicedDate || null,
         expensePaymentDate: expensePaymentDate || null,
         lineStatus: 'Planned',
+        isManual: true,
       });
+
+      try {
+        await recordManualEdit({
+          actorUserId: req.user?.id,
+          actorRole: (req as any).user?.role,
+          entityType: "expense_line",
+          entityId: `${projectName}|row${newExpense.rowNumber}`,
+          projectName,
+          action: "MANUAL_EXPENSE_ADDED",
+          summary: `Added manual expense line: ${expenseLineItem || expenseCategory}`,
+          oldRecord: {},
+          newRecord: { expenseCategory, expenseLineItem, expenseActualTotal, isManual: true },
+        });
+      } catch (auditErr: any) {
+        console.warn("[audit] Manual expense add audit failed:", auditErr.message);
+      }
+
       res.json(newExpense);
     } catch (error) {
       console.error("Add expense line error:", error);
@@ -5044,7 +5147,25 @@ export async function registerRoutes(
         rowType: 'category',
         expenseCategory: categoryName,
         expenseLineItem: categoryName,
+        isManual: true,
       });
+
+      try {
+        await recordManualEdit({
+          actorUserId: req.user?.id,
+          actorRole: (req as any).user?.role,
+          entityType: "expense_category",
+          entityId: `${projectName}|row${newCategory.rowNumber}`,
+          projectName,
+          action: "MANUAL_CATEGORY_ADDED",
+          summary: `Added manual expense category: ${categoryName}`,
+          oldRecord: {},
+          newRecord: { expenseCategory: categoryName, isManual: true },
+        });
+      } catch (auditErr: any) {
+        console.warn("[audit] Manual category add audit failed:", auditErr.message);
+      }
+
       res.json(newCategory);
     } catch (error) {
       console.error("Add category error:", error);
@@ -5081,8 +5202,26 @@ export async function registerRoutes(
         expenseLineItem: taskTitle,
         expensePaymentDate: taskEndDate,
         lineStatus: 'Planned',
+        isManual: true,
       });
       await storage.upsertExpenseTaskLink(projectName, newExpense.id, taskId, (req.user as any)?.id);
+
+      try {
+        await recordManualEdit({
+          actorUserId: req.user?.id,
+          actorRole: (req as any).user?.role,
+          entityType: "expense_line",
+          entityId: `${projectName}|row${newExpense.rowNumber}`,
+          projectName,
+          action: "TASK_INSERTED_AS_EXPENSE",
+          summary: `Inserted task "${taskTitle}" as expense line in ${expenseCategory}`,
+          oldRecord: {},
+          newRecord: { expenseCategory, expenseLineItem: taskTitle, taskId, isManual: true },
+        });
+      } catch (auditErr: any) {
+        console.warn("[audit] Insert task as expense audit failed:", auditErr.message);
+      }
+
       res.json(newExpense);
     } catch (error) {
       console.error("Insert task as line error:", error);
@@ -5114,6 +5253,23 @@ export async function registerRoutes(
         const updateFields: Record<string, any> = { [field]: color };
         if (confirmedField) updateFields[confirmedField] = isBlack;
         await storage.updateProgramExpenseFields(expense.id, updateFields);
+      }
+
+      try {
+        const oldColor = expense ? (expense as any)[field] || 'unknown' : 'unknown';
+        await recordManualEdit({
+          actorUserId: req.user?.id,
+          actorRole: (req as any).user?.role,
+          entityType: "expenditure_font_color",
+          entityId: `${projectName}|row${rowNumber}|${field}`,
+          projectName,
+          action: "FONT_COLOR_TOGGLE",
+          summary: `Toggled ${field} from ${oldColor} to ${color} for row ${rowNumber}`,
+          oldRecord: { [field]: oldColor },
+          newRecord: { [field]: color },
+        });
+      } catch (auditErr: any) {
+        console.warn("[audit] Font color toggle audit failed:", auditErr.message);
       }
 
       res.json({ success: true });

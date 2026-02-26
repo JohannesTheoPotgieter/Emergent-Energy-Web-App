@@ -133,6 +133,7 @@ export const programExpense = pgTable("program_expense", {
   computedState: text("computed_state"),
   computedForecastPaymentDate: text("computed_forecast_payment_date"),
   supplierName: text("supplier_name"),
+  isManual: boolean("is_manual").default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
