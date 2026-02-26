@@ -205,22 +205,31 @@ function applyPlanningOverrides(
 }
 
 // Apply project plan overrides to tasks/milestones
+const NUMERIC_PLAN_FIELDS = new Set(["actualPctComplete", "expectedPctComplete", "durationDays"]);
+
+function coercePlanOverride(fieldName: string, value: any): any {
+  if (value === null || value === undefined || value === "") return null;
+  if (NUMERIC_PLAN_FIELDS.has(fieldName)) {
+    const num = Number(value);
+    return isNaN(num) ? null : num;
+  }
+  return value;
+}
+
 function applyProjectPlanOverrides(
   baselineRows: any[],
   overrides: any[]
 ): any[] {
   if (overrides.length === 0) return baselineRows;
 
-  // Group overrides by rowNumber
   const overrideMap = new Map<number, Map<string, any>>();
   overrides.forEach((o: any) => {
     if (!overrideMap.has(o.rowNumber)) {
       overrideMap.set(o.rowNumber, new Map());
     }
-    overrideMap.get(o.rowNumber)!.set(o.fieldName, o.overrideValue);
+    overrideMap.get(o.rowNumber)!.set(o.fieldName, coercePlanOverride(o.fieldName, o.overrideValue));
   });
 
-  // Apply overrides to rows
   return baselineRows.map((row: any) => {
     if (!row.rowNumber || !overrideMap.has(row.rowNumber)) {
       return row;
@@ -901,7 +910,7 @@ export async function registerRoutes(
 
   app.get("/api/home/summary", async (req, res) => {
     try {
-      const [allProjectInfo, legacyExpenses, legacyRawInflows, legacyPlans, latestRefresh, revenueSummaries, allTaskLinks, allOpTasks] = await Promise.all([
+      const [allProjectInfo, legacyExpenses, legacyRawInflows, legacyPlans, latestRefresh, revenueSummaries, allTaskLinks, allOpTasks, allPlanOverrides] = await Promise.all([
         storage.getAllProjectInfo(),
         storage.getAllProgramExpenses(),
         storage.getAllProgramInflows(),
@@ -910,10 +919,11 @@ export async function registerRoutes(
         storage.getAllProjectRevenueSummaries(),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
+        storage.getAllProjectPlanOverrides(),
       ]);
       const merged = await getMergedAll(legacyExpenses, legacyRawInflows, legacyPlans);
       const allExpenses = merged.expenses;
-      const allPlans = merged.plans;
+      const allPlans = applyProjectPlanOverrides(merged.plans, allPlanOverrides);
       const allInflows = resolveInflowEffectiveDates(merged.inflows, allTaskLinks, allOpTasks, allPlans);
 
       const today = new Date().toISOString().split("T")[0];
@@ -1490,7 +1500,7 @@ export async function registerRoutes(
 
   app.get("/api/projects-summary", async (req, res) => {
     try {
-      const [allProjectInfo, allExpenses, rawInflows, allPlans, allEditableFields, allTaskLinks, allOpTasks, uploadMetaRows, committedSmartImports, allNormCosts, allNormRevenue, allNormPlans] = await Promise.all([
+      const [allProjectInfo, allExpenses, rawInflows, rawPlans, allEditableFields, allTaskLinks, allOpTasks, uploadMetaRows, committedSmartImports, allNormCosts, allNormRevenue, allNormPlans, allPlanOverrides] = await Promise.all([
         storage.getAllProjectInfo(),
         storage.getAllProgramExpenses(),
         storage.getAllProgramInflows(),
@@ -1503,7 +1513,9 @@ export async function registerRoutes(
         db.select().from(normalizedCostLines),
         db.select().from(normalizedRevenueLines),
         db.select().from(normalizedPlanTasks),
+        storage.getAllProjectPlanOverrides(),
       ]);
+      const allPlans = applyProjectPlanOverrides(rawPlans, allPlanOverrides);
       const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
 
       const importedProjectNames = new Set<string>();
@@ -4143,7 +4155,7 @@ export async function registerRoutes(
       
       let plans = await storage.getProjectPlansByProject(projectName);
       
-      if (applyOverrides === 'true') {
+      if (applyOverrides !== 'false') {
         const overrides = await storage.getProjectPlanOverridesByProject(projectName);
         plans = applyProjectPlanOverrides(plans, overrides);
       }
