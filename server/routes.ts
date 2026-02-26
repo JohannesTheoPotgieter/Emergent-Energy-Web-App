@@ -1906,7 +1906,7 @@ export async function registerRoutes(
           task_status_counts: taskCountsByProject.get(projectName) || taskCountsByProject.get(cleanName) || {},
           phase_updated_at: info?.phaseUpdatedAt || null,
           has_tracker_import: nameVariants.some(v => importedProjectNames.has(v)) || importedProjectNames.has(cleanName),
-          is_active: info?.isActive !== false,
+          is_active: info?.isActive !== false && info?.phase?.toLowerCase() !== "gone",
         };
       });
 
