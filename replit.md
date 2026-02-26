@@ -44,6 +44,7 @@ Preferred communication style: Simple, everyday language.
 -   **Knowledge Base**: Wiki-style system with `ee_info_nodes`, `ee_info_edges`, `ee_info_assets` tables, providing SOP-enriched nodes for various processes.
 -   **Walkthroughs**: 37 interactive step-by-step guides covering application functionality.
 -   **Home Greeting System**: Role-based, randomized greetings.
+-   **Home Action Hub**: Personalized home screen with stat cards (unread notifications, open tasks, pending approvals, overdue tasks), actionable sections for My Tasks (click-through to engineering), Pending Approvals (engineering gates, quality reviews, deliverables filtered by user/role), Notifications (action-required items + recent unread with mark-read), Company Priorities, and Quick Navigation links (role-filtered). Backend: `/api/home/action-hub` aggregates all data in a single call. Auto-refreshes every 60s.
 
 ### Gamification System
 -   **Module**: Badge and leaderboard system tracking user activity across the platform, awarding points and badges for various actions (task completion, approvals, reviews, imports, etc.).
