@@ -3258,6 +3258,17 @@ export async function registerRoutes(
       const today = new Date().toISOString().split("T")[0];
       const projectInfoMap = new Map(allProjectInfo.map(info => [info.projectName, info]));
 
+      const nowDate = new Date();
+      const fyStartMonth = 3;
+      const fyStartYear = nowDate.getMonth() + 1 >= fyStartMonth ? nowDate.getFullYear() : nowDate.getFullYear() - 1;
+      const fyStart = `${fyStartYear}-03-01`;
+      const fyEndYear = fyStartYear + 1;
+      const fyEndDay = (fyEndYear % 4 === 0 && (fyEndYear % 100 !== 0 || fyEndYear % 400 === 0)) ? "29" : "28";
+      const fyEnd = `${fyEndYear}-02-${fyEndDay}`;
+      function isMegaParkOutsideFY(projectName: string, dateStr: string): boolean {
+        return /mega\s*park/i.test(projectName) && (dateStr < fyStart || dateStr > fyEnd);
+      }
+
       const overdueExpenses: Array<{
         id: number;
         projectName: string;
@@ -3275,6 +3286,7 @@ export async function registerRoutes(
           const amt = parseFloat(expense.expenseActualTotal);
           const state = expense.computedState || '';
           if (amt > 0 && expense.expensePaymentDate < today && (state === 'Invoiced' || state === 'Committed')) {
+            if (isMegaParkOutsideFY(expense.projectName, expense.expensePaymentDate)) continue;
             overdueExpenses.push({
               id: expense.id,
               projectName: expense.projectName,
@@ -3309,6 +3321,7 @@ export async function registerRoutes(
           const dateToCheck = inflow.effectiveDate || inflow.invoiceRaisedDate;
           const dateInPast = dateToCheck && /^\d{4}-\d{2}-\d{2}/.test(dateToCheck) && dateToCheck < today;
           if (amt > 0 && hasInvoiceNum && paymentNotReceived && dateInPast) {
+            if (dateToCheck && isMegaParkOutsideFY(inflow.projectName, dateToCheck)) continue;
             revenueOutstanding.push({
               id: inflow.id,
               projectName: inflow.projectName,
@@ -3404,6 +3417,7 @@ export async function registerRoutes(
         if (plan.actualEnd && /^\d{4}-\d{2}-\d{2}/.test(plan.actualEnd)) {
           const endDate = plan.actualEnd.substring(0, 10);
           if (endDate < today) {
+            if (isMegaParkOutsideFY(plan.projectName, endDate)) continue;
             const pctComplete = plan.actualPctComplete != null ? Number(plan.actualPctComplete) : 0;
             if (pctComplete < 1.0) {
               overdueTasks.push({
