@@ -35,6 +35,7 @@ Preferred communication style: Simple, everyday language.
 -   **Audit Trails**: Immutable `change_sets` and `field_changes` for data mutations, plus detailed logs.
 -   **Auto-Archive**: After each Smart Import commit, projects whose last committed import is older than 90 days are automatically archived (`archivedStatus='ARCHIVED'`, `executionPhase='Completed'`, `isActive=false`). Only affects projects that have at least one prior committed import — manually created or lifecycle-board projects are never auto-archived.
 -   **Act% Calculation**: Uses duration-weighted average across all tasks (null actual% treated as 0%). Formula: `sum(actualPctComplete × durationDays) / sum(durationDays)`. Applied consistently across project list, dashboard, lifecycle board, and all delta calculations.
+-   **Expected% Calculation**: Uses duration-weighted average with SA working days fallback. When `expectedPctComplete` is stored, it's used directly; when null, expected% is computed from `actualStart`/`actualEnd` dates using SA working days (excluding weekends and SA public holidays). Tasks without dates or expected values contribute 0% to the weighted average. Applied consistently across projects-summary, home/summary dashboard, project detail, and lifecycle board endpoints.
 
 ### Database Architecture
 -   **Central Spine**: `project_info` is the primary table, with all modules linking via `project_id`.
