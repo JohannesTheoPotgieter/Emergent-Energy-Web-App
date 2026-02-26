@@ -73,6 +73,8 @@ router.get("/api/subcontractor-dashboard/summary", requireAuth, async (req: Requ
       lastPaidDate: string | null;
       avgTurnaroundDays: number | null;
       openAmount: number;
+      overdueAmount: number;
+      overdueCount: number;
       upcomingAmount30d: number;
     }
 
@@ -92,6 +94,8 @@ router.get("/api/subcontractor-dashboard/summary", requireAuth, async (req: Requ
       let turnaroundSum = 0;
       let turnaroundCount = 0;
       let openAmount = 0;
+      let overdueAmount = 0;
+      let overdueCount = 0;
       let upcomingAmount = 0;
 
       for (const line of groupLines) {
@@ -117,9 +121,13 @@ router.get("/api/subcontractor-dashboard/summary", requireAuth, async (req: Requ
           openAmount += amt;
         }
 
-        if (line.invoiceDate && line.status !== "PAID") {
+        if (line.invoiceDate && line.status !== "PAID" && amt > 0) {
           try {
             const invDate = new Date(line.invoiceDate);
+            if (invDate < now) {
+              overdueAmount += amt;
+              overdueCount++;
+            }
             if (invDate >= now && invDate <= thirtyDaysFromNow) {
               upcomingAmount += amt;
             }
@@ -140,6 +148,8 @@ router.get("/api/subcontractor-dashboard/summary", requireAuth, async (req: Requ
         lastPaidDate,
         avgTurnaroundDays: turnaroundCount > 0 ? Math.round(turnaroundSum / turnaroundCount) : null,
         openAmount,
+        overdueAmount,
+        overdueCount,
         upcomingAmount30d: upcomingAmount,
       });
     }
@@ -149,6 +159,8 @@ router.get("/api/subcontractor-dashboard/summary", requireAuth, async (req: Requ
     const biggest = summaries.find(s => s.counterpartyName.toLowerCase() !== "unknown") || null;
     const totalCounterparties = summaries.length;
     const totalOpenAmount = summaries.reduce((s, c) => s + c.openAmount, 0);
+    const totalOverdueAmount = summaries.reduce((s, c) => s + c.overdueAmount, 0);
+    const totalOverdueCount = summaries.reduce((s, c) => s + c.overdueCount, 0);
     const totalUpcoming30d = summaries.reduce((s, c) => s + c.upcomingAmount30d, 0);
     const allProjects = [...new Set(lines.map(l => l.projectName))];
 
@@ -158,6 +170,8 @@ router.get("/api/subcontractor-dashboard/summary", requireAuth, async (req: Requ
         biggestAccountSpend: biggest?.totalSpendExVat || 0,
         totalCounterparties,
         totalOpenAmount,
+        totalOverdueAmount,
+        totalOverdueCount,
         totalUpcoming30d,
       },
       counterparties: summaries,
@@ -777,6 +791,55 @@ router.post("/api/subcontractor-dashboard/link-counterparty", requireAuth, async
     res.json({ success: true, linked: costLineIds.length, counterpartyName: cpName, patternCreated });
   } catch (err: any) {
     console.error("[subcontractor-link] Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/api/subcontractor-dashboard/overdue", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const allLines = await db.select().from(normalizedCostLines);
+    const now = new Date();
+
+    const overdueLines = allLines.filter(l => {
+      if (l.status === "PAID") return false;
+      const amt = parseFloat(l.amountExVat || "0") || 0;
+      if (amt <= 0) return false;
+      if (!l.invoiceDate) return false;
+      try {
+        return new Date(l.invoiceDate) < now;
+      } catch { return false; }
+    });
+
+    const items = overdueLines.map(l => {
+      const invDate = new Date(l.invoiceDate!);
+      const daysOverdue = Math.floor((now.getTime() - invDate.getTime()) / (1000 * 60 * 60 * 24));
+      return {
+        id: l.id,
+        projectName: l.projectName,
+        counterpartyName: l.counterpartyName || "Unknown",
+        counterpartyType: l.counterpartyType || null,
+        description: l.description,
+        costCategory: l.costCategory,
+        invoiceNumber: l.invoiceNumber,
+        amountExVat: l.amountExVat,
+        invoiceDate: l.invoiceDate,
+        approvedDate: l.approvedDate,
+        status: l.status,
+        daysOverdue,
+      };
+    });
+
+    items.sort((a, b) => b.daysOverdue - a.daysOverdue);
+
+    const totalOverdue = items.reduce((s, i) => s + (parseFloat(i.amountExVat || "0") || 0), 0);
+
+    res.json({
+      totalOverdue,
+      totalItems: items.length,
+      items,
+    });
+  } catch (err: any) {
+    console.error("[subcontractor-overdue] Error:", err);
     res.status(500).json({ error: err.message });
   }
 });

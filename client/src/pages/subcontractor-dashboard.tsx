@@ -43,7 +43,7 @@ function formatDate(val: string | null): string {
   } catch { return val; }
 }
 
-type SortField = "totalSpendExVat" | "invoiceCount" | "projectCount" | "lastInvoiceDate" | "avgTurnaroundDays" | "openAmount" | "upcomingAmount30d" | "counterpartyName";
+type SortField = "totalSpendExVat" | "invoiceCount" | "projectCount" | "lastInvoiceDate" | "avgTurnaroundDays" | "openAmount" | "overdueAmount" | "upcomingAmount30d" | "counterpartyName";
 
 export default function SubcontractorDashboardPage() {
   const [, navigate] = useLocation();
@@ -78,6 +78,7 @@ export default function SubcontractorDashboardPage() {
   const [linkIsNew, setLinkIsNew] = useState(false);
   const [linkNewName, setLinkNewName] = useState("");
   const [linkNewType, setLinkNewType] = useState("OTHER");
+  const [showOverdue, setShowOverdue] = useState(false);
   const handleStartRename = () => {
     setRenameValue(selectedCp || "");
     setRenameError("");
@@ -269,6 +270,17 @@ export default function SubcontractorDashboardPage() {
     refetchOnWindowFocus: true,
   });
 
+  const { data: overdueData, isLoading: overdueLoading } = useQuery({
+    queryKey: ["/api/subcontractor-dashboard/overdue"],
+    queryFn: async () => {
+      const res = await fetch("/api/subcontractor-dashboard/overdue", { headers: getAuthHeaders(), credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load");
+      return res.json();
+    },
+    enabled: showOverdue,
+    staleTime: 0,
+  });
+
   const { data: detailData, isLoading: detailLoading } = useQuery({
     queryKey: ["/api/subcontractor-dashboard/detail", selectedCp],
     queryFn: async () => {
@@ -360,7 +372,7 @@ export default function SubcontractorDashboardPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <Card data-testid="kpi-biggest">
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center gap-2 mb-1">
@@ -387,6 +399,17 @@ export default function SubcontractorDashboardPage() {
               <p className="text-xs text-slate-500">Total Open Amount</p>
             </div>
             <p className="text-lg font-bold">{formatCurrency(kpis.totalOpenAmount)}</p>
+          </CardContent>
+        </Card>
+        <Card className={`cursor-pointer transition-colors ${showOverdue ? "border-red-300 bg-red-50/50" : "hover:border-red-200"}`}
+          onClick={() => setShowOverdue(!showOverdue)} data-testid="kpi-overdue">
+          <CardContent className="pt-4 pb-3">
+            <div className="flex items-center gap-2 mb-1">
+              <AlertCircle className="w-4 h-4 text-red-600" />
+              <p className="text-xs text-slate-500">Overdue</p>
+            </div>
+            <p className="text-lg font-bold text-red-600">{formatCurrency(kpis.totalOverdueAmount)}</p>
+            <p className="text-xs text-slate-400">{kpis.totalOverdueCount || 0} items — click to view</p>
           </CardContent>
         </Card>
         <Card data-testid="kpi-upcoming">
@@ -498,6 +521,76 @@ export default function SubcontractorDashboardPage() {
             </CardContent>
           </Card>
         </div>
+      )}
+
+      {showOverdue && (
+        <Card className="border-red-200 bg-red-50/30" data-testid="overdue-panel">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm text-red-800 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4" />
+                Overdue Items
+                {overdueData && <Badge variant="destructive" className="text-[10px]">{overdueData.totalItems} items — {formatCurrency(overdueData.totalOverdue)}</Badge>}
+              </CardTitle>
+              <Button size="sm" variant="ghost" className="h-7 text-xs text-slate-500" onClick={() => setShowOverdue(false)} data-testid="btn-close-overdue">
+                <X className="w-3 h-3" />
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {overdueLoading ? (
+              <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-red-400" /></div>
+            ) : overdueData?.items?.length > 0 ? (
+              <div className="border border-red-200 rounded-lg overflow-hidden max-h-[400px] overflow-y-auto">
+                <table className="w-full text-[11px]" data-testid="overdue-table">
+                  <thead className="sticky top-0 bg-red-50">
+                    <tr className="border-b border-red-200">
+                      <th className="text-left px-3 py-1.5 font-medium text-red-700">Counterparty</th>
+                      <th className="text-left px-3 py-1.5 font-medium text-red-700">Project</th>
+                      <th className="text-left px-3 py-1.5 font-medium text-red-700">Category</th>
+                      <th className="text-left px-3 py-1.5 font-medium text-red-700">Description</th>
+                      <th className="text-left px-3 py-1.5 font-medium text-red-700">Invoice #</th>
+                      <th className="text-right px-3 py-1.5 font-medium text-red-700">Amount</th>
+                      <th className="text-left px-3 py-1.5 font-medium text-red-700">Invoice Date</th>
+                      <th className="text-left px-3 py-1.5 font-medium text-red-700">Status</th>
+                      <th className="text-right px-3 py-1.5 font-medium text-red-700">Days Overdue</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {overdueData.items.map((item: any) => (
+                      <tr key={item.id} className="border-b border-red-100 hover:bg-red-50/50 cursor-pointer"
+                        onClick={() => { setSelectedCp(item.counterpartyName); setShowOverdue(false); }}
+                        data-testid={`overdue-row-${item.id}`}>
+                        <td className="px-3 py-1.5 font-medium text-slate-800">{item.counterpartyName}</td>
+                        <td className="px-3 py-1.5">
+                          <button className="text-blue-700 hover:underline text-left" onClick={(e) => { e.stopPropagation(); navigate(`/project/${encodeURIComponent(item.projectName)}`); }}
+                            data-testid={`overdue-nav-project-${item.id}`}>
+                            {item.projectName}
+                          </button>
+                        </td>
+                        <td className="px-3 py-1.5 text-slate-500">{item.costCategory || "—"}</td>
+                        <td className="px-3 py-1.5 text-slate-500 max-w-[180px] truncate" title={item.description || ""}>{item.description || "—"}</td>
+                        <td className="px-3 py-1.5 font-mono">{item.invoiceNumber || "—"}</td>
+                        <td className="px-3 py-1.5 font-mono text-right text-red-700">{formatCurrency(parseFloat(item.amountExVat || "0"))}</td>
+                        <td className="px-3 py-1.5 text-slate-500">{formatDate(item.invoiceDate)}</td>
+                        <td className="px-3 py-1.5">
+                          <Badge variant="outline" className="text-[9px] text-amber-700 border-amber-200 bg-amber-50">{item.status}</Badge>
+                        </td>
+                        <td className="px-3 py-1.5 text-right">
+                          <span className={`font-bold ${item.daysOverdue > 60 ? "text-red-700" : item.daysOverdue > 30 ? "text-orange-600" : "text-amber-600"}`}>
+                            {item.daysOverdue}d
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-sm text-slate-500 text-center py-4">No overdue items found.</p>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       <div className="flex flex-wrap items-center gap-3">
@@ -653,6 +746,7 @@ export default function SubcontractorDashboardPage() {
                   { key: "lastPaidDate", label: "Last Paid" },
                   { key: "avgTurnaroundDays", label: "Avg Turn." },
                   { key: "openAmount", label: "Open" },
+                  { key: "overdueAmount", label: "Overdue" },
                   { key: "upcomingAmount30d", label: "Upcoming 30d" },
                 ].map(col => (
                   <th key={col.key} className="text-left px-3 py-2 font-medium text-slate-600 text-xs cursor-pointer hover:bg-slate-100"
@@ -699,6 +793,7 @@ export default function SubcontractorDashboardPage() {
                   <td className="px-3 py-2 text-xs text-slate-500">{formatDate(cp.lastPaidDate)}</td>
                   <td className="px-3 py-2 text-xs">{cp.avgTurnaroundDays != null ? `${cp.avgTurnaroundDays}d` : "\u2014"}</td>
                   <td className="px-3 py-2 text-xs font-mono text-amber-600">{cp.openAmount > 0 ? formatCurrency(cp.openAmount) : "\u2014"}</td>
+                  <td className="px-3 py-2 text-xs font-mono text-red-600">{cp.overdueAmount > 0 ? formatCurrency(cp.overdueAmount) : "\u2014"}</td>
                   <td className="px-3 py-2 text-xs font-mono text-purple-600">{cp.upcomingAmount30d > 0 ? formatCurrency(cp.upcomingAmount30d) : "\u2014"}</td>
                   <td className="px-3 py-2"><ChevronRight className="w-4 h-4 text-slate-300" /></td>
                 </tr>
