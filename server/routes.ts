@@ -3375,17 +3375,7 @@ export async function registerRoutes(
       }
       completionCompare.sort((a, b) => b.actualPct - a.actualPct);
 
-      const completionMap = new Map<string, { actualPct: number; expectedPct: number }>();
-      for (const c of completionCompare) {
-        completionMap.set(c.projectName, { actualPct: c.actualPct, expectedPct: c.expectedPct });
-      }
-
-      const portfolioTimeline: Array<{
-        projectName: string; startDate: string | null; endDate: string | null; phase: string | null;
-        actualPct: number; expectedPct: number; delta: number;
-        pm: string | null; sizeKwp: number | null;
-        commissioningDate: string | null; constructionStartDate: string | null;
-      }> = [];
+      const portfolioTimeline: Array<{ projectName: string; startDate: string | null; endDate: string | null; phase: string | null }> = [];
       for (const projectName of Array.from(allProjectNames)) {
         const info = projectInfoMap.get(projectName);
         const projectPlans = plansByProject.get(projectName) || [];
@@ -3410,24 +3400,11 @@ export async function registerRoutes(
         const chFromPlan = findMaxEndDate(projectPlans, ['handover to client']);
         const endDate = chFromPlan || info?.clientHandoverDate || commFromPlan || info?.commissioningDate || planMaxEnd || null;
 
-        const comp = completionMap.get(projectName);
-        const actualPct = comp?.actualPct ?? 0;
-        const expectedPct = comp?.expectedPct ?? 0;
-        const commDate = commFromPlan || info?.commissioningDate || null;
-        const csDate = csFromPlan || info?.constructionStartDate || null;
-
         portfolioTimeline.push({
           projectName,
           startDate,
           endDate: endDate && endDate >= startDate ? endDate : startDate,
           phase: info?.phase || null,
-          actualPct: Math.round(actualPct * 10) / 10,
-          expectedPct: Math.round(expectedPct * 10) / 10,
-          delta: Math.round((actualPct - expectedPct) * 10) / 10,
-          pm: info?.pm || null,
-          sizeKwp: info?.sizeKwp ?? null,
-          commissioningDate: commDate && commDate >= '1950-01-01' ? commDate : null,
-          constructionStartDate: csDate && csDate >= '1950-01-01' ? csDate : null,
         });
       }
       portfolioTimeline.sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''));
