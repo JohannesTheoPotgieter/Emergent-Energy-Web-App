@@ -2639,7 +2639,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'QUALITY_MANAGER', 'CONSTRUCTION_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'QUALITY_MANAGER'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN', 'QUALITY_MANAGER'],
   },
   {
     entity: 'pd_history',
@@ -2695,7 +2695,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER', 'CONSTRUCTION_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER'],
   },
   {
     entity: 'pd_eng_stages',

@@ -16,7 +16,7 @@ import {
   ArrowLeft, User, CheckCircle, AlertCircle, Columns, CalendarDays,
   ListTodo, ShieldCheck, Clock, History, ArrowRight, Loader2,
   Wrench, PlusCircle, Circle, Calendar, PauseCircle, AlertTriangle,
-  ChevronDown, ChevronUp, Eye, Play, Zap, Target, Users,
+  ChevronDown, ChevronUp, Eye, Play, Zap, Target, Users, Trash2, Plus,
 } from "lucide-react";
 import { ProjectPlanTab } from "@/components/tabs/ProjectPlanTab";
 import { RevenueTrackingTab } from "@/components/tabs/RevenueTrackingTab";
@@ -36,7 +36,8 @@ import { WeeklyReviewWizard } from "@/components/WeeklyReviewWizard";
 import { GuidancePrompt, getPhaseGuidance } from "@/components/MicroGuidance";
 import { useProgramData } from "@/hooks/use-program-data";
 import { useAuth } from "@/hooks/use-auth";
-import { PROJECT_PHASES, LIFECYCLE_PHASES, PROJECT_PHASE_LABELS, type ProjectPhase, checkPermission } from "@shared/schema";
+import { PROJECT_PHASES, LIFECYCLE_PHASES, PROJECT_PHASE_LABELS, TASK_STATUSES, type ProjectPhase, checkPermission } from "@shared/schema";
+import { usePermission } from "@/hooks/use-permissions";
 
 const PHASE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   P0_FIRST_ASSESSMENT: { bg: "bg-slate-100", text: "text-slate-700", border: "border-slate-300" },
@@ -68,11 +69,11 @@ function PhaseBadge({ phase }: { phase: string | null }) {
   );
 }
 
-function engFetch(url: string) {
+function engFetch(url: string, options?: RequestInit) {
   const token = localStorage.getItem("auth_token");
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (token) headers["Authorization"] = `Bearer ${token}`;
-  return fetch(url, { headers, credentials: "include" });
+  return fetch(url, { ...options, headers: { ...headers, ...options?.headers }, credentials: "include" });
 }
 
 function PhaseChangeModal({ projectId, currentPhase, open, onClose }: {
@@ -244,10 +245,15 @@ const STATUS_BADGE: Record<string, string> = {
   "PROVIDE FEEDBACK": "bg-purple-100 text-purple-700",
 };
 
-function EngTasksTab({ projectInfoId, isAdmin }: { projectInfoId: number | null; isAdmin: boolean }) {
+function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: number | null; isAdmin: boolean; projectName: string }) {
   const { toast } = useToast();
   const qc = useQueryClient();
   const [, setLocation] = useLocation();
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+  const { allowed: canEdit } = usePermission('pd_eng_tasks', 'edit');
+  const { allowed: canDelete } = usePermission('pd_eng_tasks', 'delete');
 
   const { data: engData, isLoading } = useQuery<{ projectName: string; phase: string; tasks: any[] }>({
     queryKey: ["project-eng-tasks", projectInfoId],
@@ -259,16 +265,47 @@ function EngTasksTab({ projectInfoId, isAdmin }: { projectInfoId: number | null;
     enabled: !!projectInfoId,
   });
 
+  const createMutation = useMutation({
+    mutationFn: async (title: string) => {
+      const res = await engFetch("/api/eng/tasks", {
+        method: "POST",
+        body: JSON.stringify({ title, projectName, status: "TO DO", taskTypeTag: "PROJECT" }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to create task");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Task created" });
+      qc.invalidateQueries({ queryKey: ["project-eng-tasks", projectInfoId] });
+      setNewTitle("");
+      setShowAddForm(false);
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (taskId: number) => {
+      const res = await engFetch(`/api/eng/tasks/${taskId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to delete task");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Task deleted" });
+      qc.invalidateQueries({ queryKey: ["project-eng-tasks", projectInfoId] });
+      setDeleteConfirmId(null);
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
   const generateMutation = useMutation({
     mutationFn: async () => {
-      const token = localStorage.getItem("auth_token");
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-      const res = await fetch(`/api/projects/${projectInfoId}/generate-eng-tasks`, {
-        method: "POST",
-        headers,
-        credentials: "include",
-      });
+      const res = await engFetch(`/api/projects/${projectInfoId}/generate-eng-tasks`, { method: "POST" });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || "Failed to generate tasks");
@@ -279,9 +316,7 @@ function EngTasksTab({ projectInfoId, isAdmin }: { projectInfoId: number | null;
       toast({ title: `${data.tasksCreated} engineering tasks created` });
       qc.invalidateQueries({ queryKey: ["project-eng-tasks", projectInfoId] });
     },
-    onError: (err: Error) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
-    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
   if (!projectInfoId) {
@@ -297,31 +332,6 @@ function EngTasksTab({ projectInfoId, isAdmin }: { projectInfoId: number | null;
   const completedTasks = tasks.filter((t: any) => t.status === "COMPLETE");
   const overdue = tasks.filter((t: any) => t.dueDate && t.dueDate < new Date().toISOString().split("T")[0] && t.status !== "COMPLETE");
 
-  if (tasks.length === 0) {
-    return (
-      <div className="text-center py-12 space-y-4">
-        <Wrench className="h-12 w-12 mx-auto text-muted-foreground/30" />
-        <div>
-          <p className="text-lg font-medium text-muted-foreground">No engineering tasks yet</p>
-          <p className="text-sm text-muted-foreground/70 mt-1">
-            Engineering tasks are auto-created when a project moves past Phase 1 (Cost Proposal).
-          </p>
-        </div>
-        {isAdmin && (
-          <Button
-            onClick={() => generateMutation.mutate()}
-            disabled={generateMutation.isPending}
-            className="gap-2"
-            data-testid="button-generate-eng-tasks"
-          >
-            {generateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlusCircle className="h-4 w-4" />}
-            Generate Engineering Tasks
-          </Button>
-        )}
-      </div>
-    );
-  }
-
   const phaseGroups = new Map<string, any[]>();
   for (const t of tasks) {
     const ph = t.phase || "Unassigned";
@@ -331,79 +341,125 @@ function EngTasksTab({ projectInfoId, isAdmin }: { projectInfoId: number | null;
 
   return (
     <div className="space-y-4" data-testid="eng-tasks-tab">
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Card className="p-3">
-          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Total</p>
-          <p className="text-xl font-bold mt-1">{tasks.length}</p>
-        </Card>
-        <Card className="p-3">
-          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Open</p>
-          <p className="text-xl font-bold mt-1 text-blue-600">{openTasks.length}</p>
-        </Card>
-        <Card className="p-3">
-          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Completed</p>
-          <p className="text-xl font-bold mt-1 text-emerald-600">{completedTasks.length}</p>
-        </Card>
-        <Card className={`p-3 ${overdue.length > 0 ? "border-red-200" : ""}`}>
-          <p className={`text-[10px] uppercase tracking-wider ${overdue.length > 0 ? "text-red-600" : "text-muted-foreground"}`}>Overdue</p>
-          <p className={`text-xl font-bold mt-1 ${overdue.length > 0 ? "text-red-600" : ""}`}>{overdue.length}</p>
-        </Card>
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold">Engineering Tasks</h3>
+        <div className="flex gap-2">
+          {tasks.length === 0 && isAdmin && (
+            <Button size="sm" variant="outline" onClick={() => generateMutation.mutate()} disabled={generateMutation.isPending} className="h-7 text-xs gap-1" data-testid="button-generate-eng-tasks">
+              {generateMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <PlusCircle className="h-3 w-3" />}
+              Generate from Template
+            </Button>
+          )}
+          {canEdit && (
+            <Button size="sm" onClick={() => setShowAddForm(!showAddForm)} className="h-7 text-xs gap-1" data-testid="button-add-eng-task">
+              <Plus className="h-3 w-3" /> Add Task
+            </Button>
+          )}
+        </div>
       </div>
 
-      {tasks.length > 0 && (
-        <div className="w-full h-2.5 bg-muted rounded-full overflow-hidden">
-          <div
-            className="h-full bg-emerald-500 rounded-full transition-all"
-            style={{ width: `${tasks.length > 0 ? (completedTasks.length / tasks.length) * 100 : 0}%` }}
-          />
-        </div>
+      {showAddForm && (
+        <Card className="p-3">
+          <div className="flex gap-2">
+            <Input
+              placeholder="Task title..."
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              className="h-8 text-sm"
+              onKeyDown={(e) => { if (e.key === "Enter" && newTitle.trim()) createMutation.mutate(newTitle.trim()); }}
+              data-testid="input-new-eng-task"
+            />
+            <Button size="sm" className="h-8" onClick={() => { if (newTitle.trim()) createMutation.mutate(newTitle.trim()); }} disabled={!newTitle.trim() || createMutation.isPending} data-testid="button-save-eng-task">
+              {createMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Add"}
+            </Button>
+            <Button size="sm" variant="ghost" className="h-8" onClick={() => { setShowAddForm(false); setNewTitle(""); }} data-testid="button-cancel-eng-task">Cancel</Button>
+          </div>
+        </Card>
       )}
 
-      {Array.from(phaseGroups.entries()).map(([phase, phaseTasks]) => (
-        <div key={phase} className="space-y-1">
-          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5 py-2">
-            <span className={`w-2 h-2 rounded-full ${PHASE_COLORS[phase]?.bg.replace("bg-", "bg-") || "bg-slate-200"}`} />
-            {getPhaseLabel(phase)}
-            <span className="font-normal">({phaseTasks.length})</span>
-          </h4>
-          <Card>
-            <div className="divide-y">
-              {phaseTasks.map((task: any) => {
-                const isTaskOverdue = task.dueDate && task.dueDate < new Date().toISOString().split("T")[0] && task.status !== "COMPLETE";
-                return (
-                  <div
-                    key={task.id}
-                    className={`flex items-center gap-2.5 px-4 py-2.5 hover:bg-muted/20 transition-colors text-sm cursor-pointer ${isTaskOverdue ? "bg-red-50/30" : ""}`}
-                    onClick={() => setLocation(`/engineering?task=${task.id}`)}
-                    data-testid={`eng-task-row-${task.id}`}
-                  >
-                    <Circle className={`h-2.5 w-2.5 fill-current shrink-0 ${STATUS_DOT[task.status] || "text-gray-400"}`} />
-                    <span className="flex-1 min-w-0 truncate">{task.title}</span>
-                    {task.primaryWorkstream && (
-                      <Badge variant="outline" className="text-[9px] px-1.5 py-0 shrink-0">{task.primaryWorkstream}</Badge>
-                    )}
-                    <Badge className={`text-[9px] px-1.5 py-0 shrink-0 ${STATUS_BADGE[task.status] || "bg-gray-100"}`}>
-                      {task.status}
-                    </Badge>
-                    {task.dueDate && (
-                      <span className={`text-[10px] flex items-center gap-0.5 shrink-0 ${isTaskOverdue ? "text-red-600 font-semibold" : "text-muted-foreground"}`}>
-                        <Calendar className="h-3 w-3" />
-                        {new Date(task.dueDate).toLocaleDateString("en-ZA", { day: "2-digit", month: "short" })}
-                      </span>
-                    )}
-                    {task.assignees && task.assignees[0] && (
-                      <span className="text-[10px] text-muted-foreground flex items-center gap-0.5 shrink-0 max-w-[80px] truncate">
-                        <User className="h-3 w-3" />
-                        {task.assignees[0]}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </Card>
+      {tasks.length === 0 && !showAddForm ? (
+        <div className="text-center py-12 space-y-2">
+          <Wrench className="h-12 w-12 mx-auto text-muted-foreground/30" />
+          <p className="text-lg font-medium text-muted-foreground">No engineering tasks yet</p>
+          <p className="text-sm text-muted-foreground/70">Add tasks manually or generate from templates.</p>
         </div>
-      ))}
+      ) : tasks.length > 0 && (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <Card className="p-3">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Total</p>
+              <p className="text-xl font-bold mt-1">{tasks.length}</p>
+            </Card>
+            <Card className="p-3">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Open</p>
+              <p className="text-xl font-bold mt-1 text-blue-600">{openTasks.length}</p>
+            </Card>
+            <Card className="p-3">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Completed</p>
+              <p className="text-xl font-bold mt-1 text-emerald-600">{completedTasks.length}</p>
+            </Card>
+            <Card className={`p-3 ${overdue.length > 0 ? "border-red-200" : ""}`}>
+              <p className={`text-[10px] uppercase tracking-wider ${overdue.length > 0 ? "text-red-600" : "text-muted-foreground"}`}>Overdue</p>
+              <p className={`text-xl font-bold mt-1 ${overdue.length > 0 ? "text-red-600" : ""}`}>{overdue.length}</p>
+            </Card>
+          </div>
+
+          <div className="w-full h-2.5 bg-muted rounded-full overflow-hidden">
+            <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${(completedTasks.length / tasks.length) * 100}%` }} />
+          </div>
+
+          {Array.from(phaseGroups.entries()).map(([phase, phaseTasks]) => (
+            <div key={phase} className="space-y-1">
+              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5 py-2">
+                <span className={`w-2 h-2 rounded-full ${PHASE_COLORS[phase]?.bg || "bg-slate-200"}`} />
+                {getPhaseLabel(phase)}
+                <span className="font-normal">({phaseTasks.length})</span>
+              </h4>
+              <Card>
+                <div className="divide-y">
+                  {phaseTasks.map((task: any) => {
+                    const isTaskOverdue = task.dueDate && task.dueDate < new Date().toISOString().split("T")[0] && task.status !== "COMPLETE";
+                    return (
+                      <div key={task.id} className={`flex items-center gap-2.5 px-4 py-2.5 hover:bg-muted/20 transition-colors text-sm ${isTaskOverdue ? "bg-red-50/30" : ""}`} data-testid={`eng-task-row-${task.id}`}>
+                        <div className="flex-1 flex items-center gap-2.5 min-w-0 cursor-pointer" onClick={() => setLocation(`/engineering?task=${task.id}`)}>
+                          <Circle className={`h-2.5 w-2.5 fill-current shrink-0 ${STATUS_DOT[task.status] || "text-gray-400"}`} />
+                          <span className="flex-1 min-w-0 truncate">{task.title}</span>
+                          {task.primaryWorkstream && <Badge variant="outline" className="text-[9px] px-1.5 py-0 shrink-0">{task.primaryWorkstream}</Badge>}
+                          <Badge className={`text-[9px] px-1.5 py-0 shrink-0 ${STATUS_BADGE[task.status] || "bg-gray-100"}`}>{task.status}</Badge>
+                          {task.dueDate && (
+                            <span className={`text-[10px] flex items-center gap-0.5 shrink-0 ${isTaskOverdue ? "text-red-600 font-semibold" : "text-muted-foreground"}`}>
+                              <Calendar className="h-3 w-3" />
+                              {new Date(task.dueDate).toLocaleDateString("en-ZA", { day: "2-digit", month: "short" })}
+                            </span>
+                          )}
+                          {task.assignees && task.assignees[0] && (
+                            <span className="text-[10px] text-muted-foreground flex items-center gap-0.5 shrink-0 max-w-[80px] truncate">
+                              <User className="h-3 w-3" />{task.assignees[0]}
+                            </span>
+                          )}
+                        </div>
+                        {canDelete && deleteConfirmId !== task.id && (
+                          <button onClick={(e) => { e.stopPropagation(); setDeleteConfirmId(task.id); }} className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors shrink-0" data-testid={`btn-delete-eng-task-${task.id}`}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                        {deleteConfirmId === task.id && (
+                          <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                            <Button size="sm" variant="destructive" className="h-6 text-[10px] px-2" onClick={() => deleteMutation.mutate(task.id)} disabled={deleteMutation.isPending} data-testid={`btn-confirm-delete-eng-task-${task.id}`}>
+                              {deleteMutation.isPending ? "..." : "Delete"}
+                            </Button>
+                            <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2" onClick={() => setDeleteConfirmId(null)} data-testid={`btn-cancel-delete-eng-task-${task.id}`}>No</Button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </Card>
+            </div>
+          ))}
+        </>
+      )}
     </div>
   );
 }
@@ -1160,23 +1216,7 @@ export default function ProjectDetailPage() {
             Back to Overview
           </Button>
 
-          <div className="flex gap-1.5 flex-wrap border-b pb-2" data-testid="eng-sub-tabs">
-            {canViewSubTab.engTasks && (
-            <Button size="sm" variant={activeSubTab === "eng-tasks" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("eng-tasks")} data-testid="subtab-eng-tasks">
-              <ListTodo className="h-3 w-3 mr-1" /> Tasks
-            </Button>
-            )}
-            {canViewSubTab.engStages && (
-            <Button size="sm" variant={activeSubTab === "eng-stages" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("eng-stages")} data-testid="subtab-eng-stages">
-              <Target className="h-3 w-3 mr-1" /> Stages
-            </Button>
-            )}
-          </div>
-
-          {activeSubTab === "eng-tasks" && canViewTab.engineering && canViewSubTab.engTasks && <EngTasksTab projectInfoId={projectInfoId ?? null} isAdmin={isAdmin} />}
-          {activeSubTab === "eng-stages" && canViewTab.engineering && canViewSubTab.engStages && projectInfoId && (
-            <EngineeringStagesTab projectId={projectInfoId} projectName={projectName} isAdmin={isAdmin} userRole={userRole} />
-          )}
+          {canViewSubTab.engTasks && <EngTasksTab projectInfoId={projectInfoId ?? null} isAdmin={isAdmin} projectName={projectName} />}
         </div>
       )}
 
