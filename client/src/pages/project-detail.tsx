@@ -560,7 +560,7 @@ export default function ProjectDetailPage() {
   const { data: projectPlanData = [] } = useQuery({
     queryKey: ["project-plan", projectName],
     queryFn: async () => {
-      const res = await fetch(`/api/project-plan/${encodeURIComponent(projectName)}`);
+      const res = await engFetch(`/api/project-plan/${encodeURIComponent(projectName)}`);
       if (!res.ok) return [];
       return res.json();
     },
@@ -570,7 +570,7 @@ export default function ProjectDetailPage() {
   const { data: revenueData = [] } = useQuery({
     queryKey: ["program-inflows", projectName],
     queryFn: async () => {
-      const res = await fetch(`/api/program-inflows?projectName=${encodeURIComponent(projectName)}`);
+      const res = await engFetch(`/api/program-inflows?projectName=${encodeURIComponent(projectName)}`);
       if (!res.ok) return [];
       return res.json();
     },
@@ -580,7 +580,7 @@ export default function ProjectDetailPage() {
   const { data: expenseData = [] } = useQuery({
     queryKey: ["program-expenses", projectName],
     queryFn: async () => {
-      const res = await fetch(`/api/program-expenses/${encodeURIComponent(projectName)}`);
+      const res = await engFetch(`/api/program-expenses/${encodeURIComponent(projectName)}`);
       if (!res.ok) return [];
       return res.json();
     },
@@ -590,7 +590,7 @@ export default function ProjectDetailPage() {
   const { data: cashflowData = [] } = useQuery({
     queryKey: ["cashflow", projectName],
     queryFn: async () => {
-      const res = await fetch(`/api/cashflow?project=${encodeURIComponent(projectName)}`);
+      const res = await engFetch(`/api/cashflow?project=${encodeURIComponent(projectName)}`);
       if (!res.ok) return [];
       return res.json();
     },
@@ -608,9 +608,9 @@ export default function ProjectDetailPage() {
   });
 
   const { data: qualityData } = useQuery({
-    queryKey: ["quality-checklist", projectName],
+    queryKey: ["quality-summary", projectName],
     queryFn: async () => {
-      const res = await fetch(`/api/quality-checklist/${encodeURIComponent(projectName)}`);
+      const res = await engFetch(`/api/quality/project/${encodeURIComponent(projectName)}/summary`);
       if (!res.ok) return null;
       return res.json();
     },
@@ -637,13 +637,23 @@ export default function ProjectDetailPage() {
     : "—";
   const completionNum = projectInfo?.project_pct_complete != null ? projectInfo.project_pct_complete * 100 : 0;
   const isAdmin = ['admin', 'COO_ADMIN', 'CEO_ADMIN'].includes(user?.role || '');
-  const contractValue = projectInfo?.contract_value || 0;
-  const budgetTotal = projectInfo?.budget_total || 0;
+  const totalRevenueFromInflows = (revenueData as any[]).reduce((s: number, r: any) => s + (Number(r.milestoneAmount) || 0), 0);
+  const contractValue = projectInfo?.contract_value || totalRevenueFromInflows || 0;
+  const totalBudgetFromExpenses = (expenseData as any[]).reduce((s: number, e: any) => s + (Number(e.budgetTotal) || 0), 0);
+  const budgetTotal = projectInfo?.budget_total || totalBudgetFromExpenses || 0;
 
   const planTasks = projectPlanData as any[];
   const today = new Date().toISOString().split("T")[0];
-  const overduePlanTasks = planTasks.filter((t: any) => t.endDate && t.endDate < today && t.status !== "Complete" && t.status !== "Done");
-  const completedPlanTasks = planTasks.filter((t: any) => t.status === "Complete" || t.status === "Done");
+  const overduePlanTasks = planTasks.filter((t: any) => {
+    const endDate = t.endDate || t.actualEnd;
+    const pct = Number(t.actualPctComplete);
+    const isComplete = t.status === "Complete" || t.status === "Done" || (pct >= 1);
+    return endDate && endDate < today && !isComplete;
+  });
+  const completedPlanTasks = planTasks.filter((t: any) => {
+    const pct = Number(t.actualPctComplete);
+    return t.status === "Complete" || t.status === "Done" || (pct >= 1);
+  });
   const planCompletionPct = planTasks.length > 0 ? (completedPlanTasks.length / planTasks.length) * 100 : 0;
   const scheduleRag: "green" | "amber" | "red" = overduePlanTasks.length === 0 ? "green" : overduePlanTasks.length <= 3 ? "amber" : "red";
 
@@ -651,20 +661,25 @@ export default function ProjectDetailPage() {
   const costRatio = budgetTotal > 0 ? totalExpenses / budgetTotal : 0;
   const costRag: "green" | "amber" | "red" = costRatio < 0.9 ? "green" : costRatio <= 1 ? "amber" : "red";
 
-  const qualityChecklist = qualityData as any;
-  const qualityRag: "green" | "amber" | "red" = qualityChecklist && qualityChecklist.gates
-    ? (qualityChecklist.gates.every?.((g: any) => g.passed) ? "green" : qualityChecklist.gates.some?.((g: any) => g.failed) ? "red" : "amber")
-    : qualityChecklist && (Array.isArray(qualityChecklist) ? qualityChecklist.length > 0 : true) ? "amber" : "red";
-
-  const qualityGates = qualityChecklist?.gates || [];
-  const qualityGatesPassed = qualityGates.filter((g: any) => g.passed).length;
-  const qualityGatesTotal = qualityGates.length;
+  const qualitySummary = qualityData as any;
+  const qualityPhases = qualitySummary?.phases || [];
+  const qualityGatesTotal = qualityPhases.length;
+  const qualityGatesPassed = qualityPhases.filter((p: any) => p.applicableItems > 0 && p.approvedItems >= p.applicableItems).length;
+  const qualityTotalItems = qualityPhases.reduce((s: number, p: any) => s + (p.applicableItems || 0), 0);
+  const qualityApprovedItems = qualityPhases.reduce((s: number, p: any) => s + (p.approvedItems || 0), 0);
+  const qualityProgressPct = qualityTotalItems > 0 ? (qualityApprovedItems / qualityTotalItems) * 100 : 0;
+  const qualityRag: "green" | "amber" | "red" = qualitySummary?.hasChecklist
+    ? (qualityGatesPassed === qualityGatesTotal && qualityGatesTotal > 0 ? "green" : qualityApprovedItems > 0 ? "amber" : "red")
+    : "red";
 
   const nextMilestone = useMemo(() => {
     const now = new Date();
     const future = planTasks
-      .filter((t: any) => t.endDate && new Date(t.endDate) >= now)
-      .sort((a: any, b: any) => new Date(a.endDate).getTime() - new Date(b.endDate).getTime());
+      .filter((t: any) => {
+        const endDate = t.endDate || t.actualEnd;
+        return endDate && new Date(endDate) >= now;
+      })
+      .sort((a: any, b: any) => new Date(a.endDate || a.actualEnd).getTime() - new Date(b.endDate || b.actualEnd).getTime());
     return future[0] || null;
   }, [planTasks]);
 
@@ -783,7 +798,7 @@ export default function ProjectDetailPage() {
             <div className="flex flex-col gap-1" data-testid="awareness-milestone">
               <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Next Milestone</span>
               <span className="text-xs font-medium truncate">
-                {nextMilestone ? `${nextMilestone.taskName || nextMilestone.task_name || "Task"} (${new Date(nextMilestone.endDate || nextMilestone.end_date).toLocaleDateString("en-ZA", { day: "2-digit", month: "short" })})` : "—"}
+                {nextMilestone ? `${nextMilestone.taskName || nextMilestone.task_name || nextMilestone.highLevelProgramme || "Task"} (${new Date(nextMilestone.endDate || nextMilestone.actualEnd || nextMilestone.end_date).toLocaleDateString("en-ZA", { day: "2-digit", month: "short" })})` : "—"}
               </span>
             </div>
 
