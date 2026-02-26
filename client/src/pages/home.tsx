@@ -1,22 +1,35 @@
 import { useState, useMemo } from "react";
-import { Link } from "wouter";
-import { Card, CardContent } from "@/components/ui/card";
+import { Link, useLocation } from "wouter";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/use-auth";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getQueryFn, apiRequest } from "@/lib/queryClient";
 import {
   Flag,
   Loader2,
   ArrowRight,
   AlertTriangle,
-  TrendingDown,
   Clock,
   ChevronRight,
   ExternalLink,
   Users,
   Calendar,
   Target,
+  Bell,
+  CheckCircle2,
+  ClipboardCheck,
+  ListTodo,
+  FileCheck,
+  Shield,
+  Zap,
+  TrendingDown,
+  AlertCircle,
+  CircleDot,
+  Eye,
+  MailCheck,
+  Wrench,
 } from "lucide-react";
 
 const ROLE_COMPLIMENTS: Record<string, string[]> = {
@@ -235,6 +248,18 @@ interface CompanyPriority {
   links?: { id: number; linkType: string; projectName: string | null; taskId: number | null }[];
 }
 
+interface ActionHubData {
+  unreadCount: number;
+  actionRequired: any[];
+  recentNotifications: any[];
+  myTasks: any[];
+  overdueTaskCount: number;
+  pendingApprovals: any[];
+  approvalCounts: { engineering: number; quality: number; deliverable: number; total: number };
+  projectsAtRisk: any[];
+  userRole: string;
+  isAdmin: boolean;
+}
 
 function severityOrder(s: string): number {
   if (s === "critical") return 0;
@@ -271,6 +296,140 @@ function isOverdue(dueDate: string | null): boolean {
   return new Date(dueDate) < new Date();
 }
 
+function cleanProjectName(name: string): string {
+  return (name || "").replace(/_Tracker\d*$/i, "").replace(/_/g, " ").trim();
+}
+
+const EVENT_ICONS: Record<string, any> = {
+  "plan.change_confirmation": ClipboardCheck,
+  "task.assigned": ListTodo,
+  "task.status_changed": CircleDot,
+  "deliverable.submitted_for_approval": FileCheck,
+  "deliverable.qc_approved": CheckCircle2,
+  "deliverable.feedback_requested": MailCheck,
+  "milestone.approaching": Clock,
+  "milestone.commissioning_soon": AlertTriangle,
+  "project.behind_schedule": TrendingDown,
+  "project.phase_changed": Zap,
+};
+
+function NotificationItem({ notif, onMarkRead }: { notif: any; onMarkRead?: (id: number) => void }) {
+  const Icon = EVENT_ICONS[notif.eventType] || Bell;
+  const isAction = notif.requiresConfirmation && !notif.confirmedAt;
+  const projectDisplay = notif.projectName ? cleanProjectName(notif.projectName) : null;
+
+  return (
+    <div
+      className={`flex items-start gap-3 p-3 rounded-lg border transition-colors ${
+        isAction
+          ? "border-amber-200 bg-amber-50/50 dark:bg-amber-950/20 dark:border-amber-800"
+          : "border-border/50 bg-card hover:bg-muted/30"
+      }`}
+      data-testid={`notification-item-${notif.id}`}
+    >
+      <div className={`mt-0.5 p-1.5 rounded-md ${isAction ? "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-400" : "bg-muted text-muted-foreground"}`}>
+        <Icon className="w-3.5 h-3.5" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium leading-snug truncate" data-testid={`notification-title-${notif.id}`}>
+          {notif.title}
+        </p>
+        {projectDisplay && (
+          <p className="text-[11px] text-muted-foreground mt-0.5">{projectDisplay}</p>
+        )}
+        {isAction && (
+          <Badge variant="outline" className="text-[10px] mt-1 border-amber-300 text-amber-700 bg-amber-50 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-700">
+            Action Required
+          </Badge>
+        )}
+      </div>
+      {onMarkRead && !notif.isRead && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onMarkRead(notif.id); }}
+          className="text-muted-foreground hover:text-foreground p-1"
+          title="Mark as read"
+          data-testid={`mark-read-${notif.id}`}
+        >
+          <Eye className="w-3.5 h-3.5" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function TaskItem({ task }: { task: any }) {
+  const [, navigate] = useLocation();
+  const overdue = task.dueDate && new Date(task.dueDate) < new Date();
+  const projectDisplay = cleanProjectName(task.projectName);
+
+  return (
+    <div
+      className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors hover:bg-muted/30 ${
+        overdue ? "border-red-200 bg-red-50/30 dark:bg-red-950/10 dark:border-red-900" : "border-border/50 bg-card"
+      }`}
+      onClick={() => navigate(`/engineering?project=${encodeURIComponent(task.projectName)}`)}
+      data-testid={`task-item-${task.id}`}
+    >
+      <div className={`p-1.5 rounded-md ${overdue ? "bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-400" : "bg-muted text-muted-foreground"}`}>
+        <ListTodo className="w-3.5 h-3.5" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium leading-snug truncate">{task.title}</p>
+        <div className="flex items-center gap-2 mt-0.5">
+          <span className="text-[11px] text-muted-foreground">{projectDisplay}</span>
+          {task.priority && task.priority !== "Med" && (
+            <Badge variant="outline" className={`text-[10px] px-1 py-0 ${
+              task.priority === "Critical" ? "border-red-300 text-red-600" :
+              task.priority === "High" ? "border-amber-300 text-amber-600" : "border-gray-300 text-gray-500"
+            }`}>{task.priority}</Badge>
+          )}
+        </div>
+      </div>
+      <div className="text-right shrink-0">
+        {task.dueDate && (
+          <span className={`text-[11px] flex items-center gap-1 ${overdue ? "text-red-600 font-medium" : "text-muted-foreground"}`}>
+            {overdue && <AlertTriangle className="w-3 h-3" />}
+            {task.dueDate}
+          </span>
+        )}
+        <Badge variant="outline" className="text-[10px] mt-0.5">{task.status}</Badge>
+      </div>
+    </div>
+  );
+}
+
+function ApprovalItem({ approval }: { approval: any }) {
+  const [, navigate] = useLocation();
+  const projectDisplay = cleanProjectName(approval.projectName);
+  const typeIcons: Record<string, any> = {
+    engineering: Wrench,
+    quality: Shield,
+    deliverable: FileCheck,
+  };
+  const Icon = typeIcons[approval.type] || ClipboardCheck;
+  const typeColors: Record<string, string> = {
+    engineering: "bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400",
+    quality: "bg-purple-100 text-purple-600 dark:bg-purple-900/50 dark:text-purple-400",
+    deliverable: "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/50 dark:text-emerald-400",
+  };
+
+  return (
+    <div
+      className="flex items-center gap-3 p-3 rounded-lg border border-border/50 bg-card cursor-pointer transition-colors hover:bg-muted/30"
+      onClick={() => navigate("/approvals")}
+      data-testid={`approval-item-${approval.id}`}
+    >
+      <div className={`p-1.5 rounded-md ${typeColors[approval.type] || "bg-muted text-muted-foreground"}`}>
+        <Icon className="w-3.5 h-3.5" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium leading-snug truncate">{approval.title}</p>
+        <span className="text-[11px] text-muted-foreground">{projectDisplay}</span>
+      </div>
+      <Badge variant="outline" className="text-[10px] capitalize shrink-0">{approval.type}</Badge>
+    </div>
+  );
+}
 
 function CompanyPrioritiesCards({ isAdmin, priorities, isLoading }: { isAdmin: boolean; priorities: CompanyPriority[]; isLoading: boolean }) {
   const activePriorities = priorities.filter(p => !["closed", "complete"].includes(p.status));
@@ -279,26 +438,16 @@ function CompanyPrioritiesCards({ isAdmin, priorities, isLoading }: { isAdmin: b
     const aOverdue = isOverdue(a.dueDate) ? 0 : 1;
     const bOverdue = isOverdue(b.dueDate) ? 0 : 1;
     if (aOverdue !== bOverdue) return aOverdue - bOverdue;
-
     const aSev = severityOrder(a.severity);
     const bSev = severityOrder(b.severity);
     if (aSev !== bSev) return aSev - bSev;
-
     return (a.priorityRank ?? 999) - (b.priorityRank ?? 999);
   });
 
   if (isLoading) {
     return (
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-            <Flag className="h-4 w-4 text-red-500" />
-            Company Priorities
-          </h2>
-        </div>
-        <div className="flex items-center justify-center py-8">
-          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-        </div>
+      <div className="flex items-center justify-center py-6">
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -306,98 +455,122 @@ function CompanyPrioritiesCards({ isAdmin, priorities, isLoading }: { isAdmin: b
   if (activePriorities.length === 0 && !isAdmin) return null;
 
   return (
-    <div className="space-y-3" data-testid="company-priorities-section">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-          <Flag className="h-4 w-4 text-red-500" />
-          Company Priorities
-          <span className="text-xs font-normal normal-case tracking-normal text-muted-foreground/70">
-            {activePriorities.length} active
-          </span>
-        </h2>
-        {isAdmin && (
-          <Link href="/company-priorities">
-            <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" data-testid="button-manage-priorities">
-              Manage <ArrowRight className="h-3 w-3" />
-            </Button>
-          </Link>
-        )}
-      </div>
-
-      {activePriorities.length === 0 ? (
-        <p className="text-sm text-muted-foreground py-4">No active company priorities.</p>
-      ) : (
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {sorted.map((p, idx) => {
-            const overdue = isOverdue(p.dueDate);
-            const linkedCount = (p.links?.length ?? 0) + (p.linkedProjectName ? 1 : 0);
-            return (
-              <div
-                key={p.id}
-                className={`border-l-4 ${severityBorder(p.severity)} border rounded-lg bg-card p-3 space-y-2 card-hover animate-float-in ${overdue ? "ring-1 ring-red-300 dark:ring-red-800" : ""} stagger-${Math.min(idx + 1, 8)}`}
-                data-testid={`priority-card-${p.id}`}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <h3 className="font-semibold text-sm leading-snug" data-testid={`text-priority-title-${p.id}`}>{p.title}</h3>
-                  <div className="flex items-center gap-1 shrink-0">
-                    {p.department && (
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-blue-300 text-blue-700 bg-blue-50 dark:bg-blue-950/30 dark:text-blue-300 dark:border-blue-700" data-testid={`badge-dept-${p.id}`}>
-                        {p.department}
-                      </Badge>
-                    )}
-                    <Badge className={`text-[10px] px-1.5 py-0 ${statusColor(p.status)}`}>
-                      {p.status.replace(/_/g, " ")}
-                    </Badge>
-                  </div>
-                </div>
-
-                {p.assignedTo && (
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <Users className="h-3 w-3" />
-                    <span>{p.assignedTo}</span>
-                  </div>
-                )}
-
-                {p.nextAction && (
-                  <div className="flex items-start gap-1.5 text-xs text-muted-foreground">
-                    <Target className="h-3 w-3 mt-0.5 shrink-0" />
-                    <span className="line-clamp-2">{p.nextAction}</span>
-                  </div>
-                )}
-
-                <div className="flex items-center justify-between pt-1 border-t border-border/50">
-                  <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-                    {p.dueDate && (
-                      <span className={`flex items-center gap-1 ${overdue ? "text-red-600 font-medium" : ""}`}>
-                        <Calendar className="h-3 w-3" />
-                        {p.dueDate}
-                        {overdue && <AlertTriangle className="h-3 w-3" />}
-                      </span>
-                    )}
-                    {linkedCount > 0 && (
-                      <span className="flex items-center gap-1">
-                        <ExternalLink className="h-3 w-3" />
-                        {linkedCount} linked
-                      </span>
-                    )}
-                  </div>
-                  <Link href="/company-priorities">
-                    <Button variant="ghost" size="sm" className="h-6 text-[11px] px-2 gap-0.5" data-testid={`button-view-priority-${p.id}`}>
-                      Details <ChevronRight className="h-3 w-3" />
-                    </Button>
-                  </Link>
-                </div>
-              </div>
-            );
-          })}
+    <Card className="shadow-sm" data-testid="company-priorities-section">
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+            <Flag className="h-4 w-4 text-red-500" />
+            Company Priorities
+            <span className="text-xs font-normal normal-case tracking-normal text-muted-foreground/70">
+              {activePriorities.length} active
+            </span>
+          </CardTitle>
+          {isAdmin && (
+            <Link href="/company-priorities">
+              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" data-testid="button-manage-priorities">
+                Manage <ArrowRight className="h-3 w-3" />
+              </Button>
+            </Link>
+          )}
         </div>
-      )}
+      </CardHeader>
+      <CardContent>
+        {activePriorities.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-2">No active company priorities.</p>
+        ) : (
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {sorted.map((p, idx) => {
+              const overdue = isOverdue(p.dueDate);
+              const linkedCount = (p.links?.length ?? 0) + (p.linkedProjectName ? 1 : 0);
+              return (
+                <div
+                  key={p.id}
+                  className={`border-l-4 ${severityBorder(p.severity)} border rounded-lg bg-card p-3 space-y-2 ${overdue ? "ring-1 ring-red-300 dark:ring-red-800" : ""}`}
+                  data-testid={`priority-card-${p.id}`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <h3 className="font-semibold text-sm leading-snug" data-testid={`text-priority-title-${p.id}`}>{p.title}</h3>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {p.department && (
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-blue-300 text-blue-700 bg-blue-50 dark:bg-blue-950/30 dark:text-blue-300 dark:border-blue-700" data-testid={`badge-dept-${p.id}`}>
+                          {p.department}
+                        </Badge>
+                      )}
+                      <Badge className={`text-[10px] px-1.5 py-0 ${statusColor(p.status)}`}>
+                        {p.status.replace(/_/g, " ")}
+                      </Badge>
+                    </div>
+                  </div>
+                  {p.assignedTo && (
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <Users className="h-3 w-3" />
+                      <span>{p.assignedTo}</span>
+                    </div>
+                  )}
+                  {p.nextAction && (
+                    <div className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                      <Target className="h-3 w-3 mt-0.5 shrink-0" />
+                      <span className="line-clamp-2">{p.nextAction}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between pt-1 border-t border-border/50">
+                    <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+                      {p.dueDate && (
+                        <span className={`flex items-center gap-1 ${overdue ? "text-red-600 font-medium" : ""}`}>
+                          <Calendar className="h-3 w-3" />
+                          {p.dueDate}
+                          {overdue && <AlertTriangle className="h-3 w-3" />}
+                        </span>
+                      )}
+                      {linkedCount > 0 && (
+                        <span className="flex items-center gap-1">
+                          <ExternalLink className="h-3 w-3" />
+                          {linkedCount} linked
+                        </span>
+                      )}
+                    </div>
+                    <Link href="/company-priorities">
+                      <Button variant="ghost" size="sm" className="h-6 text-[11px] px-2 gap-0.5" data-testid={`button-view-priority-${p.id}`}>
+                        Details <ChevronRight className="h-3 w-3" />
+                      </Button>
+                    </Link>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function StatCard({ icon: Icon, label, value, color, href, testId }: {
+  icon: any; label: string; value: number; color: string; href?: string; testId: string;
+}) {
+  const [, navigate] = useLocation();
+  const content = (
+    <div
+      className={`flex items-center gap-3 p-3 rounded-lg border border-border/50 bg-card ${href ? "cursor-pointer hover:bg-muted/30 transition-colors" : ""}`}
+      onClick={href ? () => navigate(href) : undefined}
+      data-testid={testId}
+    >
+      <div className={`p-2 rounded-lg ${color}`}>
+        <Icon className="w-4 h-4" />
+      </div>
+      <div>
+        <p className="text-2xl font-bold leading-none" data-testid={`${testId}-value`}>{value}</p>
+        <p className="text-[11px] text-muted-foreground mt-0.5">{label}</p>
+      </div>
     </div>
   );
+  return content;
 }
 
 export default function Home() {
   const { user, isAdmin } = useAuth();
+  const [, navigate] = useLocation();
+  const queryClient = useQueryClient();
   const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
   const canEdit = isAdmin || (companyRole && ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO"].includes(companyRole));
 
@@ -416,23 +589,292 @@ export default function Home() {
     queryKey: ["/api/mytool/company-priorities"],
   });
 
+  const { data: hub, isLoading: hubLoading } = useQuery<ActionHubData>({
+    queryKey: ["/api/home/action-hub"],
+    queryFn: getQueryFn({ on401: "throw" }),
+    refetchInterval: 60000,
+  });
+
+  const markReadMutation = useMutation({
+    mutationFn: async (ids: number[]) => {
+      await apiRequest("POST", "/api/notifications/mark-read", { notificationIds: ids });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/home/action-hub"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications/unread-count"] });
+    },
+  });
+
+  const hasActions = hub && (
+    hub.actionRequired.length > 0 ||
+    hub.overdueTaskCount > 0 ||
+    hub.approvalCounts.total > 0
+  );
+
   return (
-    <div className="space-y-6" data-testid="home-page">
-      <div className="flex items-center justify-between animate-fade-in">
+    <div className="space-y-5 max-w-7xl mx-auto" data-testid="home-page">
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight animate-slide-up-fade" data-testid="text-welcome">Welcome, {firstName}</h1>
-          <p className="text-sm text-muted-foreground italic animate-slide-up-fade stagger-2" data-testid="text-compliment">
+          <h1 className="text-2xl font-bold tracking-tight" data-testid="text-welcome">Welcome, {firstName}</h1>
+          <p className="text-sm text-muted-foreground italic" data-testid="text-compliment">
             {isFriday ? `\uD83D\uDE04 ${compliment}` : compliment}
           </p>
-          <p className="text-xs text-muted-foreground mt-1 animate-slide-up-fade stagger-3">
+          <p className="text-xs text-muted-foreground mt-1">
             {new Date().toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" })}
           </p>
         </div>
       </div>
 
-      <div className="animate-float-in stagger-4">
-        <CompanyPrioritiesCards isAdmin={!!canEdit} priorities={priorities} isLoading={prioritiesLoading} />
-      </div>
+      {hubLoading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      ) : hub ? (
+        <>
+          {hasActions && (
+            <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3 flex items-center gap-3" data-testid="action-banner">
+              <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0" />
+              <div className="flex-1 text-sm">
+                <span className="font-medium text-amber-800 dark:text-amber-300">Items need your attention: </span>
+                <span className="text-amber-700 dark:text-amber-400">
+                  {[
+                    hub.overdueTaskCount > 0 && `${hub.overdueTaskCount} overdue task${hub.overdueTaskCount > 1 ? 's' : ''}`,
+                    hub.approvalCounts.total > 0 && `${hub.approvalCounts.total} pending approval${hub.approvalCounts.total > 1 ? 's' : ''}`,
+                    hub.actionRequired.length > 0 && `${hub.actionRequired.length} action${hub.actionRequired.length > 1 ? 's' : ''} required`,
+                  ].filter(Boolean).join(' · ')}
+                </span>
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3" data-testid="stat-cards">
+            <StatCard
+              icon={Bell}
+              label="Unread Notifications"
+              value={hub.unreadCount}
+              color="bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400"
+              href="/notifications"
+              testId="stat-unread"
+            />
+            <StatCard
+              icon={ListTodo}
+              label="My Open Tasks"
+              value={hub.myTasks.length}
+              color="bg-indigo-100 text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-400"
+              href="/engineering"
+              testId="stat-tasks"
+            />
+            <StatCard
+              icon={ClipboardCheck}
+              label="Pending Approvals"
+              value={hub.approvalCounts.total}
+              color="bg-purple-100 text-purple-600 dark:bg-purple-900/50 dark:text-purple-400"
+              href="/approvals"
+              testId="stat-approvals"
+            />
+            <StatCard
+              icon={AlertTriangle}
+              label="Overdue Tasks"
+              value={hub.overdueTaskCount}
+              color={hub.overdueTaskCount > 0 ? "bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-400" : "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/50 dark:text-emerald-400"}
+              href="/engineering"
+              testId="stat-overdue"
+            />
+          </div>
+
+          <div className="grid gap-5 lg:grid-cols-2">
+            {hub.myTasks.length > 0 && (
+              <Card className="shadow-sm" data-testid="card-my-tasks">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                      <ListTodo className="h-4 w-4 text-indigo-500" />
+                      My Tasks
+                      {hub.overdueTaskCount > 0 && (
+                        <Badge variant="destructive" className="text-[10px] px-1.5 py-0">{hub.overdueTaskCount} overdue</Badge>
+                      )}
+                    </CardTitle>
+                    <Link href="/engineering">
+                      <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" data-testid="button-view-all-tasks">
+                        View all <ArrowRight className="h-3 w-3" />
+                      </Button>
+                    </Link>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {hub.myTasks.map(task => (
+                      <TaskItem key={task.id} task={task} />
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {hub.approvalCounts.total > 0 && (
+              <Card className="shadow-sm" data-testid="card-approvals">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                      <ClipboardCheck className="h-4 w-4 text-purple-500" />
+                      Pending Approvals
+                      <Badge className="text-[10px] px-1.5 py-0 bg-purple-600">{hub.approvalCounts.total}</Badge>
+                    </CardTitle>
+                    <Link href="/approvals">
+                      <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" data-testid="button-view-approvals">
+                        View all <ArrowRight className="h-3 w-3" />
+                      </Button>
+                    </Link>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {hub.approvalCounts.engineering > 0 && (
+                      <Badge variant="outline" className="text-[11px] gap-1">
+                        <Wrench className="w-3 h-3" />
+                        {hub.approvalCounts.engineering} Engineering
+                      </Badge>
+                    )}
+                    {hub.approvalCounts.quality > 0 && (
+                      <Badge variant="outline" className="text-[11px] gap-1">
+                        <Shield className="w-3 h-3" />
+                        {hub.approvalCounts.quality} Quality
+                      </Badge>
+                    )}
+                    {hub.approvalCounts.deliverable > 0 && (
+                      <Badge variant="outline" className="text-[11px] gap-1">
+                        <FileCheck className="w-3 h-3" />
+                        {hub.approvalCounts.deliverable} Deliverable
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    {hub.pendingApprovals.map(approval => (
+                      <ApprovalItem key={approval.id} approval={approval} />
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {(hub.actionRequired.length > 0 || hub.recentNotifications.length > 0) && (
+              <Card className="shadow-sm" data-testid="card-notifications">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                      <Bell className="h-4 w-4 text-blue-500" />
+                      Notifications
+                      {hub.unreadCount > 0 && (
+                        <Badge className="text-[10px] px-1.5 py-0 bg-blue-600">{hub.unreadCount}</Badge>
+                      )}
+                    </CardTitle>
+                    <Link href="/notifications">
+                      <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" data-testid="button-view-notifications">
+                        View all <ArrowRight className="h-3 w-3" />
+                      </Button>
+                    </Link>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {hub.actionRequired.length > 0 && (
+                      <>
+                        {hub.actionRequired.slice(0, 4).map(notif => (
+                          <NotificationItem
+                            key={notif.id}
+                            notif={notif}
+                            onMarkRead={(id) => markReadMutation.mutate([id])}
+                          />
+                        ))}
+                        {hub.actionRequired.length > 4 && (
+                          <Link href="/notifications">
+                            <p className="text-xs text-blue-500 hover:text-blue-700 cursor-pointer pl-1">
+                              +{hub.actionRequired.length - 4} more actions required...
+                            </p>
+                          </Link>
+                        )}
+                      </>
+                    )}
+                    {hub.actionRequired.length === 0 && hub.recentNotifications.map(notif => (
+                      <NotificationItem
+                        key={notif.id}
+                        notif={notif}
+                        onMarkRead={(id) => markReadMutation.mutate([id])}
+                      />
+                    ))}
+                    {hub.actionRequired.length > 0 && hub.recentNotifications.length > 0 && (
+                      <>
+                        <div className="border-t border-border/50 pt-2 mt-2">
+                          <p className="text-[11px] text-muted-foreground font-medium uppercase tracking-wider mb-2">Recent</p>
+                        </div>
+                        {hub.recentNotifications
+                          .filter(n => !hub.actionRequired.some((a: any) => a.id === n.id))
+                          .slice(0, 3)
+                          .map(notif => (
+                            <NotificationItem
+                              key={notif.id}
+                              notif={notif}
+                              onMarkRead={(id) => markReadMutation.mutate([id])}
+                            />
+                          ))}
+                      </>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {hub.myTasks.length === 0 && hub.approvalCounts.total === 0 && hub.recentNotifications.length === 0 && (
+              <Card className="shadow-sm lg:col-span-2" data-testid="card-all-clear">
+                <CardContent className="flex flex-col items-center justify-center py-10">
+                  <CheckCircle2 className="w-10 h-10 text-emerald-500 mb-3" />
+                  <h3 className="font-semibold text-lg">You're all caught up</h3>
+                  <p className="text-sm text-muted-foreground mt-1">No pending tasks, approvals, or notifications right now.</p>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        </>
+      ) : null}
+
+      <CompanyPrioritiesCards isAdmin={!!canEdit} priorities={priorities} isLoading={prioritiesLoading} />
+
+      {hub && (
+        <Card className="shadow-sm" data-testid="card-quick-links">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground">
+              Quick Navigation
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+              {[
+                { label: "Execution Board", href: "/dashboard", icon: Target, show: true },
+                { label: "Notifications", href: "/notifications", icon: Bell, show: true, badge: hub.unreadCount > 0 ? hub.unreadCount : undefined },
+                { label: "Approvals", href: "/approvals", icon: ClipboardCheck, show: hub.approvalCounts.total > 0 || hub.isAdmin },
+                { label: "Engineering Inbox", href: "/engineering", icon: Wrench, show: true },
+                { label: "Quality Dashboard", href: "/qm-dashboard", icon: Shield, show: ["QUALITY_MANAGER", "quality_manager", "COO_ADMIN", "CEO_ADMIN", "CONSTRUCTION_MANAGER"].includes(userRole) },
+                { label: "PM Dashboard", href: "/pm-dashboard", icon: Users, show: ["PROJECT_MANAGER_SITE", "PROGRAM_MANAGER", "COO_ADMIN", "CEO_ADMIN"].includes(userRole) },
+                { label: "Leaderboard", href: "/leaderboard", icon: Zap, show: true },
+                { label: "EE Info", href: "/ee-info", icon: ExternalLink, show: true },
+              ].filter(item => item.show).map(item => (
+                <Link key={item.href} href={item.href}>
+                  <div
+                    className="flex items-center gap-2 p-3 rounded-lg border border-border/50 bg-card hover:bg-muted/30 cursor-pointer transition-colors"
+                    data-testid={`quick-link-${item.href.replace(/\//g, '-').slice(1)}`}
+                  >
+                    <item.icon className="w-4 h-4 text-muted-foreground shrink-0" />
+                    <span className="text-sm font-medium truncate">{item.label}</span>
+                    {item.badge && (
+                      <Badge className="text-[10px] px-1.5 py-0 bg-blue-600 ml-auto shrink-0">{item.badge}</Badge>
+                    )}
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

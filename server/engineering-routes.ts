@@ -7,7 +7,8 @@ import {
   deliverables, deliverableVersions, deliverableFiles, deliverableEvents,
   notifications, notificationThrottle, spFilePointers,
   projectTeamMembers, projectPlan, qcWarning, qcWarningEvent,
-  qcItemInstance, users, projectInfo, projectPhaseHistory,
+  qcItemInstance, qcChecklist, qcTemplateItem, users, projectInfo, projectPhaseHistory,
+  projectEngApprovals, projectEngStages, engStageTemplates,
   phaseTemplate as phaseTemplateTbl,
   uploadMetadata, refreshLogs, writebackAuditLog, phaseTemplateApplication,
   TASK_STATUSES, TASK_WORKSTREAMS, TASK_PRIORITIES, PROJECT_PHASES,
@@ -107,6 +108,7 @@ export function registerEngineeringRoutes(app: Express) {
   app.use("/api/deliverables", jwtAuth);
   app.use("/api/notifications", jwtAuth);
   app.use("/api/project-team", jwtAuth);
+  app.use("/api/home", jwtAuth);
 
   // ========== PROJECT TEAM MEMBERSHIP ==========
 
@@ -2162,5 +2164,198 @@ export function registerEngineeringRoutes(app: Express) {
       projectPhaseLabels: PROJECT_PHASE_LABELS,
       deliverableStatuses: DELIVERABLE_STATUSES,
     });
+  });
+
+  app.get("/api/home/action-hub", requireAuth, async (req, res) => {
+    try {
+      const currentUser = getUser(req);
+      const userId = currentUser.id;
+      const userRole = currentUser.role || "";
+      const userName = currentUser.name || "";
+      const isAdmin = ["COO_ADMIN", "CEO_ADMIN"].includes(userRole);
+
+      const APPROVAL_ROLE_MAP: Record<string, string[]> = {
+        QA_REVIEW: ["QUALITY_MANAGER"],
+        TECHNICAL_SIGNOFF: ["ENGINEERING_MANAGER", "COO_ADMIN", "CEO_ADMIN"],
+        "Engineering Manager": ["ENGINEERING_MANAGER"],
+        "Quality Manager": ["QUALITY_MANAGER"],
+        "COO": ["COO_ADMIN"],
+      };
+
+      const [
+        unreadNotifs,
+        actionNotifs,
+        recentNotifs,
+        myTasks,
+        engApprovals,
+        qcItems,
+        deliverableItems,
+        projectsAtRisk,
+      ] = await Promise.all([
+        db.select({ count: sql<number>`count(*)::int` })
+          .from(notifications)
+          .where(and(eq(notifications.recipientUserId, userId), eq(notifications.isRead, false))),
+
+        db.select()
+          .from(notifications)
+          .where(and(
+            eq(notifications.recipientUserId, userId),
+            eq(notifications.requiresConfirmation, true),
+            isNull(notifications.confirmedAt),
+          ))
+          .orderBy(desc(notifications.createdAt))
+          .limit(10),
+
+        db.select()
+          .from(notifications)
+          .where(and(eq(notifications.recipientUserId, userId), eq(notifications.isRead, false)))
+          .orderBy(desc(notifications.createdAt))
+          .limit(8),
+
+        db.select({
+          id: operationalTasks.id,
+          title: operationalTasks.title,
+          status: operationalTasks.status,
+          priority: operationalTasks.priority,
+          dueDate: operationalTasks.dueDate,
+          projectName: operationalTasks.projectName,
+          percentComplete: operationalTasks.percentComplete,
+        })
+          .from(operationalTasks)
+          .where(and(
+            eq(operationalTasks.ownerUserId, userId),
+            sql`${operationalTasks.status} NOT IN ('COMPLETE', 'CANCELLED')`,
+          ))
+          .orderBy(asc(sql`CASE WHEN ${operationalTasks.dueDate} IS NOT NULL AND ${operationalTasks.dueDate} != '' AND ${operationalTasks.dueDate}::date < CURRENT_DATE THEN 0 ELSE 1 END`), asc(operationalTasks.dueDate))
+          .limit(10),
+
+        db.select({
+          id: projectEngApprovals.id,
+          status: projectEngApprovals.status,
+          approverRole: projectEngApprovals.approverRole,
+          approverUserId: projectEngApprovals.approverUserId,
+          createdAt: projectEngApprovals.createdAt,
+          stageName: engStageTemplates.name,
+          projectName: projectInfo.projectName,
+          projectId: projectInfo.id,
+        })
+          .from(projectEngApprovals)
+          .innerJoin(projectEngStages, eq(projectEngApprovals.projectEngStageId, projectEngStages.id))
+          .innerJoin(engStageTemplates, eq(projectEngStages.stageTemplateId, engStageTemplates.id))
+          .innerJoin(projectInfo, eq(projectEngStages.projectId, projectInfo.id))
+          .where(eq(projectEngApprovals.status, "pending")),
+
+        db.select({
+          id: qcItemInstance.id,
+          qmStatus: qcItemInstance.qmStatus,
+          itemName: qcTemplateItem.itemName,
+          projectName: qcChecklist.projectName,
+          projectId: qcChecklist.projectId,
+          lastUpdatedAt: qcItemInstance.lastUpdatedAt,
+        })
+          .from(qcItemInstance)
+          .innerJoin(qcChecklist, eq(qcItemInstance.checklistId, qcChecklist.id))
+          .innerJoin(qcTemplateItem, eq(qcItemInstance.templateItemId, qcTemplateItem.id))
+          .where(and(eq(qcItemInstance.qmStatus, "review"), eq(qcItemInstance.approved, false))),
+
+        db.select({
+          id: deliverables.id,
+          title: deliverables.title,
+          status: deliverables.status,
+          projectName: deliverables.projectName,
+          projectId: deliverables.projectId,
+          deliverableType: deliverables.deliverableType,
+          ownerUserId: deliverables.ownerUserId,
+          reviewerUserId: deliverables.reviewerUserId,
+          updatedAt: deliverables.updatedAt,
+        })
+          .from(deliverables)
+          .where(and(
+            sql`${deliverables.status} IN ('NEEDS APPROVAL', 'QC APPROVED', 'OPERATIONAL APPROVAL')`,
+            isAdmin ? undefined : or(
+              eq(deliverables.reviewerUserId, userId),
+              eq(deliverables.ownerUserId, userId),
+            ),
+          ))
+          .limit(20),
+
+        db.execute(sql`
+          SELECT pi.project_name, pi.pm, pi.id as project_id, pi.phase,
+            pi.commissioning_date, pi.size_kwp
+          FROM project_info pi
+          WHERE pi.archived_status = 'ACTIVE'
+            AND pi.pm_user_id IS NOT NULL
+            AND (pi.pm_user_id = ${userId} OR ${isAdmin})
+          ORDER BY pi.project_name
+          LIMIT 50
+        `),
+      ]);
+
+      const myEngApprovals = isAdmin ? engApprovals : engApprovals.filter(a => {
+        if (a.approverUserId && a.approverUserId === userId) return true;
+        if (a.approverRole) {
+          const allowed = APPROVAL_ROLE_MAP[a.approverRole];
+          if (allowed && allowed.includes(userRole)) return true;
+        }
+        return false;
+      });
+
+      const myQcItems = isAdmin ? qcItems :
+        (userRole === "QUALITY_MANAGER" || userRole === "quality_manager") ? qcItems : [];
+
+      const myDeliverables = deliverableItems;
+
+      const pendingApprovals = [
+        ...myEngApprovals.map(a => ({
+          id: `eng-${a.id}`,
+          type: "engineering" as const,
+          title: `${a.stageName} — ${a.approverRole}`,
+          projectName: a.projectName,
+          projectId: a.projectId,
+          createdAt: a.createdAt,
+        })),
+        ...myQcItems.map(q => ({
+          id: `qc-${q.id}`,
+          type: "quality" as const,
+          title: q.itemName,
+          projectName: q.projectName,
+          projectId: q.projectId,
+          createdAt: q.lastUpdatedAt,
+        })),
+        ...myDeliverables.map(d => ({
+          id: `del-${d.id}`,
+          type: "deliverable" as const,
+          title: `${d.title} (${d.deliverableType || 'Document'})`,
+          projectName: d.projectName,
+          projectId: d.projectId,
+          createdAt: d.updatedAt,
+        })),
+      ];
+
+      const overdueTasks = myTasks.filter(t =>
+        t.dueDate && t.dueDate !== '' && new Date(t.dueDate) < new Date()
+      );
+
+      res.json({
+        unreadCount: (unreadNotifs[0] as any)?.count || 0,
+        actionRequired: actionNotifs,
+        recentNotifications: recentNotifs,
+        myTasks: myTasks,
+        overdueTaskCount: overdueTasks.length,
+        pendingApprovals: pendingApprovals.slice(0, 10),
+        approvalCounts: {
+          engineering: myEngApprovals.length,
+          quality: myQcItems.length,
+          deliverable: myDeliverables.length,
+          total: pendingApprovals.length,
+        },
+        projectsAtRisk: (projectsAtRisk.rows as any[]).slice(0, 8),
+        userRole,
+        isAdmin,
+      });
+    } catch (err: any) {
+      console.error("Home action hub error:", err);
+      res.status(500).json({ error: err.message });
+    }
   });
 }
