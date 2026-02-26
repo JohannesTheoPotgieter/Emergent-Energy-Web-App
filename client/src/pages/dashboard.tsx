@@ -434,7 +434,12 @@ export default function Dashboard() {
     pmTable: Array<{ pm: string; activeProjects: number; commissioningThisMonth: number; clientHandoverThisMonth: number }>;
     projectsByPhase: Array<{ phase: string; count: number }>;
     completionCompare: Array<{ projectName: string; actualPct: number; expectedPct: number }>;
-    portfolioTimeline: Array<{ projectName: string; startDate: string | null; endDate: string | null; phase: string | null }>;
+    portfolioTimeline: Array<{
+      projectName: string; startDate: string | null; endDate: string | null; phase: string | null;
+      actualPct: number; expectedPct: number; delta: number;
+      pm: string | null; sizeKwp: number | null;
+      commissioningDate: string | null; constructionStartDate: string | null;
+    }>;
   }>({
     queryKey: ["/api/program-dashboard"],
   });
