@@ -41,6 +41,9 @@ import {
   XCircle,
   FileX,
   ShieldAlert,
+  Cog,
+  BellOff,
+  ClipboardX,
 } from "lucide-react";
 
 interface BadgeInfo {
@@ -85,6 +88,9 @@ interface LeaderboardEntry {
     qualityFailures: number;
     rejectedDeliverables: number;
     openQualityWarnings: number;
+    overdueEngTasks: number;
+    unreadNotifications: number;
+    overdueQmTasks: number;
   };
 }
 
@@ -152,6 +158,9 @@ const PENALTY_STAT_CONFIG = [
   { key: "qualityFailures", label: "QC Failures", icon: XCircle, color: "text-red-600" },
   { key: "rejectedDeliverables", label: "Rejected Docs", icon: FileX, color: "text-amber-600" },
   { key: "openQualityWarnings", label: "Open Warnings", icon: ShieldAlert, color: "text-yellow-600" },
+  { key: "overdueEngTasks", label: "Overdue Eng Tasks", icon: Cog, color: "text-red-500" },
+  { key: "unreadNotifications", label: "Unread Notifs (3d+)", icon: BellOff, color: "text-gray-500" },
+  { key: "overdueQmTasks", label: "Overdue QM Tasks", icon: ClipboardX, color: "text-red-600" },
 ];
 
 export default function LeaderboardPage() {
