@@ -855,6 +855,45 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
+  app.post("/api/notifications/:id/confirm", requireAuth, async (req, res) => {
+    try {
+      const notifId = parseInt(req.params.id);
+      const userId = getUser(req).id;
+      if (isNaN(notifId)) return res.status(400).json({ error: "Invalid notification ID" });
+
+      const [notif] = await db.select().from(notifications).where(eq(notifications.id, notifId));
+      if (!notif) return res.status(404).json({ error: "Notification not found" });
+      if (notif.recipientUserId !== userId) return res.status(403).json({ error: "You can only confirm your own notifications" });
+      if (!notif.requiresConfirmation) return res.status(400).json({ error: "This notification does not require confirmation" });
+      if (notif.confirmedAt) return res.status(400).json({ error: "Already confirmed" });
+
+      const [confirmer] = await db.select({ name: users.name }).from(users).where(eq(users.id, userId));
+
+      await db.update(notifications)
+        .set({ confirmedByUserId: userId, confirmedAt: new Date(), isRead: true, readAt: new Date() })
+        .where(eq(notifications.id, notifId));
+
+      const relatedNotifs = await db.select().from(notifications)
+        .where(and(
+          eq(notifications.eventType, notif.eventType),
+          eq(notifications.requiresConfirmation, true),
+          isNull(notifications.confirmedAt),
+          eq(notifications.changeDetails, notif.changeDetails!),
+          ne(notifications.id, notifId)
+        ));
+
+      for (const related of relatedNotifs) {
+        await db.update(notifications)
+          .set({ confirmedByUserId: userId, confirmedAt: new Date(), isRead: true, readAt: new Date() })
+          .where(eq(notifications.id, related.id));
+      }
+
+      res.json({ success: true, confirmedBy: confirmer?.name || "Unknown", confirmedAt: new Date() });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // ========== SHAREPOINT FILE POINTERS ==========
 
   app.get("/api/eng/file-pointers/:entityType/:entityId", requireAuth, async (req, res) => {
