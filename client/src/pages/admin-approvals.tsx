@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
+import { usePermission } from "@/hooks/use-permissions";
 import { useLocation } from "wouter";
 import { format } from "date-fns";
 import { Card, CardContent } from "@/components/ui/card";
@@ -88,6 +89,7 @@ function getAuthHeaders(): Record<string, string> {
 
 export default function AdminApprovalsPage() {
   const { user } = useAuth();
+  const { allowed: canView } = usePermission('approvals', 'view');
   const [, navigate] = useLocation();
   const [filter, setFilter] = useState<ApprovalType>("all");
   const [actionDialog, setActionDialog] = useState<{ item: ApprovalItem; action: "approve" | "reject" } | null>(null);
@@ -198,6 +200,20 @@ export default function AdminApprovalsPage() {
     } else if (item.type === "deliverable") {
       navigate(`/project/${encodeURIComponent(item.projectName)}`);
     }
+  }
+
+  if (!canView) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]" data-testid="access-denied-container">
+        <Card className="max-w-md w-full">
+          <CardContent className="py-12 text-center">
+            <AlertTriangle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
+            <h2 className="text-xl font-semibold mb-2" data-testid="text-access-denied">Access Denied</h2>
+            <p className="text-muted-foreground">You don't have permission to view this page.</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   return (

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/hooks/use-auth";
+import { usePermission } from "@/hooks/use-permissions";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -76,6 +77,7 @@ const PHASE_TO_ENG_STAGES: Record<string, string[]> = {
 
 export default function PhaseTemplatesPage() {
   const { user, isAdmin } = useAuth();
+  const { allowed: canView } = usePermission('phase_templates', 'view');
   const { toast } = useToast();
   const qc = useQueryClient();
   const [templates, setTemplates] = useState<PhaseTemplateData[]>([]);
@@ -307,6 +309,20 @@ export default function PhaseTemplatesPage() {
     };
     return <Badge className={colors[type] || ""}>{type}</Badge>;
   };
+
+  if (!canView) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]" data-testid="access-denied-container">
+        <Card className="max-w-md w-full">
+          <CardContent className="py-12 text-center">
+            <AlertTriangle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
+            <h2 className="text-xl font-semibold mb-2" data-testid="text-access-denied">Access Denied</h2>
+            <p className="text-muted-foreground">You don't have permission to view this page.</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 max-w-[1400px] mx-auto space-y-6" data-testid="phase-templates-page">

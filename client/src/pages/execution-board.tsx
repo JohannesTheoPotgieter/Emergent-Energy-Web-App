@@ -6,7 +6,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Search, Zap, AlertCircle, CheckCircle2, FileSpreadsheet, Info } from "lucide-react";
+import { usePermission } from "@/hooks/use-permissions";
+import { Loader2, Search, Zap, AlertCircle, CheckCircle2, FileSpreadsheet, Info, AlertTriangle } from "lucide-react";
 
 interface ProjectInfo {
   id: number | null;
@@ -51,6 +52,7 @@ function ragBadge(rag: string | null) {
 }
 
 export default function ExecutionBoard() {
+  const { allowed: canView } = usePermission('execution_board', 'view');
   const [allProjects, setAllProjects] = useState<ProjectInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -138,6 +140,20 @@ export default function ExecutionBoard() {
         <button onClick={loadData} className="text-sm text-blue-600 hover:underline" data-testid="btn-retry">
           Retry
         </button>
+      </div>
+    );
+  }
+
+  if (!canView) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]" data-testid="access-denied-container">
+        <Card className="max-w-md w-full">
+          <CardContent className="py-12 text-center">
+            <AlertTriangle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
+            <h2 className="text-xl font-semibold mb-2" data-testid="text-access-denied">Access Denied</h2>
+            <p className="text-muted-foreground">You don't have permission to view this page.</p>
+          </CardContent>
+        </Card>
       </div>
     );
   }

@@ -76,11 +76,13 @@ const SECTION_CONFIG: {
   {
     key: "COCKPIT",
     label: "EXCO",
-    description: "My Tool, Company Priorities, Lifecycle Dashboard",
+    description: "My Tool, Company Priorities, Lifecycle Dashboard, Meetings",
     icon: "📊",
     entities: [
       { entity: "my_tool" as PermissionEntity, entityLabel: "My Tool" },
       { entity: "lifecycle" as PermissionEntity, entityLabel: "Lifecycle Board" },
+      { entity: "company_priorities" as PermissionEntity, entityLabel: "Company Priorities" },
+      { entity: "meetings" as PermissionEntity, entityLabel: "Meetings" },
     ],
   },
   {
@@ -90,6 +92,7 @@ const SECTION_CONFIG: {
     icon: "📋",
     entities: [
       { entity: "projects" as PermissionEntity, entityLabel: "Projects" },
+      { entity: "execution_board" as PermissionEntity, entityLabel: "Execution Board" },
       { entity: "pm_dashboard" as PermissionEntity, entityLabel: "PM Dashboard" },
       { entity: "smart_import" as PermissionEntity, entityLabel: "Smart Import" },
       { entity: "tr_register" as PermissionEntity, entityLabel: "TR Register" },
@@ -99,13 +102,14 @@ const SECTION_CONFIG: {
   {
     key: "MONEY",
     label: "Project Finance",
-    description: "Cashflow, COS Tracker, Procurement",
+    description: "Cashflow, COS Tracker, Procurement, Invoice Patterns",
     icon: "💰",
     entities: [
       { entity: "financials" as PermissionEntity, entityLabel: "Financials" },
       { entity: "cos" as PermissionEntity, entityLabel: "COS Tracker" },
       { entity: "cashflow" as PermissionEntity, entityLabel: "Cashflow" },
       { entity: "procurement" as PermissionEntity, entityLabel: "Procurement" },
+      { entity: "invoice_patterns" as PermissionEntity, entityLabel: "Invoice Patterns" },
     ],
   },
   {
@@ -122,12 +126,14 @@ const SECTION_CONFIG: {
   {
     key: "GOVERNANCE",
     label: "Governance",
-    description: "Quality Dashboard, Weekly Reviews",
+    description: "Quality Dashboard, Weekly Reviews, Leaderboard, Approvals",
     icon: "🛡️",
     entities: [
       { entity: "quality" as PermissionEntity, entityLabel: "Quality" },
       { entity: "governance" as PermissionEntity, entityLabel: "Governance" },
       { entity: "weekly_reviews" as PermissionEntity, entityLabel: "Weekly Reviews" },
+      { entity: "leaderboard" as PermissionEntity, entityLabel: "Leaderboard" },
+      { entity: "approvals" as PermissionEntity, entityLabel: "Approvals" },
     ],
   },
   {
@@ -137,15 +143,18 @@ const SECTION_CONFIG: {
     icon: "📖",
     entities: [
       { entity: "ee_info" as PermissionEntity, entityLabel: "EE Info & Walkthroughs" },
+      { entity: "feedback" as PermissionEntity, entityLabel: "Feedback & Support" },
     ],
   },
   {
     key: "ADMIN",
     label: "Admin",
-    description: "Settings, Roles & Permissions",
+    description: "Settings, Roles & Permissions, Phase Templates, Activity Log",
     icon: "⚙️",
     entities: [
-      { entity: "admin" as PermissionEntity, entityLabel: "Admin" },
+      { entity: "admin" as PermissionEntity, entityLabel: "Admin Settings" },
+      { entity: "phase_templates" as PermissionEntity, entityLabel: "Phase Templates" },
+      { entity: "activity_log" as PermissionEntity, entityLabel: "Activity Log" },
     ],
   },
 ];

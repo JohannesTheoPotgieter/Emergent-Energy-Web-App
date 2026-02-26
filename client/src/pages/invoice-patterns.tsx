@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { usePermission } from "@/hooks/use-permissions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,7 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   FileSpreadsheet, Plus, Trash2, Loader2, Search,
   ToggleLeft, ToggleRight, Pencil, Play, BarChart3,
-  CheckCircle2, AlertCircle, TrendingUp,
+  CheckCircle2, AlertCircle, TrendingUp, AlertTriangle,
 } from "lucide-react";
 
 function getAuthHeaders(): Record<string, string> {
@@ -22,6 +23,7 @@ function getAuthHeaders(): Record<string, string> {
 }
 
 export default function InvoicePatternsPage() {
+  const { allowed: canView } = usePermission('invoice_patterns', 'view');
   const [search, setSearch] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -163,6 +165,20 @@ export default function InvoicePatternsPage() {
     r.inferredType.toLowerCase().includes(search.toLowerCase()) ||
     (r.counterpartyName || "").toLowerCase().includes(search.toLowerCase())
   );
+
+  if (!canView) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]" data-testid="access-denied-container">
+        <Card className="max-w-md w-full">
+          <CardContent className="py-12 text-center">
+            <AlertTriangle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
+            <h2 className="text-xl font-semibold mb-2" data-testid="text-access-denied">Access Denied</h2>
+            <p className="text-muted-foreground">You don't have permission to view this page.</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6" data-testid="invoice-patterns-page">
