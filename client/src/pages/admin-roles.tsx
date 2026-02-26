@@ -86,13 +86,14 @@ const SECTION_CONFIG: {
   {
     key: "PROJECTS",
     label: "Project Management",
-    description: "Execution Board, Project Summary, TR Register, Smart Import",
+    description: "Execution Board, Project Summary, TR Register, Smart Import, Create Project",
     icon: "📋",
     entities: [
       { entity: "projects" as PermissionEntity, entityLabel: "Projects" },
       { entity: "pm_dashboard" as PermissionEntity, entityLabel: "PM Dashboard" },
       { entity: "smart_import" as PermissionEntity, entityLabel: "Smart Import" },
       { entity: "tr_register" as PermissionEntity, entityLabel: "TR Register" },
+      { entity: "create_project" as PermissionEntity, entityLabel: "Create Project" },
     ],
   },
   {
@@ -156,15 +157,22 @@ const PROJECT_DETAIL_TAB_CONFIG: {
   items: { entity: PermissionEntity; label: string }[];
 }[] = [
   {
-    group: "main_tabs",
-    groupLabel: "Main Tabs",
-    icon: "📑",
+    group: "overview_section",
+    groupLabel: "Overview (Landing Page)",
+    icon: "📊",
     items: [
-      { entity: "pd_overview" as PermissionEntity, label: "Overview" },
-      { entity: "pd_plan" as PermissionEntity, label: "Plan" },
-      { entity: "pd_finance" as PermissionEntity, label: "Project Finance" },
-      { entity: "pd_engineering" as PermissionEntity, label: "Engineering" },
-      { entity: "pd_quality" as PermissionEntity, label: "Quality" },
+      { entity: "pd_overview" as PermissionEntity, label: "Tasks (Grid / Board / Calendar)" },
+      { entity: "pd_engineering" as PermissionEntity, label: "Engineering Pillar Card" },
+      { entity: "pd_quality" as PermissionEntity, label: "Quality Pillar Card" },
+    ],
+  },
+  {
+    group: "pm_section",
+    groupLabel: "Project Management Section",
+    icon: "📋",
+    items: [
+      { entity: "pd_plan" as PermissionEntity, label: "Plan (Gantt / Key Dates)" },
+      { entity: "pd_finance" as PermissionEntity, label: "Finance (Revenue / Expenditure / COS / Cashflow)" },
       { entity: "pd_history" as PermissionEntity, label: "History / Weekly Reviews" },
     ],
   },
@@ -190,12 +198,20 @@ const PROJECT_DETAIL_TAB_CONFIG: {
     ],
   },
   {
-    group: "engineering_subtabs",
-    groupLabel: "Engineering Sub-tabs",
+    group: "engineering_section",
+    groupLabel: "Engineering Section",
     icon: "🔩",
     items: [
       { entity: "pd_eng_tasks" as PermissionEntity, label: "Engineering Tasks" },
       { entity: "pd_eng_stages" as PermissionEntity, label: "Engineering Stages" },
+    ],
+  },
+  {
+    group: "quality_section",
+    groupLabel: "Quality Section",
+    icon: "🛡️",
+    items: [
+      { entity: "pd_quality" as PermissionEntity, label: "Quality Checklist" },
     ],
   },
 ];
@@ -644,7 +660,7 @@ function RoleTableSection({ toast }: { toast: ReturnType<typeof useToast>["toast
                   </div>
 
                   <div>
-                    <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-3">Project Detail Tabs — What this role sees on each project</h4>
+                    <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-3">Project Detail Sections — What this role sees on each project</h4>
                     <div className="grid grid-cols-1 gap-2">
                       {PROJECT_DETAIL_TAB_CONFIG.map(({ group, groupLabel, icon, items }) => (
                         <div key={group} className="rounded-lg border border-gray-100 bg-gray-50/30" data-testid={`pd-group-${role.role}-${group}`}>
