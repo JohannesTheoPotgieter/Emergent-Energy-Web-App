@@ -13,7 +13,7 @@ Preferred communication style: Simple, everyday language.
 -   **UI/UX**: shadcn/ui (Radix UI-based) and Tailwind CSS v4 for mobile-first responsive design. Recharts for data visualization.
 -   **Forms**: React Hook Form with Zod validation.
 -   **Core Features**: Includes financial tracking with a COS Tracker, project and quality management, a 5-step Smart Excel Import wizard with re-run protection and font color extraction for status, and a Subcontractor Dashboard. Integrates with SharePoint Proposals Pipeline. Features a UX Guidance System, Project Awareness Bar, Business Alert Engine, and Weekly Review Wizard. Admin utilities include an Execution Cockpit, a redesigned sidebar, a Permission Gate System for role-based access, and Admin Roles & Permissions management. The TR Register module tracks cross-project action items. A PM Dashboard provides view-only project oversight.
--   **Plan Management**: Editable plan tasks, milestone structuring (create, group, ungroup, convert), and task deletion with persistence via frontend overrides.
+-   **Plan Management**: Full plan structuring system with hierarchical milestones (virtual and converted). Tasks can be grouped under milestones via Create Milestone, Group, Convert to Milestone, and Ungroup operations. Milestones auto-compute rollup values (earliest start, latest end, duration-weighted Act%). Structure stored as overrides in `project_plan_overrides` — Smart Import never overwrites user-defined hierarchy. `TaskGridView` supports inline hierarchy with expand/collapse, milestone-aware styling, and Create & Group flow.
 -   **Terminology**: All financial metrics use "Actual vs Costed" terminology, with "Costed" as the user-facing label for `budget_total`.
 -   **Financial Year**: September to August. All FY calculations and date-based logic adhere to this boundary.
 -   **Project Detail Page**: Section-based navigation with pillars (Project Management, Engineering, Quality).
@@ -21,7 +21,7 @@ Preferred communication style: Simple, everyday language.
 
 ### Backend
 -   **Frameworks & Libraries**: Express.js with TypeScript.
--   **Authentication & Authorization**: Passport.js with local strategy, PostgreSQL-backed sessions, role-based access control, rate limiting, and granular permission middleware. Includes specific roles like `PROJECT_DEVELOPER` and `PROJECT_MANAGER_SITE`.
+-   **Authentication & Authorization**: Passport.js with local strategy, PostgreSQL-backed sessions, role-based access control, rate limiting, and granular permission middleware. Includes specific roles like `PROJECT_DEVELOPER` and `PROJECT_MANAGER_SITE`. Frontend `usePermission` hook fetches DB entity permission overrides from `/api/auth/permissions` and checks them before falling back to static defaults. Admin Roles page saves entity-level permission overrides per role.
 -   **File Handling**: Multer for uploads, `exceljs` for parsing.
 -   **Data Storage**: PostgreSQL with Drizzle ORM, ensuring transactional safety and reprocessing.
 -   **Logic**: Pure-function modules for computations, automated backfill system for computed columns, and audit trails for data mutations.
