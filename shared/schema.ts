@@ -3651,5 +3651,11 @@ export const BADGE_DEFINITIONS: Record<string, { name: string; description: stri
   penalty_overdue_repeat: { name: "Deadline Dodger", description: "5+ overdue tasks — time to catch up!", icon: "⏰", threshold: 5, category: "penalties" },
   penalty_overdue_chronic: { name: "Chronic Overdue", description: "10+ overdue tasks — needs urgent attention", icon: "🚨", threshold: 10, category: "penalties" },
   penalty_quality_concern: { name: "Quality Concern", description: "5+ quality failures recorded", icon: "⚠️", threshold: 5, category: "penalties" },
+  penalty_eng_task_slipping: { name: "Engineering Slip", description: "3+ overdue engineering tasks", icon: "🔩", threshold: 3, category: "penalties" },
+  penalty_eng_task_overdue: { name: "Engineering Bottleneck", description: "5+ overdue engineering tasks — blocking progress", icon: "🛑", threshold: 5, category: "penalties" },
+  penalty_inbox_pileup: { name: "Inbox Pileup", description: "10+ unread notifications older than 3 days", icon: "📬", threshold: 10, category: "penalties" },
+  penalty_inbox_neglect: { name: "Inbox Neglect", description: "20+ unread notifications — stay informed!", icon: "🙈", threshold: 20, category: "penalties" },
+  penalty_qm_slipping: { name: "QM Slipping", description: "3+ overdue quality tasks on your projects", icon: "📉", threshold: 3, category: "penalties" },
+  penalty_qm_overdue: { name: "QM Bottleneck", description: "5+ overdue quality tasks — quality at risk", icon: "🔴", threshold: 5, category: "penalties" },
   clean_record: { name: "Clean Record", description: "No penalties — zero overdue, behind, or quality issues", icon: "🌟", threshold: 0, category: "excellence" },
 };

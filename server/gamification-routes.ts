@@ -49,6 +49,9 @@ const PENALTY_VALUES: Record<string, number> = {
   quality_failure: -8,
   rejected_deliverable: -6,
   open_quality_warning: -4,
+  overdue_eng_task: -6,
+  unread_notifications: -2,
+  overdue_qm_task: -7,
 };
 
 interface UserActivityCounts {
@@ -71,6 +74,9 @@ interface UserActivityCounts {
   qualityFailures: number;
   rejectedDeliverables: number;
   openQualityWarnings: number;
+  overdueEngTasks: number;
+  unreadNotifications: number;
+  overdueQmTasks: number;
 }
 
 async function computeUserActivities(): Promise<UserActivityCounts[]> {
@@ -161,6 +167,32 @@ async function computeUserActivities(): Promise<UserActivityCounts[]> {
           AND status IN ('open', 'in_progress')`
     );
 
+    const overdueEngTasks = await execCount(
+      sql`SELECT COUNT(*)::int as cnt FROM project_eng_tasks 
+          WHERE owner_user_id = ${uid} 
+          AND due_date IS NOT NULL AND due_date != '' 
+          AND NULLIF(due_date, '')::date < CURRENT_DATE 
+          AND status NOT IN ('complete', 'skipped')`
+    );
+
+    const unreadNotifications = await execCount(
+      sql`SELECT COUNT(*)::int as cnt FROM notifications 
+          WHERE recipient_user_id = ${uid} 
+          AND is_read = false 
+          AND created_at < NOW() - INTERVAL '3 days'`
+    );
+
+    const overdueQmTasks = await execCount(
+      sql`SELECT COUNT(*)::int as cnt FROM qc_item_instance qi
+          JOIN qc_checklist qc ON qi.checklist_id = qc.id
+          JOIN project_info pi ON qc.project_name = pi.project_name
+          WHERE (pi.pm_user_id = ${uid} OR LOWER(TRIM(pi.pm)) = LOWER(TRIM(${userName})))
+          AND qi.end_date IS NOT NULL AND qi.end_date != ''
+          AND NULLIF(qi.end_date, '')::date < CURRENT_DATE
+          AND qi.approved = false
+          AND qi.is_applicable = true`
+    );
+
     results.push({
       userId: uid,
       userName,
@@ -181,6 +213,9 @@ async function computeUserActivities(): Promise<UserActivityCounts[]> {
       qualityFailures,
       rejectedDeliverables,
       openQualityWarnings,
+      overdueEngTasks,
+      unreadNotifications,
+      overdueQmTasks,
     });
   }
 
@@ -207,7 +242,10 @@ function computePoints(act: UserActivityCounts): { earned: number; penalties: nu
     act.plansBehind * PENALTY_VALUES.plan_behind +
     act.qualityFailures * PENALTY_VALUES.quality_failure +
     act.rejectedDeliverables * PENALTY_VALUES.rejected_deliverable +
-    act.openQualityWarnings * PENALTY_VALUES.open_quality_warning;
+    act.openQualityWarnings * PENALTY_VALUES.open_quality_warning +
+    act.overdueEngTasks * PENALTY_VALUES.overdue_eng_task +
+    act.unreadNotifications * PENALTY_VALUES.unread_notifications +
+    act.overdueQmTasks * PENALTY_VALUES.overdue_qm_task;
 
   return { earned, penalties, total: Math.max(0, earned + penalties) };
 }
@@ -252,8 +290,18 @@ function computeEarnedBadges(act: UserActivityCounts): string[] {
 
   if (act.qualityFailures >= 5) badges.push("penalty_quality_concern");
 
+  if (act.overdueEngTasks >= 5) badges.push("penalty_eng_task_overdue");
+  else if (act.overdueEngTasks >= 3) badges.push("penalty_eng_task_slipping");
+
+  if (act.unreadNotifications >= 20) badges.push("penalty_inbox_neglect");
+  else if (act.unreadNotifications >= 10) badges.push("penalty_inbox_pileup");
+
+  if (act.overdueQmTasks >= 5) badges.push("penalty_qm_overdue");
+  else if (act.overdueQmTasks >= 3) badges.push("penalty_qm_slipping");
+
   if (act.overdueTasks === 0 && act.plansBehind === 0 && act.qualityFailures === 0 &&
       act.rejectedDeliverables === 0 && act.openQualityWarnings === 0 &&
+      act.overdueEngTasks === 0 && act.overdueQmTasks === 0 &&
       act.tasksCompleted >= 5) {
     badges.push("clean_record");
   }
@@ -339,6 +387,9 @@ export function registerGamificationRoutes(app: Express) {
             qualityFailures: act.qualityFailures,
             rejectedDeliverables: act.rejectedDeliverables,
             openQualityWarnings: act.openQualityWarnings,
+            overdueEngTasks: act.overdueEngTasks,
+            unreadNotifications: act.unreadNotifications,
+            overdueQmTasks: act.overdueQmTasks,
           },
         };
       }).filter(Boolean);
@@ -423,6 +474,9 @@ export function registerGamificationRoutes(app: Express) {
           qualityFailures: act.qualityFailures,
           rejectedDeliverables: act.rejectedDeliverables,
           openQualityWarnings: act.openQualityWarnings,
+          overdueEngTasks: act.overdueEngTasks,
+          unreadNotifications: act.unreadNotifications,
+          overdueQmTasks: act.overdueQmTasks,
         },
       });
     } catch (err: any) {
