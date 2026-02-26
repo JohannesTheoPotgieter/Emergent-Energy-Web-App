@@ -43,6 +43,7 @@ import {
   MessageSquareText,
   BookOpen,
   ListChecks,
+  Trophy,
 } from "lucide-react";
 import { UX_REDESIGN_ENABLED } from "@shared/schema";
 import { useProgramData } from "@/hooks/use-program-data";
@@ -108,6 +109,7 @@ function getLegacyNavGroups(): NavGroup[] {
       section: "QUALITY",
       items: [
         { label: "Quality Dashboard", icon: ShieldCheck, path: "/quality" },
+        { label: "Leaderboard", icon: Trophy, path: "/leaderboard" },
       ],
     },
     {
@@ -179,6 +181,7 @@ function getRedesignedNavGroups(): NavGroup[] {
       section: "GOVERNANCE",
       items: [
         { label: "Quality Dashboard", icon: ShieldCheck, path: "/quality" },
+        { label: "Leaderboard", icon: Trophy, path: "/leaderboard" },
       ],
     },
     {

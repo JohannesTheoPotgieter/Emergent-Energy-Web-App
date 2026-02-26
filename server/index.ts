@@ -345,6 +345,10 @@ async function backfillPmUserIds() {
   const { registerApprovalsRoutes } = await import("./approvals-routes");
   registerApprovalsRoutes(app);
 
+  const { registerGamificationRoutes, ensureGamificationTables } = await import("./gamification-routes");
+  await ensureGamificationTables();
+  registerGamificationRoutes(app);
+
   const { registerWeeklyReviewRoutes } = await import("./weekly-review-routes");
   registerWeeklyReviewRoutes(app);
 
