@@ -8,6 +8,7 @@ import {
   Construction, Zap, Wrench, UserCheck, DollarSign, AlertCircle,
   TrendingDown, TrendingUp, ArrowRight, AlertTriangle, Clock,
   ChevronDown, ChevronRight, X, Loader2, Target, BarChart3, RefreshCw,
+  Diamond, Filter, SortAsc,
 } from "lucide-react";
 import { useLocation, Link } from "wouter";
 import { usePermission } from "@/hooks/use-permissions";
@@ -434,7 +435,12 @@ export default function Dashboard() {
     pmTable: Array<{ pm: string; activeProjects: number; commissioningThisMonth: number; clientHandoverThisMonth: number }>;
     projectsByPhase: Array<{ phase: string; count: number }>;
     completionCompare: Array<{ projectName: string; actualPct: number; expectedPct: number }>;
-    portfolioTimeline: Array<{ projectName: string; startDate: string | null; endDate: string | null; phase: string | null }>;
+    portfolioTimeline: Array<{
+      projectName: string; startDate: string | null; endDate: string | null; phase: string | null;
+      actualPct: number; expectedPct: number; delta: number;
+      pm: string | null; sizeKwp: number | null;
+      commissioningDate: string | null;
+    }>;
   }>({
     queryKey: ["/api/program-dashboard"],
   });
@@ -498,17 +504,40 @@ export default function Dashboard() {
     );
   }, [pmTable]);
 
+  const [ganttSort, setGanttSort] = useState<string>("start");
+  const [ganttPhaseFilter, setGanttPhaseFilter] = useState<string[]>([]);
+  const [ganttPmFilter, setGanttPmFilter] = useState<string>("");
+  const [ganttHover, setGanttHover] = useState<number | null>(null);
+
   const ganttData = useMemo(() => {
     if (!portfolioTimeline.length) return [];
-    const allDates = portfolioTimeline
+    let filtered = [...portfolioTimeline];
+    if (ganttPhaseFilter.length > 0) {
+      filtered = filtered.filter(p => p.phase && ganttPhaseFilter.includes(p.phase));
+    }
+    if (ganttPmFilter) {
+      filtered = filtered.filter(p => p.pm === ganttPmFilter);
+    }
+    filtered.sort((a, b) => {
+      switch (ganttSort) {
+        case "end": return (a.endDate || "").localeCompare(b.endDate || "");
+        case "pct": return (b.actualPct ?? 0) - (a.actualPct ?? 0);
+        case "slippage": return (a.delta ?? 0) - (b.delta ?? 0);
+        case "name": return (a.projectName || "").localeCompare(b.projectName || "");
+        default: return (a.startDate || "").localeCompare(b.startDate || "");
+      }
+    });
+    const allDates = filtered
       .flatMap(p => [p.startDate, p.endDate])
       .filter(Boolean)
       .map(d => new Date(d!).getTime());
     if (!allDates.length) return [];
     const minTime = Math.min(...allDates);
-    return portfolioTimeline.map(p => {
+    return filtered.map(p => {
       const start = p.startDate ? new Date(p.startDate).getTime() : null;
       const end = p.endDate ? new Date(p.endDate).getTime() : null;
+      const endMs = end || start || minTime;
+      const daysRemaining = Math.max(0, Math.ceil((endMs - Date.now()) / (1000 * 60 * 60 * 24)));
       return {
         displayName: (p.projectName || "").replace(/_Tracker$/i, "").replace(/_/g, " "),
         projectName: p.projectName,
@@ -517,9 +546,17 @@ export default function Dashboard() {
         endDate: p.endDate,
         offset: start ? (start - minTime) / (1000 * 60 * 60 * 24) : 0,
         duration: start && end ? Math.max(1, (end - start) / (1000 * 60 * 60 * 24)) : 1,
+        actualPct: p.actualPct ?? 0,
+        expectedPct: p.expectedPct ?? 0,
+        delta: p.delta ?? 0,
+        pm: p.pm,
+        sizeKwp: p.sizeKwp,
+        commissioningDate: p.commissioningDate,
+        daysRemaining,
+        behind: (p.delta ?? 0) < -5,
       };
     });
-  }, [portfolioTimeline]);
+  }, [portfolioTimeline, ganttSort, ganttPhaseFilter, ganttPmFilter]);
 
   const completionChartData = useMemo(() => {
     return completionCompare.map(p => ({
@@ -1052,10 +1089,67 @@ export default function Dashboard() {
             <CardTitle className="text-base font-bold text-gray-900 dark:text-gray-50">Portfolio Gantt Chart</CardTitle>
           </CardHeader>
           <CardContent>
+            <div className="flex flex-wrap items-center gap-2 mb-3" data-testid="gantt-controls">
+              <div className="flex items-center gap-1.5">
+                <SortAsc className="w-3.5 h-3.5 text-gray-400" />
+                <select
+                  className="text-xs border border-gray-200 dark:border-gray-700 rounded px-1.5 py-1 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300"
+                  value={ganttSort}
+                  onChange={e => setGanttSort(e.target.value)}
+                  data-testid="gantt-sort"
+                >
+                  <option value="start">Start Date</option>
+                  <option value="end">End Date</option>
+                  <option value="pct">% Complete</option>
+                  <option value="slippage">Slippage</option>
+                  <option value="name">Project Name</option>
+                </select>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Filter className="w-3.5 h-3.5 text-gray-400" />
+                <select
+                  className="text-xs border border-gray-200 dark:border-gray-700 rounded px-1.5 py-1 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300"
+                  value={ganttPhaseFilter.length === 1 ? ganttPhaseFilter[0] : ganttPhaseFilter.length > 1 ? "__multi__" : ""}
+                  onChange={e => {
+                    const v = e.target.value;
+                    if (v === "") setGanttPhaseFilter([]);
+                    else if (v !== "__multi__") setGanttPhaseFilter([v]);
+                  }}
+                  data-testid="gantt-phase-filter"
+                >
+                  <option value="">All Phases</option>
+                  {Array.from(new Set(portfolioTimeline.map(p => p.phase).filter(Boolean))).sort().map(p => (
+                    <option key={p!} value={p!}>{p}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <select
+                  className="text-xs border border-gray-200 dark:border-gray-700 rounded px-1.5 py-1 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300"
+                  value={ganttPmFilter}
+                  onChange={e => setGanttPmFilter(e.target.value)}
+                  data-testid="gantt-pm-filter"
+                >
+                  <option value="">All PMs</option>
+                  {Array.from(new Set(portfolioTimeline.map(p => p.pm).filter(Boolean))).sort().map(pm => (
+                    <option key={pm!} value={pm!}>{pm}</option>
+                  ))}
+                </select>
+              </div>
+              {(ganttPhaseFilter.length > 0 || ganttPmFilter) && (
+                <button
+                  className="text-xs text-blue-500 hover:text-blue-700 underline"
+                  onClick={() => { setGanttPhaseFilter([]); setGanttPmFilter(""); }}
+                  data-testid="gantt-clear-filters"
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
             <div className="overflow-x-auto -mx-3 sm:mx-0 px-3 sm:px-0">
               <div style={{ minWidth: 700 }}>
                 {(() => {
-                  const allDates = portfolioTimeline
+                  const allDates = ganttData
                     .flatMap(p => [p.startDate, p.endDate])
                     .filter(Boolean)
                     .map(d => new Date(d!).getTime());
@@ -1080,6 +1174,14 @@ export default function Dashboard() {
                     : null;
 
                   const phases = Array.from(new Set(ganttData.map(r => r.phase).filter(Boolean))) as string[];
+
+                  const behindCount = ganttData.filter(r => r.behind).length;
+                  const now = Date.now();
+                  const commSoon = ganttData.filter(r => {
+                    if (!r.commissioningDate) return false;
+                    const cd = new Date(r.commissioningDate).getTime();
+                    return cd >= now && cd <= now + 30 * 86400000;
+                  }).length;
 
                   return (
                     <div className="flex flex-col">
@@ -1109,39 +1211,116 @@ export default function Dashboard() {
                         {ganttData.map((row, i) => {
                           const leftPct = (row.offset / totalDays) * 100;
                           const widthPct = Math.max(0.3, (row.duration / totalDays) * 100);
+                          const color = phaseColor(row.phase);
+                          const progressWidthPct = widthPct * Math.min(1, row.actualPct / 100);
+                          const expectedMarkerPct = leftPct + widthPct * Math.min(1, row.expectedPct / 100);
+
+                          const commDiamondPct = (() => {
+                            if (!row.commissioningDate) return null;
+                            const ct = new Date(row.commissioningDate).getTime();
+                            if (ct < minTime || ct > maxTime) return null;
+                            return ((ct - minTime) / (maxTime - minTime)) * 100;
+                          })();
+
                           return (
                             <div
                               key={i}
-                              className="flex items-center h-7 hover:bg-gray-50 dark:hover:bg-gray-800/30 cursor-pointer transition-colors group"
+                              className={`flex items-center h-9 cursor-pointer transition-colors group relative ${row.behind ? 'border-l-[3px] border-red-500' : ''} ${ganttHover === i ? 'bg-blue-50 dark:bg-blue-950/20' : 'hover:bg-gray-50 dark:hover:bg-gray-800/30'}`}
                               onClick={() => navigateToProject(row.projectName)}
+                              onMouseEnter={() => setGanttHover(i)}
+                              onMouseLeave={() => setGanttHover(null)}
                               data-testid={`gantt-row-${i}`}
                             >
-                              <div className="w-[160px] sm:w-[220px] shrink-0 pr-2 text-right">
+                              <div className="w-[160px] sm:w-[220px] shrink-0 pr-2 text-right flex items-center justify-end gap-1">
+                                {row.behind && (
+                                  <AlertTriangle className="w-3 h-3 text-red-500 shrink-0" />
+                                )}
                                 <span className="text-[10px] sm:text-[11px] text-gray-600 dark:text-gray-400 truncate block group-hover:text-blue-600 transition-colors">
                                   {row.displayName}
                                 </span>
                               </div>
-                              <div className="relative flex-1 h-5">
+                              <div className="relative flex-1 h-6">
                                 <div
-                                  className="absolute top-1 h-3 rounded-sm transition-colors opacity-90 group-hover:opacity-100"
-                                  style={{ left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 3, backgroundColor: phaseColor(row.phase) }}
-                                  title={`${row.displayName} | ${row.phase || 'Unknown'}\n${row.startDate} → ${row.endDate}`}
+                                  className="absolute top-1 h-4 rounded-sm"
+                                  style={{ left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 3, backgroundColor: color, opacity: 0.25 }}
                                 />
+                                <div
+                                  className="absolute top-1 h-4 rounded-sm transition-all"
+                                  style={{ left: `${leftPct}%`, width: `${progressWidthPct}%`, minWidth: row.actualPct > 0 ? 2 : 0, backgroundColor: color, opacity: 0.9 }}
+                                />
+                                {row.expectedPct > 0 && (
+                                  <div
+                                    className="absolute top-0 w-0.5 h-6 bg-gray-800 dark:bg-gray-200 opacity-50"
+                                    style={{ left: `${expectedMarkerPct}%` }}
+                                    title={`Expected: ${Math.round(row.expectedPct)}%`}
+                                  />
+                                )}
+                                {widthPct > 3 && (
+                                  <span
+                                    className="absolute top-0.5 h-5 flex items-center text-[9px] font-semibold pointer-events-none select-none"
+                                    style={{ left: `${leftPct + widthPct + 0.3}%`, color: row.behind ? '#ef4444' : '#6b7280' }}
+                                  >
+                                    {Math.round(row.actualPct)}%
+                                  </span>
+                                )}
+                                {commDiamondPct !== null && (
+                                  <div
+                                    className="absolute -top-0.5 transform -translate-x-1/2"
+                                    style={{ left: `${commDiamondPct}%` }}
+                                    title={`Commissioning: ${row.commissioningDate}`}
+                                  >
+                                    <Diamond className="w-3 h-3 text-amber-500 fill-amber-400" />
+                                  </div>
+                                )}
                               </div>
+
+                              {ganttHover === i && (
+                                <div className="absolute left-[170px] sm:left-[230px] top-full z-50 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl p-3 min-w-[240px] text-xs pointer-events-none" style={{ marginTop: -4 }}>
+                                  <div className="font-semibold text-gray-900 dark:text-gray-100 mb-1.5">{row.displayName}</div>
+                                  <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-gray-600 dark:text-gray-400">
+                                    <span className="text-gray-400">PM</span><span>{row.pm || '—'}</span>
+                                    <span className="text-gray-400">Phase</span><span>{row.phase || '—'}</span>
+                                    <span className="text-gray-400">Size</span><span>{row.sizeKwp ? `${row.sizeKwp} kWp` : '—'}</span>
+                                    <span className="text-gray-400">Start</span><span>{row.startDate || '—'}</span>
+                                    <span className="text-gray-400">End</span><span>{row.endDate || '—'}</span>
+                                    <span className="text-gray-400">Act%</span><span className={row.behind ? 'text-red-500 font-semibold' : ''}>{Math.round(row.actualPct)}%</span>
+                                    <span className="text-gray-400">Expected%</span><span>{Math.round(row.expectedPct)}%</span>
+                                    <span className="text-gray-400">Delta</span>
+                                    <span className={row.delta < 0 ? 'text-red-500 font-semibold' : row.delta > 0 ? 'text-green-600' : ''}>
+                                      {row.delta > 0 ? '+' : ''}{Math.round(row.delta)}%
+                                    </span>
+                                    <span className="text-gray-400">Days left</span><span>{row.daysRemaining}</span>
+                                    {row.commissioningDate && <>
+                                      <span className="text-gray-400">Commissioning</span><span>{row.commissioningDate}</span>
+                                    </>}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           );
                         })}
                       </div>
-                      {phases.length > 0 && (
-                        <div className="flex flex-wrap gap-3 mt-3 pt-2 border-t border-gray-100 dark:border-gray-800">
+                      <div className="flex flex-wrap items-center justify-between mt-3 pt-2 border-t border-gray-100 dark:border-gray-800">
+                        <div className="flex flex-wrap gap-3">
                           {phases.map(p => (
                             <div key={p} className="flex items-center gap-1.5">
                               <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: phaseColor(p) }} />
                               <span className="text-[10px] text-gray-500">{p}</span>
                             </div>
                           ))}
+                          <div className="flex items-center gap-1.5 ml-2 pl-2 border-l border-gray-200 dark:border-gray-700">
+                            <div className="w-3 h-0.5 bg-gray-800 dark:bg-gray-200 opacity-50" />
+                            <span className="text-[10px] text-gray-500">Expected%</span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <Diamond className="w-3 h-3 text-amber-500 fill-amber-400" />
+                            <span className="text-[10px] text-gray-500">Commissioning</span>
+                          </div>
                         </div>
-                      )}
+                        <div className="text-[11px] text-gray-500 mt-1 sm:mt-0" data-testid="gantt-summary">
+                          {ganttData.length} projects{behindCount > 0 && <> · <span className="text-red-500 font-medium">{behindCount} behind schedule</span></>}{commSoon > 0 && <> · <span className="text-amber-600 font-medium">{commSoon} commissioning within 30 days</span></>}
+                        </div>
+                      </div>
                     </div>
                   );
                 })()}
