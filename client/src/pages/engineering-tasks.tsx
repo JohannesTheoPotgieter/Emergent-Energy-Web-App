@@ -1489,7 +1489,7 @@ export default function EngineeringTasksPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [viewMode, setViewMode] = useState<"board" | "list" | "projects">("board");
-  const [myTasksOnly, setMyTasksOnly] = useState(true);
+  const [myTasksOnly, setMyTasksOnly] = useState(false);
   const [myName, setMyName] = useState(() => {
     const saved = getSavedMyName();
     if (saved) return saved;
@@ -1499,13 +1499,7 @@ export default function EngineeringTasksPage() {
   const [showNamePicker, setShowNamePicker] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
-  const [assigneeFilter, setAssigneeFilter] = useState<string>(() => {
-    const saved = getSavedMyName();
-    if (saved) return saved;
-    const fullName = user?.name || "";
-    const firstName = fullName.split(/\s+/)[0];
-    return firstName || "all";
-  });
+  const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     return params.get("project") || "";
@@ -1739,12 +1733,12 @@ export default function EngineeringTasksPage() {
                 </span>
               )}
             </Button>
-            {myName && (
+            {myTasksOnly && myName && (
               <button
                 className="absolute -top-1 -right-1 w-4 h-4 bg-muted hover:bg-red-100 rounded-full flex items-center justify-center text-muted-foreground hover:text-red-600 text-[8px] border"
-                onClick={(e) => { e.stopPropagation(); setShowNamePicker(true); }}
-                title="Change name"
-                data-testid="btn-change-name"
+                onClick={(e) => { e.stopPropagation(); setMyTasksOnly(false); setAssigneeFilter("all"); }}
+                title="Clear filter"
+                data-testid="btn-clear-my-tasks"
               >
                 ×
               </button>
