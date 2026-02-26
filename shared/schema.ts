@@ -2347,6 +2347,7 @@ export const projectEngDeliverables = pgTable("project_eng_deliverables", {
   uploadedAt: timestamp("uploaded_at").notNull().defaultNow(),
   versionTag: text("version_tag"),
   notes: text("notes"),
+  sharepointFolderPath: text("sharepoint_folder_path"),
 });
 export const insertProjectEngDeliverableSchema = createInsertSchema(projectEngDeliverables).omit({ id: true, uploadedAt: true });
 export type InsertProjectEngDeliverable = z.infer<typeof insertProjectEngDeliverableSchema>;

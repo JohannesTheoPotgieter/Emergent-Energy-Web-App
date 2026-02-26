@@ -525,6 +525,7 @@ export function registerEngStageRoutes(app: Express) {
       const deliverableTemplateId = req.body.deliverableTemplateId ? parseInt(req.body.deliverableTemplateId) : null;
       const versionTag = req.body.versionTag || "v1";
       const notes = req.body.notes || null;
+      const sharepointFolderPath = req.body.sharepointFolderPath || null;
 
       const [deliverable] = await db.insert(projectEngDeliverables).values({
         projectEngStageId: stageId,
@@ -536,6 +537,7 @@ export function registerEngStageRoutes(app: Express) {
         uploadedBy: user.id,
         versionTag,
         notes,
+        sharepointFolderPath,
       }).returning();
 
       res.json({ deliverable });

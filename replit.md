@@ -46,6 +46,7 @@ Preferred communication style: Simple, everyday language.
 ### Engineering Stage Templates
 -   **Module**: Implements a 5-stage engineering checklist system (First Assessment, Cost Proposal, IFC Planning, Construction Support, Handover Pack) with CRUD for templates, project stage instantiation, task/deliverable/approval management, and stage gate completion logic.
 -   **Tables**: `eng_stage_templates`, `eng_task_templates`, `eng_deliverable_templates` (template definitions); `project_eng_stages`, `project_eng_tasks`, `project_eng_deliverables`, `project_eng_approvals` (project instances). All link to `project_info` via `project_id`.
+-   **Deliverable Upload with SharePoint Sync**: Engineers can upload deliverables per stage. On upload, a dialog prompts the user to choose a local SharePoint sync folder path (from saved presets or a custom path). The path is stored in `project_eng_deliverables.sharepoint_folder_path` and displayed on each uploaded file. Saved folder paths persist in localStorage for reuse across sessions.
 -   **Stage Gating**: Each template defines gate rules. COO can override stage completion with a mandatory reason.
 -   **Lifecycle Board Integration**: Engineering stages are auto-generated based on `PHASE_TO_ENG_STAGES` mapping when a project moves on the company lifecycle board. The board includes a **"Gone" phase** column for lost deals — Gone projects are marked inactive, excluded from active project lists/dropdowns/weekly reviews, and rendered as non-draggable cards with reduced opacity. Phase comparisons are case-insensitive.
 

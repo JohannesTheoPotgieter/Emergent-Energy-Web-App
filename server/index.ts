@@ -299,6 +299,11 @@ async function backfillPmUserIds() {
   
   await seedUsers();
   await backfillPmUserIds();
+
+  try {
+    await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS sharepoint_folder_path TEXT`));
+  } catch (e) {}
+
   
   const { seedQualityTemplate } = await import("./seed-quality-template");
   await seedQualityTemplate().catch(err => console.error('[Seed] Quality template error:', err));
