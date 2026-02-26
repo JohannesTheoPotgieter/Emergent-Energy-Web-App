@@ -14,6 +14,7 @@ import { dbMode, dbConfig, initializeDatabase, db } from "./db";
 import { sql } from "drizzle-orm";
 import { runBackfill } from "./lib/backfill";
 import { startScheduler } from "./importPipeline";
+import { startMilestoneChecker } from "./milestone-notifications";
 
 const app = express();
 const httpServer = createServer(app);
@@ -436,6 +437,7 @@ async function backfillPmUserIds() {
       log(`serving on port ${port}`);
       runBackfill().catch(err => console.error('[Backfill] startup error:', err));
       startScheduler();
+      startMilestoneChecker();
       log('SharePoint scheduled import checker started');
     },
   );
