@@ -13,11 +13,13 @@ import { classifyCostLines, generateRuleFromInvoice, normalizeInvoiceNumber } fr
 const router = Router();
 
 function jwtAuth(req: Request, res: Response, next: NextFunction) {
+  if ((req as any).user) return next();
+  if (req.isAuthenticated?.()) return next();
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith("Bearer ")) {
     try {
       const jwt = require("jsonwebtoken");
-      const decoded = jwt.verify(authHeader.slice(7), process.env.JWT_SECRET || "emergent-fallback-secret");
+      const decoded = jwt.verify(authHeader.slice(7), process.env.JWT_SECRET || "emergent-energy-jwt-secret-2026");
       if (decoded && typeof decoded === "object") {
         (req as any).user = { id: decoded.userId || decoded.id, role: decoded.role };
       }
