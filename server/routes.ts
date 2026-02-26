@@ -2989,7 +2989,7 @@ export async function registerRoutes(
 
   app.get("/api/program-dashboard", requireAuth, async (req, res) => {
     try {
-      const [allProjectInfo, allExpenses, rawInflows, allPlans, allEditableFields, allTaskLinks, allOpTasks, manualEntries] = await Promise.all([
+      const [allProjectInfo, allExpenses, rawInflows, allPlans, allEditableFields, allTaskLinks, allOpTasks, manualEntries, allUsers] = await Promise.all([
         storage.getAllProjectInfo(),
         storage.getAllProgramExpenses(),
         storage.getAllProgramInflows(),
@@ -2998,7 +2998,9 @@ export async function registerRoutes(
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
         storage.getTrackerMonthlyManual('COS'),
+        db.select({ name: users.name }).from(users),
       ]);
+      const validUserNames = new Set(allUsers.map(u => (u.name || '').toLowerCase().trim()));
       const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
 
       const today = new Date().toISOString().split("T")[0];
@@ -3218,23 +3220,27 @@ export async function registerRoutes(
           outflowProjects.push({ projectName, amount: projOutflowsWeek });
         }
 
-        const pm = info?.pm;
-        if (pm && pm.trim()) {
-          if (!pmStats.has(pm)) pmStats.set(pm, { activeProjects: 0, commissioningThisMonth: 0, clientHandoverThisMonth: 0 });
-          const stats = pmStats.get(pm)!;
-          stats.activeProjects++;
-          if (isThisMonth(commissioningDate)) {
-            stats.commissioningThisMonth++;
-          }
-          if (isThisMonth(clientHandoverDate)) {
-            stats.clientHandoverThisMonth++;
-          }
+        const rawPm = info?.pm;
+        const pmKey = rawPm && rawPm.trim() && validUserNames.has(rawPm.trim().toLowerCase()) ? rawPm.trim() : "Unassigned";
+        if (!pmStats.has(pmKey)) pmStats.set(pmKey, { activeProjects: 0, commissioningThisMonth: 0, clientHandoverThisMonth: 0 });
+        const stats = pmStats.get(pmKey)!;
+        stats.activeProjects++;
+        if (isThisMonth(commissioningDate)) {
+          stats.commissioningThisMonth++;
+        }
+        if (isThisMonth(clientHandoverDate)) {
+          stats.clientHandoverThisMonth++;
         }
       }
 
       const pmTable = Array.from(pmStats.entries())
         .map(([pm, stats]) => ({ pm, ...stats }))
-        .filter(row => row.activeProjects > 0 || row.commissioningThisMonth > 0 || row.clientHandoverThisMonth > 0);
+        .filter(row => row.activeProjects > 0 || row.commissioningThisMonth > 0 || row.clientHandoverThisMonth > 0)
+        .sort((a, b) => {
+          if (a.pm === "Unassigned") return 1;
+          if (b.pm === "Unassigned") return -1;
+          return b.activeProjects - a.activeProjects;
+        });
 
       const phaseCountMap = new Map<string, number>();
       const phaseCanonicalMap = new Map<string, string>();

@@ -458,9 +458,33 @@ export default function Dashboard() {
 
   const top10Projects = useMemo(() => {
     if (!projectsSummary.length) return [];
-    return [...projectsSummary]
-      .sort((a, b) => (a.delta_vs_expected ?? 0) - (b.delta_vs_expected ?? 0))
-      .slice(0, 10);
+    const scored = projectsSummary
+      .filter((p: any) => p.is_active !== false)
+      .map((p: any) => {
+        const rev = p.actual_revenue || 0;
+        const exp = p.actual_expenses || 0;
+        const gpPct = rev > 0 ? (rev - exp) / rev : 0;
+        const moneyRisk =
+          (p.revenue_outstanding > 0 ? Math.min(p.revenue_outstanding / 500000, 3) : 0) +
+          (p.expenses_due > 0 ? Math.min(p.expenses_due / 500000, 3) : 0) +
+          (gpPct < 0 ? 2 : gpPct < 0.05 ? 1 : 0);
+        const delta = p.delta_vs_expected ?? 0;
+        const planRisk = delta < -0.2 ? 3 : delta < -0.1 ? 2 : delta < -0.05 ? 1 : 0;
+        const statusCounts = p.task_status_counts || {};
+        const blocked = statusCounts["Blocked"] || statusCounts["BLOCKED"] || 0;
+        const overdue = statusCounts["Overdue"] || statusCounts["OVERDUE"] || 0;
+        const qualityRisk = Math.min((blocked + overdue) * 0.5, 2);
+        const totalRisk = moneyRisk + planRisk + qualityRisk;
+        return { ...p, moneyRisk, planRisk, qualityRisk, totalRisk };
+      })
+      .filter((p: any) => p.totalRisk > 0);
+    scored.sort((a: any, b: any) => {
+      if (b.totalRisk !== a.totalRisk) return b.totalRisk - a.totalRisk;
+      if (b.moneyRisk !== a.moneyRisk) return b.moneyRisk - a.moneyRisk;
+      if (b.planRisk !== a.planRisk) return b.planRisk - a.planRisk;
+      return b.qualityRisk - a.qualityRisk;
+    });
+    return scored.slice(0, 10);
   }, [projectsSummary]);
 
   const pmTotals = useMemo(() => {
@@ -887,7 +911,7 @@ export default function Dashboard() {
         <Card className="xl:col-span-3 shadow-sm" data-testid="card-projects-overview">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-base font-bold text-gray-900 dark:text-gray-50">Active Projects — Top 10</CardTitle>
+              <CardTitle className="text-base font-bold text-gray-900 dark:text-gray-50">Top 10 Projects at Risk</CardTitle>
               <Button
                 variant="ghost"
                 size="sm"
@@ -906,37 +930,47 @@ export default function Dashboard() {
                   <tr className="border-b border-gray-100 dark:border-gray-800">
                     <th className="text-left py-2.5 px-3 text-xs font-semibold uppercase tracking-wider text-gray-400">Project</th>
                     <th className="text-left py-2.5 px-3 text-xs font-semibold uppercase tracking-wider text-gray-400">Phase</th>
-                    <th className="text-left py-2.5 px-3 text-xs font-semibold uppercase tracking-wider text-gray-400 min-w-[140px]">% Complete</th>
+                    <th className="text-center py-2.5 px-3 text-xs font-semibold uppercase tracking-wider text-gray-400">Money</th>
+                    <th className="text-center py-2.5 px-3 text-xs font-semibold uppercase tracking-wider text-gray-400">Plan</th>
+                    <th className="text-center py-2.5 px-3 text-xs font-semibold uppercase tracking-wider text-gray-400">Quality</th>
                     <th className="text-right py-2.5 px-3 text-xs font-semibold uppercase tracking-wider text-gray-400">Delta</th>
                     <th className="text-right py-2.5 px-3 text-xs font-semibold uppercase tracking-wider text-gray-400">Revenue</th>
-                    <th className="text-right py-2.5 px-3 text-xs font-semibold uppercase tracking-wider text-gray-400">Expenses</th>
                   </tr>
                 </thead>
                 <tbody>
+                  {top10Projects.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="py-6 text-center text-gray-400 text-sm">All clear — no projects at risk</td>
+                    </tr>
+                  )}
                   {top10Projects.map((p: any, i: number) => {
                     const delta = p.delta_vs_expected ?? 0;
                     const deltaColor = delta < -0.05 ? "text-red-600 bg-red-50" : delta < 0 ? "text-amber-600 bg-amber-50" : "text-emerald-600 bg-emerald-50";
+                    const riskDot = (level: number) => {
+                      if (level >= 2) return <span className="inline-block w-2.5 h-2.5 rounded-full bg-red-500" title="High risk" />;
+                      if (level >= 1) return <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-400" title="Medium risk" />;
+                      return <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-400" title="Low risk" />;
+                    };
                     return (
                       <tr
                         key={p.project_name || i}
-                        className="border-b border-gray-50 dark:border-gray-800/50 last:border-0 hover:bg-blue-50/30 dark:hover:bg-blue-900/10 cursor-pointer transition-colors"
+                        className="border-b border-gray-50 dark:border-gray-800/50 last:border-0 hover:bg-red-50/30 dark:hover:bg-red-900/10 cursor-pointer transition-colors"
                         onClick={() => setLocation(`/project/${encodeURIComponent(p.project_name)}`)}
                         data-testid={`row-project-${i}`}
                       >
                         <td className="py-2.5 px-3 font-medium text-gray-800 dark:text-gray-200 max-w-[180px] truncate">
                           {(p.project_name || "").replace("_Tracker", "")}
                         </td>
-                        <td className="py-2.5 px-3 text-gray-500 dark:text-gray-400">{p.phase || "--"}</td>
-                        <td className="py-2.5 px-3">
-                          <ProgressBar value={p.project_pct_complete ?? 0} />
-                        </td>
+                        <td className="py-2.5 px-3 text-gray-500 dark:text-gray-400 text-xs">{p.phase || "--"}</td>
+                        <td className="py-2.5 px-3 text-center">{riskDot(p.moneyRisk)}</td>
+                        <td className="py-2.5 px-3 text-center">{riskDot(p.planRisk)}</td>
+                        <td className="py-2.5 px-3 text-center">{riskDot(p.qualityRisk)}</td>
                         <td className="py-2.5 px-3 text-right">
                           <span className={`inline-block px-2 py-0.5 rounded-md text-xs font-mono font-bold ${deltaColor}`}>
                             {formatPct(p.delta_vs_expected)}
                           </span>
                         </td>
                         <td className="py-2.5 px-3 text-right font-mono text-gray-600 dark:text-gray-400">{formatRand(p.actual_revenue ?? 0)}</td>
-                        <td className="py-2.5 px-3 text-right font-mono text-gray-600 dark:text-gray-400">{formatRand(p.actual_expenses ?? 0)}</td>
                       </tr>
                     );
                   })}
