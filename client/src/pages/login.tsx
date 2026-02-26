@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Lock, User, Info, X, Sparkles, Shield, BookOpen, Bug } from "lucide-react";
 
-const VERSION = "2.7.0";
+const VERSION = "0.001";
 const VERSION_DATE = "26 Feb 2026";
 
 const CHANGELOG = [
