@@ -4794,6 +4794,34 @@ export async function registerRoutes(
         return res.json({ message: "Sort order updated" });
       }
 
+      if (operation === "convertToMilestone") {
+        const { milestoneRowNumber, subtaskRowNumbers } = data || {};
+        if (milestoneRowNumber === undefined || !Array.isArray(subtaskRowNumbers) || subtaskRowNumbers.length === 0) {
+          return res.status(400).json({ error: "milestoneRowNumber and subtaskRowNumbers[] required" });
+        }
+        const overridesToSave: any[] = [];
+        overridesToSave.push({
+          projectName, rowNumber: milestoneRowNumber,
+          fieldName: "indentLevel", overrideValue: "0", createdBy: userId,
+        });
+        overridesToSave.push({
+          projectName, rowNumber: milestoneRowNumber,
+          fieldName: "parentRowNumber", overrideValue: "", createdBy: userId,
+        });
+        for (const rn of subtaskRowNumbers) {
+          overridesToSave.push({
+            projectName, rowNumber: rn,
+            fieldName: "parentRowNumber", overrideValue: String(milestoneRowNumber), createdBy: userId,
+          });
+          overridesToSave.push({
+            projectName, rowNumber: rn,
+            fieldName: "indentLevel", overrideValue: "1", createdBy: userId,
+          });
+        }
+        await storage.upsertManyProjectPlanOverrides(overridesToSave);
+        return res.json({ message: `Task converted to milestone with ${subtaskRowNumbers.length} subtasks` });
+      }
+
       if (operation === "deleteMilestone") {
         const { milestoneRowNumber } = data || {};
         if (milestoneRowNumber === undefined || milestoneRowNumber >= 0) {
