@@ -109,7 +109,6 @@ function getLegacyNavGroups(): NavGroup[] {
       section: "QUALITY",
       items: [
         { label: "Quality Dashboard", icon: ShieldCheck, path: "/quality" },
-        { label: "Leaderboard", icon: Trophy, path: "/leaderboard" },
       ],
     },
     {
@@ -117,6 +116,7 @@ function getLegacyNavGroups(): NavGroup[] {
       section: "FEEDBACK",
       items: [
         { label: "Feedback & Support", icon: MessageSquareText, path: "/feedback" },
+        { label: "Leaderboard", icon: Trophy, path: "/leaderboard" },
       ],
     },
     {
@@ -181,7 +181,6 @@ function getRedesignedNavGroups(): NavGroup[] {
       section: "GOVERNANCE",
       items: [
         { label: "Quality Dashboard", icon: ShieldCheck, path: "/quality" },
-        { label: "Leaderboard", icon: Trophy, path: "/leaderboard" },
       ],
     },
     {
@@ -190,6 +189,7 @@ function getRedesignedNavGroups(): NavGroup[] {
       items: [
         { label: "Feedback & Support", icon: MessageSquareText, path: "/feedback" },
         { label: "Emergent Energy Info", icon: BookOpen, path: "/ee-info" },
+        { label: "Leaderboard", icon: Trophy, path: "/leaderboard" },
       ],
     },
     {
