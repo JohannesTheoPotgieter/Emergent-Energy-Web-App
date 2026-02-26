@@ -127,27 +127,16 @@ export function registerApprovalsRoutes(app: Express) {
           )
         );
 
-      const pmUserIds = [...new Set(qcItems.map(q => q.pmUserId).filter(Boolean))] as number[];
-      let pmUserMap: Record<number, string> = {};
-      if (pmUserIds.length > 0) {
-        const pmUsers = await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, pmUserIds));
-        pmUserMap = Object.fromEntries(pmUsers.map(u => [u.id, u.name]));
-      }
-
       let filteredQcItems = qcItems;
       if (!isAdmin && !showAll) {
-        if (userRole === "QUALITY_MANAGER") {
+        if (userRole === "QUALITY_MANAGER" || userRole === "quality_manager") {
           filteredQcItems = qcItems;
         } else {
-          filteredQcItems = qcItems.filter(q => q.pmUserId === userId);
+          filteredQcItems = [];
         }
       }
 
       const qualityItems = filteredQcItems.map(q => {
-        const assigneeName = q.pmUserId
-          ? (pmUserMap[q.pmUserId] || q.pm || "Unassigned PM")
-          : (q.pm || "Unassigned PM");
-
         return {
           id: `qc-${q.id}`,
           type: "quality" as const,
@@ -155,7 +144,7 @@ export function registerApprovalsRoutes(app: Express) {
           projectName: q.projectName,
           projectId: q.projectId,
           status: "review",
-          assignee: assigneeName,
+          assignee: "Quality Manager",
           createdAt: q.lastUpdatedAt,
           updatedAt: q.lastUpdatedAt,
           meta: { itemInstanceId: q.id, checklistId: q.checklistId },
