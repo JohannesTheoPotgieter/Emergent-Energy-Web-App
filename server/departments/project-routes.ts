@@ -789,14 +789,16 @@ router.get("/api/projects-summary", async (req, res) => {
         let weightedExpSum = 0;
         for (const task of projectPlans) {
           const dur = task.durationDays && task.durationDays > 0 ? task.durationDays : 1;
+          totalExpWeight += dur;
           if (task.expectedPctComplete !== null && task.expectedPctComplete !== undefined) {
             weightedExpSum += task.expectedPctComplete * dur;
-            totalExpWeight += dur;
             continue;
           }
           const tStart = task.actualStart?.substring(0, 10);
           const tEnd = task.actualEnd?.substring(0, 10);
-          if (!tStart || !tEnd || !/^\d{4}-\d{2}-\d{2}/.test(tStart) || !/^\d{4}-\d{2}-\d{2}/.test(tEnd)) continue;
+          if (!tStart || !tEnd || !/^\d{4}-\d{2}-\d{2}/.test(tStart) || !/^\d{4}-\d{2}-\d{2}/.test(tEnd)) {
+            continue;
+          }
           let exp = 0;
           if (todayDate >= tEnd) {
             exp = 1.0;
@@ -810,7 +812,6 @@ router.get("/api/projects-summary", async (req, res) => {
             }
           }
           weightedExpSum += exp * dur;
-          totalExpWeight += dur;
         }
         expectedPctComplete = totalExpWeight > 0 ? weightedExpSum / totalExpWeight : null;
       }
