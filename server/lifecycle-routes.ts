@@ -81,6 +81,9 @@ export function registerLifecycleRoutes(app: Express) {
       const allPlanTasks = await db.select({
         projectName: projectPlan.projectName,
         actualPctComplete: projectPlan.actualPctComplete,
+        expectedPctComplete: projectPlan.expectedPctComplete,
+        durationDays: projectPlan.durationDays,
+        taskNo: projectPlan.taskNo,
       }).from(projectPlan);
 
       const allQmData = await db.select({
@@ -129,18 +132,25 @@ export function registerLifecycleRoutes(app: Express) {
         }
       }
 
-      const planByNorm = new Map<string, { total: number; weightedPct: number; totalWeight: number }>();
+      const planByNorm = new Map<string, { total: number; weightedPct: number; totalWeight: number; weightedExpPct: number; totalExpWeight: number }>();
       for (const p of allPlanTasks) {
         const name = p.projectName;
         if (!name) continue;
+        const taskNo = (p.taskNo || '').toString().toLowerCase().trim();
+        const isSummary = taskNo === 'no.' || taskNo === 'no' || taskNo === '#';
+        if (isSummary) continue;
         const norm = normalizeName(name);
-        if (!planByNorm.has(norm)) planByNorm.set(norm, { total: 0, weightedPct: 0, totalWeight: 0 });
+        if (!planByNorm.has(norm)) planByNorm.set(norm, { total: 0, weightedPct: 0, totalWeight: 0, weightedExpPct: 0, totalExpWeight: 0 });
         const entry = planByNorm.get(norm)!;
         entry.total++;
+        const dur = p.durationDays && p.durationDays > 0 ? Number(p.durationDays) : 1;
         if (p.actualPctComplete != null) {
-          const dur = p.durationDays && p.durationDays > 0 ? p.durationDays : 1;
           entry.weightedPct += Number(p.actualPctComplete) * dur;
           entry.totalWeight += dur;
+        }
+        if (p.expectedPctComplete != null) {
+          entry.weightedExpPct += Number(p.expectedPctComplete) * dur;
+          entry.totalExpWeight += dur;
         }
       }
 
@@ -165,7 +175,7 @@ export function registerLifecycleRoutes(app: Express) {
         projectNormNames.add(norm);
 
         const eng = engByNorm.get(norm) || { total: 0, done: 0, overdue: 0, highPriority: 0, assignees: new Set<string>(), rawName: "" };
-        const plan = planByNorm.get(norm) || { total: 0, weightedPct: 0, totalWeight: 0 };
+        const plan = planByNorm.get(norm) || { total: 0, weightedPct: 0, totalWeight: 0, weightedExpPct: 0, totalExpWeight: 0 };
         const qm = qmByNorm.get(norm) || { total: 0, approved: 0 };
 
         const hasTracker = trackerProjectNames.has(norm);
@@ -175,6 +185,7 @@ export function registerLifecycleRoutes(app: Express) {
         else if (hasTracker) source = "excel";
 
         const projectPctComplete = plan.totalWeight > 0 ? plan.weightedPct / plan.totalWeight : null;
+        const expectedPctComplete = plan.totalExpWeight > 0 ? plan.weightedExpPct / plan.totalExpWeight : null;
 
         results.push({
           id: proj.id,
@@ -201,6 +212,7 @@ export function registerLifecycleRoutes(app: Express) {
           planTotal: plan.total,
           planAvgPct: plan.totalWeight > 0 ? Math.round((plan.weightedPct / plan.totalWeight) * 100) / 100 : 0,
           projectPctComplete,
+          expectedPctComplete,
           qmTotal: qm.total,
           qmApproved: qm.approved,
           phaseUpdatedAt: proj.phaseUpdatedAt,
@@ -216,7 +228,7 @@ export function registerLifecycleRoutes(app: Express) {
         if (projectNormNames.has(norm)) continue;
 
         const eng = engByNorm.get(norm)!;
-        const plan = planByNorm.get(norm) || { total: 0, weightedPct: 0, totalWeight: 0 };
+        const plan = planByNorm.get(norm) || { total: 0, weightedPct: 0, totalWeight: 0, weightedExpPct: 0, totalExpWeight: 0 };
         const qm = qmByNorm.get(norm) || { total: 0, approved: 0 };
         const projectPctComplete = plan.totalWeight > 0 ? plan.weightedPct / plan.totalWeight : null;
 

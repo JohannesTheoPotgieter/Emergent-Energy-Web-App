@@ -181,6 +181,162 @@ function progressColor(pct: number): string {
   return "bg-slate-400";
 }
 
+function TaskCompletionPopover({ projectName, currentPct }: { projectName: string; currentPct: number }) {
+  const [open, setOpen] = useState(false);
+  const [edits, setEdits] = useState<Record<number, number>>({});
+  const queryClient = useQueryClient();
+
+  const { data: tasks, isLoading } = useQuery({
+    queryKey: ["/api/project-plan", projectName],
+    queryFn: async () => {
+      const res = await fetch(`/api/project-plan/${encodeURIComponent(projectName)}?applyOverrides=true`);
+      if (!res.ok) return [];
+      const data = await res.json();
+      return (data || []).filter((t: any) => {
+        const tn = (t.taskNo || '').toString().toLowerCase().trim();
+        return tn !== 'no.' && tn !== 'no' && tn !== '#' && t.highLevelProgramme;
+      });
+    },
+    enabled: open,
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: async (overrides: { rowNumber: number; value: number }[]) => {
+      await apiRequest("POST", "/api/project-plan/overrides", {
+        overrides: overrides.map(o => ({
+          projectName,
+          rowNumber: o.rowNumber,
+          fieldName: "actualPctComplete",
+          overrideValue: String(o.value / 100),
+        })),
+        overrideCategory: "DATA_CORRECTION",
+        overrideComment: "Adjusted via project list",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/project-plan", projectName] });
+      invalidateDashboardQueries(queryClient);
+      setEdits({});
+      setOpen(false);
+    },
+  });
+
+  const handleSave = () => {
+    const changes = Object.entries(edits).map(([row, val]) => ({
+      rowNumber: parseInt(row),
+      value: val,
+    }));
+    if (changes.length > 0) saveMutation.mutate(changes);
+  };
+
+  const getVal = (task: any) => {
+    if (edits[task.rowNumber] !== undefined) return edits[task.rowNumber];
+    return task.actualPctComplete != null ? Math.round(task.actualPctComplete * 100) : 0;
+  };
+
+  const setVal = (rowNumber: number, val: number) => {
+    setEdits(prev => ({ ...prev, [rowNumber]: Math.max(0, Math.min(100, val)) }));
+  };
+
+  const weightedPct = useMemo(() => {
+    if (!tasks || tasks.length === 0) return currentPct;
+    let totalW = 0, wSum = 0;
+    for (const t of tasks as any[]) {
+      const dur = t.durationDays && t.durationDays > 0 ? t.durationDays : 1;
+      const val = getVal(t) / 100;
+      wSum += val * dur;
+      totalW += dur;
+    }
+    return totalW > 0 ? (wSum / totalW) * 100 : 0;
+  }, [tasks, edits, currentPct]);
+
+  const hasEdits = Object.keys(edits).length > 0;
+
+  return (
+    <Popover open={open} onOpenChange={(v) => { setOpen(v); if (!v) setEdits({}); }}>
+      <PopoverTrigger asChild>
+        <button className="flex items-center gap-1 min-w-[60px] w-full cursor-pointer hover:opacity-80 transition-opacity" data-testid={`btn-act-pct-${projectName}`}>
+          <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all duration-500 ${progressColor(hasEdits ? weightedPct : currentPct)}`}
+              style={{ width: `${Math.min(hasEdits ? weightedPct : currentPct, 100)}%` }}
+            />
+          </div>
+          <span className="font-mono text-[10px] w-8 text-right font-medium text-slate-700">{(hasEdits ? weightedPct : currentPct).toFixed(0)}%</span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[380px] p-0 max-h-[400px] overflow-hidden" align="start" data-testid={`popover-tasks-${projectName}`}>
+        <div className="p-3 border-b bg-slate-50 flex items-center justify-between">
+          <div>
+            <p className="text-sm font-semibold text-slate-800">Adjust Task Completion</p>
+            <p className="text-[11px] text-slate-500">{projectName.replace("_Tracker", "")}</p>
+          </div>
+          {hasEdits && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-mono font-semibold text-blue-600">New: {weightedPct.toFixed(0)}%</span>
+              <Button size="sm" className="h-7 text-xs px-2" onClick={handleSave} disabled={saveMutation.isPending} data-testid="btn-save-task-pct">
+                {saveMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3 mr-1" />}
+                Save
+              </Button>
+            </div>
+          )}
+        </div>
+        <div className="overflow-y-auto max-h-[320px] divide-y divide-slate-100">
+          {isLoading ? (
+            <div className="p-4 text-center text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin mx-auto" /></div>
+          ) : tasks && tasks.length > 0 ? (
+            (tasks as any[]).map((task: any) => {
+              const val = getVal(task);
+              const dur = task.durationDays || 1;
+              return (
+                <div key={task.rowNumber} className="px-3 py-2 flex items-center gap-2 hover:bg-slate-50/50" data-testid={`task-row-${task.rowNumber}`}>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px] font-medium text-slate-700 truncate">{task.highLevelProgramme || task.taskNo}</p>
+                    <p className="text-[9px] text-slate-400">{dur}d</p>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <div
+                      className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden cursor-pointer relative"
+                      onClick={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const x = e.clientX - rect.left;
+                        const pctVal = Math.round((x / rect.width) * 100);
+                        setVal(task.rowNumber, pctVal);
+                      }}
+                      data-testid={`bar-task-${task.rowNumber}`}
+                    >
+                      <div className={`h-full rounded-full ${progressColor(val)}`} style={{ width: `${val}%` }} />
+                    </div>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={val}
+                      onChange={(e) => setVal(task.rowNumber, parseInt(e.target.value) || 0)}
+                      className="w-10 h-6 text-[10px] font-mono text-center border rounded px-0.5"
+                      data-testid={`input-task-pct-${task.rowNumber}`}
+                    />
+                    <button
+                      onClick={() => setVal(task.rowNumber, 100)}
+                      className={`text-[9px] px-1.5 py-0.5 rounded font-bold transition-colors ${val === 100 ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500 hover:bg-emerald-50 hover:text-emerald-600'}`}
+                      data-testid={`btn-complete-${task.rowNumber}`}
+                    >
+                      100%
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <div className="p-4 text-center text-sm text-slate-400">No tasks found</div>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function deltaColor(val: number): { text: string; bg: string } {
   if (val >= 0) return { text: "text-emerald-700", bg: "bg-emerald-50" };
   if (val > -5) return { text: "text-amber-700", bg: "bg-amber-50" };
@@ -1420,15 +1576,7 @@ export default function ProjectsSummary() {
       render: (p) => {
         const pct = p.project_pct_complete != null ? p.project_pct_complete * 100 : 0;
         return (
-          <div className="flex items-center gap-1 min-w-[60px]">
-            <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
-              <div
-                className={`h-full rounded-full transition-all duration-500 ${progressColor(pct)}`}
-                style={{ width: `${Math.min(pct, 100)}%` }}
-              />
-            </div>
-            <span className="font-mono text-[10px] w-8 text-right font-medium text-slate-700">{pct.toFixed(0)}%</span>
-          </div>
+          <TaskCompletionPopover projectName={p.project_name} currentPct={pct} />
         );
       },
     },
