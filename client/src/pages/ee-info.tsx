@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Search, Network, FileText, GitBranch, ChevronRight, ChevronDown, ArrowRight,
-  Edit2, Save, X, Plus, Trash2, Loader2, BookOpen, Users, Wrench,
+  Edit2, Save, X, Plus, Minus, Trash2, Loader2, BookOpen, Users, Wrench,
   FileCheck, HelpCircle, Circle, RefreshCw, Shield, Zap, GraduationCap,
   Clock, ExternalLink, CheckCircle2, CircleDot, Lightbulb,
 } from "lucide-react";
@@ -120,6 +120,16 @@ function renderMarkdown(content: string): string {
   return html;
 }
 
+const graphNodeGlow: Record<string, string> = {
+  role: "rgba(59,130,246,0.5)",
+  process: "rgba(34,197,94,0.5)",
+  tool: "rgba(168,85,247,0.5)",
+  template: "rgba(245,158,11,0.5)",
+  governance: "rgba(239,68,68,0.5)",
+  other: "rgba(100,116,139,0.4)",
+  unknown: "rgba(156,163,175,0.3)",
+};
+
 function GraphTab({ nodes, edges, onSelectNode, userRole }: { nodes: EeNode[]; edges: EeEdge[]; onSelectNode: (slug: string) => void; userRole: string | null }) {
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
@@ -136,12 +146,17 @@ function GraphTab({ nodes, edges, onSelectNode, userRole }: { nodes: EeNode[]; e
   const [editCategory, setEditCategory] = useState("");
   const [editContent, setEditContent] = useState("");
   const [editNodeDetail, setEditNodeDetail] = useState<EeNodeDetail | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+  const svgContainerRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
 
   const isCOO = userRole === "COO_ADMIN" || userRole === "admin" || userRole === "CEO_ADMIN";
 
-  const VB_W = 1600;
-  const VB_H = 1200;
+  const VB_W = 2000;
+  const VB_H = 1500;
 
   const filtered = useMemo(() => {
     let f = nodes;
@@ -170,7 +185,7 @@ function GraphTab({ nodes, edges, onSelectNode, userRole }: { nodes: EeNode[]; e
       const angle = (2 * Math.PI * idxInCat) / Math.max(nodesInCat.length, 1);
       const catAngle = (2 * Math.PI * catIdx) / Math.max(cats.length, 1);
       const catRadius = Math.min(width, height) * 0.3;
-      const nodeRadius = 50 + nodesInCat.length * 12;
+      const nodeRadius = 60 + nodesInCat.length * 14;
       const cx = width / 2 + Math.cos(catAngle) * catRadius;
       const cy = height / 2 + Math.sin(catAngle) * catRadius;
       pos.set(n.id, {
@@ -179,7 +194,7 @@ function GraphTab({ nodes, edges, onSelectNode, userRole }: { nodes: EeNode[]; e
       });
     });
 
-    for (let iter = 0; iter < 80; iter++) {
+    for (let iter = 0; iter < 100; iter++) {
       const forces = new Map<string, { fx: number; fy: number }>();
       filtered.forEach(n => forces.set(n.id, { fx: 0, fy: 0 }));
 
@@ -191,7 +206,7 @@ function GraphTab({ nodes, edges, onSelectNode, userRole }: { nodes: EeNode[]; e
           const dx = pb.x - pa.x;
           const dy = pb.y - pa.y;
           const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
-          const repulsion = 20000 / (dist * dist);
+          const repulsion = 30000 / (dist * dist);
           const fa = forces.get(a.id)!;
           const fb = forces.get(b.id)!;
           fa.fx -= (dx / dist) * repulsion;
@@ -208,7 +223,7 @@ function GraphTab({ nodes, edges, onSelectNode, userRole }: { nodes: EeNode[]; e
         const dx = pb.x - pa.x;
         const dy = pb.y - pa.y;
         const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
-        const spring = (dist - 200) * 0.005;
+        const spring = (dist - 250) * 0.005;
         const fa = forces.get(e.fromNodeId)!;
         const fb = forces.get(e.toNodeId)!;
         if (fa) { fa.fx += (dx / dist) * spring; fa.fy += (dy / dist) * spring; }
@@ -218,10 +233,10 @@ function GraphTab({ nodes, edges, onSelectNode, userRole }: { nodes: EeNode[]; e
       filtered.forEach(n => {
         const p = pos.get(n.id)!;
         const f = forces.get(n.id)!;
-        p.x += Math.max(-8, Math.min(8, f.fx));
-        p.y += Math.max(-8, Math.min(8, f.fy));
-        p.x = Math.max(80, Math.min(width - 80, p.x));
-        p.y = Math.max(80, Math.min(height - 80, p.y));
+        p.x += Math.max(-10, Math.min(10, f.fx));
+        p.y += Math.max(-10, Math.min(10, f.fy));
+        p.x = Math.max(100, Math.min(width - 100, p.x));
+        p.y = Math.max(100, Math.min(height - 100, p.y));
       });
     }
 
@@ -229,6 +244,26 @@ function GraphTab({ nodes, edges, onSelectNode, userRole }: { nodes: EeNode[]; e
   }, [filtered, filteredEdges]);
 
   const categories = useMemo(() => [...new Set(nodes.map(n => n.category))].sort(), [nodes]);
+
+  const hoveredConnectedIds = useMemo(() => {
+    if (!hoveredNode) return new Set<string>();
+    const ids = new Set<string>();
+    ids.add(hoveredNode);
+    edges.forEach(e => {
+      if (e.fromNodeId === hoveredNode) ids.add(e.toNodeId);
+      if (e.toNodeId === hoveredNode) ids.add(e.fromNodeId);
+    });
+    return ids;
+  }, [hoveredNode, edges]);
+
+  const hoveredEdgeIds = useMemo(() => {
+    if (!hoveredNode) return new Set<string>();
+    const ids = new Set<string>();
+    edges.forEach(e => {
+      if (e.fromNodeId === hoveredNode || e.toNodeId === hoveredNode) ids.add(e.id);
+    });
+    return ids;
+  }, [hoveredNode, edges]);
 
   const createMutation = useMutation({
     mutationFn: async (data: { title: string; category: string; contentMarkdown: string }) => {
@@ -240,7 +275,7 @@ function GraphTab({ nodes, edges, onSelectNode, userRole }: { nodes: EeNode[]; e
       if (!res.ok) throw new Error("Failed to create node");
       return res.json();
     },
-    onSuccess: (data) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["ee-info-nodes"] });
       queryClient.invalidateQueries({ queryKey: ["ee-info-graph"] });
       setShowCreateDialog(false);
@@ -327,15 +362,40 @@ function GraphTab({ nodes, edges, onSelectNode, userRole }: { nodes: EeNode[]; e
     return nodes.filter(n => ids.has(n.id));
   }, [selectedNode, connectedEdges, nodes]);
 
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? 0.9 : 1.1;
+    setZoom(prev => Math.max(0.3, Math.min(3, prev * delta)));
+  }, []);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button === 0 && !(e.target as HTMLElement).closest("g")) {
+      setIsPanning(true);
+      setPanStart({ x: e.clientX - panOffset.x, y: e.clientY - panOffset.y });
+    }
+  }, [panOffset]);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (isPanning) {
+      setPanOffset({ x: e.clientX - panStart.x, y: e.clientY - panStart.y });
+    }
+  }, [isPanning, panStart]);
+
+  const handleMouseUp = useCallback(() => setIsPanning(false), []);
+
+  const resetView = useCallback(() => { setZoom(1); setPanOffset({ x: 0, y: 0 }); }, []);
+
+  const activeNodeId = hoveredNode || selectedNode?.id || null;
+
   return (
-    <div className="space-y-3" data-testid="graph-tab">
-      <div className="flex items-center gap-2 flex-wrap">
+    <div className="space-y-0" data-testid="graph-tab">
+      <div className="flex items-center gap-2 flex-wrap px-1 py-2 bg-gradient-to-r from-slate-900/5 via-transparent to-slate-900/5 rounded-t-xl border-b border-slate-200/80">
         <div className="relative flex-1 max-w-xs">
-          <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-          <Input placeholder="Search nodes..." value={search} onChange={e => setSearch(e.target.value)} className="pl-8 h-8 text-xs" data-testid="graph-search" />
+          <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+          <Input placeholder="Search nodes..." value={search} onChange={e => setSearch(e.target.value)} className="pl-8 h-8 text-xs bg-white/80 backdrop-blur-sm border-slate-200" data-testid="graph-search" />
         </div>
         <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-          <SelectTrigger className="w-[140px] h-8 text-xs" data-testid="graph-category-filter">
+          <SelectTrigger className="w-[150px] h-8 text-xs bg-white/80 backdrop-blur-sm" data-testid="graph-category-filter">
             <SelectValue placeholder="All Categories" />
           </SelectTrigger>
           <SelectContent>
@@ -345,155 +405,256 @@ function GraphTab({ nodes, edges, onSelectNode, userRole }: { nodes: EeNode[]; e
             ))}
           </SelectContent>
         </Select>
+        <Button size="sm" variant="outline" className="h-8 text-xs gap-1 bg-white/80" onClick={resetView} data-testid="graph-btn-reset">
+          <RefreshCw className="h-3 w-3" /> Reset View
+        </Button>
         {isCOO && (
-          <Button size="sm" variant="outline" className="h-8 text-xs gap-1" onClick={() => setShowCreateDialog(true)} data-testid="graph-btn-create">
+          <Button size="sm" className="h-8 text-xs gap-1 bg-indigo-600 hover:bg-indigo-700 text-white" onClick={() => setShowCreateDialog(true)} data-testid="graph-btn-create">
             <Plus className="h-3.5 w-3.5" /> Add Node
           </Button>
         )}
-        <div className="flex gap-1.5 ml-auto">
+        <div className="flex gap-2 ml-auto items-center">
           {Object.entries(graphNodeColors).filter(([k]) => k !== "unknown").map(([cat, color]) => (
-            <div key={cat} className="flex items-center gap-1 text-xs text-muted-foreground">
-              <Circle className="h-2.5 w-2.5" fill={color} stroke={color} />
+            <button
+              key={cat}
+              className={`flex items-center gap-1 text-[11px] px-2 py-1 rounded-full border transition-all ${categoryFilter === cat ? "bg-white shadow-sm border-slate-300 font-semibold" : "border-transparent text-slate-500 hover:text-slate-700"}`}
+              onClick={() => setCategoryFilter(categoryFilter === cat ? "all" : cat)}
+              data-testid={`graph-legend-${cat}`}
+            >
+              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color, boxShadow: `0 0 6px ${color}40` }} />
               <span className="capitalize">{cat}</span>
-            </div>
+            </button>
           ))}
         </div>
       </div>
-      <div className="flex gap-3">
-        <Card className="flex-1 min-w-0">
-          <CardContent className="p-0 overflow-auto" style={{ maxHeight: 600 }}>
-            <svg
-              viewBox={`0 0 ${VB_W} ${VB_H}`}
-              className="border rounded-lg bg-white"
-              style={{ width: VB_W, height: VB_H, minWidth: "100%" }}
-              data-testid="graph-canvas"
-            >
-              {positions.size > 0 && filteredEdges.map(e => {
-                const from = positions.get(e.fromNodeId);
-                const to = positions.get(e.toNodeId);
-                if (!from || !to) return null;
-                const isHighlighted = selectedNode && (e.fromNodeId === selectedNode.id || e.toNodeId === selectedNode.id);
-                return (
-                  <line
-                    key={e.id}
-                    x1={from.x} y1={from.y} x2={to.x} y2={to.y}
-                    stroke={isHighlighted ? "#3b82f6" : (e.edgeType === "embed" ? "#f59e0b66" : "#94a3b833")}
-                    strokeWidth={isHighlighted ? 2 : (e.edgeType === "embed" ? 1.5 : 0.5)}
-                  />
-                );
-              })}
-              {positions.size > 0 && filtered.map(n => {
-                const p = positions.get(n.id);
-                if (!p) return null;
-                const color = graphNodeColors[n.category] || "#9ca3af";
-                const isHovered = hoveredNode === n.id;
-                const isSelected = selectedNode?.id === n.id;
-                const isConnected = selectedNode && connectedNodes.some(cn => cn.id === n.id);
-                const dimmed = selectedNode && !isSelected && !isConnected;
-                const radius = isSelected ? 16 : (isHovered ? 14 : (n.status === "stub" ? 6 : 9));
-                const label = n.title.length > 25 ? n.title.slice(0, 23) + "..." : n.title;
-                return (
-                  <g
-                    key={n.id}
-                    onClick={() => handleNodeClick(n)}
-                    onMouseEnter={() => setHoveredNode(n.id)}
-                    onMouseLeave={() => setHoveredNode(null)}
-                    style={{ cursor: "pointer" }}
-                    opacity={dimmed ? 0.25 : 1}
-                  >
-                    {isSelected && (
-                      <circle
-                        cx={p.x} cy={p.y} r={radius + 4}
-                        fill="none"
-                        stroke="#3b82f6"
-                        strokeWidth={2}
-                        strokeDasharray="4 2"
-                      />
-                    )}
-                    <circle
-                      cx={p.x} cy={p.y} r={radius}
-                      fill={n.status === "stub" ? color + "44" : color}
-                      stroke={isSelected ? "#1d4ed8" : (isHovered ? "#000" : "white")}
-                      strokeWidth={isSelected ? 3 : (isHovered ? 2 : 1)}
+
+      <div className="flex gap-0 relative">
+        <div
+          ref={svgContainerRef}
+          className="flex-1 min-w-0 rounded-b-xl overflow-hidden relative"
+          style={{ height: "calc(100vh - 220px)", minHeight: 500, background: "linear-gradient(135deg, #0f172a 0%, #1e293b 40%, #0f172a 100%)" }}
+          onWheel={handleWheel}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+        >
+          <div className="absolute inset-0 overflow-hidden pointer-events-none" style={{ opacity: 0.06 }}>
+            <svg width="100%" height="100%"><defs><pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M 40 0 L 0 0 0 40" fill="none" stroke="#94a3b8" strokeWidth="0.5" /></pattern></defs><rect width="100%" height="100%" fill="url(#grid)" /></svg>
+          </div>
+
+          <svg
+            viewBox={`0 0 ${VB_W} ${VB_H}`}
+            className="w-full h-full"
+            style={{ cursor: isPanning ? "grabbing" : "grab", transform: `scale(${zoom}) translate(${panOffset.x / zoom}px, ${panOffset.y / zoom}px)`, transformOrigin: "center center", transition: isPanning ? "none" : "transform 0.1s ease-out" }}
+            data-testid="graph-canvas"
+          >
+            <defs>
+              {Object.entries(graphNodeColors).map(([cat, color]) => (
+                <radialGradient key={cat} id={`glow-${cat}`} cx="50%" cy="50%" r="50%">
+                  <stop offset="0%" stopColor={color} stopOpacity="0.8" />
+                  <stop offset="100%" stopColor={color} stopOpacity="0" />
+                </radialGradient>
+              ))}
+              <filter id="node-glow">
+                <feGaussianBlur stdDeviation="4" result="blur" />
+                <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+              </filter>
+              <filter id="edge-glow">
+                <feGaussianBlur stdDeviation="2" result="blur" />
+                <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+              </filter>
+            </defs>
+
+            {positions.size > 0 && filteredEdges.map(e => {
+              const from = positions.get(e.fromNodeId);
+              const to = positions.get(e.toNodeId);
+              if (!from || !to) return null;
+              const isHoverHighlight = hoveredEdgeIds.has(e.id);
+              const isSelectedHighlight = selectedNode && (e.fromNodeId === selectedNode.id || e.toNodeId === selectedNode.id);
+              const isActive = isHoverHighlight || isSelectedHighlight;
+              const dimmed = activeNodeId && !isActive;
+              const fromColor = graphNodeColors[filtered.find(n => n.id === e.fromNodeId)?.category || "unknown"] || "#9ca3af";
+              const toColor = graphNodeColors[filtered.find(n => n.id === e.toNodeId)?.category || "unknown"] || "#9ca3af";
+              const gradId = `edge-grad-${e.id}`;
+              return (
+                <React.Fragment key={e.id}>
+                  {isActive && (
+                    <line
+                      x1={from.x} y1={from.y} x2={to.x} y2={to.y}
+                      stroke={isHoverHighlight ? "#06b6d4" : "#3b82f6"}
+                      strokeWidth={6}
+                      opacity={0.25}
+                      filter="url(#edge-glow)"
                     />
-                    <text
-                      x={p.x} y={p.y + radius + 14}
-                      textAnchor="middle"
-                      fill={dimmed ? "#94a3b8" : "#334155"}
-                      fontSize={isSelected ? 13 : (isHovered ? 13 : 11)}
-                      fontWeight={isSelected || isHovered ? "bold" : "normal"}
-                      fontFamily="sans-serif"
-                    >
-                      {label}
-                    </text>
-                  </g>
-                );
-              })}
-            </svg>
-          </CardContent>
-        </Card>
+                  )}
+                  <defs>
+                    <linearGradient id={gradId} x1={from.x} y1={from.y} x2={to.x} y2={to.y} gradientUnits="userSpaceOnUse">
+                      <stop offset="0%" stopColor={isActive ? (isHoverHighlight ? "#06b6d4" : "#60a5fa") : fromColor} />
+                      <stop offset="100%" stopColor={isActive ? (isHoverHighlight ? "#06b6d4" : "#60a5fa") : toColor} />
+                    </linearGradient>
+                  </defs>
+                  <line
+                    x1={from.x} y1={from.y} x2={to.x} y2={to.y}
+                    stroke={`url(#${gradId})`}
+                    strokeWidth={isActive ? 2.5 : 0.8}
+                    opacity={dimmed ? 0.08 : (isActive ? 0.9 : 0.2)}
+                    style={{ transition: "opacity 0.3s, stroke-width 0.3s" }}
+                  />
+                </React.Fragment>
+              );
+            })}
+
+            {positions.size > 0 && filtered.map(n => {
+              const p = positions.get(n.id);
+              if (!p) return null;
+              const color = graphNodeColors[n.category] || "#9ca3af";
+              const glow = graphNodeGlow[n.category] || "rgba(156,163,175,0.3)";
+              const isHovered = hoveredNode === n.id;
+              const isSelected = selectedNode?.id === n.id;
+              const isHoverConnected = hoveredConnectedIds.has(n.id);
+              const isSelectedConnected = selectedNode && connectedNodes.some(cn => cn.id === n.id);
+              const isActive = isHovered || isSelected || isHoverConnected || isSelectedConnected;
+              const dimmed = activeNodeId && !isActive;
+              const baseR = n.status === "stub" ? 7 : 11;
+              const radius = isSelected ? 18 : (isHovered ? 16 : (isHoverConnected ? 14 : baseR));
+              const label = n.title.length > 28 ? n.title.slice(0, 26) + "..." : n.title;
+              return (
+                <g
+                  key={n.id}
+                  onClick={() => handleNodeClick(n)}
+                  onMouseEnter={() => setHoveredNode(n.id)}
+                  onMouseLeave={() => setHoveredNode(null)}
+                  style={{ cursor: "pointer", transition: "opacity 0.3s" }}
+                  opacity={dimmed ? 0.12 : 1}
+                >
+                  {(isActive) && (
+                    <circle cx={p.x} cy={p.y} r={radius + 18} fill={`url(#glow-${n.category})`} opacity={0.5} />
+                  )}
+                  {isSelected && (
+                    <circle
+                      cx={p.x} cy={p.y} r={radius + 6}
+                      fill="none" stroke="#06b6d4" strokeWidth={1.5}
+                      strokeDasharray="6 3"
+                      style={{ animation: "spin 8s linear infinite", transformOrigin: `${p.x}px ${p.y}px` }}
+                    />
+                  )}
+                  {isHoverConnected && !isHovered && !isSelected && (
+                    <circle cx={p.x} cy={p.y} r={radius + 4} fill="none" stroke="#06b6d4" strokeWidth={1} opacity={0.6} />
+                  )}
+                  <circle
+                    cx={p.x} cy={p.y} r={radius}
+                    fill={n.status === "stub" ? color + "55" : color}
+                    stroke={isSelected ? "#06b6d4" : (isHovered ? "#e2e8f0" : color + "88")}
+                    strokeWidth={isSelected ? 3 : (isHovered ? 2 : 1)}
+                    filter={isActive ? "url(#node-glow)" : undefined}
+                    style={{ transition: "r 0.2s, stroke-width 0.2s" }}
+                  />
+                  <text
+                    x={p.x} y={p.y + radius + 16}
+                    textAnchor="middle"
+                    fill={dimmed ? "#475569" : (isActive ? "#e2e8f0" : "#94a3b8")}
+                    fontSize={isActive ? 13 : 11}
+                    fontWeight={isActive ? 600 : 400}
+                    fontFamily="system-ui, -apple-system, sans-serif"
+                    style={{ transition: "fill 0.3s, font-size 0.2s", textShadow: isActive ? "0 0 8px rgba(6,182,212,0.4)" : "none" }}
+                  >
+                    {label}
+                  </text>
+                </g>
+              );
+            })}
+          </svg>
+
+          <div className="absolute bottom-3 left-3 flex items-center gap-1.5 bg-slate-900/70 backdrop-blur-md rounded-lg px-3 py-1.5 border border-slate-700/50">
+            <span className="text-[11px] text-slate-400 font-mono">{filtered.length} nodes</span>
+            <span className="text-slate-600">|</span>
+            <span className="text-[11px] text-slate-400 font-mono">{filteredEdges.length} edges</span>
+            <span className="text-slate-600">|</span>
+            <span className="text-[11px] text-slate-400 font-mono">{Math.round(zoom * 100)}%</span>
+          </div>
+
+          <div className="absolute bottom-3 right-3 flex gap-1">
+            <Button size="sm" variant="ghost" className="h-7 w-7 p-0 bg-slate-900/70 backdrop-blur-md border border-slate-700/50 text-slate-300 hover:text-white hover:bg-slate-800/80" onClick={() => setZoom(z => Math.min(3, z * 1.2))} data-testid="graph-zoom-in">
+              <Plus className="h-3.5 w-3.5" />
+            </Button>
+            <Button size="sm" variant="ghost" className="h-7 w-7 p-0 bg-slate-900/70 backdrop-blur-md border border-slate-700/50 text-slate-300 hover:text-white hover:bg-slate-800/80" onClick={() => setZoom(z => Math.max(0.3, z * 0.8))} data-testid="graph-zoom-out">
+              <Minus className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
 
         {selectedNode && (
-          <Card className="w-72 shrink-0 self-start" data-testid="graph-node-panel">
-            <CardHeader className="pb-2 px-3 pt-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm truncate">{selectedNode.title}</CardTitle>
-                <Button size="sm" variant="ghost" className="h-6 w-6 p-0 shrink-0" onClick={() => setSelectedNode(null)} data-testid="graph-panel-close">
+          <div className="w-80 shrink-0 bg-slate-900/95 backdrop-blur-xl border-l border-slate-700/50 overflow-y-auto" style={{ height: "calc(100vh - 220px)", minHeight: 500 }} data-testid="graph-node-panel">
+            <div className="p-4 space-y-4">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-sm font-semibold text-white truncate">{selectedNode.title}</h3>
+                  <Badge className={`mt-1.5 text-[10px] ${categoryColors[selectedNode.category] || ""}`}>
+                    {selectedNode.category}
+                  </Badge>
+                </div>
+                <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-slate-400 hover:text-white shrink-0" onClick={() => setSelectedNode(null)} data-testid="graph-panel-close">
                   <X className="h-3.5 w-3.5" />
                 </Button>
               </div>
-              <Badge variant="outline" className={`text-[10px] w-fit ${categoryColors[selectedNode.category] || ""}`}>
-                {selectedNode.category}
-              </Badge>
-            </CardHeader>
-            <CardContent className="px-3 pb-3 space-y-2">
-              {selectedNode.contentMarkdown && (
-                <p className="text-xs text-muted-foreground line-clamp-4">
-                  {selectedNode.contentMarkdown.replace(/[#*\[\]]/g, "").slice(0, 200)}
+
+              {selectedNode.contentMarkdown ? (
+                <p className="text-xs text-slate-400 line-clamp-5 leading-relaxed">
+                  {selectedNode.contentMarkdown.replace(/[#*\[\]]/g, "").slice(0, 250)}
                 </p>
-              )}
-              {!selectedNode.contentMarkdown && (
-                <p className="text-xs text-muted-foreground italic">No content yet.</p>
+              ) : (
+                <p className="text-xs text-slate-500 italic">No content yet.</p>
               )}
 
               {connectedNodes.length > 0 && (
                 <div>
-                  <p className="text-xs font-medium text-muted-foreground mb-1">{connectedNodes.length} connected node{connectedNodes.length !== 1 ? "s" : ""}</p>
-                  <div className="flex flex-wrap gap-1">
-                    {connectedNodes.slice(0, 6).map(cn => (
-                      <Badge key={cn.id} variant="outline" className={`text-[10px] cursor-pointer hover:bg-muted ${categoryColors[cn.category] || ""}`} onClick={() => handleNodeClick(cn)} data-testid={`graph-panel-link-${cn.slug}`}>
-                        {cn.title.length > 20 ? cn.title.slice(0, 18) + "..." : cn.title}
-                      </Badge>
+                  <p className="text-[11px] font-medium text-slate-300 mb-2">{connectedNodes.length} connected node{connectedNodes.length !== 1 ? "s" : ""}</p>
+                  <div className="space-y-1">
+                    {connectedNodes.slice(0, 10).map(cn => (
+                      <button
+                        key={cn.id}
+                        className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-left hover:bg-slate-800/80 transition-colors group"
+                        onClick={() => handleNodeClick(cn)}
+                        data-testid={`graph-panel-link-${cn.slug}`}
+                      >
+                        <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: graphNodeColors[cn.category] || "#9ca3af", boxShadow: `0 0 4px ${graphNodeColors[cn.category] || "#9ca3af"}44` }} />
+                        <span className="text-xs text-slate-300 group-hover:text-white truncate flex-1">
+                          {cn.title.length > 25 ? cn.title.slice(0, 23) + "..." : cn.title}
+                        </span>
+                        <ChevronRight className="h-3 w-3 text-slate-600 group-hover:text-slate-400 shrink-0" />
+                      </button>
                     ))}
-                    {connectedNodes.length > 6 && (
-                      <Badge variant="outline" className="text-[10px] text-muted-foreground">+{connectedNodes.length - 6} more</Badge>
+                    {connectedNodes.length > 10 && (
+                      <p className="text-[10px] text-slate-500 pl-2.5">+{connectedNodes.length - 10} more</p>
                     )}
                   </div>
                 </div>
               )}
 
-              <div className="flex gap-1.5 pt-1 border-t">
-                <Button size="sm" variant="outline" className="flex-1 h-7 text-xs gap-1" onClick={() => onSelectNode(selectedNode.slug)} data-testid="graph-panel-view-detail">
-                  <FileText className="h-3 w-3" /> View
+              <div className="flex flex-col gap-1.5 pt-2 border-t border-slate-700/50">
+                <Button size="sm" className="w-full h-8 text-xs gap-1.5 bg-cyan-600 hover:bg-cyan-700 text-white" onClick={() => onSelectNode(selectedNode.slug)} data-testid="graph-panel-view-detail">
+                  <FileText className="h-3.5 w-3.5" /> View Details
                 </Button>
                 {isCOO && (
-                  <>
-                    <Button size="sm" variant="outline" className="flex-1 h-7 text-xs gap-1" onClick={() => openEditDialog(selectedNode)} data-testid="graph-panel-edit">
+                  <div className="flex gap-1.5">
+                    <Button size="sm" variant="outline" className="flex-1 h-8 text-xs gap-1 border-slate-600 text-slate-300 hover:bg-slate-800 hover:text-white" onClick={() => openEditDialog(selectedNode)} data-testid="graph-panel-edit">
                       <Edit2 className="h-3 w-3" /> Edit
                     </Button>
-                    <Button size="sm" variant="outline" className="h-7 w-7 p-0 text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => setShowDeleteDialog(true)} data-testid="graph-panel-delete">
+                    <Button size="sm" variant="outline" className="h-8 w-8 p-0 border-red-800/50 text-red-400 hover:bg-red-900/30 hover:text-red-300" onClick={() => setShowDeleteDialog(true)} data-testid="graph-panel-delete">
                       <Trash2 className="h-3 w-3" />
                     </Button>
-                  </>
+                  </div>
                 )}
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         )}
       </div>
-      <p className="text-xs text-muted-foreground text-center">
-        {filtered.length} nodes, {filteredEdges.length} edges. Click a node to select it. Scroll to pan.
-      </p>
+
+      <style>{`
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+      `}</style>
 
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
         <DialogContent>
