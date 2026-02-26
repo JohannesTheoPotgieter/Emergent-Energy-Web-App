@@ -63,7 +63,8 @@ Preferred communication style: Simple, everyday language.
 
 ### Emergent Energy Info & Walkthroughs
 -   **Knowledge Base**: Wiki-style knowledge base with Graph, Detail, Flow, and Walkthroughs tabs. Backed by `ee_info_nodes` / `ee_info_edges` / `ee_info_assets` tables.
--   **Walkthroughs**: 9 interactive step-by-step guides covering key functionalities like Smart Import, COS Tracking, Cashflow, Weekly Review, Lifecycle Board & Engineering Stages, Quality, Engineering Tasks, Subcontractor Management, My Tool (Personal Productivity).
+-   **Walkthroughs**: 37 interactive step-by-step guides covering all app functionality across 7 categories (Project Management, Finance, Engineering, Governance, Operations, Productivity, Admin). Covers every page, tab, sub-tab, and workflow including: Smart Import, COS Tracking, Cashflow, Weekly Review, Lifecycle Board & Engineering Stages, Quality, Engineering Tasks, Subcontractor Management, My Tool, Home Dashboard, Project Summary, PM Dashboard, TR Register, Project Detail tabs (Overview, Plan/Gantt, Revenue, Expenditure, Cashflow, Quality, History, Subcontractors, Engineering Tasks, Key Dates), Engineering Dashboard/Standup, Pipeline Inbox, COS Control, Revenue Page, Admin Roles & Permissions, Phase Templates, Data Import, Invoice Patterns, Change Audit, Execution Board, Email-to-Task, EE Info Knowledge Base.
+-   **Home Greeting System**: Role-based greetings that randomize 50/50 between complimentary and sarcastic messages tailored to the logged-in user's role (CEO, COO, PM, Engineer, QM, CFO, Construction Manager, etc.). Fridays show dad jokes instead. Messages are selected once per page load via `useMemo`.
 
 ### Deploy Cache & Session Clearing
 -   **Build Versioning**: Unique `buildId` enables frontend to detect new deployments and clear client-side cache/session data.
