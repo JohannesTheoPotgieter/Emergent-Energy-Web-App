@@ -711,6 +711,26 @@ router.post("/api/subcontractor-dashboard/link-counterparty", requireAuth, async
         cpName = cp.nameCanonical;
         cpType = cpType || cp.typeDefault;
       }
+    } else if (cpName) {
+      const existing = await db.select().from(counterparties)
+        .where(sql`LOWER(${counterparties.nameCanonical}) = LOWER(${cpName.trim()})`);
+      if (existing.length > 0) {
+        cpId = existing[0].id;
+        cpName = existing[0].nameCanonical;
+        cpType = cpType || existing[0].typeDefault;
+      } else {
+        const [newCp] = await db.insert(counterparties).values({
+          nameCanonical: cpName.trim(),
+          typeDefault: cpType || "OTHER",
+          nameAliases: [],
+          isCore: false,
+          lastSeenAt: new Date(),
+        }).returning();
+        cpId = newCp.id;
+        cpName = newCp.nameCanonical;
+        cpType = cpType || newCp.typeDefault;
+        console.log(`[subcontractor] Created new counterparty "${cpName}" (id=${cpId})`);
+      }
     }
 
     await db.transaction(async (tx: any) => {
