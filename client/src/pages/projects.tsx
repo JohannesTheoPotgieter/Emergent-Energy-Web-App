@@ -164,6 +164,7 @@ function phaseConfig(phase: string | null): { bg: string; text: string; border: 
     "Commercial Close Out": { bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200", dot: "bg-emerald-500" },
     "Compliance Handover": { bg: "bg-cyan-50", text: "text-cyan-700", border: "border-cyan-200", dot: "bg-cyan-500" },
     "Hold": { bg: "bg-rose-50", text: "text-rose-700", border: "border-rose-200", dot: "bg-rose-500" },
+    "Gone": { bg: "bg-red-50", text: "text-red-800", border: "border-red-300", dot: "bg-red-800" },
   };
   return (phase && map[phase]) || { bg: "bg-slate-50", text: "text-slate-600", border: "border-slate-200", dot: "bg-slate-400" };
 }
@@ -523,6 +524,7 @@ const EXECUTION_PHASES = [
   "Commercial Close Out",
   "Compliance Handover",
   "Hold",
+  "Gone",
 ];
 
 interface SavedView {
@@ -900,7 +902,7 @@ export default function ProjectsSummary() {
 
   const PHASE_ORDER = [
     "DLP", "Financial Close", "Planning", "Construction", "QA",
-    "Handover", "Commercial Close Out", "Compliance Handover", "Hold"
+    "Handover", "Commercial Close Out", "Compliance Handover", "Hold", "Gone"
   ];
   const uniquePhases = useMemo(() => {
     const phases = new Set<string>();

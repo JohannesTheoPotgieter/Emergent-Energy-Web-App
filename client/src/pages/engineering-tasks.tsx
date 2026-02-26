@@ -491,7 +491,7 @@ function TaskDetailDrawer({
     queryFn: () => engFetch("/api/eng/team-members"),
   });
 
-  const EXCLUDED_PHASES_DRAWER = ["Hold", "Closed"];
+  const EXCLUDED_PHASES_DRAWER = ["Hold", "Closed", "Gone"];
   const { data: drawerProjects = [] } = useQuery<{ id: number; project_name: string; raw: string }[]>({
     queryKey: ["/api/projects-summary"],
     select: (data: any[]) => data.map((p: any) => ({
@@ -1615,7 +1615,7 @@ export default function EngineeringTasksPage() {
     queryFn: () => engFetch("/api/eng/team-members"),
   });
 
-  const EXCLUDED_PHASES = ["Hold", "Closed"];
+  const EXCLUDED_PHASES = ["Hold", "Closed", "Gone"];
   const { data: allProjects = [] } = useQuery<{ id: number; project_name: string }[]>({
     queryKey: ["/api/projects-summary"],
     select: (data: any[]) => data.map((p: any) => ({

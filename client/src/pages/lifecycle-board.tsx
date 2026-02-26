@@ -151,6 +151,14 @@ const PHASE_GROUPS = [
     color: "bg-gray-100 border-gray-300",
     headerBg: "bg-gray-500",
   },
+  {
+    key: "gone",
+    label: "Gone",
+    phaseValue: "Gone",
+    matches: ["Gone", "GONE"],
+    color: "bg-red-50 border-red-300",
+    headerBg: "bg-red-800",
+  },
 ];
 
 function mapPhaseToGroup(phase: string | null, source?: string): string {
@@ -833,12 +841,13 @@ export default function LifecycleBoardPage() {
                   {items.map((p) => {
                     const isTracker = p.id !== null && p.id > 0;
                     const isEngOnly = p.source === "engineering" && !isTracker;
+                    const isGone = p.phase?.toLowerCase() === "gone";
                     return (
                       <Card
                         key={p.id ?? p.projectName}
-                        className={`shadow-sm hover:shadow-md transition-all cursor-grab active:cursor-grabbing ${draggedProject?.projectName === p.projectName ? "opacity-40" : ""}`}
-                        draggable
-                        onDragStart={(e) => handleDragStart(e, p)}
+                        className={`shadow-sm hover:shadow-md transition-all ${isGone ? "opacity-60 cursor-not-allowed" : "cursor-grab active:cursor-grabbing"} ${draggedProject?.projectName === p.projectName ? "opacity-40" : ""}`}
+                        draggable={!isGone}
+                        onDragStart={(e) => !isGone && handleDragStart(e, p)}
                         onDragEnd={handleDragEnd}
                         onClick={() => openProjectDialog(p)}
                         data-testid={`card-project-${p.id}`}
