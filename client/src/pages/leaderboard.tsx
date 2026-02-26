@@ -32,6 +32,9 @@ import {
   Upload,
   Users,
   AlertTriangle,
+  Hammer,
+  ClipboardCheck,
+  Paperclip,
 } from "lucide-react";
 
 interface BadgeInfo {
@@ -64,6 +67,9 @@ interface LeaderboardEntry {
     projectUpdates: number;
     qualityApprovals: number;
     engStagesCompleted: number;
+    engTasksOwned: number;
+    opsTasksAssigned: number;
+    deliverablesUploaded: number;
   };
 }
 
@@ -113,12 +119,15 @@ const LEVEL_COLORS: Record<number, string> = {
 
 const STAT_CONFIG = [
   { key: "tasksCompleted", label: "Tasks Done", icon: CheckCircle, color: "text-green-600" },
+  { key: "opsTasksAssigned", label: "Ops Tasks", icon: ClipboardCheck, color: "text-cyan-600" },
+  { key: "engTasksOwned", label: "Eng Tasks", icon: Hammer, color: "text-amber-600" },
   { key: "projectUpdates", label: "Updates", icon: ClipboardList, color: "text-blue-600" },
   { key: "approvalsGiven", label: "Approvals", icon: ShieldCheck, color: "text-purple-600" },
   { key: "weeklyReviews", label: "Reviews", icon: FileCheck, color: "text-teal-600" },
   { key: "importsCompleted", label: "Imports", icon: Upload, color: "text-orange-600" },
   { key: "qualityApprovals", label: "QC Items", icon: Target, color: "text-pink-600" },
   { key: "engStagesCompleted", label: "Eng Stages", icon: Wrench, color: "text-indigo-600" },
+  { key: "deliverablesUploaded", label: "Deliverables", icon: Paperclip, color: "text-rose-600" },
 ];
 
 export default function LeaderboardPage() {

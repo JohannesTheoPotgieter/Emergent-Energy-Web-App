@@ -57,8 +57,8 @@ Preferred communication style: Simple, everyday language.
 ### Gamification System
 -   **Module**: Badge and leaderboard system that tracks user activity across the platform and awards points and badges.
 -   **Tables**: `user_badges` (earned badges with unique constraint on user_id + badge_key), `user_points` (activity point ledger).
--   **Points**: Computed from existing activity tables — `normalized_plan_tasks` (task completion), `project_eng_approvals` (approvals), `weekly_reviews`, `smart_import_runs`, `change_sets` (project updates), `qc_item_instance` (quality approvals), `project_eng_stages` (engineering stages).
--   **Badges**: 18 badge definitions in `BADGE_DEFINITIONS` across 8 categories (onboarding, tasks, approvals, reviews, data, imports, collaboration, streaks, quality, engineering). Badges auto-awarded on leaderboard fetch.
+-   **Points**: Computed from existing activity tables — `normalized_plan_tasks` (task completion matched by owner name), `operational_tasks` (task assignments), `project_eng_tasks` (engineering task ownership), `project_eng_approvals` (approvals), `weekly_reviews`, `smart_import_runs`, `change_sets` (project updates), `qc_item_instance` (quality approvals), `project_eng_stages` (engineering stages), `deliverable_files` (deliverable uploads). Every user gets a 10-point participation baseline.
+-   **Badges**: 23 badge definitions in `BADGE_DEFINITIONS` across 8 categories (onboarding, tasks, approvals, reviews, data, imports, collaboration, streaks, quality, engineering). Badges auto-awarded on leaderboard fetch.
 -   **Levels**: 8 levels from Rookie (0 pts) to Titan (6000 pts) with progress tracking.
 -   **Frontend**: `/leaderboard` page with Rankings tab (top-3 podium + ranked list), Badges tab (all badges with earned state), and user detail dialog showing activity breakdown.
 
