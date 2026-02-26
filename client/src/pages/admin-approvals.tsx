@@ -56,6 +56,7 @@ interface ApprovalsResponse {
     deliverable: number;
     total: number;
   };
+  isAdmin?: boolean;
 }
 
 const typeConfig = {
@@ -92,20 +93,24 @@ export default function AdminApprovalsPage() {
   const { allowed: canView } = usePermission('approvals', 'view');
   const [, navigate] = useLocation();
   const [filter, setFilter] = useState<ApprovalType>("all");
+  const [showAll, setShowAll] = useState(false);
   const [actionDialog, setActionDialog] = useState<{ item: ApprovalItem; action: "approve" | "reject" } | null>(null);
   const [reason, setReason] = useState("");
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   const { data, isLoading, error } = useQuery<ApprovalsResponse>({
-    queryKey: ["/api/approvals/pending"],
+    queryKey: ["/api/approvals/pending", showAll],
     queryFn: async () => {
-      const res = await fetch("/api/approvals/pending", { headers: getAuthHeaders() });
+      const url = showAll ? "/api/approvals/pending?showAll=true" : "/api/approvals/pending";
+      const res = await fetch(url, { headers: getAuthHeaders() });
       if (!res.ok) throw new Error("Failed to fetch approvals");
       return res.json();
     },
     refetchInterval: 30000,
   });
+
+  const isAdmin = data?.isAdmin ?? false;
 
   const actionMutation = useMutation({
     mutationFn: async ({ item, action, comment }: { item: ApprovalItem; action: "approve" | "reject"; comment: string }) => {
@@ -222,14 +227,28 @@ export default function AdminApprovalsPage() {
         <div>
           <h1 className="text-2xl font-bold" data-testid="text-approvals-title">Approvals</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Pending approvals across all projects
+            {showAll ? "All pending approvals across all projects" : "Your pending approvals"}
           </p>
         </div>
-        {counts.total > 0 && (
-          <Badge variant="destructive" className="text-sm px-3 py-1" data-testid="badge-total-count">
-            {counts.total} pending
-          </Badge>
-        )}
+        <div className="flex items-center gap-3">
+          {isAdmin && (
+            <Button
+              variant={showAll ? "default" : "outline"}
+              size="sm"
+              className="text-xs gap-1.5"
+              onClick={() => setShowAll(!showAll)}
+              data-testid="btn-toggle-show-all"
+            >
+              <User className="w-3.5 h-3.5" />
+              {showAll ? "Show Mine" : "Show All"}
+            </Button>
+          )}
+          {counts.total > 0 && (
+            <Badge variant="destructive" className="text-sm px-3 py-1" data-testid="badge-total-count">
+              {counts.total} pending
+            </Badge>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-3 gap-3">
@@ -310,7 +329,7 @@ export default function AdminApprovalsPage() {
             <h3 className="text-lg font-medium">All caught up</h3>
             <p className="text-sm text-muted-foreground mt-1">
               {filter === "all"
-                ? "No pending approvals across any category"
+                ? (showAll ? "No pending approvals across any category" : "No approvals assigned to you right now")
                 : `No pending ${typeConfig[filter].label.toLowerCase()} approvals`}
             </p>
           </CardContent>

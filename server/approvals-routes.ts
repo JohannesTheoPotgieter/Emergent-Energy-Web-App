@@ -14,6 +14,16 @@ import {
   users,
 } from "@shared/schema";
 
+const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
+
+const APPROVAL_ROLE_TO_USER_ROLES: Record<string, string[]> = {
+  QA_REVIEW: ["QUALITY_MANAGER"],
+  TECHNICAL_SIGNOFF: ["ENGINEERING_MANAGER", "COO_ADMIN", "CEO_ADMIN"],
+  "Engineering Manager": ["ENGINEERING_MANAGER"],
+  "Quality Manager": ["QUALITY_MANAGER"],
+  "COO": ["COO_ADMIN"],
+};
+
 function jwtAuth(req: Request, _res: Response, next: NextFunction) {
   if ((req as any).user) return next();
   if (req.isAuthenticated?.()) return next();
@@ -34,8 +44,19 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
 }
 
 export function registerApprovalsRoutes(app: Express) {
-  app.get("/api/approvals/pending", jwtAuth, requireAuth, async (_req: Request, res: Response) => {
+  app.get("/api/approvals/pending", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
+      const currentUser = (req as any).user;
+      const userId = currentUser?.id;
+      const userRole = currentUser?.role || "";
+      const isAdmin = ADMIN_ROLES.includes(userRole);
+      const showAll = isAdmin && req.query.showAll === "true";
+
+      const qmUsers = await db.select({ id: users.id, name: users.name })
+        .from(users)
+        .where(eq(users.role, "QUALITY_MANAGER"));
+      const qmDisplayName = qmUsers.length > 0 ? qmUsers.map(u => u.name).join(", ") : "Quality Manager";
+
       const engApprovals = await db.select({
         id: projectEngApprovals.id,
         status: projectEngApprovals.status,
@@ -63,7 +84,19 @@ export function registerApprovalsRoutes(app: Express) {
         approverMap = Object.fromEntries(approverUsers.map(u => [u.id, u.name]));
       }
 
-      const engineeringItems = engApprovals.map(a => ({
+      let filteredEngApprovals = engApprovals;
+      if (!isAdmin && !showAll) {
+        filteredEngApprovals = engApprovals.filter(a => {
+          if (a.approverUserId && a.approverUserId === userId) return true;
+          if (a.approverRole) {
+            const allowedRoles = APPROVAL_ROLE_TO_USER_ROLES[a.approverRole];
+            if (allowedRoles && allowedRoles.includes(userRole)) return true;
+          }
+          return false;
+        });
+      }
+
+      const engineeringItems = filteredEngApprovals.map(a => ({
         id: `eng-${a.id}`,
         type: "engineering" as const,
         title: `${a.stageName} — ${a.approverRole}`,
@@ -96,14 +129,17 @@ export function registerApprovalsRoutes(app: Express) {
           )
         );
 
-      const qualityItems = qcItems.map(q => ({
+      const userCanSeeQuality = isAdmin || showAll || userRole === "QUALITY_MANAGER";
+      const filteredQcItems = userCanSeeQuality ? qcItems : [];
+
+      const qualityItems = filteredQcItems.map(q => ({
         id: `qc-${q.id}`,
         type: "quality" as const,
         title: q.itemName,
         projectName: q.projectName,
         projectId: q.projectId,
         status: "review",
-        assignee: "Quality Manager",
+        assignee: qmDisplayName,
         createdAt: q.lastUpdatedAt,
         updatedAt: q.lastUpdatedAt,
         meta: { itemInstanceId: q.id, checklistId: q.checklistId },
@@ -137,7 +173,16 @@ export function registerApprovalsRoutes(app: Express) {
         delivUserMap = Object.fromEntries(dUsers.map(u => [u.id, u.name]));
       }
 
-      const delivItems = deliverableItems.map(d => ({
+      let filteredDeliverables = deliverableItems;
+      if (!isAdmin && !showAll) {
+        filteredDeliverables = deliverableItems.filter(d => {
+          if (d.reviewerUserId && d.reviewerUserId === userId) return true;
+          if (d.ownerUserId && d.ownerUserId === userId) return true;
+          return false;
+        });
+      }
+
+      const delivItems = filteredDeliverables.map(d => ({
         id: `del-${d.id}`,
         type: "deliverable" as const,
         title: `${d.title} (${d.deliverableType})`,
@@ -161,6 +206,7 @@ export function registerApprovalsRoutes(app: Express) {
           deliverable: delivItems.length,
           total: allItems.length,
         },
+        isAdmin,
       });
     } catch (err: any) {
       console.error("Error fetching pending approvals:", err);
