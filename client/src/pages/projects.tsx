@@ -876,6 +876,30 @@ export default function ProjectsSummary() {
     },
   });
 
+  const { data: pmUsers = [] } = useQuery<{ id: number; name: string; username: string; role: string }[]>({
+    queryKey: ["/api/pm-assignable-users"],
+    queryFn: async () => {
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch("/api/pm-assignable-users", { credentials: "include", headers });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    staleTime: 60_000,
+  });
+
+  const pmAssignMutation = useMutation({
+    mutationFn: async ({ projectInfoId, pm, pmUserId }: { projectInfoId: number; pm: string; pmUserId: number | null }) => {
+      const res = await apiRequest("PATCH", `/api/project-info/${projectInfoId}/assign-pm`, { pm, pmUserId });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects-summary"] });
+      invalidateDashboardQueries(queryClient);
+    },
+  });
+
   const { data: projects = [], isLoading } = useQuery<ProjectSummary[]>({
     queryKey: ["/api/projects-summary"],
     queryFn: async () => {
@@ -1176,7 +1200,39 @@ export default function ProjectsSummary() {
       render: (p) => <span className="font-mono text-slate-700">{p.size_kwp != null ? p.size_kwp.toFixed(0) : "—"}</span>,
     },
     { key: "pd", header: "PD", render: (p) => <span className="text-slate-600 truncate max-w-[80px] block" title={p.pd || ""}>{truncateName(p.pd, 12)}</span> },
-    { key: "pm", header: "PM", render: (p) => <span className="text-slate-600 truncate max-w-[80px] block" title={p.pm || ""}>{truncateName(p.pm, 12)}</span> },
+    {
+      key: "pm",
+      header: "PM",
+      render: (p) => p.project_info_id ? (
+        <Select
+          value={p.pm || "__unassigned"}
+          onValueChange={(val) => {
+            if (val === "__unassigned" || !p.project_info_id) return;
+            const matchedUser = pmUsers.find(u => u.name === val);
+            pmAssignMutation.mutate({
+              projectInfoId: p.project_info_id,
+              pm: val,
+              pmUserId: matchedUser?.id ?? null,
+            });
+          }}
+        >
+          <SelectTrigger
+            className="h-7 w-[120px] text-xs border-0 bg-transparent hover:bg-slate-50 px-1 shadow-none focus:ring-0"
+            data-testid={`select-pm-${p.project_name}`}
+          >
+            <span className="truncate">{p.pm ? truncateName(p.pm, 14) : "—"}</span>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__unassigned" disabled>Unassigned</SelectItem>
+            {pmUsers.map((u) => (
+              <SelectItem key={u.id} value={u.name}>{u.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      ) : (
+        <span className="text-slate-600 truncate max-w-[80px] block" title={p.pm || ""}>{truncateName(p.pm, 12)}</span>
+      ),
+    },
     {
       key: "cost_proposal_signed",
       header: "Cost Prop.",

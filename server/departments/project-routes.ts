@@ -5,7 +5,8 @@ import { db } from "../db";
 import { requirePermission } from "../permission-middleware";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { OVERRIDE_CATEGORIES } from "@shared/schema";
+import { OVERRIDE_CATEGORIES, users, projectInfo } from "@shared/schema";
+import { eq } from "drizzle-orm";
 import { recordOverride } from "../lib/audit/diff-engine";
 
 const router = Router();
@@ -1597,6 +1598,45 @@ router.get("/api/project-info", async (req, res) => {
     res.json(info);
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch project info", message: "Failed to fetch project info" });
+  }
+});
+
+router.get("/api/pm-assignable-users", requireAuth, async (_req, res) => {
+  try {
+    const allUsers = await db.select({
+      id: users.id,
+      name: users.name,
+      username: users.username,
+      role: users.role,
+    }).from(users);
+    res.json(allUsers.map(u => ({ id: u.id, name: u.name, username: u.username, role: u.role })));
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch users" });
+  }
+});
+
+router.patch("/api/project-info/:id/assign-pm", requireAuth, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ error: "Invalid project ID" });
+
+    const schema = z.object({
+      pm: z.string().min(1),
+      pmUserId: z.number().nullable().optional(),
+    });
+    const { pm, pmUserId } = schema.parse(req.body);
+
+    const updated = await storage.updateProjectInfoById(id, { pm } as any);
+    if (!updated) return res.status(404).json({ error: "Project not found" });
+
+    if (pmUserId) {
+      await db.update(projectInfo).set({ pmUserId }).where(eq(projectInfo.id, id));
+    }
+
+    res.json(updated);
+  } catch (error) {
+    console.error("PM assignment error:", error);
+    res.status(500).json({ error: "Failed to assign PM" });
   }
 });
 
