@@ -617,7 +617,7 @@ function RoleTableSection({ toast }: { toast: ReturnType<typeof useToast>["toast
                               </div>
                               {isActive && entities.length > 0 && (
                                 <div className="flex gap-0.5 shrink-0">
-                                  {(["view", "edit", "approve", "override"] as PermissionAction[]).map(action => (
+                                  {(["view", "edit", "approve", "override", "delete"] as PermissionAction[]).map(action => (
                                     <span key={action} className="text-[9px] text-gray-400 font-medium uppercase w-11 text-center">{action}</span>
                                   ))}
                                 </div>
@@ -630,7 +630,7 @@ function RoleTableSection({ toast }: { toast: ReturnType<typeof useToast>["toast
                                     <div key={entity} className="flex items-center justify-between" data-testid={`entity-row-${role.role}-${entity}`}>
                                       <span className="text-xs text-gray-600">{entityLabel}</span>
                                       <div className="flex gap-0.5">
-                                        {(["view", "edit", "approve", "override"] as PermissionAction[]).map(action => {
+                                        {(["view", "edit", "approve", "override", "delete"] as PermissionAction[]).map(action => {
                                           const active = getEntityPerm(role.role, entity, action);
                                           return (
                                             <button
