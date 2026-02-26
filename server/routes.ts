@@ -1838,14 +1838,16 @@ export async function registerRoutes(
           let totalExpWeight = 0, weightedExpSum = 0;
           for (const task of (planLikeRows as any[])) {
             const dur = task.durationDays && task.durationDays > 0 ? task.durationDays : 1;
+            totalExpWeight += dur;
             if (task.expectedPctComplete !== null && task.expectedPctComplete !== undefined) {
               weightedExpSum += task.expectedPctComplete * dur;
-              totalExpWeight += dur;
               continue;
             }
             const tStart = task.actualStart?.substring(0, 10);
             const tEnd = task.actualEnd?.substring(0, 10);
-            if (!tStart || !tEnd || !/^\d{4}-\d{2}-\d{2}/.test(tStart) || !/^\d{4}-\d{2}-\d{2}/.test(tEnd)) continue;
+            if (!tStart || !tEnd || !/^\d{4}-\d{2}-\d{2}/.test(tStart) || !/^\d{4}-\d{2}-\d{2}/.test(tEnd)) {
+              continue;
+            }
             let exp = 0;
             if (todayDate >= tEnd) {
               exp = 1.0;
@@ -1859,7 +1861,6 @@ export async function registerRoutes(
               }
             }
             weightedExpSum += exp * dur;
-            totalExpWeight += dur;
           }
           expectedPctComplete = totalExpWeight > 0 ? weightedExpSum / totalExpWeight : null;
         }
@@ -8981,8 +8982,8 @@ export async function registerRoutes(
           if (pctComplete >= 100) status = "Done";
           else if (pctComplete > 0) status = "In Progress";
 
-          let computedExpPct: number | null = pt.expectedPctComplete != null ? Math.round(pt.expectedPctComplete * 100) : null;
-          if (computedExpPct === null) {
+          let computedExpPct: number = pt.expectedPctComplete != null ? Math.round(pt.expectedPctComplete * 100) : 0;
+          if (pt.expectedPctComplete == null) {
             const tStart = (pt.actualStart || "").substring(0, 10);
             const tEnd = (pt.actualEnd || "").substring(0, 10);
             if (tStart && tEnd && /^\d{4}-\d{2}-\d{2}/.test(tStart) && /^\d{4}-\d{2}-\d{2}/.test(tEnd)) {
