@@ -322,6 +322,7 @@ export function registerRoleManagementRoutes(app: Express) {
         canManageUsers: perm.canManageUsers,
         canManageRoles: perm.canManageRoles,
         canEditData: perm.canEditData,
+        entityPermissions: perm.entityPermissions || null,
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message });

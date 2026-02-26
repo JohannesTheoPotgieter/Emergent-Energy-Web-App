@@ -4374,6 +4374,19 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/project-plan/overrides", async (req, res) => {
+    try {
+      const { projectName } = req.query;
+      if (!projectName || typeof projectName !== 'string') {
+        return res.status(400).json({ error: "Project name required", message: "Project name is required" });
+      }
+      const overrides = await storage.getProjectPlanOverridesByProject(projectName);
+      res.json(overrides);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch project plan overrides", message: "Failed to fetch project plan overrides" });
+    }
+  });
+
   app.get("/api/project-plan/:projectName", async (req, res) => {
     try {
       const projectName = req.params.projectName;
@@ -4701,20 +4714,6 @@ export async function registerRoutes(
     }
   });
 
-  // Project Plan Overrides API
-  app.get("/api/project-plan/overrides", async (req, res) => {
-    try {
-      const { projectName } = req.query;
-      if (!projectName || typeof projectName !== 'string') {
-        return res.status(400).json({ error: "Project name required", message: "Project name is required" });
-      }
-      const overrides = await storage.getProjectPlanOverridesByProject(projectName);
-      res.json(overrides);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch project plan overrides", message: "Failed to fetch project plan overrides" });
-    }
-  });
-
   app.post("/api/project-plan/overrides", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { overrides, overrideCategory, overrideComment } = req.body;
@@ -4783,14 +4782,18 @@ export async function registerRoutes(
 
   app.post("/api/project-plan/structure", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const { operation, projectName, data } = req.body;
-      if (!projectName || !operation) {
+      const { operation, projectName: rawProjectName, data } = req.body;
+      if (!rawProjectName || !operation) {
         return res.status(400).json({ error: "projectName and operation required" });
       }
       const userId = (req as any).user?.id || null;
 
+      const trackerName = rawProjectName.endsWith("_Tracker") ? rawProjectName : rawProjectName + "_Tracker";
+      const plansDirect = await storage.getProjectPlansByProject(rawProjectName);
+      const projectName = plansDirect.length > 0 ? rawProjectName : trackerName;
+
       const notifyStructureChange = (desc: string) => {
-        sendPlanChangeNotifications(projectName, userId, desc, [{ operation, tasks: data?.taskRowNumbers || [] }]);
+        sendPlanChangeNotifications(rawProjectName, userId, desc, [{ operation, tasks: data?.taskRowNumbers || [] }]);
       };
 
       if (operation === "createMilestone") {
@@ -9383,7 +9386,7 @@ export async function registerRoutes(
             sortOrder: pt.sortOrder ?? pt.rowNumber ?? 0,
             isBaseline: !isVirtualMilestone,
             isVirtualMilestone,
-            isMilestone: pt.isMilestone === true,
+            isMilestone: pt.isMilestone === true || pt.indentLevel === 0,
             rowNumber: pt.rowNumber,
             parentRowNumber: pt.parentRowNumber || null,
             indentLevel: pt.indentLevel ?? null,
