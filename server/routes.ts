@@ -205,7 +205,7 @@ function applyPlanningOverrides(
 }
 
 // Apply project plan overrides to tasks/milestones
-const NUMERIC_PLAN_FIELDS = new Set(["actualPctComplete", "expectedPctComplete", "durationDays"]);
+const NUMERIC_PLAN_FIELDS = new Set(["actualPctComplete", "expectedPctComplete", "durationDays", "parentRowNumber", "indentLevel", "sortOrder"]);
 
 function coercePlanOverride(fieldName: string, value: any): any {
   if (value === null || value === undefined || value === "") return null;
@@ -224,10 +224,17 @@ function applyProjectPlanOverrides(
 
   const deletedRows = new Set<string>();
   const overrideMap = new Map<string, Map<string, any>>();
+  const virtualMilestones = new Map<string, Map<string, any>>();
+
   overrides.forEach((o: any) => {
     const key = `${o.projectName}::${o.rowNumber}`;
     if (o.fieldName === "isDeleted" && o.overrideValue === "true") {
       deletedRows.add(key);
+      return;
+    }
+    if (o.rowNumber < 0) {
+      if (!virtualMilestones.has(key)) virtualMilestones.set(key, new Map());
+      virtualMilestones.get(key)!.set(o.fieldName, coercePlanOverride(o.fieldName, o.overrideValue));
       return;
     }
     if (!overrideMap.has(key)) {
@@ -236,7 +243,11 @@ function applyProjectPlanOverrides(
     overrideMap.get(key)!.set(o.fieldName, coercePlanOverride(o.fieldName, o.overrideValue));
   });
 
-  return baselineRows
+  for (const key of deletedRows) {
+    virtualMilestones.delete(key);
+  }
+
+  const result = baselineRows
     .filter((row: any) => {
       if (!row.rowNumber || !row.projectName) return true;
       return !deletedRows.has(`${row.projectName}::${row.rowNumber}`);
@@ -252,6 +263,31 @@ function applyProjectPlanOverrides(
       });
       return updatedRow;
     });
+
+  for (const [key, fields] of virtualMilestones) {
+    const [projName, rowNumStr] = key.split("::");
+    const rowNumber = parseInt(rowNumStr);
+    const milestone: any = {
+      id: rowNumber,
+      projectName: projName,
+      rowNumber,
+      taskNo: "",
+      highLevelProgramme: fields.get("highLevelProgramme") || "Milestone",
+      actualStart: fields.get("actualStart") || null,
+      actualEnd: fields.get("actualEnd") || null,
+      durationDays: fields.get("durationDays") || null,
+      actualPctComplete: fields.get("actualPctComplete") || null,
+      expectedPctComplete: fields.get("expectedPctComplete") || null,
+      parentRowNumber: fields.get("parentRowNumber") || null,
+      indentLevel: fields.get("indentLevel") ?? 0,
+      sortOrder: fields.get("sortOrder") ?? 0,
+      isMilestone: true,
+      isVirtual: true,
+    };
+    result.push(milestone);
+  }
+
+  return result;
 }
 
 // Apply revenue tracking overrides with type coercion
@@ -1019,6 +1055,7 @@ export async function registerRoutes(
         }
       }
       for (const plan of allPlans) {
+        if ((plan as any).rowNumber < 0 && (plan as any).isVirtual) continue;
         const taskNo2 = (plan.taskNo || '').toString().toLowerCase().trim();
         const isSummary2 = taskNo2 === 'no.' || taskNo2 === 'no' || taskNo2 === '#';
         if (isSummary2) continue;
@@ -1754,7 +1791,7 @@ export async function registerRoutes(
           durationDays: np.durationDays,
           actualPctComplete: np.pctComplete,
           expectedPctComplete: null as number | null,
-        })) : projectPlans;
+        })) : projectPlans.filter((p: any) => !(p.rowNumber < 0 && p.isVirtual));
 
         // Compute milestone dates from plan tasks (Excel spec: max ActualEndDate matching descriptions)
         const pdFromPlan = findMaxEndDate(planLikeRows as any, ['bd handover', 'project charter handover']);
@@ -4575,6 +4612,121 @@ export async function registerRoutes(
       res.json({ message: `Project plan overrides deleted for project: ${projectName}` });
     } catch (error) {
       res.status(500).json({ error: "Failed to delete project plan overrides", message: "Failed to delete project plan overrides" });
+    }
+  });
+
+  app.post("/api/project-plan/structure", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { operation, projectName, data } = req.body;
+      if (!projectName || !operation) {
+        return res.status(400).json({ error: "projectName and operation required" });
+      }
+      const userId = (req as any).user?.id || null;
+
+      if (operation === "createMilestone") {
+        const { title } = data || {};
+        if (!title) return res.status(400).json({ error: "title required" });
+
+        const existingOverrides = await storage.getProjectPlanOverridesByProject(projectName);
+        let minRow = 0;
+        for (const o of existingOverrides) {
+          if (o.rowNumber < minRow) minRow = o.rowNumber;
+        }
+        const newRowNumber = minRow - 1;
+
+        const milestoneOverrides = [
+          { projectName, rowNumber: newRowNumber, fieldName: "highLevelProgramme", overrideValue: title, createdBy: userId },
+          { projectName, rowNumber: newRowNumber, fieldName: "indentLevel", overrideValue: "0", createdBy: userId },
+          { projectName, rowNumber: newRowNumber, fieldName: "sortOrder", overrideValue: String(newRowNumber), createdBy: userId },
+        ];
+        await storage.upsertManyProjectPlanOverrides(milestoneOverrides);
+        return res.json({ message: "Milestone created", rowNumber: newRowNumber });
+      }
+
+      if (operation === "setParent") {
+        const { taskRowNumbers, parentRowNumber } = data || {};
+        if (!Array.isArray(taskRowNumbers) || parentRowNumber === undefined) {
+          return res.status(400).json({ error: "taskRowNumbers[] and parentRowNumber required" });
+        }
+        const overridesToSave: any[] = [];
+        for (let i = 0; i < taskRowNumbers.length; i++) {
+          overridesToSave.push({
+            projectName, rowNumber: taskRowNumbers[i],
+            fieldName: "parentRowNumber", overrideValue: String(parentRowNumber), createdBy: userId,
+          });
+          overridesToSave.push({
+            projectName, rowNumber: taskRowNumbers[i],
+            fieldName: "indentLevel", overrideValue: "1", createdBy: userId,
+          });
+        }
+        await storage.upsertManyProjectPlanOverrides(overridesToSave);
+        return res.json({ message: `${taskRowNumbers.length} tasks grouped under milestone` });
+      }
+
+      if (operation === "removeMilestone") {
+        const { taskRowNumbers } = data || {};
+        if (!Array.isArray(taskRowNumbers)) {
+          return res.status(400).json({ error: "taskRowNumbers[] required" });
+        }
+        const overridesToSave: any[] = [];
+        for (const rn of taskRowNumbers) {
+          overridesToSave.push({
+            projectName, rowNumber: rn,
+            fieldName: "parentRowNumber", overrideValue: "", createdBy: userId,
+          });
+          overridesToSave.push({
+            projectName, rowNumber: rn,
+            fieldName: "indentLevel", overrideValue: "", createdBy: userId,
+          });
+        }
+        await storage.upsertManyProjectPlanOverrides(overridesToSave);
+        return res.json({ message: `${taskRowNumbers.length} tasks ungrouped` });
+      }
+
+      if (operation === "reorder") {
+        const { rowNumber, newSortOrder } = data || {};
+        if (rowNumber === undefined || newSortOrder === undefined) {
+          return res.status(400).json({ error: "rowNumber and newSortOrder required" });
+        }
+        await storage.upsertManyProjectPlanOverrides([{
+          projectName, rowNumber, fieldName: "sortOrder",
+          overrideValue: String(newSortOrder), createdBy: userId,
+        }]);
+        return res.json({ message: "Sort order updated" });
+      }
+
+      if (operation === "deleteMilestone") {
+        const { milestoneRowNumber } = data || {};
+        if (milestoneRowNumber === undefined || milestoneRowNumber >= 0) {
+          return res.status(400).json({ error: "milestoneRowNumber (negative) required" });
+        }
+        const allOverrides = await storage.getProjectPlanOverridesByProject(projectName);
+        const childOverrides = allOverrides.filter(
+          (o: any) => o.fieldName === "parentRowNumber" && o.overrideValue === String(milestoneRowNumber)
+        );
+        const ungroupOverrides: any[] = [];
+        for (const co of childOverrides) {
+          ungroupOverrides.push({
+            projectName, rowNumber: co.rowNumber,
+            fieldName: "parentRowNumber", overrideValue: "", createdBy: userId,
+          });
+          ungroupOverrides.push({
+            projectName, rowNumber: co.rowNumber,
+            fieldName: "indentLevel", overrideValue: "", createdBy: userId,
+          });
+        }
+        ungroupOverrides.push({
+          projectName, rowNumber: milestoneRowNumber,
+          fieldName: "isDeleted", overrideValue: "true", createdBy: userId,
+        });
+        await storage.upsertManyProjectPlanOverrides(ungroupOverrides);
+        return res.json({ message: "Milestone deleted and children ungrouped" });
+      }
+
+      return res.status(400).json({ error: `Unknown operation: ${operation}` });
+    } catch (error: any) {
+      console.error("[plan-structure] Error:", error);
+      res.status(500).json({ error: error.message || "Failed to update plan structure" });
     }
   });
 
@@ -8952,15 +9104,10 @@ export async function registerRoutes(
 
       const operationalTasks = allOperationalTasks.filter((t: any) => t.externalSource !== "clickup");
 
-      const planTasks = planTasksDirect.length > 0 ? planTasksDirect : planTasksTracker;
+      const rawPlanTasks = planTasksDirect.length > 0 ? planTasksDirect : planTasksTracker;
       const planOverrides = planTasksDirect.length > 0 ? planOverridesDirect : planOverridesTracker;
 
-      const deletedRowNumbers = new Set<number>();
-      for (const o of planOverrides) {
-        if (o.fieldName === "isDeleted" && o.overrideValue === "true") {
-          deletedRowNumbers.add(o.rowNumber);
-        }
-      }
+      const planTasks = applyProjectPlanOverrides(rawPlanTasks, planOverrides);
 
       const linkedImportedIds = new Set(
         operationalTasks
@@ -8971,8 +9118,8 @@ export async function registerRoutes(
       const SECTION_HEADER_TITLES = ["high level programme", "programme", "high level program"];
       const baselineTasks = planTasks
         .filter((pt: any) => !linkedImportedIds.has(pt.id))
-        .filter((pt: any) => !deletedRowNumbers.has(pt.rowNumber))
         .filter((pt: any) => {
+          if (pt.isVirtual) return true;
           const title = (pt.highLevelProgramme || "").trim().toLowerCase();
           return title && !SECTION_HEADER_TITLES.includes(title);
         })
@@ -8983,7 +9130,7 @@ export async function registerRoutes(
           else if (pctComplete > 0) status = "In Progress";
 
           let computedExpPct: number = pt.expectedPctComplete != null ? Math.round(pt.expectedPctComplete * 100) : 0;
-          if (pt.expectedPctComplete == null) {
+          if (pt.expectedPctComplete == null && !pt.isVirtual) {
             const tStart = (pt.actualStart || "").substring(0, 10);
             const tEnd = (pt.actualEnd || "").substring(0, 10);
             if (tStart && tEnd && /^\d{4}-\d{2}-\d{2}/.test(tStart) && /^\d{4}-\d{2}-\d{2}/.test(tEnd)) {
@@ -9002,22 +9149,24 @@ export async function registerRoutes(
             }
           }
 
+          const isVirtualMilestone = pt.isVirtual === true;
+
           return {
-            id: -pt.id,
+            id: isVirtualMilestone ? pt.rowNumber : -pt.id,
             projectName: projectName,
-            planProjectName: pt.projectName,
-            importedTaskId: pt.id,
+            planProjectName: isVirtualMilestone ? projectName : pt.projectName,
+            importedTaskId: isVirtualMilestone ? null : pt.id,
             taskNumber: pt.taskNo || String(pt.rowNumber || ""),
             parentTaskId: null as number | null,
             title: pt.highLevelProgramme || `Task ${pt.taskNo || pt.rowNumber}`,
             description: null,
-            status,
+            status: isVirtualMilestone ? "Not Started" : status,
             priority: "Normal",
             startDate: pt.actualStart || null,
             dueDate: pt.actualEnd || null,
             durationDays: pt.durationDays || null,
-            percentComplete: pctComplete,
-            expectedPercentComplete: computedExpPct,
+            percentComplete: isVirtualMilestone ? 0 : pctComplete,
+            expectedPercentComplete: isVirtualMilestone ? 0 : computedExpPct,
             storedActualPct: pt.actualPctComplete != null ? Math.round(pt.actualPctComplete * 100) : null,
             assignees: null,
             tags: null,
@@ -9028,20 +9177,26 @@ export async function registerRoutes(
             actualEndDate: pt.actualEnd || null,
             actualDurationDays: pt.durationDays || null,
             comment: null as string | null,
-            sortOrder: pt.rowNumber || 0,
-            isBaseline: true,
+            sortOrder: pt.sortOrder ?? pt.rowNumber ?? 0,
+            isBaseline: !isVirtualMilestone,
+            isVirtualMilestone,
+            isMilestone: pt.isMilestone === true,
             rowNumber: pt.rowNumber,
+            parentRowNumber: pt.parentRowNumber || null,
+            indentLevel: pt.indentLevel ?? null,
             createdBy: null,
-            createdAt: pt.createdAt,
-            updatedAt: pt.createdAt,
+            createdAt: pt.createdAt || null,
+            updatedAt: pt.createdAt || null,
           };
         });
 
       const allTasks: any[] = [...baselineTasks, ...operationalTasks];
 
+      const rowNumberToId = new Map<number, number>();
       const taskNumToId = new Map<string, number>();
       let summaryTaskId: number | null = null;
       for (const t of allTasks) {
+        if (t.rowNumber != null) rowNumberToId.set(t.rowNumber, t.id);
         if (t.taskNumber) {
           taskNumToId.set(String(t.taskNumber), t.id);
           const num = String(t.taskNumber).toLowerCase();
@@ -9050,7 +9205,15 @@ export async function registerRoutes(
           }
         }
       }
+
       for (const t of allTasks) {
+        if (t.parentRowNumber != null && t.parentRowNumber !== 0) {
+          const parentId = rowNumberToId.get(t.parentRowNumber);
+          if (parentId !== undefined) {
+            t.parentTaskId = parentId;
+            continue;
+          }
+        }
         if (t.parentTaskId) continue;
         const num = String(t.taskNumber || "");
         if (!num) continue;
@@ -9197,6 +9360,12 @@ export async function registerRoutes(
       for (const [, t] of taskMap) {
         if (!childrenMap.has(t.id)) {
           t.computedExpectedPct = calcExpected(t);
+        }
+        if (t.isVirtualMilestone && (t.isParent || t.childCount > 0)) {
+          const pct = t.percentComplete || 0;
+          if (pct >= 100) t.status = "Done";
+          else if (pct > 0) t.status = "In Progress";
+          else t.status = "Not Started";
         }
         const pct = t.percentComplete || 0;
         const exp = t.computedExpectedPct ?? 0;

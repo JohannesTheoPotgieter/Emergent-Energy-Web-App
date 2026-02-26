@@ -607,6 +607,73 @@ router.post("/api/admin/wipe-all-data", requireAuth, async (req: Request, res: R
   }
 });
 
+router.get("/api/counterparties", requireAuth, async (_req: Request, res: Response) => {
+  try {
+    const all = await db
+      .select()
+      .from(counterparties)
+      .orderBy(counterparties.nameCanonical);
+    res.json(all);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/api/counterparties", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { nameCanonical, typeDefault, nameAliases, isCore } = req.body;
+    if (!nameCanonical || !nameCanonical.trim()) {
+      return res.status(400).json({ error: "nameCanonical is required" });
+    }
+    const userId = (req as any).user?.id || null;
+    const [cp] = await db
+      .insert(counterparties)
+      .values({
+        nameCanonical: nameCanonical.trim(),
+        typeDefault: typeDefault || "OTHER",
+        nameAliases: nameAliases || [],
+        isCore: isCore || false,
+        createdBy: userId,
+      })
+      .returning();
+    res.json(cp);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch("/api/counterparties/:id", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+    const updates: any = {};
+    if (req.body.nameCanonical !== undefined) updates.nameCanonical = req.body.nameCanonical.trim();
+    if (req.body.typeDefault !== undefined) updates.typeDefault = req.body.typeDefault;
+    if (req.body.nameAliases !== undefined) updates.nameAliases = req.body.nameAliases;
+    if (req.body.isCore !== undefined) updates.isCore = req.body.isCore;
+    const [updated] = await db
+      .update(counterparties)
+      .set(updates)
+      .where(eq(counterparties.id, id))
+      .returning();
+    if (!updated) return res.status(404).json({ error: "Counterparty not found" });
+    res.json(updated);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete("/api/counterparties/:id", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+    await db.delete(counterparties).where(eq(counterparties.id, id));
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export function registerInvoicePatternRoutes(app: any) {
   app.use(router);
 }
