@@ -363,6 +363,8 @@ router.post("/api/procurement-analysis/classify", requireAuth, async (req: Reque
           .update(invoicePatternRules)
           .set({
             timesMatched: sql`${invoicePatternRules.timesMatched} + ${count}`,
+            timesConfirmed: sql`${invoicePatternRules.timesConfirmed} + ${count}`,
+            lastConfirmedAt: new Date(),
           })
           .where(eq(invoicePatternRules.id, ruleId));
       }
