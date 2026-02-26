@@ -22,7 +22,7 @@ import {
   Loader2, ArrowUpDown, ChevronRight, AlertCircle, Calendar,
   CheckCircle2, CircleDot, ExternalLink, FileText, Pencil, Check, X, Trash2, Merge, Tag, Link2, ArrowLeft,
 } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 
 function getAuthHeaders(): Record<string, string> {
   const token = localStorage.getItem("company_role_token");
@@ -257,6 +257,8 @@ export default function SubcontractorDashboardPage() {
       if (!res.ok) throw new Error("Failed to load");
       return res.json();
     },
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   });
 
   const { data: detailData, isLoading: detailLoading } = useQuery({
@@ -389,6 +391,106 @@ export default function SubcontractorDashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {counterpartiesList.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4" data-testid="dashboard-charts">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-xs text-slate-600">Top 10 by Spend</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="h-56">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={counterpartiesList
+                      .filter((c: any) => c.counterpartyName?.toLowerCase() !== "unknown")
+                      .sort((a: any, b: any) => b.totalSpendExVat - a.totalSpendExVat)
+                      .slice(0, 10)
+                      .map((c: any) => ({ name: c.counterpartyName.length > 18 ? c.counterpartyName.slice(0, 16) + "…" : c.counterpartyName, spend: c.totalSpendExVat }))}
+                    layout="vertical"
+                    margin={{ left: 0, right: 12 }}
+                  >
+                    <XAxis type="number" tick={{ fontSize: 9 }} tickFormatter={(v: number) => `R${(v / 1000).toFixed(0)}k`} />
+                    <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 9 }} />
+                    <Tooltip formatter={(v: number) => [formatCurrency(v), "Spend"]} />
+                    <Bar dataKey="spend" fill="#6366f1" radius={[0, 4, 4, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-xs text-slate-600">Spend by Type</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="h-56">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={(() => {
+                        const typeMap: Record<string, number> = {};
+                        counterpartiesList.forEach((c: any) => {
+                          const t = c.counterpartyType || "OTHER";
+                          typeMap[t] = (typeMap[t] || 0) + c.totalSpendExVat;
+                        });
+                        return Object.entries(typeMap).map(([name, value]) => ({ name, value }));
+                      })()}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={45}
+                      outerRadius={75}
+                      paddingAngle={3}
+                      dataKey="value"
+                      label={({ name, percent }: any) => `${name} ${(percent * 100).toFixed(0)}%`}
+                    >
+                      {(() => {
+                        const colors: Record<string, string> = { INSTALLER: "#22c55e", SUPPLIER: "#3b82f6", OTHER: "#94a3b8" };
+                        const typeMap: Record<string, number> = {};
+                        counterpartiesList.forEach((c: any) => {
+                          const t = c.counterpartyType || "OTHER";
+                          typeMap[t] = (typeMap[t] || 0) + c.totalSpendExVat;
+                        });
+                        return Object.keys(typeMap).map((key) => (
+                          <Cell key={key} fill={colors[key] || "#94a3b8"} />
+                        ));
+                      })()}
+                    </Pie>
+                    <Tooltip formatter={(v: number) => [formatCurrency(v), "Spend"]} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-xs text-slate-600">Counterparties by Project Count</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="h-56">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={counterpartiesList
+                      .filter((c: any) => c.counterpartyName?.toLowerCase() !== "unknown" && c.projectCount > 1)
+                      .sort((a: any, b: any) => b.projectCount - a.projectCount)
+                      .slice(0, 10)
+                      .map((c: any) => ({ name: c.counterpartyName.length > 18 ? c.counterpartyName.slice(0, 16) + "…" : c.counterpartyName, projects: c.projectCount, spend: c.totalSpendExVat }))}
+                    layout="vertical"
+                    margin={{ left: 0, right: 12 }}
+                  >
+                    <XAxis type="number" tick={{ fontSize: 9 }} allowDecimals={false} />
+                    <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 9 }} />
+                    <Tooltip formatter={(v: number, name: string) => [name === "projects" ? v : formatCurrency(v), name === "projects" ? "Projects" : "Spend"]} />
+                    <Bar dataKey="projects" fill="#f59e0b" radius={[0, 4, 4, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[200px] max-w-sm">
