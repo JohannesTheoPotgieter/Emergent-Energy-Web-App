@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useRoute, useLocation, useSearch } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -409,28 +408,32 @@ function EngTasksTab({ projectInfoId, isAdmin }: { projectInfoId: number | null;
   );
 }
 
-const OLD_TAB_TO_SUPER: Record<string, { superTab: string; subTab: string }> = {
-  "task-grid": { superTab: "overview", subTab: "task-grid" },
-  "board": { superTab: "overview", subTab: "board" },
-  "calendar": { superTab: "overview", subTab: "calendar" },
-  "eng-tasks": { superTab: "engineering", subTab: "eng-tasks" },
-  "project-plan": { superTab: "plan", subTab: "gantt" },
-  "revenue-tracking": { superTab: "money", subTab: "revenue-tracking" },
-  "expenditure": { superTab: "money", subTab: "expenditure" },
-  "monthly-realisation": { superTab: "money", subTab: "monthly-realisation" },
-  "cashflow": { superTab: "money", subTab: "cashflow" },
-  "subcontractors": { superTab: "money", subTab: "subcontractors" },
-  "quality": { superTab: "quality", subTab: "quality" },
-  "history": { superTab: "history", subTab: "history" },
+const OLD_TAB_TO_SECTION: Record<string, { section: string; subTab: string }> = {
+  "task-grid": { section: "project-management", subTab: "task-grid" },
+  "board": { section: "project-management", subTab: "board" },
+  "calendar": { section: "project-management", subTab: "calendar" },
+  "eng-tasks": { section: "engineering", subTab: "eng-tasks" },
+  "eng-stages": { section: "engineering", subTab: "eng-stages" },
+  "project-plan": { section: "project-management", subTab: "gantt" },
+  "gantt": { section: "project-management", subTab: "gantt" },
+  "key-dates": { section: "project-management", subTab: "key-dates" },
+  "revenue-tracking": { section: "project-management", subTab: "revenue-tracking" },
+  "expenditure": { section: "project-management", subTab: "expenditure" },
+  "monthly-realisation": { section: "project-management", subTab: "monthly-realisation" },
+  "cashflow": { section: "project-management", subTab: "cashflow" },
+  "subcontractors": { section: "project-management", subTab: "subcontractors" },
+  "quality": { section: "quality", subTab: "quality" },
+  "history": { section: "project-management", subTab: "history" },
+  "overview": { section: "overview", subTab: "" },
+  "engineering": { section: "engineering", subTab: "eng-tasks" },
+  "money": { section: "project-management", subTab: "revenue-tracking" },
+  "plan": { section: "project-management", subTab: "gantt" },
 };
 
-const SUPER_TAB_DEFAULTS: Record<string, string> = {
-  overview: "task-grid",
-  plan: "gantt",
+const SECTION_DEFAULT_SUBTAB: Record<string, string> = {
+  "project-management": "task-grid",
   engineering: "eng-tasks",
-  money: "revenue-tracking",
   quality: "quality",
-  history: "history",
 };
 
 function RagDot({ color }: { color: "green" | "amber" | "red" }) {
@@ -511,42 +514,48 @@ export default function ProjectDetailPage() {
 
   const resolvedFromUrl = useMemo(() => {
     if (!urlTab) return null;
-    const mapped = OLD_TAB_TO_SUPER[urlTab];
+    const mapped = OLD_TAB_TO_SECTION[urlTab];
     if (mapped) return mapped;
-    if (["overview", "plan", "engineering", "money", "quality", "history"].includes(urlTab)) {
-      return { superTab: urlTab, subTab: SUPER_TAB_DEFAULTS[urlTab] };
-    }
     return null;
   }, [urlTab]);
 
-  const [activeSuperTab, setActiveSuperTab] = useState(resolvedFromUrl?.superTab || "overview");
-  const [subTabs, setSubTabs] = useState<Record<string, string>>({
-    overview: resolvedFromUrl?.superTab === "overview" ? resolvedFromUrl.subTab : "task-grid",
-    plan: resolvedFromUrl?.superTab === "plan" ? resolvedFromUrl.subTab : "gantt",
-    engineering: "eng-tasks",
-    money: resolvedFromUrl?.superTab === "money" ? resolvedFromUrl.subTab : "revenue-tracking",
-    quality: "quality",
-    history: "history",
-  });
+  const [activeSection, setActiveSection] = useState<string>(resolvedFromUrl?.section || "overview");
+  const [activeSubTab, setActiveSubTab] = useState<string>(resolvedFromUrl?.subTab || "");
 
   useEffect(() => {
     if (urlTab) {
-      const mapped = OLD_TAB_TO_SUPER[urlTab];
+      const mapped = OLD_TAB_TO_SECTION[urlTab];
       if (mapped) {
-        setActiveSuperTab(mapped.superTab);
-        setSubTabs(prev => ({ ...prev, [mapped.superTab]: mapped.subTab }));
-      } else if (["overview", "plan", "engineering", "money", "quality", "history"].includes(urlTab)) {
-        setActiveSuperTab(urlTab);
+        setActiveSection(mapped.section);
+        if (mapped.subTab) setActiveSubTab(mapped.subTab);
       }
     }
   }, [urlTab]);
 
+  const navigateToSection = (section: string, subTab?: string) => {
+    if (section === "engineering" && !canViewTab.engineering) { setActiveSection("overview"); return; }
+    if (section === "quality" && !canViewTab.quality) { setActiveSection("overview"); return; }
+    setActiveSection(section);
+    setActiveSubTab(subTab || SECTION_DEFAULT_SUBTAB[section] || "");
+  };
+
   const projectInfo = projectsSummary?.find((p: any) => p.project_name === projectName);
+  const projectInfoId = projectInfo?.project_info_id;
 
   const handleTaskClick = (taskId: number) => {
     setSelectedTaskId(taskId);
     setDrawerOpen(true);
   };
+
+  const { data: engStagesData } = useQuery({
+    queryKey: ["project-eng-stages-overview", projectInfoId],
+    queryFn: async () => {
+      const res = await engFetch(`/api/projects/${projectInfoId}/eng-stages`);
+      if (!res.ok) return { stages: [] };
+      return res.json();
+    },
+    enabled: !!projectInfoId,
+  });
 
   const { data: projectPlanData = [] } = useQuery({
     queryKey: ["project-plan", projectName],
@@ -626,25 +635,16 @@ export default function ProjectDetailPage() {
   const completion = projectInfo?.project_pct_complete != null
     ? `${(projectInfo.project_pct_complete * 100).toFixed(0)}%`
     : "—";
+  const completionNum = projectInfo?.project_pct_complete != null ? projectInfo.project_pct_complete * 100 : 0;
   const isAdmin = ['admin', 'COO_ADMIN', 'CEO_ADMIN'].includes(user?.role || '');
-  const projectInfoId = projectInfo?.project_info_id;
   const contractValue = projectInfo?.contract_value || 0;
   const budgetTotal = projectInfo?.budget_total || 0;
-
-  const dataHealth = [
-    { name: "Project Plan", rows: (projectPlanData as any[]).length, present: (projectPlanData as any[]).length > 0 },
-    { name: "Revenue Tracking", rows: (revenueData as any[]).length, present: (revenueData as any[]).length > 0 },
-    { name: "Expenditure Breakdown", rows: (expenseData as any[]).length, present: (expenseData as any[]).length > 0 },
-    { name: "Finance Summary", rows: 0, present: false },
-    { name: "Cashflow", rows: (cashflowData as any[]).length, present: (cashflowData as any[]).length > 0 },
-  ];
-
-  const sheetsPresent = dataHealth.filter(s => s.present).length;
-  const totalRows = dataHealth.reduce((sum, s) => sum + s.rows, 0);
 
   const planTasks = projectPlanData as any[];
   const today = new Date().toISOString().split("T")[0];
   const overduePlanTasks = planTasks.filter((t: any) => t.endDate && t.endDate < today && t.status !== "Complete" && t.status !== "Done");
+  const completedPlanTasks = planTasks.filter((t: any) => t.status === "Complete" || t.status === "Done");
+  const planCompletionPct = planTasks.length > 0 ? (completedPlanTasks.length / planTasks.length) * 100 : 0;
   const scheduleRag: "green" | "amber" | "red" = overduePlanTasks.length === 0 ? "green" : overduePlanTasks.length <= 3 ? "amber" : "red";
 
   const totalExpenses = (expenseData as any[]).reduce((s: number, e: any) => s + (Number(e.expenseActualTotal) || 0), 0);
@@ -655,6 +655,10 @@ export default function ProjectDetailPage() {
   const qualityRag: "green" | "amber" | "red" = qualityChecklist && qualityChecklist.gates
     ? (qualityChecklist.gates.every?.((g: any) => g.passed) ? "green" : qualityChecklist.gates.some?.((g: any) => g.failed) ? "red" : "amber")
     : qualityChecklist && (Array.isArray(qualityChecklist) ? qualityChecklist.length > 0 : true) ? "amber" : "red";
+
+  const qualityGates = qualityChecklist?.gates || [];
+  const qualityGatesPassed = qualityGates.filter((g: any) => g.passed).length;
+  const qualityGatesTotal = qualityGates.length;
 
   const nextMilestone = useMemo(() => {
     const now = new Date();
@@ -674,6 +678,13 @@ export default function ProjectDetailPage() {
 
   const hasRedRag = scheduleRag === "red" || costRag === "red" || qualityRag === "red";
 
+  const engStages = engStagesData?.stages || [];
+  const engTotalTasks = engStages.reduce((s: number, st: any) => s + (st.tasks?.length || 0), 0);
+  const engCompletedTasks = engStages.reduce((s: number, st: any) => s + (st.tasks?.filter((t: any) => t.status === "complete").length || 0), 0);
+  const engStagePct = engTotalTasks > 0 ? (engCompletedTasks / engTotalTasks) * 100 : 0;
+  const engCompletedStages = engStages.filter((s: any) => s.status === "complete").length;
+  const engActiveStage = engStages.find((s: any) => s.status === "in_progress") || engStages.find((s: any) => s.status === "not_started");
+
   const alerts = useMemo(() => {
     const result: { severity: "warning" | "info"; message: string; key: string }[] = [];
     const now = new Date();
@@ -688,8 +699,8 @@ export default function ProjectDetailPage() {
     if (totalExpenses > totalRev && totalRev > 0) {
       result.push({ severity: "warning", message: `COS (R${totalExpenses.toLocaleString()}) exceeds linked revenue (R${totalRev.toLocaleString()})`, key: "cos-exceeds-rev" });
     }
-    const engTasks = engDataForAlerts?.tasks || [];
-    const overdueEng = engTasks.filter((t: any) => t.dueDate && t.dueDate < today && t.status !== "COMPLETE");
+    const engTaskAlerts = engDataForAlerts?.tasks || [];
+    const overdueEng = engTaskAlerts.filter((t: any) => t.dueDate && t.dueDate < today && t.status !== "COMPLETE");
     if (overdueEng.length > 0) {
       result.push({ severity: "warning", message: `${overdueEng.length} overdue engineering task${overdueEng.length > 1 ? "s" : ""}`, key: "eng-overdue" });
     }
@@ -704,19 +715,15 @@ export default function ProjectDetailPage() {
       return { label: "Advance Gate", icon: <Zap className="h-4 w-4" />, action: () => setPhaseModalOpen(true) };
     }
     if (executionPhase && phase?.includes("CONSTRUCTION")) {
-      return { label: "Start Weekly Review", icon: <Play className="h-4 w-4" />, action: () => { setActiveSuperTab("overview"); setSubTabs(prev => ({ ...prev, overview: "task-grid" })); } };
+      return { label: "Start Weekly Review", icon: <Play className="h-4 w-4" />, action: () => navigateToSection("project-management", "history") };
     }
     if (hasRedRag) {
       return { label: "Resolve Issue", icon: <AlertTriangle className="h-4 w-4" />, action: () => { setAlertsExpanded(true); alertsRef.current?.scrollIntoView({ behavior: "smooth" }); } };
     }
-    return { label: "View Tasks", icon: <Eye className="h-4 w-4" />, action: () => { setActiveSuperTab("overview"); setSubTabs(prev => ({ ...prev, overview: "task-grid" })); } };
+    return { label: "View Tasks", icon: <Eye className="h-4 w-4" />, action: () => navigateToSection("project-management", "task-grid") };
   }, [phase, executionPhase, hasRedRag]);
 
-  const setSubTab = (superTab: string, subTab: string) => {
-    setSubTabs(prev => ({ ...prev, [superTab]: subTab }));
-  };
-
-  const currentSubTab = subTabs[activeSuperTab] || SUPER_TAB_DEFAULTS[activeSuperTab];
+  const ragColor = (rag: "green" | "amber" | "red") => rag === "green" ? "text-emerald-600" : rag === "amber" ? "text-amber-600" : "text-red-600";
 
   return (
     <div className="space-y-4">
@@ -729,6 +736,7 @@ export default function ProjectDetailPage() {
         <div className="space-y-2">
           <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
             <h2 className="text-xl sm:text-3xl font-heading font-bold text-foreground" data-testid="text-project-name">{displayName}</h2>
+            <PhaseBadge phase={phase} />
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs sm:text-sm text-muted-foreground">
             <span className="flex items-center gap-1"><User className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> PD: {pd}</span>
@@ -736,47 +744,19 @@ export default function ProjectDetailPage() {
             <span className="flex items-center gap-1"><Activity className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> {sizeKwp}</span>
             <span className="flex items-center gap-1"><TrendingUp className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> {completion} complete</span>
           </div>
-          {projectInfoId && <PhaseHistoryTimeline projectId={projectInfoId} />}
         </div>
 
-        <Card className="lg:w-auto">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-4">
-              <div className="text-center">
-                <p className="text-2xl font-bold">{sheetsPresent}/6</p>
-                <p className="text-xs text-muted-foreground">Sheets</p>
-              </div>
-              <div className="h-8 w-px bg-border" />
-              <div className="text-center">
-                <p className="text-2xl font-bold">{totalRows}</p>
-                <p className="text-xs text-muted-foreground">Rows</p>
-              </div>
-              <div className="h-8 w-px bg-border" />
-              <div className="flex flex-wrap gap-1">
-                {dataHealth.map(sheet => (
-                  <Badge
-                    key={sheet.name}
-                    variant={sheet.present ? "default" : "outline"}
-                    className={`text-xs ${!sheet.present && "opacity-50"}`}
-                  >
-                    {sheet.present ? <CheckCircle className="h-3 w-3 mr-1" /> : <AlertCircle className="h-3 w-3 mr-1" />}
-                    {sheet.name.split(" ")[0]}
-                  </Badge>
-                ))}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="flex items-center gap-2">
+          <Button size="sm" onClick={primaryCta.action} className="gap-1.5" data-testid="button-primary-cta">
+            {primaryCta.icon}
+            {primaryCta.label}
+          </Button>
+        </div>
       </div>
 
       <Card className="sticky top-0 z-10 shadow-sm" data-testid="awareness-bar">
         <CardContent className="p-3">
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 items-center">
-            <div className="flex flex-col gap-1" data-testid="awareness-phase">
-              <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Phase</span>
-              <PhaseBadge phase={phase} />
-            </div>
-
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 items-center">
             <div className="flex flex-col gap-1" data-testid="awareness-execution-phase">
               <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Execution</span>
               <span className="text-xs font-medium truncate">{executionPhase || "—"}</span>
@@ -818,17 +798,15 @@ export default function ProjectDetailPage() {
             </div>
 
             <div className="flex flex-col gap-1" data-testid="awareness-margin">
-              <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Margin Δ</span>
+              <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Margin Delta</span>
               <span className={`text-sm font-bold ${marginDelta >= 0 ? "text-emerald-600" : "text-red-600"}`}>
                 {marginDelta >= 0 ? "+" : ""}{marginDelta.toFixed(1)}%
               </span>
             </div>
 
-            <div className="flex items-end justify-end">
-              <Button size="sm" onClick={primaryCta.action} className="gap-1.5" data-testid="button-primary-cta">
-                {primaryCta.icon}
-                {primaryCta.label}
-              </Button>
+            <div className="flex flex-col gap-1" data-testid="awareness-contract">
+              <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Contract</span>
+              <span className="text-sm font-bold">R{(contractValue / 1000000).toFixed(1)}M</span>
             </div>
           </div>
         </CardContent>
@@ -879,165 +857,323 @@ export default function ProjectDetailPage() {
         </div>
       )}
 
-      <Tabs value={activeSuperTab} onValueChange={setActiveSuperTab} className="w-full">
-        <TabsList className="flex gap-1 h-auto p-1 w-full" data-testid="super-tabs">
-          {canViewTab.overview && (
-          <TabsTrigger value="overview" className="flex items-center gap-1.5 text-xs" data-testid="tab-overview">
-            <ListTodo className="h-3.5 w-3.5" />
-            <span>Overview</span>
-          </TabsTrigger>
-          )}
-          {canViewTab.plan && (
-          <TabsTrigger value="plan" className="flex items-center gap-1.5 text-xs" data-testid="tab-plan">
-            <FileText className="h-3.5 w-3.5" />
-            <span>Plan</span>
-          </TabsTrigger>
-          )}
-          {canViewTab.finance && (
-          <TabsTrigger value="money" className="flex items-center gap-1.5 text-xs" data-testid="tab-money">
-            <DollarSign className="h-3.5 w-3.5" />
-            <span>Project Finance</span>
-          </TabsTrigger>
-          )}
-          {canViewTab.engineering && (
-          <TabsTrigger value="engineering" className="flex items-center gap-1.5 text-xs" data-testid="tab-engineering">
-            <Wrench className="h-3.5 w-3.5" />
-            <span>Engineering</span>
-          </TabsTrigger>
-          )}
-          {canViewTab.quality && (
-          <TabsTrigger value="quality" className="flex items-center gap-1.5 text-xs" data-testid="tab-quality">
-            <ShieldCheck className="h-3.5 w-3.5" />
-            <span>Quality</span>
-          </TabsTrigger>
-          )}
-          {canViewTab.history && (
-          <TabsTrigger value="history" className="flex items-center gap-1.5 text-xs" data-testid="tab-history">
-            <History className="h-3.5 w-3.5" />
-            <span>History</span>
-          </TabsTrigger>
-          )}
-        </TabsList>
+      {activeSection === "overview" && (
+        <div className="space-y-6" data-testid="overview-section">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {canViewTab.overview && (
+            <Card
+              className="group cursor-pointer hover:shadow-lg hover:border-blue-300 transition-all duration-200 relative overflow-hidden"
+              onClick={() => navigateToSection("project-management")}
+              data-testid="pillar-project-management"
+            >
+              <div className="absolute top-0 left-0 right-0 h-1 bg-blue-500" />
+              <CardContent className="p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
+                      <ListTodo className="h-5 w-5 text-blue-600" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-sm">Project Management</h3>
+                      <p className="text-[10px] text-muted-foreground">Plan, Finance, Tasks & History</p>
+                    </div>
+                  </div>
+                  <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-blue-500 transition-colors" />
+                </div>
 
-        {canViewTab.overview && (
-        <TabsContent value="overview" className="space-y-4">
-          <div className="flex gap-1 flex-wrap" data-testid="sub-tabs-overview">
-            <Button size="sm" variant={currentSubTab === "task-grid" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("overview", "task-grid")} data-testid="subtab-task-grid">
-              <ListTodo className="h-3 w-3 mr-1" /> Tasks
-            </Button>
-            <Button size="sm" variant={currentSubTab === "board" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("overview", "board")} data-testid="subtab-board">
-              <Columns className="h-3 w-3 mr-1" /> Board
-            </Button>
-            <Button size="sm" variant={currentSubTab === "calendar" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("overview", "calendar")} data-testid="subtab-calendar">
-              <CalendarDays className="h-3 w-3 mr-1" /> Calendar
-            </Button>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">Plan Progress</span>
+                    <span className="font-semibold">{planCompletionPct.toFixed(0)}%</span>
+                  </div>
+                  <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
+                    <div className="h-full bg-blue-500 rounded-full transition-all" style={{ width: `${planCompletionPct}%` }} />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div>
+                    <p className="text-lg font-bold">{planTasks.length}</p>
+                    <p className="text-[10px] text-muted-foreground">Total Tasks</p>
+                  </div>
+                  <div>
+                    <p className="text-lg font-bold text-emerald-600">{completedPlanTasks.length}</p>
+                    <p className="text-[10px] text-muted-foreground">Completed</p>
+                  </div>
+                  <div>
+                    <p className={`text-lg font-bold ${overduePlanTasks.length > 0 ? "text-red-600" : ""}`}>{overduePlanTasks.length}</p>
+                    <p className="text-[10px] text-muted-foreground">Overdue</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1 border-t">
+                  <RagDot color={scheduleRag} />
+                  <span className={`text-xs font-medium ${ragColor(scheduleRag)}`}>
+                    Schedule {scheduleRag === "green" ? "On Track" : scheduleRag === "amber" ? "At Risk" : "Behind"}
+                  </span>
+                  {nextMilestone && (
+                    <span className="text-[10px] text-muted-foreground ml-auto truncate max-w-[120px]">
+                      Next: {nextMilestone.taskName || nextMilestone.task_name || "Milestone"}
+                    </span>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+            )}
+
+            {canViewTab.engineering && (
+            <Card
+              className="group cursor-pointer hover:shadow-lg hover:border-orange-300 transition-all duration-200 relative overflow-hidden"
+              onClick={() => navigateToSection("engineering")}
+              data-testid="pillar-engineering"
+            >
+              <div className="absolute top-0 left-0 right-0 h-1 bg-orange-500" />
+              <CardContent className="p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-10 h-10 rounded-lg bg-orange-100 flex items-center justify-center">
+                      <Wrench className="h-5 w-5 text-orange-600" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-sm">Engineering</h3>
+                      <p className="text-[10px] text-muted-foreground">Tasks & Stage Checklists</p>
+                    </div>
+                  </div>
+                  <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-orange-500 transition-colors" />
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">Stage Progress</span>
+                    <span className="font-semibold">{engStagePct.toFixed(0)}%</span>
+                  </div>
+                  <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
+                    <div className="h-full bg-orange-500 rounded-full transition-all" style={{ width: `${engStagePct}%` }} />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div>
+                    <p className="text-lg font-bold">{engStages.length}</p>
+                    <p className="text-[10px] text-muted-foreground">Stages</p>
+                  </div>
+                  <div>
+                    <p className="text-lg font-bold text-emerald-600">{engCompletedStages}</p>
+                    <p className="text-[10px] text-muted-foreground">Complete</p>
+                  </div>
+                  <div>
+                    <p className="text-lg font-bold">{engCompletedTasks}/{engTotalTasks}</p>
+                    <p className="text-[10px] text-muted-foreground">Tasks Done</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1 border-t">
+                  <Target className="h-3.5 w-3.5 text-orange-500" />
+                  <span className="text-xs font-medium text-muted-foreground truncate">
+                    {engActiveStage ? `Active: ${engActiveStage.stageName || engActiveStage.templateName || "Stage"}` : engStages.length === 0 ? "No stages yet" : "All stages complete"}
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+            )}
+
+            {canViewTab.quality && (
+            <Card
+              className="group cursor-pointer hover:shadow-lg hover:border-emerald-300 transition-all duration-200 relative overflow-hidden"
+              onClick={() => navigateToSection("quality")}
+              data-testid="pillar-quality"
+            >
+              <div className="absolute top-0 left-0 right-0 h-1 bg-emerald-500" />
+              <CardContent className="p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center">
+                      <ShieldCheck className="h-5 w-5 text-emerald-600" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-sm">Quality</h3>
+                      <p className="text-[10px] text-muted-foreground">Checklists & Gate Approvals</p>
+                    </div>
+                  </div>
+                  <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-emerald-500 transition-colors" />
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">Gate Progress</span>
+                    <span className="font-semibold">{qualityGatesTotal > 0 ? `${qualityGatesPassed}/${qualityGatesTotal}` : "—"}</span>
+                  </div>
+                  <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-emerald-500 rounded-full transition-all"
+                      style={{ width: `${qualityGatesTotal > 0 ? (qualityGatesPassed / qualityGatesTotal) * 100 : 0}%` }}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div>
+                    <p className="text-lg font-bold">{qualityGatesTotal}</p>
+                    <p className="text-[10px] text-muted-foreground">Total Gates</p>
+                  </div>
+                  <div>
+                    <p className="text-lg font-bold text-emerald-600">{qualityGatesPassed}</p>
+                    <p className="text-[10px] text-muted-foreground">Passed</p>
+                  </div>
+                  <div>
+                    <p className={`text-lg font-bold ${qualityGatesTotal - qualityGatesPassed > 0 ? "text-amber-600" : ""}`}>
+                      {qualityGatesTotal - qualityGatesPassed}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">Pending</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1 border-t">
+                  <RagDot color={qualityRag} />
+                  <span className={`text-xs font-medium ${ragColor(qualityRag)}`}>
+                    Quality {qualityRag === "green" ? "On Track" : qualityRag === "amber" ? "Needs Review" : "Action Required"}
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+            )}
           </div>
-          {currentSubTab === "task-grid" && <TaskGridView projectName={projectName} onTaskClick={handleTaskClick} />}
-          {currentSubTab === "board" && <BoardView projectName={projectName} onTaskClick={handleTaskClick} />}
-          {currentSubTab === "calendar" && <CalendarView projectName={projectName} onTaskClick={handleTaskClick} />}
-        </TabsContent>
-        )}
 
-        {canViewTab.engineering && (
-        <TabsContent value="engineering" className="space-y-4">
-          <div className="flex gap-1 flex-wrap" data-testid="sub-tabs-engineering">
+          {projectInfoId && <PhaseHistoryTimeline projectId={projectInfoId} />}
+        </div>
+      )}
+
+      {activeSection === "project-management" && (
+        <div className="space-y-4" data-testid="pm-section">
+          <Button variant="ghost" size="sm" onClick={() => navigateToSection("overview")} className="gap-2 -ml-2" data-testid="button-back-overview">
+            <ArrowLeft className="h-4 w-4" />
+            Back to Overview
+          </Button>
+
+          <div className="flex gap-1.5 flex-wrap border-b pb-2" data-testid="pm-sub-tabs">
+            {canViewTab.overview && (
+            <>
+              <Button size="sm" variant={activeSubTab === "task-grid" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("task-grid")} data-testid="subtab-task-grid">
+                <ListTodo className="h-3 w-3 mr-1" /> Tasks
+              </Button>
+              <Button size="sm" variant={activeSubTab === "board" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("board")} data-testid="subtab-board">
+                <Columns className="h-3 w-3 mr-1" /> Board
+              </Button>
+              <Button size="sm" variant={activeSubTab === "calendar" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("calendar")} data-testid="subtab-calendar">
+                <CalendarDays className="h-3 w-3 mr-1" /> Calendar
+              </Button>
+            </>
+            )}
+            <div className="w-px h-5 bg-border self-center mx-1" />
+            {canViewTab.plan && canViewSubTab.gantt && (
+            <Button size="sm" variant={activeSubTab === "gantt" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("gantt")} data-testid="subtab-gantt">
+              <FileText className="h-3 w-3 mr-1" /> Gantt
+            </Button>
+            )}
+            {canViewTab.plan && canViewSubTab.keyDates && (
+            <Button size="sm" variant={activeSubTab === "key-dates" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("key-dates")} data-testid="subtab-key-dates">
+              <Calendar className="h-3 w-3 mr-1" /> Key Dates
+            </Button>
+            )}
+            <div className="w-px h-5 bg-border self-center mx-1" />
+            {canViewTab.finance && canViewSubTab.revenue && (
+            <Button size="sm" variant={activeSubTab === "revenue-tracking" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("revenue-tracking")} data-testid="subtab-revenue">
+              <DollarSign className="h-3 w-3 mr-1" /> Revenue
+            </Button>
+            )}
+            {canViewTab.finance && canViewSubTab.expenditure && (
+            <Button size="sm" variant={activeSubTab === "expenditure" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("expenditure")} data-testid="subtab-expenditure">
+              <CreditCard className="h-3 w-3 mr-1" /> Expenditure
+            </Button>
+            )}
+            {canViewTab.finance && canViewSubTab.cosTracker && (
+            <Button size="sm" variant={activeSubTab === "monthly-realisation" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("monthly-realisation")} data-testid="subtab-monthly-realisation">
+              <TrendingUp className="h-3 w-3 mr-1" /> COS
+            </Button>
+            )}
+            {canViewTab.finance && canViewSubTab.cashflow && (
+            <Button size="sm" variant={activeSubTab === "cashflow" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("cashflow")} data-testid="subtab-cashflow">
+              <Activity className="h-3 w-3 mr-1" /> Cashflow
+            </Button>
+            )}
+            {canViewTab.finance && canViewSubTab.subcontractors && (
+            <Button size="sm" variant={activeSubTab === "subcontractors" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("subcontractors")} data-testid="subtab-subcontractors">
+              <Users className="h-3 w-3 mr-1" /> Subcontractors
+            </Button>
+            )}
+            <div className="w-px h-5 bg-border self-center mx-1" />
+            {canViewTab.history && (
+            <Button size="sm" variant={activeSubTab === "history" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("history")} data-testid="subtab-history">
+              <History className="h-3 w-3 mr-1" /> History
+            </Button>
+            )}
+          </div>
+
+          {activeSubTab === "task-grid" && canViewTab.overview && <TaskGridView projectName={projectName} onTaskClick={handleTaskClick} />}
+          {activeSubTab === "board" && canViewTab.overview && <BoardView projectName={projectName} onTaskClick={handleTaskClick} />}
+          {activeSubTab === "calendar" && canViewTab.overview && <CalendarView projectName={projectName} onTaskClick={handleTaskClick} />}
+          {activeSubTab === "gantt" && canViewTab.plan && canViewSubTab.gantt && <ProjectPlanTab projectName={projectName} />}
+          {activeSubTab === "key-dates" && canViewTab.plan && canViewSubTab.keyDates && <KeyDatesPanel projectName={projectName} />}
+          {activeSubTab === "revenue-tracking" && canViewTab.finance && canViewSubTab.revenue && <RevenueTrackingTab projectName={projectName} highlightId={highlightType === 'revenue' ? highlightId : null} />}
+          {activeSubTab === "expenditure" && canViewTab.finance && canViewSubTab.expenditure && <ExpenditureEditableTab projectName={projectName} highlightId={highlightType === 'expense' ? highlightId : null} />}
+          {activeSubTab === "monthly-realisation" && canViewTab.finance && canViewSubTab.cosTracker && <MonthlyRealisationTab projectName={projectName} />}
+          {activeSubTab === "cashflow" && canViewTab.finance && canViewSubTab.cashflow && <CashflowTab projectName={projectName} />}
+          {activeSubTab === "subcontractors" && canViewTab.finance && canViewSubTab.subcontractors && <ProjectSubcontractorsTab projectName={projectName} />}
+          {activeSubTab === "history" && canViewTab.history && (
+            <>
+              <WeeklyReviewWizard
+                projectName={projectName}
+                snapshotMetrics={{
+                  phase: phase || undefined,
+                  completion: projectInfo?.project_pct_complete ?? undefined,
+                  totalRevenue: totalPaidInflows,
+                  totalExpenses,
+                  margin: totalPaidInflows > 0 ? (totalPaidInflows - totalExpenses) / totalPaidInflows : 0,
+                  overdueCount: (engDataForAlerts as any[])?.filter?.((t: any) => t.dueDate && t.dueDate < new Date().toISOString().split("T")[0] && t.status !== "COMPLETE")?.length || 0,
+                }}
+              />
+              <ProjectHistoryTab projectName={projectName} />
+            </>
+          )}
+        </div>
+      )}
+
+      {activeSection === "engineering" && canViewTab.engineering && (
+        <div className="space-y-4" data-testid="eng-section">
+          <Button variant="ghost" size="sm" onClick={() => navigateToSection("overview")} className="gap-2 -ml-2" data-testid="button-back-overview">
+            <ArrowLeft className="h-4 w-4" />
+            Back to Overview
+          </Button>
+
+          <div className="flex gap-1.5 flex-wrap border-b pb-2" data-testid="eng-sub-tabs">
             {canViewSubTab.engTasks && (
-            <Button size="sm" variant={currentSubTab === "eng-tasks" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("engineering", "eng-tasks")} data-testid="subtab-eng-tasks">
+            <Button size="sm" variant={activeSubTab === "eng-tasks" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("eng-tasks")} data-testid="subtab-eng-tasks">
               <ListTodo className="h-3 w-3 mr-1" /> Tasks
             </Button>
             )}
             {canViewSubTab.engStages && (
-            <Button size="sm" variant={currentSubTab === "eng-stages" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("engineering", "eng-stages")} data-testid="subtab-eng-stages">
+            <Button size="sm" variant={activeSubTab === "eng-stages" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("eng-stages")} data-testid="subtab-eng-stages">
               <Target className="h-3 w-3 mr-1" /> Stages
             </Button>
             )}
           </div>
-          {currentSubTab === "eng-tasks" && canViewSubTab.engTasks && <EngTasksTab projectInfoId={projectInfoId ?? null} isAdmin={isAdmin} />}
-          {currentSubTab === "eng-stages" && canViewSubTab.engStages && projectInfoId && (
+
+          {activeSubTab === "eng-tasks" && canViewTab.engineering && canViewSubTab.engTasks && <EngTasksTab projectInfoId={projectInfoId ?? null} isAdmin={isAdmin} />}
+          {activeSubTab === "eng-stages" && canViewTab.engineering && canViewSubTab.engStages && projectInfoId && (
             <EngineeringStagesTab projectId={projectInfoId} projectName={projectName} isAdmin={isAdmin} userRole={userRole} />
           )}
-        </TabsContent>
-        )}
+        </div>
+      )}
 
-        {canViewTab.plan && (
-        <TabsContent value="plan" className="space-y-4">
-          <div className="flex gap-1 flex-wrap" data-testid="sub-tabs-plan">
-            {canViewSubTab.gantt && (
-            <Button size="sm" variant={currentSubTab === "gantt" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("plan", "gantt")} data-testid="subtab-gantt">
-              <FileText className="h-3 w-3 mr-1" /> Gantt
-            </Button>
-            )}
-            {canViewSubTab.keyDates && (
-            <Button size="sm" variant={currentSubTab === "key-dates" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("plan", "key-dates")} data-testid="subtab-key-dates">
-              <Calendar className="h-3 w-3 mr-1" /> Key Dates
-            </Button>
-            )}
-          </div>
-          {currentSubTab === "gantt" && canViewSubTab.gantt && <ProjectPlanTab projectName={projectName} />}
-          {currentSubTab === "key-dates" && canViewSubTab.keyDates && <KeyDatesPanel projectName={projectName} />}
-        </TabsContent>
-        )}
-
-        {canViewTab.finance && (
-        <TabsContent value="money" className="space-y-4">
-          <div className="flex gap-1 flex-wrap" data-testid="sub-tabs-money">
-            {canViewSubTab.revenue && (
-            <Button size="sm" variant={currentSubTab === "revenue-tracking" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("money", "revenue-tracking")} data-testid="subtab-revenue">
-              <DollarSign className="h-3 w-3 mr-1" /> Revenue
-            </Button>
-            )}
-            {canViewSubTab.expenditure && (
-            <Button size="sm" variant={currentSubTab === "expenditure" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("money", "expenditure")} data-testid="subtab-expenditure">
-              <CreditCard className="h-3 w-3 mr-1" /> Expenditure
-            </Button>
-            )}
-            {canViewSubTab.cosTracker && (
-            <Button size="sm" variant={currentSubTab === "monthly-realisation" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("money", "monthly-realisation")} data-testid="subtab-monthly-realisation">
-              <TrendingUp className="h-3 w-3 mr-1" /> COS Tracker
-            </Button>
-            )}
-            {canViewSubTab.cashflow && (
-            <Button size="sm" variant={currentSubTab === "cashflow" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("money", "cashflow")} data-testid="subtab-cashflow">
-              <Activity className="h-3 w-3 mr-1" /> Cashflow
-            </Button>
-            )}
-            {canViewSubTab.subcontractors && (
-            <Button size="sm" variant={currentSubTab === "subcontractors" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setSubTab("money", "subcontractors")} data-testid="subtab-subcontractors">
-              <Users className="h-3 w-3 mr-1" /> Subcontractors
-            </Button>
-            )}
-          </div>
-          {currentSubTab === "revenue-tracking" && canViewSubTab.revenue && <RevenueTrackingTab projectName={projectName} highlightId={highlightType === 'revenue' ? highlightId : null} />}
-          {currentSubTab === "expenditure" && canViewSubTab.expenditure && <ExpenditureEditableTab projectName={projectName} highlightId={highlightType === 'expense' ? highlightId : null} />}
-          {currentSubTab === "monthly-realisation" && canViewSubTab.cosTracker && <MonthlyRealisationTab projectName={projectName} />}
-          {currentSubTab === "cashflow" && canViewSubTab.cashflow && <CashflowTab projectName={projectName} />}
-          {currentSubTab === "subcontractors" && canViewSubTab.subcontractors && <ProjectSubcontractorsTab projectName={projectName} />}
-        </TabsContent>
-        )}
-
-        {canViewTab.quality && (
-        <TabsContent value="quality" className="space-y-4">
+      {activeSection === "quality" && canViewTab.quality && (
+        <div className="space-y-4" data-testid="quality-section">
+          <Button variant="ghost" size="sm" onClick={() => navigateToSection("overview")} className="gap-2 -ml-2" data-testid="button-back-overview">
+            <ArrowLeft className="h-4 w-4" />
+            Back to Overview
+          </Button>
           <QualityTab projectName={projectName} />
-        </TabsContent>
-        )}
-
-        {canViewTab.history && (
-        <TabsContent value="history" className="space-y-4">
-          <WeeklyReviewWizard
-            projectName={projectName}
-            snapshotMetrics={{
-              phase: phase || undefined,
-              completion: projectInfo?.project_pct_complete ?? undefined,
-              totalRevenue: totalPaidInflows,
-              totalExpenses,
-              margin: totalPaidInflows > 0 ? (totalPaidInflows - totalExpenses) / totalPaidInflows : 0,
-              overdueCount: (engDataForAlerts as any[])?.filter?.((t: any) => t.dueDate && t.dueDate < new Date().toISOString().split("T")[0] && t.status !== "COMPLETE")?.length || 0,
-            }}
-          />
-          <ProjectHistoryTab projectName={projectName} />
-        </TabsContent>
-        )}
-      </Tabs>
+        </div>
+      )}
 
       <TaskDetailDrawer
         taskId={selectedTaskId}
