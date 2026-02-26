@@ -1,12 +1,21 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
 import { format } from "date-fns";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/hooks/use-toast";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import {
   Wrench,
   ShieldCheck,
@@ -18,6 +27,9 @@ import {
   Filter,
   User,
   FolderOpen,
+  ThumbsUp,
+  ThumbsDown,
+  Loader2,
 } from "lucide-react";
 
 type ApprovalType = "all" | "engineering" | "quality" | "deliverable";
@@ -51,7 +63,6 @@ const typeConfig = {
     icon: Wrench,
     color: "text-purple-600",
     bg: "bg-purple-50",
-    badgeVariant: "outline" as const,
     badgeClass: "border-purple-300 text-purple-700 bg-purple-50",
   },
   quality: {
@@ -59,7 +70,6 @@ const typeConfig = {
     icon: ShieldCheck,
     color: "text-teal-600",
     bg: "bg-teal-50",
-    badgeVariant: "outline" as const,
     badgeClass: "border-teal-300 text-teal-700 bg-teal-50",
   },
   deliverable: {
@@ -67,33 +77,118 @@ const typeConfig = {
     icon: FileCheck,
     color: "text-blue-600",
     bg: "bg-blue-50",
-    badgeVariant: "outline" as const,
     badgeClass: "border-blue-300 text-blue-700 bg-blue-50",
   },
 };
+
+function getAuthHeaders(): Record<string, string> {
+  const token = localStorage.getItem("auth_token");
+  return token ? { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } : { "Content-Type": "application/json" };
+}
 
 export default function AdminApprovalsPage() {
   const { user } = useAuth();
   const [, navigate] = useLocation();
   const [filter, setFilter] = useState<ApprovalType>("all");
-
-  const token = typeof window !== "undefined" ? localStorage.getItem("auth_token") : null;
+  const [actionDialog, setActionDialog] = useState<{ item: ApprovalItem; action: "approve" | "reject" } | null>(null);
+  const [reason, setReason] = useState("");
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const { data, isLoading, error } = useQuery<ApprovalsResponse>({
     queryKey: ["/api/approvals/pending"],
     queryFn: async () => {
-      const res = await fetch("/api/approvals/pending", {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
+      const res = await fetch("/api/approvals/pending", { headers: getAuthHeaders() });
       if (!res.ok) throw new Error("Failed to fetch approvals");
       return res.json();
     },
     refetchInterval: 30000,
   });
 
+  const actionMutation = useMutation({
+    mutationFn: async ({ item, action, comment }: { item: ApprovalItem; action: "approve" | "reject"; comment: string }) => {
+      if (item.type === "engineering") {
+        const approvalId = item.meta.approvalId;
+        const res = await fetch(`/api/eng-stages/approvals/${approvalId}`, {
+          method: "PATCH",
+          headers: getAuthHeaders(),
+          body: JSON.stringify({
+            status: action === "approve" ? "approved" : "rejected",
+            comments: comment || undefined,
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || err.message || "Failed to update engineering approval");
+        }
+        return res.json();
+      } else if (item.type === "quality") {
+        const itemInstanceId = item.meta.itemInstanceId;
+        const res = await fetch(`/api/quality/project/${encodeURIComponent(item.projectName)}/item/${itemInstanceId}/approve`, {
+          method: "POST",
+          headers: getAuthHeaders(),
+          body: JSON.stringify({
+            approved: action === "approve",
+            comment: comment || undefined,
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || err.message || "Failed to update quality approval");
+        }
+        return res.json();
+      } else if (item.type === "deliverable") {
+        const deliverableId = item.meta.deliverableId;
+        const newStatus = action === "approve" ? "COMPLETE" : "PROVIDE FEEDBACK";
+        const res = await fetch(`/api/deliverables/${deliverableId}`, {
+          method: "PATCH",
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ status: newStatus }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || err.message || "Failed to update deliverable");
+        }
+        if (action === "reject" && comment) {
+          await fetch(`/api/deliverables/${deliverableId}/feedback`, {
+            method: "POST",
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ feedbackText: comment }),
+          }).catch(() => {});
+        }
+        return res.json();
+      }
+    },
+    onSuccess: (_data, variables) => {
+      const verb = variables.action === "approve" ? "approved" : "rejected";
+      toast({ title: `Item ${verb}`, description: `${variables.item.title} has been ${verb}.` });
+      queryClient.invalidateQueries({ queryKey: ["/api/approvals/pending"] });
+      setActionDialog(null);
+      setReason("");
+    },
+    onError: (err: any) => {
+      toast({ title: "Action failed", description: err.message || "Something went wrong", variant: "destructive" });
+    },
+  });
+
   const items = data?.items || [];
   const counts = data?.counts || { engineering: 0, quality: 0, deliverable: 0, total: 0 };
   const filtered = filter === "all" ? items : items.filter(i => i.type === filter);
+
+  function openAction(item: ApprovalItem, action: "approve" | "reject", e: { stopPropagation: () => void }) {
+    e.stopPropagation();
+    setReason("");
+    setActionDialog({ item, action });
+  }
+
+  function submitAction() {
+    if (!actionDialog) return;
+    if (actionDialog.action === "reject" && !reason.trim()) {
+      toast({ title: "Reason required", description: "Please provide a reason for rejection.", variant: "destructive" });
+      return;
+    }
+    actionMutation.mutate({ item: actionDialog.item, action: actionDialog.action, comment: reason.trim() });
+  }
 
   function navigateToItem(item: ApprovalItem) {
     if (item.type === "engineering") {
@@ -215,8 +310,7 @@ export default function AdminApprovalsPage() {
             return (
               <Card
                 key={item.id}
-                className="hover:shadow-md transition-shadow cursor-pointer"
-                onClick={() => navigateToItem(item)}
+                className="hover:shadow-md transition-shadow"
                 data-testid={`card-approval-${item.id}`}
               >
                 <CardContent className="p-4">
@@ -251,7 +345,38 @@ export default function AdminApprovalsPage() {
                         </span>
                       </div>
                     </div>
-                    <ExternalLink className="w-4 h-4 text-muted-foreground shrink-0 mt-1" />
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <Button
+                        variant="default"
+                        size="sm"
+                        className="h-7 text-xs bg-green-600 hover:bg-green-700 gap-1"
+                        onClick={(e) => openAction(item, "approve", e)}
+                        data-testid={`btn-approve-${item.id}`}
+                      >
+                        <ThumbsUp className="w-3 h-3" />
+                        Approve
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700 gap-1"
+                        onClick={(e) => openAction(item, "reject", e)}
+                        data-testid={`btn-reject-${item.id}`}
+                      >
+                        <ThumbsDown className="w-3 h-3" />
+                        Reject
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0"
+                        onClick={() => navigateToItem(item)}
+                        title="View in project"
+                        data-testid={`btn-navigate-${item.id}`}
+                      >
+                        <ExternalLink className="w-3.5 h-3.5 text-muted-foreground" />
+                      </Button>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -259,6 +384,71 @@ export default function AdminApprovalsPage() {
           })}
         </div>
       )}
+
+      <Dialog open={!!actionDialog} onOpenChange={(open) => { if (!open) { setActionDialog(null); setReason(""); } }}>
+        <DialogContent className="sm:max-w-[440px]">
+          {actionDialog && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  {actionDialog.action === "approve" ? (
+                    <ThumbsUp className="w-5 h-5 text-green-600" />
+                  ) : (
+                    <ThumbsDown className="w-5 h-5 text-red-600" />
+                  )}
+                  {actionDialog.action === "approve" ? "Approve Item" : "Reject Item"}
+                </DialogTitle>
+                <DialogDescription>
+                  {actionDialog.action === "approve"
+                    ? "Confirm approval for this item. You can optionally add a comment."
+                    : "Please provide a reason for rejecting this item."}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3 py-2">
+                <div className="rounded-lg border p-3 bg-muted/30">
+                  <div className="text-sm font-medium">{actionDialog.item.title}</div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {actionDialog.item.projectName} · {typeConfig[actionDialog.item.type].label}
+                  </div>
+                </div>
+                <div>
+                  <label className="text-sm font-medium">
+                    {actionDialog.action === "approve" ? "Comment (optional)" : "Reason (required)"}
+                  </label>
+                  <Textarea
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    placeholder={actionDialog.action === "approve" ? "Add a comment..." : "Why is this being rejected?"}
+                    className="mt-1.5"
+                    rows={3}
+                    data-testid="input-reason"
+                  />
+                </div>
+              </div>
+              <DialogFooter className="gap-2 sm:gap-0">
+                <Button
+                  variant="outline"
+                  onClick={() => { setActionDialog(null); setReason(""); }}
+                  disabled={actionMutation.isPending}
+                  data-testid="btn-cancel-action"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant={actionDialog.action === "approve" ? "default" : "destructive"}
+                  className={actionDialog.action === "approve" ? "bg-green-600 hover:bg-green-700" : ""}
+                  onClick={submitAction}
+                  disabled={actionMutation.isPending || (actionDialog.action === "reject" && !reason.trim())}
+                  data-testid="btn-confirm-action"
+                >
+                  {actionMutation.isPending && <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />}
+                  {actionDialog.action === "approve" ? "Confirm Approval" : "Confirm Rejection"}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
