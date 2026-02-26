@@ -413,17 +413,18 @@ router.get("/api/home/summary", async (req, res) => {
       }
     }
     for (const plan of allPlans) {
-      if (!projectDeltas.has(plan.projectName) && plan.actualPctComplete !== null && plan.expectedPctComplete !== null) {
-        if (!projectDeltas.has(plan.projectName)) {
-          projectDeltas.set(plan.projectName, { weightedActual: 0, weightedExpected: 0, totalWeight: 0, hasSummary: false });
-        }
-        const pd = projectDeltas.get(plan.projectName)!;
-        if (!pd.hasSummary) {
-          const dur = plan.durationDays && plan.durationDays > 0 ? plan.durationDays : 1;
-          pd.weightedActual += plan.actualPctComplete * dur;
-          pd.weightedExpected += plan.expectedPctComplete * dur;
-          pd.totalWeight += dur;
-        }
+      const taskNo2 = (plan.taskNo || '').toString().toLowerCase().trim();
+      const isSummary2 = taskNo2 === 'no.' || taskNo2 === 'no' || taskNo2 === '#';
+      if (isSummary2) continue;
+      if (!projectDeltas.has(plan.projectName)) {
+        projectDeltas.set(plan.projectName, { weightedActual: 0, weightedExpected: 0, totalWeight: 0, hasSummary: false });
+      }
+      const pd = projectDeltas.get(plan.projectName)!;
+      if (!pd.hasSummary) {
+        const dur = plan.durationDays && plan.durationDays > 0 ? plan.durationDays : 1;
+        pd.weightedActual += (plan.actualPctComplete ?? 0) * dur;
+        pd.weightedExpected += (plan.expectedPctComplete ?? 0) * dur;
+        pd.totalWeight += dur;
       }
     }
 
@@ -752,12 +753,11 @@ router.get("/api/projects-summary", async (req, res) => {
         expectedPctComplete = summaryRow.expectedPctComplete ?? null;
       }
       if (projectPctComplete === null) {
-        const validTasks = projectPlans.filter(p => p.actualPctComplete !== null);
         let totalWeight = 0;
         let weightedSum = 0;
-        for (const p of validTasks) {
+        for (const p of projectPlans) {
           const dur = p.durationDays && p.durationDays > 0 ? p.durationDays : 1;
-          weightedSum += (p.actualPctComplete || 0) * dur;
+          weightedSum += (p.actualPctComplete ?? 0) * dur;
           totalWeight += dur;
         }
         projectPctComplete = totalWeight > 0 ? weightedSum / totalWeight : null;
