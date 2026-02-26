@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getQueryFn } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import {
   Construction, Zap, Wrench, UserCheck, DollarSign, AlertCircle,
   TrendingDown, TrendingUp, ArrowRight, AlertTriangle, Clock,
-  ChevronDown, ChevronRight, X, Loader2, Target, BarChart3,
+  ChevronDown, ChevronRight, X, Loader2, Target, BarChart3, RefreshCw,
 } from "lucide-react";
 import { useLocation, Link } from "wouter";
 import { format } from "date-fns";
@@ -394,8 +394,10 @@ function GanttTooltip({ active, payload }: any) {
 
 export default function Dashboard() {
   const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [activeDrilldown, setActiveDrilldown] = useState<string | null>(null);
+  const [hpRefreshing, setHpRefreshing] = useState(false);
 
   const { data: dashboardData, isLoading: dashLoading } = useQuery<{
     kpis: {
@@ -674,16 +676,34 @@ export default function Dashboard() {
 
       <Card className="border-l-4 border-l-red-500 shadow-sm" data-testid="card-high-priority">
         <CardHeader className="pb-2">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-red-100 dark:bg-red-900/30">
-              <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-400" />
+          <div className="flex items-center justify-between w-full">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-red-100 dark:bg-red-900/30">
+                <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-400" />
+              </div>
+              <div>
+                <CardTitle className="text-lg font-bold text-gray-900 dark:text-gray-50">High Priority Actions</CardTitle>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  Overdue expenses · Revenue outstanding · Projects behind plan · Upcoming milestones · Overdue tasks
+                </p>
+              </div>
             </div>
-            <div>
-              <CardTitle className="text-lg font-bold text-gray-900 dark:text-gray-50">High Priority Actions</CardTitle>
-              <p className="text-xs text-gray-400 mt-0.5">
-                Overdue expenses · Revenue outstanding · Projects behind plan · Upcoming milestones · Overdue tasks
-              </p>
-            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+              disabled={hpRefreshing}
+              onClick={async () => {
+                setHpRefreshing(true);
+                await queryClient.invalidateQueries({ queryKey: ["/api/dashboard/high-priority"] });
+                await queryClient.refetchQueries({ queryKey: ["/api/dashboard/high-priority"] });
+                setHpRefreshing(false);
+              }}
+              data-testid="btn-refresh-high-priority"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${hpRefreshing ? "animate-spin" : ""}`} />
+              {hpRefreshing ? "Refreshing…" : "Refresh"}
+            </Button>
           </div>
         </CardHeader>
         <CardContent>
