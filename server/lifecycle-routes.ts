@@ -144,14 +144,10 @@ export function registerLifecycleRoutes(app: Express) {
         const entry = planByNorm.get(norm)!;
         entry.total++;
         const dur = p.durationDays && p.durationDays > 0 ? Number(p.durationDays) : 1;
-        if (p.actualPctComplete != null) {
-          entry.weightedPct += Number(p.actualPctComplete) * dur;
-          entry.totalWeight += dur;
-        }
-        if (p.expectedPctComplete != null) {
-          entry.weightedExpPct += Number(p.expectedPctComplete) * dur;
-          entry.totalExpWeight += dur;
-        }
+        entry.weightedPct += Number(p.actualPctComplete ?? 0) * dur;
+        entry.totalWeight += dur;
+        entry.weightedExpPct += Number(p.expectedPctComplete ?? 0) * dur;
+        entry.totalExpWeight += dur;
       }
 
       const qmByNorm = new Map<string, { total: number; approved: number }>();
