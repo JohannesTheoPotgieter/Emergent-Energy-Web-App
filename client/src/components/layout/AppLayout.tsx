@@ -128,7 +128,6 @@ function getLegacyNavGroups(): NavGroup[] {
         { label: "Phase Templates", icon: Layers, path: "/admin/phase-templates" },
         { label: "New Project", icon: FolderPlus, path: "/project-create" },
         { label: "Smart Import", icon: FileSpreadsheet, path: "/smart-import" },
-        { label: "Invoice Patterns", icon: FileSpreadsheet, path: "/invoice-patterns" },
         { label: "Weekly Reviews", icon: CalendarCheck, path: "/weekly-reviews" },
         { label: "Change Audit", icon: Activity, path: "/admin/activity-log" },
         { label: "Approvals", icon: ShieldCheck, path: "/admin/approvals" },
@@ -166,6 +165,7 @@ function getRedesignedNavGroups(): NavGroup[] {
         { label: "Cashflow", icon: Wallet, path: "/cashflow" },
         { label: "COS Tracker", icon: TrendingUp, path: "/cos" },
         { label: "Procurement", icon: Truck, path: "/subcontractor-dashboard" },
+        { label: "Invoice Patterns", icon: FileSpreadsheet, path: "/invoice-patterns" },
       ],
     },
     {
@@ -201,7 +201,6 @@ function getRedesignedNavGroups(): NavGroup[] {
           children: [
             { label: "Roles & Permissions", icon: ShieldAlert, path: "/admin/roles" },
             { label: "Phase Templates", icon: ClipboardCheck, path: "/admin/phase-templates" },
-            { label: "Invoice Patterns", icon: FileSpreadsheet, path: "/invoice-patterns" },
             { label: "Weekly Reviews", icon: CalendarCheck, path: "/weekly-reviews" },
             { label: "Change Audit", icon: Activity, path: "/admin/activity-log" },
             { label: "Approvals", icon: ShieldCheck, path: "/admin/approvals" },
