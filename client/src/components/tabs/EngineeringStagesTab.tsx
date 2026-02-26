@@ -6,6 +6,9 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import {
   CheckCircle2,
@@ -25,6 +28,8 @@ import {
   Loader2,
   FolderDown,
   Play,
+  FolderOpen,
+  HardDrive,
 } from "lucide-react";
 import { exportStagePack, exportAllStagesPack } from "@/lib/stage-export";
 
@@ -495,38 +500,86 @@ function TaskRow({ task, projectId, stageId }: { task: any; projectId: number; s
   );
 }
 
+const SP_FOLDER_KEY = "eng_sp_folder_paths";
+const DEFAULT_SP_FOLDERS = [
+  "S:\\Emergent Energy\\Engineering\\Deliverables",
+  "S:\\Emergent Energy\\Projects",
+  "C:\\Users\\Shared\\SharePoint\\Emergent Energy\\Engineering",
+];
+
+function getSavedFolderPaths(): string[] {
+  try {
+    const saved = localStorage.getItem(SP_FOLDER_KEY);
+    if (saved) return JSON.parse(saved);
+  } catch {}
+  return DEFAULT_SP_FOLDERS;
+}
+
+function saveFolderPaths(paths: string[]) {
+  localStorage.setItem(SP_FOLDER_KEY, JSON.stringify(paths));
+}
+
 function DeliverablesSection({ stageId, projectId, templates, uploaded }: {
   stageId: number; projectId: number; templates: any[]; uploaded: any[];
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [spFolderPath, setSpFolderPath] = useState("");
+  const [customPath, setCustomPath] = useState("");
+  const [savedPaths, setSavedPaths] = useState<string[]>(getSavedFolderPaths);
   const { toast } = useToast();
   const qc = useQueryClient();
 
-  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    setPendingFile(file);
+    setSpFolderPath(savedPaths[0] || "");
+    setCustomPath("");
+    setUploadDialogOpen(true);
+    if (fileRef.current) fileRef.current.value = "";
+  }
+
+  async function handleConfirmUpload() {
+    if (!pendingFile) return;
+    const folderPath = spFolderPath === "__custom__" ? customPath.trim() : spFolderPath;
+
+    if (folderPath && spFolderPath === "__custom__" && customPath.trim()) {
+      if (!savedPaths.includes(customPath.trim())) {
+        const updated = [...savedPaths, customPath.trim()];
+        setSavedPaths(updated);
+        saveFolderPaths(updated);
+      }
+    }
+
     setUploading(true);
     try {
       const formData = new FormData();
-      formData.append("file", file);
+      formData.append("file", pendingFile);
       if (selectedTemplateId) formData.append("deliverableTemplateId", String(selectedTemplateId));
       formData.append("versionTag", "v1");
+      if (folderPath) formData.append("sharepointFolderPath", folderPath);
 
       const res = await engFetch(`/api/eng-stages/stages/${stageId}/deliverables`, {
         method: "POST",
         body: formData,
       });
       if (!res.ok) throw new Error("Upload failed");
-      toast({ title: "File uploaded" });
+      toast({
+        title: "File uploaded",
+        description: folderPath ? `SharePoint sync folder: ${folderPath}` : undefined,
+      });
       qc.invalidateQueries({ queryKey: ["eng-stage-detail", stageId] });
+      setUploadDialogOpen(false);
+      setPendingFile(null);
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     } finally {
       setUploading(false);
       setSelectedTemplateId(null);
-      if (fileRef.current) fileRef.current.value = "";
     }
   }
 
@@ -538,6 +591,15 @@ function DeliverablesSection({ stageId, projectId, templates, uploaded }: {
       qc.invalidateQueries({ queryKey: ["eng-stage-detail", stageId] });
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+  }
+
+  function handleRemoveSavedPath(pathToRemove: string) {
+    const updated = savedPaths.filter(p => p !== pathToRemove);
+    setSavedPaths(updated);
+    saveFolderPaths(updated);
+    if (spFolderPath === pathToRemove) {
+      setSpFolderPath(updated[0] || "__custom__");
     }
   }
 
@@ -559,28 +621,38 @@ function DeliverablesSection({ stageId, projectId, templates, uploaded }: {
               </div>
               {dt.description && <p className="text-[10px] text-muted-foreground mb-2">{dt.description}</p>}
               {files.map((f: any) => (
-                <div key={f.id} className="flex items-center gap-2 py-1 border-t text-xs">
-                  <FileText className="h-3 w-3 text-muted-foreground" />
-                  <span className="flex-1 truncate">{f.fileName}</span>
-                  {f.versionTag && <Badge variant="outline" className="text-[10px]">{f.versionTag}</Badge>}
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-6 w-6 p-0"
-                    onClick={() => window.open(`/api/eng-stages/deliverables/${f.id}/download`, "_blank")}
-                    data-testid={`btn-download-${f.id}`}
-                  >
-                    <Download className="h-3 w-3" />
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-6 w-6 p-0 text-red-500"
-                    onClick={() => handleDelete(f.id)}
-                    data-testid={`btn-delete-${f.id}`}
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
+                <div key={f.id} className="flex flex-col gap-0.5 py-1.5 border-t">
+                  <div className="flex items-center gap-2 text-xs">
+                    <FileText className="h-3 w-3 text-muted-foreground shrink-0" />
+                    <span className="flex-1 truncate font-medium">{f.fileName}</span>
+                    {f.versionTag && <Badge variant="outline" className="text-[10px]">{f.versionTag}</Badge>}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 w-6 p-0"
+                      onClick={() => window.open(`/api/eng-stages/deliverables/${f.id}/download`, "_blank")}
+                      data-testid={`btn-download-${f.id}`}
+                    >
+                      <Download className="h-3 w-3" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 w-6 p-0 text-red-500"
+                      onClick={() => handleDelete(f.id)}
+                      data-testid={`btn-delete-${f.id}`}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                  {f.sharepointFolderPath && (
+                    <div className="flex items-center gap-1.5 ml-5 text-[10px] text-blue-600">
+                      <FolderOpen className="h-2.5 w-2.5 shrink-0" />
+                      <span className="truncate" title={f.sharepointFolderPath}>
+                        SharePoint: {f.sharepointFolderPath}
+                      </span>
+                    </div>
+                  )}
                 </div>
               ))}
               <Button
@@ -597,7 +669,125 @@ function DeliverablesSection({ stageId, projectId, templates, uploaded }: {
           </Card>
         );
       })}
-      <input ref={fileRef} type="file" className="hidden" onChange={handleUpload} />
+      <input ref={fileRef} type="file" className="hidden" onChange={handleFileSelect} />
+
+      <Dialog open={uploadDialogOpen} onOpenChange={(open) => {
+        if (!open) { setUploadDialogOpen(false); setPendingFile(null); }
+      }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Upload className="h-5 w-5 text-blue-600" />
+              Upload Deliverable
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {pendingFile && (
+              <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border">
+                <FileText className="h-8 w-8 text-blue-500 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{pendingFile.name}</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {(pendingFile.size / 1024).toFixed(1)} KB
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold flex items-center gap-1.5">
+                <HardDrive className="h-3.5 w-3.5 text-blue-600" />
+                Local SharePoint Sync Folder
+              </Label>
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                Choose the local folder path where this file should be saved for SharePoint sync.
+                This is the folder on your machine that syncs with SharePoint.
+              </p>
+
+              <Select value={spFolderPath} onValueChange={setSpFolderPath}>
+                <SelectTrigger className="h-9 text-xs" data-testid="select-sp-folder">
+                  <SelectValue placeholder="Select a folder path..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {savedPaths.map((p, i) => (
+                    <SelectItem key={i} value={p}>
+                      <div className="flex items-center gap-2">
+                        <FolderOpen className="h-3 w-3 text-blue-500 shrink-0" />
+                        <span className="truncate text-xs">{p}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                  <SelectItem value="__custom__">
+                    <div className="flex items-center gap-2 text-blue-600">
+                      <FolderOpen className="h-3 w-3 shrink-0" />
+                      <span className="text-xs font-medium">Enter custom path...</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="">
+                    <span className="text-xs text-muted-foreground">Skip (no SharePoint path)</span>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+
+              {spFolderPath === "__custom__" && (
+                <div className="space-y-1.5">
+                  <Input
+                    className="h-8 text-xs font-mono"
+                    placeholder="e.g. S:\Emergent Energy\Projects\ProjectName\Deliverables"
+                    value={customPath}
+                    onChange={e => setCustomPath(e.target.value)}
+                    data-testid="input-custom-sp-path"
+                    autoFocus
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    This path will be saved for future uploads.
+                  </p>
+                </div>
+              )}
+
+              {savedPaths.length > 0 && (
+                <details className="text-[10px]">
+                  <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+                    Manage saved paths ({savedPaths.length})
+                  </summary>
+                  <div className="mt-1.5 space-y-1">
+                    {savedPaths.map((p, i) => (
+                      <div key={i} className="flex items-center gap-2 py-0.5">
+                        <span className="flex-1 truncate font-mono text-slate-600">{p}</span>
+                        <button
+                          className="text-red-400 hover:text-red-600 shrink-0"
+                          onClick={() => handleRemoveSavedPath(p)}
+                          title="Remove saved path"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => { setUploadDialogOpen(false); setPendingFile(null); }}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleConfirmUpload}
+              disabled={uploading || !pendingFile || (spFolderPath === "__custom__" && !customPath.trim())}
+              data-testid="btn-confirm-upload"
+            >
+              {uploading ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+              ) : (
+                <Upload className="h-3.5 w-3.5 mr-1" />
+              )}
+              Upload & Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
