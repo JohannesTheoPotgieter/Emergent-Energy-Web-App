@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
+import { usePermission } from "@/hooks/use-permissions";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,7 +17,7 @@ const authFetch = async (url: string, opts: RequestInit = {}) => {
 };
 
 export default function ProjectCreatePage() {
-  const { isAdmin } = useAuth();
+  const { allowed: canCreateProject, loading: permLoading } = usePermission('create_project', 'edit');
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const [saving, setSaving] = useState(false);
@@ -55,7 +56,8 @@ export default function ProjectCreatePage() {
     setSaving(false);
   };
 
-  if (!isAdmin) return <div className="p-8 text-center text-muted-foreground">Admin access required</div>;
+  if (permLoading) return <div className="p-8 text-center text-muted-foreground"><Loader2 className="w-6 h-6 animate-spin mx-auto" /></div>;
+  if (!canCreateProject) return <div className="p-8 text-center text-muted-foreground">You don't have permission to create projects. Contact your admin to request access.</div>;
 
   const phaseLabels = constants?.projectPhaseLabels || {};
 

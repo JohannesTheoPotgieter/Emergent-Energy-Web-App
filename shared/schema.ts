@@ -2432,7 +2432,7 @@ export const UX_REDESIGN_ENABLED = true;
 
 export type PermissionEntity = 'projects' | 'financials' | 'quality' | 'engineering' | 'procurement' | 'admin' | 'governance'
   | 'cos' | 'cashflow' | 'smart_import' | 'tr_register' | 'pm_dashboard'
-  | 'eng_stages' | 'eng_tasks' | 'lifecycle' | 'my_tool'
+  | 'eng_stages' | 'eng_tasks' | 'lifecycle' | 'my_tool' | 'create_project'
   | 'weekly_reviews' | 'ee_info'
   | 'pd_overview' | 'pd_plan' | 'pd_finance' | 'pd_engineering' | 'pd_quality' | 'pd_history'
   | 'pd_revenue' | 'pd_expenditure' | 'pd_cos_tracker' | 'pd_cashflow' | 'pd_subcontractors'
@@ -2557,6 +2557,13 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     entity: 'lifecycle',
     view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'ENGINEERING_MANAGER'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
+    approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+  },
+  {
+    entity: 'create_project',
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
