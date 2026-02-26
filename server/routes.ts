@@ -3259,12 +3259,10 @@ export async function registerRoutes(
       const projectInfoMap = new Map(allProjectInfo.map(info => [info.projectName, info]));
 
       const nowDate = new Date();
-      const fyStartMonth = 3;
+      const fyStartMonth = 9;
       const fyStartYear = nowDate.getMonth() + 1 >= fyStartMonth ? nowDate.getFullYear() : nowDate.getFullYear() - 1;
-      const fyStart = `${fyStartYear}-03-01`;
-      const fyEndYear = fyStartYear + 1;
-      const fyEndDay = (fyEndYear % 4 === 0 && (fyEndYear % 100 !== 0 || fyEndYear % 400 === 0)) ? "29" : "28";
-      const fyEnd = `${fyEndYear}-02-${fyEndDay}`;
+      const fyStart = `${fyStartYear}-09-01`;
+      const fyEnd = `${fyStartYear + 1}-08-31`;
       function isMegaParkOutsideFY(projectName: string, dateStr: string): boolean {
         return /mega\s*park/i.test(projectName) && (dateStr < fyStart || dateStr > fyEnd);
       }
