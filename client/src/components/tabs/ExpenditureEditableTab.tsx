@@ -112,7 +112,7 @@ const COLUMNS: ColumnDef[] = [
   { key: "cosStatus", label: "COS Status", defaultVisible: true, align: "center", minWidth: "110px" },
   { key: "paymentStatus", label: "Payment Status", defaultVisible: true, align: "center", minWidth: "110px" },
   { key: "plannedMonth", label: "Planned Month", defaultVisible: true, align: "center", minWidth: "100px" },
-  { key: "budgetTotal", label: "Budget Total", defaultVisible: false, align: "right", minWidth: "120px" },
+  { key: "budgetTotal", label: "Costed Total", defaultVisible: false, align: "right", minWidth: "120px" },
   { key: "revenueAmount", label: "Rev Recognition", defaultVisible: false, align: "right", minWidth: "130px" },
   { key: "variance", label: "Variance", defaultVisible: false, align: "right", minWidth: "110px" },
 ];

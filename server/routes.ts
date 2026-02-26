@@ -7420,7 +7420,7 @@ export async function registerRoutes(
           .reduce((sum: number, inf: any) => sum + Math.abs(parseFloat(inf.milestoneAmount || '0')), 0);
 
         const riskFlags: string[] = [];
-        if (totalActual > totalBudget * 1.1 && totalBudget > 0) riskFlags.push('Over budget');
+        if (totalActual > totalBudget * 1.1 && totalBudget > 0) riskFlags.push('Over costed');
         if (!p.constructionStartDate) riskFlags.push('No start date');
         if (!p.commissioningDate) riskFlags.push('No commissioning date');
         if (!p.pm) riskFlags.push('No PM assigned');

@@ -69,13 +69,13 @@ const ROW_DEFS: {
   { key: "planned", label: "Planned", dataKey: "planned", editable: false, colorClass: "text-blue-600", group: "monthly" },
   { key: "realised", label: "Realised", dataKey: "realised", editable: true, colorClass: "text-green-600", group: "monthly" },
   { key: "outstanding", label: "Outstanding", dataKey: "outstanding", editable: true, colorClass: "text-amber-600", group: "monthly" },
-  { key: "budget", label: "Budget", dataKey: "budget", editable: true, colorClass: "text-purple-600", group: "monthly" },
+  { key: "budget", label: "Costed", dataKey: "budget", editable: true, colorClass: "text-purple-600", group: "monthly" },
   { key: "variance", label: "Variance", dataKey: "variance", editable: false, colorClass: "", group: "monthly", colorCoded: true },
   { key: "variancePct", label: "Variance %", dataKey: "variancePct", editable: false, colorClass: "", group: "monthly", colorCoded: true },
   { key: "ytdPlanned", label: "YTD Planned", dataKey: "ytdPlanned", editable: false, colorClass: "text-blue-600", group: "ytd" },
   { key: "ytdRealised", label: "YTD Realised", dataKey: "ytdRealised", editable: false, colorClass: "text-green-600", group: "ytd" },
   { key: "ytdOutstanding", label: "YTD Outstanding", dataKey: "ytdOutstanding", editable: false, colorClass: "text-amber-600", group: "ytd" },
-  { key: "ytdBudget", label: "YTD Budget", dataKey: "ytdBudget", editable: false, colorClass: "text-purple-600", group: "ytd" },
+  { key: "ytdBudget", label: "YTD Costed", dataKey: "ytdBudget", editable: false, colorClass: "text-purple-600", group: "ytd" },
   { key: "ytdVariance", label: "YTD Variance", dataKey: "ytdVariance", editable: false, colorClass: "", group: "ytd", colorCoded: true },
   { key: "ytdVariancePct", label: "YTD Variance %", dataKey: "ytdVariancePct", editable: false, colorClass: "", group: "ytd", colorCoded: true },
 ];
@@ -133,7 +133,7 @@ export default function RevenueTracker() {
         month: m.monthLabel,
         Planned: m.planned,
         Realised: m.realised,
-        Budget: m.budget,
+        Costed: m.budget,
         "YTD Variance": m.ytdVariance,
       })),
     [months],
@@ -163,7 +163,7 @@ export default function RevenueTracker() {
           Revenue Tracker FY26
         </h2>
         <p className="text-muted-foreground mt-1" data-testid="text-page-subtitle">
-          Monthly revenue tracking with planned vs budget analysis
+          Monthly revenue tracking with planned vs costed analysis
         </p>
       </div>
 
@@ -208,7 +208,7 @@ export default function RevenueTracker() {
                   <Target className="h-5 w-5 text-purple-600" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">YTD Budget</p>
+                  <p className="text-sm text-muted-foreground">YTD Costed</p>
                   <p className="text-2xl font-bold font-mono" data-testid="text-ytd-budget-value">
                     {formatRand(lastMonth?.ytdBudget ?? 0)}
                   </p>
@@ -348,7 +348,7 @@ export default function RevenueTracker() {
                   <Legend />
                   <Bar dataKey="Planned" fill="#3b82f6" radius={[4, 4, 0, 0]} />
                   <Bar dataKey="Realised" fill="#22c55e" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="Budget" fill="#a855f7" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Costed" fill="#a855f7" radius={[4, 4, 0, 0]} />
                   <Line
                     type="monotone"
                     dataKey="YTD Variance"
