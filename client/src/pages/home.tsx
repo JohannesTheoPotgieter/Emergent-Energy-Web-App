@@ -1,8 +1,9 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getQueryFn, apiRequest } from "@/lib/queryClient";
@@ -30,6 +31,11 @@ import {
   Eye,
   MailCheck,
   Wrench,
+  Search,
+  FolderOpen,
+  FileText,
+  MessageSquare,
+  Building2,
 } from "lucide-react";
 
 const ROLE_COMPLIMENTS: Record<string, string[]> = {
@@ -577,6 +583,198 @@ function StatCard({ icon: Icon, label, value, color, href, testId }: {
   return content;
 }
 
+interface ProjectSummary {
+  project_name: string;
+  phase?: string | null;
+  pm?: string | null;
+  pd?: string | null;
+  project_pct_complete?: number | null;
+  expected_pct_complete?: number | null;
+  project_info_id?: number | null;
+  is_active?: boolean;
+}
+
+function ProjectQuickSearch({ projects, isLoading }: { projects: ProjectSummary[]; isLoading: boolean }) {
+  const [, navigate] = useLocation();
+  const [search, setSearch] = useState("");
+  const [isOpen, setIsOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const activeProjects = useMemo(() => projects.filter(p => p.is_active !== false), [projects]);
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return activeProjects.slice(0, 8);
+    const q = search.toLowerCase();
+    return activeProjects.filter(p =>
+      cleanProjectName(p.project_name).toLowerCase().includes(q) ||
+      (p.pm || "").toLowerCase().includes(q) ||
+      (p.pd || "").toLowerCase().includes(q)
+    ).slice(0, 10);
+  }, [search, activeProjects]);
+
+  return (
+    <div ref={wrapperRef} className="relative" data-testid="project-quick-search">
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Jump to a project..."
+          className="pl-10 h-10 bg-card border-border/60"
+          value={search}
+          onChange={(e) => { setSearch(e.target.value); setIsOpen(true); }}
+          onFocus={() => setIsOpen(true)}
+          data-testid="input-project-search"
+        />
+      </div>
+      {isOpen && !isLoading && filtered.length > 0 && (
+        <div className="absolute z-50 w-full mt-1 bg-card border border-border rounded-lg shadow-lg max-h-[320px] overflow-y-auto" data-testid="project-search-results">
+          {filtered.map(p => (
+            <button
+              key={p.project_name}
+              className="w-full text-left px-3 py-2.5 hover:bg-muted/50 transition-colors flex items-center gap-3 border-b border-border/30 last:border-0"
+              onClick={() => {
+                navigate(`/project/${encodeURIComponent(p.project_name)}`);
+                setIsOpen(false);
+                setSearch("");
+              }}
+              data-testid={`search-result-${p.project_name}`}
+            >
+              <div className="p-1.5 rounded bg-blue-50 text-blue-600">
+                <Building2 className="h-3.5 w-3.5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{cleanProjectName(p.project_name)}</p>
+                <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                  {p.phase && <span>{p.phase}</span>}
+                  {p.pm && <span>PM: {p.pm}</span>}
+                </div>
+              </div>
+              {p.project_pct_complete != null && (
+                <Badge variant="outline" className="text-[10px] shrink-0">
+                  {Math.round(p.project_pct_complete * 100)}%
+                </Badge>
+              )}
+              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MyProjectsHub({ projects, userName }: { projects: ProjectSummary[]; userName: string }) {
+  const [, navigate] = useLocation();
+
+  const myProjects = useMemo(() => {
+    const name = userName.toLowerCase().trim();
+    return projects.filter(p => {
+      if (p.is_active === false) return false;
+      const pmLower = (p.pm || "").toLowerCase().trim();
+      const pdLower = (p.pd || "").toLowerCase().trim();
+      return pmLower === name || pdLower === name ||
+        (name.length > 2 && (pmLower.startsWith(name + " ") || pdLower.startsWith(name + " ")));
+    });
+  }, [projects, userName]);
+
+  if (myProjects.length === 0) return null;
+
+  return (
+    <Card className="shadow-sm" data-testid="card-my-projects">
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+            <FolderOpen className="h-4 w-4 text-blue-500" />
+            My Projects
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0">{myProjects.length}</Badge>
+          </CardTitle>
+          <Link href="/projects">
+            <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" data-testid="button-view-all-projects">
+              All Projects <ArrowRight className="h-3 w-3" />
+            </Button>
+          </Link>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {myProjects.slice(0, 6).map(p => {
+            const name = cleanProjectName(p.project_name);
+            const progress = p.project_pct_complete != null ? Math.round(p.project_pct_complete * 100) : null;
+            const expected = p.expected_pct_complete != null ? Math.round(p.expected_pct_complete * 100) : null;
+            const behind = progress !== null && expected !== null && (expected - progress) > 5;
+
+            return (
+              <div
+                key={p.project_name}
+                className={`border rounded-lg p-3 cursor-pointer transition-colors hover:bg-muted/30 ${behind ? "border-red-200 bg-red-50/20" : "border-border/50"}`}
+                onClick={() => navigate(`/project/${encodeURIComponent(p.project_name)}`)}
+                data-testid={`my-project-${p.project_name}`}
+              >
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <h4 className="text-sm font-semibold leading-snug line-clamp-2">{name}</h4>
+                  {p.phase && (
+                    <Badge variant="outline" className="text-[10px] px-1 py-0 shrink-0">{p.phase}</Badge>
+                  )}
+                </div>
+                {progress !== null && (
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-[11px]">
+                      <span className="text-muted-foreground">Progress</span>
+                      <span className={`font-medium ${behind ? "text-red-600" : "text-foreground"}`}>{progress}%</span>
+                    </div>
+                    <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all ${behind ? "bg-red-500" : "bg-blue-500"}`}
+                        style={{ width: `${Math.min(progress, 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+                <div className="flex items-center gap-2 mt-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-[10px] gap-1 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                    onClick={(e) => { e.stopPropagation(); navigate(`/project/${encodeURIComponent(p.project_name)}#documents`); }}
+                    data-testid={`project-docs-${p.project_name}`}
+                  >
+                    <FileText className="h-3 w-3" /> Docs
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-[10px] gap-1 text-purple-600 hover:text-purple-700 hover:bg-purple-50"
+                    onClick={(e) => { e.stopPropagation(); navigate(`/project/${encodeURIComponent(p.project_name)}#teams`); }}
+                    data-testid={`project-teams-${p.project_name}`}
+                  >
+                    <MessageSquare className="h-3 w-3" /> Teams
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        {myProjects.length > 6 && (
+          <Link href="/projects">
+            <p className="text-xs text-blue-500 hover:text-blue-700 cursor-pointer mt-2 pl-1" data-testid="link-more-projects">
+              +{myProjects.length - 6} more project{myProjects.length - 6 > 1 ? "s" : ""}...
+            </p>
+          </Link>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function Home() {
   const { user, isAdmin } = useAuth();
   const [, navigate] = useLocation();
@@ -603,6 +801,16 @@ export default function Home() {
     queryKey: ["/api/home/action-hub"],
     queryFn: getQueryFn({ on401: "throw" }),
     refetchInterval: 60000,
+  });
+
+  const { data: allProjects = [], isLoading: projectsLoading } = useQuery<ProjectSummary[]>({
+    queryKey: ["/api/projects-summary"],
+    queryFn: async () => {
+      const res = await fetch("/api/projects-summary", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    staleTime: 120000,
   });
 
   const markReadMutation = useMutation({
@@ -634,6 +842,12 @@ export default function Home() {
           </p>
         </div>
       </div>
+
+      <ProjectQuickSearch projects={allProjects} isLoading={projectsLoading} />
+
+      {user?.name && (
+        <MyProjectsHub projects={allProjects} userName={user.name} />
+      )}
 
       <CompanyPrioritiesCards isAdmin={!!canEdit} priorities={priorities} isLoading={prioritiesLoading} />
 
