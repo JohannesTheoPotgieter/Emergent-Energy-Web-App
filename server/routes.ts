@@ -4843,14 +4843,18 @@ export async function registerRoutes(
         if (!Array.isArray(taskRowNumbers) || parentRowNumber === undefined) {
           return res.status(400).json({ error: "taskRowNumbers[] and parentRowNumber required" });
         }
+        const safeRows = taskRowNumbers.filter((rn: number) => rn !== parentRowNumber);
+        if (safeRows.length === 0) {
+          return res.status(400).json({ error: "Cannot set a task as its own parent" });
+        }
         const overridesToSave: any[] = [];
-        for (let i = 0; i < taskRowNumbers.length; i++) {
+        for (let i = 0; i < safeRows.length; i++) {
           overridesToSave.push({
-            projectName, rowNumber: taskRowNumbers[i],
+            projectName, rowNumber: safeRows[i],
             fieldName: "parentRowNumber", overrideValue: String(parentRowNumber), createdBy: userId,
           });
           overridesToSave.push({
-            projectName, rowNumber: taskRowNumbers[i],
+            projectName, rowNumber: safeRows[i],
             fieldName: "indentLevel", overrideValue: "1", createdBy: userId,
           });
         }
@@ -4897,6 +4901,10 @@ export async function registerRoutes(
         if (milestoneRowNumber === undefined || !Array.isArray(subtaskRowNumbers) || subtaskRowNumbers.length === 0) {
           return res.status(400).json({ error: "milestoneRowNumber and subtaskRowNumbers[] required" });
         }
+        const safeSubtasks = subtaskRowNumbers.filter((rn: number) => rn !== milestoneRowNumber);
+        if (safeSubtasks.length === 0) {
+          return res.status(400).json({ error: "No valid subtasks after excluding milestone" });
+        }
         const overridesToSave: any[] = [];
         overridesToSave.push({
           projectName, rowNumber: milestoneRowNumber,
@@ -4906,7 +4914,7 @@ export async function registerRoutes(
           projectName, rowNumber: milestoneRowNumber,
           fieldName: "parentRowNumber", overrideValue: "", createdBy: userId,
         });
-        for (const rn of subtaskRowNumbers) {
+        for (const rn of safeSubtasks) {
           overridesToSave.push({
             projectName, rowNumber: rn,
             fieldName: "parentRowNumber", overrideValue: String(milestoneRowNumber), createdBy: userId,

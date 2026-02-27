@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -24,7 +24,7 @@ import {
   ChevronDown, ChevronRight, Columns, ListFilter,
   AlertTriangle, TrendingUp, TrendingDown, Minus,
   CheckCircle2, Clock, Circle, Ban, Loader2,
-  Milestone, FolderPlus, Ungroup, X, ArrowUpDown,
+  Milestone, FolderPlus, Ungroup, X, ArrowUpDown, GripVertical,
 } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -102,7 +102,10 @@ const formatDateCompact = (dateStr: string | null | undefined): string => {
 const getTaskDepth = (task: any, taskMap: Map<number, any>): number => {
   let depth = 0;
   let current = task;
+  const seen = new Set<number>();
   while (current?.parentTaskId && taskMap.has(current.parentTaskId)) {
+    if (seen.has(current.id)) return depth;
+    seen.add(current.id);
     depth++;
     current = taskMap.get(current.parentTaskId);
   }
@@ -159,6 +162,10 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
   const [visibleColumns, setVisibleColumns] = useState<Set<ColumnKey>>(() =>
     new Set(ALL_COLUMNS.filter(c => c.defaultVisible).map(c => c.key))
   );
+
+  const [dragId, setDragId] = useState<number | null>(null);
+  const [dropTargetId, setDropTargetId] = useState<number | null>(null);
+  const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { data: tasks = [], isLoading } = useQuery<any[]>({
     queryKey: ["planning-tasks", projectName],
@@ -369,7 +376,10 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
   const visibleTasks = useMemo(() => {
     return filtered.filter(t => {
       let parentId = t.parentTaskId;
+      const seen = new Set<number>();
       while (parentId) {
+        if (parentId === t.id || seen.has(parentId)) return true;
+        seen.add(parentId);
         if (collapsedParents.has(parentId)) return false;
         const parent = taskMap.get(parentId);
         parentId = parent?.parentTaskId || null;
@@ -388,6 +398,59 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
     const avgPct = leafTasks.length > 0 ? Math.round(leafTasks.reduce((s, t) => s + (t.percentComplete || 0), 0) / leafTasks.length) : 0;
     return { total, done, inProgress, behind, ahead, avgPct };
   }, [tasks]);
+
+  const handleDragStart = useCallback((e: React.DragEvent, task: any) => {
+    if (!isAdmin) return;
+    const ids = selectedIds.has(task.id) ? Array.from(selectedIds) : [task.id];
+    e.dataTransfer.setData("text/plain", JSON.stringify(ids));
+    e.dataTransfer.effectAllowed = "move";
+    setDragId(task.id);
+  }, [isAdmin, selectedIds]);
+
+  const handleDragOver = useCallback((e: React.DragEvent, task: any) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (task.id !== dragId) setDropTargetId(task.id);
+  }, [dragId]);
+
+  const handleDragLeave = useCallback(() => {
+    if (dragTimeoutRef.current) clearTimeout(dragTimeoutRef.current);
+    dragTimeoutRef.current = setTimeout(() => setDropTargetId(null), 50);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent, targetTask: any) => {
+    e.preventDefault();
+    setDragId(null);
+    setDropTargetId(null);
+    if (dragTimeoutRef.current) clearTimeout(dragTimeoutRef.current);
+    try {
+      const draggedIds: number[] = JSON.parse(e.dataTransfer.getData("text/plain"));
+      if (!draggedIds.length || draggedIds.includes(targetTask.id)) return;
+      const draggedTasks = draggedIds.map(id => tasks.find((t: any) => t.id === id)).filter(Boolean);
+      const dragRowNumbers = draggedTasks.map((t: any) => t.rowNumber).filter((rn: any) => rn != null);
+      if (dragRowNumbers.length === 0) return;
+
+      const targetIsParent = targetTask.isParent || targetTask.isMilestone || targetTask.isVirtualMilestone || targetTask.childCount > 0;
+      if (targetIsParent && targetTask.rowNumber != null) {
+        structureMutation.mutate({
+          operation: "setParent",
+          data: { taskRowNumbers: dragRowNumbers, parentRowNumber: targetTask.rowNumber },
+        });
+      } else {
+        const allRowNumbers = [...dragRowNumbers, targetTask.rowNumber].filter((rn: any) => rn != null);
+        if (allRowNumbers.length < 2) return;
+        structureMutation.mutate(
+          { operation: "convertToMilestone", data: { milestoneRowNumber: targetTask.rowNumber, subtaskRowNumbers: dragRowNumbers } }
+        );
+      }
+      setSelectedIds(new Set());
+    } catch {}
+  }, [tasks, structureMutation]);
+
+  const handleDragEnd = useCallback(() => {
+    setDragId(null);
+    setDropTargetId(null);
+  }, []);
 
   const toggleParent = useCallback((id: number) => {
     setCollapsedParents(prev => {
@@ -429,6 +492,9 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
       case "title":
         return (
           <div className="flex items-center gap-1.5 min-w-0" style={{ paddingLeft: `${depth * 18}px` }}>
+            {isAdmin && (
+              <GripVertical className="h-3.5 w-3.5 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 cursor-grab" />
+            )}
             {hasChildren ? (
               <button
                 className="flex items-center justify-center w-5 h-5 rounded hover:bg-slate-200 transition-colors shrink-0"
@@ -941,11 +1007,20 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
                   const isBehind = task.planStatus === "behind" && !hasChildren;
                   return (
                     <TableRow key={task.id} data-testid={`row-task-${task.id}`}
+                      draggable={isAdmin}
+                      onDragStart={e => handleDragStart(e, task)}
+                      onDragOver={e => handleDragOver(e, task)}
+                      onDragLeave={handleDragLeave}
+                      onDrop={e => handleDrop(e, task)}
+                      onDragEnd={handleDragEnd}
                       className={[
                         "group transition-colors",
+                        dragId === task.id ? "opacity-40" : "",
+                        dropTargetId === task.id ? "ring-2 ring-indigo-400 ring-inset bg-indigo-50/80" : "",
                         isMsRow ? "bg-indigo-50/60 hover:bg-indigo-100/60 border-l-[3px] border-l-indigo-400" :
                         hasChildren ? "bg-slate-50/60 hover:bg-slate-100/80" : "hover:bg-slate-50/80",
                         !isMsRow && isBehind ? "border-l-[3px] border-l-red-400" : !isMsRow && task.planStatus === "ahead" && !hasChildren ? "border-l-[3px] border-l-emerald-400" : !isMsRow && !hasChildren ? "border-l-[3px] border-l-transparent" : "",
+                        isAdmin ? "cursor-grab active:cursor-grabbing" : "",
                       ].join(" ")}>
                       <TableCell className="w-9 px-2">
                         <Checkbox data-testid={`checkbox-task-${task.id}`} checked={selectedIds.has(task.id)} onCheckedChange={() => toggleOne(task.id)} />
