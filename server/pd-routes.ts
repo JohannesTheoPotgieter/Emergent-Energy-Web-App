@@ -108,6 +108,8 @@ export function registerPdRoutes(app: Express) {
 
       const enriched = rows.map(r => ({
         ...r,
+        clientName: r.clientName || r.ticket.clientNameSnapshot || null,
+        projectName: r.projectName || (r.ticket.projectId ? r.ticket.projectSiteName : null),
         taskTotal: taskCounts[r.ticket.id]?.total || 0,
         taskCompleted: taskCounts[r.ticket.id]?.completed || 0,
       }));
@@ -179,6 +181,8 @@ export function registerPdRoutes(app: Express) {
 
       res.json({
         ...ticket,
+        clientName: ticket.clientName || ticket.ticket.clientNameSnapshot || null,
+        projectName: ticket.projectName || (ticket.ticket.projectId ? ticket.ticket.projectSiteName : null),
         tasks,
         recentActivity,
         developerName: developerUser[0]?.name || null,
