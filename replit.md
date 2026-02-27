@@ -23,7 +23,7 @@ Preferred communication style: Simple, everyday language.
 
 ### Backend
 -   **Frameworks & Libraries**: Express.js with TypeScript.
--   **Authentication & Authorization**: Passport.js with local strategy, PostgreSQL-backed sessions, role-based access control, rate limiting, and granular permission middleware. Includes specific roles like `PROJECT_DEVELOPER` and `PROJECT_MANAGER_SITE`. Frontend `usePermission` hook fetches DB entity permission overrides from `/api/auth/permissions` and checks them before falling back to static defaults. Admin Roles page saves entity-level permission overrides per role.
+-   **Authentication & Authorization**: Passport.js with local strategy, PostgreSQL-backed sessions, role-based access control, rate limiting, and granular permission middleware. Includes specific roles like `PROJECT_DEVELOPER` and `PROJECT_MANAGER_SITE`. Frontend `usePermission` hook fetches DB entity permission overrides from `/api/auth/permissions` and checks them before falling back to static defaults. Admin Roles page (`/admin/roles`) redesigned with tab-based layout: Role Permissions (sidebar selector + category-grouped permission grid), Project Detail Access (per-tab view/edit controls), User Management (search, avatars, color-coded role badges). Permission entities expanded to include `portfolios`, `notifications`, `subcontractors`, `cos_control`, `cashflow_forecast`, `home`. Shared state across all tabs prevents data fragmentation.
 -   **File Handling**: Multer for uploads, `exceljs` for parsing.
 -   **Data Storage**: PostgreSQL with Drizzle ORM, ensuring transactional safety and reprocessing.
 -   **Logic**: Pure-function modules for computations, automated backfill system for computed columns, and audit trails for data mutations.
