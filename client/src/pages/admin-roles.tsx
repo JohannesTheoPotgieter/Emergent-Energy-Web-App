@@ -52,6 +52,8 @@ import {
   CheckCircle2,
   XCircle,
   Lock,
+  ToggleLeft,
+  Layers,
 } from "lucide-react";
 import {
   COMPANY_ROLE_LABELS,
@@ -108,16 +110,19 @@ interface PermissionCategory {
   description: string;
   icon: any;
   color: string;
+  bgLight: string;
   entities: { entity: PermissionEntity; label: string; description: string }[];
+  projectDetail?: { entity: PermissionEntity; label: string; description: string }[];
 }
 
-const PERMISSION_CATEGORIES: PermissionCategory[] = [
+const UNIFIED_CATEGORIES: PermissionCategory[] = [
   {
     key: "home_exco",
     label: "Home & EXCO",
     description: "Home dashboard, My Tool, company priorities, meetings, lifecycle board",
     icon: Home,
     color: "bg-indigo-500",
+    bgLight: "bg-indigo-50 border-indigo-100",
     entities: [
       { entity: "home" as PermissionEntity, label: "Home / Action Hub", description: "Dashboard with stats, tasks, and notifications" },
       { entity: "my_tool" as PermissionEntity, label: "My Tool", description: "Personal task manager with today, week, backlog views" },
@@ -133,6 +138,7 @@ const PERMISSION_CATEGORIES: PermissionCategory[] = [
     description: "Projects, execution board, PM dashboard, import, portfolios",
     icon: FolderKanban,
     color: "bg-blue-500",
+    bgLight: "bg-blue-50 border-blue-100",
     entities: [
       { entity: "projects" as PermissionEntity, label: "Projects", description: "View and manage project list" },
       { entity: "execution_board" as PermissionEntity, label: "Execution Board", description: "Kanban-style project execution tracking" },
@@ -142,6 +148,13 @@ const PERMISSION_CATEGORIES: PermissionCategory[] = [
       { entity: "tr_register" as PermissionEntity, label: "TR Register", description: "Technical review action items" },
       { entity: "create_project" as PermissionEntity, label: "Create Project", description: "Ability to create new projects" },
     ],
+    projectDetail: [
+      { entity: "pd_overview" as PermissionEntity, label: "Overview / Tasks", description: "Grid, Board, Calendar task views" },
+      { entity: "pd_plan" as PermissionEntity, label: "Plan", description: "Project plan with Gantt and key dates" },
+      { entity: "pd_gantt" as PermissionEntity, label: "Gantt Chart", description: "Interactive Gantt chart view" },
+      { entity: "pd_key_dates" as PermissionEntity, label: "Key Dates", description: "Milestone dates and deadlines" },
+      { entity: "pd_history" as PermissionEntity, label: "History / Reviews", description: "Project history and weekly review log" },
+    ],
   },
   {
     key: "finance",
@@ -149,6 +162,7 @@ const PERMISSION_CATEGORIES: PermissionCategory[] = [
     description: "Financial tracking, COS, cashflow, invoicing, procurement",
     icon: DollarSign,
     color: "bg-emerald-500",
+    bgLight: "bg-emerald-50 border-emerald-100",
     entities: [
       { entity: "financials" as PermissionEntity, label: "Financials", description: "Revenue and expense tracking" },
       { entity: "cos" as PermissionEntity, label: "COS Tracker", description: "Cost of sales tracking per project" },
@@ -159,6 +173,14 @@ const PERMISSION_CATEGORIES: PermissionCategory[] = [
       { entity: "invoice_patterns" as PermissionEntity, label: "Invoice Patterns", description: "Invoice pattern analysis" },
       { entity: "subcontractors" as PermissionEntity, label: "Subcontractors", description: "Subcontractor management dashboard" },
     ],
+    projectDetail: [
+      { entity: "pd_finance" as PermissionEntity, label: "Finance Summary", description: "Combined finance overview" },
+      { entity: "pd_revenue" as PermissionEntity, label: "Revenue", description: "Revenue lines and inflows" },
+      { entity: "pd_expenditure" as PermissionEntity, label: "Expenditure", description: "Expense lines and outflows" },
+      { entity: "pd_cos_tracker" as PermissionEntity, label: "COS Tracker", description: "Project-level cost of sales" },
+      { entity: "pd_cashflow" as PermissionEntity, label: "Cashflow", description: "Project cash flow tracking" },
+      { entity: "pd_subcontractors" as PermissionEntity, label: "Subcontractors", description: "Subcontractor assignments and costs" },
+    ],
   },
   {
     key: "engineering",
@@ -166,10 +188,16 @@ const PERMISSION_CATEGORIES: PermissionCategory[] = [
     description: "Engineering stages, task boards, and delivery management",
     icon: Wrench,
     color: "bg-orange-500",
+    bgLight: "bg-orange-50 border-orange-100",
     entities: [
       { entity: "engineering" as PermissionEntity, label: "Engineering Dashboard", description: "Overview of all engineering activity" },
       { entity: "eng_tasks" as PermissionEntity, label: "Task Board", description: "Engineering task management board" },
       { entity: "eng_stages" as PermissionEntity, label: "Stage Checklists", description: "5-stage engineering checklist system" },
+    ],
+    projectDetail: [
+      { entity: "pd_engineering" as PermissionEntity, label: "Engineering Pillar", description: "Engineering summary card on project overview" },
+      { entity: "pd_eng_tasks" as PermissionEntity, label: "Engineering Tasks", description: "Task list for this project" },
+      { entity: "pd_eng_stages" as PermissionEntity, label: "Engineering Stages", description: "Stage checklist progress" },
     ],
   },
   {
@@ -178,12 +206,16 @@ const PERMISSION_CATEGORIES: PermissionCategory[] = [
     description: "Quality management, reviews, leaderboard, approvals",
     icon: ShieldCheck,
     color: "bg-purple-500",
+    bgLight: "bg-purple-50 border-purple-100",
     entities: [
       { entity: "quality" as PermissionEntity, label: "Quality Dashboard", description: "Quality management overview" },
       { entity: "governance" as PermissionEntity, label: "Governance", description: "Governance tracking and compliance" },
       { entity: "weekly_reviews" as PermissionEntity, label: "Weekly Reviews", description: "Weekly project review sessions" },
       { entity: "leaderboard" as PermissionEntity, label: "Leaderboard", description: "Gamification leaderboard and badges" },
       { entity: "approvals" as PermissionEntity, label: "Approvals", description: "Pending approvals queue" },
+    ],
+    projectDetail: [
+      { entity: "pd_quality" as PermissionEntity, label: "Quality Pillar", description: "Quality summary card on project overview" },
     ],
   },
   {
@@ -192,6 +224,7 @@ const PERMISSION_CATEGORIES: PermissionCategory[] = [
     description: "Knowledge base, walkthroughs, feedback",
     icon: BookOpen,
     color: "bg-cyan-500",
+    bgLight: "bg-cyan-50 border-cyan-100",
     entities: [
       { entity: "ee_info" as PermissionEntity, label: "EE Info & Walkthroughs", description: "Knowledge base and guided tours" },
       { entity: "feedback" as PermissionEntity, label: "Feedback & Support", description: "User feedback and support requests" },
@@ -203,6 +236,7 @@ const PERMISSION_CATEGORIES: PermissionCategory[] = [
     description: "System settings, roles, templates, activity logs",
     icon: Settings,
     color: "bg-slate-500",
+    bgLight: "bg-slate-50 border-slate-100",
     entities: [
       { entity: "admin" as PermissionEntity, label: "Admin Settings", description: "System configuration and settings" },
       { entity: "phase_templates" as PermissionEntity, label: "Phase Templates", description: "Engineering phase template management" },
@@ -211,66 +245,17 @@ const PERMISSION_CATEGORIES: PermissionCategory[] = [
   },
 ];
 
-const PROJECT_DETAIL_CATEGORIES: PermissionCategory[] = [
-  {
-    key: "pd_overview",
-    label: "Project Overview",
-    description: "Landing page, task views, pillar cards",
-    icon: Eye,
-    color: "bg-blue-500",
-    entities: [
-      { entity: "pd_overview" as PermissionEntity, label: "Overview / Tasks", description: "Grid, Board, Calendar task views" },
-      { entity: "pd_engineering" as PermissionEntity, label: "Engineering Pillar", description: "Engineering summary card on overview" },
-      { entity: "pd_quality" as PermissionEntity, label: "Quality Pillar", description: "Quality summary card on overview" },
-    ],
-  },
-  {
-    key: "pd_pm",
-    label: "Project Management",
-    description: "Plan views, history, weekly reviews",
-    icon: FolderKanban,
-    color: "bg-indigo-500",
-    entities: [
-      { entity: "pd_plan" as PermissionEntity, label: "Plan", description: "Project plan with Gantt and key dates" },
-      { entity: "pd_gantt" as PermissionEntity, label: "Gantt Chart", description: "Interactive Gantt chart view" },
-      { entity: "pd_key_dates" as PermissionEntity, label: "Key Dates", description: "Milestone dates and deadlines" },
-      { entity: "pd_history" as PermissionEntity, label: "History / Reviews", description: "Project history and weekly review log" },
-    ],
-  },
-  {
-    key: "pd_finance",
-    label: "Project Finance",
-    description: "Revenue, expenditure, COS, cashflow, subcontractors",
-    icon: DollarSign,
-    color: "bg-emerald-500",
-    entities: [
-      { entity: "pd_finance" as PermissionEntity, label: "Finance Summary", description: "Combined finance overview" },
-      { entity: "pd_revenue" as PermissionEntity, label: "Revenue", description: "Revenue lines and inflows" },
-      { entity: "pd_expenditure" as PermissionEntity, label: "Expenditure", description: "Expense lines and outflows" },
-      { entity: "pd_cos_tracker" as PermissionEntity, label: "COS Tracker", description: "Project-level cost of sales" },
-      { entity: "pd_cashflow" as PermissionEntity, label: "Cashflow", description: "Project cash flow tracking" },
-      { entity: "pd_subcontractors" as PermissionEntity, label: "Subcontractors", description: "Subcontractor assignments and costs" },
-    ],
-  },
-  {
-    key: "pd_eng",
-    label: "Project Engineering",
-    description: "Engineering tasks and stage checklists",
-    icon: Wrench,
-    color: "bg-orange-500",
-    entities: [
-      { entity: "pd_eng_tasks" as PermissionEntity, label: "Engineering Tasks", description: "Task list for this project" },
-      { entity: "pd_eng_stages" as PermissionEntity, label: "Engineering Stages", description: "Stage checklist progress" },
-    ],
-  },
+const ACTIONS: { action: PermissionAction; label: string; icon: any; color: string; activeColor: string }[] = [
+  { action: "view", label: "View", icon: Eye, color: "text-blue-600", activeColor: "bg-blue-600" },
+  { action: "edit", label: "Edit", icon: Edit3, color: "text-amber-600", activeColor: "bg-amber-600" },
+  { action: "approve", label: "Approve", icon: ThumbsUp, color: "text-green-600", activeColor: "bg-green-600" },
+  { action: "override", label: "Override", icon: Zap, color: "text-purple-600", activeColor: "bg-purple-600" },
+  { action: "delete", label: "Delete", icon: Trash2, color: "text-red-600", activeColor: "bg-red-600" },
 ];
 
-const ACTION_CONFIG: { action: PermissionAction; label: string; icon: any; color: string; description: string }[] = [
-  { action: "view", label: "View", icon: Eye, color: "bg-blue-600", description: "Can see this feature" },
-  { action: "edit", label: "Edit", icon: Edit3, color: "bg-amber-600", description: "Can modify data" },
-  { action: "approve", label: "Approve", icon: ThumbsUp, color: "bg-green-600", description: "Can approve items" },
-  { action: "override", label: "Override", icon: Zap, color: "bg-purple-600", description: "Can override restrictions" },
-  { action: "delete", label: "Delete", icon: Trash2, color: "bg-red-600", description: "Can delete records" },
+const PD_ACTIONS: { action: PermissionAction; label: string; icon: any; activeColor: string }[] = [
+  { action: "view", label: "View", icon: Eye, activeColor: "bg-blue-600" },
+  { action: "edit", label: "Edit", icon: Edit3, activeColor: "bg-amber-600" },
 ];
 
 function getAuthHeaders(): HeadersInit {
@@ -333,14 +318,10 @@ export default function AdminRolesPage() {
       </header>
 
       <Tabs defaultValue="permissions" className="w-full">
-        <TabsList className="grid w-full grid-cols-3 h-12">
+        <TabsList className="grid w-full grid-cols-2 h-12">
           <TabsTrigger value="permissions" className="flex items-center gap-2 text-sm" data-testid="tab-permissions">
             <Shield className="h-4 w-4" />
             Role Permissions
-          </TabsTrigger>
-          <TabsTrigger value="project-detail" className="flex items-center gap-2 text-sm" data-testid="tab-project-detail">
-            <FolderKanban className="h-4 w-4" />
-            Project Detail Access
           </TabsTrigger>
           <TabsTrigger value="users" className="flex items-center gap-2 text-sm" data-testid="tab-users">
             <Users className="h-4 w-4" />
@@ -349,10 +330,7 @@ export default function AdminRolesPage() {
         </TabsList>
 
         <TabsContent value="permissions" className="mt-4">
-          <RolePermissionsTab toast={toast} shared={sharedState} />
-        </TabsContent>
-        <TabsContent value="project-detail" className="mt-4">
-          <ProjectDetailTab toast={toast} shared={sharedState} />
+          <UnifiedPermissionsTab toast={toast} shared={sharedState} />
         </TabsContent>
         <TabsContent value="users" className="mt-4">
           <UserManagementSection toast={toast} shared={sharedState} />
@@ -369,7 +347,7 @@ function useRolesData() {
 
   const loadRoles = useCallback(async () => {
     try {
-      const res = await fetch("/api/roles", { headers: getAuthHeaders() });
+      const res = await fetch("/api/roles", { headers: getAuthHeaders(), credentials: "include" });
       if (res.ok) {
         const data = await res.json();
         setRoles(data);
@@ -409,7 +387,7 @@ function useRolesData() {
   return { roles, loading, pendingChanges, setPendingChanges, loadRoles, getEntityPerm, toggleEntityPerm, setLoading };
 }
 
-function RolePermissionsTab({ toast, shared }: { toast: ReturnType<typeof useToast>["toast"]; shared: SharedRolesState }) {
+function UnifiedPermissionsTab({ toast, shared }: { toast: ReturnType<typeof useToast>["toast"]; shared: SharedRolesState }) {
   const { roles, loading, pendingChanges, setPendingChanges, loadRoles, getEntityPerm, toggleEntityPerm, setLoading } = shared;
   const [selectedRole, setSelectedRole] = useState<string>("");
   const [saving, setSaving] = useState(false);
@@ -421,7 +399,7 @@ function RolePermissionsTab({ toast, shared }: { toast: ReturnType<typeof useToa
   const [editingLabel, setEditingLabel] = useState(false);
   const [editLabelValue, setEditLabelValue] = useState("");
   const [deletingRole, setDeletingRole] = useState(false);
-  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(PERMISSION_CATEGORIES.map(c => c.key)));
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(UNIFIED_CATEGORIES.map(c => c.key)));
 
   useEffect(() => {
     if (roles.length > 0 && !selectedRole) {
@@ -467,6 +445,7 @@ function RolePermissionsTab({ toast, shared }: { toast: ReturnType<typeof useToa
       const res = await fetch(`/api/roles/${selectedRole}`, {
         method: "PUT",
         headers: getAuthHeaders(),
+        credentials: "include",
         body: JSON.stringify(changes),
       });
       if (res.ok) {
@@ -498,6 +477,7 @@ function RolePermissionsTab({ toast, shared }: { toast: ReturnType<typeof useToa
       const res = await fetch("/api/roles", {
         method: "POST",
         headers: getAuthHeaders(),
+        credentials: "include",
         body: JSON.stringify({ role: newRoleKey.toUpperCase().replace(/\s+/g, "_"), label: newRoleLabel, description: newRoleDesc }),
       });
       if (res.ok) {
@@ -525,6 +505,7 @@ function RolePermissionsTab({ toast, shared }: { toast: ReturnType<typeof useToa
       const res = await fetch(`/api/roles/${selectedRole}`, {
         method: "PUT",
         headers: getAuthHeaders(),
+        credentials: "include",
         body: JSON.stringify({ label: editLabelValue.trim() }),
       });
       if (res.ok) {
@@ -548,6 +529,7 @@ function RolePermissionsTab({ toast, shared }: { toast: ReturnType<typeof useToa
       const res = await fetch(`/api/roles/${selectedRole}`, {
         method: "DELETE",
         headers: getAuthHeaders(),
+        credentials: "include",
       });
       if (res.ok) {
         toast({ title: "Deleted", description: `Role "${selectedRole}" has been deleted.` });
@@ -573,15 +555,32 @@ function RolePermissionsTab({ toast, shared }: { toast: ReturnType<typeof useToa
     });
   };
 
-  const toggleAllInCategory = (category: PermissionCategory, action: PermissionAction) => {
+  const setCategoryPreset = (category: PermissionCategory, preset: "full" | "view-only" | "none") => {
     if (!selectedRole) return;
-    const allOn = category.entities.every(e => getEntityPerm(selectedRole, e.entity, action));
-    category.entities.forEach(e => {
-      const current = getEntityPerm(selectedRole, e.entity, action);
-      if (allOn ? current : !current) {
-        toggleEntityPerm(selectedRole, e.entity, action);
+    const allEntities = [...category.entities, ...(category.projectDetail || [])];
+    const allActions: PermissionAction[] = ["view", "edit", "approve", "override", "delete"];
+    const role = roles.find(r => r.role === selectedRole);
+    const storedEp = (role?.entityPermissions || {}) as Record<string, Record<string, boolean>>;
+    const pendingEp = (pendingChanges[selectedRole]?.entityPermissions || { ...storedEp }) as Record<string, Record<string, boolean>>;
+    const updated = { ...pendingEp };
+
+    for (const ent of allEntities) {
+      updated[ent.entity] = { ...(updated[ent.entity] || {}) };
+      for (const action of allActions) {
+        if (preset === "full") {
+          updated[ent.entity][action] = true;
+        } else if (preset === "view-only") {
+          updated[ent.entity][action] = action === "view";
+        } else {
+          updated[ent.entity][action] = false;
+        }
       }
-    });
+    }
+
+    setPendingChanges(prev => ({
+      ...prev,
+      [selectedRole]: { ...prev[selectedRole], entityPermissions: updated as any },
+    }));
   };
 
   if (loading) {
@@ -599,15 +598,13 @@ function RolePermissionsTab({ toast, shared }: { toast: ReturnType<typeof useToa
   const effectiveCanManageRoles = pendingChanges[selectedRole]?.canManageRoles ?? currentRole?.canManageRoles;
   const effectiveCanEditData = pendingChanges[selectedRole]?.canEditData ?? currentRole?.canEditData;
 
-  const permCount = PERMISSION_CATEGORIES.reduce((sum, cat) => {
-    return sum + cat.entities.filter(e => getEntityPerm(selectedRole, e.entity, "view")).length;
-  }, 0);
-  const totalEntities = PERMISSION_CATEGORIES.reduce((sum, cat) => sum + cat.entities.length, 0);
+  const allEntities = UNIFIED_CATEGORIES.flatMap(c => [...c.entities, ...(c.projectDetail || [])]);
+  const permCount = allEntities.filter(e => getEntityPerm(selectedRole, e.entity, "view")).length;
 
   return (
     <>
       <div className="flex flex-col lg:flex-row gap-4">
-        <div className="lg:w-72 shrink-0 space-y-3">
+        <div className="lg:w-64 shrink-0 space-y-3">
           <Card data-testid="card-role-selector">
             <CardHeader className="py-3 px-4">
               <div className="flex items-center justify-between">
@@ -717,8 +714,8 @@ function RolePermissionsTab({ toast, shared }: { toast: ReturnType<typeof useToa
                         <p className="text-sm text-gray-500 mt-1">{currentRole.description}</p>
                       )}
                       <div className="flex items-center gap-4 mt-2">
-                        <span className="text-xs text-gray-400">{effectiveSections.length} of {ALL_SECTIONS.length} sections</span>
-                        <span className="text-xs text-gray-400">{permCount} of {totalEntities} modules accessible</span>
+                        <span className="text-xs text-gray-400">{effectiveSections.length}/{ALL_SECTIONS.length} sidebar sections</span>
+                        <span className="text-xs text-gray-400">{permCount}/{allEntities.length} modules accessible</span>
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
@@ -765,162 +762,105 @@ function RolePermissionsTab({ toast, shared }: { toast: ReturnType<typeof useToa
                 </CardContent>
               </Card>
 
-              <Card data-testid="card-sidebar-access">
-                <CardHeader className="py-3 px-5">
-                  <CardTitle className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                    <LayoutDashboard className="h-4 w-4 text-gray-400" />
-                    Sidebar Navigation Access
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="px-5 pb-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
-                    {ALL_SECTIONS.map((section) => {
-                      const isActive = effectiveSections.includes(section);
-                      const Icon = SECTION_ICONS[section] || LayoutDashboard;
-                      const colorClass = SECTION_COLORS[section] || "bg-gray-50 border-gray-200 text-gray-700";
-                      return (
-                        <button
-                          key={section}
-                          className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-all ${
-                            isActive
-                              ? `${colorClass} shadow-sm`
-                              : "border-gray-100 bg-gray-50/50 text-gray-400"
-                          }`}
-                          onClick={() => toggleSection(section)}
-                          data-testid={`toggle-section-${selectedRole}-${section}`}
-                        >
-                          <div className={`h-8 w-8 rounded-lg flex items-center justify-center ${
-                            isActive ? "bg-white/60" : "bg-gray-100"
-                          }`}>
-                            <Icon className="h-4 w-4" />
-                          </div>
-                          <div className="text-left flex-1">
-                            <span className="text-sm font-medium block">{SECTION_LABELS[section]}</span>
-                          </div>
-                          <div className={`h-5 w-5 rounded-full flex items-center justify-center ${
-                            isActive ? "bg-white/80" : "bg-gray-200"
-                          }`}>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <Card data-testid="card-sidebar-access">
+                  <CardHeader className="py-3 px-4">
+                    <CardTitle className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2">
+                      <LayoutDashboard className="h-3.5 w-3.5" />
+                      Sidebar Sections
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="px-4 pb-4 pt-0">
+                    <div className="flex flex-wrap gap-2">
+                      {ALL_SECTIONS.map((section) => {
+                        const isActive = effectiveSections.includes(section);
+                        const Icon = SECTION_ICONS[section] || LayoutDashboard;
+                        const colorClass = SECTION_COLORS[section] || "bg-gray-50 border-gray-200 text-gray-700";
+                        return (
+                          <button
+                            key={section}
+                            className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all text-xs font-medium ${
+                              isActive
+                                ? `${colorClass} shadow-sm`
+                                : "border-gray-100 bg-gray-50/50 text-gray-400"
+                            }`}
+                            onClick={() => toggleSection(section)}
+                            data-testid={`toggle-section-${selectedRole}-${section}`}
+                          >
+                            <Icon className="h-3.5 w-3.5" />
+                            {SECTION_LABELS[section]}
                             {isActive
-                              ? <CheckCircle2 className="h-4 w-4 text-green-600" />
-                              : <XCircle className="h-4 w-4 text-gray-300" />
+                              ? <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
+                              : <XCircle className="h-3.5 w-3.5 text-gray-300" />
                             }
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
 
-              <Card data-testid="card-special-capabilities">
-                <CardHeader className="py-3 px-5">
-                  <CardTitle className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                    <Zap className="h-4 w-4 text-gray-400" />
-                    Special Capabilities
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="px-5 pb-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <label
-                      className={`flex items-center justify-between gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${
-                        effectiveCanManageUsers ? "border-blue-200 bg-blue-50" : "border-gray-100 bg-gray-50/50"
-                      }`}
-                      data-testid={`toggle-canManageUsers-${selectedRole}`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className={`h-8 w-8 rounded-lg flex items-center justify-center ${
-                          effectiveCanManageUsers ? "bg-blue-100" : "bg-gray-100"
-                        }`}>
-                          <Users className={`h-4 w-4 ${effectiveCanManageUsers ? "text-blue-600" : "text-gray-400"}`} />
-                        </div>
-                        <div>
-                          <span className={`text-sm font-medium block ${effectiveCanManageUsers ? "text-blue-800" : "text-gray-500"}`}>Manage Users</span>
-                          <span className="text-[11px] text-gray-400">Create, edit, delete accounts</span>
-                        </div>
-                      </div>
-                      <Switch
-                        checked={!!effectiveCanManageUsers}
-                        onCheckedChange={() => toggleCapability("canManageUsers")}
-                      />
-                    </label>
-                    <label
-                      className={`flex items-center justify-between gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${
-                        effectiveCanManageRoles ? "border-purple-200 bg-purple-50" : "border-gray-100 bg-gray-50/50"
-                      }`}
-                      data-testid={`toggle-canManageRoles-${selectedRole}`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className={`h-8 w-8 rounded-lg flex items-center justify-center ${
-                          effectiveCanManageRoles ? "bg-purple-100" : "bg-gray-100"
-                        }`}>
-                          <Shield className={`h-4 w-4 ${effectiveCanManageRoles ? "text-purple-600" : "text-gray-400"}`} />
-                        </div>
-                        <div>
-                          <span className={`text-sm font-medium block ${effectiveCanManageRoles ? "text-purple-800" : "text-gray-500"}`}>Manage Roles</span>
-                          <span className="text-[11px] text-gray-400">Create, edit role permissions</span>
-                        </div>
-                      </div>
-                      <Switch
-                        checked={!!effectiveCanManageRoles}
-                        onCheckedChange={() => toggleCapability("canManageRoles")}
-                      />
-                    </label>
-                    <label
-                      className={`flex items-center justify-between gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${
-                        effectiveCanEditData ? "border-amber-200 bg-amber-50" : "border-gray-100 bg-gray-50/50"
-                      }`}
-                      data-testid={`toggle-canEditData-${selectedRole}`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className={`h-8 w-8 rounded-lg flex items-center justify-center ${
-                          effectiveCanEditData ? "bg-amber-100" : "bg-gray-100"
-                        }`}>
-                          <Edit3 className={`h-4 w-4 ${effectiveCanEditData ? "text-amber-600" : "text-gray-400"}`} />
-                        </div>
-                        <div>
-                          <span className={`text-sm font-medium block ${effectiveCanEditData ? "text-amber-800" : "text-gray-500"}`}>Edit Data</span>
-                          <span className="text-[11px] text-gray-400">Inline editing of project data</span>
-                        </div>
-                      </div>
-                      <Switch
-                        checked={!!effectiveCanEditData}
-                        onCheckedChange={() => toggleCapability("canEditData")}
-                      />
-                    </label>
-                  </div>
-                </CardContent>
-              </Card>
+                <Card data-testid="card-special-capabilities">
+                  <CardHeader className="py-3 px-4">
+                    <CardTitle className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2">
+                      <Zap className="h-3.5 w-3.5" />
+                      Special Capabilities
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="px-4 pb-4 pt-0">
+                    <div className="space-y-2">
+                      {[
+                        { field: "canManageUsers" as const, label: "Manage Users", desc: "Create, edit, delete accounts", icon: Users, value: effectiveCanManageUsers, color: "blue" },
+                        { field: "canManageRoles" as const, label: "Manage Roles", desc: "Create, edit role permissions", icon: Shield, value: effectiveCanManageRoles, color: "purple" },
+                        { field: "canEditData" as const, label: "Edit Data", desc: "Inline editing of project data", icon: Edit3, value: effectiveCanEditData, color: "amber" },
+                      ].map(cap => (
+                        <label
+                          key={cap.field}
+                          className={`flex items-center justify-between gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-all ${
+                            cap.value ? `border-${cap.color}-200 bg-${cap.color}-50/50` : "border-gray-100 bg-gray-50/30"
+                          }`}
+                          data-testid={`toggle-${cap.field}-${selectedRole}`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <cap.icon className={`h-3.5 w-3.5 ${cap.value ? `text-${cap.color}-600` : "text-gray-400"}`} />
+                            <div>
+                              <span className={`text-xs font-medium ${cap.value ? "text-gray-800" : "text-gray-500"}`}>{cap.label}</span>
+                              <p className="text-[10px] text-gray-400 leading-tight">{cap.desc}</p>
+                            </div>
+                          </div>
+                          <Switch
+                            checked={!!cap.value}
+                            onCheckedChange={() => toggleCapability(cap.field)}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
 
               <div className="space-y-3" data-testid="permission-categories">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                    <Shield className="h-4 w-4 text-gray-400" />
-                    Module Permissions
+                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2">
+                    <Layers className="h-3.5 w-3.5" />
+                    Module Permissions & Project Detail Access
                   </h3>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-xs h-7"
-                      onClick={() => setExpandedCategories(new Set(PERMISSION_CATEGORIES.map(c => c.key)))}
-                    >
+                  <div className="flex items-center gap-1">
+                    <Button variant="ghost" size="sm" className="text-xs h-7" onClick={() => setExpandedCategories(new Set(UNIFIED_CATEGORIES.map(c => c.key)))}>
                       Expand All
                     </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-xs h-7"
-                      onClick={() => setExpandedCategories(new Set())}
-                    >
+                    <Button variant="ghost" size="sm" className="text-xs h-7" onClick={() => setExpandedCategories(new Set())}>
                       Collapse All
                     </Button>
                   </div>
                 </div>
 
-                {PERMISSION_CATEGORIES.map((category) => {
+                {UNIFIED_CATEGORIES.map((category) => {
                   const isExpanded = expandedCategories.has(category.key);
                   const Icon = category.icon;
-                  const viewCount = category.entities.filter(e => getEntityPerm(selectedRole, e.entity, "view")).length;
+                  const allEnts = [...category.entities, ...(category.projectDetail || [])];
+                  const viewCount = allEnts.filter(e => getEntityPerm(selectedRole, e.entity, "view")).length;
+                  const editCount = allEnts.filter(e => getEntityPerm(selectedRole, e.entity, "edit")).length;
                   return (
                     <Card key={category.key} className="overflow-hidden" data-testid={`category-${category.key}`}>
                       <button
@@ -935,7 +875,10 @@ function RolePermissionsTab({ toast, shared }: { toast: ReturnType<typeof useToa
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-semibold text-gray-800">{category.label}</span>
                             <Badge variant="outline" className="text-[10px] font-normal">
-                              {viewCount}/{category.entities.length} accessible
+                              {viewCount}/{allEnts.length} view
+                            </Badge>
+                            <Badge variant="outline" className="text-[10px] font-normal">
+                              {editCount} edit
                             </Badge>
                           </div>
                           <p className="text-xs text-gray-400 mt-0.5">{category.description}</p>
@@ -945,21 +888,50 @@ function RolePermissionsTab({ toast, shared }: { toast: ReturnType<typeof useToa
 
                       {isExpanded && (
                         <div className="border-t border-gray-100">
+                          <div className="px-4 py-2 bg-gray-50/60 flex items-center justify-between">
+                            <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Quick Set</span>
+                            <div className="flex items-center gap-1.5">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-6 text-[10px] px-2 border-green-200 text-green-700 hover:bg-green-50"
+                                onClick={(e) => { e.stopPropagation(); setCategoryPreset(category, "full"); }}
+                                data-testid={`preset-full-${category.key}`}
+                              >
+                                <Check className="h-3 w-3 mr-1" /> Full Access
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-6 text-[10px] px-2 border-blue-200 text-blue-700 hover:bg-blue-50"
+                                onClick={(e) => { e.stopPropagation(); setCategoryPreset(category, "view-only"); }}
+                                data-testid={`preset-view-${category.key}`}
+                              >
+                                <Eye className="h-3 w-3 mr-1" /> View Only
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-6 text-[10px] px-2 border-red-200 text-red-700 hover:bg-red-50"
+                                onClick={(e) => { e.stopPropagation(); setCategoryPreset(category, "none"); }}
+                                data-testid={`preset-none-${category.key}`}
+                              >
+                                <X className="h-3 w-3 mr-1" /> No Access
+                              </Button>
+                            </div>
+                          </div>
+
                           <div className="overflow-x-auto">
                             <table className="w-full text-sm">
                               <thead>
                                 <tr className="bg-gray-50/80">
                                   <th className="text-left px-4 py-2 text-xs font-medium text-gray-500 w-[280px]">Feature</th>
-                                  {ACTION_CONFIG.map(({ action, label, icon: AIcon, color }) => (
-                                    <th key={action} className="text-center px-2 py-2 w-[80px]">
-                                      <button
-                                        className="flex flex-col items-center gap-0.5 mx-auto group"
-                                        onClick={() => toggleAllInCategory(category, action)}
-                                        title={`Toggle all ${label} in ${category.label}`}
-                                      >
-                                        <AIcon className="h-3.5 w-3.5 text-gray-400 group-hover:text-gray-600" />
-                                        <span className="text-[10px] font-medium text-gray-400 uppercase group-hover:text-gray-600">{label}</span>
-                                      </button>
+                                  {ACTIONS.map(({ action, label, icon: AIcon }) => (
+                                    <th key={action} className="text-center px-2 py-2 w-[72px]">
+                                      <div className="flex flex-col items-center gap-0.5">
+                                        <AIcon className="h-3 w-3 text-gray-400" />
+                                        <span className="text-[9px] font-medium text-gray-400 uppercase">{label}</span>
+                                      </div>
                                     </th>
                                   ))}
                                 </tr>
@@ -971,32 +943,76 @@ function RolePermissionsTab({ toast, shared }: { toast: ReturnType<typeof useToa
                                     className={`${idx % 2 === 0 ? "bg-white" : "bg-gray-50/30"} hover:bg-blue-50/30 transition-colors`}
                                     data-testid={`entity-row-${selectedRole}-${ent.entity}`}
                                   >
-                                    <td className="px-4 py-2.5">
-                                      <div>
-                                        <span className="text-sm font-medium text-gray-700">{ent.label}</span>
-                                        <p className="text-[11px] text-gray-400 leading-tight">{ent.description}</p>
-                                      </div>
+                                    <td className="px-4 py-2">
+                                      <span className="text-sm font-medium text-gray-700">{ent.label}</span>
+                                      <p className="text-[10px] text-gray-400 leading-tight">{ent.description}</p>
                                     </td>
-                                    {ACTION_CONFIG.map(({ action, color }) => {
+                                    {ACTIONS.map(({ action, activeColor }) => {
                                       const active = getEntityPerm(selectedRole, ent.entity, action);
                                       return (
-                                        <td key={action} className="text-center px-2 py-2.5">
+                                        <td key={action} className="text-center px-2 py-2">
                                           <button
-                                            className={`h-7 w-14 rounded-md border text-[11px] font-semibold transition-all ${
+                                            className={`h-7 w-12 rounded-md border text-[11px] font-semibold transition-all ${
                                               active
-                                                ? `${color} border-transparent text-white shadow-sm`
+                                                ? `${activeColor} border-transparent text-white shadow-sm`
                                                 : "bg-white border-gray-200 text-gray-300 hover:border-gray-300 hover:text-gray-400"
                                             }`}
                                             onClick={() => toggleEntityPerm(selectedRole, ent.entity, action)}
                                             data-testid={`perm-${selectedRole}-${ent.entity}-${action}`}
                                           >
-                                            {active ? <Check className="h-3.5 w-3.5 mx-auto" /> : <X className="h-3.5 w-3.5 mx-auto" />}
+                                            {active ? <Check className="h-3 w-3 mx-auto" /> : <X className="h-3 w-3 mx-auto" />}
                                           </button>
                                         </td>
                                       );
                                     })}
                                   </tr>
                                 ))}
+
+                                {category.projectDetail && category.projectDetail.length > 0 && (
+                                  <>
+                                    <tr className={`${category.bgLight} border-t border-b`}>
+                                      <td colSpan={ACTIONS.length + 1} className="px-4 py-1.5">
+                                        <div className="flex items-center gap-2">
+                                          <FolderKanban className="h-3 w-3 text-gray-500" />
+                                          <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Project Detail Sub-Functions</span>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                    {category.projectDetail.map((ent, idx) => (
+                                      <tr
+                                        key={ent.entity}
+                                        className={`${idx % 2 === 0 ? "bg-white" : "bg-gray-50/30"} hover:bg-blue-50/30 transition-colors`}
+                                        data-testid={`entity-row-${selectedRole}-${ent.entity}`}
+                                      >
+                                        <td className="px-4 py-2 pl-8">
+                                          <span className="text-sm font-medium text-gray-600">{ent.label}</span>
+                                          <p className="text-[10px] text-gray-400 leading-tight">{ent.description}</p>
+                                        </td>
+                                        {ACTIONS.map(({ action, activeColor }) => {
+                                          if (action !== "view" && action !== "edit") {
+                                            return <td key={action} className="text-center px-2 py-2"><span className="text-[10px] text-gray-200">-</span></td>;
+                                          }
+                                          const active = getEntityPerm(selectedRole, ent.entity, action);
+                                          return (
+                                            <td key={action} className="text-center px-2 py-2">
+                                              <button
+                                                className={`h-7 w-12 rounded-md border text-[11px] font-semibold transition-all ${
+                                                  active
+                                                    ? `${activeColor} border-transparent text-white shadow-sm`
+                                                    : "bg-white border-gray-200 text-gray-300 hover:border-gray-300 hover:text-gray-400"
+                                                }`}
+                                                onClick={() => toggleEntityPerm(selectedRole, ent.entity, action)}
+                                                data-testid={`perm-${selectedRole}-${ent.entity}-${action}`}
+                                              >
+                                                {active ? <Check className="h-3 w-3 mx-auto" /> : <X className="h-3 w-3 mx-auto" />}
+                                              </button>
+                                            </td>
+                                          );
+                                        })}
+                                      </tr>
+                                    ))}
+                                  </>
+                                )}
                               </tbody>
                             </table>
                           </div>
@@ -1103,219 +1119,6 @@ function RolePermissionsTab({ toast, shared }: { toast: ReturnType<typeof useToa
   );
 }
 
-function ProjectDetailTab({ toast, shared }: { toast: ReturnType<typeof useToast>["toast"]; shared: SharedRolesState }) {
-  const { roles, loading, pendingChanges, setPendingChanges, loadRoles, getEntityPerm, toggleEntityPerm } = shared;
-  const [selectedRole, setSelectedRole] = useState<string>("");
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (roles.length > 0 && !selectedRole) {
-      setSelectedRole(roles[0].role);
-    }
-  }, [roles, selectedRole]);
-
-  const currentRole = roles.find(r => r.role === selectedRole);
-  const hasChanges = !!pendingChanges[selectedRole];
-
-  const handleSaveRole = async () => {
-    const changes = pendingChanges[selectedRole];
-    if (!changes) return;
-    setSaving(true);
-    try {
-      const res = await fetch(`/api/roles/${selectedRole}`, {
-        method: "PUT",
-        headers: getAuthHeaders(),
-        body: JSON.stringify(changes),
-      });
-      if (res.ok) {
-        toast({ title: "Saved", description: `Project detail permissions updated for ${currentRole?.label || selectedRole}.` });
-        setPendingChanges(prev => {
-          const next = { ...prev };
-          delete next[selectedRole];
-          return next;
-        });
-        loadRoles();
-      } else {
-        const data = await res.json();
-        toast({ title: "Error", description: data.error || "Failed to save.", variant: "destructive" });
-      }
-    } catch {
-      toast({ title: "Error", description: "Failed to save.", variant: "destructive" });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  if (loading) {
-    return (
-      <Card>
-        <CardContent className="py-12 flex items-center justify-center">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-          <span className="ml-2 text-muted-foreground">Loading...</span>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  const pdActions: PermissionAction[] = ["view", "edit"];
-
-  return (
-    <div className="space-y-4">
-      <Card>
-        <CardContent className="py-4 px-5">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3 flex-1">
-              <span className="text-sm font-medium text-gray-600">Editing role:</span>
-              <Select value={selectedRole} onValueChange={setSelectedRole}>
-                <SelectTrigger className="w-64 h-9" data-testid="select-pd-role">
-                  <SelectValue placeholder="Select role" />
-                </SelectTrigger>
-                <SelectContent>
-                  {roles.map(r => (
-                    <SelectItem key={r.role} value={r.role}>{r.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            {hasChanges && (
-              <div className="flex items-center gap-2 shrink-0">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setPendingChanges(prev => {
-                    const next = { ...prev };
-                    delete next[selectedRole];
-                    return next;
-                  })}
-                  data-testid="btn-pd-discard"
-                >
-                  <X className="h-3.5 w-3.5 mr-1" /> Discard
-                </Button>
-                <Button
-                  size="sm"
-                  className="bg-green-600 hover:bg-green-700"
-                  onClick={handleSaveRole}
-                  disabled={saving}
-                  data-testid="btn-pd-save"
-                >
-                  {saving ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}
-                  Save Changes
-                </Button>
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      <p className="text-sm text-gray-500 px-1">
-        Control what this role can see and edit on individual project detail pages. These permissions apply to all projects the user has access to.
-      </p>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {PROJECT_DETAIL_CATEGORIES.map((category) => {
-          const Icon = category.icon;
-          const viewCount = category.entities.filter(e => getEntityPerm(selectedRole, e.entity, "view")).length;
-          return (
-            <Card key={category.key} className="overflow-hidden" data-testid={`pd-category-${category.key}`}>
-              <div className="flex items-center gap-3 px-4 py-3 bg-gray-50/80 border-b border-gray-100">
-                <div className={`h-8 w-8 rounded-lg ${category.color} flex items-center justify-center shrink-0`}>
-                  <Icon className="h-4 w-4 text-white" />
-                </div>
-                <div className="flex-1">
-                  <span className="text-sm font-semibold text-gray-800">{category.label}</span>
-                  <p className="text-[11px] text-gray-400">{category.description}</p>
-                </div>
-                <Badge variant="outline" className="text-[10px]">{viewCount}/{category.entities.length}</Badge>
-              </div>
-              <div>
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-gray-100">
-                      <th className="text-left px-4 py-2 text-xs font-medium text-gray-400 w-auto">Tab / Section</th>
-                      {pdActions.map(action => (
-                        <th key={action} className="text-center px-2 py-2 w-[70px]">
-                          <span className="text-[10px] font-medium text-gray-400 uppercase">{action}</span>
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {category.entities.map((ent, idx) => (
-                      <tr
-                        key={ent.entity}
-                        className={`${idx % 2 === 0 ? "bg-white" : "bg-gray-50/30"} hover:bg-blue-50/30 transition-colors`}
-                        data-testid={`pd-entity-row-${selectedRole}-${ent.entity}`}
-                      >
-                        <td className="px-4 py-2">
-                          <span className="text-sm text-gray-700">{ent.label}</span>
-                          <p className="text-[10px] text-gray-400">{ent.description}</p>
-                        </td>
-                        {pdActions.map(action => {
-                          const active = getEntityPerm(selectedRole, ent.entity, action);
-                          const actionCfg = ACTION_CONFIG.find(a => a.action === action)!;
-                          return (
-                            <td key={action} className="text-center px-2 py-2">
-                              <button
-                                className={`h-7 w-14 rounded-md border text-[11px] font-semibold transition-all ${
-                                  active
-                                    ? `${actionCfg.color} border-transparent text-white shadow-sm`
-                                    : "bg-white border-gray-200 text-gray-300 hover:border-gray-300 hover:text-gray-400"
-                                }`}
-                                onClick={() => toggleEntityPerm(selectedRole, ent.entity, action)}
-                                data-testid={`pd-perm-${selectedRole}-${ent.entity}-${action}`}
-                              >
-                                {active ? <Check className="h-3.5 w-3.5 mx-auto" /> : <X className="h-3.5 w-3.5 mx-auto" />}
-                              </button>
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-          );
-        })}
-      </div>
-
-      {hasChanges && (
-        <div className="sticky bottom-4 z-10">
-          <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-4 flex items-center justify-between shadow-lg">
-            <div className="flex items-center gap-3">
-              <AlertTriangle className="h-5 w-5 text-amber-600" />
-              <span className="text-sm font-medium text-amber-800">You have unsaved changes for {currentRole?.label}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                variant="ghost"
-                className="text-amber-700"
-                onClick={() => setPendingChanges(prev => {
-                  const next = { ...prev };
-                  delete next[selectedRole];
-                  return next;
-                })}
-              >
-                Discard
-              </Button>
-              <Button
-                size="sm"
-                className="bg-green-600 hover:bg-green-700"
-                onClick={handleSaveRole}
-                disabled={saving}
-              >
-                {saving ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}
-                Save Changes
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 function UserManagementSection({ toast, shared }: { toast: ReturnType<typeof useToast>["toast"]; shared: SharedRolesState }) {
   const [userList, setUserList] = useState<UserRecord[]>([]);
   const roles = shared.roles;
@@ -1333,7 +1136,7 @@ function UserManagementSection({ toast, shared }: { toast: ReturnType<typeof use
 
   const loadUsers = useCallback(async () => {
     try {
-      const usersRes = await fetch("/api/admin/users", { headers: getAuthHeaders() });
+      const usersRes = await fetch("/api/admin/users", { headers: getAuthHeaders(), credentials: "include" });
       if (usersRes.ok) setUserList(await usersRes.json());
     } catch {
     } finally {
@@ -1349,6 +1152,7 @@ function UserManagementSection({ toast, shared }: { toast: ReturnType<typeof use
       const res = await fetch(`/api/admin/users/${userId}/role`, {
         method: "PATCH",
         headers: getAuthHeaders(),
+        credentials: "include",
         body: JSON.stringify({ role: newRole }),
       });
       if (res.ok) {
@@ -1375,6 +1179,7 @@ function UserManagementSection({ toast, shared }: { toast: ReturnType<typeof use
       const res = await fetch("/api/admin/users", {
         method: "POST",
         headers: getAuthHeaders(),
+        credentials: "include",
         body: JSON.stringify(newUser),
       });
       if (res.ok) {
@@ -1404,6 +1209,7 @@ function UserManagementSection({ toast, shared }: { toast: ReturnType<typeof use
       const res = await fetch(`/api/admin/users/${resetPasswordUser.id}/password`, {
         method: "PATCH",
         headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ password: resetPassword }),
       });
       if (res.ok) {
@@ -1427,6 +1233,7 @@ function UserManagementSection({ toast, shared }: { toast: ReturnType<typeof use
       const res = await fetch(`/api/admin/users/${userId}`, {
         method: "DELETE",
         headers: getAuthHeaders(),
+        credentials: "include",
       });
       if (res.ok) {
         toast({ title: "User Deleted", description: "User has been removed." });
