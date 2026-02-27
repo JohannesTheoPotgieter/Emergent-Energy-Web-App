@@ -1610,7 +1610,7 @@ export async function registerRoutes(
 
   app.get("/api/projects-summary", async (req, res) => {
     try {
-      const [allProjectInfo, allExpenses, rawInflows, rawPlans, allEditableFields, allTaskLinks, allOpTasks, uploadMetaRows, committedSmartImports, allNormCosts, allNormRevenue, allNormPlans, allPlanOverrides] = await Promise.all([
+      const [allProjectInfo, allExpenses, rawInflows, rawPlans, allEditableFields, allTaskLinks, allOpTasks, uploadMetaRows, committedSmartImports, allNormCosts, allNormRevenue, allNormPlans, allPlanOverrides, lastImportRows] = await Promise.all([
         storage.getAllProjectInfo(),
         storage.getAllProgramExpenses(),
         storage.getAllProgramInflows(),
@@ -1624,6 +1624,7 @@ export async function registerRoutes(
         db.select().from(normalizedRevenueLines),
         db.select().from(normalizedPlanTasks),
         storage.getAllProjectPlanOverrides(),
+        db.execute(sql`SELECT project_name, MAX(COALESCE(committed_at, uploaded_at)) as last_import FROM smart_import_runs WHERE status = 'COMMITTED' GROUP BY project_name`),
       ]);
       const allPlans = applyProjectPlanOverrides(rawPlans, allPlanOverrides);
       const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
@@ -1642,6 +1643,19 @@ export async function registerRoutes(
           importedProjectNames.add(row.projectName.replace(/ /g, '_'));
           importedProjectNames.add(row.projectName + '_Tracker');
           importedProjectNames.add(row.projectName.replace(/ /g, '_') + '_Tracker');
+        }
+      }
+
+      const lastImportByProject = new Map<string, string>();
+      for (const row of lastImportRows.rows) {
+        const pName = (row as any).project_name as string;
+        const lastImport = (row as any).last_import as string;
+        if (pName && lastImport) {
+          const isoDate = new Date(lastImport).toISOString();
+          lastImportByProject.set(pName, isoDate);
+          lastImportByProject.set(pName.replace(/ /g, '_'), isoDate);
+          lastImportByProject.set(pName + '_Tracker', isoDate);
+          lastImportByProject.set(pName.replace(/ /g, '_') + '_Tracker', isoDate);
         }
       }
 
@@ -2049,6 +2063,7 @@ export async function registerRoutes(
           task_status_counts: taskCountsByProject.get(projectName) || taskCountsByProject.get(cleanName) || {},
           phase_updated_at: info?.phaseUpdatedAt || null,
           has_tracker_import: nameVariants.some(v => importedProjectNames.has(v)) || importedProjectNames.has(cleanName),
+          last_import_at: nameVariants.reduce<string | null>((acc, v) => acc || lastImportByProject.get(v) || null, null) || lastImportByProject.get(cleanName) || null,
           is_active: info?.isActive !== false && info?.phase?.toLowerCase() !== "gone",
         };
       });

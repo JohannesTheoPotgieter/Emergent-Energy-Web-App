@@ -302,6 +302,13 @@ function isOverdue(dueDate: string | null): boolean {
   return new Date(dueDate) < new Date();
 }
 
+function daysOverdueCalc(dueDate: string): number {
+  const due = new Date(dueDate + "T00:00:00");
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  return Math.max(0, Math.floor((now.getTime() - due.getTime()) / (1000 * 60 * 60 * 24)));
+}
+
 function cleanProjectName(name: string): string {
   return (name || "").replace(/_Tracker\d*$/i, "").replace(/_/g, " ").trim();
 }
@@ -367,13 +374,14 @@ function NotificationItem({ notif, onMarkRead }: { notif: any; onMarkRead?: (id:
 
 function TaskItem({ task }: { task: any }) {
   const [, navigate] = useLocation();
-  const overdue = task.dueDate && new Date(task.dueDate) < new Date();
+  const overdue = task.dueDate && isOverdue(task.dueDate);
+  const daysOverdue = overdue ? Math.max(1, daysOverdueCalc(task.dueDate)) : 0;
   const projectDisplay = cleanProjectName(task.projectName);
 
   return (
     <div
       className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors hover:bg-muted/30 ${
-        overdue ? "border-red-200 bg-red-50/30 dark:bg-red-950/10 dark:border-red-900" : "border-border/50 bg-card"
+        overdue ? "border-l-4 border-l-red-500 border-red-200 bg-red-50/30 dark:bg-red-950/10 dark:border-red-900" : "border-border/50 bg-card"
       }`}
       onClick={() => navigate(`/engineering?project=${encodeURIComponent(task.projectName)}`)}
       data-testid={`task-item-${task.id}`}
@@ -400,7 +408,10 @@ function TaskItem({ task }: { task: any }) {
             {task.dueDate}
           </span>
         )}
-        <Badge variant="outline" className="text-[10px] mt-0.5">{task.status}</Badge>
+        {overdue && (
+          <Badge variant="destructive" className="text-[9px] px-1 py-0 mt-0.5" data-testid={`task-overdue-badge-${task.id}`}>{daysOverdue}d overdue</Badge>
+        )}
+        {!overdue && <Badge variant="outline" className="text-[10px] mt-0.5">{task.status}</Badge>}
       </div>
     </div>
   );
@@ -592,6 +603,8 @@ interface ProjectSummary {
   expected_pct_complete?: number | null;
   project_info_id?: number | null;
   is_active?: boolean;
+  has_tracker_import?: boolean;
+  last_import_at?: string | null;
 }
 
 function ProjectQuickSearch({ projects, isLoading }: { projects: ProjectSummary[]; isLoading: boolean }) {
@@ -672,6 +685,126 @@ function ProjectQuickSearch({ projects, isLoading }: { projects: ProjectSummary[
   );
 }
 
+interface PriorityItem {
+  id: string;
+  type: "overdue_task" | "action_required" | "approval";
+  title: string;
+  projectName: string | null;
+  urgency: number;
+  urgencyLabel: string;
+  icon: any;
+  iconColor: string;
+  href: string;
+}
+
+function PriorityQueue({ hub }: { hub: ActionHubData }) {
+  const [, navigate] = useLocation();
+
+  const items = useMemo(() => {
+    const result: PriorityItem[] = [];
+    const now = Date.now();
+
+    for (const task of hub.myTasks) {
+      if (task.dueDate && isOverdue(task.dueDate)) {
+        const daysLate = Math.max(1, daysOverdueCalc(task.dueDate));
+        result.push({
+          id: `task-${task.id}`,
+          type: "overdue_task",
+          title: task.title,
+          projectName: task.projectName,
+          urgency: 1000 + daysLate,
+          urgencyLabel: `${daysLate}d overdue`,
+          icon: AlertTriangle,
+          iconColor: "bg-red-100 text-red-600",
+          href: `/engineering?project=${encodeURIComponent(task.projectName)}`,
+        });
+      }
+    }
+
+    for (const notif of hub.actionRequired) {
+      result.push({
+        id: `notif-${notif.id}`,
+        type: "action_required",
+        title: notif.title,
+        projectName: notif.projectName,
+        urgency: 500,
+        urgencyLabel: "Action required",
+        icon: ClipboardCheck,
+        iconColor: "bg-amber-100 text-amber-600",
+        href: "/notifications",
+      });
+    }
+
+    for (const approval of hub.pendingApprovals) {
+      result.push({
+        id: `appr-${approval.id}`,
+        type: "approval",
+        title: approval.title,
+        projectName: approval.projectName,
+        urgency: 100,
+        urgencyLabel: "Awaiting approval",
+        icon: FileCheck,
+        iconColor: "bg-purple-100 text-purple-600",
+        href: "/approvals",
+      });
+    }
+
+    result.sort((a, b) => b.urgency - a.urgency);
+    return result.slice(0, 5);
+  }, [hub]);
+
+  if (items.length === 0) return null;
+
+  return (
+    <Card className="shadow-sm border-l-4 border-l-amber-500" data-testid="priority-queue">
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+            <Target className="h-4 w-4 text-amber-500" />
+            Your Priority Queue
+            <Badge className="text-[10px] px-1.5 py-0 bg-amber-600">{items.length}</Badge>
+          </CardTitle>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-2">
+          {items.map(item => {
+            const Icon = item.icon;
+            return (
+              <div
+                key={item.id}
+                className="flex items-center gap-3 p-2.5 rounded-lg border border-border/50 bg-card cursor-pointer transition-colors hover:bg-muted/30"
+                onClick={() => navigate(item.href)}
+                data-testid={`priority-item-${item.id}`}
+              >
+                <div className={`p-1.5 rounded-md ${item.iconColor}`}>
+                  <Icon className="w-3.5 h-3.5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium leading-snug truncate">{item.title}</p>
+                  {item.projectName && (
+                    <span className="text-[11px] text-muted-foreground">{cleanProjectName(item.projectName)}</span>
+                  )}
+                </div>
+                <Badge
+                  variant={item.type === "overdue_task" ? "destructive" : "outline"}
+                  className={`text-[9px] px-1.5 py-0 shrink-0 ${
+                    item.type === "action_required" ? "border-amber-300 text-amber-700 bg-amber-50" :
+                    item.type === "approval" ? "border-purple-300 text-purple-700" : ""
+                  }`}
+                  data-testid={`priority-urgency-${item.id}`}
+                >
+                  {item.urgencyLabel}
+                </Badge>
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function MyProjectsHub({ projects, userName }: { projects: ProjectSummary[]; userName: string }) {
   const [, navigate] = useLocation();
 
@@ -711,6 +844,8 @@ function MyProjectsHub({ projects, userName }: { projects: ProjectSummary[]; use
             const progress = p.project_pct_complete != null ? Math.round(p.project_pct_complete * 100) : null;
             const expected = p.expected_pct_complete != null ? Math.round(p.expected_pct_complete * 100) : null;
             const behind = progress !== null && expected !== null && (expected - progress) > 5;
+            const importDaysAgo = p.last_import_at ? Math.floor((Date.now() - new Date(p.last_import_at).getTime()) / (1000 * 60 * 60 * 24)) : null;
+            const isStale = importDaysAgo !== null && importDaysAgo > 14;
 
             return (
               <div
@@ -725,6 +860,12 @@ function MyProjectsHub({ projects, userName }: { projects: ProjectSummary[]; use
                     <Badge variant="outline" className="text-[10px] px-1 py-0 shrink-0">{p.phase}</Badge>
                   )}
                 </div>
+                {isStale && (
+                  <div className="flex items-center gap-1 mb-1.5 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5" data-testid={`stale-warning-${p.project_name}`}>
+                    <Clock className="h-3 w-3 shrink-0" />
+                    <span>Data may be stale — last import {importDaysAgo}d ago</span>
+                  </div>
+                )}
                 {progress !== null && (
                   <div className="space-y-1">
                     <div className="flex justify-between text-[11px]">
@@ -843,6 +984,29 @@ export default function Home() {
         </div>
       </div>
 
+      {(() => {
+        try {
+          const stored = localStorage.getItem("last_visited_project");
+          if (stored) {
+            const { name } = JSON.parse(stored);
+            if (name && allProjects.some(p => p.project_name === name)) {
+              return (
+                <button
+                  className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 transition-colors"
+                  onClick={() => navigate(`/project/${encodeURIComponent(name)}`)}
+                  data-testid="link-last-visited-project"
+                >
+                  <ArrowRight className="h-3.5 w-3.5" />
+                  <span>Continue with <span className="font-medium">{cleanProjectName(name)}</span></span>
+                  <ChevronRight className="h-3 w-3" />
+                </button>
+              );
+            }
+          }
+        } catch {}
+        return null;
+      })()}
+
       <ProjectQuickSearch projects={allProjects} isLoading={projectsLoading} />
 
       {user?.name && (
@@ -872,6 +1036,8 @@ export default function Home() {
               </div>
             </div>
           )}
+
+          <PriorityQueue hub={hub} />
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3" data-testid="stat-cards">
             <StatCard
