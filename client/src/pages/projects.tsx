@@ -1048,11 +1048,17 @@ function EditProjectInfoModal({
           </div>
           <div>
             <Label className="text-xs font-medium text-slate-600 mb-1 block">PM</Label>
-            <Input
-              value={formData.pm}
-              onChange={(e) => updateField("pm", e.target.value)}
-              data-testid="input-edit-pm"
-            />
+            <Select value={formData.pm || "__unassigned"} onValueChange={(val) => updateField("pm", val === "__unassigned" ? "" : val)}>
+              <SelectTrigger data-testid="select-edit-pm">
+                <SelectValue placeholder="Select PM..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__unassigned">Unassigned</SelectItem>
+                {pmUsers.map((u) => (
+                  <SelectItem key={u.id} value={u.name}>{u.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div>
             <Label className="text-xs font-medium text-slate-600 mb-1 block">Construction Start Date</Label>
@@ -1196,10 +1202,8 @@ export default function ProjectsSummary() {
   const currentProjects = viewTab === "active" ? activeProjects : archivedProjects;
 
   const uniquePMs = useMemo(() => {
-    const pms = new Set<string>();
-    currentProjects.forEach((p) => { if (p.pm) pms.add(p.pm); });
-    return Array.from(pms).sort();
-  }, [currentProjects]);
+    return pmUsers.map(u => u.name).sort();
+  }, [pmUsers]);
 
   const PHASE_ORDER = [
     "DLP", "Financial Close", "Planning", "Construction", "QA",

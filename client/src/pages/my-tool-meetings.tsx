@@ -116,6 +116,17 @@ export default function MyToolMeetingsPage() {
     select: (data: any[]) => data.map((p: any) => ({ id: p.id, projectName: p.projectName })).sort((a: any, b: any) => a.projectName.localeCompare(b.projectName)),
   });
 
+  const { data: pmUsers = [] } = useQuery<{ id: number; name: string }[]>({
+    queryKey: ["/api/pm-assignable-users"],
+    queryFn: async () => {
+      const token = localStorage.getItem("company_role_token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch("/api/pm-assignable-users", { credentials: "include", headers });
+      return res.ok ? res.json() : [];
+    },
+  });
+
   const { data: webhookStatus } = useQuery<WebhookStatus>({
     queryKey: ["/api/meetings/webhook-status"],
     refetchInterval: 60_000,
@@ -682,11 +693,14 @@ export default function MyToolMeetingsPage() {
                     </div>
                     <div>
                       <label className="text-xs font-medium text-gray-500">PM</label>
-                      <Input
-                        value={convertForm.pm || ""}
-                        onChange={(e) => setConvertForm((p) => ({ ...p, pm: e.target.value }))}
-                        data-testid="input-pm"
-                      />
+                      <Select value={convertForm.pm || ""} onValueChange={(v) => setConvertForm((p) => ({ ...p, pm: v }))}>
+                        <SelectTrigger data-testid="select-pm"><SelectValue placeholder="Select PM..." /></SelectTrigger>
+                        <SelectContent>
+                          {pmUsers.sort((a: any, b: any) => a.name.localeCompare(b.name)).map((u: any) => (
+                            <SelectItem key={u.id} value={u.name}>{u.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
                 </>
