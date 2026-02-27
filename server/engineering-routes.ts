@@ -2,6 +2,9 @@ import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, and, desc, asc, sql, inArray, isNull, lt, gt, or, ne } from "drizzle-orm";
 import { verifyToken } from "./jwt";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
 import {
   operationalTasks, taskComments, taskActivityLog, taskWatchers,
   deliverables, deliverableVersions, deliverableFiles, deliverableEvents,
@@ -17,6 +20,16 @@ import {
 } from "@shared/schema";
 import { applyTemplate } from "./template-routes";
 import { requirePermission } from "./permission-middleware";
+
+const approvalUploadsDir = path.join(process.cwd(), "uploads", "approvals");
+if (!fs.existsSync(approvalUploadsDir)) fs.mkdirSync(approvalUploadsDir, { recursive: true });
+const approvalUpload = multer({
+  storage: multer.diskStorage({
+    destination: approvalUploadsDir,
+    filename: (_req, file, cb) => cb(null, `${Date.now()}-${path.basename(file.originalname).replace(/[^a-zA-Z0-9._-]/g, '_')}`),
+  }),
+  limits: { fileSize: 50 * 1024 * 1024 },
+});
 
 type AppUser = { id: number; email: string; name: string; role: string; };
 
@@ -347,6 +360,64 @@ export function registerEngineeringRoutes(app: Express) {
 
       res.json(updated);
     } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/eng/tasks/:id/send-for-approval", requireAuth, approvalUpload.single("file"), async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const [existing] = await db.select().from(operationalTasks).where(eq(operationalTasks.id, id));
+      if (!existing) return res.status(404).json({ error: "Task not found" });
+
+      const approverUserId = parseInt(req.body.approverUserId);
+      if (!approverUserId) return res.status(400).json({ error: "Approver is required" });
+
+      const note = req.body.note || "";
+      const file = req.file;
+
+      const [updated] = await db.update(operationalTasks).set({
+        status: "NEEDS APPROVAL",
+        approverUserId,
+        updatedAt: new Date(),
+      }).where(eq(operationalTasks.id, id)).returning();
+
+      await db.insert(taskActivityLog).values({
+        taskId: id,
+        actorId: getUser(req).id,
+        actionType: "field_changed",
+        fieldName: "status",
+        oldValue: existing.status,
+        newValue: "NEEDS APPROVAL",
+      });
+
+      if (note.trim()) {
+        const fileInfo = file ? ` [Attachment: ${file.originalname}]` : "";
+        await db.insert(taskComments).values({
+          taskId: id,
+          userId: getUser(req).id,
+          text: `[Sent for Approval] ${note.trim()}${fileInfo}`,
+        });
+      } else if (file) {
+        await db.insert(taskComments).values({
+          taskId: id,
+          userId: getUser(req).id,
+          text: `[Sent for Approval] Attachment: ${file.originalname}`,
+        });
+      }
+
+      await createNotification(approverUserId, "deliverable.submitted_for_approval",
+        `Approval needed: ${updated.title}`,
+        `Task "${updated.title}" has been sent to you for approval${file ? ` with attachment: ${file.originalname}` : ""}`,
+        { projectName: updated.projectName, linkedTaskId: id }
+      );
+
+      res.json({
+        ...updated,
+        uploadedFile: file ? { filename: file.filename, originalName: file.originalname, size: file.size } : null,
+      });
+    } catch (err: any) {
+      console.error("[Eng] Send for approval error:", err);
       res.status(500).json({ error: err.message });
     }
   });
