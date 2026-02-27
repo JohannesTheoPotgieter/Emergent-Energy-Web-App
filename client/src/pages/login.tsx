@@ -5,9 +5,19 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Lock, User, Info, X, Shield, Trophy, UserCog, LayoutGrid, PauseCircle, FolderKanban } from "lucide-react";
+import { Lock, User, Info, X, Smartphone, Briefcase, ShieldCheck, UserCog, LayoutGrid, PauseCircle, FolderKanban } from "lucide-react";
 
 const CHANGELOG = [
+  {
+    icon: Briefcase,
+    title: "Project Development Sidebar Section",
+    description: "Project Development now has its own dedicated sidebar section that can be independently toggled per role in Admin Roles. COO, CEO, CCO, and Project Developers have access by default — other roles can be granted it through permissions.",
+  },
+  {
+    icon: Smartphone,
+    title: "Mobile-Friendly Engineering & Admin",
+    description: "Engineering Dashboard, My Tasks, and Admin Roles pages are now fully responsive on mobile. Task rows show compact badges on small screens, My Tasks uses card layouts instead of tables, and Admin permission grids stack cleanly on narrow devices.",
+  },
   {
     icon: UserCog,
     title: "My Tasks View — Your Daily Cockpit",
@@ -29,14 +39,9 @@ const CHANGELOG = [
     description: "Setting a task to Projects Assistance now requires a linked project — no more orphaned assistance requests floating in the void. These tasks also appear in the linked project's Engineering Tasks tab with a clear visual indicator.",
   },
   {
-    icon: Shield,
+    icon: ShieldCheck,
     title: "Send for Approval Workflow",
     description: "Engineering tasks and quality items now have a dedicated Send for Approval flow with file upload, approver selection, and automatic notification creation. No more manually chasing approvers through chat.",
-  },
-  {
-    icon: Trophy,
-    title: "Portfolio Owner & Management",
-    description: "Portfolios now have an assigned owner. Create and edit dialogs include an owner selector, giving clear accountability for portfolio-level oversight and decision-making.",
   },
 ];
 
@@ -48,7 +53,7 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [showVersion, setShowVersion] = useState(false);
-  const [versionInfo, setVersionInfo] = useState({ version: "0.0.003", buildTime: "", buildNumber: "" });
+  const [versionInfo, setVersionInfo] = useState({ version: "0.0.004", buildTime: "", buildNumber: "" });
 
   useEffect(() => {
     fetch("/api/version")
