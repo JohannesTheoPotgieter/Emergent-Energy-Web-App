@@ -960,6 +960,121 @@ export const PHASE_TO_ENG_STAGES: Record<string, string[]> = {
   "Compliance Handover": ["Handover Pack"],
 };
 
+// ===================== PROJECT DEVELOPMENT =====================
+
+export const clients = pgTable("clients", {
+  id: serial("id").primaryKey(),
+  clientId: text("client_id").notNull().unique(),
+  name: text("name").notNull(),
+  createdBy: integer("created_by").references(() => users.id),
+  updatedBy: integer("updated_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertClient = z.infer<typeof insertClientSchema>;
+export type Client = typeof clients.$inferSelect;
+
+export const pdTicketStatusEnum = pgEnum('pd_ticket_status', ['Draft', 'In Progress', 'On Hold', 'Completed', 'Cancelled']);
+export const pdRequestTypeEnum = pgEnum('pd_request_type', [
+  'Cost Proposal', 'IFC Planning', 'Site Assessment', 'Feasibility Study',
+  'Grid Application', 'Design Review', 'Battery Assessment', 'Full EPC',
+]);
+export const pdFundingTypeEnum = pgEnum('pd_funding_type', ['PPA', 'Cash', 'Lease', 'Hybrid', 'Other']);
+export const pdProvinceEnum = pgEnum('pd_province', [
+  'Eastern Cape', 'Free State', 'Gauteng', 'KwaZulu-Natal', 'Limpopo',
+  'Mpumalanga', 'Northern Cape', 'North West', 'Western Cape',
+]);
+
+export const pdTickets = pgTable("pd_tickets", {
+  id: serial("id").primaryKey(),
+  clientId: integer("client_id").references(() => clients.id),
+  clientNameSnapshot: text("client_name_snapshot"),
+  projectId: integer("project_id").references(() => projectInfo.id),
+  projectSiteName: text("project_site_name").notNull(),
+  dueDate: text("due_date"),
+  requestType: text("request_type").notNull(),
+  priority: text("priority").notNull().default("Medium"),
+  status: text("status").notNull().default("Draft"),
+  numberOfReworks: integer("number_of_reworks").notNull().default(0),
+  projectDeveloperUserId: integer("project_developer_user_id").references(() => users.id),
+  designerUserId: integer("designer_user_id").references(() => users.id),
+  fundingType: text("funding_type"),
+  sizeKwp: decimal("size_kwp", { precision: 12, scale: 2 }),
+  province: text("province"),
+  gpsCoordinates: text("gps_coordinates"),
+  billsOrTariffData: boolean("bills_or_tariff_data").default(false),
+  meteringDataAvailable: boolean("metering_data_available").default(false),
+  siteInspectionForm: boolean("site_inspection_form").default(false),
+  siteInspectionLink: text("site_inspection_link"),
+  workingSchedule: text("working_schedule"),
+  batteriesNeeded: boolean("batteries_needed").default(false),
+  batterySize: decimal("battery_size", { precision: 12, scale: 2 }),
+  dieselGenIntegration: boolean("diesel_gen_integration").default(false),
+  roofReplacementNeeded: boolean("roof_replacement_needed").default(false),
+  hseDiscussed: boolean("hse_discussed").default(false),
+  comments: text("comments"),
+  clickUpSynced: boolean("clickup_synced").default(false),
+  tasksSpawnedAt: timestamp("tasks_spawned_at"),
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertPdTicketSchema = createInsertSchema(pdTickets).omit({ id: true, createdAt: true, updatedAt: true, tasksSpawnedAt: true });
+export type InsertPdTicket = z.infer<typeof insertPdTicketSchema>;
+export type PdTicket = typeof pdTickets.$inferSelect;
+
+export const PD_REQUEST_TYPE_TASK_TEMPLATES: Record<string, { title: string; priority: string }[]> = {
+  "Cost Proposal": [
+    { title: "Prepare Cost Proposal Document", priority: "High" },
+    { title: "Review Site Technical Data", priority: "Medium" },
+    { title: "Financial Model & Pricing", priority: "High" },
+    { title: "Client Presentation Pack", priority: "Medium" },
+  ],
+  "IFC Planning": [
+    { title: "IFC Design Package", priority: "High" },
+    { title: "Structural Assessment", priority: "High" },
+    { title: "Electrical Single Line Diagram", priority: "High" },
+    { title: "Cable Schedule & Layout", priority: "Medium" },
+    { title: "Construction Timeline", priority: "Medium" },
+  ],
+  "Site Assessment": [
+    { title: "Site Visit & Survey", priority: "High" },
+    { title: "Roof Assessment Report", priority: "High" },
+    { title: "Electrical Infrastructure Review", priority: "Medium" },
+    { title: "HSE Risk Assessment", priority: "Medium" },
+  ],
+  "Feasibility Study": [
+    { title: "Solar Resource Assessment", priority: "High" },
+    { title: "Energy Yield Analysis", priority: "High" },
+    { title: "Feasibility Report", priority: "High" },
+    { title: "Financial Viability Summary", priority: "Medium" },
+  ],
+  "Grid Application": [
+    { title: "Grid Connection Application", priority: "High" },
+    { title: "Utility Liaison & Documentation", priority: "High" },
+    { title: "Grid Compliance Check", priority: "Medium" },
+  ],
+  "Design Review": [
+    { title: "Review Existing Design", priority: "High" },
+    { title: "Design Revision Notes", priority: "Medium" },
+    { title: "Updated Design Package", priority: "High" },
+  ],
+  "Battery Assessment": [
+    { title: "Battery Sizing & Selection", priority: "High" },
+    { title: "Integration Design", priority: "High" },
+    { title: "Battery Cost Analysis", priority: "Medium" },
+  ],
+  "Full EPC": [
+    { title: "Full EPC Design Package", priority: "High" },
+    { title: "Procurement Schedule", priority: "High" },
+    { title: "Construction Plan", priority: "High" },
+    { title: "QA/QC Plan", priority: "Medium" },
+    { title: "Commissioning Checklist", priority: "Medium" },
+    { title: "Handover Documentation", priority: "Medium" },
+  ],
+};
+
 export const operationalTasks = pgTable("operational_tasks", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").references(() => projectInfo.id),
@@ -1010,6 +1125,7 @@ export const operationalTasks = pgTable("operational_tasks", {
   importedCommentCount: integer("imported_comment_count"),
   taskTypeTag: text("task_type_tag"),
   domain: text("domain").notNull().default("BOTH"),
+  pdTicketId: integer("pd_ticket_id").references(() => pdTickets.id),
   createdBy: integer("created_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

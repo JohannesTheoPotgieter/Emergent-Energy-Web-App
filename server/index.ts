@@ -400,6 +400,9 @@ async function backfillPmUserIds() {
   const { registerPortfolioRoutes } = await import("./portfolio-routes");
   registerPortfolioRoutes(app);
 
+  const { registerPdRoutes } = await import("./pd-routes");
+  registerPdRoutes(app);
+
   await db.execute(sql.raw(`
     CREATE TABLE IF NOT EXISTS portfolios (
       id SERIAL PRIMARY KEY,
