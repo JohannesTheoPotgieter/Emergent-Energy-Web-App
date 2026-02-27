@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -47,6 +47,19 @@ export default function PdTicketDetailPage() {
     queryKey: ["/api/pd/tickets", ticketId],
     queryFn: () => pdFetch(`/api/pd/tickets/${ticketId}`),
     enabled: !!ticketId,
+  });
+
+  const { data: projectsList = [] } = useQuery<any[]>({
+    queryKey: ["projects-list-for-link"],
+    queryFn: async () => {
+      const res = await fetch("/api/projects", { credentials: "include", headers: { ...(localStorage.getItem("auth_token") ? { Authorization: `Bearer ${localStorage.getItem("auth_token")}` } : {}) } });
+      if (!res.ok) return [];
+      const rows = await res.json();
+      return rows.map((p: any) => ({ id: p.id, name: (p.projectName || p.project_name || "").replace(/_Tracker.*$/i, "").replace(/_/g, " ") }))
+        .filter((p: any) => p.name)
+        .sort((a: any, b: any) => a.name.localeCompare(b.name));
+    },
+    enabled: editing,
   });
 
   const updateMutation = useMutation({
@@ -102,6 +115,7 @@ export default function PdTicketDetailPage() {
       dueDate: t.dueDate || "",
       comments: t.comments || "",
       numberOfReworks: t.numberOfReworks || 0,
+      projectId: t.projectId || "",
     });
     setEditing(true);
   };
@@ -175,6 +189,16 @@ export default function PdTicketDetailPage() {
               <div className="space-y-1">
                 <Label className="text-xs">Reworks</Label>
                 <Input type="number" className="h-8 text-xs" value={editForm.numberOfReworks} onChange={e => setEditForm(p => ({ ...p, numberOfReworks: parseInt(e.target.value) || 0 }))} data-testid="edit-reworks" />
+              </div>
+              <div className="col-span-2 md:col-span-4 space-y-1">
+                <Label className="text-xs">Linked Project</Label>
+                <Select value={editForm.projectId ? String(editForm.projectId) : "__none__"} onValueChange={v => setEditForm(p => ({ ...p, projectId: v === "__none__" ? null : parseInt(v) }))}>
+                  <SelectTrigger className="h-8 text-xs" data-testid="edit-project"><SelectValue placeholder="Select a project..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Not linked</SelectItem>
+                    {projectsList.map((p: any) => <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="col-span-2 md:col-span-4 space-y-1">
                 <Label className="text-xs">Comments</Label>
