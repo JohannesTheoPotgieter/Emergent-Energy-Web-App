@@ -46,6 +46,7 @@ import {
   Trophy,
   Bell,
   FolderOpen,
+  FileEdit,
 } from "lucide-react";
 import { UX_REDESIGN_ENABLED } from "@shared/schema";
 import { useProgramData } from "@/hooks/use-program-data";
@@ -170,6 +171,14 @@ function getRedesignedNavGroups(): NavGroup[] {
         { label: "COS Tracker", icon: TrendingUp, path: "/cos" },
         { label: "Procurement", icon: Truck, path: "/subcontractor-dashboard" },
         { label: "Invoice Patterns", icon: FileSpreadsheet, path: "/invoice-patterns" },
+      ],
+    },
+    {
+      heading: "PROJECT DEVELOPMENT",
+      section: "PROJECTS",
+      items: [
+        { label: "PD Dashboard", icon: FileEdit, path: "/pd" },
+        { label: "PD Tickets", icon: ClipboardList, path: "/pd/tickets" },
       ],
     },
     {

@@ -56,6 +56,10 @@ import PMDashboard from "@/pages/pm-dashboard";
 import NotificationCenterPage from "@/pages/notification-center";
 import PortfoliosPage from "@/pages/portfolios";
 import PortfolioDetailPage from "@/pages/portfolio-detail";
+import PdDashboardPage from "@/pages/pd-dashboard";
+import PdTicketsPage from "@/pages/pd-tickets";
+import PdTicketCreatePage from "@/pages/pd-ticket-create";
+import PdTicketDetailPage from "@/pages/pd-ticket-detail";
 import { useAuth } from "@/hooks/use-auth";
 import { useProgramData } from "@/hooks/use-program-data";
 import { TrackerTable } from "@/components/dashboard/TrackerTable";
@@ -273,6 +277,10 @@ function ProtectedPages() {
         <Route path="/notifications" component={NotificationCenterPage} />
         <Route path="/portfolios" component={PortfoliosPage} />
         <Route path="/portfolios/:id" component={PortfolioDetailPage} />
+        <Route path="/pd" component={PdDashboardPage} />
+        <Route path="/pd/tickets" component={PdTicketsPage} />
+        <Route path="/pd/tickets/create" component={PdTicketCreatePage} />
+        <Route path="/pd/tickets/:id" component={PdTicketDetailPage} />
         <Route path="/admin/eng-templates">{() => <Redirect to="/admin/phase-templates" />}</Route>
 
         <Route component={NotFound} />
