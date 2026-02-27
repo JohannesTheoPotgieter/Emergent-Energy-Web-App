@@ -2158,6 +2158,7 @@ export function registerEngineeringRoutes(app: Express) {
       const tasks = await db.select().from(operationalTasks)
         .where(or(
           eq(operationalTasks.projectName, cleanName),
+          eq(operationalTasks.projectId, projectId),
           and(
             eq(operationalTasks.status, "PROJECTS ASSISTANCE"),
             eq(operationalTasks.projectId, projectId)

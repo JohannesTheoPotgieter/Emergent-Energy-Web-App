@@ -784,11 +784,18 @@ export default function ProjectDetailPage() {
   const hasRedRag = scheduleRag === "red" || costRag === "red" || qualityRag === "red";
 
   const engStages = engStagesData?.stages || [];
-  const engTotalTasks = engStages.reduce((s: number, st: any) => s + (st.tasks?.length || 0), 0);
-  const engCompletedTasks = engStages.reduce((s: number, st: any) => s + (st.tasks?.filter((t: any) => t.status === "complete").length || 0), 0);
-  const engStagePct = engTotalTasks > 0 ? (engCompletedTasks / engTotalTasks) * 100 : 0;
+  const engStageTotalTasks = engStages.reduce((s: number, st: any) => s + (st.tasks?.length || 0), 0);
+  const engStageCompletedTasks = engStages.reduce((s: number, st: any) => s + (st.tasks?.filter((t: any) => t.status === "complete").length || 0), 0);
   const engCompletedStages = engStages.filter((s: any) => s.status === "complete").length;
   const engActiveStage = engStages.find((s: any) => s.status === "in_progress") || engStages.find((s: any) => s.status === "not_started");
+
+  const engBoardTasks = engDataForAlerts?.tasks || [];
+  const engBoardTotal = engBoardTasks.length;
+  const engBoardCompleted = engBoardTasks.filter((t: any) => t.status === "COMPLETE").length;
+
+  const engTotalTasks = engStageTotalTasks + engBoardTotal;
+  const engCompletedTasks = engStageCompletedTasks + engBoardCompleted;
+  const engStagePct = engTotalTasks > 0 ? (engCompletedTasks / engTotalTasks) * 100 : 0;
 
   const alerts = useMemo(() => {
     const result: { severity: "warning" | "info"; message: string; key: string }[] = [];
@@ -1132,7 +1139,7 @@ export default function ProjectDetailPage() {
                 <div className="flex items-center gap-2 pt-1 border-t">
                   <Target className="h-3.5 w-3.5 text-orange-500" />
                   <span className="text-xs font-medium text-muted-foreground truncate">
-                    {engActiveStage ? `Active: ${engActiveStage.stageName || engActiveStage.templateName || "Stage"}` : engStages.length === 0 ? "No stages yet" : "All stages complete"}
+                    {engActiveStage ? `Active: ${engActiveStage.stageName || engActiveStage.templateName || "Stage"}` : engStages.length === 0 && engBoardTotal > 0 ? `${engBoardTotal} board task${engBoardTotal !== 1 ? "s" : ""} linked` : engStages.length === 0 ? "No stages yet" : "All stages complete"}
                   </span>
                 </div>
               </CardContent>
