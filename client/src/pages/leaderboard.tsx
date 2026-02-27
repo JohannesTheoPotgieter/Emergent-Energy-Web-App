@@ -4,7 +4,6 @@ import { useAuth } from "@/hooks/use-auth";
 import { usePermission } from "@/hooks/use-permissions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -45,6 +44,9 @@ import {
   Cog,
   BellOff,
   ClipboardX,
+  Flame,
+  Sparkles,
+  Swords,
 } from "lucide-react";
 
 interface BadgeInfo {
@@ -121,23 +123,18 @@ const ROLE_LABELS: Record<string, string> = {
   ENGINEERING_MANAGER: "Eng Manager",
   ACCOUNTANT: "Accountant",
   admin: "Admin",
+  PROJECT_DEVELOPER: "Project Dev",
 };
 
-const PODIUM_COLORS = [
-  "from-yellow-400 to-amber-500",
-  "from-gray-300 to-gray-400",
-  "from-amber-600 to-amber-700",
-];
-
-const LEVEL_COLORS: Record<number, string> = {
-  1: "bg-gray-100 text-gray-700",
-  2: "bg-blue-100 text-blue-700",
-  3: "bg-green-100 text-green-700",
-  4: "bg-purple-100 text-purple-700",
-  5: "bg-orange-100 text-orange-700",
-  6: "bg-red-100 text-red-700",
-  7: "bg-yellow-100 text-yellow-800",
-  8: "bg-gradient-to-r from-purple-100 to-pink-100 text-purple-800",
+const LEVEL_CONFIG: Record<number, { color: string; bg: string; glow: string; emoji: string }> = {
+  1: { color: "text-slate-600", bg: "bg-slate-100 dark:bg-slate-800", glow: "", emoji: "🌱" },
+  2: { color: "text-blue-600", bg: "bg-blue-100 dark:bg-blue-900/40", glow: "", emoji: "⚡" },
+  3: { color: "text-green-600", bg: "bg-green-100 dark:bg-green-900/40", glow: "", emoji: "🌟" },
+  4: { color: "text-purple-600", bg: "bg-purple-100 dark:bg-purple-900/40", glow: "shadow-purple-200/50", emoji: "💜" },
+  5: { color: "text-orange-600", bg: "bg-orange-100 dark:bg-orange-900/40", glow: "shadow-orange-200/50", emoji: "🔥" },
+  6: { color: "text-red-600", bg: "bg-red-100 dark:bg-red-900/40", glow: "shadow-red-200/50", emoji: "👑" },
+  7: { color: "text-yellow-700", bg: "bg-yellow-100 dark:bg-yellow-900/40", glow: "shadow-yellow-300/50", emoji: "⚔️" },
+  8: { color: "text-fuchsia-600", bg: "bg-gradient-to-r from-purple-100 to-pink-100 dark:from-purple-900/40 dark:to-pink-900/40", glow: "shadow-fuchsia-300/60", emoji: "💎" },
 };
 
 const STAT_CONFIG = [
@@ -226,7 +223,7 @@ function DetailLineItems({ cat, expanded, onToggle, config, type }: {
         <Icon className={`w-4 h-4 shrink-0 ${config.color}`} />
         <span className="text-xs font-medium flex-1 truncate">{config.label}</span>
         <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-          {cat.count} × {isEarned ? '+' : ''}{cat.perPoint}
+          {cat.count} x {isEarned ? '+' : ''}{cat.perPoint}
         </span>
         <span className={`text-xs font-bold whitespace-nowrap ${isEarned ? 'text-green-600' : 'text-red-500'}`}>
           = {isEarned ? '+' : ''}{cat.total}
@@ -253,6 +250,29 @@ function DetailLineItems({ cat, expanded, onToggle, config, type }: {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function XpBar({ current, max, level, title, color }: { current: number; max: number; level: number; title: string; color: string }) {
+  const pct = max > 0 ? Math.min(100, (current / max) * 100) : 100;
+  return (
+    <div className="w-full">
+      <div className="flex items-center justify-between text-[10px] mb-0.5">
+        <span className={`font-bold ${color}`}>Lv.{level} {title}</span>
+        <span className="text-muted-foreground">{current} / {max} XP</span>
+      </div>
+      <div className="h-2.5 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden relative">
+        <div
+          className="h-full rounded-full transition-all duration-1000 ease-out relative overflow-hidden"
+          style={{
+            width: `${pct}%`,
+            background: `linear-gradient(90deg, ${color === 'text-fuchsia-600' ? '#c026d3' : color === 'text-yellow-700' ? '#b45309' : '#6366f1'}, ${color === 'text-fuchsia-600' ? '#ec4899' : color === 'text-yellow-700' ? '#eab308' : '#8b5cf6'})`,
+          }}
+        >
+          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer" />
+        </div>
+      </div>
     </div>
   );
 }
@@ -289,171 +309,257 @@ function UserDetailDialog({ selectedUser, onClose }: { selectedUser: Leaderboard
   const netTotal = detailData?.netTotal ?? 0;
   const participationPts = detailData?.participation ? (detailData.pointValues?.participation || 10) : 0;
 
+  if (!selectedUser) return null;
+  const lvlCfg = LEVEL_CONFIG[selectedUser.level.level] || LEVEL_CONFIG[1];
+
   return (
     <Dialog open={!!selectedUser} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="sm:max-w-[520px] max-h-[85vh] overflow-y-auto">
-        {selectedUser && (
-          <>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <Award className="w-5 h-5 text-primary" />
-                {selectedUser.name}
-              </DialogTitle>
-              <DialogDescription>
-                {ROLE_LABELS[selectedUser.role] || selectedUser.role} — Level {selectedUser.level.level} {selectedUser.level.title}
-              </DialogDescription>
-            </DialogHeader>
+      <DialogContent className="sm:max-w-[540px] max-h-[85vh] overflow-y-auto p-0">
+        <div className="bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-500 px-6 pt-6 pb-8 text-white relative overflow-hidden">
+          <div className="absolute top-2 right-2 text-4xl opacity-20">{lvlCfg.emoji}</div>
+          <div className="absolute -bottom-4 -left-4 w-24 h-24 bg-white/5 rounded-full" />
+          <div className="absolute -top-6 -right-6 w-32 h-32 bg-white/5 rounded-full" />
+          <DialogHeader>
+            <DialogTitle className="text-white flex items-center gap-2 text-lg">
+              <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-xl font-bold backdrop-blur-sm">
+                {selectedUser.name.charAt(0)}
+              </div>
+              {selectedUser.name}
+            </DialogTitle>
+            <DialogDescription className="text-white/70 text-xs">
+              {ROLE_LABELS[selectedUser.role] || selectedUser.role}
+            </DialogDescription>
+          </DialogHeader>
 
-            <div className="space-y-4 py-2">
-              <div className="flex items-center gap-3">
-                <div>
-                  <div className="text-3xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent" data-testid="text-total-points">
-                    {selectedUser.points}
-                  </div>
-                  <div className="text-[10px] text-muted-foreground">total points</div>
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
-                    <span>Lv.{selectedUser.level.level} {selectedUser.level.title}</span>
-                    <span>{selectedUser.level.nextThreshold} pts</span>
-                  </div>
-                  <Progress
-                    value={selectedUser.level.nextThreshold > selectedUser.level.currentThreshold
+          <div className="mt-4 flex items-end gap-4">
+            <div>
+              <div className="text-4xl font-black tracking-tight" data-testid="text-total-points">
+                {selectedUser.points.toLocaleString()}
+              </div>
+              <div className="text-white/60 text-xs mt-0.5">total XP</div>
+            </div>
+            <div className="flex-1 mb-1">
+              <div className="flex items-center justify-between text-[10px] text-white/60 mb-1">
+                <span className="flex items-center gap-1">
+                  <span className="text-sm">{lvlCfg.emoji}</span>
+                  Lv.{selectedUser.level.level} {selectedUser.level.title}
+                </span>
+                <span>Next: {selectedUser.level.nextThreshold.toLocaleString()} XP</span>
+              </div>
+              <div className="h-3 rounded-full bg-white/20 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-yellow-300 to-amber-400 transition-all duration-1000 relative overflow-hidden"
+                  style={{
+                    width: `${selectedUser.level.nextThreshold > selectedUser.level.currentThreshold
                       ? ((selectedUser.points - selectedUser.level.currentThreshold) / (selectedUser.level.nextThreshold - selectedUser.level.currentThreshold)) * 100
-                      : 100}
-                    className="h-2"
-                  />
-                  <div className="flex items-center justify-between text-[10px] text-muted-foreground mt-1">
-                    <span className="text-green-600 font-medium">+{selectedUser.pointsEarned} earned</span>
-                    {selectedUser.pointsPenalty < 0 && (
-                      <span className="text-red-500 font-medium">{selectedUser.pointsPenalty} deducted</span>
-                    )}
-                  </div>
+                      : 100}%`
+                  }}
+                >
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer" />
                 </div>
               </div>
+            </div>
+          </div>
 
-              {selectedUser.badges.length > 0 && (
-                <div>
-                  <h4 className="text-sm font-medium mb-2">Badges ({selectedUser.badges.length})</h4>
-                  <div className="flex flex-wrap gap-1.5">
-                    {selectedUser.badges.map(b => (
-                      <div
-                        key={b.key}
-                        className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-muted text-[11px]"
-                        title={b.description}
-                      >
-                        <span>{b.icon}</span>
-                        <span className="font-medium">{b.name}</span>
-                      </div>
-                    ))}
+          <div className="flex items-center gap-3 mt-3 text-xs">
+            <span className="bg-green-500/20 text-green-200 px-2 py-0.5 rounded-full font-medium">
+              +{selectedUser.pointsEarned.toLocaleString()} earned
+            </span>
+            {selectedUser.pointsPenalty < 0 && (
+              <span className="bg-red-500/20 text-red-200 px-2 py-0.5 rounded-full font-medium">
+                {selectedUser.pointsPenalty.toLocaleString()} penalties
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="px-6 py-4 space-y-4">
+          {selectedUser.badges.length > 0 && (
+            <div>
+              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                Badges Earned ({selectedUser.badges.length})
+              </h4>
+              <div className="flex flex-wrap gap-1.5">
+                {selectedUser.badges.map(b => (
+                  <div
+                    key={b.key}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gradient-to-r from-amber-50 to-yellow-50 dark:from-amber-950/30 dark:to-yellow-950/30 border border-amber-200/50 dark:border-amber-800/30 text-[11px] hover:scale-105 transition-transform cursor-default"
+                    title={b.description}
+                  >
+                    <span className="text-sm">{b.icon}</span>
+                    <span className="font-medium text-amber-800 dark:text-amber-200">{b.name}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {loadingDetails && (
+            <div className="text-center py-6 text-xs text-muted-foreground">
+              <Sparkles className="w-6 h-6 mx-auto mb-2 animate-spin text-purple-400" />
+              Loading point breakdown...
+            </div>
+          )}
+
+          {detailData && (
+            <div>
+              <div className="flex items-center gap-1 mb-3 bg-muted/30 rounded-lg p-1">
+                <button
+                  className={`flex-1 text-xs px-3 py-2 rounded-md font-medium transition-all ${detailTab === 'earned' ? 'bg-white dark:bg-gray-800 shadow-sm text-green-700 dark:text-green-400' : 'text-muted-foreground hover:text-foreground'}`}
+                  onClick={() => setDetailTab("earned")}
+                  data-testid="btn-earned-tab"
+                >
+                  <TrendingUp className="w-3.5 h-3.5 inline mr-1.5" />
+                  Earned (+{earnedTotal.toLocaleString()})
+                </button>
+                <button
+                  className={`flex-1 text-xs px-3 py-2 rounded-md font-medium transition-all ${detailTab === 'penalties' ? 'bg-white dark:bg-gray-800 shadow-sm text-red-700 dark:text-red-400' : 'text-muted-foreground hover:text-foreground'}`}
+                  onClick={() => setDetailTab("penalties")}
+                  data-testid="btn-penalties-tab"
+                >
+                  <TrendingDown className="w-3.5 h-3.5 inline mr-1.5" />
+                  Penalties ({penaltyTotal.toLocaleString()})
+                </button>
+              </div>
+
+              {detailTab === "earned" && (
+                <div className="space-y-1.5">
+                  {EARNED_DETAIL_CONFIG.map(cfg => {
+                    const cat = detailData.earned[cfg.key];
+                    if (!cat) return null;
+                    return (
+                      <DetailLineItems
+                        key={cfg.key}
+                        cat={cat}
+                        expanded={!!expandedSections[cfg.key]}
+                        onToggle={() => toggleSection(cfg.key)}
+                        config={cfg}
+                        type="earned"
+                      />
+                    );
+                  })}
+                  {participationPts > 0 && (
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 border border-blue-100 dark:border-blue-900/30">
+                      <Sparkles className="w-4 h-4 text-blue-500 shrink-0" />
+                      <span className="text-xs font-medium flex-1">Active User Bonus</span>
+                      <span className="text-xs font-bold text-green-600">+{participationPts}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between px-3 py-2.5 rounded-lg bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/20 dark:to-emerald-950/20 border border-green-200 dark:border-green-900/40 mt-2">
+                    <span className="text-xs font-semibold text-green-700 dark:text-green-400">Total Earned</span>
+                    <span className="text-sm font-bold text-green-700 dark:text-green-400">+{earnedTotal.toLocaleString()}</span>
                   </div>
                 </div>
               )}
 
-              {loadingDetails && (
-                <div className="text-center py-4 text-xs text-muted-foreground">Loading point details...</div>
-              )}
-
-              {detailData && (
-                <div>
-                  <div className="flex items-center gap-1 mb-3">
-                    <button
-                      className={`text-xs px-3 py-1.5 rounded-md font-medium transition-colors ${detailTab === 'earned' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'text-muted-foreground hover:bg-muted/50'}`}
-                      onClick={() => setDetailTab("earned")}
-                      data-testid="btn-earned-tab"
-                    >
-                      <TrendingUp className="w-3 h-3 inline mr-1" />
-                      Earned (+{earnedTotal})
-                    </button>
-                    <button
-                      className={`text-xs px-3 py-1.5 rounded-md font-medium transition-colors ${detailTab === 'penalties' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'text-muted-foreground hover:bg-muted/50'}`}
-                      onClick={() => setDetailTab("penalties")}
-                      data-testid="btn-penalties-tab"
-                    >
-                      <TrendingDown className="w-3 h-3 inline mr-1" />
-                      Penalties ({penaltyTotal})
-                    </button>
-                  </div>
-
-                  {detailTab === "earned" && (
-                    <div className="space-y-1.5">
-                      {EARNED_DETAIL_CONFIG.map(cfg => {
-                        const cat = detailData.earned[cfg.key];
-                        if (!cat) return null;
+              {detailTab === "penalties" && (
+                <div className="space-y-1.5">
+                  {penaltyTotal === 0 ? (
+                    <div className="text-center py-8">
+                      <div className="text-4xl mb-2">🌟</div>
+                      <div className="text-sm font-medium text-green-600">Clean Record!</div>
+                      <div className="text-xs text-muted-foreground mt-1">No penalties — keep it up!</div>
+                    </div>
+                  ) : (
+                    <>
+                      {PENALTY_DETAIL_CONFIG.map(cfg => {
+                        const cat = detailData.penalties[cfg.key];
+                        if (!cat || cat.count === 0) return null;
                         return (
                           <DetailLineItems
                             key={cfg.key}
                             cat={cat}
-                            expanded={!!expandedSections[cfg.key]}
-                            onToggle={() => toggleSection(cfg.key)}
+                            expanded={!!expandedSections[`p_${cfg.key}`]}
+                            onToggle={() => toggleSection(`p_${cfg.key}`)}
                             config={cfg}
-                            type="earned"
+                            type="penalty"
                           />
                         );
                       })}
-                      {participationPts > 0 && (
-                        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/30 border border-gray-100 dark:border-gray-800">
-                          <Users className="w-4 h-4 text-blue-500 shrink-0" />
-                          <span className="text-xs font-medium flex-1">Participation Bonus</span>
-                          <span className="text-[10px] text-muted-foreground">active user</span>
-                          <span className="text-xs font-bold text-green-600">+{participationPts}</span>
-                        </div>
-                      )}
-                      <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900/40 mt-2">
-                        <span className="text-xs font-semibold text-green-700 dark:text-green-400">Total Earned</span>
-                        <span className="text-sm font-bold text-green-700 dark:text-green-400">+{earnedTotal}</span>
+                      <div className="flex items-center justify-between px-3 py-2.5 rounded-lg bg-gradient-to-r from-red-50 to-rose-50 dark:from-red-950/20 dark:to-rose-950/20 border border-red-200 dark:border-red-900/40 mt-2">
+                        <span className="text-xs font-semibold text-red-700 dark:text-red-400">Total Penalties</span>
+                        <span className="text-sm font-bold text-red-700 dark:text-red-400">{penaltyTotal.toLocaleString()}</span>
                       </div>
-                    </div>
+                    </>
                   )}
-
-                  {detailTab === "penalties" && (
-                    <div className="space-y-1.5">
-                      {penaltyTotal === 0 ? (
-                        <div className="text-center py-6 text-sm text-muted-foreground">
-                          <CheckCircle className="w-8 h-8 mx-auto mb-2 text-green-500" />
-                          No penalties — great job!
-                        </div>
-                      ) : (
-                        <>
-                          {PENALTY_DETAIL_CONFIG.map(cfg => {
-                            const cat = detailData.penalties[cfg.key];
-                            if (!cat || cat.count === 0) return null;
-                            return (
-                              <DetailLineItems
-                                key={cfg.key}
-                                cat={cat}
-                                expanded={!!expandedSections[`p_${cfg.key}`]}
-                                onToggle={() => toggleSection(`p_${cfg.key}`)}
-                                config={cfg}
-                                type="penalty"
-                              />
-                            );
-                          })}
-                          <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/40 mt-2">
-                            <span className="text-xs font-semibold text-red-700 dark:text-red-400">Total Penalties</span>
-                            <span className="text-sm font-bold text-red-700 dark:text-red-400">{penaltyTotal}</span>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  )}
-
-                  <div className="flex items-center justify-between px-3 py-2.5 rounded-lg bg-primary/5 border border-primary/20 mt-3">
-                    <span className="text-xs font-semibold">Net Total</span>
-                    <div className="text-right">
-                      <span className="text-sm font-bold">{netTotal} pts</span>
-                      <div className="text-[10px] text-muted-foreground">
-                        +{earnedTotal} earned{penaltyTotal < 0 ? ` ${penaltyTotal} penalties` : ''}
-                      </div>
-                    </div>
-                  </div>
                 </div>
               )}
+
+              <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-gradient-to-r from-indigo-50 via-purple-50 to-pink-50 dark:from-indigo-950/20 dark:via-purple-950/20 dark:to-pink-950/20 border border-indigo-200/50 dark:border-indigo-800/30 mt-3">
+                <div className="flex items-center gap-2">
+                  <Trophy className="w-5 h-5 text-amber-500" />
+                  <span className="text-sm font-bold">Net Score</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-lg font-black bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">{netTotal.toLocaleString()} XP</span>
+                </div>
+              </div>
             </div>
-          </>
-        )}
+          )}
+        </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function PodiumCard({ entry, rank, onClick }: { entry: LeaderboardEntry; rank: number; onClick: () => void }) {
+  const lvlCfg = LEVEL_CONFIG[entry.level.level] || LEVEL_CONFIG[1];
+  const podiumHeights = [180, 200, 160];
+  const podiumColors = [
+    "from-gray-300 via-gray-200 to-gray-100 dark:from-gray-600 dark:via-gray-700 dark:to-gray-800",
+    "from-yellow-400 via-amber-300 to-yellow-200 dark:from-yellow-600 dark:via-amber-700 dark:to-yellow-800",
+    "from-amber-700 via-amber-600 to-amber-500 dark:from-amber-800 dark:via-amber-700 dark:to-amber-600",
+  ];
+  const crownColors = ["text-gray-400", "text-yellow-500", "text-amber-600"];
+  const orderIndex = rank === 1 ? 1 : rank === 2 ? 0 : 2;
+
+  return (
+    <div
+      className="flex flex-col items-center cursor-pointer group"
+      onClick={onClick}
+      style={{ order: orderIndex }}
+      data-testid={`card-rank-${rank}`}
+    >
+      <div className="relative mb-2">
+        <div className={`w-16 h-16 sm:w-20 sm:h-20 rounded-full flex items-center justify-center text-2xl sm:text-3xl font-black shadow-lg transition-transform group-hover:scale-110 ${rank === 1 ? 'bg-gradient-to-br from-yellow-300 to-amber-500 text-white ring-4 ring-yellow-300/50' : rank === 2 ? 'bg-gradient-to-br from-gray-200 to-gray-400 text-gray-700 ring-4 ring-gray-300/50' : 'bg-gradient-to-br from-amber-500 to-amber-700 text-white ring-4 ring-amber-400/50'}`}>
+          {entry.name.charAt(0)}
+        </div>
+        {rank === 1 && (
+          <Crown className="absolute -top-3 left-1/2 -translate-x-1/2 w-8 h-8 text-yellow-500 drop-shadow-lg animate-bounce-slow" />
+        )}
+        <div className={`absolute -bottom-1 left-1/2 -translate-x-1/2 w-7 h-7 rounded-full flex items-center justify-center text-xs font-black shadow-md ${rank === 1 ? 'bg-yellow-500 text-white' : rank === 2 ? 'bg-gray-400 text-white' : 'bg-amber-600 text-white'}`}>
+          {rank}
+        </div>
+      </div>
+
+      <div className="text-center mb-2">
+        <div className="font-bold text-sm truncate max-w-[120px] group-hover:text-primary transition-colors">{entry.name}</div>
+        <div className="text-[10px] text-muted-foreground">{ROLE_LABELS[entry.role] || entry.role}</div>
+      </div>
+
+      <div className={`rounded-t-xl w-full flex flex-col items-center justify-end bg-gradient-to-t ${podiumColors[rank - 1]} transition-all group-hover:shadow-lg relative overflow-hidden`}
+        style={{ height: podiumHeights[rank - 1], minWidth: rank === 1 ? 140 : 120 }}
+      >
+        {rank === 1 && <div className="absolute inset-0 bg-gradient-to-t from-transparent via-white/10 to-white/20" />}
+        <div className="text-center pb-4 relative z-10">
+          <div className={`text-3xl sm:text-4xl font-black ${rank === 1 ? 'text-white' : rank === 2 ? 'text-gray-700 dark:text-gray-200' : 'text-white'}`}>
+            {entry.points.toLocaleString()}
+          </div>
+          <div className={`text-[10px] font-medium ${rank === 1 ? 'text-white/70' : rank === 2 ? 'text-gray-500 dark:text-gray-400' : 'text-white/70'}`}>XP</div>
+          {entry.pointsPenalty < 0 && (
+            <div className="text-[10px] text-red-300 font-medium mt-0.5">{entry.pointsPenalty}</div>
+          )}
+          <div className="flex justify-center gap-0.5 mt-2">
+            {entry.badges.slice(0, 4).map(b => (
+              <span key={b.key} className="text-base drop-shadow" title={b.name}>{b.icon}</span>
+            ))}
+          </div>
+          <div className={`text-[10px] mt-1 font-medium ${rank === 1 ? 'text-yellow-200' : rank === 2 ? 'text-gray-500 dark:text-gray-300' : 'text-amber-200'}`}>
+            {lvlCfg.emoji} Lv.{entry.level.level} {entry.level.title}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -466,7 +572,7 @@ export default function LeaderboardPage() {
   const { data, isLoading } = useQuery<LeaderboardResponse>({
     queryKey: ["/api/gamification/leaderboard"],
     queryFn: async () => {
-      const res = await fetch("/api/gamification/leaderboard", { headers: getAuthHeaders() });
+      const res = await fetch("/api/gamification/leaderboard", { headers: getAuthHeaders(), credentials: "include" });
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
@@ -494,183 +600,181 @@ export default function LeaderboardPage() {
     );
   }
 
+  const myLvlCfg = myEntry ? (LEVEL_CONFIG[myEntry.level.level] || LEVEL_CONFIG[1]) : LEVEL_CONFIG[1];
+
   return (
     <div className="max-w-5xl mx-auto p-4 sm:p-6 space-y-6">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-leaderboard-title">
-            <Trophy className="w-7 h-7 text-yellow-500" />
-            Leaderboard
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Track achievements and compete with your team
-          </p>
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-yellow-400 to-amber-500 flex items-center justify-center shadow-lg shadow-amber-200/50 dark:shadow-amber-900/30">
+            <Trophy className="w-7 h-7 text-white" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-black tracking-tight" data-testid="text-leaderboard-title">
+              Leaderboard
+            </h1>
+            <p className="text-xs text-muted-foreground">
+              Compete, earn XP, and climb the ranks
+            </p>
+          </div>
         </div>
         <Tabs value={tab} onValueChange={(v) => setTab(v as any)}>
-          <TabsList>
-            <TabsTrigger value="leaderboard" data-testid="tab-leaderboard">Rankings</TabsTrigger>
-            <TabsTrigger value="badges" data-testid="tab-badges">All Badges</TabsTrigger>
+          <TabsList className="bg-muted/50">
+            <TabsTrigger value="leaderboard" data-testid="tab-leaderboard" className="gap-1.5">
+              <Swords className="w-3.5 h-3.5" />
+              Rankings
+            </TabsTrigger>
+            <TabsTrigger value="badges" data-testid="tab-badges" className="gap-1.5">
+              <Medal className="w-3.5 h-3.5" />
+              Badges
+            </TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
 
       {myEntry && (
-        <Card className="border-2 border-primary/20 bg-primary/5 animate-float-in" data-testid="card-my-stats">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center text-white font-bold text-lg">
-                {myRank > 0 ? `#${myRank}` : "-"}
+        <div className="relative overflow-hidden rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-500 p-4 sm:p-5 text-white shadow-xl shadow-purple-200/30 dark:shadow-purple-900/30 animate-float-in" data-testid="card-my-stats">
+          <div className="absolute top-0 right-0 w-40 h-40 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/4" />
+          <div className="absolute bottom-0 left-20 w-24 h-24 bg-white/5 rounded-full translate-y-1/2" />
+
+          <div className="relative flex items-center gap-4">
+            <div className="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center text-2xl font-black backdrop-blur-sm ring-2 ring-white/30">
+              {myRank > 0 ? `#${myRank}` : "-"}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-bold text-lg">{myEntry.name}</span>
+                <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full backdrop-blur-sm">
+                  {myLvlCfg.emoji} Lv.{myEntry.level.level} {myEntry.level.title}
+                </span>
               </div>
-              <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold">{myEntry.name}</span>
-                  <Badge className={`text-[10px] ${LEVEL_COLORS[myEntry.level.level] || "bg-gray-100"}`}>
-                    Lv.{myEntry.level.level} {myEntry.level.title}
-                  </Badge>
-                </div>
-                <div className="flex items-center gap-3 mt-1">
-                  <span className="text-sm font-medium">{myEntry.points} pts</span>
-                  {myEntry.pointsPenalty < 0 && (
-                    <span className="text-xs text-red-500 flex items-center gap-0.5">
-                      <TrendingDown className="w-3 h-3" />
-                      {myEntry.pointsPenalty}
-                    </span>
-                  )}
-                  <div className="flex-1 max-w-[200px]">
-                    <Progress
-                      value={myEntry.level.nextThreshold > myEntry.level.currentThreshold
-                        ? ((myEntry.points - myEntry.level.currentThreshold) / (myEntry.level.nextThreshold - myEntry.level.currentThreshold)) * 100
-                        : 100}
-                      className="h-2"
-                    />
-                  </div>
-                  <span className="text-xs text-muted-foreground">
-                    {myEntry.level.nextThreshold - myEntry.points} pts to next level
+              <div className="flex items-center gap-3 mt-2">
+                <span className="text-xl font-black">{myEntry.points.toLocaleString()} XP</span>
+                {myEntry.pointsPenalty < 0 && (
+                  <span className="text-xs bg-red-500/30 text-red-200 px-1.5 py-0.5 rounded-full">
+                    {myEntry.pointsPenalty}
                   </span>
-                </div>
-              </div>
-              <div className="flex gap-1">
-                {myEntry.badges.slice(0, 5).map(b => (
-                  <span key={b.key} className="text-lg" title={b.name}>{b.icon}</span>
-                ))}
-                {myEntry.badges.length > 5 && (
-                  <span className="text-xs text-muted-foreground self-center">+{myEntry.badges.length - 5}</span>
                 )}
               </div>
+              <div className="mt-2">
+                <div className="h-2.5 rounded-full bg-white/20 overflow-hidden max-w-xs">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-yellow-300 to-amber-400 transition-all duration-1000 relative overflow-hidden"
+                    style={{
+                      width: `${myEntry.level.nextThreshold > myEntry.level.currentThreshold
+                        ? ((myEntry.points - myEntry.level.currentThreshold) / (myEntry.level.nextThreshold - myEntry.level.currentThreshold)) * 100
+                        : 100}%`
+                    }}
+                  >
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer" />
+                  </div>
+                </div>
+                <span className="text-[10px] text-white/60 mt-0.5 block">
+                  {Math.max(0, myEntry.level.nextThreshold - myEntry.points).toLocaleString()} XP to next level
+                </span>
+              </div>
             </div>
-          </CardContent>
-        </Card>
+            <div className="flex flex-wrap gap-1 justify-end max-w-[120px]">
+              {myEntry.badges.slice(0, 6).map(b => (
+                <span key={b.key} className="text-xl drop-shadow-lg hover:scale-125 transition-transform cursor-default" title={b.name}>{b.icon}</span>
+              ))}
+              {myEntry.badges.length > 6 && (
+                <span className="text-xs text-white/50 self-center">+{myEntry.badges.length - 6}</span>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {isLoading && (
-        <div className="text-center py-12 text-muted-foreground" data-testid="text-loading">
-          Computing rankings...
+        <div className="text-center py-16" data-testid="text-loading">
+          <div className="inline-flex items-center gap-3 text-muted-foreground">
+            <Sparkles className="w-6 h-6 animate-spin text-purple-400" />
+            <span className="text-sm font-medium">Computing rankings...</span>
+          </div>
         </div>
       )}
 
       {tab === "leaderboard" && !isLoading && (
         <>
           {topThree.length > 0 && (
-            <div className="grid grid-cols-3 gap-3">
-              {[1, 0, 2].map((idx) => {
-                const entry = topThree[idx];
-                if (!entry) return <div key={idx} />;
-                const rank = idx === 0 ? 2 : idx === 1 ? 1 : 3;
-                const isFirst = rank === 1;
+            <div className="flex items-end justify-center gap-3 sm:gap-6 pt-8 pb-2">
+              {topThree.map((entry, idx) => (
+                <PodiumCard
+                  key={entry.userId}
+                  entry={entry}
+                  rank={idx + 1}
+                  onClick={() => setSelectedUser(entry)}
+                />
+              ))}
+            </div>
+          )}
+
+          {rest.length > 0 && (
+            <div className="space-y-2 mt-2">
+              {rest.map((entry, i) => {
+                const rank = i + 4;
+                const lvlCfg = LEVEL_CONFIG[entry.level.level] || LEVEL_CONFIG[1];
+                const hasPenalties = entry.pointsPenalty < 0;
 
                 return (
-                  <Card
+                  <div
                     key={entry.userId}
-                    className={`cursor-pointer transition-all hover:shadow-lg card-hover animate-float-in stagger-${rank} ${isFirst ? "ring-2 ring-yellow-400 -mt-2" : ""}`}
+                    className="flex items-center gap-3 p-3 rounded-xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 cursor-pointer hover:shadow-md hover:border-primary/20 transition-all group animate-slide-up-fade"
+                    style={{ animationDelay: `${Math.min(i * 0.04, 0.4)}s`, animationFillMode: 'both' }}
                     onClick={() => setSelectedUser(entry)}
                     data-testid={`card-rank-${rank}`}
                   >
-                    <CardContent className="p-4 text-center">
-                      <div className={`w-12 h-12 mx-auto rounded-full bg-gradient-to-br ${PODIUM_COLORS[rank - 1]} flex items-center justify-center text-white font-bold text-lg mb-2`}>
-                        {rank === 1 ? <Crown className="w-6 h-6" /> : rank}
+                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-800 flex items-center justify-center text-sm font-black text-gray-500 dark:text-gray-400 shrink-0">
+                      {rank}
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-sm truncate group-hover:text-primary transition-colors">{entry.name}</span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${lvlCfg.bg} ${lvlCfg.color}`}>
+                          {lvlCfg.emoji} Lv.{entry.level.level}
+                        </span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 hidden sm:inline">
+                          {ROLE_LABELS[entry.role] || entry.role}
+                        </span>
                       </div>
-                      <div className="font-semibold text-sm truncate">{entry.name}</div>
-                      <Badge variant="secondary" className="text-[10px] mt-1">
-                        {ROLE_LABELS[entry.role] || entry.role}
-                      </Badge>
-                      <div className="text-2xl font-bold mt-2 bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
-                        {entry.points}
+                      <div className="h-1.5 rounded-full bg-gray-100 dark:bg-gray-800 mt-1.5 max-w-[180px] overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-indigo-400 to-purple-500 transition-all duration-700"
+                          style={{ width: `${Math.min(100, (entry.points / (activeEntries[0]?.points || 1)) * 100)}%` }}
+                        />
                       </div>
-                      <div className="text-[10px] text-muted-foreground flex items-center justify-center gap-1">
-                        points
-                        {entry.pointsPenalty < 0 && (
-                          <span className="text-red-500 flex items-center gap-0.5">
-                            ({entry.pointsPenalty})
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex justify-center gap-0.5 mt-2">
-                        {entry.badges.slice(0, 4).map(b => (
-                          <span key={b.key} className="text-sm" title={b.name}>{b.icon}</span>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex gap-0.5">
+                        {entry.badges.slice(0, 3).map(b => (
+                          <span key={b.key} className="text-base" title={b.name}>{b.icon}</span>
                         ))}
                       </div>
-                    </CardContent>
-                  </Card>
+                      <div className="text-right min-w-[60px]">
+                        <div className="font-black text-sm">{entry.points.toLocaleString()}</div>
+                        <div className="text-[10px] text-muted-foreground">XP</div>
+                        {hasPenalties && (
+                          <div className="text-[9px] text-red-500 font-medium">{entry.pointsPenalty}</div>
+                        )}
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                    </div>
+                  </div>
                 );
               })}
             </div>
           )}
 
-          {rest.length > 0 && (
-            <div className="space-y-1">
-              {rest.map((entry, i) => (
-                <Card
-                  key={entry.userId}
-                  className="cursor-pointer hover:shadow-sm transition-shadow animate-slide-up-fade"
-                  style={{ animationDelay: `${Math.min(i * 0.03, 0.3)}s`, animationFillMode: 'both' }}
-                  onClick={() => setSelectedUser(entry)}
-                  data-testid={`card-rank-${i + 4}`}
-                >
-                  <CardContent className="p-3 flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-sm font-bold text-muted-foreground">
-                      {i + 4}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-sm truncate">{entry.name}</span>
-                        <Badge className={`text-[10px] ${LEVEL_COLORS[entry.level.level] || "bg-gray-100"}`}>
-                          Lv.{entry.level.level}
-                        </Badge>
-                        <Badge variant="secondary" className="text-[10px]">
-                          {ROLE_LABELS[entry.role] || entry.role}
-                        </Badge>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="flex gap-0.5">
-                        {entry.badges.slice(0, 3).map(b => (
-                          <span key={b.key} className="text-sm">{b.icon}</span>
-                        ))}
-                      </div>
-                      <div className="text-right">
-                        <span className="font-bold text-sm">{entry.points} pts</span>
-                        {entry.pointsPenalty < 0 && (
-                          <div className="text-[10px] text-red-500 flex items-center justify-end gap-0.5">
-                            <TrendingDown className="w-2.5 h-2.5" />
-                            {entry.pointsPenalty}
-                          </div>
-                        )}
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
-
           {activeEntries.length === 0 && !isLoading && (
-            <Card>
+            <Card className="border-dashed">
               <CardContent className="p-12 text-center">
-                <Trophy className="w-12 h-12 mx-auto mb-3 text-muted-foreground" />
-                <h3 className="text-lg font-medium">No activity yet</h3>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Start completing tasks, reviewing projects, and approving items to earn points!
+                <div className="text-5xl mb-4">🏆</div>
+                <h3 className="text-lg font-bold">No Rankings Yet</h3>
+                <p className="text-sm text-muted-foreground mt-2 max-w-sm mx-auto">
+                  Start completing tasks, reviewing projects, and approving items to earn XP and climb the leaderboard!
                 </p>
               </CardContent>
             </Card>
@@ -683,26 +787,32 @@ export default function LeaderboardPage() {
           {Object.entries(data.badgeDefinitions).map(([key, badge], idx) => {
             const earned = myEntry?.badges.some(b => b.key === key);
             return (
-              <Card
+              <div
                 key={key}
-                className={`transition-all animate-scale-in ${earned ? "ring-2 ring-primary/30 bg-primary/5" : "opacity-60"}`}
-                style={{ animationDelay: `${Math.min(idx * 0.04, 0.4)}s`, animationFillMode: 'both' }}
+                className={`flex items-center gap-3 p-4 rounded-xl border transition-all animate-scale-in ${
+                  earned
+                    ? "bg-gradient-to-r from-amber-50 to-yellow-50 dark:from-amber-950/20 dark:to-yellow-950/20 border-amber-200 dark:border-amber-800/40 shadow-sm"
+                    : "bg-gray-50 dark:bg-gray-900/50 border-gray-100 dark:border-gray-800 opacity-50"
+                }`}
+                style={{ animationDelay: `${Math.min(idx * 0.03, 0.4)}s`, animationFillMode: 'both' }}
                 data-testid={`badge-card-${key}`}
               >
-                <CardContent className="p-4 flex items-center gap-3">
-                  <div className={`text-3xl ${earned ? "" : "grayscale opacity-40"}`}>
-                    {badge.icon}
+                <div className={`text-3xl ${earned ? "drop-shadow-lg" : "grayscale opacity-40"} transition-all`}>
+                  {badge.icon}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className={`font-bold text-sm ${earned ? "text-amber-800 dark:text-amber-200" : "text-gray-400"}`}>{badge.name}</span>
+                    {earned && <CheckCircle className="w-4 h-4 text-green-500 shrink-0" />}
                   </div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-sm">{badge.name}</span>
-                      {earned && <CheckCircle className="w-3.5 h-3.5 text-green-500" />}
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-0.5">{badge.description}</p>
-                    <Badge variant="outline" className="text-[10px] mt-1 capitalize">{badge.category}</Badge>
-                  </div>
-                </CardContent>
-              </Card>
+                  <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{badge.description}</p>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full inline-block mt-1 capitalize ${
+                    badge.category === 'penalties' ? 'bg-red-100 text-red-600 dark:bg-red-950/30 dark:text-red-400' :
+                    badge.category === 'excellence' ? 'bg-green-100 text-green-600 dark:bg-green-950/30 dark:text-green-400' :
+                    'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'
+                  }`}>{badge.category}</span>
+                </div>
+              </div>
             );
           })}
         </div>
@@ -711,46 +821,46 @@ export default function LeaderboardPage() {
       <UserDetailDialog selectedUser={selectedUser} onClose={() => setSelectedUser(null)} />
 
       {!isLoading && tab === "leaderboard" && data?.pointValues && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2">
+        <div className="rounded-xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
+          <div className="px-5 py-3 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-800/50 dark:to-gray-900 border-b border-gray-100 dark:border-gray-800">
+            <h3 className="text-sm font-bold flex items-center gap-2">
               <Zap className="w-4 h-4 text-yellow-500" />
-              How Points Work
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
+              How XP Works
+            </h3>
+          </div>
+          <div className="p-5 space-y-4">
             <div>
-              <div className="text-xs font-medium text-green-600 mb-1.5 flex items-center gap-1">
-                <TrendingUp className="w-3 h-3" />
-                Earn Points
+              <div className="text-xs font-bold text-green-600 mb-2 flex items-center gap-1.5 uppercase tracking-wider">
+                <TrendingUp className="w-3.5 h-3.5" />
+                Earn XP
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {Object.entries(data.pointValues).map(([key, pts]) => (
-                  <div key={key} className="text-center p-2 rounded-lg bg-muted/50">
-                    <div className="text-lg font-bold text-green-600">+{pts}</div>
-                    <div className="text-[10px] text-muted-foreground capitalize">{key.replace(/_/g, " ")}</div>
+                  <div key={key} className="text-center p-2.5 rounded-lg bg-gradient-to-b from-green-50 to-emerald-50 dark:from-green-950/20 dark:to-emerald-950/20 border border-green-100 dark:border-green-900/30">
+                    <div className="text-lg font-black text-green-600">+{pts}</div>
+                    <div className="text-[10px] text-green-600/70 capitalize font-medium">{key.replace(/_/g, " ")}</div>
                   </div>
                 ))}
               </div>
             </div>
             {data.penaltyValues && (
               <div>
-                <div className="text-xs font-medium text-red-500 mb-1.5 flex items-center gap-1">
-                  <TrendingDown className="w-3 h-3" />
-                  Lose Points
+                <div className="text-xs font-bold text-red-500 mb-2 flex items-center gap-1.5 uppercase tracking-wider">
+                  <TrendingDown className="w-3.5 h-3.5" />
+                  Lose XP
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {Object.entries(data.penaltyValues).map(([key, pts]) => (
-                    <div key={key} className="text-center p-2 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/30">
-                      <div className="text-lg font-bold text-red-500">{pts}</div>
-                      <div className="text-[10px] text-red-400/80 capitalize">{key.replace(/_/g, " ")}</div>
+                    <div key={key} className="text-center p-2.5 rounded-lg bg-gradient-to-b from-red-50 to-rose-50 dark:from-red-950/20 dark:to-rose-950/20 border border-red-100 dark:border-red-900/30">
+                      <div className="text-lg font-black text-red-500">{pts}</div>
+                      <div className="text-[10px] text-red-400/80 capitalize font-medium">{key.replace(/_/g, " ")}</div>
                     </div>
                   ))}
                 </div>
               </div>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
     </div>
   );
