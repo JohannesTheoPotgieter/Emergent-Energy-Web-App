@@ -220,7 +220,7 @@ export default function PdTicketCreatePage() {
                     data-testid="input-client-search"
                   />
                 </div>
-                {filteredClients.length > 0 && (
+                {filteredClients.length > 0 ? (
                   <div className="border rounded-lg max-h-48 overflow-y-auto">
                     {filteredClients.map((c: any) => (
                       <button
@@ -234,7 +234,12 @@ export default function PdTicketCreatePage() {
                       </button>
                     ))}
                   </div>
-                )}
+                ) : clientSearch.trim() ? (
+                  <div className="border rounded-lg p-4 text-center bg-muted/10" data-testid="no-clients-found">
+                    <p className="text-sm text-muted-foreground">No clients found matching "<span className="font-medium">{clientSearch}</span>"</p>
+                    <p className="text-xs text-muted-foreground mt-1">Try a different search or create a new client below</p>
+                  </div>
+                ) : null}
 
                 <Separator />
                 {!creatingClient ? (
