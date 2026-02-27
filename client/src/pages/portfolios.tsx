@@ -16,7 +16,8 @@ import { useToast } from "@/hooks/use-toast";
 import {
   Briefcase, Plus, FolderOpen, TrendingUp, TrendingDown, AlertTriangle,
   Users, Zap, DollarSign, ShieldCheck, Search, ChevronRight, ChevronDown, Wrench,
-  CheckCircle2, Clock, XCircle, BarChart3, Activity,
+  CheckCircle2, Clock, XCircle, BarChart3, Activity, Receipt, Percent,
+  ArrowUpRight, ArrowDownRight, Layers, Target,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -58,6 +59,24 @@ function shortName(name: string) {
   return (name || "").replace(/_Tracker$/i, "").replace(/_/g, " ").slice(0, 18);
 }
 
+function KpiCard({ icon: Icon, label, value, color, bgClass, testId }: { icon: any; label: string; value: string; color: string; bgClass: string; testId: string }) {
+  return (
+    <Card className={`border-0 shadow-sm ${bgClass}`}>
+      <CardContent className="p-3.5">
+        <div className="flex items-center gap-2.5">
+          <div className={`rounded-lg p-1.5 ${color === 'text-emerald-700' ? 'bg-emerald-200/60' : color === 'text-blue-700' ? 'bg-blue-200/60' : color === 'text-orange-700' ? 'bg-orange-200/60' : color === 'text-red-700' ? 'bg-red-200/60' : color === 'text-violet-700' ? 'bg-violet-200/60' : 'bg-gray-200/60'}`}>
+            <Icon className={`h-4 w-4 ${color}`} />
+          </div>
+          <div className="min-w-0">
+            <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">{label}</div>
+            <div className={`text-lg font-bold mt-0.5 leading-tight ${color}`} data-testid={testId}>{value}</div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function FinanceCharts({ portfolio }: { portfolio: any }) {
   const breakdown = portfolio.projectFinanceBreakdown || [];
   if (breakdown.length === 0) {
@@ -86,42 +105,37 @@ function FinanceCharts({ portfolio }: { portfolio: any }) {
   }));
 
   const fin = portfolio.finance || {};
+  const gp = (fin.actualRevenue || 0) - (fin.actualExpenses || 0);
+  const gpMargin = (fin.actualRevenue || 0) > 0 ? (gp / (fin.actualRevenue || 1)) * 100 : 0;
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Card><CardContent className="p-3">
-          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Costed Revenue</div>
-          <div className="text-lg font-bold mt-0.5" data-testid="text-fin-costed-revenue">{formatCurrency(fin.costedRevenue || 0)}</div>
-        </CardContent></Card>
-        <Card><CardContent className="p-3">
-          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Actual Revenue</div>
-          <div className="text-lg font-bold mt-0.5 text-blue-600" data-testid="text-fin-actual-revenue">{formatCurrency(fin.actualRevenue || 0)}</div>
-        </CardContent></Card>
-        <Card><CardContent className="p-3">
-          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Costed Expenses</div>
-          <div className="text-lg font-bold mt-0.5" data-testid="text-fin-costed-expenses">{formatCurrency(fin.costedExpenses || 0)}</div>
-        </CardContent></Card>
-        <Card><CardContent className="p-3">
-          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Actual Expenses</div>
-          <div className="text-lg font-bold mt-0.5 text-orange-600" data-testid="text-fin-actual-expenses">{formatCurrency(fin.actualExpenses || 0)}</div>
-        </CardContent></Card>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <KpiCard icon={DollarSign} label="Costed Revenue" value={formatCurrency(fin.costedRevenue || 0)} color="text-emerald-700" bgClass="bg-emerald-50/80" testId="text-fin-costed-revenue" />
+        <KpiCard icon={ArrowUpRight} label="Actual Revenue" value={formatCurrency(fin.actualRevenue || 0)} color="text-blue-700" bgClass="bg-blue-50/80" testId="text-fin-actual-revenue" />
+        <KpiCard icon={Receipt} label="Costed Expenses" value={formatCurrency(fin.costedExpenses || 0)} color="text-orange-700" bgClass="bg-orange-50/80" testId="text-fin-costed-expenses" />
+        <KpiCard icon={ArrowDownRight} label="Actual Expenses" value={formatCurrency(fin.actualExpenses || 0)} color="text-red-700" bgClass="bg-red-50/80" testId="text-fin-actual-expenses" />
+        <KpiCard icon={TrendingUp} label="Gross Profit" value={formatCurrency(gp)} color={gp >= 0 ? "text-emerald-700" : "text-red-700"} bgClass={gp >= 0 ? "bg-emerald-50/80" : "bg-red-50/80"} testId="text-fin-gross-profit" />
+        <KpiCard icon={Percent} label="GP Margin" value={`${gpMargin.toFixed(1)}%`} color={gpMargin >= 0 ? "text-violet-700" : "text-red-700"} bgClass={gpMargin >= 0 ? "bg-violet-50/80" : "bg-red-50/80"} testId="text-fin-gp-margin" />
       </div>
 
       {revenueData.length > 0 && (
-        <Card data-testid="chart-revenue-costed-vs-actual">
+        <Card className="shadow-sm" data-testid="chart-revenue-costed-vs-actual">
           <CardHeader className="pb-1 pt-3 px-4">
-            <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Revenue: Costed vs Actual (R'000)</CardTitle>
+            <CardTitle className="text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5">
+              <DollarSign className="h-3.5 w-3.5 text-blue-500" />
+              <span className="text-muted-foreground">Revenue: Costed vs Actual (R'000)</span>
+            </CardTitle>
           </CardHeader>
           <CardContent className="p-2">
             <ResponsiveContainer width="100%" height={Math.max(160, revenueData.length * 32)}>
               <BarChart data={revenueData} layout="vertical" margin={{ left: 10, right: 20, top: 5, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v) => `${v}`} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={100} />
-                <Tooltip formatter={(v: number) => [`R ${v}K`, ""]} contentStyle={{ fontSize: 11 }} />
-                <Bar dataKey="Costed" fill="#93c5fd" radius={[0, 2, 2, 0]} barSize={12} />
-                <Bar dataKey="Actual" fill="#2563eb" radius={[0, 2, 2, 0]} barSize={12} />
+                <CartesianGrid strokeDasharray="3 3" opacity={0.15} horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v) => `R ${v}K`} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: '#64748b' }} width={100} />
+                <Tooltip formatter={(v: number) => [`R ${v.toLocaleString()}K`, ""]} contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #e2e8f0' }} />
+                <Bar dataKey="Costed" fill="#93c5fd" radius={[0, 4, 4, 0]} barSize={12} name="Costed Revenue" />
+                <Bar dataKey="Actual" fill="#2563eb" radius={[0, 4, 4, 0]} barSize={12} name="Actual Revenue" />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
               </BarChart>
             </ResponsiveContainer>
@@ -130,19 +144,22 @@ function FinanceCharts({ portfolio }: { portfolio: any }) {
       )}
 
       {expenseData.length > 0 && (
-        <Card data-testid="chart-expenses-costed-vs-actual">
+        <Card className="shadow-sm" data-testid="chart-expenses-costed-vs-actual">
           <CardHeader className="pb-1 pt-3 px-4">
-            <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Expenses: Costed vs Actual (R'000)</CardTitle>
+            <CardTitle className="text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5">
+              <Receipt className="h-3.5 w-3.5 text-orange-500" />
+              <span className="text-muted-foreground">Expenses: Costed vs Actual (R'000)</span>
+            </CardTitle>
           </CardHeader>
           <CardContent className="p-2">
             <ResponsiveContainer width="100%" height={Math.max(160, expenseData.length * 32)}>
               <BarChart data={expenseData} layout="vertical" margin={{ left: 10, right: 20, top: 5, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v) => `${v}`} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={100} />
-                <Tooltip formatter={(v: number) => [`R ${v}K`, ""]} contentStyle={{ fontSize: 11 }} />
-                <Bar dataKey="Costed" fill="#fdba74" radius={[0, 2, 2, 0]} barSize={12} />
-                <Bar dataKey="Actual" fill="#ea580c" radius={[0, 2, 2, 0]} barSize={12} />
+                <CartesianGrid strokeDasharray="3 3" opacity={0.15} horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v) => `R ${v}K`} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: '#64748b' }} width={100} />
+                <Tooltip formatter={(v: number) => [`R ${v.toLocaleString()}K`, ""]} contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #e2e8f0' }} />
+                <Bar dataKey="Costed" fill="#fdba74" radius={[0, 4, 4, 0]} barSize={12} name="Costed Expenses" />
+                <Bar dataKey="Actual" fill="#ea580c" radius={[0, 4, 4, 0]} barSize={12} name="Actual Expenses" />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
               </BarChart>
             </ResponsiveContainer>
@@ -151,18 +168,21 @@ function FinanceCharts({ portfolio }: { portfolio: any }) {
       )}
 
       {gpData.length > 0 && (
-        <Card data-testid="chart-gross-profit">
+        <Card className="shadow-sm" data-testid="chart-gross-profit">
           <CardHeader className="pb-1 pt-3 px-4">
-            <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Gross Profit by Project (R'000)</CardTitle>
+            <CardTitle className="text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5">
+              <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />
+              <span className="text-muted-foreground">Gross Profit by Project (R'000)</span>
+            </CardTitle>
           </CardHeader>
           <CardContent className="p-2">
             <ResponsiveContainer width="100%" height={Math.max(160, gpData.length * 32)}>
               <BarChart data={gpData} layout="vertical" margin={{ left: 10, right: 20, top: 5, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                <XAxis type="number" tick={{ fontSize: 10 }} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={100} />
-                <Tooltip formatter={(v: number) => [`R ${v}K`, "GP"]} contentStyle={{ fontSize: 11 }} />
-                <Bar dataKey="GP" radius={[0, 3, 3, 0]} barSize={14}>
+                <CartesianGrid strokeDasharray="3 3" opacity={0.15} horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v) => `R ${v}K`} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: '#64748b' }} width={100} />
+                <Tooltip formatter={(v: number) => [`R ${v.toLocaleString()}K`, "GP"]} contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #e2e8f0' }} />
+                <Bar dataKey="GP" radius={[0, 4, 4, 0]} barSize={14}>
                   {gpData.map((entry: any, idx: number) => (
                     <Cell key={idx} fill={entry.GP >= 0 ? "#16a34a" : "#dc2626"} />
                   ))}
@@ -211,22 +231,10 @@ function ScheduleCharts({ portfolio }: { portfolio: any }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Card><CardContent className="p-3">
-          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Projects</div>
-          <div className="text-lg font-bold mt-0.5" data-testid="text-schedule-projects">{schedule.length}</div>
-        </CardContent></Card>
-        <Card><CardContent className="p-3">
-          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Avg Act%</div>
-          <div className="text-lg font-bold mt-0.5" data-testid="text-schedule-avg-act">{portfolio.avgActualPct}%</div>
-        </CardContent></Card>
-        <Card><CardContent className="p-3">
-          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Avg Exp%</div>
-          <div className="text-lg font-bold mt-0.5" data-testid="text-schedule-avg-exp">{portfolio.avgExpectedPct}%</div>
-        </CardContent></Card>
-        <Card><CardContent className="p-3">
-          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Behind Schedule</div>
-          <div className={`text-lg font-bold mt-0.5 ${portfolio.behindCount > 0 ? 'text-red-600' : 'text-emerald-600'}`} data-testid="text-schedule-behind">{portfolio.behindCount}</div>
-        </CardContent></Card>
+        <KpiCard icon={Layers} label="Projects" value={`${schedule.length}`} color="text-blue-700" bgClass="bg-blue-50/80" testId="text-schedule-projects" />
+        <KpiCard icon={Target} label="Avg Actual %" value={`${portfolio.avgActualPct}%`} color="text-emerald-700" bgClass="bg-emerald-50/80" testId="text-schedule-avg-act" />
+        <KpiCard icon={BarChart3} label="Avg Expected %" value={`${portfolio.avgExpectedPct}%`} color="text-blue-700" bgClass="bg-blue-50/80" testId="text-schedule-avg-exp" />
+        <KpiCard icon={AlertTriangle} label="Behind Schedule" value={`${portfolio.behindCount}`} color={portfolio.behindCount > 0 ? "text-red-700" : "text-emerald-700"} bgClass={portfolio.behindCount > 0 ? "bg-red-50/80" : "bg-emerald-50/80"} testId="text-schedule-behind" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -318,22 +326,10 @@ function QualityCharts({ portfolio }: { portfolio: any }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Card><CardContent className="p-3">
-          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Total Items</div>
-          <div className="text-lg font-bold mt-0.5" data-testid="text-quality-total">{qs.total}</div>
-        </CardContent></Card>
-        <Card><CardContent className="p-3">
-          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Approved</div>
-          <div className="text-lg font-bold mt-0.5 text-emerald-600" data-testid="text-quality-approved">{qs.approved}</div>
-        </CardContent></Card>
-        <Card><CardContent className="p-3">
-          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Pending</div>
-          <div className="text-lg font-bold mt-0.5 text-amber-600" data-testid="text-quality-pending">{qs.pending}</div>
-        </CardContent></Card>
-        <Card><CardContent className="p-3">
-          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Pass Rate</div>
-          <div className={`text-lg font-bold mt-0.5 ${passRate >= 80 ? 'text-emerald-600' : passRate >= 50 ? 'text-amber-600' : 'text-red-600'}`} data-testid="text-quality-pass-rate">{passRate}%</div>
-        </CardContent></Card>
+        <KpiCard icon={Layers} label="Total Items" value={`${qs.total}`} color="text-blue-700" bgClass="bg-blue-50/80" testId="text-quality-total" />
+        <KpiCard icon={CheckCircle2} label="Approved" value={`${qs.approved}`} color="text-emerald-700" bgClass="bg-emerald-50/80" testId="text-quality-approved" />
+        <KpiCard icon={Clock} label="Pending" value={`${qs.pending}`} color="text-orange-700" bgClass="bg-orange-50/80" testId="text-quality-pending" />
+        <KpiCard icon={Percent} label="Pass Rate" value={`${passRate}%`} color={passRate >= 80 ? "text-emerald-700" : passRate >= 50 ? "text-orange-700" : "text-red-700"} bgClass={passRate >= 80 ? "bg-emerald-50/80" : passRate >= 50 ? "bg-orange-50/80" : "bg-red-50/80"} testId="text-quality-pass-rate" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -419,22 +415,10 @@ function EngineeringCharts({ portfolio }: { portfolio: any }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Card><CardContent className="p-3">
-          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Total Stages</div>
-          <div className="text-lg font-bold mt-0.5" data-testid="text-eng-total">{eng.total}</div>
-        </CardContent></Card>
-        <Card><CardContent className="p-3">
-          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Complete</div>
-          <div className="text-lg font-bold mt-0.5 text-emerald-600" data-testid="text-eng-complete">{eng.complete}</div>
-        </CardContent></Card>
-        <Card><CardContent className="p-3">
-          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">In Progress</div>
-          <div className="text-lg font-bold mt-0.5 text-blue-600" data-testid="text-eng-in-progress">{eng.inProgress}</div>
-        </CardContent></Card>
-        <Card><CardContent className="p-3">
-          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Completion Rate</div>
-          <div className={`text-lg font-bold mt-0.5 ${completionRate >= 80 ? 'text-emerald-600' : completionRate >= 50 ? 'text-amber-600' : 'text-red-600'}`} data-testid="text-eng-completion-rate">{completionRate}%</div>
-        </CardContent></Card>
+        <KpiCard icon={Layers} label="Total Stages" value={`${eng.total}`} color="text-blue-700" bgClass="bg-blue-50/80" testId="text-eng-total" />
+        <KpiCard icon={CheckCircle2} label="Complete" value={`${eng.complete}`} color="text-emerald-700" bgClass="bg-emerald-50/80" testId="text-eng-complete" />
+        <KpiCard icon={Activity} label="In Progress" value={`${eng.inProgress}`} color="text-blue-700" bgClass="bg-blue-50/80" testId="text-eng-in-progress" />
+        <KpiCard icon={Percent} label="Completion Rate" value={`${completionRate}%`} color={completionRate >= 80 ? "text-emerald-700" : completionRate >= 50 ? "text-orange-700" : "text-red-700"} bgClass={completionRate >= 80 ? "bg-emerald-50/80" : completionRate >= 50 ? "bg-orange-50/80" : "bg-red-50/80"} testId="text-eng-completion-rate" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

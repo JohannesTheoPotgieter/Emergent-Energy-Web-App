@@ -418,64 +418,116 @@ export default function PortfolioDetailPage() {
           {rollups ? (
             <>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                <Card><CardContent className="p-4">
-                  <div className="text-xs text-muted-foreground">Planned Revenue</div>
-                  <div className="text-xl font-bold mt-1">{formatCurrency(rollups.finance?.totalPlannedRevenue || 0)}</div>
-                </CardContent></Card>
-                <Card><CardContent className="p-4">
-                  <div className="text-xs text-muted-foreground">Revenue Realised</div>
-                  <div className="text-xl font-bold mt-1">{formatCurrency(rollups.finance?.totalActualRevenue || 0)}</div>
-                </CardContent></Card>
-                <Card><CardContent className="p-4">
-                  <div className="text-xs text-muted-foreground">Planned Expenses</div>
-                  <div className="text-xl font-bold mt-1">{formatCurrency(rollups.finance?.totalPlannedExpenses || 0)}</div>
-                </CardContent></Card>
-                <Card><CardContent className="p-4">
-                  <div className="text-xs text-muted-foreground">COS Realised</div>
-                  <div className="text-xl font-bold mt-1">{formatCurrency(rollups.finance?.totalActualExpenses || 0)}</div>
-                </CardContent></Card>
-                <Card><CardContent className="p-4">
-                  <div className="text-xs text-muted-foreground">Gross Profit</div>
-                  <div className={`text-xl font-bold mt-1 ${(rollups.finance?.grossProfit || 0) >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                    {formatCurrency(rollups.finance?.grossProfit || 0)}
-                  </div>
-                </CardContent></Card>
-                <Card><CardContent className="p-4">
-                  <div className="text-xs text-muted-foreground">Gross Margin</div>
-                  <div className="text-xl font-bold mt-1">{rollups.finance?.grossMarginPct || 0}%</div>
-                </CardContent></Card>
+                <Card className="border-emerald-200 bg-emerald-50/40">
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-2">
+                      <div className="h-8 w-8 rounded-lg bg-emerald-100 flex items-center justify-center">
+                        <DollarSign className="h-4 w-4 text-emerald-600" />
+                      </div>
+                      <div className="text-xs font-medium text-emerald-700 uppercase tracking-wider">Costed Revenue</div>
+                    </div>
+                    <div className="text-xl font-bold mt-2 text-emerald-900" data-testid="stat-costed-revenue">{formatCurrency(rollups.finance?.totalPlannedRevenue || 0)}</div>
+                  </CardContent>
+                </Card>
+                <Card className="border-green-200 bg-green-50/40">
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-2">
+                      <div className="h-8 w-8 rounded-lg bg-green-100 flex items-center justify-center">
+                        <TrendingUp className="h-4 w-4 text-green-600" />
+                      </div>
+                      <div className="text-xs font-medium text-green-700 uppercase tracking-wider">Actual Revenue</div>
+                    </div>
+                    <div className="text-xl font-bold mt-2 text-green-900" data-testid="stat-actual-revenue">{formatCurrency(rollups.finance?.totalActualRevenue || 0)}</div>
+                  </CardContent>
+                </Card>
+                <Card className="border-orange-200 bg-orange-50/40">
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-2">
+                      <div className="h-8 w-8 rounded-lg bg-orange-100 flex items-center justify-center">
+                        <Briefcase className="h-4 w-4 text-orange-600" />
+                      </div>
+                      <div className="text-xs font-medium text-orange-700 uppercase tracking-wider">Costed Expenses</div>
+                    </div>
+                    <div className="text-xl font-bold mt-2 text-orange-900" data-testid="stat-costed-expenses">{formatCurrency(rollups.finance?.totalPlannedExpenses || 0)}</div>
+                  </CardContent>
+                </Card>
+                <Card className="border-red-200 bg-red-50/40">
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-2">
+                      <div className="h-8 w-8 rounded-lg bg-red-100 flex items-center justify-center">
+                        <TrendingDown className="h-4 w-4 text-red-600" />
+                      </div>
+                      <div className="text-xs font-medium text-red-700 uppercase tracking-wider">Actual Expenses</div>
+                    </div>
+                    <div className="text-xl font-bold mt-2 text-red-900" data-testid="stat-actual-expenses">{formatCurrency(rollups.finance?.totalActualExpenses || 0)}</div>
+                  </CardContent>
+                </Card>
+                <Card className={`${(rollups.finance?.grossProfit || 0) >= 0 ? "border-blue-200 bg-blue-50/40" : "border-red-200 bg-red-50/40"}`}>
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-2">
+                      <div className={`h-8 w-8 rounded-lg flex items-center justify-center ${(rollups.finance?.grossProfit || 0) >= 0 ? "bg-blue-100" : "bg-red-100"}`}>
+                        <Zap className={`h-4 w-4 ${(rollups.finance?.grossProfit || 0) >= 0 ? "text-blue-600" : "text-red-600"}`} />
+                      </div>
+                      <div className={`text-xs font-medium uppercase tracking-wider ${(rollups.finance?.grossProfit || 0) >= 0 ? "text-blue-700" : "text-red-700"}`}>Gross Profit</div>
+                    </div>
+                    <div className={`text-xl font-bold mt-2 ${(rollups.finance?.grossProfit || 0) >= 0 ? "text-emerald-600" : "text-red-600"}`} data-testid="stat-finance-gp">
+                      {formatCurrency(rollups.finance?.grossProfit || 0)}
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className={`${(rollups.finance?.grossMarginPct || 0) >= 0 ? "border-indigo-200 bg-indigo-50/40" : "border-red-200 bg-red-50/40"}`}>
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-2">
+                      <div className={`h-8 w-8 rounded-lg flex items-center justify-center ${(rollups.finance?.grossMarginPct || 0) >= 0 ? "bg-indigo-100" : "bg-red-100"}`}>
+                        <Flag className={`h-4 w-4 ${(rollups.finance?.grossMarginPct || 0) >= 0 ? "text-indigo-600" : "text-red-600"}`} />
+                      </div>
+                      <div className={`text-xs font-medium uppercase tracking-wider ${(rollups.finance?.grossMarginPct || 0) >= 0 ? "text-indigo-700" : "text-red-700"}`}>Gross Margin</div>
+                    </div>
+                    <div className={`text-xl font-bold mt-2 ${(rollups.finance?.grossMarginPct || 0) >= 20 ? "text-emerald-600" : (rollups.finance?.grossMarginPct || 0) >= 0 ? "text-amber-600" : "text-red-600"}`} data-testid="stat-finance-margin">
+                      {rollups.finance?.grossMarginPct || 0}%
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
 
               {rollups.projects?.length > 0 && (
                 <div className="border rounded-lg overflow-hidden">
                   <Table>
                     <TableHeader>
-                      <TableRow>
-                        <TableHead>Project</TableHead>
-                        <TableHead className="text-right">Planned Rev</TableHead>
-                        <TableHead className="text-right">Actual Rev</TableHead>
-                        <TableHead className="text-right">Planned COS</TableHead>
-                        <TableHead className="text-right">Actual COS</TableHead>
-                        <TableHead className="text-right">GP</TableHead>
+                      <TableRow className="bg-slate-50/80">
+                        <TableHead className="font-semibold text-slate-600">Project</TableHead>
+                        <TableHead className="text-right font-semibold text-emerald-700">Costed Rev</TableHead>
+                        <TableHead className="text-right font-semibold text-green-700">Actual Rev</TableHead>
+                        <TableHead className="text-right font-semibold text-orange-700">Costed COS</TableHead>
+                        <TableHead className="text-right font-semibold text-red-700">Actual COS</TableHead>
+                        <TableHead className="text-right font-semibold text-blue-700">GP</TableHead>
+                        <TableHead className="text-right font-semibold text-indigo-700">GP%</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {rollups.projects.map((p: any) => (
-                        <TableRow key={p.id} data-testid={`row-finance-${p.id}`}>
-                          <TableCell>
-                            <Link href={`/project/${encodeURIComponent(p.projectName)}`}>
-                              <span className="text-primary hover:underline font-medium">{p.projectName}</span>
-                            </Link>
-                          </TableCell>
-                          <TableCell className="text-right text-sm">{formatCurrency(p.plannedRevenue || 0)}</TableCell>
-                          <TableCell className="text-right text-sm">{formatCurrency(p.actualRevenue || 0)}</TableCell>
-                          <TableCell className="text-right text-sm">{formatCurrency(p.plannedExpenses || 0)}</TableCell>
-                          <TableCell className="text-right text-sm">{formatCurrency(p.actualExpenses || 0)}</TableCell>
-                          <TableCell className={`text-right text-sm font-medium ${(p.grossProfit || 0) >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                            {formatCurrency(p.grossProfit || 0)}
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                      {rollups.projects.map((p: any) => {
+                        const pGp = (p.actualRevenue || 0) - (p.actualExpenses || 0);
+                        const pGpPct = (p.actualRevenue || 0) > 0 ? (pGp / (p.actualRevenue || 1)) * 100 : 0;
+                        return (
+                          <TableRow key={p.id} className="hover:bg-slate-50/60 transition-colors" data-testid={`row-finance-${p.id}`}>
+                            <TableCell className="py-3">
+                              <Link href={`/project/${encodeURIComponent(p.projectName)}`}>
+                                <span className="text-blue-700 hover:text-blue-900 hover:underline font-medium">{cleanName(p.projectName)}</span>
+                              </Link>
+                            </TableCell>
+                            <TableCell className="text-right text-sm font-mono py-3">{formatCurrency(p.plannedRevenue || 0)}</TableCell>
+                            <TableCell className="text-right text-sm font-mono py-3">{formatCurrency(p.actualRevenue || 0)}</TableCell>
+                            <TableCell className="text-right text-sm font-mono py-3">{formatCurrency(p.plannedExpenses || 0)}</TableCell>
+                            <TableCell className="text-right text-sm font-mono py-3">{formatCurrency(p.actualExpenses || 0)}</TableCell>
+                            <TableCell className={`text-right text-sm font-mono font-semibold py-3 ${pGp >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                              {formatCurrency(pGp)}
+                            </TableCell>
+                            <TableCell className={`text-right text-sm font-mono font-semibold py-3 ${pGpPct >= 20 ? "text-emerald-600" : pGpPct >= 0 ? "text-amber-600" : "text-red-600"}`}>
+                              {pGpPct.toFixed(1)}%
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>

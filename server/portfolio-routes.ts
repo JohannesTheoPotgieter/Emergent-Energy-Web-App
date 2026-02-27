@@ -341,31 +341,45 @@ export function registerPortfolioRoutes(app: Express) {
         completionByProject.set(pn, computeProjectCompletion(projPlans));
       }
 
-      const rawPlannedRev = rawInflows.reduce((s, r) => s + (parseFloat(String(r.revenueAmount || "0")) || 0), 0);
-      const rawPlannedExp = rawExpenses.reduce((s, e) => s + (parseFloat(String(e.budgetTotal || "0")) || 0), 0);
-      const rawActualExp = rawExpenses.reduce((s, e) => s + (parseFloat(String(e.actualCosTotal || "0")) || 0), 0);
+      const projectInfoMap = new Map(projects.map(p => [p.projectName, p]));
 
       const perProjectFinance = new Map<string, { plannedRev: number; actualRev: number; plannedExp: number; actualExp: number; gp: number }>();
       for (const pn of projectNames) {
         const projInflows = rawInflows.filter(r => r.projectName === pn);
         const projExpenses = rawExpenses.filter(e => e.projectName === pn);
-        const pRev = projInflows.reduce((s, r) => s + (parseFloat(String(r.revenueAmount || "0")) || 0), 0);
-        const pExp = projExpenses.reduce((s, e) => s + (parseFloat(String(e.budgetTotal || "0")) || 0), 0);
-        const aRev = projInflows.reduce((s, r) => s + (parseFloat(String(r.revenueAmount || "0")) || 0), 0);
-        const aExp = projExpenses.reduce((s, e) => s + (parseFloat(String(e.actualCosTotal || "0")) || 0), 0);
-        perProjectFinance.set(pn, { plannedRev: pRev, actualRev: aRev, plannedExp: pExp, actualExp: aExp, gp: aRev - aExp });
+        let costedRev = projInflows.reduce((s, r) => s + (parseFloat(String(r.revenueAmount || "0")) || 0), 0);
+        if (costedRev === 0) {
+          const pInfo = projectInfoMap.get(pn);
+          if (pInfo?.contractValue) costedRev = parseFloat(String(pInfo.contractValue)) || 0;
+        }
+        const actualRev = projInflows.reduce((s, r) => s + (parseFloat(String(r.milestoneAmount || "0")) || 0), 0);
+        const costedExp = projExpenses.reduce((s, e) => s + (parseFloat(String(e.budgetTotal || "0")) || 0), 0);
+        let actualExp = projExpenses.reduce((s, e) => s + (parseFloat(String(e.expenseActualTotal || "0")) || 0), 0);
+        if (actualExp === 0) {
+          actualExp = projExpenses.reduce((s, e) => s + (parseFloat(String(e.actualCosTotal || "0")) || 0), 0);
+        }
+        perProjectFinance.set(pn, { plannedRev: costedRev, actualRev, plannedExp: costedExp, actualExp, gp: actualRev - actualExp });
       }
 
+      let totalPlannedRev = 0, totalActualRev = 0, totalPlannedExp = 0, totalActualExp = 0;
+      for (const [, fin] of perProjectFinance) {
+        totalPlannedRev += fin.plannedRev;
+        totalActualRev += fin.actualRev;
+        totalPlannedExp += fin.plannedExp;
+        totalActualExp += fin.actualExp;
+      }
+      const totalGp = totalActualRev - totalActualExp;
+
       const finance = {
-        totalPlannedRevenue: rawPlannedRev,
-        totalActualRevenue: rawPlannedRev,
-        totalPlannedExpenses: rawPlannedExp,
-        totalActualExpenses: rawActualExp,
-        grossProfit: rawPlannedRev - rawActualExp,
+        totalPlannedRevenue: totalPlannedRev,
+        totalActualRevenue: totalActualRev,
+        totalPlannedExpenses: totalPlannedExp,
+        totalActualExpenses: totalActualExp,
+        grossProfit: totalGp,
         grossMarginPct: 0,
       };
-      if (rawPlannedRev > 0) {
-        finance.grossMarginPct = Math.round((finance.grossProfit / rawPlannedRev) * 10000) / 100;
+      if (totalActualRev > 0) {
+        finance.grossMarginPct = Math.round((totalGp / totalActualRev) * 10000) / 100;
       }
 
       const scheduleItems = projectNames.map(pn => completionByProject.get(pn) || { actualPct: 0, expectedPct: 0, delta: 0 });
@@ -628,17 +642,25 @@ export function registerPortfolioRoutes(app: Express) {
         const projectFinanceBreakdown = portfolioProjects.map(proj => {
           const expenses = expenseByProject.get(proj.projectName) || [];
           const inflows = inflowByProject.get(proj.projectName) || [];
-          const costedRev = inflows.reduce((s: number, r: any) => s + (parseFloat(String(r.revenueAmount || "0")) || 0), 0);
-          const actualRev = inflows.reduce((s: number, r: any) => s + (parseFloat(String(r.revenueAmount || "0")) || 0), 0);
+          let costedRev = inflows.reduce((s: number, r: any) => s + (parseFloat(String(r.revenueAmount || "0")) || 0), 0);
+          if (costedRev === 0 && proj.contractValue) {
+            costedRev = parseFloat(String(proj.contractValue)) || 0;
+          }
+          const actualRev = inflows.reduce((s: number, r: any) => s + (parseFloat(String(r.milestoneAmount || "0")) || 0), 0);
           const costedExp = expenses.reduce((s: number, e: any) => s + (parseFloat(String(e.budgetTotal || "0")) || 0), 0);
-          const actualExp = expenses.reduce((s: number, e: any) => s + (parseFloat(String(e.actualCosTotal || "0")) || 0), 0);
+          let actualExp = expenses.reduce((s: number, e: any) => s + (parseFloat(String(e.expenseActualTotal || "0")) || 0), 0);
+          if (actualExp === 0) {
+            actualExp = expenses.reduce((s: number, e: any) => s + (parseFloat(String(e.actualCosTotal || "0")) || 0), 0);
+          }
+          const gp = actualRev - actualExp;
           return {
             projectName: proj.projectName,
             costedRevenue: Math.round(costedRev),
             actualRevenue: Math.round(actualRev),
             costedExpenses: Math.round(costedExp),
             actualExpenses: Math.round(actualExp),
-            grossProfit: Math.round(actualRev - actualExp),
+            grossProfit: Math.round(gp),
+            gpMarginPct: actualRev > 0 ? Math.round((gp / actualRev) * 10000) / 100 : 0,
           };
         });
 
