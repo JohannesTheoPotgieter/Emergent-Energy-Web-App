@@ -45,9 +45,14 @@ async function buildAll() {
     versionData.patch += 1;
     versionData.lastUpdated = buildTime;
   } catch {}
+
+  const now = new Date();
+  const buildNumber = `${String(now.getFullYear()).slice(2)}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}.${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}`;
   const versionString = `${versionData.major}.${versionData.minor}.${String(versionData.patch).padStart(3, "0")}`;
+
   console.log(`Build ID: ${buildId}`);
   console.log(`Version: ${versionString}`);
+  console.log(`Build Number: ${buildNumber}`);
 
   await writeFile("version.json", JSON.stringify(versionData, null, 2));
 
@@ -55,7 +60,7 @@ async function buildAll() {
   await viteBuild();
 
   console.log("writing build version...");
-  await writeFile("dist/public/build-version.json", JSON.stringify({ buildId, buildTime, version: versionString }));
+  await writeFile("dist/public/build-version.json", JSON.stringify({ buildId, buildTime, version: versionString, buildNumber }));
 
   console.log("building server...");
   const pkg = JSON.parse(await readFile("package.json", "utf-8"));
