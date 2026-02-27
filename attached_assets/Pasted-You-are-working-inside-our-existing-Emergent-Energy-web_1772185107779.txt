@@ -1,0 +1,145 @@
+You are working inside our existing Emergent Energy web application codebase.
+
+GOAL
+Redesign and improve the Engineering section usability for:
+1) Engineers doing daily work (easy “My Tasks” view + fast updates)
+2) COO-led Engineering Standup (fast triage + live updates, minimal friction)
+
+NON-NEGOTIABLE GUARDRAILS
+- Do NOT break any existing functionality.
+- Do NOT refactor unrelated code.
+- Use existing infrastructure (existing task model, status enums, board components, drawers, APIs, filters, permissions) wherever possible.
+- Do NOT change approval functionality (logic, workflow, schema, permissions, UI). Treat approvals as a “do not touch” zone.
+- Do NOT make assumptions. If any requirement is unclear, ask me questions BEFORE implementing.
+- Prefer additive changes: new views/components/routes behind feature flags if needed.
+- Keep database changes minimal. Only add fields if absolutely required and backward compatible.
+
+CURRENT CONTEXT (from me)
+- Statuses are fine. Keep them as-is.
+- HOLD workflow requirement: only capture “blocked: Internal or External”.
+- Standup screen does NOT need Company Priorities.
+- “Projects Assistance” must link to a project. These tasks must show under that Project’s tasks as well.
+- Standup is led by me (COO) and I update tasks live during standup.
+- Standup sorting preference: Priority/time-critical first, then by Assignee (C then A).
+- Tasks can have multiple assignees (current UI shows an assignee + an additional person). Preserve this behaviour.
+
+FEATURES TO IMPLEMENT
+
+A) ENGINEERING → “MY TASKS” VIEW (engineer daily cockpit)
+Add a new easy view within Engineering section called “My Tasks”.
+- Default filter: tasks where current user is an assignee (includes multi-assignee).
+- Default sorting buckets (top to bottom):
+  1) Overdue
+  2) Due today / Due soon (configurable window, default 7 days)
+  3) HOLD
+  4) In Progress
+  5) Everything else (To Do etc.)
+- Provide quick filters: Status, Priority, Project, Due window, Search.
+- Allow FAST inline edits WITHOUT opening the task drawer:
+  - Status dropdown (existing statuses)
+  - Due date picker
+  - Priority dropdown (existing priorities)
+  - Quick update note (1-line text) that posts into the task’s Updates/Activity feed using existing update mechanism
+- Keep “Open details” available (existing drawer) for deep editing, but not required for basic updating.
+
+B) ENGINEERING → “ENGINEERING STANDUP” VIEW (COO cockpit)
+On Engineering Standup page, add a “Standup Mode” that is optimised for running a live standup.
+- Do not include Company Priorities on this page.
+- Standup Mode default grouping:
+  Primary buckets (C):
+    1) Overdue
+    2) Due today / Due soon (default 7 days)
+    3) HOLD
+    4) In Progress
+    5) Everything else
+  Secondary grouping (A):
+    - Within each bucket, group by Assignee (collapsible)
+- Provide fast inline edits (same as My Tasks):
+  - Status, Due date, Priority, Assignee(s), Quick update note
+- Add a compact “Blockers & Escalations” section that surfaces HOLD items and overdue items.
+  - Must support sorting by: most overdue, urgent priority first.
+- Add “15 blockers need attention” style counter as a clickable filter that jumps to the Blockers section/list.
+
+C) HOLD WORKFLOW (minimal capture)
+Requirement: when a task is set to HOLD, capture only whether it is blocked Internal or External.
+Implement minimal friction:
+- If Status is set to HOLD, require a field “Blocked Type” with only:
+  - Internal
+  - External
+- If user tries to save HOLD without Blocked Type, block save and show clear message.
+- If task leaves HOLD, Blocked Type can remain stored (optional) but should not block anything.
+
+IMPORTANT: Use existing task fields if something like this already exists. Only add a new field if nothing equivalent exists.
+
+D) “PROJECTS ASSISTANCE” MUST LINK TO PROJECT + SHOW IN PROJECT TASKS
+- If a task status is “Projects Assistance”, Linked Project becomes REQUIRED.
+- Enforce validation at both UI and API/server layer (so no bypass).
+- These tasks must show:
+  1) In Engineering Task Board as normal
+  2) Inside the linked Project’s tasks view/list (wherever project tasks are displayed)
+- Do not create a new “client” object or portfolio object here; just ensure tasks are project-linked.
+
+E) PERFORMANCE + UX REQUIREMENTS
+- Reduce click count for standup updates: user should be able to update Status/Due/Priority + add a quick note from list view.
+- Avoid heavy page reloads. Use existing state management/data fetching patterns.
+- Keep UI consistent with existing design system (components, spacing, icons).
+- Ensure permissions: Engineers can edit their tasks, COO can edit all tasks (use existing role permissions).
+- Keep multi-assignee behaviour intact.
+
+IMPLEMENTATION GUIDELINES (STRICT)
+1) First, map existing code:
+   - Where tasks are defined (types/models)
+   - Existing status/priority enums
+   - Existing board component and task drawer component
+   - Existing task update endpoint + update log mechanism
+   - Existing project tasks view component
+   - Existing permissions/roles
+2) Reuse existing components for:
+   - task cards/rows where possible
+   - filters/search controls
+   - date pickers, dropdowns
+   - posting updates/activity
+3) Only add:
+   - new “My Tasks” page/view (route or tab)
+   - “Standup Mode” list view within Engineering Standup
+   - validation for Projects Assistance requires Linked Project
+   - Blocked Type field if necessary
+4) Do NOT alter approval flows. If any part touches approval statuses/approvers, stop and ask me.
+
+QUESTIONS YOU MUST ASK ME IF UNCLEAR (DO NOT GUESS)
+- Confirm what “Due soon window” should be (default 7 days ok?)
+- Confirm how multi-assignee is stored (array? secondary assignee field? watchers?) and which should qualify for “My Tasks”
+- Confirm where Project → Tasks list lives in code so you can add Projects Assistance tasks there without changing structure
+- Confirm if any existing field already represents “blocked internal/external”
+
+ACCEPTANCE TESTS (YOU MUST IMPLEMENT + I MUST BE ABLE TO VERIFY)
+1) My Tasks:
+   - Logged in as an engineer, I see only tasks where I’m an assignee (including multi-assignee).
+   - I can change Status, Due date, Priority inline.
+   - I can add a quick update note and it appears in Updates/Activity for the task.
+   - I can still open the existing task drawer to see full details.
+
+2) Standup Mode:
+   - Logged in as COO, I can see standup list bucketed: Overdue, Due Soon, HOLD, In Progress, etc.
+   - Within each bucket I can expand/collapse by Assignee.
+   - I can inline edit Status/Due/Priority/Assignee and post a quick update note.
+   - “Blockers need attention” counter filters/jumps to blocked/overdue items.
+
+3) HOLD:
+   - Setting Status to HOLD requires selecting Blocked Type (Internal/External).
+   - Cannot save HOLD without Blocked Type (both UI + API enforced).
+   - Leaving HOLD does not break anything.
+
+4) Projects Assistance:
+   - If status is “Projects Assistance”, Linked Project is required.
+   - Those tasks appear on the linked Project’s Tasks view.
+   - No regressions in Engineering Task Board or any other area.
+
+DELIVERABLES
+- Code changes implemented with minimal footprint.
+- Short technical summary of what you changed and where.
+- List of files touched.
+- Any migration script ONLY if you add a new field; must be backward compatible and safe.
+- Do not merge/ship until all acceptance tests pass.
+
+Start by auditing the existing Engineering section and task infrastructure. Then implement in small safe steps.
