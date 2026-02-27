@@ -193,6 +193,11 @@ async function computeUserActivities(): Promise<UserActivityCounts[]> {
           AND qi.is_applicable = true`
     );
 
+    const hasAnyActivity = (tasksCompleted + approvalsGiven + weeklyReviews +
+      importsCompleted + projectUpdates + qualityApprovals +
+      engStagesCompleted + engTasksOwned + opsTasksAssigned +
+      deliverablesUploaded) > 0;
+
     results.push({
       userId: uid,
       userName,
@@ -207,7 +212,7 @@ async function computeUserActivities(): Promise<UserActivityCounts[]> {
       engTasksOwned,
       opsTasksAssigned,
       deliverablesUploaded,
-      participation: 1,
+      participation: hasAnyActivity ? 1 : 0,
       overdueTasks,
       plansBehind,
       qualityFailures,
@@ -350,7 +355,9 @@ export function registerGamificationRoutes(app: Express) {
         badgesByUser[b.userId].push(b.badgeKey);
       }
 
-      const leaderboard = activities.map(act => {
+      const leaderboard = activities
+        .filter(act => act.participation > 0)
+        .map(act => {
         const u = userMap[act.userId];
         if (!u) return null;
         const { earned, penalties, total } = computePoints(act);
@@ -492,6 +499,12 @@ export function registerGamificationRoutes(app: Express) {
       if (!u) return res.status(404).json({ error: "User not found" });
       const userName = u.name || "";
 
+      const activities = await computeUserActivities();
+      const act = activities.find(a => a.userId === userId);
+      if (!act) return res.status(404).json({ error: "No activity data" });
+
+      const { earned: earnedTotal, penalties: penaltyTotal, total: netTotal } = computePoints(act);
+
       const execItems = async (query: ReturnType<typeof sql>): Promise<any[]> => {
         try {
           const result = await db.execute(query);
@@ -499,171 +512,76 @@ export function registerGamificationRoutes(app: Express) {
         } catch { return []; }
       };
 
-      const tasksCompletedItems = await execItems(
-        sql`SELECT COALESCE(title, task_name, '') as name, project_name as project, 
-            COALESCE(actual_end, '') as date
-            FROM normalized_plan_tasks 
-            WHERE LOWER(TRIM(owner)) = LOWER(TRIM(${userName})) AND pct_complete >= 1
-            ORDER BY actual_end DESC NULLS LAST LIMIT 50`
-      );
-      const approvalsGivenItems = await execItems(
-        sql`SELECT COALESCE(a.notes, s.stage_name, 'Approval') as name, 
-            pi.project_name as project, a.approved_at::text as date
-            FROM project_eng_approvals a
-            LEFT JOIN project_eng_stages s ON a.stage_id = s.id
-            LEFT JOIN project_info pi ON s.project_id = pi.id
-            WHERE a.approver_user_id = ${userId} AND a.status = 'approved'
-            ORDER BY a.approved_at DESC NULLS LAST LIMIT 50`
-      );
-      const weeklyReviewItems = await execItems(
-        sql`SELECT COALESCE(pi.project_name, 'Review') as name, pi.project_name as project,
-            wr.reviewed_at::text as date
-            FROM weekly_reviews wr
-            LEFT JOIN project_info pi ON wr.project_id = pi.id
-            WHERE wr.reviewed_by = ${userId} AND wr.status = 'completed'
-            ORDER BY wr.reviewed_at DESC NULLS LAST LIMIT 50`
-      );
-      const importsCompletedItems = await execItems(
-        sql`SELECT COALESCE(file_name, 'Import') as name, project_name as project,
-            committed_at::text as date
-            FROM smart_import_runs
-            WHERE committed_by = ${userId} AND status = 'COMMITTED'
-            ORDER BY committed_at DESC NULLS LAST LIMIT 50`
-      );
-      const projectUpdatesItems = await execItems(
-        sql`SELECT COALESCE(entity_type, 'Update') || ': ' || COALESCE(field_name, '') as name,
-            project_name as project, changed_at::text as date
-            FROM change_sets
-            WHERE actor_user_id = ${userId}
-            ORDER BY changed_at DESC NULLS LAST LIMIT 50`
-      );
-      const qualityApprovalsItems = await execItems(
-        sql`SELECT COALESCE(qi.item_name, 'QC Item') as name, qc.project_name as project,
-            qi.updated_at::text as date
-            FROM qc_item_instance qi
-            JOIN qc_checklist qc ON qi.checklist_id = qc.id
-            WHERE qi.approved_by_user_id = ${userId} AND qi.approved = true
-            ORDER BY qi.updated_at DESC NULLS LAST LIMIT 50`
-      );
-      const engStagesCompletedItems = await execItems(
-        sql`SELECT COALESCE(s.stage_name, 'Stage') as name, pi.project_name as project,
-            s.completed_at::text as date
-            FROM project_eng_stages s
-            LEFT JOIN project_info pi ON s.project_id = pi.id
-            WHERE s.created_by = ${userId} AND s.status = 'complete'
-            ORDER BY s.completed_at DESC NULLS LAST LIMIT 50`
-      );
-      const deliverablesUploadedItems = await execItems(
-        sql`SELECT COALESCE(df.file_name, 'File') as name, pi.project_name as project,
-            df.uploaded_at::text as date
-            FROM deliverable_files df
-            LEFT JOIN project_eng_deliverables d ON df.deliverable_id = d.id
-            LEFT JOIN project_eng_stages s ON d.stage_id = s.id
-            LEFT JOIN project_info pi ON s.project_id = pi.id
-            WHERE df.uploaded_by_user_id = ${userId}
-            ORDER BY df.uploaded_at DESC NULLS LAST LIMIT 50`
-      );
-
-      const overdueTaskItems = await execItems(
-        sql`SELECT COALESCE(title, task_name, 'Task') as name, project_name as project,
-            due_date as date, status
-            FROM operational_tasks
-            WHERE owner_user_id = ${userId}
-            AND due_date IS NOT NULL AND due_date != ''
-            AND due_date < CURRENT_DATE::text
-            AND status NOT IN ('COMPLETE', 'QC APPROVED', 'DONE')
-            ORDER BY due_date ASC LIMIT 50`
-      );
-      const plansBehindItems = await execItems(
-        sql`SELECT COALESCE(title, task_name, '') as name, project_name as project,
-            ROUND(actual_pct_complete::numeric * 100) || '% vs ' || ROUND(expected_pct_complete::numeric * 100) || '% expected' as date
-            FROM project_plan
-            WHERE LOWER(TRIM(COALESCE(high_level_programme, ''))) != ''
-            AND actual_pct_complete IS NOT NULL
-            AND expected_pct_complete IS NOT NULL
-            AND actual_pct_complete < 1
-            AND (expected_pct_complete - actual_pct_complete) > 0.15
-            AND project_name IN (
-              SELECT DISTINCT project_name FROM project_info WHERE LOWER(TRIM(pm)) = LOWER(TRIM(${userName}))
-            )
-            ORDER BY (expected_pct_complete - actual_pct_complete) DESC LIMIT 50`
-      );
-      const qualityFailureItems = await execItems(
-        sql`SELECT COALESCE(qi.item_name, 'QC Item') as name, qc.project_name as project,
-            qi.updated_at::text as date
-            FROM qc_item_instance qi
-            JOIN qc_checklist qc ON qi.checklist_id = qc.id
-            JOIN project_info pi ON qc.project_name = pi.project_name
-            WHERE pi.pm_user_id = ${userId} AND qi.qm_status = 'fail'
-            ORDER BY qi.updated_at DESC NULLS LAST LIMIT 50`
-      );
-      const rejectedDeliverableItems = await execItems(
-        sql`SELECT COALESCE(title, 'Deliverable') as name, 
-            (SELECT pi.project_name FROM project_eng_stages s JOIN project_info pi ON s.project_id = pi.id WHERE s.id = stage_id LIMIT 1) as project,
-            updated_at::text as date
-            FROM project_eng_deliverables
-            WHERE uploaded_by = ${userId} AND approval_status = 'rejected'
-            ORDER BY updated_at DESC NULLS LAST LIMIT 50`
-      );
-      const openQualityWarningItems = await execItems(
-        sql`SELECT COALESCE(description, 'Warning') as name, project_name as project,
-            created_at::text as date, status
-            FROM qc_warning
-            WHERE owner_user_id = ${userId} AND status IN ('open', 'in_progress')
-            ORDER BY created_at DESC NULLS LAST LIMIT 50`
-      );
-      const overdueEngTaskItems = await execItems(
-        sql`SELECT COALESCE(t.title, 'Task') as name, pi.project_name as project,
-            t.due_date as date, t.status
-            FROM project_eng_tasks t
-            LEFT JOIN project_eng_stages s ON t.stage_id = s.id
-            LEFT JOIN project_info pi ON s.project_id = pi.id
-            WHERE t.owner_user_id = ${userId}
-            AND t.due_date IS NOT NULL AND t.due_date != ''
-            AND NULLIF(t.due_date, '')::date < CURRENT_DATE
-            AND t.status NOT IN ('complete', 'skipped')
-            ORDER BY t.due_date ASC LIMIT 50`
-      );
-      const overdueQmTaskItems = await execItems(
-        sql`SELECT COALESCE(qi.item_name, 'QM Item') as name, qc.project_name as project,
-            qi.end_date as date
-            FROM qc_item_instance qi
-            JOIN qc_checklist qc ON qi.checklist_id = qc.id
-            JOIN project_info pi ON qc.project_name = pi.project_name
-            WHERE (pi.pm_user_id = ${userId} OR LOWER(TRIM(pi.pm)) = LOWER(TRIM(${userName})))
-            AND qi.end_date IS NOT NULL AND qi.end_date != ''
-            AND NULLIF(qi.end_date, '')::date < CURRENT_DATE
-            AND qi.approved = false AND qi.is_applicable = true
-            ORDER BY qi.end_date ASC LIMIT 50`
-      );
-
       const formatItems = (rows: any[]) => rows.map(r => ({
         name: String(r.name || '').replace(/_Tracker$/i, '').replace(/_/g, ' '),
         project: String(r.project || '').replace(/_Tracker$/i, '').replace(/_/g, ' '),
         date: r.date ? String(r.date).substring(0, 10) : null,
       }));
 
+      const buildCategory = (count: number, perPoint: number, items: any[]) => ({
+        count,
+        perPoint,
+        total: count * perPoint,
+        items: formatItems(items),
+      });
+
+      const [
+        tasksCompletedItems, approvalsGivenItems, weeklyReviewItems,
+        importsCompletedItems, projectUpdatesItems, qualityApprovalsItems,
+        engStagesCompletedItems, deliverablesUploadedItems,
+        engTasksOwnedItems, opsTasksAssignedItems,
+        overdueTaskItems, plansBehindItems, qualityFailureItems,
+        rejectedDeliverableItems, openQualityWarningItems,
+        overdueEngTaskItems, overdueQmTaskItems, unreadNotifItems,
+      ] = await Promise.all([
+        execItems(sql`SELECT COALESCE(title, task_name, '') as name, project_name as project, COALESCE(actual_end, '') as date FROM normalized_plan_tasks WHERE LOWER(TRIM(owner)) = LOWER(TRIM(${userName})) AND pct_complete >= 1 ORDER BY actual_end DESC NULLS LAST LIMIT 100`),
+        execItems(sql`SELECT COALESCE(a.notes, s.stage_name, 'Approval') as name, pi.project_name as project, a.approved_at::text as date FROM project_eng_approvals a LEFT JOIN project_eng_stages s ON a.stage_id = s.id LEFT JOIN project_info pi ON s.project_id = pi.id WHERE a.approver_user_id = ${userId} AND a.status = 'approved' ORDER BY a.approved_at DESC NULLS LAST LIMIT 100`),
+        execItems(sql`SELECT COALESCE(pi.project_name, 'Review') as name, pi.project_name as project, wr.reviewed_at::text as date FROM weekly_reviews wr LEFT JOIN project_info pi ON wr.project_id = pi.id WHERE wr.reviewed_by = ${userId} AND wr.status = 'completed' ORDER BY wr.reviewed_at DESC NULLS LAST LIMIT 100`),
+        execItems(sql`SELECT COALESCE(file_name, 'Import') as name, project_name as project, committed_at::text as date FROM smart_import_runs WHERE committed_by = ${userId} AND status = 'COMMITTED' ORDER BY committed_at DESC NULLS LAST LIMIT 100`),
+        execItems(sql`SELECT COALESCE(entity_type, 'Update') || ': ' || COALESCE(field_name, '') as name, project_name as project, changed_at::text as date FROM change_sets WHERE actor_user_id = ${userId} ORDER BY changed_at DESC NULLS LAST LIMIT 100`),
+        execItems(sql`SELECT COALESCE(qi.item_name, 'QC Item') as name, qc.project_name as project, qi.updated_at::text as date FROM qc_item_instance qi JOIN qc_checklist qc ON qi.checklist_id = qc.id WHERE qi.approved_by_user_id = ${userId} AND qi.approved = true ORDER BY qi.updated_at DESC NULLS LAST LIMIT 100`),
+        execItems(sql`SELECT COALESCE(s.stage_name, 'Stage') as name, pi.project_name as project, s.completed_at::text as date FROM project_eng_stages s LEFT JOIN project_info pi ON s.project_id = pi.id WHERE s.created_by = ${userId} AND s.status = 'complete' ORDER BY s.completed_at DESC NULLS LAST LIMIT 100`),
+        execItems(sql`SELECT COALESCE(df.file_name, 'File') as name, pi.project_name as project, df.uploaded_at::text as date FROM deliverable_files df LEFT JOIN project_eng_deliverables d ON df.deliverable_id = d.id LEFT JOIN project_eng_stages s ON d.stage_id = s.id LEFT JOIN project_info pi ON s.project_id = pi.id WHERE df.uploaded_by_user_id = ${userId} ORDER BY df.uploaded_at DESC NULLS LAST LIMIT 100`),
+        execItems(sql`SELECT COALESCE(t.title, 'Task') as name, pi.project_name as project, '' as date FROM project_eng_tasks t LEFT JOIN project_eng_stages s ON t.stage_id = s.id LEFT JOIN project_info pi ON s.project_id = pi.id WHERE t.owner_user_id = ${userId} ORDER BY t.id DESC LIMIT 100`),
+        execItems(sql`SELECT COALESCE(title, task_name, 'Task') as name, project_name as project, '' as date FROM operational_tasks WHERE owner_user_id = ${userId} ORDER BY id DESC LIMIT 100`),
+        execItems(sql`SELECT COALESCE(title, task_name, 'Task') as name, project_name as project, due_date as date FROM operational_tasks WHERE owner_user_id = ${userId} AND due_date IS NOT NULL AND due_date != '' AND due_date < CURRENT_DATE::text AND status NOT IN ('COMPLETE', 'QC APPROVED', 'DONE') ORDER BY due_date ASC LIMIT 100`),
+        execItems(sql`SELECT COALESCE(title, task_name, '') as name, project_name as project, ROUND(actual_pct_complete::numeric * 100) || '% vs ' || ROUND(expected_pct_complete::numeric * 100) || '% expected' as date FROM project_plan WHERE LOWER(TRIM(COALESCE(high_level_programme, ''))) != '' AND actual_pct_complete IS NOT NULL AND expected_pct_complete IS NOT NULL AND actual_pct_complete < 1 AND (expected_pct_complete - actual_pct_complete) > 0.15 AND project_name IN (SELECT DISTINCT project_name FROM project_info WHERE LOWER(TRIM(pm)) = LOWER(TRIM(${userName}))) ORDER BY (expected_pct_complete - actual_pct_complete) DESC LIMIT 100`),
+        execItems(sql`SELECT COALESCE(qi.item_name, 'QC Item') as name, qc.project_name as project, qi.updated_at::text as date FROM qc_item_instance qi JOIN qc_checklist qc ON qi.checklist_id = qc.id JOIN project_info pi ON qc.project_name = pi.project_name WHERE pi.pm_user_id = ${userId} AND qi.qm_status = 'fail' ORDER BY qi.updated_at DESC NULLS LAST LIMIT 100`),
+        execItems(sql`SELECT COALESCE(title, 'Deliverable') as name, (SELECT pi.project_name FROM project_eng_stages s JOIN project_info pi ON s.project_id = pi.id WHERE s.id = stage_id LIMIT 1) as project, updated_at::text as date FROM project_eng_deliverables WHERE uploaded_by = ${userId} AND approval_status = 'rejected' ORDER BY updated_at DESC NULLS LAST LIMIT 100`),
+        execItems(sql`SELECT COALESCE(description, 'Warning') as name, project_name as project, created_at::text as date FROM qc_warning WHERE owner_user_id = ${userId} AND status IN ('open', 'in_progress') ORDER BY created_at DESC NULLS LAST LIMIT 100`),
+        execItems(sql`SELECT COALESCE(t.title, 'Task') as name, pi.project_name as project, t.due_date as date FROM project_eng_tasks t LEFT JOIN project_eng_stages s ON t.stage_id = s.id LEFT JOIN project_info pi ON s.project_id = pi.id WHERE t.owner_user_id = ${userId} AND t.due_date IS NOT NULL AND t.due_date != '' AND NULLIF(t.due_date, '')::date < CURRENT_DATE AND t.status NOT IN ('complete', 'skipped') ORDER BY t.due_date ASC LIMIT 100`),
+        execItems(sql`SELECT COALESCE(qi.item_name, 'QM Item') as name, qc.project_name as project, qi.end_date as date FROM qc_item_instance qi JOIN qc_checklist qc ON qi.checklist_id = qc.id JOIN project_info pi ON qc.project_name = pi.project_name WHERE (pi.pm_user_id = ${userId} OR LOWER(TRIM(pi.pm)) = LOWER(TRIM(${userName}))) AND qi.end_date IS NOT NULL AND qi.end_date != '' AND NULLIF(qi.end_date, '')::date < CURRENT_DATE AND qi.approved = false AND qi.is_applicable = true ORDER BY qi.end_date ASC LIMIT 100`),
+        execItems(sql`SELECT COALESCE(title, 'Notification') as name, '' as project, created_at::text as date FROM notifications WHERE recipient_user_id = ${userId} AND is_read = false AND created_at < NOW() - INTERVAL '3 days' ORDER BY created_at ASC LIMIT 100`),
+      ]);
+
       res.json({
         pointValues: POINT_VALUES,
         penaltyValues: PENALTY_VALUES,
+        earnedTotal,
+        penaltyTotal,
+        netTotal,
+        participation: act.participation,
         earned: {
-          tasksCompleted: { count: tasksCompletedItems.length, perPoint: POINT_VALUES.task_complete, total: tasksCompletedItems.length * POINT_VALUES.task_complete, items: formatItems(tasksCompletedItems) },
-          approvalsGiven: { count: approvalsGivenItems.length, perPoint: POINT_VALUES.approval_given, total: approvalsGivenItems.length * POINT_VALUES.approval_given, items: formatItems(approvalsGivenItems) },
-          weeklyReviews: { count: weeklyReviewItems.length, perPoint: POINT_VALUES.weekly_review, total: weeklyReviewItems.length * POINT_VALUES.weekly_review, items: formatItems(weeklyReviewItems) },
-          importsCompleted: { count: importsCompletedItems.length, perPoint: POINT_VALUES.import_complete, total: importsCompletedItems.length * POINT_VALUES.import_complete, items: formatItems(importsCompletedItems) },
-          projectUpdates: { count: projectUpdatesItems.length, perPoint: POINT_VALUES.project_update, total: projectUpdatesItems.length * POINT_VALUES.project_update, items: formatItems(projectUpdatesItems) },
-          qualityApprovals: { count: qualityApprovalsItems.length, perPoint: POINT_VALUES.quality_approve, total: qualityApprovalsItems.length * POINT_VALUES.quality_approve, items: formatItems(qualityApprovalsItems) },
-          engStagesCompleted: { count: engStagesCompletedItems.length, perPoint: POINT_VALUES.eng_stage_complete, total: engStagesCompletedItems.length * POINT_VALUES.eng_stage_complete, items: formatItems(engStagesCompletedItems) },
-          deliverablesUploaded: { count: deliverablesUploadedItems.length, perPoint: POINT_VALUES.deliverable_uploaded, total: deliverablesUploadedItems.length * POINT_VALUES.deliverable_uploaded, items: formatItems(deliverablesUploadedItems) },
+          tasksCompleted: buildCategory(act.tasksCompleted, POINT_VALUES.task_complete, tasksCompletedItems),
+          approvalsGiven: buildCategory(act.approvalsGiven, POINT_VALUES.approval_given, approvalsGivenItems),
+          weeklyReviews: buildCategory(act.weeklyReviews, POINT_VALUES.weekly_review, weeklyReviewItems),
+          importsCompleted: buildCategory(act.importsCompleted, POINT_VALUES.import_complete, importsCompletedItems),
+          projectUpdates: buildCategory(act.projectUpdates, POINT_VALUES.project_update, projectUpdatesItems),
+          qualityApprovals: buildCategory(act.qualityApprovals, POINT_VALUES.quality_approve, qualityApprovalsItems),
+          engStagesCompleted: buildCategory(act.engStagesCompleted, POINT_VALUES.eng_stage_complete, engStagesCompletedItems),
+          deliverablesUploaded: buildCategory(act.deliverablesUploaded, POINT_VALUES.deliverable_uploaded, deliverablesUploadedItems),
+          engTasksOwned: buildCategory(act.engTasksOwned, POINT_VALUES.eng_task_owned, engTasksOwnedItems),
+          opsTasksAssigned: buildCategory(act.opsTasksAssigned, POINT_VALUES.ops_task_assigned, opsTasksAssignedItems),
         },
         penalties: {
-          overdueTasks: { count: overdueTaskItems.length, perPoint: PENALTY_VALUES.overdue_task, total: overdueTaskItems.length * PENALTY_VALUES.overdue_task, items: formatItems(overdueTaskItems) },
-          plansBehind: { count: plansBehindItems.length, perPoint: PENALTY_VALUES.plan_behind, total: plansBehindItems.length * PENALTY_VALUES.plan_behind, items: formatItems(plansBehindItems) },
-          qualityFailures: { count: qualityFailureItems.length, perPoint: PENALTY_VALUES.quality_failure, total: qualityFailureItems.length * PENALTY_VALUES.quality_failure, items: formatItems(qualityFailureItems) },
-          rejectedDeliverables: { count: rejectedDeliverableItems.length, perPoint: PENALTY_VALUES.rejected_deliverable, total: rejectedDeliverableItems.length * PENALTY_VALUES.rejected_deliverable, items: formatItems(rejectedDeliverableItems) },
-          openQualityWarnings: { count: openQualityWarningItems.length, perPoint: PENALTY_VALUES.open_quality_warning, total: openQualityWarningItems.length * PENALTY_VALUES.open_quality_warning, items: formatItems(openQualityWarningItems) },
-          overdueEngTasks: { count: overdueEngTaskItems.length, perPoint: PENALTY_VALUES.overdue_eng_task, total: overdueEngTaskItems.length * PENALTY_VALUES.overdue_eng_task, items: formatItems(overdueEngTaskItems) },
-          overdueQmTasks: { count: overdueQmTaskItems.length, perPoint: PENALTY_VALUES.overdue_qm_task, total: overdueQmTaskItems.length * PENALTY_VALUES.overdue_qm_task, items: formatItems(overdueQmTaskItems) },
+          overdueTasks: buildCategory(act.overdueTasks, PENALTY_VALUES.overdue_task, overdueTaskItems),
+          plansBehind: buildCategory(act.plansBehind, PENALTY_VALUES.plan_behind, plansBehindItems),
+          qualityFailures: buildCategory(act.qualityFailures, PENALTY_VALUES.quality_failure, qualityFailureItems),
+          rejectedDeliverables: buildCategory(act.rejectedDeliverables, PENALTY_VALUES.rejected_deliverable, rejectedDeliverableItems),
+          openQualityWarnings: buildCategory(act.openQualityWarnings, PENALTY_VALUES.open_quality_warning, openQualityWarningItems),
+          overdueEngTasks: buildCategory(act.overdueEngTasks, PENALTY_VALUES.overdue_eng_task, overdueEngTaskItems),
+          unreadNotifications: buildCategory(act.unreadNotifications, PENALTY_VALUES.unread_notifications, unreadNotifItems),
+          overdueQmTasks: buildCategory(act.overdueQmTasks, PENALTY_VALUES.overdue_qm_task, overdueQmTaskItems),
         },
       });
     } catch (err: any) {
