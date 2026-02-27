@@ -118,7 +118,7 @@ export function MonthlyRealisationTab({ projectName }: MonthlyRealisationTabProp
   const { data, isLoading } = useQuery({
     queryKey: ["expenditure-breakdown", projectName],
     queryFn: async () => {
-      const res = await fetch(`/api/expenditure-breakdown/${encodeURIComponent(projectName)}`);
+      const res = await fetch(`/api/expenditure-breakdown/${encodeURIComponent(projectName)}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch");
       return res.json();
     },

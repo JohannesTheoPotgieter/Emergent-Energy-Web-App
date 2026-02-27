@@ -11,7 +11,7 @@ export function FinanceRevenueTab({ projectName }: FinanceRevenueTabProps) {
   const { data: monthlyRevenue = [], isLoading, error } = useQuery({
     queryKey: ["finance-revenue", projectName],
     queryFn: async () => {
-      const res = await fetch(`/api/finance/revenue?projectName=${encodeURIComponent(projectName)}`);
+      const res = await fetch(`/api/finance/revenue?projectName=${encodeURIComponent(projectName)}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch finance revenue data");
       return res.json();
     },

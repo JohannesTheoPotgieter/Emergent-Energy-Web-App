@@ -63,7 +63,7 @@ export function WeeklyReviewWizard({ projectName, snapshotMetrics }: WeeklyRevie
   const { data: pastReviews = [] } = useQuery({
     queryKey: ["weekly-reviews", projectName],
     queryFn: async () => {
-      const res = await fetch(`/api/weekly-reviews/${encodeURIComponent(projectName)}`);
+      const res = await fetch(`/api/weekly-reviews/${encodeURIComponent(projectName)}`, { credentials: "include" });
       if (!res.ok) return [];
       return res.json();
     },
@@ -75,6 +75,7 @@ export function WeeklyReviewWizard({ projectName, snapshotMetrics }: WeeklyRevie
       const res = await fetch(`/api/weekly-reviews/${encodeURIComponent(projectName)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ weekStarting: weekStart, snapshotMetrics }),
       });
       if (!res.ok) throw new Error("Failed to create review");
@@ -93,6 +94,7 @@ export function WeeklyReviewWizard({ projectName, snapshotMetrics }: WeeklyRevie
       const res = await fetch(`/api/weekly-reviews/${encodeURIComponent(projectName)}/${reviewId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify(stepData),
       });
       if (!res.ok) throw new Error("Failed to save");
@@ -106,6 +108,7 @@ export function WeeklyReviewWizard({ projectName, snapshotMetrics }: WeeklyRevie
       const res = await fetch(`/api/weekly-reviews/${encodeURIComponent(projectName)}/${reviewId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
           status: "completed",
           stepSchedule: schedule,

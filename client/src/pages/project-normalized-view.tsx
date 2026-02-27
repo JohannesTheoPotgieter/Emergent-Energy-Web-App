@@ -166,6 +166,7 @@ export default function ProjectNormalizedView() {
       setLoading(true);
       setError(null);
       const res = await fetch(`/api/smart-import/history/${encodeURIComponent(projectName)}`, {
+        credentials: "include",
         headers: getAuthHeaders(),
       });
       if (!res.ok) throw new Error(`Failed to load import history (${res.status})`);

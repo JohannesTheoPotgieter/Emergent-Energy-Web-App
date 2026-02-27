@@ -163,9 +163,9 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
   const { data: tasks = [], isLoading } = useQuery<any[]>({
     queryKey: ["planning-tasks", projectName],
     queryFn: async () => {
-      const res = await fetch(`/api/planning-tasks/${encodeURIComponent(projectName)}`);
+      const res = await fetch(`/api/planning-tasks/${encodeURIComponent(projectName)}`, { credentials: "include" });
       if (!res.ok) {
-        const fallback = await fetch(`/api/operational-tasks/${encodeURIComponent(projectName)}`);
+        const fallback = await fetch(`/api/operational-tasks/${encodeURIComponent(projectName)}`, { credentials: "include" });
         if (!fallback.ok) return [];
         return fallback.json();
       }

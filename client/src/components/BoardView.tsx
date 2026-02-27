@@ -44,7 +44,7 @@ export default function BoardView({ projectName, onTaskClick }: BoardViewProps) 
   const { data: tasks = [], isLoading } = useQuery<any[]>({
     queryKey: ["operational-tasks", projectName],
     queryFn: async () => {
-      const res = await fetch(`/api/operational-tasks/${encodeURIComponent(projectName)}`);
+      const res = await fetch(`/api/operational-tasks/${encodeURIComponent(projectName)}`, { credentials: "include" });
       if (!res.ok) return [];
       return res.json();
     },

@@ -106,7 +106,7 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
   const { data, isLoading, error } = useQuery<RevenueTabData>({
     queryKey: ["revenue-tab", projectName],
     queryFn: async () => {
-      const res = await fetch(`/api/revenue-tab/${encodeURIComponent(projectName)}`);
+      const res = await fetch(`/api/revenue-tab/${encodeURIComponent(projectName)}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch revenue data");
       return res.json();
     },
@@ -116,7 +116,7 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
   const { data: taskAlerts = [] } = useQuery<TaskAlert[]>({
     queryKey: ["revenue-task-alerts", projectName],
     queryFn: async () => {
-      const res = await fetch(`/api/revenue-tab/${encodeURIComponent(projectName)}/task-alerts`);
+      const res = await fetch(`/api/revenue-tab/${encodeURIComponent(projectName)}/task-alerts`, { credentials: "include" });
       if (!res.ok) return [];
       return res.json();
     },
@@ -126,6 +126,7 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
   const saveMutation = useMutation({
     mutationFn: async (overridesToSave: RevenueOverride[]) => {
       const res = await fetch(`/api/revenue-tracking/overrides`, {
+        credentials: "include",
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ overrides: overridesToSave.map(o => ({ ...o, projectName })) }),
@@ -146,6 +147,7 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
   const toggleInBankMutation = useMutation({
     mutationFn: async ({ rowNumber, inBank }: { rowNumber: number; inBank: boolean }) => {
       const res = await fetch(`/api/revenue-tracking/overrides`, {
+        credentials: "include",
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ overrides: [{ projectName, rowNumber, fieldName: "inBank", overrideValue: inBank ? "1" : "0" }] }),
@@ -166,7 +168,7 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
   const { data: projectTasks = [] } = useQuery<any[]>({
     queryKey: ["operational-tasks", projectName],
     queryFn: async () => {
-      const res = await fetch(`/api/operational-tasks/${encodeURIComponent(projectName)}`);
+      const res = await fetch(`/api/operational-tasks/${encodeURIComponent(projectName)}`, { credentials: "include" });
       if (!res.ok) return [];
       return res.json();
     },
@@ -176,6 +178,7 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
   const linkTaskMutation = useMutation({
     mutationFn: async ({ milestoneRowNumber, taskId }: { milestoneRowNumber: number; taskId: number }) => {
       const res = await fetch(`/api/revenue-tab/${encodeURIComponent(projectName)}/link-task`, {
+        credentials: "include",
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ milestoneRowNumber, taskId }),
@@ -197,6 +200,7 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
   const unlinkTaskMutation = useMutation({
     mutationFn: async (milestoneRowNumber: number) => {
       const res = await fetch(`/api/revenue-tab/${encodeURIComponent(projectName)}/link-task/${milestoneRowNumber}`, {
+        credentials: "include",
         method: "DELETE",
       });
       if (!res.ok) throw new Error("Failed to unlink task");
@@ -214,6 +218,7 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
   const dateOverrideMutation = useMutation({
     mutationFn: async ({ milestoneRowNumber, dateOverride, reason }: { milestoneRowNumber: number; dateOverride: string; reason: string }) => {
       const res = await fetch(`/api/revenue-tab/${encodeURIComponent(projectName)}/date-override`, {
+        credentials: "include",
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ milestoneRowNumber, dateOverride, reason }),
@@ -247,6 +252,7 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
   const saveCostedMutation = useMutation({
     mutationFn: async (values: { revenue: string; expenditure: string }) => {
       const res = await fetch(`/api/revenue-tab/${encodeURIComponent(projectName)}/costed`, {
+        credentials: "include",
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

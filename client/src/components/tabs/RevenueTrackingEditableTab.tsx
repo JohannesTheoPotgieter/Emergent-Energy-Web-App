@@ -30,6 +30,7 @@ export function RevenueTrackingEditableTab({ projectName }: RevenueTrackingEdita
   const saveMutation = useMutation({
     mutationFn: async (overrides: any[]) => {
       const response = await fetch("/api/revenue-tracking/overrides", {
+        credentials: "include",
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ overrides }),
@@ -58,6 +59,7 @@ export function RevenueTrackingEditableTab({ projectName }: RevenueTrackingEdita
   const resetMutation = useMutation({
     mutationFn: async () => {
       const response = await fetch(`/api/revenue-tracking/overrides/${projectName}`, {
+        credentials: "include",
         method: "DELETE",
       });
       if (!response.ok) throw new Error("Failed to reset overrides");

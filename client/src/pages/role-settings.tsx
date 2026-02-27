@@ -31,6 +31,7 @@ function getAuthHeaders(): HeadersInit {
 async function fetchSetting(key: string): Promise<string | null> {
   try {
     const res = await fetch(`/api/settings?key=${encodeURIComponent(key)}`, {
+      credentials: "include",
       headers: getAuthHeaders(),
     });
     if (!res.ok) return null;
@@ -43,6 +44,7 @@ async function fetchSetting(key: string): Promise<string | null> {
 
 async function saveSetting(key: string, value: string): Promise<boolean> {
   const res = await fetch("/api/settings", {
+    credentials: "include",
     method: "PUT",
     headers: getAuthHeaders(),
     body: JSON.stringify({ key, value }),
@@ -95,7 +97,7 @@ function ProcurementAnalysisSection({ toast }: { toast: ReturnType<typeof useToa
 
   const loadStatus = async () => {
     try {
-      const res = await fetch("/api/procurement-analysis/status", { headers: getAuthHeaders() });
+      const res = await fetch("/api/procurement-analysis/status", { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) setStatus(await res.json());
     } catch {}
   };
@@ -105,6 +107,7 @@ function ProcurementAnalysisSection({ toast }: { toast: ReturnType<typeof useToa
     setLastResult(null);
     try {
       const res = await fetch("/api/procurement-analysis/run", {
+        credentials: "include",
         method: "POST",
         headers: getAuthHeaders(),
       });
@@ -190,7 +193,7 @@ function RolePasswordsSection({ toast }: { toast: ReturnType<typeof useToast>["t
 
   const loadPasswords = async () => {
     try {
-      const res = await fetch("/api/role-auth/passwords", { headers: getAuthHeaders() });
+      const res = await fetch("/api/role-auth/passwords", { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         const map: Record<string, { password: string | null; updatedAt: string | null }> = {};
@@ -210,6 +213,7 @@ function RolePasswordsSection({ toast }: { toast: ReturnType<typeof useToast>["t
     setSaving(true);
     try {
       const res = await fetch("/api/role-auth/password", {
+        credentials: "include",
         method: "PATCH",
         headers: getAuthHeaders(),
         body: JSON.stringify({ targetRole, newPassword }),
