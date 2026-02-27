@@ -272,7 +272,7 @@ function applyProjectPlanOverrides(
       id: rowNumber,
       projectName: projName,
       rowNumber,
-      taskNo: "",
+      taskNo: fields.get("taskNo") || "",
       highLevelProgramme: fields.get("highLevelProgramme") || "Milestone",
       actualStart: fields.get("actualStart") || null,
       actualEnd: fields.get("actualEnd") || null,
@@ -4956,6 +4956,57 @@ export async function registerRoutes(
         await storage.upsertManyProjectPlanOverrides(ungroupOverrides);
         notifyStructureChange(`Milestone deleted, ${childOverrides.length} task(s) ungrouped.`);
         return res.json({ message: "Milestone deleted and children ungrouped" });
+      }
+
+      if (operation === "renumber") {
+        const plansDirect2 = await storage.getProjectPlansByProject(rawProjectName);
+        const pName2 = plansDirect2.length > 0 ? rawProjectName : trackerName;
+        const rawPlanTasks = plansDirect2.length > 0 ? plansDirect2 : await storage.getProjectPlansByProject(trackerName);
+        const planOverrides = await storage.getProjectPlanOverridesByProject(pName2);
+        const planTasks = applyProjectPlanOverrides(rawPlanTasks, planOverrides);
+
+        const SECTION_HEADER_TITLES = ["high level programme", "programme", "high level program"];
+        const tasks2 = planTasks
+          .filter((pt: any) => {
+            if (pt.isVirtual) return true;
+            const title = (pt.highLevelProgramme || "").trim().toLowerCase();
+            return title && !SECTION_HEADER_TITLES.includes(title);
+          })
+          .map((pt: any) => ({
+            rowNumber: pt.rowNumber,
+            parentRowNumber: pt.parentRowNumber || null,
+            sortOrder: pt.sortOrder ?? pt.rowNumber ?? 0,
+            isVirtual: pt.isVirtual === true,
+          }));
+
+        const childMap = new Map<number | null, any[]>();
+        for (const t of tasks2) {
+          const parent = t.parentRowNumber;
+          if (!childMap.has(parent)) childMap.set(parent, []);
+          childMap.get(parent)!.push(t);
+        }
+        for (const [, children] of childMap) {
+          children.sort((a: any, b: any) => (a.sortOrder || 0) - (b.sortOrder || 0));
+        }
+
+        const overridesToSave: any[] = [];
+        const assignNumbers = (parentRn: number | null, prefix: string) => {
+          const children = childMap.get(parentRn) || [];
+          children.forEach((child: any, idx: number) => {
+            const num = prefix ? `${prefix}.${idx + 1}` : String(idx + 1);
+            overridesToSave.push({
+              projectName: pName2, rowNumber: child.rowNumber,
+              fieldName: "taskNo", overrideValue: num, createdBy: userId,
+            });
+            assignNumbers(child.rowNumber, num);
+          });
+        };
+        assignNumbers(null, "");
+
+        if (overridesToSave.length > 0) {
+          await storage.upsertManyProjectPlanOverrides(overridesToSave);
+        }
+        return res.json({ message: `Renumbered ${overridesToSave.length} tasks` });
       }
 
       return res.status(400).json({ error: `Unknown operation: ${operation}` });

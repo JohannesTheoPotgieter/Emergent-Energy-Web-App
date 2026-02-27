@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -24,7 +25,7 @@ import {
   ChevronDown, ChevronRight, Columns, ListFilter,
   AlertTriangle, TrendingUp, TrendingDown, Minus,
   CheckCircle2, Clock, Circle, Ban, Loader2,
-  Milestone, FolderPlus, Ungroup, X, ArrowUpDown, GripVertical,
+  Milestone, FolderPlus, Ungroup, X, ArrowUpDown, GripVertical, Hash, RefreshCw,
 } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -146,6 +147,7 @@ const pctColor = (pct: number) => {
 export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewProps) {
   const { isAdmin } = useAuth();
   const qc = useQueryClient();
+  const { toast } = useToast();
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [statusFilter, setStatusFilter] = useState("All");
   const [priorityFilter, setPriorityFilter] = useState("All");
@@ -165,6 +167,7 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
 
   const [dragId, setDragId] = useState<number | null>(null);
   const [dropTargetId, setDropTargetId] = useState<number | null>(null);
+  const [showRenumberPrompt, setShowRenumberPrompt] = useState(false);
   const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { data: tasks = [], isLoading } = useQuery<any[]>({
@@ -251,10 +254,25 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
     mutationFn: async ({ operation, data }: { operation: string; data: any }) => {
       await apiRequest("POST", "/api/project-plan/structure", { operation, projectName, data });
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: ["planning-tasks", projectName] });
       qc.invalidateQueries({ queryKey: ["/api/projects-summary"] });
       setSelectedIds(new Set());
+      if (["setParent", "convertToMilestone", "createMilestone", "removeMilestone", "deleteMilestone"].includes(variables.operation)) {
+        setShowRenumberPrompt(true);
+      }
+    },
+  });
+
+  const renumberMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", "/api/project-plan/structure", { operation: "renumber", projectName, data: {} });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["planning-tasks", projectName] });
+      qc.invalidateQueries({ queryKey: ["/api/projects-summary"] });
+      setShowRenumberPrompt(false);
+      toast({ title: "Numbering updated", description: "Task numbers now reflect the current structure." });
     },
   });
 
@@ -312,6 +330,7 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
       setSelectedIds(new Set());
       setGroupDialogOpen(false);
       setGroupNewMilestoneTitle("");
+      setShowRenumberPrompt(true);
     },
   });
 
@@ -432,15 +451,16 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
 
       const targetIsParent = targetTask.isParent || targetTask.isMilestone || targetTask.isVirtualMilestone || targetTask.childCount > 0;
       if (targetIsParent && targetTask.rowNumber != null) {
-        structureMutation.mutate({
-          operation: "setParent",
-          data: { taskRowNumbers: dragRowNumbers, parentRowNumber: targetTask.rowNumber },
-        });
+        structureMutation.mutate(
+          { operation: "setParent", data: { taskRowNumbers: dragRowNumbers, parentRowNumber: targetTask.rowNumber } },
+          { onSuccess: () => toast({ title: "Tasks grouped", description: `${dragRowNumbers.length} task(s) added under "${targetTask.title || "milestone"}"` }) }
+        );
       } else {
         const allRowNumbers = [...dragRowNumbers, targetTask.rowNumber].filter((rn: any) => rn != null);
         if (allRowNumbers.length < 2) return;
         structureMutation.mutate(
-          { operation: "convertToMilestone", data: { milestoneRowNumber: targetTask.rowNumber, subtaskRowNumbers: dragRowNumbers } }
+          { operation: "convertToMilestone", data: { milestoneRowNumber: targetTask.rowNumber, subtaskRowNumbers: dragRowNumbers } },
+          { onSuccess: () => toast({ title: "Milestone created", description: `"${targetTask.title || "Task"}" is now a milestone with ${dragRowNumbers.length} subtask(s)` }) }
         );
       }
       setSelectedIds(new Set());
@@ -927,6 +947,30 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
             onClick={() => setMilestoneDialogOpen(true)}>
             <Milestone className="h-3.5 w-3.5" /> Create Milestone
           </Button>
+          <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" data-testid="button-renumber"
+            onClick={() => renumberMutation.mutate()}
+            disabled={renumberMutation.isPending}>
+            {renumberMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Hash className="h-3.5 w-3.5" />}
+            Refresh Numbering
+          </Button>
+        </div>
+      )}
+
+      {showRenumberPrompt && isAdmin && (
+        <div data-testid="renumber-prompt" className="flex items-center gap-3 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-sm animate-slide-up-fade">
+          <RefreshCw className="h-4 w-4 text-amber-600 shrink-0" />
+          <span className="text-amber-800 font-medium flex-1">
+            Structure changed — task numbering may be out of date.
+          </span>
+          <Button size="sm" className="h-7 text-xs gap-1 bg-amber-600 hover:bg-amber-700" data-testid="button-renumber-now"
+            onClick={() => renumberMutation.mutate()}
+            disabled={renumberMutation.isPending}>
+            {renumberMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Hash className="h-3 w-3" />}
+            Update Numbers
+          </Button>
+          <button className="text-amber-400 hover:text-amber-600" onClick={() => setShowRenumberPrompt(false)}>
+            <X className="h-4 w-4" />
+          </button>
         </div>
       )}
 
