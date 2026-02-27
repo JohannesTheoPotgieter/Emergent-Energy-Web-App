@@ -10,9 +10,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation, useRoute } from "wouter";
+import { Progress } from "@/components/ui/progress";
 import {
   Loader2, ArrowLeft, Building2, FolderKanban, FileEdit, ExternalLink,
   CheckCircle2, Clock, AlertTriangle, Activity, ListTodo, Pencil, Save, X,
+  CircleDot, Circle, PauseCircle, ArrowUpRight,
 } from "lucide-react";
 
 function pdFetch(url: string, opts?: RequestInit) {
@@ -225,57 +227,12 @@ export default function PdTicketDetailPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base flex items-center justify-between">
-            <span className="flex items-center gap-2">
-              <ListTodo className="h-4 w-4" />
-              Spawned Tasks
-              <Badge variant="secondary" className="text-[10px]">{tasks.length}</Badge>
-            </span>
-            {tasks.length === 0 && t.projectId && !t.tasksSpawnedAt && (
-              <Button size="sm" variant="outline" onClick={() => spawnMutation.mutate()} disabled={spawnMutation.isPending} data-testid="btn-spawn-tasks">
-                {spawnMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
-                Spawn Tasks
-              </Button>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {tasks.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">
-              {t.tasksSpawnedAt ? "No tasks found (they may have been deleted)" : t.projectId ? "Tasks not yet spawned" : "Link a project to spawn tasks"}
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[600px]">
-                <thead>
-                  <tr className="text-[10px] text-muted-foreground border-b">
-                    <th className="text-left p-2">Task</th>
-                    <th className="text-left p-2">Status</th>
-                    <th className="text-left p-2">Priority</th>
-                    <th className="text-left p-2">Assignees</th>
-                    <th className="text-left p-2">Due Date</th>
-                    <th className="text-left p-2">Updated</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {tasks.map((task: any) => (
-                    <tr key={task.id} className="border-b hover:bg-muted/10 transition-colors" data-testid={`spawned-task-${task.id}`}>
-                      <td className="p-2 font-medium">{task.title}</td>
-                      <td className="p-2"><Badge className={`text-[10px] ${taskStatusColor(task.status)}`}>{task.status}</Badge></td>
-                      <td className="p-2"><Badge variant="outline" className="text-[10px]">{task.priority}</Badge></td>
-                      <td className="p-2 text-xs text-muted-foreground">{(task.assignees || []).join(", ") || "—"}</td>
-                      <td className="p-2 text-xs text-muted-foreground">{task.dueDate || "—"}</td>
-                      <td className="p-2 text-xs text-muted-foreground">{new Date(task.updatedAt).toLocaleDateString()}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <SpawnedTasksCard
+        tasks={tasks}
+        ticket={t}
+        spawnMutation={spawnMutation}
+        navigate={navigate}
+      />
 
       {activity.length > 0 && (
         <Card>
@@ -309,6 +266,171 @@ export default function PdTicketDetailPage() {
         </Card>
       )}
     </div>
+  );
+}
+
+function SpawnedTasksCard({ tasks, ticket, spawnMutation, navigate }: {
+  tasks: any[];
+  ticket: any;
+  spawnMutation: any;
+  navigate: (path: string) => void;
+}) {
+  const completed = tasks.filter((t: any) => t.status === "COMPLETE").length;
+  const inProgress = tasks.filter((t: any) => t.status === "IN PROGRESS").length;
+  const hold = tasks.filter((t: any) => t.status === "HOLD").length;
+  const todo = tasks.filter((t: any) => t.status === "TO DO").length;
+  const other = tasks.length - completed - inProgress - hold - todo;
+  const pct = tasks.length > 0 ? Math.round((completed / tasks.length) * 100) : 0;
+
+  const todayStr = new Date().toISOString().split("T")[0];
+  const overdueTasks = tasks.filter((t: any) => t.dueDate && t.dueDate < todayStr && t.status !== "COMPLETE");
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base flex items-center justify-between">
+          <span className="flex items-center gap-2">
+            <ListTodo className="h-4 w-4" />
+            Engineering Tasks
+            <Badge variant="secondary" className="text-[10px]">{tasks.length}</Badge>
+          </span>
+          {tasks.length === 0 && ticket.projectId && !ticket.tasksSpawnedAt && (
+            <Button size="sm" variant="outline" onClick={() => spawnMutation.mutate()} disabled={spawnMutation.isPending} data-testid="btn-spawn-tasks">
+              {spawnMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+              Spawn Tasks
+            </Button>
+          )}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {tasks.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-4 text-center">
+            {ticket.tasksSpawnedAt ? "No tasks found (they may have been deleted)" : ticket.projectId ? "Tasks not yet spawned — click Spawn Tasks to create them" : "Link a project first, then spawn tasks"}
+          </p>
+        ) : (
+          <>
+            <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-muted-foreground">Overall Progress</span>
+                <span className="text-sm font-bold" data-testid="task-progress-pct">{pct}%</span>
+              </div>
+              <Progress value={pct} className="h-2.5" />
+              <div className="flex flex-wrap items-center gap-3 text-[11px]">
+                <span className="flex items-center gap-1">
+                  <CheckCircle2 className="h-3 w-3 text-green-600" />
+                  <strong>{completed}</strong> Complete
+                </span>
+                <span className="flex items-center gap-1">
+                  <CircleDot className="h-3 w-3 text-blue-500" />
+                  <strong>{inProgress}</strong> In Progress
+                </span>
+                <span className="flex items-center gap-1">
+                  <PauseCircle className="h-3 w-3 text-orange-500" />
+                  <strong>{hold}</strong> On Hold
+                </span>
+                <span className="flex items-center gap-1">
+                  <Circle className="h-3 w-3 text-gray-400" />
+                  <strong>{todo}</strong> To Do
+                </span>
+                {other > 0 && (
+                  <span className="flex items-center gap-1">
+                    <Circle className="h-3 w-3 text-purple-400" />
+                    <strong>{other}</strong> Other
+                  </span>
+                )}
+                {overdueTasks.length > 0 && (
+                  <span className="flex items-center gap-1 text-red-600 font-semibold">
+                    <AlertTriangle className="h-3 w-3" />
+                    {overdueTasks.length} Overdue
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[700px]">
+                <thead>
+                  <tr className="text-[10px] text-muted-foreground border-b bg-muted/30">
+                    <th className="text-left p-2 pl-3">Task</th>
+                    <th className="text-left p-2">Status</th>
+                    <th className="text-left p-2">Priority</th>
+                    <th className="text-left p-2">Assignees</th>
+                    <th className="text-left p-2">Due Date</th>
+                    <th className="text-left p-2">% Done</th>
+                    <th className="text-left p-2">Updated</th>
+                    <th className="text-left p-2 w-8"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tasks.map((task: any) => {
+                    const taskOverdue = task.dueDate && task.dueDate < todayStr && task.status !== "COMPLETE";
+                    return (
+                      <tr
+                        key={task.id}
+                        className={`border-b hover:bg-muted/20 cursor-pointer transition-colors ${taskOverdue ? "bg-red-50/40 dark:bg-red-950/10" : ""}`}
+                        onClick={() => navigate(`/engineering/tasks?taskId=${task.id}`)}
+                        data-testid={`spawned-task-${task.id}`}
+                      >
+                        <td className="p-2 pl-3">
+                          <div className="flex items-center gap-1.5">
+                            {task.status === "COMPLETE" ? (
+                              <CheckCircle2 className="h-3.5 w-3.5 text-green-600 shrink-0" />
+                            ) : task.status === "IN PROGRESS" ? (
+                              <CircleDot className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+                            ) : task.status === "HOLD" ? (
+                              <PauseCircle className="h-3.5 w-3.5 text-orange-500 shrink-0" />
+                            ) : (
+                              <Circle className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                            )}
+                            <span className={`font-medium text-sm ${task.status === "COMPLETE" ? "line-through text-muted-foreground" : ""}`}>
+                              {task.title.replace(/^\[PD\]\s*/, "")}
+                            </span>
+                          </div>
+                          {task.holdReason && (
+                            <p className="text-[10px] text-orange-600 mt-0.5 ml-5 truncate max-w-[300px]">
+                              {task.blockedType && <span className={`px-1 py-0 rounded font-semibold mr-0.5 ${task.blockedType === "External" ? "bg-orange-100 text-orange-700" : "bg-purple-100 text-purple-700"}`}>{task.blockedType}</span>}
+                              {task.holdReason}
+                            </p>
+                          )}
+                        </td>
+                        <td className="p-2"><Badge className={`text-[10px] ${taskStatusColor(task.status)}`}>{task.status}</Badge></td>
+                        <td className="p-2"><Badge variant="outline" className="text-[10px]">{task.priority}</Badge></td>
+                        <td className="p-2 text-xs text-muted-foreground">{(task.assignees || []).join(", ") || "—"}</td>
+                        <td className={`p-2 text-xs ${taskOverdue ? "text-red-600 font-semibold" : "text-muted-foreground"}`}>
+                          {task.dueDate || "—"}
+                          {taskOverdue && <AlertTriangle className="h-3 w-3 inline ml-1 text-red-500" />}
+                        </td>
+                        <td className="p-2">
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-12 h-1.5 rounded-full bg-muted overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all ${(task.percentComplete || 0) >= 100 ? "bg-green-500" : (task.percentComplete || 0) > 0 ? "bg-blue-500" : "bg-gray-300"}`}
+                                style={{ width: `${Math.min(task.percentComplete || 0, 100)}%` }}
+                              />
+                            </div>
+                            <span className="text-[10px] text-muted-foreground w-7 text-right">{task.percentComplete || 0}%</span>
+                          </div>
+                        </td>
+                        <td className="p-2 text-xs text-muted-foreground">{new Date(task.updatedAt).toLocaleDateString()}</td>
+                        <td className="p-2">
+                          <ArrowUpRight className="h-3.5 w-3.5 text-muted-foreground" />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {ticket.tasksSpawnedAt && (
+              <p className="text-[10px] text-muted-foreground text-right">
+                Tasks spawned on {new Date(ticket.tasksSpawnedAt).toLocaleDateString()}
+              </p>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
