@@ -20,9 +20,10 @@ import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, Plus, Trash2, DollarSign, TrendingUp, TrendingDown, Users,
   ShieldCheck, Wrench, Zap, AlertTriangle, ChevronRight, Edit, Calendar,
-  Briefcase, Search, ArrowRightLeft, CheckCircle2,
+  Briefcase, Search, ArrowRightLeft, CheckCircle2, Flag,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { format } from "date-fns";
 
 export default function PortfolioDetailPage() {
   const [, params] = useRoute("/portfolios/:id");
@@ -56,6 +57,12 @@ export default function PortfolioDetailPage() {
     queryKey: ["/api/portfolios", portfolioId, "available-projects"],
     queryFn: () => fetch(`/api/portfolios/${portfolioId}/available-projects`, { credentials: "include" }).then(r => r.json()),
     enabled: assignOpen,
+  });
+
+  const { data: allProjectsSummary = [] } = useQuery<any[]>({
+    queryKey: ["/api/projects-summary"],
+    queryFn: () => fetch("/api/projects-summary", { credentials: "include" }).then(r => r.json()),
+    enabled: !!portfolioId,
   });
 
   const updateMutation = useMutation({
@@ -152,6 +159,47 @@ export default function PortfolioDetailPage() {
     if (Math.abs(v) >= 1e3) return `R ${(v / 1e3).toFixed(0)}K`;
     return `R ${v.toFixed(0)}`;
   };
+
+  const portfolioProjectNames = useMemo(() => {
+    const names = new Set((portfolio?.projects || []).map((p: any) => p.projectName));
+    return names;
+  }, [portfolio]);
+
+  const portfolioProjectsSummary = useMemo(() => {
+    if (!allProjectsSummary.length || !portfolioProjectNames.size) return [];
+    return allProjectsSummary.filter((p: any) => portfolioProjectNames.has(p.project_name));
+  }, [allProjectsSummary, portfolioProjectNames]);
+
+  const formatDate = (d: string | null) => {
+    if (!d) return "—";
+    try { return format(new Date(d), "dd MMM yy"); } catch { return d; }
+  };
+  const formatPct = (v: number | null) => {
+    if (v == null) return "—";
+    return `${(v * 100).toFixed(1)}%`;
+  };
+  const phaseConfig = (phase: string | null) => {
+    const p = (phase || "").toLowerCase();
+    if (p.includes("construction") && !p.includes("close")) return { bg: "bg-blue-50", text: "text-blue-700", border: "border-blue-200", dot: "bg-blue-500" };
+    if (p.includes("qa") || p.includes("quality")) return { bg: "bg-purple-50", text: "text-purple-700", border: "border-purple-200", dot: "bg-purple-500" };
+    if (p.includes("handover")) return { bg: "bg-green-50", text: "text-green-700", border: "border-green-200", dot: "bg-green-500" };
+    if (p.includes("dlp")) return { bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-200", dot: "bg-amber-500" };
+    if (p.includes("commercial")) return { bg: "bg-teal-50", text: "text-teal-700", border: "border-teal-200", dot: "bg-teal-500" };
+    if (p.includes("financial")) return { bg: "bg-indigo-50", text: "text-indigo-700", border: "border-indigo-200", dot: "bg-indigo-500" };
+    if (p.includes("hold")) return { bg: "bg-slate-50", text: "text-slate-600", border: "border-slate-200", dot: "bg-slate-400" };
+    return { bg: "bg-gray-50", text: "text-gray-700", border: "border-gray-200", dot: "bg-gray-500" };
+  };
+  const deltaColor = (val: number) => {
+    if (val <= -10) return { text: "text-red-700", bg: "bg-red-50" };
+    if (val < -5) return { text: "text-orange-600", bg: "bg-orange-50" };
+    if (val < 0) return { text: "text-amber-600", bg: "bg-amber-50" };
+    return { text: "text-emerald-600", bg: "bg-emerald-50" };
+  };
+  const truncateName = (name: string | null, max: number) => {
+    if (!name) return "—";
+    return name.length > max ? name.slice(0, max) + "…" : name;
+  };
+  const cleanName = (name: string) => name.replace(/_Tracker.*$/i, "").replace(/_/g, " ");
 
   const filteredAvailable = useMemo(() => {
     if (!availableProjects) return [];
@@ -255,52 +303,112 @@ export default function PortfolioDetailPage() {
               </CardContent>
             </Card>
           ) : (
-            <div className="border rounded-lg overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Project</TableHead>
-                    <TableHead>Phase</TableHead>
-                    <TableHead>PM</TableHead>
-                    <TableHead className="text-right">Size (kWp)</TableHead>
-                    <TableHead className="text-right">Act%</TableHead>
-                    <TableHead className="text-right">Exp%</TableHead>
-                    <TableHead></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(rollups?.projects || projects).map((p: any) => {
-                    const delta = (p.actualPct || 0) - (p.expectedPct || 0);
+            <div className="border rounded-lg overflow-x-auto">
+              <table className="w-full text-[11px]">
+                <thead>
+                  <tr className="border-b bg-slate-50/80">
+                    <th className="text-left px-2 py-2 font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap sticky left-0 bg-slate-50/80 z-10 min-w-[140px]">Project</th>
+                    <th className="text-left px-2 py-2 font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Phase</th>
+                    <th className="text-left px-2 py-2 font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">PM</th>
+                    <th className="text-left px-2 py-2 font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">PD</th>
+                    <th className="text-right px-2 py-2 font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">kWp</th>
+                    <th className="text-left px-2 py-2 font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">C.Start</th>
+                    <th className="text-left px-2 py-2 font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Comm.</th>
+                    <th className="text-left px-2 py-2 font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Client</th>
+                    <th className="text-right px-2 py-2 font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Days</th>
+                    <th className="text-right px-2 py-2 font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Act%</th>
+                    <th className="text-right px-2 py-2 font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Exp%</th>
+                    <th className="text-right px-2 py-2 font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Delta</th>
+                    <th className="text-right px-2 py-2 font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Revenue</th>
+                    <th className="text-right px-2 py-2 font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Expenses</th>
+                    <th className="text-right px-2 py-2 font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">GP%</th>
+                    <th className="px-2 py-2 w-8"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(portfolioProjectsSummary.length > 0 ? portfolioProjectsSummary : (rollups?.projects || projects)).map((p: any) => {
+                    const isSummaryRow = !!p.project_name;
+                    const name = isSummaryRow ? p.project_name : p.projectName;
+                    const phase = p.phase;
+                    const pm = p.pm;
+                    const pd = isSummaryRow ? p.pd : p.pd;
+                    const sizeKwp = isSummaryRow ? p.size_kwp : parseFloat(p.sizeKwp || "0");
+                    const constructionStart = isSummaryRow ? p.construction_start_date : null;
+                    const commDate = isSummaryRow ? p.commissioning_date : null;
+                    const clientDate = isSummaryRow ? p.client_handover_date : null;
+                    const duration = isSummaryRow ? p.duration : null;
+                    const actPct = isSummaryRow ? (p.project_pct_complete != null ? p.project_pct_complete * 100 : 0) : (p.actualPct || 0);
+                    const expPct = isSummaryRow ? (p.expected_pct_complete != null ? p.expected_pct_complete * 100 : 0) : (p.expectedPct || 0);
+                    const deltaVal = isSummaryRow ? (p.delta_vs_expected != null ? p.delta_vs_expected * 100 : 0) : ((p.actualPct || 0) - (p.expectedPct || 0));
+                    const revenue = isSummaryRow ? p.actual_revenue : p.actualRevenue;
+                    const expenses = isSummaryRow ? p.actual_expenses : p.actualExpenses;
+                    const gpPct = isSummaryRow ? (p.gp_percent != null ? p.gp_percent * 100 : null) : null;
+                    const projectId = isSummaryRow ? p.project_info_id : p.id;
+                    const phaseCfg = phaseConfig(phase);
+                    const dColor = deltaColor(deltaVal);
+                    const DeltaIcon = deltaVal >= 0 ? TrendingUp : TrendingDown;
+                    const fmtMoney = (v: number | null) => {
+                      if (v == null || v === 0) return <span className="text-slate-400">—</span>;
+                      return <span className="font-mono text-slate-700">R{v.toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>;
+                    };
+
                     return (
-                      <TableRow key={p.id} className="cursor-pointer hover:bg-muted/50" data-testid={`row-project-${p.id}`}>
-                        <TableCell>
-                          <Link href={`/project/${encodeURIComponent(p.projectName)}`}>
-                            <span className="font-medium text-primary hover:underline">{p.projectName}</span>
+                      <tr key={projectId || name} className="border-b hover:bg-slate-50/50 transition-colors" data-testid={`row-project-${projectId}`}>
+                        <td className="px-2 py-2 sticky left-0 bg-white z-10">
+                          <Link href={`/project/${encodeURIComponent(name)}`}>
+                            <span className="font-semibold text-blue-700 hover:text-blue-900 hover:underline truncate max-w-[140px] block" title={cleanName(name)} data-testid={`link-project-${name}`}>
+                              {cleanName(name)}
+                            </span>
                           </Link>
-                        </TableCell>
-                        <TableCell><Badge variant="outline" className="text-xs">{p.phase || "—"}</Badge></TableCell>
-                        <TableCell className="text-sm">{p.pm || "—"}</TableCell>
-                        <TableCell className="text-right text-sm">{parseFloat(p.sizeKwp || "0").toFixed(0)}</TableCell>
-                        <TableCell className="text-right">
-                          <span className={`text-sm font-medium ${delta < -5 ? "text-red-600" : "text-emerald-600"}`}>
-                            {(p.actualPct || 0).toFixed(1)}%
+                        </td>
+                        <td className="px-2 py-2">
+                          <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${phaseCfg.bg} ${phaseCfg.text} ${phaseCfg.border}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${phaseCfg.dot}`} />
+                            {phase || "—"}
                           </span>
-                        </TableCell>
-                        <TableCell className="text-right text-sm text-muted-foreground">
-                          {(p.expectedPct || 0).toFixed(1)}%
-                        </TableCell>
-                        <TableCell className="text-right">
+                        </td>
+                        <td className="px-2 py-2 text-slate-600 whitespace-nowrap" title={pm || ""}>{truncateName(pm, 14)}</td>
+                        <td className="px-2 py-2 text-slate-600 whitespace-nowrap" title={pd || ""}>{truncateName(pd, 12)}</td>
+                        <td className="px-2 py-2 text-right font-mono text-slate-700">{sizeKwp ? sizeKwp.toFixed(0) : "—"}</td>
+                        <td className="px-2 py-2 text-slate-600 whitespace-nowrap">{formatDate(constructionStart)}</td>
+                        <td className="px-2 py-2 text-slate-600 whitespace-nowrap">{formatDate(commDate)}</td>
+                        <td className="px-2 py-2 text-slate-600 whitespace-nowrap">{formatDate(clientDate)}</td>
+                        <td className="px-2 py-2 text-right font-mono text-slate-600">{duration != null ? duration : "—"}</td>
+                        <td className="px-2 py-2 text-right">
+                          <span className={`font-mono font-semibold ${deltaVal < -5 ? "text-red-600" : "text-emerald-600"}`}>
+                            {actPct.toFixed(1)}%
+                          </span>
+                        </td>
+                        <td className="px-2 py-2 text-right font-mono text-slate-600">{expPct.toFixed(1)}%</td>
+                        <td className="px-2 py-2 text-right">
+                          {deltaVal !== 0 ? (
+                            <span className={`inline-flex items-center gap-0.5 font-mono font-semibold px-1 py-0.5 rounded-md ${dColor.text} ${dColor.bg}`}>
+                              <DeltaIcon className="w-3 h-3" />
+                              {deltaVal >= 0 ? "+" : ""}{deltaVal.toFixed(1)}%
+                            </span>
+                          ) : <span className="text-slate-400">—</span>}
+                        </td>
+                        <td className="px-2 py-2 text-right">{fmtMoney(revenue)}</td>
+                        <td className="px-2 py-2 text-right">{fmtMoney(expenses)}</td>
+                        <td className="px-2 py-2 text-right">
+                          {gpPct != null ? (
+                            <span className={`font-mono font-semibold ${gpPct >= 20 ? "text-emerald-600" : gpPct >= 0 ? "text-amber-600" : "text-red-600"}`}>
+                              {gpPct.toFixed(1)}%
+                            </span>
+                          ) : <span className="text-slate-400">—</span>}
+                        </td>
+                        <td className="px-2 py-2 text-right">
                           <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-red-600"
-                            onClick={e => { e.stopPropagation(); removeMutation.mutate(p.id); }}
-                            data-testid={`button-remove-project-${p.id}`}>
+                            onClick={e => { e.stopPropagation(); if (projectId) removeMutation.mutate(projectId); }}
+                            data-testid={`button-remove-project-${projectId}`}>
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
-                        </TableCell>
-                      </TableRow>
+                        </td>
+                      </tr>
                     );
                   })}
-                </TableBody>
-              </Table>
+                </tbody>
+              </table>
             </div>
           )}
         </TabsContent>
