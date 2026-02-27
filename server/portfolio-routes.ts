@@ -4,9 +4,50 @@ import { eq, sql, and, inArray, desc } from "drizzle-orm";
 import { verifyToken } from "./jwt";
 import {
   portfolios, portfolioRolloutPlans, portfolioRolloutPhases,
-  projectPortfolioAssignments, projectInfo, derivedProjectKpis, users,
+  projectPortfolioAssignments, projectInfo, users,
   qcChecklist, qcItemInstance, programExpense, programInflows, projectPlan,
 } from "@shared/schema";
+
+function computeProjectCompletion(plans: any[]): { actualPct: number; expectedPct: number; delta: number } {
+  const todayStr = new Date().toISOString().split("T")[0];
+  const validPlans = plans.filter((p: any) => {
+    const act = p.actualPctComplete ?? p.percentComplete;
+    return act != null;
+  });
+  if (validPlans.length === 0) return { actualPct: 0, expectedPct: 0, delta: 0 };
+
+  let totalWeight = 0, weightedActual = 0, weightedExpected = 0;
+  for (const p of validPlans) {
+    const dur = (p.durationDays && p.durationDays > 0) ? p.durationDays : 1;
+    const act = p.actualPctComplete ?? p.percentComplete ?? 0;
+    weightedActual += (parseFloat(act) || 0) * dur;
+    let exp = p.expectedPctComplete ?? p.expectedProgress ?? null;
+    if (exp == null) {
+      const tStart = p.actualStart?.substring(0, 10);
+      const tEnd = p.actualEnd?.substring(0, 10);
+      if (tStart && tEnd && /^\d{4}-\d{2}-\d{2}/.test(tStart) && /^\d{4}-\d{2}-\d{2}/.test(tEnd)) {
+        if (todayStr >= tEnd) exp = 1.0;
+        else if (todayStr <= tStart) exp = 0.0;
+        else {
+          const totalDays = Math.max(1, (new Date(tEnd).getTime() - new Date(tStart).getTime()) / 86400000);
+          const elapsedDays = (new Date(todayStr).getTime() - new Date(tStart).getTime()) / 86400000;
+          exp = Math.min(elapsedDays / totalDays, 1.0);
+        }
+      } else {
+        exp = 0;
+      }
+    }
+    weightedExpected += (parseFloat(exp) || 0) * dur;
+    totalWeight += dur;
+  }
+
+  if (totalWeight === 0) return { actualPct: 0, expectedPct: 0, delta: 0 };
+  const rawActual = weightedActual / totalWeight;
+  const rawExpected = weightedExpected / totalWeight;
+  const actualPct = rawActual <= 1.0 ? Math.round(rawActual * 1000) / 10 : Math.round(rawActual * 10) / 10;
+  const expectedPct = rawExpected <= 1.0 ? Math.round(rawExpected * 1000) / 10 : Math.round(rawExpected * 10) / 10;
+  return { actualPct, expectedPct, delta: Math.round((actualPct - expectedPct) * 10) / 10 };
+}
 
 function jwtAuth(req: Request, _res: Response, next: NextFunction) {
   if ((req as any).user) return next();
@@ -282,19 +323,21 @@ export function registerPortfolioRoutes(app: Express) {
       const projects = await db.select().from(projectInfo).where(inArray(projectInfo.id, projectIds));
       const projectNames = projects.map(p => p.projectName);
 
-      let kpis: any[] = [];
-      if (projectNames.length > 0) {
-        kpis = await db.select().from(derivedProjectKpis).where(inArray(derivedProjectKpis.projectName, projectNames));
-      }
-
-      let kpiPlannedRev = kpis.reduce((s, k) => s + (parseFloat(k.totalPlannedRevenue || "0") || 0), 0);
-      let kpiPlannedExp = kpis.reduce((s, k) => s + (parseFloat(k.totalPlannedExpenses || "0") || 0), 0);
-      let kpiActualRev = kpis.reduce((s, k) => s + (parseFloat(k.revenueRealised || "0") || 0), 0);
-      let kpiActualExp = kpis.reduce((s, k) => s + (parseFloat(k.cosRealised || "0") || 0), 0);
-      let kpiGP = kpis.reduce((s, k) => s + (parseFloat(k.grossProfit || "0") || 0), 0);
-
       const rawExpenses = await db.select().from(programExpense).where(inArray(programExpense.projectName, projectNames));
       const rawInflows = await db.select().from(programInflows).where(inArray(programInflows.projectName, projectNames));
+      const allPlans = await db.select().from(projectPlan).where(inArray(projectPlan.projectName, projectNames));
+
+      const plansByProject = new Map<string, any[]>();
+      for (const p of allPlans) {
+        if (!plansByProject.has(p.projectName)) plansByProject.set(p.projectName, []);
+        plansByProject.get(p.projectName)!.push(p);
+      }
+
+      const completionByProject = new Map<string, { actualPct: number; expectedPct: number; delta: number }>();
+      for (const pn of projectNames) {
+        const projPlans = plansByProject.get(pn) || [];
+        completionByProject.set(pn, computeProjectCompletion(projPlans));
+      }
 
       const rawPlannedRev = rawInflows.reduce((s, r) => s + (parseFloat(String(r.revenueAmount || "0")) || 0), 0);
       const rawPlannedExp = rawExpenses.reduce((s, e) => s + (parseFloat(String(e.budgetTotal || "0")) || 0), 0);
@@ -304,36 +347,31 @@ export function registerPortfolioRoutes(app: Express) {
       for (const pn of projectNames) {
         const projInflows = rawInflows.filter(r => r.projectName === pn);
         const projExpenses = rawExpenses.filter(e => e.projectName === pn);
-        const kpi = kpis.find(k => k.projectName === pn);
         const pRev = projInflows.reduce((s, r) => s + (parseFloat(String(r.revenueAmount || "0")) || 0), 0);
         const pExp = projExpenses.reduce((s, e) => s + (parseFloat(String(e.budgetTotal || "0")) || 0), 0);
-        const aRev = kpi ? (parseFloat(kpi.revenueRealised || "0") || 0) : projInflows.reduce((s, r) => s + (parseFloat(String(r.revenueAmount || "0")) || 0), 0);
+        const aRev = projInflows.reduce((s, r) => s + (parseFloat(String(r.revenueAmount || "0")) || 0), 0);
         const aExp = projExpenses.reduce((s, e) => s + (parseFloat(String(e.actualCosTotal || "0")) || 0), 0);
-        perProjectFinance.set(pn, { plannedRev: pRev || (kpi ? parseFloat(kpi.totalPlannedRevenue || "0") || 0 : 0), actualRev: aRev, plannedExp: pExp || (kpi ? parseFloat(kpi.totalPlannedExpenses || "0") || 0 : 0), actualExp: aExp || (kpi ? parseFloat(kpi.cosRealised || "0") || 0 : 0), gp: aRev - aExp });
+        perProjectFinance.set(pn, { plannedRev: pRev, actualRev: aRev, plannedExp: pExp, actualExp: aExp, gp: aRev - aExp });
       }
 
       const finance = {
-        totalPlannedRevenue: kpiPlannedRev > 0 ? kpiPlannedRev : rawPlannedRev,
-        totalActualRevenue: kpiActualRev > 0 ? kpiActualRev : rawPlannedRev,
-        totalPlannedExpenses: kpiPlannedExp > 0 ? kpiPlannedExp : rawPlannedExp,
-        totalActualExpenses: kpiActualExp > 0 ? kpiActualExp : rawActualExp,
-        grossProfit: kpiGP !== 0 ? kpiGP : ((kpiActualRev > 0 ? kpiActualRev : rawPlannedRev) - (kpiActualExp > 0 ? kpiActualExp : rawActualExp)),
+        totalPlannedRevenue: rawPlannedRev,
+        totalActualRevenue: rawPlannedRev,
+        totalPlannedExpenses: rawPlannedExp,
+        totalActualExpenses: rawActualExp,
+        grossProfit: rawPlannedRev - rawActualExp,
         grossMarginPct: 0,
       };
-      const effectiveRev = finance.totalActualRevenue || finance.totalPlannedRevenue;
-      if (effectiveRev > 0) {
-        finance.grossMarginPct = Math.round((finance.grossProfit / effectiveRev) * 10000) / 100;
+      if (rawPlannedRev > 0) {
+        finance.grossMarginPct = Math.round((finance.grossProfit / rawPlannedRev) * 10000) / 100;
       }
 
-      const scheduleItems = kpis.map(k => ({
-        actualPct: parseFloat(k.avgActualPctComplete || "0") || 0,
-        expectedPct: parseFloat(k.avgExpectedPctComplete || "0") || 0,
-        delta: parseFloat(k.scheduleDelta || "0") || 0,
-      }));
+      const scheduleItems = projectNames.map(pn => completionByProject.get(pn) || { actualPct: 0, expectedPct: 0, delta: 0 });
+      const validSchedule = scheduleItems.filter(s => s.actualPct > 0 || s.expectedPct > 0);
       const schedule = {
-        avgActualPct: scheduleItems.length > 0 ? Math.round(scheduleItems.reduce((s, i) => s + i.actualPct, 0) / scheduleItems.length * 10) / 10 : 0,
-        avgExpectedPct: scheduleItems.length > 0 ? Math.round(scheduleItems.reduce((s, i) => s + i.expectedPct, 0) / scheduleItems.length * 10) / 10 : 0,
-        avgDelta: scheduleItems.length > 0 ? Math.round(scheduleItems.reduce((s, i) => s + i.delta, 0) / scheduleItems.length * 10) / 10 : 0,
+        avgActualPct: validSchedule.length > 0 ? Math.round(validSchedule.reduce((s, i) => s + i.actualPct, 0) / validSchedule.length * 10) / 10 : 0,
+        avgExpectedPct: validSchedule.length > 0 ? Math.round(validSchedule.reduce((s, i) => s + i.expectedPct, 0) / validSchedule.length * 10) / 10 : 0,
+        avgDelta: validSchedule.length > 0 ? Math.round(validSchedule.reduce((s, i) => s + i.delta, 0) / validSchedule.length * 10) / 10 : 0,
         behindCount: scheduleItems.filter(i => i.delta < -5).length,
         onTrackCount: scheduleItems.filter(i => i.delta >= -5).length,
         atRiskCount: scheduleItems.filter(i => i.delta < -10).length,
@@ -371,7 +409,7 @@ export function registerPortfolioRoutes(app: Express) {
       } catch (e) {}
 
       const projectDetails = projects.map(p => {
-        const kpi = kpis.find(k => k.projectName === p.projectName);
+        const comp = completionByProject.get(p.projectName) || { actualPct: 0, expectedPct: 0, delta: 0 };
         const rawFin = perProjectFinance.get(p.projectName);
         return {
           id: p.id,
@@ -381,15 +419,15 @@ export function registerPortfolioRoutes(app: Express) {
           pm: p.pm,
           pd: p.pd,
           isActive: p.isActive,
-          ragStatus: kpi?.ragStatus || null,
-          actualPct: kpi ? parseFloat(kpi.avgActualPctComplete || "0") || 0 : 0,
-          expectedPct: kpi ? parseFloat(kpi.avgExpectedPctComplete || "0") || 0 : 0,
-          delta: kpi ? parseFloat(kpi.scheduleDelta || "0") || 0 : 0,
-          plannedRevenue: rawFin?.plannedRev || (kpi ? parseFloat(kpi.totalPlannedRevenue || "0") || 0 : 0),
-          actualRevenue: rawFin?.actualRev || (kpi ? parseFloat(kpi.revenueRealised || "0") || 0 : 0),
-          plannedExpenses: rawFin?.plannedExp || (kpi ? parseFloat(kpi.totalPlannedExpenses || "0") || 0 : 0),
-          actualExpenses: rawFin?.actualExp || (kpi ? parseFloat(kpi.cosRealised || "0") || 0 : 0),
-          grossProfit: rawFin?.gp ?? (kpi ? parseFloat(kpi.grossProfit || "0") || 0 : 0),
+          ragStatus: comp.delta < -10 ? "RED" : comp.delta < -5 ? "AMBER" : "GREEN",
+          actualPct: comp.actualPct,
+          expectedPct: comp.expectedPct,
+          delta: comp.delta,
+          plannedRevenue: rawFin?.plannedRev || 0,
+          actualRevenue: rawFin?.actualRev || 0,
+          plannedExpenses: rawFin?.plannedExp || 0,
+          actualExpenses: rawFin?.actualExp || 0,
+          grossProfit: rawFin?.gp || 0,
         };
       });
 
@@ -519,19 +557,20 @@ export function registerPortfolioRoutes(app: Express) {
       const allPortfolios = await db.select().from(portfolios).orderBy(desc(portfolios.createdAt));
       const assignments = await db.select().from(projectPortfolioAssignments);
       const allProjects = await db.select().from(projectInfo);
-      const kpis = await db.select().from(derivedProjectKpis);
 
       const ownerIds = allPortfolios.map(p => p.ownerUserId).filter(Boolean) as number[];
       const allUsers = ownerIds.length > 0 ? await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, ownerIds)) : [];
       const userMap = new Map(allUsers.map(u => [u.id, u.name]));
 
       const projectMap = new Map(allProjects.map(p => [p.id, p]));
-      const kpiMap = new Map(kpis.map(k => [k.projectName, k]));
 
       const allExpenses = await db.select().from(programExpense);
       const allInflows = await db.select().from(programInflows);
+      const allPlanTasks = await db.select().from(projectPlan);
+
       const expenseByProject = new Map<string, any[]>();
       const inflowByProject = new Map<string, any[]>();
+      const plansByProject = new Map<string, any[]>();
       for (const e of allExpenses) {
         if (!expenseByProject.has(e.projectName)) expenseByProject.set(e.projectName, []);
         expenseByProject.get(e.projectName)!.push(e);
@@ -539,6 +578,15 @@ export function registerPortfolioRoutes(app: Express) {
       for (const r of allInflows) {
         if (!inflowByProject.has(r.projectName)) inflowByProject.set(r.projectName, []);
         inflowByProject.get(r.projectName)!.push(r);
+      }
+      for (const p of allPlanTasks) {
+        if (!plansByProject.has(p.projectName)) plansByProject.set(p.projectName, []);
+        plansByProject.get(p.projectName)!.push(p);
+      }
+
+      const completionCache = new Map<string, { actualPct: number; expectedPct: number; delta: number }>();
+      for (const [pn, plans] of plansByProject.entries()) {
+        completionCache.set(pn, computeProjectCompletion(plans));
       }
 
       let engStageRows: any[] = [];
@@ -560,13 +608,14 @@ export function registerPortfolioRoutes(app: Express) {
       const result = allPortfolios.map(portfolio => {
         const portfolioAssignments = assignments.filter(a => a.portfolioId === portfolio.id);
         const portfolioProjects = portfolioAssignments.map(a => projectMap.get(a.projectId)).filter(Boolean) as any[];
-        const portfolioKpis = portfolioProjects.map(p => kpiMap.get(p.projectName)).filter(Boolean) as any[];
         const portfolioProjectIds = portfolioProjects.map(p => p.id);
         const portfolioProjectNames = portfolioProjects.map(p => p.projectName);
 
         const totalKwp = portfolioProjects.reduce((s, p) => s + (parseFloat(String(p.sizeKwp || "0")) || 0), 0);
 
-        const scheduleDeltas = portfolioKpis.map(k => parseFloat(k.scheduleDelta || "0") || 0);
+        const projectCompletions = portfolioProjects.map(p => completionCache.get(p.projectName) || { actualPct: 0, expectedPct: 0, delta: 0 });
+        const validCompletions = projectCompletions.filter(c => c.actualPct > 0 || c.expectedPct > 0);
+        const scheduleDeltas = projectCompletions.map(c => c.delta);
         const hasBehind = scheduleDeltas.some(d => d < -5);
         const hasAtRisk = scheduleDeltas.some(d => d < -10);
 
@@ -575,13 +624,12 @@ export function registerPortfolioRoutes(app: Express) {
         else if (hasBehind) overallHealth = "Behind";
 
         const projectFinanceBreakdown = portfolioProjects.map(proj => {
-          const kpi = kpiMap.get(proj.projectName);
           const expenses = expenseByProject.get(proj.projectName) || [];
           const inflows = inflowByProject.get(proj.projectName) || [];
-          const costedRev = inflows.reduce((s: number, r: any) => s + (parseFloat(String(r.revenueAmount || "0")) || 0), 0) || (kpi ? parseFloat(kpi.totalPlannedRevenue || "0") || 0 : 0);
-          const actualRev = kpi ? (parseFloat(kpi.revenueRealised || "0") || 0) : 0;
-          const costedExp = expenses.reduce((s: number, e: any) => s + (parseFloat(String(e.budgetTotal || "0")) || 0), 0) || (kpi ? parseFloat(kpi.totalPlannedExpenses || "0") || 0 : 0);
-          const actualExp = expenses.reduce((s: number, e: any) => s + (parseFloat(String(e.actualCosTotal || "0")) || 0), 0) || (kpi ? parseFloat(kpi.cosRealised || "0") || 0 : 0);
+          const costedRev = inflows.reduce((s: number, r: any) => s + (parseFloat(String(r.revenueAmount || "0")) || 0), 0);
+          const actualRev = inflows.reduce((s: number, r: any) => s + (parseFloat(String(r.revenueAmount || "0")) || 0), 0);
+          const costedExp = expenses.reduce((s: number, e: any) => s + (parseFloat(String(e.budgetTotal || "0")) || 0), 0);
+          const actualExp = expenses.reduce((s: number, e: any) => s + (parseFloat(String(e.actualCosTotal || "0")) || 0), 0);
           return {
             projectName: proj.projectName,
             costedRevenue: Math.round(costedRev),
@@ -611,12 +659,12 @@ export function registerPortfolioRoutes(app: Express) {
         }
 
         const projectSchedule = portfolioProjects.map(p => {
-          const kpi = kpiMap.get(p.projectName);
+          const comp = completionCache.get(p.projectName) || { actualPct: 0, expectedPct: 0, delta: 0 };
           return {
             projectName: p.projectName,
-            actualPct: kpi ? parseFloat(kpi.avgActualPctComplete || "0") || 0 : 0,
-            expectedPct: kpi ? parseFloat(kpi.avgExpectedPctComplete || "0") || 0 : 0,
-            delta: kpi ? parseFloat(kpi.scheduleDelta || "0") || 0 : 0,
+            actualPct: comp.actualPct,
+            expectedPct: comp.expectedPct,
+            delta: comp.delta,
             phase: p.phase || null,
           };
         });
@@ -682,11 +730,6 @@ export function registerPortfolioRoutes(app: Express) {
         ? await db.select().from(projectPlan).where(inArray(projectPlan.projectName, projectNames))
         : [];
 
-      const kpis = projectNames.length > 0
-        ? await db.select().from(derivedProjectKpis).where(inArray(derivedProjectKpis.projectName, projectNames))
-        : [];
-      const kpiMap = new Map(kpis.map(k => [k.projectName, k]));
-
       const plansByProject = new Map<string, any[]>();
       for (const p of plans) {
         if (!plansByProject.has(p.projectName)) plansByProject.set(p.projectName, []);
@@ -697,7 +740,6 @@ export function registerPortfolioRoutes(app: Express) {
 
       for (const proj of projects) {
         const projPlans = plansByProject.get(proj.projectName) || [];
-        const kpi = kpiMap.get(proj.projectName);
 
         let startDate: string | null = null;
         let endDate: string | null = null;
@@ -731,17 +773,16 @@ export function registerPortfolioRoutes(app: Express) {
         if (!commDate) commDate = (proj as any).commissioningDate || null;
         if (!startDate) continue;
 
-        const actualPct = kpi ? parseFloat(kpi.avgActualPctComplete || "0") || 0 : 0;
-        const expectedPct = kpi ? parseFloat(kpi.avgExpectedPctComplete || "0") || 0 : 0;
+        const comp = computeProjectCompletion(projPlans);
 
         timeline.push({
           projectName: proj.projectName,
           startDate,
           endDate: endDate && endDate >= startDate ? endDate : startDate,
           phase: proj.phase || null,
-          actualPct: Math.round(actualPct * 10) / 10,
-          expectedPct: Math.round(expectedPct * 10) / 10,
-          delta: Math.round((actualPct - expectedPct) * 10) / 10,
+          actualPct: comp.actualPct,
+          expectedPct: comp.expectedPct,
+          delta: comp.delta,
           pm: proj.pm || null,
           sizeKwp: proj.sizeKwp ?? null,
           commissioningDate: commDate && commDate >= '1950-01-01' ? commDate : null,
