@@ -394,12 +394,12 @@ function PermissionsTab({ toast, shared }: { toast: any; shared: ReturnType<type
         <div className="flex-1 min-w-0 space-y-3">
           {currentRole && (
             <>
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     {editingLabel ? (
                       <div className="flex items-center gap-1.5">
-                        <Input value={editLabelValue} onChange={e => setEditLabelValue(e.target.value)} className="h-7 w-48 text-sm" autoFocus onKeyDown={e => { if (e.key === "Enter") handleRename(); if (e.key === "Escape") setEditingLabel(false); }} data-testid="input-rename-role" />
+                        <Input value={editLabelValue} onChange={e => setEditLabelValue(e.target.value)} className="h-7 w-36 sm:w-48 text-sm" autoFocus onKeyDown={e => { if (e.key === "Enter") handleRename(); if (e.key === "Escape") setEditingLabel(false); }} data-testid="input-rename-role" />
                         <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={handleRename}><Check className="h-3 w-3 text-green-600" /></Button>
                         <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => setEditingLabel(false)}><X className="h-3 w-3 text-gray-400" /></Button>
                       </div>
@@ -495,32 +495,30 @@ function PermissionsTab({ toast, shared }: { toast: any; shared: ReturnType<type
                               None
                             </Button>
                           </div>
-                          <table className="w-full text-sm">
-                            <tbody>
-                              {cat.items.map((item, idx) => (
-                                <tr key={item.entity} className={`${idx % 2 === 0 ? "bg-white" : "bg-gray-50/30"} hover:bg-blue-50/30 transition-colors`} data-testid={`entity-row-${selectedRole}-${item.entity}`}>
-                                  <td className="px-4 py-2 text-sm text-gray-700 font-medium w-[240px]">{item.label}</td>
+                          <div className="divide-y">
+                            {cat.items.map((item, idx) => (
+                              <div key={item.entity} className={`flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-0 px-4 py-2.5 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50/30"} hover:bg-blue-50/30 transition-colors`} data-testid={`entity-row-${selectedRole}-${item.entity}`}>
+                                <span className="text-sm text-gray-700 font-medium sm:w-[240px] shrink-0">{item.label}</span>
+                                <div className="flex items-center gap-1 flex-wrap">
                                   {item.actions.map(action => {
                                     const active = getEntityPerm(selectedRole, item.entity, action);
                                     const style = ACTION_STYLE[action];
                                     return (
-                                      <td key={action} className="text-center px-1 py-2 w-[70px]">
-                                        <button
-                                          className={`h-6 px-2.5 rounded-md border text-[10px] font-semibold transition-all inline-flex items-center gap-1 ${active ? `${style.bg} border-transparent text-white` : "bg-white border-gray-200 text-gray-300 hover:border-gray-300"}`}
-                                          onClick={() => toggleEntityPerm(selectedRole, item.entity, action)}
-                                          data-testid={`perm-${selectedRole}-${item.entity}-${action}`}
-                                        >
-                                          {active ? <Check className="h-2.5 w-2.5" /> : <X className="h-2.5 w-2.5" />}
-                                          {style.label}
-                                        </button>
-                                      </td>
+                                      <button
+                                        key={action}
+                                        className={`h-6 px-2.5 rounded-md border text-[10px] font-semibold transition-all inline-flex items-center gap-1 ${active ? `${style.bg} border-transparent text-white` : "bg-white border-gray-200 text-gray-300 hover:border-gray-300"}`}
+                                        onClick={() => toggleEntityPerm(selectedRole, item.entity, action)}
+                                        data-testid={`perm-${selectedRole}-${item.entity}-${action}`}
+                                      >
+                                        {active ? <Check className="h-2.5 w-2.5" /> : <X className="h-2.5 w-2.5" />}
+                                        {style.label}
+                                      </button>
                                     );
                                   })}
-                                  <td />
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       )}
                     </Card>
@@ -530,12 +528,12 @@ function PermissionsTab({ toast, shared }: { toast: any; shared: ReturnType<type
 
               {hasChanges && (
                 <div className="sticky bottom-4 z-10">
-                  <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-3 flex items-center justify-between shadow-lg">
+                  <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 shadow-lg">
                     <div className="flex items-center gap-2">
-                      <AlertTriangle className="h-4 w-4 text-amber-600" />
+                      <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
                       <span className="text-sm font-medium text-amber-800">Unsaved changes for {currentRole.label}</span>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 self-end sm:self-auto">
                       <Button size="sm" variant="ghost" className="text-amber-700 h-8" onClick={() => setPendingChanges(prev => { const n = { ...prev }; delete n[selectedRole]; return n; })} data-testid="btn-discard-bottom">Discard</Button>
                       <Button size="sm" className="bg-green-600 hover:bg-green-700 h-8" onClick={handleSave} disabled={saving} data-testid="btn-save-bottom">
                         {saving ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}Save
@@ -690,23 +688,25 @@ function UsersTab({ toast, shared }: { toast: any; shared: ReturnType<typeof use
                       <span className="text-xs font-bold text-green-700">{user.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()}</span>
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-2">
                         <span className="text-sm font-medium text-gray-800" data-testid={`text-user-name-${user.id}`}>{user.name}</span>
                         <span className="text-xs text-gray-400 truncate">{user.email}</span>
                       </div>
                       <Badge className={`text-[10px] mt-0.5 border ${rc}`} variant="outline" data-testid={`text-user-role-${user.id}`}>{roleLabel}</Badge>
                     </div>
-                    <Select value={user.role} onValueChange={val => changeRole(user.id, val)} disabled={changingId === user.id}>
-                      <SelectTrigger className="w-44 h-7 text-xs" data-testid={`select-role-${user.id}`}><SelectValue /></SelectTrigger>
-                      <SelectContent>{roles.map(r => <SelectItem key={r.role} value={r.role}>{r.label}</SelectItem>)}</SelectContent>
-                    </Select>
-                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => { setResetUser(user); setResetPw(""); }} title="Reset password" data-testid={`btn-reset-password-${user.id}`}>
-                      <KeyRound className="h-3.5 w-3.5 text-blue-500" />
-                    </Button>
-                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => setConfirmDelete(user)} disabled={deletingId === user.id} title="Delete user" data-testid={`btn-delete-user-${user.id}`}>
-                      {deletingId === user.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5 text-red-400" />}
-                    </Button>
-                    {changingId === user.id && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Select value={user.role} onValueChange={val => changeRole(user.id, val)} disabled={changingId === user.id}>
+                        <SelectTrigger className="w-28 sm:w-44 h-7 text-xs" data-testid={`select-role-${user.id}`}><SelectValue /></SelectTrigger>
+                        <SelectContent>{roles.map(r => <SelectItem key={r.role} value={r.role}>{r.label}</SelectItem>)}</SelectContent>
+                      </Select>
+                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => { setResetUser(user); setResetPw(""); }} title="Reset password" data-testid={`btn-reset-password-${user.id}`}>
+                        <KeyRound className="h-3.5 w-3.5 text-blue-500" />
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => setConfirmDelete(user)} disabled={deletingId === user.id} title="Delete user" data-testid={`btn-delete-user-${user.id}`}>
+                        {deletingId === user.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5 text-red-400" />}
+                      </Button>
+                      {changingId === user.id && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+                    </div>
                   </div>
                 );
               })}

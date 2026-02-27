@@ -554,7 +554,7 @@ function InlineTaskRow({ task, onUpdate }: { task: FullTask; onUpdate: (id: numb
               {task.title}
             </span>
             {task.blockedType && (
-              <Badge className={`text-[8px] px-1 py-0 ${task.blockedType === "External" ? "bg-orange-100 text-orange-700" : "bg-purple-100 text-purple-700"}`}>
+              <Badge className={`text-[8px] px-1 py-0 shrink-0 ${task.blockedType === "External" ? "bg-orange-100 text-orange-700" : "bg-purple-100 text-purple-700"}`}>
                 {task.blockedType}
               </Badge>
             )}
@@ -562,12 +562,12 @@ function InlineTaskRow({ task, onUpdate }: { task: FullTask; onUpdate: (id: numb
           <div className="flex items-center gap-2 mt-0.5">
             <span className="text-[10px] text-muted-foreground truncate">{displayProject(task.projectName)}</span>
             {(task.holdReason || task.blockerReason) && (
-              <span className="text-[10px] text-red-500 truncate max-w-[180px]">{task.holdReason || task.blockerReason}</span>
+              <span className="text-[10px] text-red-500 truncate max-w-[120px] sm:max-w-[180px]">{task.holdReason || task.blockerReason}</span>
             )}
           </div>
         </div>
 
-        <div className="flex items-center gap-1 shrink-0">
+        <div className="hidden sm:flex items-center gap-1 shrink-0">
           <Select
             value={task.priority}
             onValueChange={(val) => onUpdate(task.id, { priority: val })}
@@ -635,10 +635,34 @@ function InlineTaskRow({ task, onUpdate }: { task: FullTask; onUpdate: (id: numb
             <ExternalLink className="h-3 w-3" />
           </Button>
         </div>
+
+        <div className="flex sm:hidden items-center gap-1 shrink-0">
+          {task.dueDate && (
+            <span className={`text-[9px] px-1 py-0.5 rounded ${
+              isOverdue ? "text-red-700 bg-red-100 font-bold" :
+              isDueSoon ? "text-amber-700 bg-amber-100 font-semibold" :
+              "text-muted-foreground"
+            }`}>
+              {daysFromNow(task.dueDate)}
+            </span>
+          )}
+          <Badge className={`text-[8px] px-1 py-0 ${statusBadge[task.status] || "bg-gray-100"}`}>
+            {task.status}
+          </Badge>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 w-6 p-0"
+            onClick={(e) => { e.stopPropagation(); setLocation(`/engineering/tasks?taskId=${task.id}`); }}
+            data-testid={`open-detail-mobile-${task.id}`}
+          >
+            <ExternalLink className="h-3 w-3" />
+          </Button>
+        </div>
       </div>
 
       {showNote && (
-        <div className="flex items-center gap-1.5 px-3 pb-2 pl-11">
+        <div className="flex items-center gap-1.5 px-3 pb-2 sm:pl-11">
           <Input
             placeholder="Add a quick note..."
             value={quickNote}

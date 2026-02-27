@@ -2375,7 +2375,7 @@ function MyTasksView({
             </button>
             {!isCollapsed && (
               <div className="px-2 pb-2">
-                <div className="overflow-x-auto">
+                <div className="hidden sm:block overflow-x-auto">
                   <table className="w-full text-sm min-w-[800px]">
                     <thead>
                       <tr className="text-[10px] text-muted-foreground border-b">
@@ -2484,6 +2484,85 @@ function MyTasksView({
                       })}
                     </tbody>
                   </table>
+                </div>
+                <div className="sm:hidden space-y-2">
+                  {bucket.tasks.map(task => {
+                    const projectDisplay = task.projectName?.replace(/_Tracker.*$/i, "").replace(/_/g, " ");
+                    const overdue = isOverdue(task.dueDate, task.status);
+                    return (
+                      <div
+                        key={task.id}
+                        className={`border rounded-lg p-3 bg-card space-y-2 ${overdue ? "border-red-200 bg-red-50/30" : ""}`}
+                        data-testid={`my-task-card-${task.id}`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-sm leading-snug" data-testid={`my-task-title-${task.id}`}>{task.title}</p>
+                            <p className="text-[10px] text-muted-foreground mt-0.5 truncate">{projectDisplay}</p>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 shrink-0"
+                            onClick={() => onCardClick(task)}
+                            data-testid={`my-task-open-${task.id}`}
+                          >
+                            <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
+                          </Button>
+                        </div>
+                        {task.holdReason && (
+                          <div className="text-[10px] text-red-500 flex items-center gap-0.5">
+                            <PauseCircle className="h-3 w-3 shrink-0" />
+                            {task.blockedType && <span className={`px-1 py-0 rounded text-[9px] font-semibold mr-0.5 ${task.blockedType === "External" ? "bg-orange-100 text-orange-700" : "bg-purple-100 text-purple-700"}`}>{task.blockedType}</span>}
+                            <span className="truncate">{task.holdReason}</span>
+                          </div>
+                        )}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <Select value={task.status} onValueChange={v => { if (v !== task.status) onStatusChange(task.id, v); }}>
+                            <SelectTrigger className="h-6 text-[10px] w-auto min-w-0 border-none shadow-none p-0" data-testid={`my-task-status-${task.id}`}>
+                              <Badge className={`text-[10px] ${statusColors[task.status] || "bg-gray-100"}`}>{task.status}</Badge>
+                            </SelectTrigger>
+                            <SelectContent>
+                              {TASK_STATUSES.map(s => <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                          <Select value={task.priority} onValueChange={v => { if (v !== task.priority) onPriorityChange(task.id, v); }}>
+                            <SelectTrigger className="h-6 text-[10px] w-auto min-w-0 border-none shadow-none p-0" data-testid={`my-task-priority-${task.id}`}>
+                              <Badge className={`text-[10px] ${priorityColors[task.priority] || "bg-gray-100"}`}>{task.priority}</Badge>
+                            </SelectTrigger>
+                            <SelectContent>
+                              {PRIORITIES.map(p => <SelectItem key={p} value={p} className="text-xs">{p}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                          {task.dueDate && (
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${overdue ? "text-red-700 bg-red-100 font-bold" : "text-muted-foreground"}`}>
+                              {daysLabel(task.dueDate) || formatDateShort(task.dueDate)}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Input
+                            placeholder="Add note..."
+                            className="h-7 text-[10px] flex-1 min-w-0"
+                            value={quickNotes[task.id] || ""}
+                            onChange={e => setQuickNotes(prev => ({ ...prev, [task.id]: e.target.value }))}
+                            onKeyDown={e => { if (e.key === "Enter" && quickNotes[task.id]?.trim()) postQuickNote(task.id); }}
+                            data-testid={`my-task-note-${task.id}`}
+                          />
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 shrink-0"
+                            disabled={!quickNotes[task.id]?.trim() || postingNote[task.id]}
+                            onClick={() => postQuickNote(task.id)}
+                            data-testid={`my-task-note-send-${task.id}`}
+                          >
+                            {postingNote[task.id] ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
