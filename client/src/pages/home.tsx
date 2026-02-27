@@ -255,7 +255,7 @@ interface ActionHubData {
   myTasks: any[];
   overdueTaskCount: number;
   pendingApprovals: any[];
-  approvalCounts: { engineering: number; quality: number; deliverable: number; total: number };
+  approvalCounts: { engineering: number; quality: number; deliverable: number; taskDeliverable: number; total: number };
   projectsAtRisk: any[];
   userRole: string;
   isAdmin: boolean;
@@ -307,6 +307,8 @@ const EVENT_ICONS: Record<string, any> = {
   "deliverable.submitted_for_approval": FileCheck,
   "deliverable.qc_approved": CheckCircle2,
   "deliverable.feedback_requested": MailCheck,
+  "deliverable.sent_for_acknowledgment": FileCheck,
+  "deliverable.acknowledged": CheckCircle2,
   "milestone.approaching": Clock,
   "milestone.commissioning_soon": AlertTriangle,
   "project.behind_schedule": TrendingDown,
@@ -405,18 +407,26 @@ function ApprovalItem({ approval }: { approval: any }) {
     engineering: Wrench,
     quality: Shield,
     deliverable: FileCheck,
+    task_deliverable: FileCheck,
   };
   const Icon = typeIcons[approval.type] || ClipboardCheck;
   const typeColors: Record<string, string> = {
     engineering: "bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400",
     quality: "bg-purple-100 text-purple-600 dark:bg-purple-900/50 dark:text-purple-400",
     deliverable: "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/50 dark:text-emerald-400",
+    task_deliverable: "bg-orange-100 text-orange-600 dark:bg-orange-900/50 dark:text-orange-400",
   };
 
   return (
     <div
       className="flex items-center gap-3 p-3 rounded-lg border border-border/50 bg-card cursor-pointer transition-colors hover:bg-muted/30"
-      onClick={() => navigate("/approvals")}
+      onClick={() => {
+        if (approval.type === "task_deliverable" && approval.taskId) {
+          navigate(`/engineering/tasks?taskId=${approval.taskId}`);
+        } else {
+          navigate("/approvals");
+        }
+      }}
       data-testid={`approval-item-${approval.id}`}
     >
       <div className={`p-1.5 rounded-md ${typeColors[approval.type] || "bg-muted text-muted-foreground"}`}>
@@ -424,9 +434,9 @@ function ApprovalItem({ approval }: { approval: any }) {
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium leading-snug truncate">{approval.title}</p>
-        <span className="text-[11px] text-muted-foreground">{projectDisplay}</span>
+        <span className="text-[11px] text-muted-foreground">{approval.type === "task_deliverable" && approval.taskTitle ? approval.taskTitle : projectDisplay}</span>
       </div>
-      <Badge variant="outline" className="text-[10px] capitalize shrink-0">{approval.type}</Badge>
+      <Badge variant="outline" className={`text-[10px] capitalize shrink-0 ${approval.type === "task_deliverable" ? "border-orange-300 text-orange-700" : ""}`}>{approval.type === "task_deliverable" ? "Acknowledge" : approval.type}</Badge>
     </div>
   );
 }
@@ -747,6 +757,12 @@ export default function Home() {
                       <Badge variant="outline" className="text-[11px] gap-1">
                         <FileCheck className="w-3 h-3" />
                         {hub.approvalCounts.deliverable} Deliverable
+                      </Badge>
+                    )}
+                    {hub.approvalCounts.taskDeliverable > 0 && (
+                      <Badge variant="outline" className="text-[11px] gap-1 border-orange-300 text-orange-700">
+                        <FileCheck className="w-3 h-3" />
+                        {hub.approvalCounts.taskDeliverable} Pending Acknowledgment
                       </Badge>
                     )}
                   </div>

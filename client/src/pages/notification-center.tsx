@@ -32,6 +32,8 @@ const EVENT_TYPE_LABELS: Record<string, { label: string; icon: typeof Bell; colo
   "deliverable.submitted_for_approval": { label: "Needs Approval", icon: AlertTriangle, color: "text-purple-600 bg-purple-50" },
   "deliverable.qc_approved": { label: "QC Approved", icon: Check, color: "text-green-600 bg-green-50" },
   "deliverable.feedback_requested": { label: "Feedback Requested", icon: Zap, color: "text-rose-600 bg-rose-50" },
+  "deliverable.sent_for_acknowledgment": { label: "Deliverable Received", icon: Inbox, color: "text-orange-600 bg-orange-50" },
+  "deliverable.acknowledged": { label: "Deliverable Acknowledged", icon: Check, color: "text-emerald-600 bg-emerald-50" },
   "milestone.approaching": { label: "Milestone Approaching", icon: Clock, color: "text-orange-600 bg-orange-50" },
   "milestone.commissioning_soon": { label: "Commissioning Soon", icon: Zap, color: "text-amber-600 bg-amber-50" },
   "project.phase_changed": { label: "Phase Changed", icon: ArrowRight, color: "text-teal-600 bg-teal-50" },
