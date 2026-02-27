@@ -6,7 +6,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import {
-  operationalTasks, taskComments, taskActivityLog, taskWatchers,
+  operationalTasks, taskComments, taskActivityLog, taskWatchers, taskDeliverables,
   deliverables, deliverableVersions, deliverableFiles, deliverableEvents,
   notifications, notificationThrottle, spFilePointers,
   projectTeamMembers, projectPlan, qcWarning, qcWarningEvent,
@@ -326,9 +326,6 @@ export function registerEngineeringRoutes(app: Express) {
           return res.status(400).json({ error: "A linked project is required when setting status to PROJECTS ASSISTANCE" });
         }
       }
-      if (updates.status === "NEEDS APPROVAL" && !updates.approverUserId && !existing.approverUserId) {
-        return res.status(400).json({ error: "Approver required for NEEDS APPROVAL status" });
-      }
       if (updates.status === "COMPLETE") {
         updates.completedAt = new Date();
       }
@@ -361,11 +358,6 @@ export function registerEngineeringRoutes(app: Express) {
             `Task status: ${updated.title}`, `Status changed from "${existing.status}" to "${updates.status}"`,
             { projectName: updated.projectName, linkedTaskId: id });
         }
-        if (updates.status === "NEEDS APPROVAL" && updated.approverUserId) {
-          await createNotification(updated.approverUserId, "deliverable.submitted_for_approval",
-            `Approval needed: ${updated.title}`, `Task "${updated.title}" needs your approval`,
-            { projectName: updated.projectName, linkedTaskId: id });
-        }
       }
 
       res.json(updated);
@@ -380,15 +372,11 @@ export function registerEngineeringRoutes(app: Express) {
       const [existing] = await db.select().from(operationalTasks).where(eq(operationalTasks.id, id));
       if (!existing) return res.status(404).json({ error: "Task not found" });
 
-      const approverUserId = parseInt(req.body.approverUserId);
-      if (!approverUserId) return res.status(400).json({ error: "Approver is required" });
-
       const note = req.body.note || "";
       const file = req.file;
 
       const [updated] = await db.update(operationalTasks).set({
         status: "NEEDS APPROVAL",
-        approverUserId,
         updatedAt: new Date(),
       }).where(eq(operationalTasks.id, id)).returning();
 
@@ -416,11 +404,13 @@ export function registerEngineeringRoutes(app: Express) {
         });
       }
 
-      await createNotification(approverUserId, "deliverable.submitted_for_approval",
-        `Approval needed: ${updated.title}`,
-        `Task "${updated.title}" has been sent to you for approval${file ? ` with attachment: ${file.originalname}` : ""}`,
-        { projectName: updated.projectName, linkedTaskId: id }
-      );
+      if (updated.ownerUserId && updated.ownerUserId !== getUser(req).id) {
+        await createNotification(updated.ownerUserId, "deliverable.submitted_for_approval",
+          `Approval needed: ${updated.title}`,
+          `Task "${updated.title}" has been sent for approval${file ? ` with attachment: ${file.originalname}` : ""}`,
+          { projectName: updated.projectName, linkedTaskId: id }
+        );
+      }
 
       res.json({
         ...updated,
@@ -428,6 +418,156 @@ export function registerEngineeringRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error("[Eng] Send for approval error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/eng/tasks/:id/send-deliverable", requireAuth, approvalUpload.single("file"), async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const [existing] = await db.select().from(operationalTasks).where(eq(operationalTasks.id, id));
+      if (!existing) return res.status(404).json({ error: "Task not found" });
+
+      const recipientUserId = parseInt(req.body.recipientUserId);
+      if (!recipientUserId) return res.status(400).json({ error: "Recipient is required" });
+
+      const file = req.file;
+      if (!file) return res.status(400).json({ error: "A file attachment is required" });
+
+      const note = req.body.note || "";
+      const user = getUser(req);
+
+      const [deliverable] = await db.insert(taskDeliverables).values({
+        taskId: id,
+        filename: file.filename,
+        originalName: file.originalname,
+        fileSize: file.size,
+        note: note.trim() || null,
+        sentByUserId: user.id,
+        recipientUserId,
+      }).returning();
+
+      const fileInfo = note.trim() ? ` — ${note.trim()}` : "";
+      await db.insert(taskComments).values({
+        taskId: id,
+        userId: user.id,
+        text: `[Deliverable Sent] ${file.originalname} → ${(await db.select({ name: users.name }).from(users).where(eq(users.id, recipientUserId)))[0]?.name || "recipient"}${fileInfo}`,
+      });
+
+      await db.insert(taskActivityLog).values({
+        taskId: id,
+        actorId: user.id,
+        actionType: "deliverable_sent",
+        fieldName: "deliverable",
+        newValue: file.originalname,
+      });
+
+      await createNotification(recipientUserId, "deliverable.sent_for_acknowledgment",
+        `Deliverable received: ${existing.title}`,
+        `"${file.originalname}" has been sent to you for acknowledgment on task "${existing.title}"${note.trim() ? ` — ${note.trim()}` : ""}`,
+        { projectName: existing.projectName, linkedTaskId: id }
+      );
+
+      res.json(deliverable);
+    } catch (err: any) {
+      console.error("[Eng] Send deliverable error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/eng/tasks/:id/deliverables", requireAuth, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const deliverables = await db.select({
+        id: taskDeliverables.id,
+        taskId: taskDeliverables.taskId,
+        filename: taskDeliverables.filename,
+        originalName: taskDeliverables.originalName,
+        fileSize: taskDeliverables.fileSize,
+        note: taskDeliverables.note,
+        sentByUserId: taskDeliverables.sentByUserId,
+        senderName: users.name,
+        recipientUserId: taskDeliverables.recipientUserId,
+        acknowledged: taskDeliverables.acknowledged,
+        acknowledgedAt: taskDeliverables.acknowledgedAt,
+        createdAt: taskDeliverables.createdAt,
+      })
+        .from(taskDeliverables)
+        .leftJoin(users, eq(users.id, taskDeliverables.sentByUserId))
+        .where(eq(taskDeliverables.taskId, id))
+        .orderBy(desc(taskDeliverables.createdAt));
+
+      const recipientIds = [...new Set(deliverables.map(d => d.recipientUserId))];
+      let recipientMap: Record<number, string> = {};
+      if (recipientIds.length > 0) {
+        const recipients = await db.select({ id: users.id, name: users.name }).from(users)
+          .where(sql`${users.id} IN ${recipientIds}`);
+        recipientMap = Object.fromEntries(recipients.map(r => [r.id, r.name]));
+      }
+
+      res.json(deliverables.map(d => ({
+        ...d,
+        recipientName: recipientMap[d.recipientUserId] || `User #${d.recipientUserId}`,
+      })));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/eng/deliverables/:id/acknowledge", requireAuth, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const [deliverable] = await db.select().from(taskDeliverables).where(eq(taskDeliverables.id, id));
+      if (!deliverable) return res.status(404).json({ error: "Deliverable not found" });
+
+      const user = getUser(req);
+      if (deliverable.recipientUserId !== user.id) {
+        return res.status(403).json({ error: "Only the recipient can acknowledge this deliverable" });
+      }
+
+      const [updated] = await db.update(taskDeliverables).set({
+        acknowledged: true,
+        acknowledgedAt: new Date(),
+      }).where(eq(taskDeliverables.id, id)).returning();
+
+      await db.insert(taskComments).values({
+        taskId: deliverable.taskId,
+        userId: user.id,
+        text: `[Acknowledged] Deliverable "${deliverable.originalName}" received and acknowledged`,
+      });
+
+      await db.insert(taskActivityLog).values({
+        taskId: deliverable.taskId,
+        actorId: user.id,
+        actionType: "deliverable_acknowledged",
+        fieldName: "deliverable",
+        newValue: deliverable.originalName,
+      });
+
+      await createNotification(deliverable.sentByUserId, "deliverable.acknowledged",
+        `Deliverable acknowledged: ${deliverable.originalName}`,
+        `Your deliverable "${deliverable.originalName}" has been acknowledged by ${user.name}`,
+        { linkedTaskId: deliverable.taskId }
+      );
+
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/eng/deliverables/:id/download", requireAuth, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const [deliverable] = await db.select().from(taskDeliverables).where(eq(taskDeliverables.id, id));
+      if (!deliverable) return res.status(404).json({ error: "Deliverable not found" });
+
+      const filePath = path.join(approvalUploadsDir, deliverable.filename);
+      if (!fs.existsSync(filePath)) return res.status(404).json({ error: "File not found on disk" });
+
+      res.setHeader("Content-Disposition", `attachment; filename="${deliverable.originalName}"`);
+      res.sendFile(filePath);
+    } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
   });
@@ -463,10 +603,6 @@ export function registerEngineeringRoutes(app: Express) {
       if (updates.status === "HOLD" && !updates.blockedType) {
         return res.status(400).json({ error: "Blocked type (Internal or External) required when setting status to HOLD" });
       }
-      if (updates.status === "NEEDS APPROVAL" && !updates.approverUserId) {
-        return res.status(400).json({ error: "Approver required for NEEDS APPROVAL status" });
-      }
-
       const updatedTasks = [];
       for (const taskId of taskIds) {
         const bulkSet: Record<string, any> = { ...updates, updatedAt: new Date() };
