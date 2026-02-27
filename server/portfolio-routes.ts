@@ -528,10 +528,41 @@ export function registerPortfolioRoutes(app: Express) {
       const projectMap = new Map(allProjects.map(p => [p.id, p]));
       const kpiMap = new Map(kpis.map(k => [k.projectName, k]));
 
+      const allExpenses = await db.select().from(programExpense);
+      const allInflows = await db.select().from(programInflows);
+      const expenseByProject = new Map<string, any[]>();
+      const inflowByProject = new Map<string, any[]>();
+      for (const e of allExpenses) {
+        if (!expenseByProject.has(e.projectName)) expenseByProject.set(e.projectName, []);
+        expenseByProject.get(e.projectName)!.push(e);
+      }
+      for (const r of allInflows) {
+        if (!inflowByProject.has(r.projectName)) inflowByProject.set(r.projectName, []);
+        inflowByProject.get(r.projectName)!.push(r);
+      }
+
+      let engStageRows: any[] = [];
+      let qualityRows: any[] = [];
+      try {
+        const engResult = await db.execute(sql`SELECT project_id, status FROM project_eng_stages`);
+        engStageRows = engResult.rows || [];
+      } catch (e) {}
+      try {
+        const allChecklists = await db.select().from(qcChecklist);
+        const checklistIds = allChecklists.map(c => c.id);
+        if (checklistIds.length > 0) {
+          const items = await db.select().from(qcItemInstance).where(inArray(qcItemInstance.checklistId, checklistIds));
+          const checklistProjectMap = new Map(allChecklists.map(c => [c.id, c.projectName]));
+          qualityRows = items.map(item => ({ ...item, projectName: checklistProjectMap.get(item.checklistId) || "" }));
+        }
+      } catch (e) {}
+
       const result = allPortfolios.map(portfolio => {
         const portfolioAssignments = assignments.filter(a => a.portfolioId === portfolio.id);
         const portfolioProjects = portfolioAssignments.map(a => projectMap.get(a.projectId)).filter(Boolean) as any[];
         const portfolioKpis = portfolioProjects.map(p => kpiMap.get(p.projectName)).filter(Boolean) as any[];
+        const portfolioProjectIds = portfolioProjects.map(p => p.id);
+        const portfolioProjectNames = portfolioProjects.map(p => p.projectName);
 
         const totalKwp = portfolioProjects.reduce((s, p) => s + (parseFloat(String(p.sizeKwp || "0")) || 0), 0);
 
@@ -543,12 +574,67 @@ export function registerPortfolioRoutes(app: Express) {
         if (hasAtRisk) overallHealth = "At Risk";
         else if (hasBehind) overallHealth = "Behind";
 
+        const projectFinanceBreakdown = portfolioProjects.map(proj => {
+          const kpi = kpiMap.get(proj.projectName);
+          const expenses = expenseByProject.get(proj.projectName) || [];
+          const inflows = inflowByProject.get(proj.projectName) || [];
+          const costedRev = inflows.reduce((s: number, r: any) => s + (parseFloat(String(r.revenueAmount || "0")) || 0), 0) || (kpi ? parseFloat(kpi.totalPlannedRevenue || "0") || 0 : 0);
+          const actualRev = kpi ? (parseFloat(kpi.revenueRealised || "0") || 0) : 0;
+          const costedExp = expenses.reduce((s: number, e: any) => s + (parseFloat(String(e.budgetTotal || "0")) || 0), 0) || (kpi ? parseFloat(kpi.totalPlannedExpenses || "0") || 0 : 0);
+          const actualExp = expenses.reduce((s: number, e: any) => s + (parseFloat(String(e.actualCosTotal || "0")) || 0), 0) || (kpi ? parseFloat(kpi.cosRealised || "0") || 0 : 0);
+          return {
+            projectName: proj.projectName,
+            costedRevenue: Math.round(costedRev),
+            actualRevenue: Math.round(actualRev),
+            costedExpenses: Math.round(costedExp),
+            actualExpenses: Math.round(actualExp),
+            grossProfit: Math.round(actualRev - actualExp),
+          };
+        });
+
         const financeRollup = {
-          totalPlannedRevenue: portfolioKpis.reduce((s, k) => s + (parseFloat(k.totalPlannedRevenue || "0") || 0), 0),
-          revenueRealised: portfolioKpis.reduce((s, k) => s + (parseFloat(k.revenueRealised || "0") || 0), 0),
-          totalPlannedExpenses: portfolioKpis.reduce((s, k) => s + (parseFloat(k.totalPlannedExpenses || "0") || 0), 0),
-          cosRealised: portfolioKpis.reduce((s, k) => s + (parseFloat(k.cosRealised || "0") || 0), 0),
-          grossProfit: portfolioKpis.reduce((s, k) => s + (parseFloat(k.grossProfit || "0") || 0), 0),
+          costedRevenue: projectFinanceBreakdown.reduce((s, p) => s + p.costedRevenue, 0),
+          actualRevenue: projectFinanceBreakdown.reduce((s, p) => s + p.actualRevenue, 0),
+          costedExpenses: projectFinanceBreakdown.reduce((s, p) => s + p.costedExpenses, 0),
+          actualExpenses: projectFinanceBreakdown.reduce((s, p) => s + p.actualExpenses, 0),
+          grossProfit: projectFinanceBreakdown.reduce((s, p) => s + p.grossProfit, 0),
+          totalPlannedRevenue: projectFinanceBreakdown.reduce((s, p) => s + p.costedRevenue, 0),
+          revenueRealised: projectFinanceBreakdown.reduce((s, p) => s + p.actualRevenue, 0),
+          totalPlannedExpenses: projectFinanceBreakdown.reduce((s, p) => s + p.costedExpenses, 0),
+          cosRealised: projectFinanceBreakdown.reduce((s, p) => s + p.actualExpenses, 0),
+        };
+
+        const phaseCounts: Record<string, number> = {};
+        for (const p of portfolioProjects) {
+          const ph = p.phase || "Unknown";
+          phaseCounts[ph] = (phaseCounts[ph] || 0) + 1;
+        }
+
+        const projectSchedule = portfolioProjects.map(p => {
+          const kpi = kpiMap.get(p.projectName);
+          return {
+            projectName: p.projectName,
+            actualPct: kpi ? parseFloat(kpi.avgActualPctComplete || "0") || 0 : 0,
+            expectedPct: kpi ? parseFloat(kpi.avgExpectedPctComplete || "0") || 0 : 0,
+            delta: kpi ? parseFloat(kpi.scheduleDelta || "0") || 0 : 0,
+            phase: p.phase || null,
+          };
+        });
+
+        const portEngStages = engStageRows.filter((r: any) => portfolioProjectIds.includes(r.project_id));
+        const engSummary = {
+          total: portEngStages.length,
+          complete: portEngStages.filter((r: any) => r.status === "complete").length,
+          inProgress: portEngStages.filter((r: any) => r.status === "in_progress").length,
+          notStarted: portEngStages.filter((r: any) => r.status === "not_started" || !r.status).length,
+        };
+
+        const portQuality = qualityRows.filter((r: any) => portfolioProjectNames.includes(r.projectName));
+        const qualitySummary = {
+          total: portQuality.length,
+          approved: portQuality.filter((r: any) => r.status === "APPROVED").length,
+          pending: portQuality.filter((r: any) => r.status === "PENDING" || r.status === "IN_PROGRESS").length,
+          failed: portQuality.filter((r: any) => r.status === "FAILED" || r.status === "REJECTED").length,
         };
 
         return {
@@ -564,6 +650,11 @@ export function registerPortfolioRoutes(app: Express) {
           avgActualPct: portfolioKpis.length > 0 ? Math.round(portfolioKpis.reduce((s, k) => s + (parseFloat(k.avgActualPctComplete || "0") || 0), 0) / portfolioKpis.length * 10) / 10 : 0,
           avgExpectedPct: portfolioKpis.length > 0 ? Math.round(portfolioKpis.reduce((s, k) => s + (parseFloat(k.avgExpectedPctComplete || "0") || 0), 0) / portfolioKpis.length * 10) / 10 : 0,
           finance: financeRollup,
+          projectFinanceBreakdown,
+          phaseCounts,
+          projectSchedule,
+          engSummary,
+          qualitySummary,
         };
       });
 
