@@ -1007,22 +1007,35 @@ function ProcessDetailView({
         </Card>
       )}
 
-      {steps.length > 0 && (
+      {((sop?.steps || []).length > 0 || steps.length > 0) && (
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Hash className="h-4 w-4" /> Steps ({steps.length})</CardTitle></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Hash className="h-4 w-4" /> Steps ({(sop?.steps || []).length || steps.length})</CardTitle></CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {steps.map((step: any, i: number) => (
-                <div key={step.id} className="flex items-start gap-3 p-3 rounded-lg border border-slate-200 bg-slate-50/50">
-                  <div className="w-7 h-7 rounded-full bg-slate-800 text-white flex items-center justify-center text-xs font-bold shrink-0">
-                    {i + 1}
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">{step.title}</p>
-                    {step.contentMarkdown && <p className="text-xs text-slate-500 mt-0.5">{step.contentMarkdown.slice(0, 200)}</p>}
-                  </div>
-                </div>
-              ))}
+              {(sop?.steps || []).length > 0
+                ? (sop.steps as any[]).map((step: any, i: number) => (
+                    <div key={i} className="flex items-start gap-3 p-3 rounded-lg border border-slate-200 bg-slate-50/50">
+                      <div className="w-7 h-7 rounded-full bg-slate-800 text-white flex items-center justify-center text-xs font-bold shrink-0">
+                        {i + 1}
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium">{step.title}</p>
+                        {step.description && <p className="text-xs text-slate-500 mt-0.5">{step.description}</p>}
+                      </div>
+                    </div>
+                  ))
+                : steps.map((step: any, i: number) => (
+                    <div key={step.id} className="flex items-start gap-3 p-3 rounded-lg border border-slate-200 bg-slate-50/50">
+                      <div className="w-7 h-7 rounded-full bg-slate-800 text-white flex items-center justify-center text-xs font-bold shrink-0">
+                        {i + 1}
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium">{step.title}</p>
+                        {step.contentMarkdown && <p className="text-xs text-slate-500 mt-0.5">{step.contentMarkdown.slice(0, 200)}</p>}
+                      </div>
+                    </div>
+                  ))
+              }
             </div>
           </CardContent>
         </Card>
