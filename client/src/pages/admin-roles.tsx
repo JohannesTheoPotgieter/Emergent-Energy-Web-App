@@ -62,7 +62,7 @@ import {
 } from "@shared/schema";
 
 const ALL_SECTIONS = [
-  "COCKPIT", "PROJECTS", "MONEY", "DELIVERY", "GOVERNANCE", "INFORMATION", "ADMIN",
+  "COCKPIT", "PROJECTS", "MONEY", "PROJECT_DEVELOPMENT", "DELIVERY", "GOVERNANCE", "INFORMATION", "ADMIN",
 ] as const;
 
 const SECTION_META: Record<string, { label: string; icon: any; color: string }> = {
@@ -72,6 +72,7 @@ const SECTION_META: Record<string, { label: string; icon: any; color: string }> 
   DELIVERY: { label: "Engineering", icon: Wrench, color: "bg-orange-50 border-orange-200 text-orange-700" },
   GOVERNANCE: { label: "Governance", icon: ShieldCheck, color: "bg-purple-50 border-purple-200 text-purple-700" },
   INFORMATION: { label: "Information", icon: BookOpen, color: "bg-cyan-50 border-cyan-200 text-cyan-700" },
+  PROJECT_DEVELOPMENT: { label: "Project Development", icon: Briefcase, color: "bg-teal-50 border-teal-200 text-teal-700" },
   ADMIN: { label: "Admin", icon: Settings, color: "bg-slate-50 border-slate-200 text-slate-700" },
 };
 
