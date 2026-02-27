@@ -11,7 +11,7 @@ export function FinanceCosTab({ projectName }: FinanceCosTabProps) {
   const { data: monthlyCos = [], isLoading, error } = useQuery({
     queryKey: ["finance-cos", projectName],
     queryFn: async () => {
-      const res = await fetch(`/api/finance/cos?projectName=${encodeURIComponent(projectName)}`);
+      const res = await fetch(`/api/finance/cos?projectName=${encodeURIComponent(projectName)}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch finance COS data");
       return res.json();
     },

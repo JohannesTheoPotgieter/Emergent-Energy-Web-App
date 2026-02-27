@@ -144,7 +144,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
   const { data: workingPlan, isLoading, error } = useQuery<WorkingPlanResponse>({
     queryKey: ["working-plan", projectName],
     queryFn: async () => {
-      const res = await fetch(`/api/projects/${encodeURIComponent(projectName)}/working-plan`);
+      const res = await fetch(`/api/projects/${encodeURIComponent(projectName)}/working-plan`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch working plan");
       return res.json();
     },
@@ -154,7 +154,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
   const { data: changeNotices = [] } = useQuery<ScheduleChangeNotice[]>({
     queryKey: ["change-notices", projectName],
     queryFn: async () => {
-      const res = await fetch(`/api/projects/${encodeURIComponent(projectName)}/change-notices`);
+      const res = await fetch(`/api/projects/${encodeURIComponent(projectName)}/change-notices`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch change notices");
       return res.json();
     },
@@ -201,6 +201,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
   const updateTaskMutation = useMutation({
     mutationFn: async ({ taskId, changes }: { taskId: number; changes: any }) => {
       const res = await fetch(`/api/working-plan/tasks/${taskId}`, {
+        credentials: "include",
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectName, ...changes }),
@@ -219,6 +220,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
   const resetPlanMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch(`/api/projects/${encodeURIComponent(projectName)}/working-plan/reset`, {
+        credentials: "include",
         method: "POST",
       });
       if (!res.ok) throw new Error("Failed to reset plan");
@@ -233,6 +235,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
   const createDependencyMutation = useMutation({
     mutationFn: async (dep: { predecessorTaskId: number; successorTaskId: number; dependencyType: string; lagDays: number }) => {
       const res = await fetch(`/api/projects/${encodeURIComponent(projectName)}/dependencies`, {
+        credentials: "include",
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(dep),
@@ -250,7 +253,8 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
 
   const deleteDependencyMutation = useMutation({
     mutationFn: async (depId: number) => {
-      const res = await fetch(`/api/dependencies/${depId}`, { method: "DELETE" });
+      const res = await fetch(`/api/dependencies/${depId}`, { credentials: "include",
+        method: "DELETE" });
       if (!res.ok) throw new Error("Failed to delete dependency");
       return res.json();
     },
@@ -263,6 +267,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
   const deleteTaskMutation = useMutation({
     mutationFn: async ({ taskId, isNewTask }: { taskId: number; isNewTask: boolean }) => {
       const res = await fetch(`/api/working-plan/tasks/${taskId}`, {
+        credentials: "include",
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectName, isNewTask }),
@@ -282,6 +287,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
   const createChangeNoticeMutation = useMutation({
     mutationFn: async (notice: { summary: string; oldFinishDate?: string; newFinishDate?: string; changedTasks?: string; userNote?: string }) => {
       const res = await fetch(`/api/projects/${encodeURIComponent(projectName)}/change-notices`, {
+        credentials: "include",
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(notice),

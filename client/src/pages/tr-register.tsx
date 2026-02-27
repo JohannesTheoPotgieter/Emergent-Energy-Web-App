@@ -164,7 +164,7 @@ export default function TrRegisterPage() {
   const { data: items = [], isLoading } = useQuery<TrItem[]>({
     queryKey: ["/api/tr-register", queryParams],
     queryFn: async () => {
-      const res = await fetch(`/api/tr-register?${queryParams}`, { headers: getAuthHeaders() });
+      const res = await fetch(`/api/tr-register?${queryParams}`, { credentials: "include", headers: getAuthHeaders() });
       if (!res.ok) throw new Error("Failed to fetch TR items");
       return res.json();
     },
@@ -173,7 +173,7 @@ export default function TrRegisterPage() {
   const { data: boardItems = [], isLoading: boardLoading } = useQuery<TrItem[]>({
     queryKey: ["/api/tr-register", "board-all"],
     queryFn: async () => {
-      const res = await fetch(`/api/tr-register`, { headers: getAuthHeaders() });
+      const res = await fetch(`/api/tr-register`, { credentials: "include", headers: getAuthHeaders() });
       if (!res.ok) throw new Error("Failed to fetch TR items");
       return res.json();
     },
@@ -185,7 +185,7 @@ export default function TrRegisterPage() {
   const { data: itemDetail, isLoading: detailLoading } = useQuery<TrItemDetail>({
     queryKey: ["/api/tr-register", selectedItemId],
     queryFn: async () => {
-      const res = await fetch(`/api/tr-register/${selectedItemId}`, { headers: getAuthHeaders() });
+      const res = await fetch(`/api/tr-register/${selectedItemId}`, { credentials: "include", headers: getAuthHeaders() });
       if (!res.ok) throw new Error("Failed to fetch TR item detail");
       return res.json();
     },
@@ -195,7 +195,7 @@ export default function TrRegisterPage() {
   const { data: projectsRaw = [] } = useQuery<any>({
     queryKey: ["/api/projects-summary"],
     queryFn: async () => {
-      const res = await fetch("/api/projects-summary", { headers: getAuthHeaders() });
+      const res = await fetch("/api/projects-summary", { credentials: "include", headers: getAuthHeaders() });
       if (!res.ok) return [];
       return res.json();
     },
@@ -221,7 +221,7 @@ export default function TrRegisterPage() {
 
   const seedMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch("/api/tr-register/seed", { method: "POST", headers: getAuthHeaders() });
+      const res = await fetch("/api/tr-register/seed", { credentials: "include", method: "POST", headers: getAuthHeaders() });
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || "Seed failed"); }
       return res.json();
     },
@@ -234,7 +234,7 @@ export default function TrRegisterPage() {
 
   const createMutation = useMutation({
     mutationFn: async (body: any) => {
-      const res = await fetch("/api/tr-register", { method: "POST", headers: getAuthHeaders(), body: JSON.stringify(body) });
+      const res = await fetch("/api/tr-register", { credentials: "include", method: "POST", headers: getAuthHeaders(), body: JSON.stringify(body) });
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || "Create failed"); }
       return res.json();
     },
@@ -249,7 +249,7 @@ export default function TrRegisterPage() {
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: any }) => {
-      const res = await fetch(`/api/tr-register/${id}`, { method: "PATCH", headers: getAuthHeaders(), body: JSON.stringify(data) });
+      const res = await fetch(`/api/tr-register/${id}`, { credentials: "include", method: "PATCH", headers: getAuthHeaders(), body: JSON.stringify(data) });
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || "Update failed"); }
       return res.json();
     },
@@ -262,7 +262,7 @@ export default function TrRegisterPage() {
 
   const completeMutation = useMutation({
     mutationFn: async (id: number) => {
-      const res = await fetch(`/api/tr-register/${id}/complete`, { method: "PATCH", headers: getAuthHeaders() });
+      const res = await fetch(`/api/tr-register/${id}/complete`, { credentials: "include", method: "PATCH", headers: getAuthHeaders() });
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || "Complete failed"); }
       return res.json();
     },
@@ -275,7 +275,7 @@ export default function TrRegisterPage() {
 
   const linkMutation = useMutation({
     mutationFn: async ({ trItemId, projectId }: { trItemId: number; projectId: number }) => {
-      const res = await fetch(`/api/tr-register/${trItemId}/link`, { method: "POST", headers: getAuthHeaders(), body: JSON.stringify({ projectId }) });
+      const res = await fetch(`/api/tr-register/${trItemId}/link`, { credentials: "include", method: "POST", headers: getAuthHeaders(), body: JSON.stringify({ projectId }) });
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || "Link failed"); }
       return res.json();
     },
@@ -290,7 +290,7 @@ export default function TrRegisterPage() {
 
   const unlinkMutation = useMutation({
     mutationFn: async ({ trItemId, linkId }: { trItemId: number; linkId: number }) => {
-      const res = await fetch(`/api/tr-register/${trItemId}/link/${linkId}`, { method: "DELETE", headers: getAuthHeaders() });
+      const res = await fetch(`/api/tr-register/${trItemId}/link/${linkId}`, { credentials: "include", method: "DELETE", headers: getAuthHeaders() });
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || "Unlink failed"); }
       return res.json();
     },
@@ -303,7 +303,7 @@ export default function TrRegisterPage() {
 
   const suggestionDecisionMutation = useMutation({
     mutationFn: async ({ trItemId, projectId, decision }: { trItemId: number; projectId: number; decision: string }) => {
-      const res = await fetch(`/api/tr-register/${trItemId}/suggestion-decision`, { method: "POST", headers: getAuthHeaders(), body: JSON.stringify({ projectId, decision }) });
+      const res = await fetch(`/api/tr-register/${trItemId}/suggestion-decision`, { credentials: "include", method: "POST", headers: getAuthHeaders(), body: JSON.stringify({ projectId, decision }) });
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || "Decision failed"); }
       return res.json();
     },
@@ -377,7 +377,7 @@ export default function TrRegisterPage() {
     if (!selectedItemId) return;
     setSuggestLoading(true);
     try {
-      const res = await fetch(`/api/tr-register/${selectedItemId}/suggest-links`, { method: "POST", headers: getAuthHeaders() });
+      const res = await fetch(`/api/tr-register/${selectedItemId}/suggest-links`, { credentials: "include", method: "POST", headers: getAuthHeaders() });
       if (!res.ok) throw new Error("Failed to generate suggestions");
       const data = await res.json();
       setSuggestions(data);

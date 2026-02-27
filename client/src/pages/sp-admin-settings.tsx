@@ -108,6 +108,7 @@ export default function SpAdminSettingsPage() {
   const saveMutation = useMutation({
     mutationFn: async (data: Omit<SpSettings, "lastRunAt">) => {
       const res = await fetch("/api/admin/sp-settings", {
+        credentials: "include",
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -128,6 +129,7 @@ export default function SpAdminSettingsPage() {
   const testMutation = useMutation({
     mutationFn: async (data: { siteId: string; driveId: string }) => {
       const res = await fetch("/api/admin/sp-settings/test", {
+        credentials: "include",
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
