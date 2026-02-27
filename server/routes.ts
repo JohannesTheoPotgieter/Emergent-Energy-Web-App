@@ -24,8 +24,6 @@ import { recordOverride, recordManualEdit } from "./lib/audit/diff-engine";
 import { OVERRIDE_CATEGORIES } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
 import { createNameResolver, fetchAllNormalized, mergeExpensesOnly, mergeInflowsOnly, mergePlansOnly } from "./lib/data-merge";
-import { getFeatureFlag } from "./lib/feature-flags";
-import { derivedPortfolioKpis, derivedProjectKpis } from "@shared/schema";
 
 function isCosRealisedCheck(exp: any): boolean {
   const hasInvoice = !!(exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim());
@@ -840,22 +838,6 @@ export async function registerRoutes(
 
   app.get("/api/overview", async (req, res) => {
     try {
-      const useRollups = await getFeatureFlag("USE_NEW_DASHBOARD_ROLLUPS");
-      if (useRollups) {
-        const [portfolio] = await db.select().from(derivedPortfolioKpis)
-          .where(eq(derivedPortfolioKpis.snapshotKey, "current")).limit(1);
-        if (portfolio) {
-          return res.json({
-            total_program_budget: parseFloat(portfolio.totalProgramBudget || "0"),
-            actual_spend_paid: parseFloat(portfolio.actualSpendPaid || "0"),
-            revenue_realised: parseFloat(portfolio.revenueRealised || "0"),
-            active_projects: portfolio.activeProjectsCount,
-            data_as_of: portfolio.computedAt?.toISOString() || new Date().toISOString(),
-            source: "derived_rollups",
-          });
-        }
-      }
-
       const [allProjectInfo, allExpenses, rawInflows, allPlans, latestRefresh, allTaskLinks, allOpTasks, allNormCostsOv, allNormRevOv, allNormPlansOv] = await Promise.all([
         storage.getAllProjectInfo(),
         storage.getAllProgramExpenses(),
