@@ -51,6 +51,7 @@ import {
   Settings,
   Lock,
   Briefcase,
+  FileText,
 } from "lucide-react";
 import {
   COMPANY_ROLE_LABELS,
@@ -86,18 +87,32 @@ interface PermCat {
 
 const PERM_CATEGORIES: PermCat[] = [
   {
+    key: "exco",
+    label: "EXCO",
+    icon: LayoutDashboard,
+    color: "bg-indigo-500",
+    items: [
+      { entity: "my_tool" as PermissionEntity, label: "My Tool", actions: ["view", "edit"] },
+      { entity: "company_priorities" as PermissionEntity, label: "Company Priorities", actions: ["view", "edit"] },
+      { entity: "lifecycle" as PermissionEntity, label: "Lifecycle Board", actions: ["view", "edit"] },
+      { entity: "home" as PermissionEntity, label: "Home / Action Hub", actions: ["view"] },
+    ],
+  },
+  {
     key: "pm",
     label: "Project Management",
     icon: FolderKanban,
     color: "bg-blue-500",
     items: [
       { entity: "execution_board" as PermissionEntity, label: "Execution Board", actions: ["view"] },
+      { entity: "projects" as PermissionEntity, label: "Project Summary", actions: ["view", "edit", "delete"] },
+      { entity: "pm_dashboard" as PermissionEntity, label: "PM Dashboard", actions: ["view"] },
+      { entity: "tr_register" as PermissionEntity, label: "TR Register", actions: ["view", "edit"] },
+      { entity: "smart_import" as PermissionEntity, label: "Smart Import", actions: ["view", "edit"] },
+      { entity: "portfolios" as PermissionEntity, label: "Portfolios", actions: ["view", "edit", "delete"] },
       { entity: "create_project" as PermissionEntity, label: "Create Project", actions: ["edit"] },
-      { entity: "company_priorities" as PermissionEntity, label: "Company Priorities", actions: ["view", "edit"] },
       { entity: "meetings" as PermissionEntity, label: "Meetings", actions: ["view"] },
-      { entity: "leaderboard" as PermissionEntity, label: "Leaderboard", actions: ["view"] },
       { entity: "approvals" as PermissionEntity, label: "Approvals", actions: ["view"] },
-      { entity: "feedback" as PermissionEntity, label: "Feedback & Support", actions: ["view"] },
     ],
   },
   {
@@ -106,9 +121,14 @@ const PERM_CATEGORIES: PermCat[] = [
     icon: DollarSign,
     color: "bg-emerald-500",
     items: [
-      { entity: "financials" as PermissionEntity, label: "Financials", actions: ["edit"] },
-      { entity: "invoice_patterns" as PermissionEntity, label: "Invoice Patterns", actions: ["view"] },
-      { entity: "procurement" as PermissionEntity, label: "Procurement", actions: ["edit"] },
+      { entity: "financials" as PermissionEntity, label: "Financials", actions: ["view", "edit"] },
+      { entity: "cashflow" as PermissionEntity, label: "Cashflow", actions: ["view", "edit"] },
+      { entity: "cos" as PermissionEntity, label: "COS Tracker", actions: ["view", "edit"] },
+      { entity: "cos_control" as PermissionEntity, label: "COS Control", actions: ["view", "edit"] },
+      { entity: "cashflow_forecast" as PermissionEntity, label: "Cashflow Forecast", actions: ["view", "edit"] },
+      { entity: "subcontractors" as PermissionEntity, label: "Procurement / Subcontractors", actions: ["view", "edit"] },
+      { entity: "procurement" as PermissionEntity, label: "Procurement Data", actions: ["edit"] },
+      { entity: "invoice_patterns" as PermissionEntity, label: "Invoice Patterns", actions: ["view", "edit"] },
     ],
   },
   {
@@ -117,18 +137,43 @@ const PERM_CATEGORIES: PermCat[] = [
     icon: Wrench,
     color: "bg-orange-500",
     items: [
+      { entity: "engineering" as PermissionEntity, label: "Engineering Dashboard", actions: ["view", "edit"] },
       { entity: "eng_tasks" as PermissionEntity, label: "Engineering Tasks", actions: ["view", "edit", "delete"] },
+      { entity: "eng_stages" as PermissionEntity, label: "Engineering Stages", actions: ["view", "edit"] },
       { entity: "pd_eng_tasks" as PermissionEntity, label: "Project Detail — Eng Tasks", actions: ["view", "edit", "delete"] },
+      { entity: "pd_eng_stages" as PermissionEntity, label: "Project Detail — Eng Stages", actions: ["view", "edit"] },
       { entity: "phase_templates" as PermissionEntity, label: "Phase Templates", actions: ["view"] },
     ],
   },
   {
     key: "quality",
-    label: "Quality",
+    label: "Quality & Governance",
     icon: ShieldCheck,
     color: "bg-purple-500",
     items: [
+      { entity: "quality" as PermissionEntity, label: "Quality Dashboard", actions: ["view", "edit"] },
       { entity: "pd_quality" as PermissionEntity, label: "Project Detail — Quality", actions: ["view", "edit", "delete"] },
+      { entity: "governance" as PermissionEntity, label: "Governance", actions: ["view", "edit"] },
+    ],
+  },
+  {
+    key: "project_detail",
+    label: "Project Detail Tabs",
+    icon: FileText,
+    color: "bg-cyan-500",
+    items: [
+      { entity: "pd_overview" as PermissionEntity, label: "Overview", actions: ["view", "edit"] },
+      { entity: "pd_plan" as PermissionEntity, label: "Plan", actions: ["view", "edit"] },
+      { entity: "pd_gantt" as PermissionEntity, label: "Gantt Chart", actions: ["view"] },
+      { entity: "pd_key_dates" as PermissionEntity, label: "Key Dates", actions: ["view", "edit"] },
+      { entity: "pd_finance" as PermissionEntity, label: "Finance", actions: ["view", "edit"] },
+      { entity: "pd_revenue" as PermissionEntity, label: "Revenue", actions: ["view", "edit"] },
+      { entity: "pd_expenditure" as PermissionEntity, label: "Expenditure", actions: ["view", "edit"] },
+      { entity: "pd_cos_tracker" as PermissionEntity, label: "COS Tracker", actions: ["view", "edit"] },
+      { entity: "pd_cashflow" as PermissionEntity, label: "Cashflow", actions: ["view", "edit"] },
+      { entity: "pd_subcontractors" as PermissionEntity, label: "Subcontractors", actions: ["view", "edit"] },
+      { entity: "pd_engineering" as PermissionEntity, label: "Engineering", actions: ["view", "edit"] },
+      { entity: "pd_history" as PermissionEntity, label: "History / Audit", actions: ["view"] },
     ],
   },
   {
@@ -143,12 +188,25 @@ const PERM_CATEGORIES: PermCat[] = [
     ],
   },
   {
+    key: "information",
+    label: "Information",
+    icon: BookOpen,
+    color: "bg-cyan-600",
+    items: [
+      { entity: "ee_info" as PermissionEntity, label: "Emergent Energy Info", actions: ["view"] },
+      { entity: "leaderboard" as PermissionEntity, label: "Leaderboard", actions: ["view"] },
+      { entity: "feedback" as PermissionEntity, label: "Feedback & Support", actions: ["view", "edit"] },
+      { entity: "notifications" as PermissionEntity, label: "Notifications", actions: ["view"] },
+    ],
+  },
+  {
     key: "admin",
     label: "Admin",
     icon: Settings,
     color: "bg-slate-500",
     items: [
-      { entity: "activity_log" as PermissionEntity, label: "Activity Log", actions: ["view"] },
+      { entity: "activity_log" as PermissionEntity, label: "Change Audit", actions: ["view"] },
+      { entity: "weekly_reviews" as PermissionEntity, label: "Weekly Reviews", actions: ["view", "edit"] },
     ],
   },
 ];
