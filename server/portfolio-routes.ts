@@ -11,8 +11,10 @@ import {
 function computeProjectCompletion(plans: any[]): { actualPct: number; expectedPct: number; delta: number } {
   const todayStr = new Date().toISOString().split("T")[0];
   const validPlans = plans.filter((p: any) => {
-    const act = p.actualPctComplete ?? p.percentComplete;
-    return act != null;
+    const hasActual = (p.actualPctComplete ?? p.percentComplete) != null;
+    const hasExpected = (p.expectedPctComplete ?? p.expectedProgress) != null;
+    const hasDateRange = p.actualStart && p.actualEnd;
+    return hasActual || hasExpected || hasDateRange;
   });
   if (validPlans.length === 0) return { actualPct: 0, expectedPct: 0, delta: 0 };
 
@@ -695,8 +697,8 @@ export function registerPortfolioRoutes(app: Express) {
           totalKwp: Math.round(totalKwp * 100) / 100,
           overallHealth,
           behindCount: scheduleDeltas.filter(d => d < -5).length,
-          avgActualPct: portfolioKpis.length > 0 ? Math.round(portfolioKpis.reduce((s, k) => s + (parseFloat(k.avgActualPctComplete || "0") || 0), 0) / portfolioKpis.length * 10) / 10 : 0,
-          avgExpectedPct: portfolioKpis.length > 0 ? Math.round(portfolioKpis.reduce((s, k) => s + (parseFloat(k.avgExpectedPctComplete || "0") || 0), 0) / portfolioKpis.length * 10) / 10 : 0,
+          avgActualPct: validCompletions.length > 0 ? Math.round(validCompletions.reduce((s, c) => s + c.actualPct, 0) / validCompletions.length * 10) / 10 : 0,
+          avgExpectedPct: validCompletions.length > 0 ? Math.round(validCompletions.reduce((s, c) => s + c.expectedPct, 0) / validCompletions.length * 10) / 10 : 0,
           finance: financeRollup,
           projectFinanceBreakdown,
           phaseCounts,

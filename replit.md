@@ -33,7 +33,7 @@ Preferred communication style: Simple, everyday language.
 ### Database Architecture
 -   **Core Structure**: `project_info` as the central spine.
 -   **Data Sources**: `normalized_cost_lines`, `normalized_revenue_lines`, `normalized_plan_tasks` are the primary data sources.
--   **Derived Data**: `derived_project_kpis`, `derived_portfolio_kpis`, `derived_rag_summary` are rebuilt on demand.
+-   **Derived Data**: `derived_project_kpis`, `derived_portfolio_kpis`, `derived_rag_summary` tables exist but are NOT used by portfolio endpoints. All portfolio dashboards, rollups, timeline, and overview endpoints compute Act%/Expected%/delta and financial metrics live from underlying `project_plan`, `program_expense`, and `program_inflows` tables using `computeProjectCompletion()` (duration-weighted plan task calculation).
 
 ### Engineering Stage Management
 -   **Module**: A 5-stage engineering checklist system (First Assessment, Cost Proposal, IFC Planning, Construction Support, Handover Pack) with CRUD for templates, project stage instantiation, task/deliverable/approval management, and stage gate completion logic.
