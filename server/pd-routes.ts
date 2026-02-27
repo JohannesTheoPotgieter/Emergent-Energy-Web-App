@@ -239,7 +239,8 @@ export function registerPdRoutes(app: Express) {
         createdBy: user?.id || null,
       }).returning();
 
-      await spawnTasksForTicket(ticket, user);
+      const selectedTasks: string[] | undefined = body.selectedTasks;
+      await spawnTasksForTicket(ticket, user, selectedTasks);
 
       res.status(201).json(ticket);
     } catch (err: any) {
@@ -375,11 +376,22 @@ async function generateClientId(): Promise<string> {
   return `EE-C${String(nextNum).padStart(4, "0")}`;
 }
 
-async function spawnTasksForTicket(ticket: any, user: any): Promise<any[]> {
+async function spawnTasksForTicket(ticket: any, user: any, selectedTasks?: string[]): Promise<any[]> {
   if (ticket.tasksSpawnedAt) return [];
 
-  const templates = PD_REQUEST_TYPE_TASK_TEMPLATES[ticket.requestType] || [];
+  let templates = PD_REQUEST_TYPE_TASK_TEMPLATES[ticket.requestType] || [];
   if (templates.length === 0) return [];
+
+  if (selectedTasks && Array.isArray(selectedTasks)) {
+    const selectedSet = new Set(selectedTasks);
+    templates = templates.filter(t => selectedSet.has(t.title));
+    if (templates.length === 0) {
+      await db.update(pdTickets)
+        .set({ tasksSpawnedAt: new Date(), status: ticket.status === "Draft" ? "In Progress" : ticket.status })
+        .where(eq(pdTickets.id, ticket.id));
+      return [];
+    }
+  }
 
   let projectName = ticket.projectSiteName || "Unassigned";
   if (ticket.projectId) {
