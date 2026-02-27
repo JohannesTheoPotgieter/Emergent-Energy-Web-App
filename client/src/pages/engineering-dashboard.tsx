@@ -136,11 +136,36 @@ const statusBadge: Record<string, string> = {
 };
 
 const priorityColors: Record<string, string> = {
+  "Critical": "text-red-600",
   "Urgent": "text-red-600",
   "High": "text-orange-600",
   "Med": "text-yellow-600",
+  "Medium": "text-yellow-600",
   "Low": "text-gray-500",
 };
+
+const priorityBorderDash: Record<string, string> = {
+  "Critical": "border-l-red-600",
+  "Urgent": "border-l-red-500",
+  "High": "border-l-orange-500",
+  "Med": "border-l-amber-400",
+  "Medium": "border-l-amber-400",
+  "Low": "border-l-gray-300",
+};
+
+function getInitials(name: string) {
+  return name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
+}
+
+function getAvatarColor(name: string) {
+  const colors = [
+    "bg-blue-500", "bg-emerald-500", "bg-purple-500", "bg-amber-500",
+    "bg-rose-500", "bg-cyan-500", "bg-indigo-500", "bg-teal-500",
+  ];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  return colors[Math.abs(hash) % colors.length];
+}
 
 function formatDate(d: string | null) {
   if (!d) return "";
@@ -165,37 +190,50 @@ function displayProject(name: string) {
 function TaskRow({ task, showProject = true }: { task: StandupTask; showProject?: boolean }) {
   const [, setLocation] = useLocation();
   const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && task.status !== "COMPLETE";
+  const isDueSoon = task.dueDate && !isOverdue && (() => {
+    const diff = Math.round((new Date(task.dueDate!).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+    return diff <= 2;
+  })();
+  const assignee = task.assignees?.[0];
 
   return (
     <div
-      className="flex items-center gap-2 px-3 py-2 border-b last:border-b-0 hover:bg-muted/30 transition-colors text-xs group cursor-pointer"
+      className={`flex items-center gap-2.5 px-3 py-2.5 border-b last:border-b-0 hover:bg-muted/40 transition-all text-xs group cursor-pointer border-l-3 ${priorityBorderDash[task.priority] || "border-l-gray-200"} ${isOverdue ? "bg-red-50/30 dark:bg-red-950/10" : ""}`}
       onClick={() => setLocation(`/engineering/tasks?taskId=${task.id}`)}
       data-testid={`standup-task-${task.id}`}
     >
+      {assignee && (
+        <div className={`w-6 h-6 rounded-full ${getAvatarColor(assignee)} flex items-center justify-center shrink-0`} title={assignee}>
+          <span className="text-[8px] font-bold text-white leading-none">{getInitials(assignee)}</span>
+        </div>
+      )}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
-          <span className={`font-medium truncate ${priorityColors[task.priority] || ""}`}>
+          <span className="font-medium truncate text-foreground">
             {task.title}
           </span>
+          {task.taskTypeTag && (
+            <span className="text-[8px] px-1 py-0 bg-muted text-muted-foreground rounded shrink-0">{task.taskTypeTag}</span>
+          )}
         </div>
-        {showProject && (
-          <span className="text-[10px] text-muted-foreground">{displayProject(task.projectName)}</span>
-        )}
-        {(task.holdReason || task.blockerReason) && (
-          <p className="text-[10px] text-red-500 mt-0.5 truncate">
-            {task.holdReason || task.blockerReason}
-          </p>
-        )}
+        <div className="flex items-center gap-2 mt-0.5">
+          {showProject && (
+            <span className="text-[10px] text-muted-foreground truncate">{displayProject(task.projectName)}</span>
+          )}
+          {(task.holdReason || task.blockerReason) && (
+            <span className="text-[10px] text-red-500 truncate max-w-[200px]">
+              {task.holdReason || task.blockerReason}
+            </span>
+          )}
+        </div>
       </div>
       <div className="flex items-center gap-1.5 shrink-0">
-        {task.assignees?.[0] && (
-          <span className="text-[10px] text-muted-foreground flex items-center gap-0.5 max-w-[70px] truncate">
-            <User className="h-3 w-3 shrink-0" />
-            {task.assignees[0]}
-          </span>
-        )}
         {task.dueDate && (
-          <span className={`text-[10px] flex items-center gap-0.5 ${isOverdue ? "text-red-600 font-bold" : "text-muted-foreground"}`}>
+          <span className={`text-[10px] flex items-center gap-0.5 px-1.5 py-0.5 rounded-md ${
+            isOverdue ? "text-red-700 bg-red-100 dark:bg-red-900/40 font-bold" :
+            isDueSoon ? "text-amber-700 bg-amber-100 dark:bg-amber-900/40 font-semibold" :
+            "text-muted-foreground"
+          }`}>
             <Calendar className="h-3 w-3 shrink-0" />
             {daysFromNow(task.dueDate)}
           </span>
@@ -203,6 +241,7 @@ function TaskRow({ task, showProject = true }: { task: StandupTask; showProject?
         <Badge className={`text-[9px] px-1.5 py-0 ${statusBadge[task.status] || "bg-gray-100"}`}>
           {task.status}
         </Badge>
+        <ChevronRight className="h-3 w-3 text-muted-foreground/40 opacity-0 group-hover:opacity-100 transition-opacity" />
       </div>
     </div>
   );
@@ -222,17 +261,26 @@ function CollapsibleSection({
 }) {
   const [open, setOpen] = useState(defaultOpen);
 
+  const countBg = color.includes("red") ? "bg-red-100 text-red-700 dark:bg-red-900/40" :
+    color.includes("purple") ? "bg-purple-100 text-purple-700 dark:bg-purple-900/40" :
+    color.includes("indigo") ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40" :
+    color.includes("blue") ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40" :
+    color.includes("emerald") ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40" :
+    "bg-muted text-muted-foreground";
+
   return (
-    <Card className="overflow-hidden" data-testid={testId}>
+    <Card className="overflow-hidden shadow-sm" data-testid={testId}>
       <button
-        className="w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-muted/20 transition-colors"
+        className="w-full flex items-center gap-2.5 px-4 py-3 text-left hover:bg-muted/30 transition-all"
         onClick={() => setOpen(!open)}
         data-testid={`toggle-${testId}`}
       >
-        {open ? <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" /> : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />}
+        <div className={`transition-transform duration-200 ${open ? "rotate-90" : ""}`}>
+          <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+        </div>
         <span className={`shrink-0 ${color}`}>{icon}</span>
         <span className="font-semibold text-sm flex-1">{title}</span>
-        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${color} bg-opacity-10`}>{count}</span>
+        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${countBg}`}>{count}</span>
         {badge}
       </button>
       {open && <div className="border-t">{children}</div>}
@@ -242,26 +290,26 @@ function CollapsibleSection({
 
 function KpiStrip({ summary }: { summary: StandupData["summary"] }) {
   const stats = [
-    { label: "Projects", value: summary.totalProjects, icon: <Layers className="w-4 h-4" />, color: "text-blue-600", bg: "bg-blue-50" },
-    { label: "Active", value: summary.activeTasks, icon: <ListTodo className="w-4 h-4" />, color: "text-blue-600", bg: "bg-blue-50" },
-    { label: "Overdue", value: summary.overdueTasks, icon: <AlertTriangle className="w-4 h-4" />, color: summary.overdueTasks > 0 ? "text-red-600" : "text-muted-foreground", bg: summary.overdueTasks > 0 ? "bg-red-50" : "bg-muted" },
-    { label: "On Hold", value: summary.holdTasks, icon: <PauseCircle className="w-4 h-4" />, color: summary.holdTasks > 0 ? "text-amber-600" : "text-muted-foreground", bg: summary.holdTasks > 0 ? "bg-amber-50" : "bg-muted" },
-    { label: "Approvals", value: summary.needsApprovalCount, icon: <ShieldAlert className="w-4 h-4" />, color: summary.needsApprovalCount > 0 ? "text-purple-600" : "text-muted-foreground", bg: summary.needsApprovalCount > 0 ? "bg-purple-50" : "bg-muted" },
-    { label: "Due This Week", value: summary.upcomingThisWeekCount, icon: <Timer className="w-4 h-4" />, color: "text-indigo-600", bg: "bg-indigo-50" },
-    { label: "Done (24h)", value: summary.recentlyCompletedCount, icon: <CheckCircle2 className="w-4 h-4" />, color: "text-emerald-600", bg: "bg-emerald-50" },
+    { label: "Projects", value: summary.totalProjects, icon: <Layers className="w-4 h-4" />, color: "text-blue-600", bg: "bg-blue-50 dark:bg-blue-950/30", border: "border-blue-200 dark:border-blue-800", pulse: false },
+    { label: "Active", value: summary.activeTasks, icon: <ListTodo className="w-4 h-4" />, color: "text-blue-600", bg: "bg-blue-50 dark:bg-blue-950/30", border: "border-blue-200 dark:border-blue-800", pulse: false },
+    { label: "Overdue", value: summary.overdueTasks, icon: <AlertTriangle className="w-4 h-4" />, color: summary.overdueTasks > 0 ? "text-red-600" : "text-muted-foreground", bg: summary.overdueTasks > 0 ? "bg-red-50 dark:bg-red-950/30" : "bg-muted", border: summary.overdueTasks > 0 ? "border-red-200 dark:border-red-800" : "", pulse: summary.overdueTasks > 0 },
+    { label: "On Hold", value: summary.holdTasks, icon: <PauseCircle className="w-4 h-4" />, color: summary.holdTasks > 0 ? "text-amber-600" : "text-muted-foreground", bg: summary.holdTasks > 0 ? "bg-amber-50 dark:bg-amber-950/30" : "bg-muted", border: summary.holdTasks > 0 ? "border-amber-200 dark:border-amber-800" : "", pulse: false },
+    { label: "Approvals", value: summary.needsApprovalCount, icon: <ShieldAlert className="w-4 h-4" />, color: summary.needsApprovalCount > 0 ? "text-purple-600" : "text-muted-foreground", bg: summary.needsApprovalCount > 0 ? "bg-purple-50 dark:bg-purple-950/30" : "bg-muted", border: summary.needsApprovalCount > 0 ? "border-purple-200 dark:border-purple-800" : "", pulse: false },
+    { label: "Due This Week", value: summary.upcomingThisWeekCount, icon: <Timer className="w-4 h-4" />, color: "text-indigo-600", bg: "bg-indigo-50 dark:bg-indigo-950/30", border: "border-indigo-200 dark:border-indigo-800", pulse: false },
+    { label: "Done (24h)", value: summary.recentlyCompletedCount, icon: <CheckCircle2 className="w-4 h-4" />, color: "text-emerald-600", bg: "bg-emerald-50 dark:bg-emerald-950/30", border: "border-emerald-200 dark:border-emerald-800", pulse: false },
   ];
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2" data-testid="standup-kpi-strip">
+    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2" data-testid="standup-kpi-strip">
       {stats.map(s => (
-        <Card key={s.label} className="overflow-hidden">
+        <Card key={s.label} className={`overflow-hidden shadow-sm ${s.border} transition-all hover:shadow-md`}>
           <CardContent className="p-3 flex items-center gap-2.5">
-            <div className={`w-8 h-8 rounded-lg ${s.bg} flex items-center justify-center shrink-0`}>
+            <div className={`w-9 h-9 rounded-xl ${s.bg} flex items-center justify-center shrink-0 ${s.pulse ? "animate-pulse" : ""}`}>
               <span className={s.color}>{s.icon}</span>
             </div>
             <div className="min-w-0">
-              <p className={`text-lg font-bold leading-tight ${s.color}`} data-testid={`kpi-${s.label.toLowerCase().replace(/\s+/g, "-")}`}>{s.value}</p>
-              <p className="text-[9px] text-muted-foreground uppercase tracking-wide truncate">{s.label}</p>
+              <p className={`text-xl font-bold leading-tight ${s.color}`} data-testid={`kpi-${s.label.toLowerCase().replace(/\s+/g, "-")}`}>{s.value}</p>
+              <p className="text-[8px] text-muted-foreground uppercase tracking-wider font-medium truncate">{s.label}</p>
             </div>
           </CardContent>
         </Card>
@@ -278,13 +326,13 @@ function ProjectHealthGrid({ projects }: { projects: ProjectHealth[] }) {
   const ragText = { RED: "text-red-700", AMBER: "text-amber-700", GREEN: "text-emerald-700" };
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2" data-testid="project-health-grid">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5" data-testid="project-health-grid">
       {projects.map(p => {
         const colors = PHASE_COLORS[p.phase] || PHASE_COLORS.P0_FIRST_ASSESSMENT;
         return (
           <Card
             key={p.projectName}
-            className={`overflow-hidden border-l-4 ${ragBorder[p.rag]} hover:shadow-md transition-all cursor-pointer`}
+            className={`overflow-hidden border-l-4 ${ragBorder[p.rag]} hover:shadow-lg transition-all cursor-pointer group shadow-sm`}
             onClick={() => {
               const name = p.projectName.replace(/ /g, "_");
               const trackerName = name.endsWith("_Tracker") ? name : name + "_Tracker";
@@ -295,30 +343,30 @@ function ProjectHealthGrid({ projects }: { projects: ProjectHealth[] }) {
             <CardContent className="p-3">
               <div className="flex items-start justify-between gap-2 mb-2">
                 <div className="min-w-0 flex-1">
-                  <p className="font-semibold text-sm truncate">{p.displayName}</p>
-                  <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium ${colors.bg} ${colors.text}`}>
+                  <p className="font-semibold text-sm truncate group-hover:text-blue-600 transition-colors">{p.displayName}</p>
+                  <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium ${colors.bg} ${colors.text} mt-0.5`}>
                     {p.phaseLabel}
                   </span>
                 </div>
-                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${ragBg[p.rag]} ${ragText[p.rag]}`}>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${ragBg[p.rag]} ${ragText[p.rag]}`}>
                   {p.rag}
                 </span>
               </div>
 
-              <div className="flex items-center gap-2 mb-2">
-                <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+              <div className="flex items-center gap-2 mb-2.5">
+                <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
                   <div
-                    className={`h-full rounded-full ${p.completion >= 80 ? "bg-emerald-500" : p.completion >= 40 ? "bg-blue-500" : "bg-slate-400"}`}
+                    className={`h-full rounded-full transition-all duration-500 ${p.completion >= 80 ? "bg-emerald-500" : p.completion >= 40 ? "bg-blue-500" : "bg-slate-400"}`}
                     style={{ width: `${Math.min(p.completion, 100)}%` }}
                   />
                 </div>
-                <span className="text-[10px] font-mono text-muted-foreground">{p.completion}%</span>
+                <span className="text-[10px] font-mono font-bold text-muted-foreground">{p.completion}%</span>
               </div>
 
-              <div className="flex gap-3 text-[10px]">
+              <div className="flex gap-2 text-[10px] flex-wrap">
                 <span className="text-muted-foreground">{p.active} active</span>
-                {p.overdue > 0 && <span className="text-red-600 font-bold">{p.overdue} overdue</span>}
-                {p.hold > 0 && <span className="text-amber-600 font-semibold">{p.hold} hold</span>}
+                {p.overdue > 0 && <span className="text-red-700 bg-red-100 dark:bg-red-900/40 px-1.5 py-0.5 rounded-full font-bold">{p.overdue} overdue</span>}
+                {p.hold > 0 && <span className="text-amber-700 bg-amber-100 dark:bg-amber-900/40 px-1.5 py-0.5 rounded-full font-semibold">{p.hold} hold</span>}
                 {p.dueThisWeek > 0 && <span className="text-indigo-600">{p.dueThisWeek} due this wk</span>}
               </div>
             </CardContent>
@@ -332,29 +380,60 @@ function ProjectHealthGrid({ projects }: { projects: ProjectHealth[] }) {
 function WorkloadTable({ workload }: { workload: WorkloadEntry[] }) {
   if (workload.length === 0) return <p className="text-xs text-muted-foreground p-4">No workload data</p>;
 
+  const maxActive = Math.max(...workload.map(w => w.active), 1);
+
   return (
     <div className="overflow-x-auto" data-testid="workload-table">
       <table className="w-full text-xs">
         <thead>
-          <tr className="bg-muted/30 text-[10px] uppercase text-muted-foreground">
-            <th className="text-left px-3 py-2 font-medium">Person</th>
-            <th className="text-center px-2 py-2 font-medium">Active</th>
-            <th className="text-center px-2 py-2 font-medium">Due This Wk</th>
-            <th className="text-center px-2 py-2 font-medium">Overdue</th>
-            <th className="text-center px-2 py-2 font-medium">On Hold</th>
+          <tr className="bg-muted/40 text-[9px] uppercase text-muted-foreground tracking-wider">
+            <th className="text-left px-3 py-2.5 font-semibold">Person</th>
+            <th className="text-center px-2 py-2.5 font-semibold">Active</th>
+            <th className="text-center px-2 py-2.5 font-semibold">Due This Wk</th>
+            <th className="text-center px-2 py-2.5 font-semibold">Overdue</th>
+            <th className="text-center px-2 py-2.5 font-semibold">On Hold</th>
           </tr>
         </thead>
         <tbody>
           {workload.map(w => (
-            <tr key={w.name} className="border-b last:border-b-0 hover:bg-muted/20" data-testid={`workload-row-${w.name}`}>
-              <td className="px-3 py-2 font-medium flex items-center gap-1.5">
-                <User className="h-3.5 w-3.5 text-muted-foreground" />
-                {w.name}
+            <tr key={w.name} className="border-b last:border-b-0 hover:bg-muted/20 transition-colors" data-testid={`workload-row-${w.name}`}>
+              <td className="px-3 py-2.5">
+                <div className="flex items-center gap-2">
+                  <div className={`w-6 h-6 rounded-full ${getAvatarColor(w.name)} flex items-center justify-center shrink-0`}>
+                    <span className="text-[8px] font-bold text-white">{getInitials(w.name)}</span>
+                  </div>
+                  <span className="font-medium">{w.name}</span>
+                </div>
               </td>
-              <td className="text-center px-2 py-2">{w.active}</td>
-              <td className="text-center px-2 py-2 text-indigo-600 font-semibold">{w.dueThisWeek}</td>
-              <td className={`text-center px-2 py-2 ${w.overdue > 0 ? "text-red-600 font-bold" : ""}`}>{w.overdue}</td>
-              <td className={`text-center px-2 py-2 ${w.hold > 0 ? "text-amber-600 font-semibold" : ""}`}>{w.hold}</td>
+              <td className="text-center px-2 py-2.5">
+                <div className="flex items-center justify-center gap-1.5">
+                  <div className="w-12 h-1.5 bg-muted rounded-full overflow-hidden hidden sm:block">
+                    <div className="h-full bg-blue-400 rounded-full" style={{ width: `${(w.active / maxActive) * 100}%` }} />
+                  </div>
+                  <span className="font-semibold">{w.active}</span>
+                </div>
+              </td>
+              <td className="text-center px-2 py-2.5">
+                <span className={`font-semibold ${w.dueThisWeek > 0 ? "text-indigo-600" : "text-muted-foreground"}`}>{w.dueThisWeek}</span>
+              </td>
+              <td className="text-center px-2 py-2.5">
+                {w.overdue > 0 ? (
+                  <span className="inline-flex items-center gap-0.5 text-red-700 bg-red-100 dark:bg-red-900/40 px-1.5 py-0.5 rounded-full font-bold text-[10px]">
+                    {w.overdue}
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">0</span>
+                )}
+              </td>
+              <td className="text-center px-2 py-2.5">
+                {w.hold > 0 ? (
+                  <span className="inline-flex items-center gap-0.5 text-amber-700 bg-amber-100 dark:bg-amber-900/40 px-1.5 py-0.5 rounded-full font-bold text-[10px]">
+                    {w.hold}
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">0</span>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -437,14 +516,21 @@ function groupByAssignee(tasks: FullTask[]): Map<string, FullTask[]> {
 function InlineTaskRow({ task, onUpdate }: { task: FullTask; onUpdate: (id: number, updates: Record<string, any>) => void }) {
   const [, setLocation] = useLocation();
   const [quickNote, setQuickNote] = useState("");
+  const [showNote, setShowNote] = useState(false);
   const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && task.status !== "COMPLETE";
+  const isDueSoon = task.dueDate && !isOverdue && (() => {
+    const diff = Math.round((new Date(task.dueDate!).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+    return diff <= 2;
+  })();
   const { toast } = useToast();
+  const assignee = task.assignees?.[0];
 
   const handleQuickNote = async () => {
     if (!quickNote.trim()) return;
     try {
       await engPost(`/api/eng/tasks/${task.id}/comments`, { body: `[Quick Note] ${quickNote.trim()}` });
       setQuickNote("");
+      setShowNote(false);
       toast({ title: "Note posted" });
     } catch (e: any) {
       toast({ title: "Error", description: e.message, variant: "destructive" });
@@ -453,25 +539,32 @@ function InlineTaskRow({ task, onUpdate }: { task: FullTask; onUpdate: (id: numb
 
   return (
     <div
-      className="border-b last:border-b-0 hover:bg-muted/30 transition-colors text-xs"
+      className={`border-b last:border-b-0 hover:bg-muted/30 transition-all text-xs border-l-3 ${priorityBorderDash[task.priority] || "border-l-gray-200"} ${isOverdue ? "bg-red-50/30 dark:bg-red-950/10" : ""}`}
       data-testid={`standup-inline-task-${task.id}`}
     >
-      <div className="flex items-center gap-2 px-3 py-2">
+      <div className="flex items-center gap-2 px-3 py-2.5">
+        {assignee && (
+          <div className={`w-6 h-6 rounded-full ${getAvatarColor(assignee)} flex items-center justify-center shrink-0`} title={assignee}>
+            <span className="text-[8px] font-bold text-white leading-none">{getInitials(assignee)}</span>
+          </div>
+        )}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
-            <span className={`font-medium truncate ${priorityColors[task.priority] || ""}`}>
+            <span className="font-medium truncate text-foreground">
               {task.title}
             </span>
             {task.blockedType && (
-              <Badge className={`text-[8px] px-1 py-0 ${task.blockedType === "External" ? "bg-orange-100 text-orange-700" : "bg-yellow-100 text-yellow-700"}`}>
+              <Badge className={`text-[8px] px-1 py-0 ${task.blockedType === "External" ? "bg-orange-100 text-orange-700" : "bg-purple-100 text-purple-700"}`}>
                 {task.blockedType}
               </Badge>
             )}
           </div>
-          <span className="text-[10px] text-muted-foreground">{displayProject(task.projectName)}</span>
-          {(task.holdReason || task.blockerReason) && (
-            <p className="text-[10px] text-red-500 mt-0.5 truncate">{task.holdReason || task.blockerReason}</p>
-          )}
+          <div className="flex items-center gap-2 mt-0.5">
+            <span className="text-[10px] text-muted-foreground truncate">{displayProject(task.projectName)}</span>
+            {(task.holdReason || task.blockerReason) && (
+              <span className="text-[10px] text-red-500 truncate max-w-[180px]">{task.holdReason || task.blockerReason}</span>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-1 shrink-0">
@@ -479,7 +572,7 @@ function InlineTaskRow({ task, onUpdate }: { task: FullTask; onUpdate: (id: numb
             value={task.priority}
             onValueChange={(val) => onUpdate(task.id, { priority: val })}
           >
-            <SelectTrigger className="h-6 w-[60px] text-[10px] px-1.5" data-testid={`priority-select-${task.id}`}>
+            <SelectTrigger className="h-6 w-[60px] text-[10px] px-1.5 border-dashed" data-testid={`priority-select-${task.id}`}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -493,7 +586,7 @@ function InlineTaskRow({ task, onUpdate }: { task: FullTask; onUpdate: (id: numb
             value={task.status}
             onValueChange={(val) => onUpdate(task.id, { status: val })}
           >
-            <SelectTrigger className="h-6 w-[100px] text-[10px] px-1.5" data-testid={`status-select-${task.id}`}>
+            <SelectTrigger className="h-6 w-[100px] text-[10px] px-1.5 border-dashed" data-testid={`status-select-${task.id}`}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -507,12 +600,16 @@ function InlineTaskRow({ task, onUpdate }: { task: FullTask; onUpdate: (id: numb
             type="date"
             value={task.dueDate || ""}
             onChange={(e) => onUpdate(task.id, { dueDate: e.target.value || null })}
-            className="h-6 w-[110px] text-[10px] px-1.5"
+            className="h-6 w-[110px] text-[10px] px-1.5 border-dashed"
             data-testid={`due-date-input-${task.id}`}
           />
 
           {task.dueDate && (
-            <span className={`text-[10px] w-[50px] text-right ${isOverdue ? "text-red-600 font-bold" : "text-muted-foreground"}`}>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-md min-w-[44px] text-center ${
+              isOverdue ? "text-red-700 bg-red-100 dark:bg-red-900/40 font-bold" :
+              isDueSoon ? "text-amber-700 bg-amber-100 dark:bg-amber-900/40 font-semibold" :
+              "text-muted-foreground"
+            }`}>
               {daysFromNow(task.dueDate)}
             </span>
           )}
@@ -520,7 +617,18 @@ function InlineTaskRow({ task, onUpdate }: { task: FullTask; onUpdate: (id: numb
           <Button
             variant="ghost"
             size="sm"
-            className="h-6 w-6 p-0"
+            className="h-6 w-6 p-0 opacity-60 hover:opacity-100"
+            onClick={(e) => { e.stopPropagation(); setShowNote(!showNote); }}
+            title="Add note"
+            data-testid={`toggle-note-${task.id}`}
+          >
+            <Edit3 className="h-3 w-3" />
+          </Button>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 w-6 p-0 opacity-60 hover:opacity-100"
             onClick={(e) => { e.stopPropagation(); setLocation(`/engineering/tasks?taskId=${task.id}`); }}
             data-testid={`open-detail-${task.id}`}
           >
@@ -529,44 +637,56 @@ function InlineTaskRow({ task, onUpdate }: { task: FullTask; onUpdate: (id: numb
         </div>
       </div>
 
-      <div className="flex items-center gap-1.5 px-3 pb-2">
-        <Input
-          placeholder="Quick note..."
-          value={quickNote}
-          onChange={(e) => setQuickNote(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") handleQuickNote(); }}
-          className="h-5 text-[10px] flex-1"
-          data-testid={`quick-note-input-${task.id}`}
-        />
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-5 w-5 p-0"
-          onClick={handleQuickNote}
-          disabled={!quickNote.trim()}
-          data-testid={`quick-note-send-${task.id}`}
-        >
-          <Send className="h-3 w-3" />
-        </Button>
-      </div>
+      {showNote && (
+        <div className="flex items-center gap-1.5 px-3 pb-2 pl-11">
+          <Input
+            placeholder="Add a quick note..."
+            value={quickNote}
+            onChange={(e) => setQuickNote(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") handleQuickNote(); if (e.key === "Escape") setShowNote(false); }}
+            className="h-6 text-[10px] flex-1 border-dashed"
+            autoFocus
+            data-testid={`quick-note-input-${task.id}`}
+          />
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 px-2 text-[10px] gap-1"
+            onClick={handleQuickNote}
+            disabled={!quickNote.trim()}
+            data-testid={`quick-note-send-${task.id}`}
+          >
+            <Send className="h-3 w-3" />
+            Post
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
 
 function AssigneeGroup({ name, tasks, onUpdate, defaultOpen }: { name: string; tasks: FullTask[]; onUpdate: (id: number, updates: Record<string, any>) => void; defaultOpen: boolean }) {
   const [open, setOpen] = useState(defaultOpen);
+  const overdueCount = tasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && t.status !== "COMPLETE").length;
 
   return (
     <div data-testid={`assignee-group-${name}`}>
       <button
-        className="w-full flex items-center gap-2 px-4 py-1.5 text-left hover:bg-muted/20 transition-colors bg-muted/10"
+        className="w-full flex items-center gap-2 px-4 py-2 text-left hover:bg-muted/30 transition-colors bg-muted/10 border-b"
         onClick={() => setOpen(!open)}
         data-testid={`toggle-assignee-${name}`}
       >
-        {open ? <ChevronDown className="h-3 w-3 text-muted-foreground" /> : <ChevronRight className="h-3 w-3 text-muted-foreground" />}
-        <User className="h-3 w-3 text-muted-foreground" />
+        <div className={`transition-transform duration-150 ${open ? "rotate-90" : ""}`}>
+          <ChevronRight className="h-3 w-3 text-muted-foreground" />
+        </div>
+        <div className={`w-5 h-5 rounded-full ${name === "Unassigned" ? "bg-gray-400" : getAvatarColor(name)} flex items-center justify-center shrink-0`}>
+          <span className="text-[7px] font-bold text-white leading-none">{name === "Unassigned" ? "?" : getInitials(name)}</span>
+        </div>
         <span className="font-medium text-xs">{name}</span>
-        <span className="text-[10px] text-muted-foreground ml-auto">{tasks.length} task{tasks.length !== 1 ? "s" : ""}</span>
+        {overdueCount > 0 && (
+          <span className="text-[9px] font-bold text-red-600 bg-red-100 dark:bg-red-900/40 px-1.5 py-0.5 rounded-full">{overdueCount} overdue</span>
+        )}
+        <span className="text-[10px] text-muted-foreground ml-auto">{tasks.length}</span>
       </button>
       {open && (
         <div>
@@ -595,17 +715,26 @@ function StandupBucket({
 
   if (tasks.length === 0) return null;
 
+  const countBg = color.includes("red") ? "bg-red-100 text-red-700 dark:bg-red-900/40" :
+    color.includes("amber") ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40" :
+    color.includes("indigo") ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40" :
+    color.includes("blue") ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40" :
+    "bg-muted text-muted-foreground";
+
   return (
-    <Card className="overflow-hidden" data-testid={testId}>
+    <Card className="overflow-hidden shadow-sm" data-testid={testId}>
       <button
-        className="w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-muted/20 transition-colors"
+        className="w-full flex items-center gap-2.5 px-4 py-3 text-left hover:bg-muted/30 transition-all"
         onClick={() => setOpen(!open)}
         data-testid={`toggle-${testId}`}
       >
-        {open ? <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" /> : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />}
+        <div className={`transition-transform duration-200 ${open ? "rotate-90" : ""}`}>
+          <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+        </div>
         <span className={`shrink-0 ${color}`}>{icon}</span>
         <span className="font-semibold text-sm flex-1">{title}</span>
-        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${color} bg-opacity-10`}>{tasks.length}</span>
+        <span className="text-[10px] text-muted-foreground mr-1">{grouped.size} assignee{grouped.size !== 1 ? "s" : ""}</span>
+        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${countBg}`}>{tasks.length}</span>
       </button>
       {open && (
         <div className="border-t">
@@ -698,11 +827,14 @@ function StandupModeView() {
       {blockerCount > 0 && (
         <button
           onClick={scrollToBlockers}
-          className="flex items-center gap-1.5 text-red-600 bg-red-50 px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-red-100 transition-colors w-fit"
+          className="flex items-center gap-2 text-red-700 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 px-4 py-2 rounded-xl text-xs font-bold hover:bg-red-100 dark:hover:bg-red-950/50 transition-all w-fit shadow-sm"
           data-testid="standup-blocker-badge"
         >
-          <ShieldAlert className="h-4 w-4" />
+          <div className="w-6 h-6 bg-red-100 dark:bg-red-900/40 rounded-full flex items-center justify-center">
+            <ShieldAlert className="h-3.5 w-3.5" />
+          </div>
           {blockerCount} blocker{blockerCount !== 1 ? "s" : ""} need attention
+          <ChevronDown className="h-3.5 w-3.5 ml-1 animate-bounce" />
         </button>
       )}
 
@@ -926,20 +1058,20 @@ export default function EngineeringDashboard() {
 
   return (
     <div data-testid="eng-dashboard" className="space-y-5">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center shadow-sm">
+          <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center shadow-md">
             <Wrench className="h-5 w-5 text-white" />
           </div>
           <div>
-            <h2 className="text-xl sm:text-2xl font-heading font-bold" data-testid="text-standup-title">
-              {standupMode ? "Engineering Standup Mode" : showAllTasks ? "Engineering Standup" : `${firstName}'s Dashboard`}
+            <h2 className="text-xl sm:text-2xl font-heading font-bold tracking-tight" data-testid="text-standup-title">
+              {standupMode ? "Engineering Standup" : showAllTasks ? "Engineering Overview" : `${firstName}'s Dashboard`}
             </h2>
             <p className="text-xs text-muted-foreground flex items-center gap-1.5">
               <Clock className="h-3 w-3" />
               {todayFormatted}
               {!showAllTasks && firstName && (
-                <span className="ml-1 flex items-center gap-1 text-blue-600">
+                <span className="ml-1 flex items-center gap-1 text-blue-600 font-medium">
                   <UserCheck className="h-3 w-3" />
                   Filtered to your tasks
                 </span>
@@ -952,11 +1084,11 @@ export default function EngineeringDashboard() {
             <Button
               variant={standupMode ? "default" : "outline"}
               size="sm"
-              className={`h-7 text-xs gap-1 ${standupMode ? "bg-orange-600 hover:bg-orange-700" : ""}`}
+              className={`h-8 text-xs gap-1.5 font-semibold ${standupMode ? "bg-orange-600 hover:bg-orange-700 shadow-sm" : ""}`}
               onClick={() => setStandupMode(!standupMode)}
               data-testid="toggle-standup-mode"
             >
-              <LayoutGrid className="h-3 w-3" />
+              <LayoutGrid className="h-3.5 w-3.5" />
               {standupMode ? "Exit Standup" : "Standup Mode"}
             </Button>
           )}
@@ -964,19 +1096,19 @@ export default function EngineeringDashboard() {
             <Button
               variant={showAllTasks ? "default" : "outline"}
               size="sm"
-              className="h-7 text-xs gap-1"
+              className="h-8 text-xs gap-1.5 font-semibold"
               onClick={() => setShowAllTasks(!showAllTasks)}
               data-testid="toggle-all-tasks"
             >
               {showAllTasks ? (
-                <><UserCheck className="h-3 w-3" /> My Tasks</>
+                <><UserCheck className="h-3.5 w-3.5" /> My Tasks</>
               ) : (
-                <><Eye className="h-3 w-3" /> All Tasks</>
+                <><Eye className="h-3.5 w-3.5" /> All Tasks</>
               )}
             </Button>
           )}
           {!standupMode && totalBlockers > 0 && (
-            <div className="flex items-center gap-1.5 text-red-600 bg-red-50 px-3 py-1.5 rounded-lg text-xs font-semibold" data-testid="blocker-alert">
+            <div className="flex items-center gap-1.5 text-red-600 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 px-3 py-1.5 rounded-lg text-xs font-bold animate-pulse" data-testid="blocker-alert">
               <ShieldAlert className="h-4 w-4" />
               {totalBlockers} blocker{totalBlockers !== 1 ? "s" : ""} need attention
             </div>
@@ -1004,22 +1136,22 @@ export default function EngineeringDashboard() {
           defaultOpen={true}
           testId="section-blockers"
         >
-          {blockers.hold.length > 0 && (
-            <div>
-              <div className="px-3 py-1.5 bg-red-50/50 text-[10px] font-semibold text-red-700 uppercase tracking-wider flex items-center gap-1">
-                <PauseCircle className="h-3 w-3" />
-                On Hold ({blockers.hold.length})
-              </div>
-              {blockers.hold.map(t => <TaskRow key={t.id} task={t} />)}
-            </div>
-          )}
           {blockers.overdue.length > 0 && (
             <div>
-              <div className="px-3 py-1.5 bg-amber-50/50 text-[10px] font-semibold text-amber-700 uppercase tracking-wider flex items-center gap-1">
+              <div className="px-3 py-2 bg-gradient-to-r from-red-50 to-transparent dark:from-red-950/20 text-[10px] font-bold text-red-700 dark:text-red-400 uppercase tracking-wider flex items-center gap-1.5 border-b">
                 <AlertTriangle className="h-3 w-3" />
                 Overdue ({blockers.overdue.length})
               </div>
               {blockers.overdue.map(t => <TaskRow key={t.id} task={t} />)}
+            </div>
+          )}
+          {blockers.hold.length > 0 && (
+            <div>
+              <div className="px-3 py-2 bg-gradient-to-r from-amber-50 to-transparent dark:from-amber-950/20 text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider flex items-center gap-1.5 border-b">
+                <PauseCircle className="h-3 w-3" />
+                On Hold ({blockers.hold.length})
+              </div>
+              {blockers.hold.map(t => <TaskRow key={t.id} task={t} />)}
             </div>
           )}
         </CollapsibleSection>
@@ -1082,34 +1214,39 @@ export default function EngineeringDashboard() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Card data-testid="section-workload">
+        <Card className="shadow-sm" data-testid="section-workload">
           <div className="px-4 py-3 border-b flex items-center gap-2">
-            <Users className="h-4 w-4 text-indigo-600" />
+            <div className="w-7 h-7 rounded-lg bg-indigo-50 dark:bg-indigo-950/30 flex items-center justify-center">
+              <Users className="h-4 w-4 text-indigo-600" />
+            </div>
             <span className="font-semibold text-sm">Team Workload</span>
-            <span className="text-xs text-muted-foreground ml-auto">{workload.length} members</span>
+            <span className="text-[10px] text-muted-foreground ml-auto bg-muted px-1.5 py-0.5 rounded-full font-medium">{workload.length} members</span>
           </div>
           <WorkloadTable workload={workload} />
         </Card>
 
-        <Card data-testid="section-pipeline">
+        <Card className="shadow-sm" data-testid="section-pipeline">
           <div className="px-4 py-3 border-b flex items-center gap-2">
-            <TrendingUp className="h-4 w-4 text-emerald-600" />
+            <div className="w-7 h-7 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 flex items-center justify-center">
+              <TrendingUp className="h-4 w-4 text-emerald-600" />
+            </div>
             <span className="font-semibold text-sm">Status Pipeline</span>
           </div>
           <CardContent className="p-4">
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               {(() => {
                 const statusOrder = ["TO DO", "IN PROGRESS", "NEEDS APPROVAL", "QC APPROVED", "PROVIDE FEEDBACK", "PROJECTS ASSISTANCE", "HOLD", "COMPLETE"];
                 const statusColors: Record<string, string> = {
-                  "COMPLETE": "bg-emerald-400",
-                  "HOLD": "bg-red-400",
-                  "IN PROGRESS": "bg-blue-400",
-                  "NEEDS APPROVAL": "bg-amber-400",
-                  "QC APPROVED": "bg-teal-400",
-                  "PROVIDE FEEDBACK": "bg-orange-400",
+                  "COMPLETE": "bg-emerald-500",
+                  "HOLD": "bg-red-500",
+                  "IN PROGRESS": "bg-blue-500",
+                  "NEEDS APPROVAL": "bg-amber-500",
+                  "QC APPROVED": "bg-teal-500",
+                  "PROVIDE FEEDBACK": "bg-orange-500",
                   "TO DO": "bg-slate-400",
-                  "PROJECTS ASSISTANCE": "bg-purple-400",
+                  "PROJECTS ASSISTANCE": "bg-purple-500",
                 };
+                const total = summary.totalTasks || 1;
                 return Object.entries(data.statusPipeline)
                   .sort(([a], [b]) => {
                     const ai = statusOrder.indexOf(a);
@@ -1117,18 +1254,17 @@ export default function EngineeringDashboard() {
                     return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
                   })
                   .map(([status, count]) => {
-                    const total = summary.totalTasks || 1;
                     const pct = Math.round((count / total) * 100);
                     return (
-                      <div key={status} className="flex items-center gap-2 text-xs">
-                        <span className="w-[90px] sm:w-[130px] truncate text-muted-foreground">{status}</span>
-                        <div className="flex-1 h-3 bg-muted rounded-full overflow-hidden">
+                      <div key={status} className="flex items-center gap-2 text-xs group">
+                        <span className="w-[90px] sm:w-[130px] truncate text-muted-foreground group-hover:text-foreground transition-colors">{status}</span>
+                        <div className="flex-1 h-4 bg-muted/60 rounded-md overflow-hidden">
                           <div
-                            className={`h-full rounded-full transition-all ${statusColors[status] || "bg-slate-300"}`}
-                            style={{ width: `${pct}%` }}
+                            className={`h-full rounded-md transition-all duration-500 ${statusColors[status] || "bg-slate-300"}`}
+                            style={{ width: `${Math.max(pct, 2)}%` }}
                           />
                         </div>
-                        <span className="font-mono w-8 text-right font-semibold">{count}</span>
+                        <span className="font-mono w-8 text-right font-bold">{count}</span>
                       </div>
                     );
                   });
@@ -1140,15 +1276,24 @@ export default function EngineeringDashboard() {
 
       <div>
         <div className="flex items-center gap-2 mb-3">
-          <ArrowUpRight className="h-4 w-4 text-muted-foreground" />
+          <div className="w-7 h-7 rounded-lg bg-muted flex items-center justify-center">
+            <ArrowUpRight className="h-4 w-4 text-muted-foreground" />
+          </div>
           <h3 className="font-semibold text-sm">Project Health</h3>
-          <span className="text-xs text-muted-foreground">
-            {projectHealth.filter(p => p.rag === "RED").length} red
-            {" / "}
-            {projectHealth.filter(p => p.rag === "AMBER").length} amber
-            {" / "}
-            {projectHealth.filter(p => p.rag === "GREEN").length} green
-          </span>
+          <div className="flex items-center gap-2 ml-auto text-[10px]">
+            <span className="flex items-center gap-1 text-red-600 font-bold">
+              <span className="w-2 h-2 rounded-full bg-red-500" />
+              {projectHealth.filter(p => p.rag === "RED").length}
+            </span>
+            <span className="flex items-center gap-1 text-amber-600 font-bold">
+              <span className="w-2 h-2 rounded-full bg-amber-500" />
+              {projectHealth.filter(p => p.rag === "AMBER").length}
+            </span>
+            <span className="flex items-center gap-1 text-emerald-600 font-bold">
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
+              {projectHealth.filter(p => p.rag === "GREEN").length}
+            </span>
+          </div>
         </div>
         <ProjectHealthGrid projects={projectHealth} />
       </div>
