@@ -35,6 +35,10 @@ Preferred communication style: Simple, everyday language.
 -   **Data Sources**: `normalized_cost_lines`, `normalized_revenue_lines`, `normalized_plan_tasks` are the primary data sources.
 -   **Derived Data**: `derived_project_kpis`, `derived_portfolio_kpis`, `derived_rag_summary` tables exist but are NOT used by portfolio endpoints. All portfolio dashboards, rollups, timeline, and overview endpoints compute Act%/Expected%/delta and financial metrics live from underlying `project_plan`, `program_expense`, and `program_inflows` tables using `computeProjectCompletion()` (duration-weighted plan task calculation).
 
+### Engineering Task Deliverables & Approval
+-   **Deliverables**: Tasks support file deliverable attachments sent to specific recipients with acknowledgment tracking. `task_deliverables` table stores file, sender, recipient, acknowledgment status. Download endpoint at `/api/eng/deliverables/:id/download`.
+-   **Approval Flow**: "Send for Approval" changes task status to NEEDS APPROVAL without requiring a specific approver. Approve/Request Changes/Reject actions available when task is in NEEDS APPROVAL status.
+
 ### Engineering Stage Management
 -   **Module**: A 5-stage engineering checklist system (First Assessment, Cost Proposal, IFC Planning, Construction Support, Handover Pack) with CRUD for templates, project stage instantiation, task/deliverable/approval management, and stage gate completion logic.
 -   **SharePoint Integration**: Deliverable uploads include SharePoint sync folder path selection and display.

@@ -62,6 +62,7 @@ import {
   Eye,
   EyeOff,
   Pencil,
+  Paperclip,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { usePermission } from "@/hooks/use-permissions";
@@ -767,10 +768,14 @@ function TaskDetailDrawer({
   const [approvalComment, setApprovalComment] = useState("");
   const [showApprovalActions, setShowApprovalActions] = useState(false);
   const [showSendForApproval, setShowSendForApproval] = useState(false);
-  const [sendApprovalApprover, setSendApprovalApprover] = useState("");
   const [sendApprovalNote, setSendApprovalNote] = useState("");
   const [sendApprovalFile, setSendApprovalFile] = useState<File | null>(null);
   const [sendingForApproval, setSendingForApproval] = useState(false);
+  const [showSendDeliverable, setShowSendDeliverable] = useState(false);
+  const [deliverableFile, setDeliverableFile] = useState<File | null>(null);
+  const [deliverableRecipient, setDeliverableRecipient] = useState("");
+  const [deliverableNote, setDeliverableNote] = useState("");
+  const [sendingDeliverable, setSendingDeliverable] = useState(false);
   const [drawerHoldDialog, setDrawerHoldDialog] = useState(false);
   const [drawerHoldReason, setDrawerHoldReason] = useState("");
   const [drawerBlockedType, setDrawerBlockedType] = useState("");
@@ -791,6 +796,11 @@ function TaskDetailDrawer({
   const { data: subtasks = [] } = useQuery<Task[]>({
     queryKey: ["task-subtasks", task.id],
     queryFn: () => engFetch(`/api/eng/tasks/${task.id}/subtasks`),
+  });
+
+  const { data: taskDeliverables = [] } = useQuery<any[]>({
+    queryKey: ["task-deliverables", task.id],
+    queryFn: () => engFetch(`/api/eng/tasks/${task.id}/deliverables`),
   });
 
   const { data: teamMembers = [] } = useQuery<TeamMember[]>({
@@ -853,10 +863,6 @@ function TaskDetailDrawer({
     }
     if (newStatus === "PROJECTS ASSISTANCE" && !task.projectName) {
       toast({ title: "Project required", description: "Link a project to this task before setting Projects Assistance status.", variant: "destructive" });
-      return;
-    }
-    if (newStatus === "NEEDS APPROVAL" && !task.approverUserId) {
-      toast({ title: "Set an approver first", description: "Assign an approver below before requesting approval.", variant: "destructive" });
       return;
     }
     if (newStatus === "COMPLETE") {
@@ -1052,19 +1058,13 @@ function TaskDetailDrawer({
                 <Label className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center gap-1">
                   <ShieldCheck className="h-3.5 w-3.5" /> Approval
                 </Label>
-                {task.approverUserId && (
-                  <Badge variant="outline" className="text-[10px]">
-                    <UserCheck className="h-3 w-3 mr-1" />
-                    {teamMembers.find(m => m.id === task.approverUserId)?.name || `User #${task.approverUserId}`}
-                  </Badge>
-                )}
               </div>
 
               {(task.status === "NEEDS APPROVAL" || task.status === "OPERATIONAL APPROVAL") && (
                 <div className="space-y-2 pt-1">
                   <div className="p-2 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded text-xs text-amber-700 dark:text-amber-300 flex items-center gap-2">
                     <Clock className="h-3.5 w-3.5 shrink-0" />
-                    Awaiting approval from {teamMembers.find(m => m.id === task.approverUserId)?.name || "approver"}
+                    Awaiting approval
                   </div>
                   <Textarea
                     value={approvalComment}
@@ -1156,7 +1156,7 @@ function TaskDetailDrawer({
 
                   <Dialog open={showSendForApproval} onOpenChange={(open) => {
                     setShowSendForApproval(open);
-                    if (!open) { setSendApprovalApprover(""); setSendApprovalNote(""); setSendApprovalFile(null); }
+                    if (!open) { setSendApprovalNote(""); setSendApprovalFile(null); }
                   }}>
                     <DialogContent className="max-w-md">
                       <DialogHeader>
@@ -1165,19 +1165,6 @@ function TaskDetailDrawer({
                         </DialogTitle>
                       </DialogHeader>
                       <div className="space-y-4 pt-2">
-                        <div className="space-y-1.5">
-                          <Label className="text-xs font-medium">Approver <span className="text-red-500">*</span></Label>
-                          <Select value={sendApprovalApprover} onValueChange={setSendApprovalApprover}>
-                            <SelectTrigger className="h-9 text-sm" data-testid="select-send-approver">
-                              <SelectValue placeholder="Select approver..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {teamMembers.filter(m => m.id !== user?.id).map(m => (
-                                <SelectItem key={m.id} value={String(m.id)}>{m.name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
                         <div className="space-y-1.5">
                           <Label className="text-xs font-medium">Attachment (optional)</Label>
                           <div
@@ -1213,7 +1200,7 @@ function TaskDetailDrawer({
                           <Textarea
                             value={sendApprovalNote}
                             onChange={(e) => setSendApprovalNote(e.target.value)}
-                            placeholder="Add context for the approver..."
+                            placeholder="Add context for the reviewer..."
                             className="min-h-[60px] text-sm"
                             data-testid="textarea-send-approval-note"
                           />
@@ -1221,12 +1208,11 @@ function TaskDetailDrawer({
                         <div className="flex gap-2 pt-2">
                           <Button
                             className="flex-1 h-9 text-sm bg-amber-600 hover:bg-amber-700 gap-1.5"
-                            disabled={!sendApprovalApprover || sendingForApproval}
+                            disabled={sendingForApproval}
                             onClick={async () => {
                               setSendingForApproval(true);
                               try {
                                 const formData = new FormData();
-                                formData.append("approverUserId", sendApprovalApprover);
                                 formData.append("note", sendApprovalNote);
                                 if (sendApprovalFile) formData.append("file", sendApprovalFile);
                                 const token = localStorage.getItem("auth_token");
@@ -1240,9 +1226,9 @@ function TaskDetailDrawer({
                                   const err = await res.json().catch(() => ({ error: "Failed" }));
                                   throw new Error(err.error);
                                 }
-                                toast({ title: "Sent for approval", description: "The approver has been notified" });
+                                toast({ title: "Sent for approval", description: "Task status changed to Needs Approval" });
                                 setShowSendForApproval(false);
-                                setSendApprovalApprover(""); setSendApprovalNote(""); setSendApprovalFile(null);
+                                setSendApprovalNote(""); setSendApprovalFile(null);
                                 onUpdate();
                                 queryClient.invalidateQueries({ queryKey: ["task-comments", task.id] });
                                 queryClient.invalidateQueries({ queryKey: ["task-activity", task.id] });
@@ -1266,6 +1252,194 @@ function TaskDetailDrawer({
                   </Dialog>
                 </>
               )}
+            </div>
+
+            <div className="space-y-3 p-3 bg-blue-50/30 dark:bg-blue-950/10 rounded-lg border border-blue-200/50 dark:border-blue-800/30">
+              <div className="flex items-center justify-between">
+                <Label className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                  <Paperclip className="h-3.5 w-3.5" /> Deliverables
+                </Label>
+                <Badge variant="outline" className="text-[10px]">{taskDeliverables.length}</Badge>
+              </div>
+
+              <Button
+                size="sm"
+                className="h-8 text-xs bg-blue-600 hover:bg-blue-700 text-white gap-1.5 w-full"
+                onClick={() => setShowSendDeliverable(true)}
+                data-testid="btn-send-deliverable"
+              >
+                <Send className="h-3.5 w-3.5" /> Send Deliverable
+              </Button>
+
+              {taskDeliverables.length > 0 && (
+                <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                  {taskDeliverables.map((del: any) => (
+                    <div key={del.id} className="p-2 bg-white dark:bg-gray-900 rounded border text-xs space-y-1" data-testid={`deliverable-item-${del.id}`}>
+                      <div className="flex items-center justify-between gap-2">
+                        <a
+                          href={`/api/eng/deliverables/${del.id}/download`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1.5 truncate text-blue-600 hover:underline"
+                          data-testid={`link-download-deliverable-${del.id}`}
+                        >
+                          <Paperclip className="h-3 w-3 text-blue-500 shrink-0" />
+                          <span className="font-medium truncate">{del.originalName}</span>
+                        </a>
+                        {del.acknowledged ? (
+                          <Badge className="bg-emerald-100 text-emerald-700 border-emerald-300 text-[9px] shrink-0">Acknowledged</Badge>
+                        ) : (
+                          del.recipientUserId === user?.id ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-6 text-[10px] border-blue-300 text-blue-700 hover:bg-blue-50 gap-1 shrink-0"
+                              onClick={async () => {
+                                try {
+                                  const token = localStorage.getItem("auth_token");
+                                  const res = await fetch(`/api/eng/deliverables/${del.id}/acknowledge`, {
+                                    method: "PATCH",
+                                    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), "Content-Type": "application/json" },
+                                    credentials: "include",
+                                  });
+                                  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Failed");
+                                  toast({ title: "Acknowledged", description: `Deliverable "${del.originalName}" acknowledged` });
+                                  queryClient.invalidateQueries({ queryKey: ["task-deliverables", task.id] });
+                                  queryClient.invalidateQueries({ queryKey: ["task-comments", task.id] });
+                                  queryClient.invalidateQueries({ queryKey: ["task-activity", task.id] });
+                                } catch (err: any) {
+                                  toast({ title: "Error", description: err.message, variant: "destructive" });
+                                }
+                              }}
+                              data-testid={`btn-acknowledge-${del.id}`}
+                            >
+                              <CheckCircle2 className="h-3 w-3" /> Acknowledge
+                            </Button>
+                          ) : (
+                            <Badge variant="outline" className="text-[9px] text-amber-600 border-amber-300 shrink-0">Pending</Badge>
+                          )
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <span>{del.senderName} → {del.recipientName}</span>
+                        <span>·</span>
+                        <span>{del.createdAt ? new Date(del.createdAt).toLocaleDateString() : ""}</span>
+                      </div>
+                      {del.note && <p className="text-muted-foreground italic">{del.note}</p>}
+                      {del.acknowledged && del.acknowledgedAt && (
+                        <p className="text-emerald-600 text-[10px]">Acknowledged {new Date(del.acknowledgedAt).toLocaleDateString()}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <Dialog open={showSendDeliverable} onOpenChange={(open) => {
+                setShowSendDeliverable(open);
+                if (!open) { setDeliverableFile(null); setDeliverableRecipient(""); setDeliverableNote(""); }
+              }}>
+                <DialogContent className="max-w-md">
+                  <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2 text-base">
+                      <Send className="h-4 w-4 text-blue-600" /> Send Deliverable
+                    </DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4 pt-2">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-medium">Recipient <span className="text-red-500">*</span></Label>
+                      <Select value={deliverableRecipient} onValueChange={setDeliverableRecipient}>
+                        <SelectTrigger className="h-9 text-sm" data-testid="select-deliverable-recipient">
+                          <SelectValue placeholder="Select recipient..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {teamMembers.filter(m => m.id !== user?.id).map(m => (
+                            <SelectItem key={m.id} value={String(m.id)}>{m.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-medium">File <span className="text-red-500">*</span></Label>
+                      <div
+                        className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors cursor-pointer hover:border-blue-400 hover:bg-blue-50/30 dark:hover:bg-blue-950/10 ${deliverableFile ? "border-blue-400 bg-blue-50/20" : "border-muted"}`}
+                        onClick={() => {
+                          const input = document.createElement("input");
+                          input.type = "file";
+                          input.onchange = (e) => {
+                            const file = (e.target as HTMLInputElement).files?.[0];
+                            if (file) setDeliverableFile(file);
+                          };
+                          input.click();
+                        }}
+                        data-testid="dropzone-deliverable-file"
+                      >
+                        {deliverableFile ? (
+                          <div className="flex items-center justify-center gap-2 text-sm">
+                            <CheckCircle2 className="h-4 w-4 text-blue-600" />
+                            <span className="truncate max-w-[200px]">{deliverableFile.name}</span>
+                            <button onClick={(e) => { e.stopPropagation(); setDeliverableFile(null); }} className="text-muted-foreground hover:text-red-500">
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="text-xs text-muted-foreground">Click to attach a deliverable file</div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-medium">Note (optional)</Label>
+                      <Textarea
+                        value={deliverableNote}
+                        onChange={(e) => setDeliverableNote(e.target.value)}
+                        placeholder="Add context for the recipient..."
+                        className="min-h-[60px] text-sm"
+                        data-testid="textarea-deliverable-note"
+                      />
+                    </div>
+                    <div className="flex gap-2 pt-2">
+                      <Button
+                        className="flex-1 h-9 text-sm bg-blue-600 hover:bg-blue-700 gap-1.5"
+                        disabled={!deliverableRecipient || !deliverableFile || sendingDeliverable}
+                        onClick={async () => {
+                          setSendingDeliverable(true);
+                          try {
+                            const formData = new FormData();
+                            formData.append("recipientUserId", deliverableRecipient);
+                            formData.append("note", deliverableNote);
+                            if (deliverableFile) formData.append("file", deliverableFile);
+                            const token = localStorage.getItem("auth_token");
+                            const res = await fetch(`/api/eng/tasks/${task.id}/send-deliverable`, {
+                              method: "POST",
+                              headers: token ? { Authorization: `Bearer ${token}` } : {},
+                              body: formData,
+                              credentials: "include",
+                            });
+                            if (!res.ok) {
+                              const err = await res.json().catch(() => ({ error: "Failed" }));
+                              throw new Error(err.error);
+                            }
+                            toast({ title: "Deliverable sent", description: "The recipient has been notified" });
+                            setShowSendDeliverable(false);
+                            setDeliverableFile(null); setDeliverableRecipient(""); setDeliverableNote("");
+                            queryClient.invalidateQueries({ queryKey: ["task-deliverables", task.id] });
+                            queryClient.invalidateQueries({ queryKey: ["task-comments", task.id] });
+                            queryClient.invalidateQueries({ queryKey: ["task-activity", task.id] });
+                          } catch (err: any) {
+                            toast({ title: "Error", description: err.message, variant: "destructive" });
+                          } finally {
+                            setSendingDeliverable(false);
+                          }
+                        }}
+                        data-testid="btn-confirm-send-deliverable"
+                      >
+                        {sendingDeliverable ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                        {sendingDeliverable ? "Sending..." : "Send Deliverable"}
+                      </Button>
+                      <Button variant="outline" className="h-9 text-sm" onClick={() => setShowSendDeliverable(false)}>Cancel</Button>
+                    </div>
+                  </div>
+                </DialogContent>
+              </Dialog>
             </div>
 
             {task.holdReason && (
@@ -2360,7 +2534,6 @@ export default function EngineeringTasksPage() {
     primaryWorkstream: "",
     dueDate: "",
     assignees: [] as string[],
-    approverUserId: null as number | null,
   });
 
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
@@ -2418,7 +2591,7 @@ export default function EngineeringTasksPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["eng-tasks"] });
       setCreateOpen(false);
-      setNewTask({ projectName: "", title: "", description: "", status: "TO DO", priority: "Medium", phase: "", primaryWorkstream: "", dueDate: "", assignees: [], approverUserId: null });
+      setNewTask({ projectName: "", title: "", description: "", status: "TO DO", priority: "Medium", phase: "", primaryWorkstream: "", dueDate: "", assignees: [] });
       toast({ title: "Task created" });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -2454,14 +2627,6 @@ export default function EngineeringTasksPage() {
       if (task && !task.projectName) {
         setSelectedTask(task);
         toast({ title: "Project required", description: "Link a project to this task before setting Projects Assistance status.", variant: "destructive" });
-        return;
-      }
-    }
-    if (newStatus === "NEEDS APPROVAL") {
-      const task = tasks.find(t => t.id === taskId);
-      if (task && !task.approverUserId) {
-        setSelectedTask(task);
-        toast({ title: "Set an approver first", description: "Open the task and assign an approver before requesting approval.", variant: "destructive" });
         return;
       }
     }
@@ -2777,21 +2942,6 @@ export default function EngineeringTasksPage() {
                         <SelectItem value="none">Unassigned</SelectItem>
                         {pageTeamMembers.map(m => (
                           <SelectItem key={m.id} value={m.name}>{m.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Approver</Label>
-                    <Select
-                      value={newTask.approverUserId ? String(newTask.approverUserId) : "none"}
-                      onValueChange={v => setNewTask(p => ({ ...p, approverUserId: v === "none" ? null : parseInt(v) }))}
-                    >
-                      <SelectTrigger data-testid="select-task-approver"><SelectValue placeholder="Select approver" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">No approver</SelectItem>
-                        {pageTeamMembers.filter(m => ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER", "QUALITY_MANAGER", "CONSTRUCTION_MANAGER"].includes(m.role)).map(m => (
-                          <SelectItem key={m.id} value={String(m.id)}>{m.name}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>

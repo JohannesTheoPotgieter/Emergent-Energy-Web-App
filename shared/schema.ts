@@ -1187,6 +1187,24 @@ export const insertTaskAttachmentSchema = createInsertSchema(taskAttachments).om
 export type InsertTaskAttachment = z.infer<typeof insertTaskAttachmentSchema>;
 export type TaskAttachment = typeof taskAttachments.$inferSelect;
 
+export const taskDeliverables = pgTable("task_deliverables", {
+  id: serial("id").primaryKey(),
+  taskId: integer("task_id").notNull().references(() => operationalTasks.id, { onDelete: 'cascade' }),
+  filename: text("filename").notNull(),
+  originalName: text("original_name").notNull(),
+  fileSize: integer("file_size"),
+  note: text("note"),
+  sentByUserId: integer("sent_by_user_id").notNull().references(() => users.id),
+  recipientUserId: integer("recipient_user_id").notNull().references(() => users.id),
+  acknowledged: boolean("acknowledged").notNull().default(false),
+  acknowledgedAt: timestamp("acknowledged_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertTaskDeliverableSchema = createInsertSchema(taskDeliverables).omit({ id: true, createdAt: true, acknowledged: true, acknowledgedAt: true });
+export type InsertTaskDeliverable = z.infer<typeof insertTaskDeliverableSchema>;
+export type TaskDeliverable = typeof taskDeliverables.$inferSelect;
+
 export const taskActivityLog = pgTable("task_activity_log", {
   id: serial("id").primaryKey(),
   taskId: integer("task_id").notNull().references(() => operationalTasks.id, { onDelete: 'cascade' }),
