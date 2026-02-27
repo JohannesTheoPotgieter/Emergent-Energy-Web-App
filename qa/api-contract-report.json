@@ -1,0 +1,31 @@
+{
+  "generatedAt": "2026-02-27T00:00:00Z",
+  "totalEndpoints": 78,
+  "verified": 16,
+  "documented": 50,
+  "securityConcerns": [
+    {
+      "endpoint": "GET /api/program/cos",
+      "issue": "No authentication required - exposes financial COS data",
+      "severity": "MEDIUM"
+    }
+  ],
+  "contracts": {
+    "GET /api/health": { "auth": false, "role": null, "response": { "status": "ok" }, "tested": true },
+    "POST /api/auth/login": { "auth": false, "role": null, "response": { "user": "object" }, "tested": true, "invalidPayloadRejected": true },
+    "GET /api/auth/me": { "auth": true, "role": null, "response": { "id": "number", "username": "string", "role": "string" }, "tested": true },
+    "GET /api/projects": { "auth": true, "role": null, "response": "Array<Project>", "tested": true },
+    "POST /api/projects": { "auth": true, "role": "requireAdmin", "response": "Project", "tested": true },
+    "GET /api/admin/users": { "auth": true, "role": "requireAdmin", "response": "Array<User>", "tested": true },
+    "POST /api/reprocess-all": { "auth": true, "role": "requireAdmin", "response": { "success": true }, "tested": true },
+    "GET /api/admin/ms-integration": { "auth": true, "role": "requireAdmin", "response": "object", "tested": true },
+    "GET /api/cashflow-2026": { "auth": true, "role": null, "response": "object", "tested": true },
+    "POST /api/cashflow-2026/opening-balance": { "auth": true, "role": "requireAdmin", "response": { "success": true }, "tested": true },
+    "GET /api/roles": { "auth": true, "role": null, "response": "Array<Role>", "tested": true },
+    "PUT /api/roles/:role": { "auth": true, "role": "requireAdmin", "response": { "success": true }, "tested": true },
+    "GET /api/overview": { "auth": false, "role": null, "response": "object", "tested": true },
+    "GET /api/portfolio-dashboard": { "auth": true, "role": null, "response": "object", "tested": false },
+    "GET /api/pm/dashboard": { "auth": true, "role": null, "response": "object", "tested": false },
+    "GET /api/home/action-hub": { "auth": true, "role": null, "response": "object", "tested": false }
+  }
+}

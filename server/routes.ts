@@ -3757,7 +3757,7 @@ export async function registerRoutes(
 
   // ==================== PROJECTS ROUTES ====================
 
-  app.get("/api/projects", async (req, res) => {
+  app.get("/api/projects", requireAuth, async (req, res) => {
     try {
       const projects = await storage.getAllProjects();
       res.json(projects);

@@ -1,0 +1,192 @@
+{
+  "frontendRoutes": [
+    { "path": "/auth/login", "component": "LoginPage", "guards": ["none"], "access": "public" },
+    { "path": "/", "component": "Home", "guards": ["ProtectedRoute", "RoleGuard"], "access": "all_authenticated", "notes": "PM redirects to /pm-dashboard" },
+    { "path": "/dashboard", "component": "Dashboard", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
+    { "path": "/projects", "component": "ProjectsSummary", "guards": ["ProtectedRoute", "RoleGuard"], "access": "all_authenticated" },
+    { "path": "/project/:projectName", "component": "ProjectDetailPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "all_authenticated" },
+    { "path": "/cashflow", "component": "CashflowPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management_pm" },
+    { "path": "/revenue", "component": "RevenueTracker", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
+    { "path": "/cos", "component": "CostTracker", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management_pm" },
+    { "path": "/cos-control", "component": "CosControlPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
+    { "path": "/cashflow-forecast", "component": "CashflowForecastPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
+    { "path": "/my-tool", "component": "MyToolTodayPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
+    { "path": "/my-tool/week", "component": "MyToolWeekPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
+    { "path": "/my-tool/backlog", "component": "MyToolBacklogPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
+    { "path": "/my-tool/settings", "component": "MyToolSettingsPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
+    { "path": "/company-priorities", "component": "MyToolPrioritiesPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
+    { "path": "/my-tool/help", "component": "MyToolHelpPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
+    { "path": "/admin", "component": "AdminPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_only" },
+    { "path": "/admin/my-tool-settings", "component": "MyToolAdminSettingsPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_only" },
+    { "path": "/admin/phase-templates", "component": "PhaseTemplatesPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_only" },
+    { "path": "/admin/settings", "component": "RoleSettingsPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_only" },
+    { "path": "/admin/activity-log", "component": "SystemActivityLogPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_only" },
+    { "path": "/admin/roles", "component": "AdminRolesPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_only" },
+    { "path": "/admin/approvals", "component": "AdminApprovalsPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_only" },
+    { "path": "/admin/ms-integration", "component": "MsIntegrationSettingsPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_only" },
+    { "path": "/quality", "component": "QmDashboardPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "all_authenticated" },
+    { "path": "/engineering", "component": "EngineeringDashboardPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "most_roles" },
+    { "path": "/engineering/tasks", "component": "EngineeringTasksPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "most_roles" },
+    { "path": "/engineering/inbox", "component": "EngineeringInboxPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "most_roles" },
+    { "path": "/engineering/sync", "component": "EngineeringSyncPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
+    { "path": "/project-create", "component": "ProjectCreatePage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
+    { "path": "/lifecycle-board", "component": "LifecycleBoardPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
+    { "path": "/execution-board", "component": "ExecutionBoardPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
+    { "path": "/smart-import", "component": "SmartImportPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
+    { "path": "/project-normalized/:projectName", "component": "ProjectNormalizedViewPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
+    { "path": "/invoice-patterns", "component": "InvoicePatternsPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
+    { "path": "/subcontractor-dashboard", "component": "SubcontractorDashboardPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
+    { "path": "/weekly-reviews", "component": "WeeklyReviewsPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
+    { "path": "/leaderboard", "component": "LeaderboardPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
+    { "path": "/tr-register", "component": "TrRegisterPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
+    { "path": "/feedback", "component": "FeedbackPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "all_authenticated" },
+    { "path": "/ee-info", "component": "EeInfoPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
+    { "path": "/pm-dashboard", "component": "PMDashboard", "guards": ["ProtectedRoute", "RoleGuard"], "access": "all_authenticated" },
+    { "path": "/notifications", "component": "NotificationCenterPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
+    { "path": "/portfolios", "component": "PortfoliosPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
+    { "path": "/portfolios/:id", "component": "PortfolioDetailPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
+    { "path": "/pd", "component": "PdDashboardPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
+    { "path": "/pd/tickets", "component": "PdTicketsPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
+    { "path": "/pd/tickets/create", "component": "PdTicketCreatePage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
+    { "path": "/pd/tickets/:id", "component": "PdTicketDetailPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
+    { "path": "/my-tool/triage-inbox", "component": "TriageInboxPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
+    { "path": "/my-tool/unclassified-tasks", "component": "UnclassifiedTasksPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
+    { "path": "/my-tool/meetings", "component": "MyToolMeetingsPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" }
+  ],
+  "backendRoutes": {
+    "auth": [
+      { "method": "GET", "path": "/api/health", "auth": "none", "permission": "none" },
+      { "method": "GET", "path": "/api/auth/status", "auth": "none", "permission": "none" },
+      { "method": "POST", "path": "/api/auth/login", "auth": "none", "permission": "none" },
+      { "method": "POST", "path": "/api/auth/logout", "auth": "none", "permission": "none" },
+      { "method": "GET", "path": "/api/auth/me", "auth": "requireAuth", "permission": "none" }
+    ],
+    "admin": [
+      { "method": "POST", "path": "/api/upload", "auth": "requireAuth", "permission": "none" },
+      { "method": "POST", "path": "/api/reprocess-all", "auth": "requireAuth", "permission": "requireAdmin" },
+      { "method": "GET", "path": "/api/writeback-mappings", "auth": "requireAuth", "permission": "requireAdmin" },
+      { "method": "POST", "path": "/api/writeback-mappings", "auth": "requireAuth", "permission": "requireAdmin" },
+      { "method": "PATCH", "path": "/api/writeback-mappings/:id", "auth": "requireAuth", "permission": "requireAdmin" },
+      { "method": "DELETE", "path": "/api/writeback-mappings/:id", "auth": "requireAuth", "permission": "requireAdmin" },
+      { "method": "GET", "path": "/api/writeback-audit", "auth": "requireAuth", "permission": "requireAdmin" },
+      { "method": "GET", "path": "/api/writeback/workbook-sheets", "auth": "requireAuth", "permission": "requireAdmin" },
+      { "method": "GET", "path": "/api/admin/ms-integration", "auth": "requireAuth", "permission": "requireAdmin" },
+      { "method": "PUT", "path": "/api/admin/ms-integration/:key", "auth": "requireAuth", "permission": "requireAdmin" },
+      { "method": "POST", "path": "/api/admin/ms-integration/test-sharepoint", "auth": "requireAuth", "permission": "requireAdmin" },
+      { "method": "POST", "path": "/api/admin/ms-integration/browse-drive", "auth": "requireAuth", "permission": "requireAdmin" }
+    ],
+    "projects": [
+      { "method": "GET", "path": "/api/overview", "auth": "none", "permission": "none" },
+      { "method": "GET", "path": "/api/home/summary", "auth": "none", "permission": "none" },
+      { "method": "GET", "path": "/api/projects", "auth": "requireAuth", "permission": "none" },
+      { "method": "GET", "path": "/api/projects/:projectName", "auth": "requireAuth", "permission": "none" },
+      { "method": "GET", "path": "/api/projects/:projectName/normalized", "auth": "requireAuth", "permission": "none" },
+      { "method": "PATCH", "path": "/api/projects/:projectName", "auth": "requireAuth", "permission": "can_edit_project_info" },
+      { "method": "POST", "path": "/api/projects", "auth": "requireAuth", "permission": "requireAdmin" }
+    ],
+    "finance": [
+      { "method": "GET", "path": "/api/program/cos", "auth": "none", "permission": "none" },
+      { "method": "GET", "path": "/api/cashflow-2026", "auth": "requireAuth", "permission": "none" },
+      { "method": "GET", "path": "/api/cashflow-2026/detail", "auth": "requireAuth", "permission": "none" },
+      { "method": "POST", "path": "/api/cashflow-2026/opening-balance", "auth": "requireAuth", "permission": "requireAdmin" },
+      { "method": "GET", "path": "/api/opex/budget", "auth": "requireAuth", "permission": "none" },
+      { "method": "POST", "path": "/api/opex/budget", "auth": "requireAuth", "permission": "requireAdmin" },
+      { "method": "POST", "path": "/api/opex/weekly-manual", "auth": "requireAuth", "permission": "requireAdmin" }
+    ],
+    "eeInfo": [
+      { "method": "GET", "path": "/api/ee-info/nodes", "auth": "requireAuth", "permission": "none" },
+      { "method": "GET", "path": "/api/ee-info/nodes/:slug", "auth": "requireAuth", "permission": "none" },
+      { "method": "GET", "path": "/api/ee-info/graph", "auth": "requireAuth", "permission": "none" },
+      { "method": "GET", "path": "/api/ee-info/flow", "auth": "requireAuth", "permission": "none" },
+      { "method": "GET", "path": "/api/ee-info/settings", "auth": "requireAuth", "permission": "none" },
+      { "method": "POST", "path": "/api/ee-info/nodes", "auth": "requireAuth", "permission": "requireCOO" },
+      { "method": "PUT", "path": "/api/ee-info/nodes/:id", "auth": "requireAuth", "permission": "requireCOO" },
+      { "method": "DELETE", "path": "/api/ee-info/nodes/:id", "auth": "requireAuth", "permission": "requireCOO" },
+      { "method": "POST", "path": "/api/ee-info/import/obsidian-zip", "auth": "requireAuth", "permission": "requireCOO" },
+      { "method": "GET", "path": "/api/ee-info/os/lifecycle", "auth": "requireAuth", "permission": "none" },
+      { "method": "GET", "path": "/api/ee-info/os/departments", "auth": "requireAuth", "permission": "none" },
+      { "method": "GET", "path": "/api/ee-info/os/departments/:slug", "auth": "requireAuth", "permission": "none" },
+      { "method": "GET", "path": "/api/ee-info/os/processes/:slug", "auth": "requireAuth", "permission": "none" },
+      { "method": "GET", "path": "/api/ee-info/os/templates", "auth": "requireAuth", "permission": "none" },
+      { "method": "POST", "path": "/api/ee-info/os/seed", "auth": "requireAuth", "permission": "requireCOO" }
+    ],
+    "quality": [
+      { "method": "POST", "path": "/api/quality/access/verify", "auth": "requireAuth", "permission": "requireAdminOrQm" },
+      { "method": "GET", "path": "/api/quality/dashboard", "auth": "jwtAuth+requireAuth", "permission": "requireQmChallenge" },
+      { "method": "GET", "path": "/api/quality/templates", "auth": "jwtAuth+requireAuth", "permission": "none" },
+      { "method": "GET", "path": "/api/quality/checklists", "auth": "requireAuth", "permission": "none" },
+      { "method": "GET", "path": "/api/quality/warnings", "auth": "requireAuth", "permission": "none" }
+    ],
+    "engineering": [
+      { "method": "GET", "path": "/api/eng/standup", "auth": "requireAuth", "permission": "none" },
+      { "method": "GET", "path": "/api/eng/tasks", "auth": "jwtAuth+requireAuth", "permission": "none" },
+      { "method": "PATCH", "path": "/api/eng/tasks/:id", "auth": "jwtAuth+requireAuth", "permission": "none" },
+      { "method": "GET", "path": "/api/engineering/dashboard", "auth": "jwtAuth+requireAuth", "permission": "requireEpmChallenge" }
+    ],
+    "roles": [
+      { "method": "GET", "path": "/api/roles", "auth": "jwtAuth+requireAuth", "permission": "none" },
+      { "method": "PUT", "path": "/api/roles/:role", "auth": "jwtAuth+requireAuth", "permission": "requireAdmin" },
+      { "method": "POST", "path": "/api/roles", "auth": "jwtAuth+requireAuth", "permission": "requireAdmin" },
+      { "method": "GET", "path": "/api/admin/users", "auth": "jwtAuth+requireAuth", "permission": "requireAdmin" },
+      { "method": "PATCH", "path": "/api/admin/users/:userId/role", "auth": "jwtAuth+requireAuth", "permission": "requireAdmin" }
+    ],
+    "pd": [
+      { "method": "GET", "path": "/api/pd/clients", "auth": "requireAuth", "permission": "none" },
+      { "method": "POST", "path": "/api/pd/clients", "auth": "requireAuth", "permission": "none" },
+      { "method": "GET", "path": "/api/pd/tickets", "auth": "requireAuth", "permission": "none" },
+      { "method": "POST", "path": "/api/pd/tickets", "auth": "requireAuth", "permission": "none" },
+      { "method": "PATCH", "path": "/api/pd/tickets/:id", "auth": "requireAuth", "permission": "none" },
+      { "method": "GET", "path": "/api/pd/dashboard", "auth": "requireAuth", "permission": "none" }
+    ],
+    "audit": [
+      { "method": "GET", "path": "/api/audit/project-history/:projectId", "auth": "requireAuth", "permission": "none" },
+      { "method": "GET", "path": "/api/audit/activity-log", "auth": "requireAuth", "permission": "requireAdmin" },
+      { "method": "GET", "path": "/api/audit/override-categories", "auth": "requireAuth", "permission": "none" }
+    ],
+    "sharepoint": [
+      { "method": "GET", "path": "/api/sp-sync/discover/sites", "auth": "jwtAuth+requireAuth", "permission": "requireCOO" },
+      { "method": "POST", "path": "/api/sp-sync/pull", "auth": "jwtAuth+requireAuth", "permission": "requireCOO" },
+      { "method": "POST", "path": "/api/sp-sync/push", "auth": "jwtAuth+requireAuth", "permission": "requireCOO" },
+      { "method": "GET", "path": "/api/sp-sync/intake-requests", "auth": "jwtAuth+requireAuth", "permission": "none" }
+    ],
+    "myTool": [
+      { "method": "GET", "path": "/api/mytool/daily-review", "auth": "requireAuth", "permission": "requireAdmin" },
+      { "method": "GET", "path": "/api/mytool/company-priorities", "auth": "requireAuth", "permission": "none" },
+      { "method": "POST", "path": "/api/mytool/company-priorities", "auth": "requireAuth", "permission": "requirePriorityAdmin" },
+      { "method": "GET", "path": "/api/outlook/events", "auth": "requireAuth", "permission": "none" },
+      { "method": "POST", "path": "/api/outlook/send-approval", "auth": "requireAuth", "permission": "requireAdmin" }
+    ],
+    "portfolio": [
+      { "method": "GET", "path": "/api/portfolio-dashboard", "auth": "requireAuth", "permission": "none" },
+      { "method": "GET", "path": "/api/portfolios", "auth": "requireAuth", "permission": "none" },
+      { "method": "POST", "path": "/api/portfolios", "auth": "requireAuth", "permission": "requireAdmin" },
+      { "method": "GET", "path": "/api/portfolios/:id", "auth": "requireAuth", "permission": "none" }
+    ],
+    "pm": [
+      { "method": "GET", "path": "/api/pm/dashboard", "auth": "requireAuth", "permission": "none" },
+      { "method": "GET", "path": "/api/pm/priority-items", "auth": "requireAuth", "permission": "none" },
+      { "method": "GET", "path": "/api/pm/calendar-events", "auth": "requireAuth", "permission": "none" }
+    ],
+    "home": [
+      { "method": "GET", "path": "/api/home/action-hub", "auth": "requireAuth", "permission": "none" },
+      { "method": "GET", "path": "/api/home/company-priorities", "auth": "requireAuth", "permission": "none" }
+    ],
+    "notifications": [
+      { "method": "GET", "path": "/api/notifications", "auth": "requireAuth", "permission": "none" },
+      { "method": "PATCH", "path": "/api/notifications/:id/read", "auth": "requireAuth", "permission": "none" }
+    ],
+    "gamification": [
+      { "method": "GET", "path": "/api/gamification/leaderboard", "auth": "requireAuth", "permission": "none" },
+      { "method": "GET", "path": "/api/gamification/user/:userId", "auth": "requireAuth", "permission": "none" }
+    ],
+    "smartImport": [
+      { "method": "POST", "path": "/api/smart-import/upload", "auth": "requireAuth", "permission": "none" },
+      { "method": "GET", "path": "/api/smart-import/:runId", "auth": "requireAuth", "permission": "none" },
+      { "method": "POST", "path": "/api/smart-import/:runId/commit", "auth": "requireAuth", "permission": "none" },
+      { "method": "PATCH", "path": "/api/smart-import/:runId/mapping", "auth": "requireAuth", "permission": "none" },
+      { "method": "PATCH", "path": "/api/smart-import/:runId/issue/:issueId/resolve", "auth": "requireAuth", "permission": "none" }
+    ]
+  },
+  "totalFrontendRoutes": 51,
+  "totalBackendEndpoints": 78
+}

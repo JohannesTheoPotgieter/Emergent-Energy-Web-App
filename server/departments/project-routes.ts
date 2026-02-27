@@ -1656,7 +1656,7 @@ router.get("/api/dashboard", async (req, res) => {
 
 // ==================== PROJECTS ROUTES ====================
 
-router.get("/api/projects", async (req, res) => {
+router.get("/api/projects", requireAuth, async (req, res) => {
   try {
     const projects = await storage.getAllProjects();
     res.json(projects);
