@@ -625,6 +625,8 @@ export default function Home() {
         </div>
       </div>
 
+      <CompanyPrioritiesCards isAdmin={!!canEdit} priorities={priorities} isLoading={prioritiesLoading} />
+
       {hubLoading ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -836,8 +838,6 @@ export default function Home() {
           </div>
         </>
       ) : null}
-
-      <CompanyPrioritiesCards isAdmin={!!canEdit} priorities={priorities} isLoading={prioritiesLoading} />
 
       {hub && (
         <Card className="shadow-sm" data-testid="card-quick-links">
