@@ -839,42 +839,6 @@ export default function Home() {
         </>
       ) : null}
 
-      {hub && (
-        <Card className="shadow-sm" data-testid="card-quick-links">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground">
-              Quick Navigation
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-              {[
-                { label: "Execution Board", href: "/dashboard", icon: Target, show: true },
-                { label: "Notifications", href: "/notifications", icon: Bell, show: true, badge: hub.unreadCount > 0 ? hub.unreadCount : undefined },
-                { label: "Approvals", href: "/approvals", icon: ClipboardCheck, show: hub.approvalCounts.total > 0 || hub.isAdmin },
-                { label: "Engineering Inbox", href: "/engineering", icon: Wrench, show: true },
-                { label: "Quality Dashboard", href: "/qm-dashboard", icon: Shield, show: ["QUALITY_MANAGER", "quality_manager", "COO_ADMIN", "CEO_ADMIN", "CONSTRUCTION_MANAGER"].includes(userRole) },
-                { label: "PM Dashboard", href: "/pm-dashboard", icon: Users, show: ["PROJECT_MANAGER_SITE", "PROGRAM_MANAGER", "COO_ADMIN", "CEO_ADMIN"].includes(userRole) },
-                { label: "Leaderboard", href: "/leaderboard", icon: Zap, show: true },
-                { label: "EE Info", href: "/ee-info", icon: ExternalLink, show: true },
-              ].filter(item => item.show).map(item => (
-                <Link key={item.href} href={item.href}>
-                  <div
-                    className="flex items-center gap-2 p-3 rounded-lg border border-border/50 bg-card hover:bg-muted/30 cursor-pointer transition-colors"
-                    data-testid={`quick-link-${item.href.replace(/\//g, '-').slice(1)}`}
-                  >
-                    <item.icon className="w-4 h-4 text-muted-foreground shrink-0" />
-                    <span className="text-sm font-medium truncate">{item.label}</span>
-                    {item.badge && (
-                      <Badge className="text-[10px] px-1.5 py-0 bg-blue-600 ml-auto shrink-0">{item.badge}</Badge>
-                    )}
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }
