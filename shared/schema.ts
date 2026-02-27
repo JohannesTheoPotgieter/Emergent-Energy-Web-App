@@ -3603,6 +3603,67 @@ export const DEFAULT_ROLE_PERMISSIONS: InsertRolePermission[] = [
   { role: "ACCOUNTANT", label: "Accountant", description: "Finance team — cashflow, COS tracking, invoice management", sections: ["COCKPIT", "PROJECTS", "MONEY", "INFORMATION"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
 ];
 
+// ===================== PORTFOLIO MANAGEMENT =====================
+
+export const portfolioStatusEnum = pgEnum('portfolio_status', ['Active', 'On Hold', 'Completed', 'Archived']);
+
+export const portfolios = pgTable("portfolios", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  clientName: text("client_name"),
+  status: text("status").notNull().default("Active"),
+  description: text("description"),
+  ownerUserId: integer("owner_user_id").references(() => users.id),
+  createdBy: integer("created_by").references(() => users.id),
+  updatedBy: integer("updated_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertPortfolioSchema = createInsertSchema(portfolios).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertPortfolio = z.infer<typeof insertPortfolioSchema>;
+export type Portfolio = typeof portfolios.$inferSelect;
+
+export const portfolioRolloutPlans = pgTable("portfolio_rollout_plans", {
+  id: serial("id").primaryKey(),
+  portfolioId: integer("portfolio_id").notNull().references(() => portfolios.id, { onDelete: 'cascade' }),
+  name: text("name").notNull(),
+  notes: text("notes"),
+  createdBy: integer("created_by").references(() => users.id),
+  updatedBy: integer("updated_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertPortfolioRolloutPlanSchema = createInsertSchema(portfolioRolloutPlans).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertPortfolioRolloutPlan = z.infer<typeof insertPortfolioRolloutPlanSchema>;
+export type PortfolioRolloutPlan = typeof portfolioRolloutPlans.$inferSelect;
+
+export const portfolioRolloutPhases = pgTable("portfolio_rollout_phases", {
+  id: serial("id").primaryKey(),
+  rolloutPlanId: integer("rollout_plan_id").notNull().references(() => portfolioRolloutPlans.id, { onDelete: 'cascade' }),
+  phaseName: text("phase_name").notNull(),
+  startDate: text("start_date"),
+  endDate: text("end_date"),
+  targetKwp: decimal("target_kwp", { precision: 12, scale: 2 }),
+  targetRevenue: decimal("target_revenue", { precision: 15, scale: 2 }),
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+export const insertPortfolioRolloutPhaseSchema = createInsertSchema(portfolioRolloutPhases).omit({ id: true });
+export type InsertPortfolioRolloutPhase = z.infer<typeof insertPortfolioRolloutPhaseSchema>;
+export type PortfolioRolloutPhase = typeof portfolioRolloutPhases.$inferSelect;
+
+export const projectPortfolioAssignments = pgTable("project_portfolio_assignments", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id).unique(),
+  portfolioId: integer("portfolio_id").notNull().references(() => portfolios.id, { onDelete: 'cascade' }),
+  assignedBy: integer("assigned_by").references(() => users.id),
+  assignedAt: timestamp("assigned_at").notNull().defaultNow(),
+  movedBy: integer("moved_by").references(() => users.id),
+  movedAt: timestamp("moved_at"),
+});
+export const insertProjectPortfolioAssignmentSchema = createInsertSchema(projectPortfolioAssignments).omit({ id: true, assignedAt: true });
+export type InsertProjectPortfolioAssignment = z.infer<typeof insertProjectPortfolioAssignmentSchema>;
+export type ProjectPortfolioAssignment = typeof projectPortfolioAssignments.$inferSelect;
+
 // ===================== GAMIFICATION (Part N) =====================
 
 export const userBadges = pgTable("user_badges", {

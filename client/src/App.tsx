@@ -54,6 +54,8 @@ import FeedbackPage from "@/pages/feedback";
 import EeInfoPage from "@/pages/ee-info";
 import PMDashboard from "@/pages/pm-dashboard";
 import NotificationCenterPage from "@/pages/notification-center";
+import PortfoliosPage from "@/pages/portfolios";
+import PortfolioDetailPage from "@/pages/portfolio-detail";
 import { useAuth } from "@/hooks/use-auth";
 import { useProgramData } from "@/hooks/use-program-data";
 import { TrackerTable } from "@/components/dashboard/TrackerTable";
@@ -269,6 +271,8 @@ function ProtectedPages() {
         <Route path="/ee-info" component={EeInfoPage} />
         <Route path="/pm-dashboard" component={PMDashboard} />
         <Route path="/notifications" component={NotificationCenterPage} />
+        <Route path="/portfolios" component={PortfoliosPage} />
+        <Route path="/portfolios/:id" component={PortfolioDetailPage} />
         <Route path="/admin/eng-templates">{() => <Redirect to="/admin/phase-templates" />}</Route>
 
         <Route component={NotFound} />

@@ -397,6 +397,53 @@ async function backfillPmUserIds() {
   const { backfillProjectIds } = await import("./lib/backfill-project-ids");
   await backfillProjectIds().catch(err => console.error('[Backfill] Project IDs error:', err));
 
+  const { registerPortfolioRoutes } = await import("./portfolio-routes");
+  registerPortfolioRoutes(app);
+
+  await db.execute(sql.raw(`
+    CREATE TABLE IF NOT EXISTS portfolios (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL,
+      client_name TEXT,
+      status TEXT NOT NULL DEFAULT 'Active',
+      description TEXT,
+      owner_user_id INTEGER REFERENCES users(id),
+      created_by INTEGER REFERENCES users(id),
+      updated_by INTEGER REFERENCES users(id),
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS portfolio_rollout_plans (
+      id SERIAL PRIMARY KEY,
+      portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      notes TEXT,
+      created_by INTEGER REFERENCES users(id),
+      updated_by INTEGER REFERENCES users(id),
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS portfolio_rollout_phases (
+      id SERIAL PRIMARY KEY,
+      rollout_plan_id INTEGER NOT NULL REFERENCES portfolio_rollout_plans(id) ON DELETE CASCADE,
+      phase_name TEXT NOT NULL,
+      start_date TEXT,
+      end_date TEXT,
+      target_kwp DECIMAL(12,2),
+      target_revenue DECIMAL(15,2),
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS project_portfolio_assignments (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER NOT NULL REFERENCES project_info(id) UNIQUE,
+      portfolio_id INTEGER NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE,
+      assigned_by INTEGER REFERENCES users(id),
+      assigned_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      moved_by INTEGER REFERENCES users(id),
+      moved_at TIMESTAMP
+    );
+  `)).catch(err => console.error('[Portfolio] Table creation error:', err));
+
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
