@@ -45,6 +45,7 @@ import {
   ListChecks,
   Trophy,
   Bell,
+  FolderOpen,
 } from "lucide-react";
 import { UX_REDESIGN_ENABLED } from "@shared/schema";
 import { useProgramData } from "@/hooks/use-program-data";
@@ -158,6 +159,7 @@ function getRedesignedNavGroups(): NavGroup[] {
         { label: "PM Dashboard", icon: Briefcase, path: "/pm-dashboard" },
         { label: "TR Register", icon: ClipboardList, path: "/tr-register" },
         { label: "Smart Import", icon: FileSpreadsheet, path: "/smart-import" },
+        { label: "Portfolios", icon: FolderOpen, path: "/portfolios" },
       ],
     },
     {
@@ -318,7 +320,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           let visibleItems = group.items.filter(item => {
             if (item.path === "/engineering/sync" && companyRole !== "COO_ADMIN") return false;
             if (companyRole === "PROJECT_MANAGER_SITE") {
-              const pmVisiblePaths = ["/projects", "/pm-dashboard", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/cashflow", "/cos"];
+              const pmVisiblePaths = ["/projects", "/pm-dashboard", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/cashflow", "/cos", "/portfolios"];
               return pmVisiblePaths.some(p => item.path === p);
             }
             return true;
