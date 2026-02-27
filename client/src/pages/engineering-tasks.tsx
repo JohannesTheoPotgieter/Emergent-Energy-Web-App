@@ -117,6 +117,44 @@ const priorityColors: Record<string, string> = {
   Low: "bg-gray-100 text-gray-600",
 };
 
+const priorityBorderColors: Record<string, string> = {
+  Critical: "border-l-red-600",
+  Urgent: "border-l-orange-500",
+  High: "border-l-amber-500",
+  Medium: "border-l-blue-400",
+  Low: "border-l-gray-300",
+};
+
+const priorityOrder: Record<string, number> = { Critical: 0, Urgent: 1, High: 2, Medium: 3, Low: 4 };
+
+function getInitials(name: string) {
+  return name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
+}
+
+function getAvatarColor(name: string) {
+  const colors = [
+    "bg-blue-500", "bg-emerald-500", "bg-purple-500", "bg-amber-500",
+    "bg-rose-500", "bg-cyan-500", "bg-indigo-500", "bg-teal-500",
+  ];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  return colors[Math.abs(hash) % colors.length];
+}
+
+function sortTasksForColumn(tasks: Task[]): Task[] {
+  return [...tasks].sort((a, b) => {
+    const aOverdue = isOverdue(a.dueDate, a.status) ? 0 : 1;
+    const bOverdue = isOverdue(b.dueDate, b.status) ? 0 : 1;
+    if (aOverdue !== bOverdue) return aOverdue - bOverdue;
+    const aPri = priorityOrder[a.priority] ?? 5;
+    const bPri = priorityOrder[b.priority] ?? 5;
+    if (aPri !== bPri) return aPri - bPri;
+    const aDate = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
+    const bDate = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
+    return aDate - bDate;
+  });
+}
+
 interface Task {
   id: number;
   projectName: string;
@@ -248,9 +286,12 @@ function QuickStatusSelect({ task, onStatusChange }: { task: Task; onStatusChang
   );
 }
 
-function TaskCard({ task, onClick, onStatusChange }: { task: Task; onClick: () => void; onStatusChange: (id: number, status: string) => void }) {
+function TaskCard({ task, onClick, onStatusChange, onPriorityChange }: { task: Task; onClick: () => void; onStatusChange: (id: number, status: string) => void; onPriorityChange?: (id: number, priority: string) => void }) {
   const overdue = isOverdue(task.dueDate, task.status);
+  const dueSoon = isDueThisWeek(task.dueDate, task.status);
   const projectDisplay = task.projectName?.replace(/_Tracker.*$/i, "").replace(/_/g, " ");
+  const label = daysLabel(task.dueDate);
+  const isCritical = task.priority === "Critical" || task.priority === "Urgent";
 
   return (
     <div
@@ -260,50 +301,90 @@ function TaskCard({ task, onClick, onStatusChange }: { task: Task; onClick: () =
         e.dataTransfer.effectAllowed = "move";
       }}
       onClick={onClick}
-      className={`bg-card border rounded-lg p-3 cursor-pointer hover:shadow-md transition-all duration-200 group ${overdue ? "border-red-200 dark:border-red-800" : ""}`}
+      className={`bg-card border-l-[3px] border border-b-border border-r-border border-t-border rounded-md px-2.5 py-2 cursor-pointer hover:shadow-md hover:translate-y-[-1px] transition-all duration-150 group relative
+        ${priorityBorderColors[task.priority] || "border-l-gray-300"}
+        ${overdue ? "bg-red-50/60 dark:bg-red-950/20 border-r-red-200 border-t-red-200 border-b-red-200 dark:border-r-red-900 dark:border-t-red-900 dark:border-b-red-900" : ""}
+        ${isCritical && !overdue ? "bg-orange-50/30 dark:bg-orange-950/10" : ""}
+      `}
       data-testid={`kanban-card-${task.id}`}
     >
-      <div className="flex items-start justify-between gap-2 mb-1.5">
-        <h4 className="text-sm font-medium leading-tight line-clamp-2 flex-1" data-testid={`text-card-title-${task.id}`}>
+      <div className="flex items-start gap-1.5 mb-1">
+        <h4 className="text-[13px] font-medium leading-snug line-clamp-2 flex-1 min-w-0" data-testid={`text-card-title-${task.id}`}>
           {task.title}
         </h4>
-        <GripVertical className="h-4 w-4 text-muted-foreground/30 group-hover:text-muted-foreground/60 shrink-0" />
-      </div>
-      <p className="text-[10px] text-muted-foreground mb-2 truncate">{projectDisplay}</p>
-      <div className="flex items-center justify-between gap-1 flex-wrap">
-        <Badge className={`text-[9px] px-1.5 py-0 ${priorityColors[task.priority] || "bg-gray-100"}`}>
-          {task.priority}
-        </Badge>
-        {task.dueDate && (
-          <span className={`text-[10px] flex items-center gap-0.5 ${overdue ? "text-red-600 font-semibold" : "text-muted-foreground"}`}>
-            <Calendar className="h-3 w-3" />
-            {daysLabel(task.dueDate) || formatDateShort(task.dueDate)}
-            {overdue && <AlertTriangle className="h-3 w-3" />}
-          </span>
+        {task.trackingRag && task.trackingRag !== "Green" && (
+          <div className={`w-2 h-2 rounded-full shrink-0 mt-1.5 ${task.trackingRag === "Amber" ? "bg-amber-500" : task.trackingRag === "Red" ? "bg-red-500 animate-pulse" : "bg-gray-400"}`} title={`RAG: ${task.trackingRag}`} />
         )}
       </div>
-      <div className="flex items-center justify-between mt-2">
-        {task.assignees && task.assignees.length > 0 ? (
-          <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-            <User className="h-3 w-3" />
-            <span className="truncate max-w-[80px]">{task.assignees[0]}</span>
-          </div>
-        ) : <div />}
+
+      <p className="text-[10px] text-muted-foreground/70 mb-1.5 truncate">{projectDisplay}</p>
+
+      <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
         <div onClick={(e) => e.stopPropagation()}>
+          {onPriorityChange ? (
+            <Select value={task.priority} onValueChange={(v) => { if (v !== task.priority) onPriorityChange(task.id, v); }}>
+              <SelectTrigger className="h-5 text-[9px] px-0 w-auto min-w-0 border-none shadow-none bg-transparent p-0 gap-0" data-testid={`card-priority-${task.id}`}>
+                <Badge className={`text-[9px] px-1.5 py-0 leading-tight cursor-pointer hover:ring-1 hover:ring-offset-1 ring-current ${priorityColors[task.priority] || "bg-gray-100"}`}>
+                  {task.priority}
+                </Badge>
+              </SelectTrigger>
+              <SelectContent>
+                {PRIORITIES.map(p => <SelectItem key={p} value={p} className="text-xs">{p}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Badge className={`text-[9px] px-1.5 py-0 leading-tight ${priorityColors[task.priority] || "bg-gray-100"}`}>
+              {task.priority}
+            </Badge>
+          )}
+        </div>
+        {task.dueDate && (
+          <span className={`text-[10px] flex items-center gap-0.5 font-medium px-1 py-0 rounded
+            ${overdue ? "text-red-700 bg-red-100 dark:bg-red-900/40 dark:text-red-300" : dueSoon ? "text-amber-700 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-300" : "text-muted-foreground"}`}
+          >
+            {overdue && <AlertTriangle className="h-3 w-3 shrink-0" />}
+            {!overdue && dueSoon && <Clock className="h-3 w-3 shrink-0" />}
+            {!overdue && !dueSoon && <Calendar className="h-2.5 w-2.5 shrink-0" />}
+            {label || formatDateShort(task.dueDate)}
+          </span>
+        )}
+        {task.percentComplete > 0 && task.percentComplete < 100 && (
+          <span className="text-[9px] text-muted-foreground font-medium">{Math.round(task.percentComplete)}%</span>
+        )}
+      </div>
+
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1 min-w-0">
+          {task.assignees && task.assignees.length > 0 ? (
+            <div className="flex items-center gap-1 min-w-0">
+              <div className="flex -space-x-1">
+                {task.assignees.slice(0, 2).map((name, i) => (
+                  <div key={i} className={`w-5 h-5 rounded-full ${getAvatarColor(name)} flex items-center justify-center text-[8px] font-bold text-white ring-1 ring-card`} title={name}>
+                    {getInitials(name)}
+                  </div>
+                ))}
+                {task.assignees.length > 2 && (
+                  <div className="w-5 h-5 rounded-full bg-gray-300 flex items-center justify-center text-[8px] font-bold text-gray-600 ring-1 ring-card">
+                    +{task.assignees.length - 2}
+                  </div>
+                )}
+              </div>
+              <span className="text-[10px] text-muted-foreground truncate max-w-[70px]">{task.assignees[0]?.split(" ")[0]}</span>
+            </div>
+          ) : (
+            <span className="text-[10px] text-muted-foreground/40 italic">Unassigned</span>
+          )}
+        </div>
+        <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
           <QuickStatusSelect task={task} onStatusChange={onStatusChange} />
         </div>
       </div>
+
       {task.holdReason && (
-        <p className="text-[10px] text-red-500 mt-1 truncate flex items-center gap-0.5">
+        <div className="mt-1.5 px-1.5 py-1 bg-red-50 dark:bg-red-950/30 rounded text-[10px] text-red-600 dark:text-red-400 flex items-center gap-1 border border-red-100 dark:border-red-900">
           <PauseCircle className="h-3 w-3 shrink-0" />
-          {task.blockedType && <span className={`px-1 py-0 rounded text-[9px] font-semibold mr-0.5 ${task.blockedType === "External" ? "bg-orange-100 text-orange-700" : "bg-purple-100 text-purple-700"}`}>{task.blockedType}</span>}
-          {task.holdReason}
-        </p>
-      )}
-      {task.trackingRag && (
-        <div className="mt-1 flex items-center gap-1">
-          <div className={`w-2 h-2 rounded-full ${task.trackingRag === "Green" ? "bg-green-500" : task.trackingRag === "Amber" ? "bg-amber-500" : task.trackingRag === "Red" ? "bg-red-500" : "bg-gray-400"}`} />
-          <span className="text-[10px] text-muted-foreground">{task.trackingRag}</span>
+          {task.blockedType && <span className={`px-1 py-0 rounded text-[9px] font-bold ${task.blockedType === "External" ? "bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300" : "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300"}`}>{task.blockedType}</span>}
+          <span className="truncate">{task.holdReason}</span>
         </div>
       )}
     </div>
@@ -311,15 +392,18 @@ function TaskCard({ task, onClick, onStatusChange }: { task: Task; onClick: () =
 }
 
 function KanbanColumn({
-  status, tasks, onDrop, onCardClick, onStatusChange
+  status, tasks, onDrop, onCardClick, onStatusChange, onPriorityChange
 }: {
-  status: string; tasks: Task[]; onDrop: (taskId: number, newStatus: string) => void; onCardClick: (task: Task) => void; onStatusChange: (id: number, status: string) => void;
+  status: string; tasks: Task[]; onDrop: (taskId: number, newStatus: string) => void; onCardClick: (task: Task) => void; onStatusChange: (id: number, status: string) => void; onPriorityChange?: (id: number, priority: string) => void;
 }) {
   const [dragOver, setDragOver] = useState(false);
+  const sorted = useMemo(() => sortTasksForColumn(tasks), [tasks]);
+  const overdueCount = useMemo(() => tasks.filter(t => isOverdue(t.dueDate, t.status)).length, [tasks]);
+  const criticalCount = useMemo(() => tasks.filter(t => t.priority === "Critical" || t.priority === "Urgent").length, [tasks]);
 
   return (
     <div
-      className={`flex flex-col min-w-[260px] max-w-[300px] bg-muted/30 rounded-lg border-t-4 ${statusColumnColors[status] || "border-t-gray-300"} ${dragOver ? "ring-2 ring-primary/40" : ""}`}
+      className={`flex flex-col min-w-[260px] max-w-[300px] bg-muted/20 rounded-lg border-t-4 transition-all ${statusColumnColors[status] || "border-t-gray-300"} ${dragOver ? "ring-2 ring-primary/40 bg-primary/5" : ""}`}
       onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
       onDragLeave={() => setDragOver(false)}
       onDrop={(e) => {
@@ -330,19 +414,35 @@ function KanbanColumn({
       }}
       data-testid={`kanban-column-${status.toLowerCase().replace(/\s+/g, "-")}`}
     >
-      <div className="p-3 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Badge className={`text-[10px] ${statusColors[status] || "bg-gray-100"}`}>{status}</Badge>
-          <span className="text-xs text-muted-foreground font-medium">{tasks.length}</span>
+      <div className="px-3 pt-3 pb-2 flex items-center justify-between sticky top-0 bg-inherit z-10 rounded-t-lg">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{status}</span>
+          <span className="text-[11px] text-muted-foreground/60 font-medium">{tasks.length}</span>
+        </div>
+        <div className="flex items-center gap-1">
+          {overdueCount > 0 && (
+            <span className="flex items-center gap-0.5 text-[9px] font-bold text-red-600 bg-red-100 dark:bg-red-900/40 px-1.5 py-0.5 rounded-full" title={`${overdueCount} overdue`}>
+              <AlertTriangle className="h-2.5 w-2.5" />
+              {overdueCount}
+            </span>
+          )}
+          {criticalCount > 0 && overdueCount === 0 && (
+            <span className="flex items-center gap-0.5 text-[9px] font-bold text-orange-600 bg-orange-100 dark:bg-orange-900/40 px-1.5 py-0.5 rounded-full" title={`${criticalCount} critical/urgent`}>
+              {criticalCount}
+            </span>
+          )}
         </div>
       </div>
-      <ScrollArea className="flex-1 px-2 pb-2" style={{ maxHeight: "calc(100vh - 320px)" }}>
-        <div className="space-y-2">
-          {tasks.map(task => (
-            <TaskCard key={task.id} task={task} onClick={() => onCardClick(task)} onStatusChange={onStatusChange} />
+      <ScrollArea className="flex-1 px-2 pb-2" style={{ maxHeight: "calc(100vh - 300px)" }}>
+        <div className="space-y-1.5">
+          {sorted.map(task => (
+            <TaskCard key={task.id} task={task} onClick={() => onCardClick(task)} onStatusChange={onStatusChange} onPriorityChange={onPriorityChange} />
           ))}
           {tasks.length === 0 && (
-            <div className="text-center py-8 text-xs text-muted-foreground/50">No tasks</div>
+            <div className="text-center py-10 text-xs text-muted-foreground/40">
+              <Circle className="h-6 w-6 mx-auto mb-1.5 opacity-30" />
+              No tasks
+            </div>
           )}
         </div>
       </ScrollArea>
@@ -2597,7 +2697,31 @@ export default function EngineeringTasksPage() {
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
       ) : viewMode === "board" ? (
-        <div className="flex gap-3 overflow-x-auto pb-4" style={{ minHeight: "400px" }}>
+        <>
+        {(overdueTasks.length > 0 || holdTasks.length > 0 || needsApprovalTasks.length > 0) && (
+          <div className="flex items-center gap-3 px-3 py-1.5 bg-muted/30 rounded-lg border text-xs" data-testid="board-summary-strip">
+            {overdueTasks.length > 0 && (
+              <button onClick={() => applyPreset(SAVED_FILTERS[0])} className="flex items-center gap-1 text-red-600 hover:text-red-700 font-medium transition-colors" data-testid="summary-overdue">
+                <AlertTriangle className="h-3.5 w-3.5" />
+                <span>{overdueTasks.length} overdue</span>
+              </button>
+            )}
+            {holdTasks.length > 0 && (
+              <button onClick={() => applyPreset(SAVED_FILTERS[3])} className="flex items-center gap-1 text-amber-600 hover:text-amber-700 font-medium transition-colors" data-testid="summary-hold">
+                <PauseCircle className="h-3.5 w-3.5" />
+                <span>{holdTasks.length} on hold</span>
+              </button>
+            )}
+            {needsApprovalTasks.length > 0 && (
+              <button onClick={() => applyPreset(SAVED_FILTERS[1])} className="flex items-center gap-1 text-indigo-600 hover:text-indigo-700 font-medium transition-colors" data-testid="summary-approval">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                <span>{needsApprovalTasks.length} need approval</span>
+              </button>
+            )}
+            <span className="text-muted-foreground/50 ml-auto">{filtered.length} total</span>
+          </div>
+        )}
+        <div className="flex gap-2.5 overflow-x-auto pb-4" style={{ minHeight: "400px" }}>
           {TASK_STATUSES.map(status => (
             <KanbanColumn
               key={status}
@@ -2606,9 +2730,11 @@ export default function EngineeringTasksPage() {
               onDrop={handleDrop}
               onCardClick={setSelectedTask}
               onStatusChange={handleStatusChange}
+              onPriorityChange={handlePriorityChange}
             />
           ))}
         </div>
+        </>
       ) : viewMode === "mytasks" ? (
         <MyTasksView
           tasks={tasks}
