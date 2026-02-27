@@ -515,7 +515,15 @@ export default function CosTracker() {
     [months],
   );
 
-  const getCellColor = (val: number) => (val > 0 ? "text-red-600" : "text-green-600");
+  const getCellColor = (val: number, variancePct?: number) => {
+    const pct = variancePct != null ? Math.abs(variancePct) : null;
+    const isPositive = val > 0;
+    if (pct !== null) {
+      if (pct >= 0.25) return isPositive ? "text-red-700 font-bold bg-red-50" : "text-green-700 font-bold bg-green-50";
+      if (pct >= 0.15) return isPositive ? "text-amber-600 font-semibold bg-amber-50" : "text-green-600 font-semibold bg-green-50";
+    }
+    return isPositive ? "text-red-600" : "text-green-600";
+  };
 
   const formatCell = (row: (typeof ROW_DEFS)[number], val: number) => {
     if (row.key === "variancePct" || row.key === "ytdVariancePct") {
@@ -751,7 +759,8 @@ export default function CosTracker() {
                               );
                             }
 
-                            const colorClass = row.colorCoded ? getCellColor(val) : row.colorClass;
+                            const pctRef = (row.key === "variance") ? m.variancePct : (row.key === "ytdVariance") ? m.ytdVariancePct : (row.key === "variancePct" || row.key === "ytdVariancePct") ? val : undefined;
+                            const colorClass = row.colorCoded ? getCellColor(val, pctRef) : row.colorClass;
 
                             return (
                               <td

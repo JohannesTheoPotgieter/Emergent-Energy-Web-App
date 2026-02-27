@@ -504,6 +504,12 @@ export default function ProjectDetailPage() {
   const projectName = params?.projectName ? decodeURIComponent(params.projectName) : "";
   const { projectsSummary } = useProgramData();
   const { user } = useAuth();
+
+  useEffect(() => {
+    if (projectName) {
+      try { localStorage.setItem("last_visited_project", JSON.stringify({ name: projectName, timestamp: Date.now() })); } catch {}
+    }
+  }, [projectName]);
   const userRole = user?.role || localStorage.getItem("company_role") || "";
 
   const { data: rolePermsData, isLoading: rolePermsLoading } = useQuery({

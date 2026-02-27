@@ -45,6 +45,13 @@ export default function PdTicketsPage() {
       );
     }
     return true;
+  }).sort((a: any, b: any) => {
+    const today = new Date().toISOString().split("T")[0];
+    const aOverdue = a.ticket.dueDate && a.ticket.dueDate < today && a.ticket.status !== "Completed" && a.ticket.status !== "Cancelled";
+    const bOverdue = b.ticket.dueDate && b.ticket.dueDate < today && b.ticket.status !== "Completed" && b.ticket.status !== "Cancelled";
+    if (aOverdue && !bOverdue) return -1;
+    if (!aOverdue && bOverdue) return 1;
+    return 0;
   });
 
   if (!permLoading && !canView) {
@@ -140,14 +147,20 @@ export default function PdTicketsPage() {
                 const created = new Date(t.createdAt);
                 const daysInProgress = Math.max(0, Math.floor((today.getTime() - created.getTime()) / (1000 * 60 * 60 * 24)));
                 const overdue = t.dueDate && t.dueDate < today.toISOString().split("T")[0] && t.status !== "Completed" && t.status !== "Cancelled";
+                const daysOverdue = overdue ? Math.floor((today.getTime() - new Date(t.dueDate).getTime()) / (1000 * 60 * 60 * 24)) : 0;
                 return (
-                  <tr key={t.id} className="border-b hover:bg-muted/10 cursor-pointer transition-colors" onClick={() => navigate(`/pd/tickets/${t.id}`)} data-testid={`pd-ticket-row-${t.id}`}>
+                  <tr key={t.id} className={`border-b hover:bg-muted/10 cursor-pointer transition-colors ${overdue ? "border-l-4 border-l-red-500 bg-red-50/30" : ""}`} onClick={() => navigate(`/pd/tickets/${t.id}`)} data-testid={`pd-ticket-row-${t.id}`}>
                     <td className="p-2.5 pl-3 font-medium">{t.projectSiteName}</td>
                     <td className="p-2.5 text-muted-foreground">{row.clientName || "—"}</td>
                     <td className="p-2.5"><Badge variant="outline" className="text-[10px]">{t.requestType}</Badge></td>
                     <td className="p-2.5"><Badge className={`text-[10px] ${priorityColor(t.priority)}`}>{t.priority}</Badge></td>
                     <td className="p-2.5"><Badge className={`text-[10px] ${statusColor(t.status)}`}>{t.status}</Badge></td>
-                    <td className={`p-2.5 ${overdue ? "text-red-600 font-semibold" : "text-muted-foreground"}`}>{t.dueDate || "—"}</td>
+                    <td className={`p-2.5 ${overdue ? "text-red-600 font-semibold" : "text-muted-foreground"}`}>
+                      <div className="flex items-center gap-1.5">
+                        <span>{t.dueDate || "—"}</span>
+                        {overdue && <Badge variant="destructive" className="text-[9px] px-1 py-0" data-testid={`overdue-badge-${t.id}`}>{daysOverdue}d overdue</Badge>}
+                      </div>
+                    </td>
                     <td className="p-2.5 text-muted-foreground">{daysInProgress}d</td>
                     <td className="p-2.5 text-muted-foreground">{row.developerName || "—"}</td>
                     <td className="p-2.5">

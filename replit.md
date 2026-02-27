@@ -97,3 +97,30 @@ Preferred communication style: Simple, everyday language.
 ### Third-Party Integrations
 -   **Microsoft Graph API**: For Outlook calendar integration.
 -   **Read.ai**: For meeting data ingestion via webhooks.
+
+## UX Quick Wins (Implemented)
+
+### E1. Priority Queue on Home
+- Combined overdue tasks, action-required notifications, and pending approvals into a single "Your Priority Queue" section
+- Sorted by urgency (overdue tasks by days late > action required > approvals), max 5 items
+- Rendered between action banner and stat cards on home page
+
+### E2. Overdue Visual Escalation
+- Red left border (`border-l-4 border-l-red-500`) on overdue items across TaskItem (home), PD Tickets
+- "Xd overdue" destructive badge on overdue tasks and PD ticket rows
+- Overdue PD tickets sorted to top of filtered results
+
+### E3. Stale Data Warning
+- Backend: `last_import_at` field added to `/api/projects-summary` from `smart_import_runs` latest committed date
+- Frontend: Yellow warning badge on project cards when last import > 14 days ago
+
+### E4. COS Exception Highlighting
+- Threshold-based variance coloring in COS Tracker:
+  - Within ±15%: standard red/green
+  - ±15% to ±25%: amber text + amber background
+  - Beyond ±25%: dark red text + red background
+- Applied to both variance amount and variance % rows
+
+### E5. Quick Navigation
+- Last visited project tracked in localStorage from project detail page
+- "Continue with [Project Name]" quick-link on home page (validated against active projects)
