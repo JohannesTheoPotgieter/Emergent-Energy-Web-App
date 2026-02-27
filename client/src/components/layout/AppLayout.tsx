@@ -238,6 +238,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     refetchInterval: 30000,
   });
 
+  const { data: appVersion } = useQuery<{ version: string; buildTime: string | null; buildId: string | null; buildNumber: string | null }>({
+    queryKey: ["/api/version"],
+    queryFn: async () => {
+      const res = await fetch("/api/version", { credentials: "include" });
+      return res.json();
+    },
+    staleTime: Infinity,
+  });
+
   useEffect(() => {
     setMobileOpen(false);
   }, [location]);
@@ -451,6 +460,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <LogOut className="w-4 h-4" />
           </Button>
         </div>
+        {sidebarShowLabels && appVersion && (
+          <p className="text-[10px] text-sidebar-foreground/30 mt-2 text-center" data-testid="text-app-version">
+            v{appVersion.version}{appVersion.buildNumber ? ` (${appVersion.buildNumber})` : ""}
+          </p>
+        )}
       </div>
     </>
   );

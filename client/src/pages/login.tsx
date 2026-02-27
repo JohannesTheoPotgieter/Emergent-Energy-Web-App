@@ -43,7 +43,7 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [showVersion, setShowVersion] = useState(false);
-  const [versionInfo, setVersionInfo] = useState({ version: "0.0.002", buildTime: "" });
+  const [versionInfo, setVersionInfo] = useState({ version: "0.0.002", buildTime: "", buildNumber: "" });
 
   useEffect(() => {
     fetch("/api/version")
@@ -51,7 +51,7 @@ export default function LoginPage() {
       .then((data) => {
         if (data.version) {
           const date = data.buildTime ? new Date(data.buildTime).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "";
-          setVersionInfo({ version: data.version, buildTime: date });
+          setVersionInfo({ version: data.version, buildTime: date, buildNumber: data.buildNumber || "" });
         }
       })
       .catch(() => {});
@@ -151,7 +151,7 @@ export default function LoginPage() {
             data-testid="button-version-info"
           >
             <Info className="w-3.5 h-3.5" />
-            v{versionInfo.version} — What broke this time?
+            v{versionInfo.version}{versionInfo.buildNumber ? ` (${versionInfo.buildNumber})` : ""} — What broke this time?
           </button>
         </div>
       </div>
@@ -168,7 +168,7 @@ export default function LoginPage() {
                   Version {versionInfo.version} Release Notes
                 </h2>
                 <p className="text-xs text-gray-400 mt-0.5">
-                  {versionInfo.buildTime || "Latest"} — Another round of "improvements" nobody asked for
+                  {versionInfo.buildTime || "Latest"}{versionInfo.buildNumber ? ` · Build ${versionInfo.buildNumber}` : ""} — Another round of "improvements" nobody asked for
                 </p>
               </div>
               <button

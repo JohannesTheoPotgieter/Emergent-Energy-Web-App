@@ -645,14 +645,16 @@ export async function registerRoutes(
       if (process.env.NODE_ENV === "production") {
         const bvPath = path.default.resolve("dist/public/build-version.json");
         const data = JSON.parse(await fs.readFile(bvPath, "utf-8"));
-        return res.json({ version: data.version, buildTime: data.buildTime, buildId: data.buildId });
+        return res.json({ version: data.version, buildTime: data.buildTime, buildId: data.buildId, buildNumber: data.buildNumber || null });
       }
       const vPath = path.default.resolve("version.json");
       const data = JSON.parse(await fs.readFile(vPath, "utf-8"));
       const version = `${data.major}.${data.minor}.${String(data.patch).padStart(3, "0")}`;
-      return res.json({ version, buildTime: data.lastUpdated, buildId: null });
+      const lu = data.lastUpdated ? new Date(data.lastUpdated) : new Date();
+      const buildNumber = `${String(lu.getFullYear()).slice(2)}${String(lu.getMonth() + 1).padStart(2, "0")}${String(lu.getDate()).padStart(2, "0")}`;
+      return res.json({ version, buildTime: data.lastUpdated, buildId: null, buildNumber });
     } catch {
-      return res.json({ version: "0.0.001", buildTime: null, buildId: null });
+      return res.json({ version: "0.0.001", buildTime: null, buildId: null, buildNumber: null });
     }
   });
 
