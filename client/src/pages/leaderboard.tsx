@@ -504,13 +504,12 @@ function UserDetailDialog({ selectedUser, onClose }: { selectedUser: Leaderboard
 
 function PodiumCard({ entry, rank, onClick }: { entry: LeaderboardEntry; rank: number; onClick: () => void }) {
   const lvlCfg = LEVEL_CONFIG[entry.level.level] || LEVEL_CONFIG[1];
-  const podiumHeights = [180, 200, 160];
-  const podiumColors = [
-    "from-gray-300 via-gray-200 to-gray-100 dark:from-gray-600 dark:via-gray-700 dark:to-gray-800",
-    "from-yellow-400 via-amber-300 to-yellow-200 dark:from-yellow-600 dark:via-amber-700 dark:to-yellow-800",
-    "from-amber-700 via-amber-600 to-amber-500 dark:from-amber-800 dark:via-amber-700 dark:to-amber-600",
-  ];
-  const crownColors = ["text-gray-400", "text-yellow-500", "text-amber-600"];
+  const podiumHeightByRank: Record<number, number> = { 1: 200, 2: 160, 3: 140 };
+  const podiumColorByRank: Record<number, string> = {
+    1: "from-yellow-400 via-amber-300 to-yellow-200 dark:from-yellow-600 dark:via-amber-700 dark:to-yellow-800",
+    2: "from-gray-300 via-gray-200 to-gray-100 dark:from-gray-600 dark:via-gray-700 dark:to-gray-800",
+    3: "from-amber-700 via-amber-600 to-amber-500 dark:from-amber-800 dark:via-amber-700 dark:to-amber-600",
+  };
   const orderIndex = rank === 1 ? 1 : rank === 2 ? 0 : 2;
 
   return (
@@ -537,8 +536,8 @@ function PodiumCard({ entry, rank, onClick }: { entry: LeaderboardEntry; rank: n
         <div className="text-[10px] text-muted-foreground">{ROLE_LABELS[entry.role] || entry.role}</div>
       </div>
 
-      <div className={`rounded-t-xl w-full flex flex-col items-center justify-end bg-gradient-to-t ${podiumColors[rank - 1]} transition-all group-hover:shadow-lg relative overflow-hidden`}
-        style={{ height: podiumHeights[rank - 1], minWidth: rank === 1 ? 140 : 120 }}
+      <div className={`rounded-t-xl w-full flex flex-col items-center justify-end bg-gradient-to-t ${podiumColorByRank[rank]} transition-all group-hover:shadow-lg relative overflow-hidden`}
+        style={{ height: podiumHeightByRank[rank], minWidth: rank === 1 ? 140 : 120 }}
       >
         {rank === 1 && <div className="absolute inset-0 bg-gradient-to-t from-transparent via-white/10 to-white/20" />}
         <div className="text-center pb-4 relative z-10">
