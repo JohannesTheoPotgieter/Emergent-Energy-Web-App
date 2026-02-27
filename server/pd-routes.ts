@@ -90,13 +90,35 @@ export function registerPdRoutes(app: Express) {
         .leftJoin(projectInfo, eq(pdTickets.projectId, projectInfo.id))
         .orderBy(desc(pdTickets.createdAt));
 
+      const ticketIds = rows.map(r => r.ticket.id);
+      let taskCounts: Record<number, { total: number; completed: number }> = {};
+      if (ticketIds.length > 0) {
+        const taskStats = await db.select({
+          pdTicketId: operationalTasks.pdTicketId,
+          total: sql<number>`count(*)::int`,
+          completed: sql<number>`count(*) filter (where ${operationalTasks.status} = 'COMPLETE')::int`,
+        })
+          .from(operationalTasks)
+          .where(sql`${operationalTasks.pdTicketId} IN (${sql.raw(ticketIds.join(","))})`)
+          .groupBy(operationalTasks.pdTicketId);
+        for (const s of taskStats) {
+          if (s.pdTicketId) taskCounts[s.pdTicketId] = { total: s.total, completed: s.completed };
+        }
+      }
+
+      const enriched = rows.map(r => ({
+        ...r,
+        taskTotal: taskCounts[r.ticket.id]?.total || 0,
+        taskCompleted: taskCounts[r.ticket.id]?.completed || 0,
+      }));
+
+      let result;
       if (canViewAllTickets(role)) {
-        res.json(rows);
+        result = enriched;
       } else if (role === "PROJECT_DEVELOPER") {
-        const filtered = rows.filter(r => r.ticket.createdBy === user?.id || r.ticket.projectDeveloperUserId === user?.id);
-        res.json(filtered);
+        result = enriched.filter(r => r.ticket.createdBy === user?.id || r.ticket.projectDeveloperUserId === user?.id);
       } else if (role === "ENGINEER") {
-        const taskLinks = await db.select({ pdTicketId: operationalTasks.pdTicketId })
+        const engTaskLinks = await db.select({ pdTicketId: operationalTasks.pdTicketId })
           .from(operationalTasks)
           .where(
             and(
@@ -104,12 +126,12 @@ export function registerPdRoutes(app: Express) {
               sql`${operationalTasks.assignees}::text ILIKE ${'%' + (user?.name || '') + '%'}`
             )
           );
-        const ticketIds = new Set(taskLinks.map(t => t.pdTicketId).filter(Boolean));
-        const filtered = rows.filter(r => ticketIds.has(r.ticket.id));
-        res.json(filtered);
+        const engTicketIds = new Set(engTaskLinks.map(t => t.pdTicketId).filter(Boolean));
+        result = enriched.filter(r => engTicketIds.has(r.ticket.id));
       } else {
-        res.json(rows);
+        result = enriched;
       }
+      res.json(result);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

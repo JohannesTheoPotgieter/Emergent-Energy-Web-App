@@ -101,6 +101,17 @@ export default function PdDashboardPage() {
                         {row.developerName && <span>· {row.developerName}</span>}
                       </div>
                     </div>
+                    {row.taskTotal > 0 && (
+                      <div className="flex items-center gap-1 shrink-0">
+                        <div className="w-10 h-1.5 rounded-full bg-muted overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${row.taskCompleted === row.taskTotal ? "bg-green-500" : row.taskCompleted > 0 ? "bg-blue-500" : "bg-gray-300"}`}
+                            style={{ width: `${Math.round((row.taskCompleted / row.taskTotal) * 100)}%` }}
+                          />
+                        </div>
+                        <span className="text-[9px] text-muted-foreground">{row.taskCompleted}/{row.taskTotal}</span>
+                      </div>
+                    )}
                     <Badge className={`text-[10px] shrink-0 ${statusColor(t.status)}`}>{t.status}</Badge>
                     <Badge className={`text-[10px] shrink-0 ${priorityColor(t.priority)}`}>{t.priority}</Badge>
                   </CardContent>

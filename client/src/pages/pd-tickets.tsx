@@ -104,7 +104,7 @@ export default function PdTicketsPage() {
         </Card>
       ) : (
         <div className="overflow-x-auto border rounded-lg">
-          <table className="w-full text-sm min-w-[900px]">
+          <table className="w-full text-sm min-w-[1000px]">
             <thead>
               <tr className="bg-muted/40 border-b text-[11px] text-muted-foreground">
                 <th className="text-left p-2.5 pl-3">Project / Site</th>
@@ -115,6 +115,7 @@ export default function PdTicketsPage() {
                 <th className="text-left p-2.5">Due Date</th>
                 <th className="text-left p-2.5">Days In Progress</th>
                 <th className="text-left p-2.5">Developer</th>
+                <th className="text-left p-2.5">Tasks</th>
                 <th className="text-left p-2.5">Designer</th>
               </tr>
             </thead>
@@ -135,6 +136,21 @@ export default function PdTicketsPage() {
                     <td className={`p-2.5 ${overdue ? "text-red-600 font-semibold" : "text-muted-foreground"}`}>{t.dueDate || "—"}</td>
                     <td className="p-2.5 text-muted-foreground">{daysInProgress}d</td>
                     <td className="p-2.5 text-muted-foreground">{row.developerName || "—"}</td>
+                    <td className="p-2.5">
+                      {row.taskTotal > 0 ? (
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-14 h-1.5 rounded-full bg-muted overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all ${row.taskCompleted === row.taskTotal ? "bg-green-500" : row.taskCompleted > 0 ? "bg-blue-500" : "bg-gray-300"}`}
+                              style={{ width: `${Math.round((row.taskCompleted / row.taskTotal) * 100)}%` }}
+                            />
+                          </div>
+                          <span className="text-[10px] text-muted-foreground">{row.taskCompleted}/{row.taskTotal}</span>
+                        </div>
+                      ) : (
+                        <span className="text-[10px] text-muted-foreground">—</span>
+                      )}
+                    </td>
                     <td className="p-2.5 text-muted-foreground">{row.designerName || "—"}</td>
                   </tr>
                 );
