@@ -2520,6 +2520,36 @@ export function registerEngineeringRoutes(app: Express) {
         `),
       ]);
 
+      const pendingTaskDeliverables = await db.select({
+        id: taskDeliverables.id,
+        taskId: taskDeliverables.taskId,
+        originalName: taskDeliverables.originalName,
+        note: taskDeliverables.note,
+        sentByUserId: taskDeliverables.sentByUserId,
+        recipientUserId: taskDeliverables.recipientUserId,
+        createdAt: taskDeliverables.createdAt,
+        taskTitle: operationalTasks.title,
+        projectName: operationalTasks.projectName,
+        senderName: sql<string>`(SELECT name FROM users WHERE id = ${taskDeliverables.sentByUserId})`,
+      })
+        .from(taskDeliverables)
+        .innerJoin(operationalTasks, eq(taskDeliverables.taskId, operationalTasks.id))
+        .where(and(
+          eq(taskDeliverables.acknowledged, false),
+          isAdmin
+            ? undefined
+            : or(
+                eq(taskDeliverables.recipientUserId, userId),
+                eq(taskDeliverables.sentByUserId, userId),
+              ),
+        ))
+        .orderBy(desc(taskDeliverables.createdAt))
+        .limit(20);
+
+      const myPendingTaskDeliverables = pendingTaskDeliverables.filter(d =>
+        d.recipientUserId === userId
+      );
+
       const myEngApprovals = engApprovals.filter(a => {
         if (a.approverRole === "QA_REVIEW" || a.approverRole === "Quality Manager") {
           return userRole === "QUALITY_MANAGER" || userRole === "quality_manager";
@@ -2562,6 +2592,16 @@ export function registerEngineeringRoutes(app: Express) {
           projectId: d.projectId,
           createdAt: d.updatedAt,
         })),
+        ...myPendingTaskDeliverables.map(d => ({
+          id: `td-${d.id}`,
+          type: "task_deliverable" as const,
+          title: `${d.originalName} — from ${d.senderName || 'Unknown'}`,
+          projectName: d.projectName,
+          projectId: null,
+          createdAt: d.createdAt,
+          taskId: d.taskId,
+          taskTitle: d.taskTitle,
+        })),
       ];
 
       const overdueTasks = myTasks.filter(t =>
@@ -2579,6 +2619,7 @@ export function registerEngineeringRoutes(app: Express) {
           engineering: myEngApprovals.length,
           quality: myQcItems.length,
           deliverable: myDeliverables.length,
+          taskDeliverable: myPendingTaskDeliverables.length,
           total: pendingApprovals.length,
         },
         projectsAtRisk: (projectsAtRisk.rows as any[]).slice(0, 8),
