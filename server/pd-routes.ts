@@ -235,9 +235,7 @@ export function registerPdRoutes(app: Express) {
         createdBy: user?.id || null,
       }).returning();
 
-      if (ticket.projectId) {
-        await spawnTasksForTicket(ticket, user);
-      }
+      await spawnTasksForTicket(ticket, user);
 
       res.status(201).json(ticket);
     } catch (err: any) {
@@ -297,10 +295,6 @@ export function registerPdRoutes(app: Express) {
 
       if (ticket.tasksSpawnedAt) {
         return res.status(409).json({ error: "Tasks already spawned for this ticket" });
-      }
-
-      if (!ticket.projectId) {
-        return res.status(400).json({ error: "Ticket must be linked to a project before spawning tasks" });
       }
 
       const spawned = await spawnTasksForTicket(ticket, user);
@@ -383,7 +377,7 @@ async function spawnTasksForTicket(ticket: any, user: any): Promise<any[]> {
   const templates = PD_REQUEST_TYPE_TASK_TEMPLATES[ticket.requestType] || [];
   if (templates.length === 0) return [];
 
-  let projectName = "Unassigned";
+  let projectName = ticket.projectSiteName || "Unassigned";
   if (ticket.projectId) {
     const [proj] = await db.select({ projectName: projectInfo.projectName })
       .from(projectInfo)

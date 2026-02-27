@@ -294,7 +294,7 @@ function SpawnedTasksCard({ tasks, ticket, spawnMutation, navigate }: {
             Engineering Tasks
             <Badge variant="secondary" className="text-[10px]">{tasks.length}</Badge>
           </span>
-          {tasks.length === 0 && ticket.projectId && !ticket.tasksSpawnedAt && (
+          {tasks.length === 0 && !ticket.tasksSpawnedAt && (
             <Button size="sm" variant="outline" onClick={() => spawnMutation.mutate()} disabled={spawnMutation.isPending} data-testid="btn-spawn-tasks">
               {spawnMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
               Spawn Tasks
@@ -305,7 +305,7 @@ function SpawnedTasksCard({ tasks, ticket, spawnMutation, navigate }: {
       <CardContent className="space-y-3">
         {tasks.length === 0 ? (
           <p className="text-sm text-muted-foreground py-4 text-center">
-            {ticket.tasksSpawnedAt ? "No tasks found (they may have been deleted)" : ticket.projectId ? "Tasks not yet spawned — click Spawn Tasks to create them" : "Link a project first, then spawn tasks"}
+            {ticket.tasksSpawnedAt ? "No tasks found (they may have been deleted)" : "Tasks not yet spawned — click Spawn Tasks to create them"}
           </p>
         ) : (
           <>
