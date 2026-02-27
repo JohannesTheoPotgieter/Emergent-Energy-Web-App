@@ -5,9 +5,14 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Lock, User, Info, X, Smartphone, Briefcase, ShieldCheck, UserCog, LayoutGrid, PauseCircle, FolderKanban } from "lucide-react";
+import { Lock, User, Info, X, Smartphone, Briefcase, ShieldCheck, UserCog, LayoutGrid, PauseCircle, FolderKanban, KeyRound } from "lucide-react";
 
 const CHANGELOG = [
+  {
+    icon: KeyRound,
+    title: "Granular Sub-Screen Permissions",
+    description: "Roles & Permissions now covers every sub-screen and drill-down in the app — 60 permission entities across 10 categories. New toggles for Triage Inbox, Unclassified Tasks, Pipeline Intake Inbox, SharePoint Sync, Portfolio Detail, Normalized Project View, Revenue Tracker, and Admin Roles itself. Every route now has its own permission control.",
+  },
   {
     icon: Briefcase,
     title: "Project Development Sidebar Section",
@@ -53,7 +58,7 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [showVersion, setShowVersion] = useState(false);
-  const [versionInfo, setVersionInfo] = useState({ version: "0.0.004", buildTime: "", buildNumber: "" });
+  const [versionInfo, setVersionInfo] = useState({ version: "0.0.005", buildTime: "", buildNumber: "" });
 
   useEffect(() => {
     fetch("/api/version")
