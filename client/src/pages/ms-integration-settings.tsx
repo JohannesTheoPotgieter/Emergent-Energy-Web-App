@@ -32,6 +32,11 @@ import {
   Clock,
   Zap,
   Activity,
+  Mail,
+  CheckCircle2,
+  RefreshCw,
+  Calendar,
+  Send,
 } from "lucide-react";
 
 function authFetch(url: string, opts?: RequestInit) {
@@ -75,6 +80,12 @@ interface TestResult {
   error?: string;
 }
 
+interface OutlookConnection {
+  configured: boolean;
+  connected: boolean;
+  email?: string;
+}
+
 export default function MsIntegrationSettingsPage() {
   const { isAdmin } = useAuth();
   const { toast } = useToast();
@@ -85,6 +96,7 @@ export default function MsIntegrationSettingsPage() {
   const [testResult, setTestResult] = useState<TestResult | null>(null);
   const [selectedDriveId, setSelectedDriveId] = useState("");
   const [selectedDriveName, setSelectedDriveName] = useState("");
+  const [refreshingOutlook, setRefreshingOutlook] = useState(false);
 
   const [featureFlags, setFeatureFlags] = useState({
     feature_ms_sharepoint_docs: false,
@@ -96,6 +108,30 @@ export default function MsIntegrationSettingsPage() {
     hotThresholdHours: 24,
     tags: ["finance-payment", "finance-invoice", "decision", "risk", "blocked", "snag", "client", "internal"],
   });
+
+  const { data: outlookStatus, refetch: refetchOutlook } = useQuery<OutlookConnection>({
+    queryKey: ["/api/outlook/status"],
+    retry: false,
+  });
+
+  const handleRefreshOutlook = async () => {
+    setRefreshingOutlook(true);
+    try {
+      const res = await authFetch("/api/outlook/refresh", { method: "POST" });
+      const result = await res.json();
+      queryClient.setQueryData(["/api/outlook/status"], result);
+      if (result.connected) {
+        toast({ title: "Outlook reconnected", description: result.email ? `Connected as ${result.email}` : "Connection restored." });
+      } else {
+        toast({ title: "Still disconnected", description: "The connection could not be restored. The token may need re-authorization.", variant: "destructive" });
+      }
+    } catch (err: any) {
+      toast({ title: "Refresh failed", description: err.message, variant: "destructive" });
+    } finally {
+      setRefreshingOutlook(false);
+      refetchOutlook();
+    }
+  };
 
   const { data: config, isLoading } = useQuery<MsIntegrationConfig>({
     queryKey: ["/api/admin/ms-integration"],
@@ -217,17 +253,20 @@ export default function MsIntegrationSettingsPage() {
           Microsoft Integration Settings
         </h1>
         <p className="text-sm text-gray-500 mt-1">
-          Configure SharePoint Documents and Teams integration for projects
+          Manage Outlook, SharePoint, and Teams connections for all Microsoft features
         </p>
       </header>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-4 h-10">
+        <TabsList className="grid w-full grid-cols-5 h-10">
           <TabsTrigger value="overview" className="text-xs gap-1" data-testid="tab-overview">
             <Activity className="h-3.5 w-3.5" /> Overview
           </TabsTrigger>
+          <TabsTrigger value="outlook" className="text-xs gap-1" data-testid="tab-outlook">
+            <Mail className="h-3.5 w-3.5" /> Outlook
+          </TabsTrigger>
           <TabsTrigger value="sharepoint" className="text-xs gap-1" data-testid="tab-sharepoint">
-            <FileText className="h-3.5 w-3.5" /> SharePoint Docs
+            <FileText className="h-3.5 w-3.5" /> SharePoint
           </TabsTrigger>
           <TabsTrigger value="teams" className="text-xs gap-1" data-testid="tab-teams">
             <MessageSquare className="h-3.5 w-3.5" /> Teams
@@ -282,7 +321,28 @@ export default function MsIntegrationSettingsPage() {
             </CardContent>
           </Card>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Card>
+              <CardContent className="py-5">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className={`p-2 rounded-lg ${outlookStatus?.connected ? "bg-blue-100" : "bg-gray-100"}`}>
+                    <Mail className={`h-5 w-5 ${outlookStatus?.connected ? "text-blue-600" : "text-gray-400"}`} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold">Outlook Connection</p>
+                    <Badge variant="outline" className={`text-[10px] ${outlookStatus?.connected ? "bg-blue-50 text-blue-700 border-blue-200" : outlookStatus?.configured === false ? "bg-gray-50 text-gray-500 border-gray-200" : "bg-amber-50 text-amber-700 border-amber-200"}`} data-testid="badge-outlook-status">
+                      {outlookStatus?.connected ? "Connected" : outlookStatus?.configured === false ? "Not Configured" : "Disconnected"}
+                    </Badge>
+                  </div>
+                </div>
+                <div className="text-xs text-muted-foreground space-y-1">
+                  {outlookStatus?.connected && outlookStatus.email && <p>Account: {outlookStatus.email}</p>}
+                  <p>Calendar, Email, Approvals</p>
+                  <p>Powers My Tool features</p>
+                </div>
+              </CardContent>
+            </Card>
+
             <Card>
               <CardContent className="py-5">
                 <div className="flex items-center gap-3 mb-3">
@@ -336,7 +396,14 @@ export default function MsIntegrationSettingsPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                <div className="space-y-1.5">
+                  <p className="font-semibold text-sm">Outlook (Calendar & Email)</p>
+                  <div className="flex items-center gap-2"><CheckCircle className="h-3 w-3 text-green-500" /> Calendars.ReadWrite</div>
+                  <div className="flex items-center gap-2"><CheckCircle className="h-3 w-3 text-green-500" /> Mail.ReadWrite</div>
+                  <div className="flex items-center gap-2"><CheckCircle className="h-3 w-3 text-green-500" /> Mail.Send</div>
+                  <div className="flex items-center gap-2"><CheckCircle className="h-3 w-3 text-green-500" /> User.Read</div>
+                </div>
                 <div className="space-y-1.5">
                   <p className="font-semibold text-sm">SharePoint Documents</p>
                   <div className="flex items-center gap-2"><CheckCircle className="h-3 w-3 text-green-500" /> Sites.Read.All</div>
@@ -350,6 +417,141 @@ export default function MsIntegrationSettingsPage() {
                 </div>
               </div>
               <p className="text-xs text-muted-foreground mt-3">Green = already granted via Outlook connector. Amber = may need to be added in Azure/Entra.</p>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="outlook" className="mt-4 space-y-4">
+          <Card data-testid="card-outlook-connection">
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Mail className="h-4 w-4 text-blue-600" />
+                Microsoft Account Connection
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <p className="text-sm text-muted-foreground">
+                This Microsoft account powers all integrations — Outlook calendar, email, approval emails, SharePoint, and Teams.
+                All features in My Tool (calendar sync, inbox, time blocks) use this connection.
+              </p>
+
+              {outlookStatus?.connected ? (
+                <div className="p-4 rounded-lg bg-emerald-50/50 border border-emerald-200/50 space-y-3" data-testid="outlook-connection-connected">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
+                    <span className="text-sm font-semibold text-emerald-700">Connected</span>
+                    {outlookStatus.email && (
+                      <Badge variant="secondary" className="text-xs ml-1">{outlookStatus.email}</Badge>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                    <div className="flex items-center gap-2 p-2 rounded border border-emerald-200/50 bg-white/50">
+                      <Calendar className="h-4 w-4 text-blue-500" />
+                      <span className="text-xs text-slate-600">Calendar Sync</span>
+                      <CheckCircle className="h-3 w-3 text-emerald-500 ml-auto" />
+                    </div>
+                    <div className="flex items-center gap-2 p-2 rounded border border-emerald-200/50 bg-white/50">
+                      <Mail className="h-4 w-4 text-blue-500" />
+                      <span className="text-xs text-slate-600">Email Access</span>
+                      <CheckCircle className="h-3 w-3 text-emerald-500 ml-auto" />
+                    </div>
+                    <div className="flex items-center gap-2 p-2 rounded border border-emerald-200/50 bg-white/50">
+                      <Send className="h-4 w-4 text-blue-500" />
+                      <span className="text-xs text-slate-600">Approval Emails</span>
+                      <CheckCircle className="h-3 w-3 text-emerald-500 ml-auto" />
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1 mt-2"
+                    onClick={handleRefreshOutlook}
+                    disabled={refreshingOutlook}
+                    data-testid="button-refresh-outlook"
+                  >
+                    {refreshingOutlook ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                    Refresh Connection
+                  </Button>
+                </div>
+              ) : outlookStatus?.configured === false ? (
+                <div className="p-4 rounded-lg bg-amber-50/50 border border-amber-200/50" data-testid="outlook-connection-not-configured">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="text-sm font-semibold text-amber-700">Not Configured</span>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        The Outlook connector has not been set up yet. This needs to be configured through the platform's integration settings to enable calendar, email, and approval features.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-4 rounded-lg bg-amber-50/50 border border-amber-200/50" data-testid="outlook-connection-issue">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <span className="text-sm font-semibold text-amber-700">Connection Issue</span>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        The connection may need to be refreshed. The token may have expired and needs re-authorization.
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0 gap-1 border-amber-300 text-amber-700 hover:bg-amber-50"
+                      onClick={handleRefreshOutlook}
+                      disabled={refreshingOutlook}
+                      data-testid="button-reconnect-outlook"
+                    >
+                      {refreshingOutlook ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                      Reconnect
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Plug className="h-4 w-4 text-slate-600" />
+                What This Connection Powers
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-xs text-muted-foreground space-y-3">
+                <div className="p-3 border rounded-lg">
+                  <p className="text-sm font-semibold text-slate-700 mb-1">My Tool — Calendar</p>
+                  <ul className="list-disc ml-4 space-y-1">
+                    <li>Outlook calendar events shown in day planner and weekly view</li>
+                    <li>Time blocks sync back to a dedicated "EE — My Tool Blocks" calendar</li>
+                    <li>Events marked with "My Tool" category in Outlook</li>
+                  </ul>
+                </div>
+                <div className="p-3 border rounded-lg">
+                  <p className="text-sm font-semibold text-slate-700 mb-1">My Tool — Email</p>
+                  <ul className="list-disc ml-4 space-y-1">
+                    <li>Browse, read, reply, and forward Outlook emails from within the app</li>
+                    <li>Convert emails to tasks with one click (Email-to-Task)</li>
+                    <li>Search across mail folders</li>
+                  </ul>
+                </div>
+                <div className="p-3 border rounded-lg">
+                  <p className="text-sm font-semibold text-slate-700 mb-1">Approval Emails</p>
+                  <ul className="list-disc ml-4 space-y-1">
+                    <li>HTML approval emails with Approve/Reject buttons sent via Outlook</li>
+                    <li>Used for procurement, engineering gates, and quality workflows</li>
+                  </ul>
+                </div>
+                <div className="p-3 border rounded-lg">
+                  <p className="text-sm font-semibold text-slate-700 mb-1">SharePoint & Teams</p>
+                  <ul className="list-disc ml-4 space-y-1">
+                    <li>Same Microsoft account provides access to SharePoint document libraries</li>
+                    <li>Teams message reading uses the same connection token</li>
+                  </ul>
+                </div>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

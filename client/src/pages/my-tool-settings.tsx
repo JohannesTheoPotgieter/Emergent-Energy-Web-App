@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useLocation, useSearch } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import MyToolLayout from "@/components/mytool/MyToolLayout";
 import {
   Settings,
@@ -33,7 +33,6 @@ import {
   X,
   Clock,
   Keyboard,
-  RefreshCw,
 } from "lucide-react";
 
 interface UserPreferences {
@@ -95,30 +94,11 @@ export default function MyToolSettingsPage() {
     queryKey: ["/api/mytool/preferences"],
   });
 
-  const { data: outlookStatus, refetch: refetchOutlook } = useQuery<OutlookConnection>({
+  const { data: outlookStatus } = useQuery<OutlookConnection>({
     queryKey: ["/api/outlook/status"],
     retry: false,
   });
 
-  const [refreshingOutlook, setRefreshingOutlook] = useState(false);
-  const handleRefreshOutlook = async () => {
-    setRefreshingOutlook(true);
-    try {
-      const res = await apiRequest("POST", "/api/outlook/refresh");
-      const result = await res.json();
-      queryClient.setQueryData(["/api/outlook/status"], result);
-      if (result.connected) {
-        toast({ title: "Outlook reconnected", description: result.email ? `Connected as ${result.email}` : "Connection restored successfully." });
-      } else {
-        toast({ title: "Still disconnected", description: "The Outlook connection could not be restored. The token may have expired and needs re-authorization from the platform.", variant: "destructive" });
-      }
-    } catch (err: any) {
-      toast({ title: "Refresh failed", description: err.message, variant: "destructive" });
-    } finally {
-      setRefreshingOutlook(false);
-      refetchOutlook();
-    }
-  };
 
   const { data: dodTemplates = [], isLoading: templatesLoading } = useQuery<DodTemplate[]>({
     queryKey: ["/api/mytool/dod-templates"],
@@ -431,66 +411,38 @@ export default function MyToolSettingsPage() {
         <section data-testid="section-outlook">
           <div className="flex items-center gap-2 mb-4">
             <Mail className="h-4 w-4 text-muted-foreground" />
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Outlook Integration</h2>
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Microsoft Connection</h2>
           </div>
 
           <div className="space-y-3 pl-6">
+            <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-border/50" data-testid="outlook-status-summary">
+              {outlookStatus?.connected ? (
+                <>
+                  <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                  <span className="text-sm font-medium text-emerald-700 dark:text-emerald-400">Connected</span>
+                  {outlookStatus.email && (
+                    <Badge variant="secondary" className="text-xs">{outlookStatus.email}</Badge>
+                  )}
+                </>
+              ) : (
+                <>
+                  <AlertCircle className="h-4 w-4 text-amber-500 shrink-0" />
+                  <span className="text-sm text-amber-600 dark:text-amber-400">
+                    {outlookStatus?.configured === false ? "Not configured" : "Connection issue"}
+                  </span>
+                </>
+              )}
+              <Link href="/admin/ms-integration" className="ml-auto">
+                <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1" data-testid="button-manage-ms-connection">
+                  <Settings className="h-3 w-3" />
+                  Manage
+                </Button>
+              </Link>
+            </div>
             <p className="text-xs text-muted-foreground">
-              Your Microsoft Outlook account is managed through the platform connection.
-              Calendar events, time block sync, and approval emails use this connection.
+              Calendar sync, email, time blocks, and approval emails are powered by this connection.
+              Manage it from the Microsoft Integration settings page.
             </p>
-
-            {outlookStatus?.connected ? (
-              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/50 dark:border-emerald-900/30" data-testid="outlook-connected">
-                <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
-                <span className="text-sm font-medium text-emerald-700 dark:text-emerald-400">Connected</span>
-                {outlookStatus.email && (
-                  <Badge variant="secondary" className="text-xs">{outlookStatus.email}</Badge>
-                )}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="ml-auto h-7 px-2 text-xs"
-                  onClick={handleRefreshOutlook}
-                  disabled={refreshingOutlook}
-                  data-testid="button-refresh-outlook"
-                >
-                  {refreshingOutlook ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-                  <span className="ml-1">Refresh</span>
-                </Button>
-              </div>
-            ) : outlookStatus?.configured === false ? (
-              <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-900/30" data-testid="outlook-not-configured">
-                <AlertCircle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
-                <div>
-                  <span className="text-sm text-amber-600 dark:text-amber-400">Not configured</span>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    The Outlook connector has not been set up yet. Please ask your administrator to configure it.
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-900/30" data-testid="outlook-issue">
-                <AlertCircle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
-                <div className="flex-1">
-                  <span className="text-sm text-amber-600 dark:text-amber-400">Connection issue</span>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    The connection may need to be refreshed. Click the button to try reconnecting.
-                  </p>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="shrink-0 h-7 px-3 text-xs border-amber-300 text-amber-700 hover:bg-amber-50"
-                  onClick={handleRefreshOutlook}
-                  disabled={refreshingOutlook}
-                  data-testid="button-reconnect-outlook"
-                >
-                  {refreshingOutlook ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <RefreshCw className="h-3 w-3 mr-1" />}
-                  Reconnect
-                </Button>
-              </div>
-            )}
           </div>
         </section>
 
