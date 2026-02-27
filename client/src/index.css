@@ -308,6 +308,20 @@
 .stagger-7 { animation-delay: 0.28s; animation-fill-mode: both; }
 .stagger-8 { animation-delay: 0.32s; animation-fill-mode: both; }
 
+@keyframes bounce-slow {
+  0%, 100% { transform: translateX(-50%) translateY(0); }
+  50% { transform: translateX(-50%) translateY(-4px); }
+}
+
+.animate-bounce-slow {
+  animation: bounce-slow 2s ease-in-out infinite;
+}
+
+.animate-shimmer {
+  background-size: 200% 100%;
+  animation: shimmer 2s linear infinite;
+}
+
 .loading-shimmer {
   background: linear-gradient(90deg, transparent 25%, hsl(var(--muted-foreground) / 0.08) 50%, transparent 75%);
   background-size: 200% 100%;
