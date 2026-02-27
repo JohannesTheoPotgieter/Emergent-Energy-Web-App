@@ -20,7 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, Plus, Trash2, DollarSign, TrendingUp, TrendingDown, Users,
   ShieldCheck, Wrench, Zap, AlertTriangle, ChevronRight, Edit, Calendar,
-  Briefcase, Search, ArrowRightLeft, CheckCircle2, Flag,
+  Briefcase, Search, ArrowRightLeft, CheckCircle2, Flag, Layers, Clock, XCircle, Activity,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { format } from "date-fns";
@@ -62,6 +62,12 @@ export default function PortfolioDetailPage() {
   const { data: allProjectsSummary = [] } = useQuery<any[]>({
     queryKey: ["/api/projects-summary"],
     queryFn: () => fetch("/api/projects-summary", { credentials: "include" }).then(r => r.json()),
+    enabled: !!portfolioId,
+  });
+
+  const { data: portfolioKeyDates } = useQuery<any[]>({
+    queryKey: ["/api/portfolios", portfolioId, "key-dates"],
+    queryFn: () => fetch(`/api/portfolios/${portfolioId}/key-dates`, { credentials: "include" }).then(r => r.json()),
     enabled: !!portfolioId,
   });
 
@@ -285,7 +291,7 @@ export default function PortfolioDetailPage() {
             <Wrench className="h-3.5 w-3.5" /> Engineering
           </TabsTrigger>
           <TabsTrigger value="rollout" className="gap-1.5" data-testid="tab-rollout">
-            <Calendar className="h-3.5 w-3.5" /> Rollout Plan
+            <Calendar className="h-3.5 w-3.5" /> Project Plan
           </TabsTrigger>
         </TabsList>
 
@@ -542,22 +548,58 @@ export default function PortfolioDetailPage() {
           <h3 className="font-semibold text-sm">Quality Rollup</h3>
           {rollups ? (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <Card><CardContent className="p-4">
-                <div className="text-xs text-muted-foreground">Total QC Items</div>
-                <div className="text-2xl font-bold mt-1" data-testid="stat-total-qc">{rollups.quality?.totalItems || 0}</div>
-              </CardContent></Card>
-              <Card><CardContent className="p-4">
-                <div className="text-xs text-muted-foreground">Approved</div>
-                <div className="text-2xl font-bold mt-1 text-emerald-600">{rollups.quality?.approvedItems || 0}</div>
-              </CardContent></Card>
-              <Card><CardContent className="p-4">
-                <div className="text-xs text-muted-foreground">Pending</div>
-                <div className="text-2xl font-bold mt-1 text-amber-600">{rollups.quality?.pendingItems || 0}</div>
-              </CardContent></Card>
-              <Card><CardContent className="p-4">
-                <div className="text-xs text-muted-foreground">Failed / Rejected</div>
-                <div className="text-2xl font-bold mt-1 text-red-600">{rollups.quality?.failedItems || 0}</div>
-              </CardContent></Card>
+              <Card className="border-0 shadow-sm bg-blue-50/80">
+                <CardContent className="p-3.5">
+                  <div className="flex items-center gap-2.5">
+                    <div className="rounded-lg p-1.5 bg-blue-200/60">
+                      <Layers className="h-4 w-4 text-blue-700" />
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Total QC Items</div>
+                      <div className="text-lg font-bold mt-0.5 leading-tight text-blue-700" data-testid="stat-total-qc">{rollups.quality?.totalItems || 0}</div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="border-0 shadow-sm bg-emerald-50/80">
+                <CardContent className="p-3.5">
+                  <div className="flex items-center gap-2.5">
+                    <div className="rounded-lg p-1.5 bg-emerald-200/60">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-700" />
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Approved</div>
+                      <div className="text-lg font-bold mt-0.5 leading-tight text-emerald-700">{rollups.quality?.approvedItems || 0}</div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="border-0 shadow-sm bg-amber-50/80">
+                <CardContent className="p-3.5">
+                  <div className="flex items-center gap-2.5">
+                    <div className="rounded-lg p-1.5 bg-amber-200/60">
+                      <Clock className="h-4 w-4 text-amber-700" />
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Pending</div>
+                      <div className="text-lg font-bold mt-0.5 leading-tight text-amber-700">{rollups.quality?.pendingItems || 0}</div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="border-0 shadow-sm bg-red-50/80">
+                <CardContent className="p-3.5">
+                  <div className="flex items-center gap-2.5">
+                    <div className="rounded-lg p-1.5 bg-red-200/60">
+                      <XCircle className="h-4 w-4 text-red-700" />
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Failed / Rejected</div>
+                      <div className="text-lg font-bold mt-0.5 leading-tight text-red-700">{rollups.quality?.failedItems || 0}</div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           ) : (
             <Card><CardContent className="py-10 text-center text-muted-foreground">Loading quality data...</CardContent></Card>
@@ -574,18 +616,45 @@ export default function PortfolioDetailPage() {
           <h3 className="font-semibold text-sm">Engineering Rollup</h3>
           {rollups ? (
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              <Card><CardContent className="p-4">
-                <div className="text-xs text-muted-foreground">Total Stages</div>
-                <div className="text-2xl font-bold mt-1" data-testid="stat-total-stages">{rollups.engineering?.totalStages || 0}</div>
-              </CardContent></Card>
-              <Card><CardContent className="p-4">
-                <div className="text-xs text-muted-foreground">Completed</div>
-                <div className="text-2xl font-bold mt-1 text-emerald-600">{rollups.engineering?.completedStages || 0}</div>
-              </CardContent></Card>
-              <Card><CardContent className="p-4">
-                <div className="text-xs text-muted-foreground">In Progress</div>
-                <div className="text-2xl font-bold mt-1 text-blue-600">{rollups.engineering?.inProgressStages || 0}</div>
-              </CardContent></Card>
+              <Card className="border-0 shadow-sm bg-blue-50/80">
+                <CardContent className="p-3.5">
+                  <div className="flex items-center gap-2.5">
+                    <div className="rounded-lg p-1.5 bg-blue-200/60">
+                      <Layers className="h-4 w-4 text-blue-700" />
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Total Stages</div>
+                      <div className="text-lg font-bold mt-0.5 leading-tight text-blue-700" data-testid="stat-total-stages">{rollups.engineering?.totalStages || 0}</div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="border-0 shadow-sm bg-emerald-50/80">
+                <CardContent className="p-3.5">
+                  <div className="flex items-center gap-2.5">
+                    <div className="rounded-lg p-1.5 bg-emerald-200/60">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-700" />
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Completed</div>
+                      <div className="text-lg font-bold mt-0.5 leading-tight text-emerald-700">{rollups.engineering?.completedStages || 0}</div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="border-0 shadow-sm bg-indigo-50/80">
+                <CardContent className="p-3.5">
+                  <div className="flex items-center gap-2.5">
+                    <div className="rounded-lg p-1.5 bg-indigo-200/60">
+                      <Activity className="h-4 w-4 text-indigo-700" />
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">In Progress</div>
+                      <div className="text-lg font-bold mt-0.5 leading-tight text-indigo-700">{rollups.engineering?.inProgressStages || 0}</div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           ) : (
             <Card><CardContent className="py-10 text-center text-muted-foreground">Loading engineering data...</CardContent></Card>
@@ -600,50 +669,152 @@ export default function PortfolioDetailPage() {
 
         <TabsContent value="rollout" className="space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="font-semibold text-sm">Rollout Plans</h3>
-            <Button size="sm" className="gap-1.5" onClick={() => setRolloutOpen(true)} data-testid="button-add-rollout">
-              <Plus className="h-3.5 w-3.5" /> New Rollout Plan
-            </Button>
+            <div>
+              <h3 className="font-semibold text-sm">Portfolio Project Plan</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">Key milestone dates across all projects in this portfolio</p>
+            </div>
           </div>
-          {(portfolio.rolloutPlans || []).length === 0 ? (
+          {!portfolioKeyDates ? (
+            <Card><CardContent className="py-10 text-center text-muted-foreground">
+              <Calendar className="h-8 w-8 mx-auto mb-2 opacity-40 animate-pulse" />
+              Loading project plan data...
+            </CardContent></Card>
+          ) : portfolioKeyDates.length === 0 ? (
             <Card><CardContent className="py-10 text-center text-muted-foreground">
               <Calendar className="h-8 w-8 mx-auto mb-2 opacity-40" />
-              No rollout plans yet. Create one to plan your portfolio phases.
+              No projects assigned to this portfolio yet.
             </CardContent></Card>
           ) : (
-            <div className="space-y-3">
-              {portfolio.rolloutPlans.map((rp: any) => (
-                <Card key={rp.id}>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">{rp.name}</CardTitle>
-                    {rp.notes && <p className="text-xs text-muted-foreground">{rp.notes}</p>}
-                  </CardHeader>
-                  <CardContent>
-                    {rp.phases?.length > 0 ? (
-                      <div className="space-y-2">
-                        {rp.phases.map((ph: any, i: number) => (
-                          <div key={ph.id || i} className="flex items-center gap-3 p-2 bg-muted/30 rounded">
-                            <div className="w-6 h-6 rounded-full bg-primary/10 text-primary text-xs flex items-center justify-center font-medium">
-                              {i + 1}
-                            </div>
-                            <div className="flex-1">
-                              <div className="text-sm font-medium">{ph.phaseName}</div>
-                              {(ph.startDate || ph.endDate) && (
-                                <div className="text-xs text-muted-foreground">
-                                  {ph.startDate || "TBD"} — {ph.endDate || "TBD"}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">No phases defined</p>
-                    )}
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+            <>
+              <Card>
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-[11px]" data-testid="table-portfolio-plan">
+                      <thead>
+                        <tr className="border-b bg-slate-50/80">
+                          <th className="text-left px-3 py-2.5 font-semibold text-gray-600 sticky left-0 bg-slate-50/80 z-10 min-w-[160px]">Project</th>
+                          <th className="text-center px-2 py-2.5 font-semibold text-gray-600 min-w-[60px]">Phase</th>
+                          <th className="text-center px-2 py-2.5 font-semibold text-gray-600 min-w-[50px]">Act%</th>
+                          <th className="text-center px-2 py-2.5 font-semibold text-gray-500 min-w-[80px]">Start</th>
+                          <th className="text-center px-2 py-2.5 font-medium text-indigo-600 min-w-[80px]">PD Handover</th>
+                          <th className="text-center px-2 py-2.5 font-medium text-blue-600 min-w-[80px]">Construction Start</th>
+                          <th className="text-center px-2 py-2.5 font-medium text-amber-600 min-w-[80px]">Commissioning</th>
+                          <th className="text-center px-2 py-2.5 font-medium text-green-600 min-w-[80px]">Practical Completion</th>
+                          <th className="text-center px-2 py-2.5 font-medium text-purple-600 min-w-[80px]">O&M Handover</th>
+                          <th className="text-center px-2 py-2.5 font-medium text-rose-600 min-w-[80px]">Client Handover</th>
+                          <th className="text-center px-2 py-2.5 font-semibold text-gray-500 min-w-[80px]">End</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {portfolioKeyDates.map((proj: any, idx: number) => {
+                          const kd = (name: string) => {
+                            const found = proj.keyDates?.find((d: any) => d.keyDateName === name);
+                            return found || null;
+                          };
+                          const fmtDate = (d: string | null) => {
+                            if (!d) return null;
+                            try {
+                              return format(new Date(d + 'T00:00:00'), 'dd MMM yy');
+                            } catch { return d; }
+                          };
+                          const isPast = (d: string | null) => {
+                            if (!d) return false;
+                            return d < new Date().toISOString().split('T')[0];
+                          };
+                          const isUpcoming = (d: string | null) => {
+                            if (!d) return false;
+                            const now = new Date();
+                            const dateObj = new Date(d + 'T00:00:00');
+                            const diff = (dateObj.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+                            return diff >= 0 && diff <= 30;
+                          };
+
+                          const renderDateCell = (keyDateName: string, colorClass: string) => {
+                            const dateInfo = kd(keyDateName);
+                            const date = dateInfo?.effectiveDate;
+                            const linked = dateInfo?.linked;
+                            if (!date) {
+                              return (
+                                <td className="text-center px-2 py-2.5">
+                                  <span className="text-gray-300">—</span>
+                                </td>
+                              );
+                            }
+                            const upcoming = isUpcoming(date);
+                            const past = isPast(date);
+                            return (
+                              <td className="text-center px-2 py-2.5">
+                                <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                                  upcoming ? 'bg-amber-100 text-amber-800 ring-1 ring-amber-300' :
+                                  past ? `${colorClass} opacity-70` :
+                                  colorClass
+                                }`}>
+                                  {fmtDate(date)}
+                                </span>
+                              </td>
+                            );
+                          };
+
+                          const progressColor = proj.actualPct >= 90 ? 'text-green-700 bg-green-100' :
+                                                proj.actualPct >= 50 ? 'text-blue-700 bg-blue-100' :
+                                                proj.actualPct > 0 ? 'text-amber-700 bg-amber-100' : 'text-gray-500 bg-gray-100';
+
+                          return (
+                            <tr
+                              key={proj.projectId}
+                              className={`border-b ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/40'} hover:bg-blue-50/40 transition-colors`}
+                              data-testid={`plan-row-${proj.projectId}`}
+                            >
+                              <td className="px-3 py-2.5 sticky left-0 bg-inherit z-10">
+                                <Link href={`/project/${encodeURIComponent(proj.projectName)}`} className="hover:underline">
+                                  <div className="font-medium text-gray-800 text-xs">{proj.projectName}</div>
+                                </Link>
+                                <div className="text-[10px] text-gray-400 mt-0.5">{proj.pm || '—'} · {parseFloat(proj.sizeKwp || '0').toFixed(0)} kWp</div>
+                              </td>
+                              <td className="text-center px-2 py-2.5">
+                                <Badge variant="outline" className="text-[9px] px-1.5 py-0">{proj.phase || '—'}</Badge>
+                              </td>
+                              <td className="text-center px-2 py-2.5">
+                                <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${progressColor}`}>
+                                  {Math.round(proj.actualPct)}%
+                                </span>
+                              </td>
+                              <td className="text-center px-2 py-2.5">
+                                <span className="text-[10px] text-gray-500">{fmtDate(proj.projectStart)}</span>
+                              </td>
+                              {renderDateCell("PD Handover", "bg-indigo-50 text-indigo-700")}
+                              {renderDateCell("Construction Start", "bg-blue-50 text-blue-700")}
+                              {renderDateCell("Commissioning", "bg-amber-50 text-amber-700")}
+                              {renderDateCell("Practical Completion", "bg-green-50 text-green-700")}
+                              {renderDateCell("O&M Handover", "bg-purple-50 text-purple-700")}
+                              {renderDateCell("Client Handover", "bg-rose-50 text-rose-700")}
+                              <td className="text-center px-2 py-2.5">
+                                <span className="text-[10px] text-gray-500">{fmtDate(proj.projectEnd)}</span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <div className="flex items-center gap-6 px-2 text-[10px] text-gray-400">
+                <div className="flex items-center gap-1.5">
+                  <span className="h-3 w-3 rounded bg-amber-100 ring-1 ring-amber-300" />
+                  <span>Within 30 days</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="h-3 w-3 rounded bg-gray-100" />
+                  <span>Past date</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-gray-300">—</span>
+                  <span>Not linked / no data</span>
+                </div>
+              </div>
+            </>
           )}
         </TabsContent>
       </Tabs>

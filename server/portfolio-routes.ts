@@ -821,4 +821,112 @@ export function registerPortfolioRoutes(app: Express) {
       res.status(500).json({ error: err.message });
     }
   });
+
+  app.get("/api/portfolios/:id/key-dates", jwtAuth, requireAuth, async (req, res) => {
+    try {
+      const portfolioId = parseInt(req.params.id);
+      const assignments = await db.select().from(projectPortfolioAssignments).where(eq(projectPortfolioAssignments.portfolioId, portfolioId));
+      const projectIds = assignments.map(a => a.projectId);
+
+      if (projectIds.length === 0) return res.json([]);
+
+      const projects = await db.select().from(projectInfo).where(inArray(projectInfo.id, projectIds));
+      const projectNames = projects.map(p => p.projectName);
+
+      const plans = projectNames.length > 0
+        ? await db.select().from(projectPlan).where(inArray(projectPlan.projectName, projectNames))
+        : [];
+
+      const plansByProject = new Map<string, any[]>();
+      for (const p of plans) {
+        if (!plansByProject.has(p.projectName)) plansByProject.set(p.projectName, []);
+        plansByProject.get(p.projectName)!.push(p);
+      }
+
+      const autoMappings = [
+        { keyDateName: "PD Handover", patterns: ['bd handover', 'project charter handover'], dateField: 'actualEnd' as const, sortOrder: 1 },
+        { keyDateName: "Construction Start", patterns: ['site establishment'], dateField: 'actualStart' as const, sortOrder: 2 },
+        { keyDateName: "Commissioning", patterns: ['commissioning'], dateField: 'actualEnd' as const, sortOrder: 3 },
+        { keyDateName: "Practical Completion", patterns: ['practical completion'], dateField: 'actualEnd' as const, sortOrder: 4 },
+        { keyDateName: "O&M Handover", patterns: ['handover to matriarch'], dateField: 'actualEnd' as const, sortOrder: 5 },
+        { keyDateName: "Client Handover", patterns: ['handover to client'], dateField: 'actualEnd' as const, sortOrder: 6 },
+      ];
+
+      const result = projects.map(proj => {
+        const projPlans = plansByProject.get(proj.projectName) || [];
+
+        const comp = computeProjectCompletion(projPlans);
+
+        const keyDates = autoMappings.map(mapping => {
+          let matchedTask: any = null;
+          let effectiveDate: string | null = null;
+
+          for (const task of projPlans) {
+            const desc = (task.highLevelProgramme || task.title || '').toLowerCase();
+            const matches = mapping.patterns.some(p => desc.includes(p));
+            if (matches) {
+              const dateVal = mapping.dateField === 'actualStart' ? (task.actualStart || task.baselineStart) : (task.actualEnd || task.baselineEnd);
+              if (dateVal && /^\d{4}-\d{2}-\d{2}/.test(dateVal)) {
+                const dateStr = dateVal.substring(0, 10);
+                if (mapping.dateField === 'actualStart') {
+                  if (!effectiveDate || dateStr < effectiveDate) {
+                    effectiveDate = dateStr;
+                    matchedTask = task;
+                  }
+                } else {
+                  if (!effectiveDate || dateStr > effectiveDate) {
+                    effectiveDate = dateStr;
+                    matchedTask = task;
+                  }
+                }
+              }
+            }
+          }
+
+          const plannedStart = matchedTask?.baselineStart?.substring(0, 10) || null;
+          const plannedEnd = matchedTask?.baselineEnd?.substring(0, 10) || null;
+          const plannedDate = mapping.dateField === 'actualStart' ? plannedStart : plannedEnd;
+
+          return {
+            keyDateName: mapping.keyDateName,
+            sortOrder: mapping.sortOrder,
+            plannedDate,
+            effectiveDate,
+            linked: !!matchedTask,
+          };
+        });
+
+        let projectStart: string | null = null;
+        let projectEnd: string | null = null;
+        for (const task of projPlans) {
+          const ts = task.actualStart || task.baselineStart;
+          const te = task.actualEnd || task.baselineEnd;
+          if (ts && (!projectStart || ts < projectStart)) projectStart = ts?.substring(0, 10);
+          if (te && (!projectEnd || te > projectEnd)) projectEnd = te?.substring(0, 10);
+        }
+        if (!projectStart) projectStart = (proj as any).constructionStartDate || null;
+        if (!projectEnd) projectEnd = (proj as any).clientHandoverDate || (proj as any).commissioningDate || null;
+
+        return {
+          projectId: proj.id,
+          projectName: proj.projectName,
+          phase: proj.phase || null,
+          pm: proj.pm || null,
+          sizeKwp: proj.sizeKwp ?? null,
+          actualPct: comp.actualPct,
+          expectedPct: comp.expectedPct,
+          delta: comp.delta,
+          projectStart: projectStart?.substring(0, 10) || null,
+          projectEnd: projectEnd?.substring(0, 10) || null,
+          keyDates,
+        };
+      });
+
+      result.sort((a, b) => (a.projectStart || 'z').localeCompare(b.projectStart || 'z'));
+      res.json(result);
+    } catch (err: any) {
+      console.error("[Portfolio] Key dates error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
 }
