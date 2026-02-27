@@ -10,7 +10,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { AlertCircle, CheckCircle, ChevronDown, ChevronRight, FileText, Shield, AlertTriangle, Clock, User, Lock, Link2, X, Plus, Trash2, Send, Loader2, CheckCircle2 } from "lucide-react";
+import { AlertCircle, CheckCircle, ChevronDown, ChevronRight, FileText, Shield, AlertTriangle, Clock, User, Lock, Link2, X, Plus, Trash2, Send, Loader2, CheckCircle2, Upload, FolderOpen, Paperclip, ExternalLink, ArrowLeft } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { usePermission } from "@/hooks/use-permissions";
 
@@ -79,6 +79,11 @@ export function QualityTab({ projectName }: QualityTabProps) {
   const [sfaNote, setSfaNote] = useState("");
   const [sfaFile, setSfaFile] = useState<File | null>(null);
   const [sfaSending, setSfaSending] = useState(false);
+  const [evidenceMode, setEvidenceMode] = useState<Record<number, "upload" | "sharepoint" | null>>({});
+  const [evidenceUploading, setEvidenceUploading] = useState<number | null>(null);
+  const [spBrowseItemId, setSpBrowseItemId] = useState<number | null>(null);
+  const [spFolderStack, setSpFolderStack] = useState<{ id: string | null; name: string }[]>([{ id: null, name: "Root" }]);
+  const [spLinking, setSpLinking] = useState<string | null>(null);
   const isQmOrAdmin = ['admin', 'COO_ADMIN', 'CEO_ADMIN'].includes(user?.role || '') || ['quality_manager', 'QUALITY_MANAGER'].includes(user?.role || '');
   const canEdit = isQmOrAdmin;
   const { allowed: canDeleteQc } = usePermission('pd_quality', 'delete');
@@ -274,6 +279,81 @@ export function QualityTab({ projectName }: QualityTabProps) {
       queryClient.invalidateQueries({ queryKey: ["quality-checklists"] });
     },
   });
+
+  const deleteEvidenceMutation = useMutation({
+    mutationFn: async (evidenceId: number) => {
+      const res = await qFetch(`/api/quality/evidence/${evidenceId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete evidence");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["quality-checklist", projectName] });
+    },
+  });
+
+  const currentSpFolderId = spFolderStack[spFolderStack.length - 1]?.id || null;
+  const { data: spBrowseData, isLoading: spBrowseLoading } = useQuery({
+    queryKey: ["quality-sp-browse", currentSpFolderId],
+    queryFn: async () => {
+      const url = currentSpFolderId
+        ? `/api/quality/sp-browse?folderId=${currentSpFolderId}`
+        : `/api/quality/sp-browse`;
+      const res = await qFetch(url);
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: spBrowseItemId !== null,
+    staleTime: 30000,
+  });
+
+  const handleEvidenceFileUpload = async (instanceId: number, file: File) => {
+    setEvidenceUploading(instanceId);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`/api/quality/project/${encodeURIComponent(projectName)}/item/${instanceId}/evidence/upload`, {
+        method: "POST",
+        headers,
+        body: formData,
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Upload failed");
+      }
+      queryClient.invalidateQueries({ queryKey: ["quality-checklist", projectName] });
+      setEvidenceMode(prev => ({ ...prev, [instanceId]: null }));
+    } catch (err: any) {
+      console.error("Evidence upload failed:", err);
+    } finally {
+      setEvidenceUploading(null);
+    }
+  };
+
+  const handleSpFileSelect = async (instanceId: number, spItemId: string, fileName: string) => {
+    setSpLinking(spItemId);
+    try {
+      const res = await qFetch(`/api/quality/sp-file-link?itemId=${spItemId}`);
+      if (!res.ok) throw new Error("Failed to get file link");
+      const meta = await res.json();
+      const evidenceUrl = meta.webUrl || `sharepoint://${spItemId}`;
+      await qFetch(`/api/quality/project/${encodeURIComponent(projectName)}/item/${instanceId}/evidence`, {
+        method: "POST",
+        body: JSON.stringify({ evidenceUrl, evidenceNote: `SharePoint: ${fileName}` }),
+      });
+      queryClient.invalidateQueries({ queryKey: ["quality-checklist", projectName] });
+      setSpBrowseItemId(null);
+      setSpFolderStack([{ id: null, name: "Root" }]);
+      setEvidenceMode(prev => ({ ...prev, [instanceId]: null }));
+    } catch (err: any) {
+      console.error("SharePoint link failed:", err);
+    } finally {
+      setSpLinking(null);
+    }
+  };
 
   useEffect(() => {
     if (checklistData?.phases) {
@@ -891,22 +971,150 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                         data-testid={`textarea-notes-${instance.id}`}
                                       />
                                     </div>
-                                    {itemEvidence.length > 0 && (
-                                      <div className="space-y-1.5">
-                                        <label className="text-xs font-medium text-muted-foreground">Evidence</label>
-                                        <div className="space-y-1">
-                                          {itemEvidence.map((ev: any) => (
-                                            <div key={ev.id} className="flex items-center gap-2 text-xs p-2 rounded bg-muted/30">
-                                              <FileText className="w-3 h-3 text-muted-foreground" />
-                                              <a href={ev.evidenceUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline truncate">
-                                                {ev.evidenceUrl}
-                                              </a>
-                                              {ev.evidenceNote && <span className="text-muted-foreground">— {ev.evidenceNote}</span>}
-                                            </div>
-                                          ))}
-                                        </div>
+                                    <div className="space-y-1.5">
+                                      <div className="flex items-center justify-between">
+                                        <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                                          <Paperclip className="w-3 h-3" /> Evidence {itemEvidence.length > 0 && <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4">{itemEvidence.length}</Badge>}
+                                        </label>
+                                        {canEdit && !evidenceMode[instance.id] && (
+                                          <div className="flex gap-1">
+                                            <Button
+                                              variant="outline"
+                                              size="sm"
+                                              className="h-6 text-[10px] px-2 gap-1"
+                                              onClick={() => setEvidenceMode(prev => ({ ...prev, [instance.id]: "upload" }))}
+                                              data-testid={`btn-upload-evidence-${instance.id}`}
+                                            >
+                                              <Upload className="w-3 h-3" /> Upload File
+                                            </Button>
+                                            <Button
+                                              variant="outline"
+                                              size="sm"
+                                              className="h-6 text-[10px] px-2 gap-1 text-blue-600 border-blue-200 hover:bg-blue-50"
+                                              onClick={() => { setEvidenceMode(prev => ({ ...prev, [instance.id]: "sharepoint" })); setSpBrowseItemId(instance.id); setSpFolderStack([{ id: null, name: "Root" }]); }}
+                                              data-testid={`btn-sp-evidence-${instance.id}`}
+                                            >
+                                              <FolderOpen className="w-3 h-3" /> SharePoint
+                                            </Button>
+                                          </div>
+                                        )}
                                       </div>
-                                    )}
+                                      {itemEvidence.length > 0 && (
+                                        <div className="space-y-1">
+                                          {itemEvidence.map((ev: any) => {
+                                            const isLocal = ev.evidenceUrl?.startsWith("/uploads/");
+                                            const isSp = ev.evidenceNote?.startsWith("SharePoint:");
+                                            const displayName = isSp ? ev.evidenceNote.replace("SharePoint: ", "") : (ev.evidenceNote || ev.evidenceUrl);
+                                            return (
+                                              <div key={ev.id} className={`flex items-center gap-2 text-xs p-2 rounded ${isSp ? "bg-blue-50/50 dark:bg-blue-950/20" : "bg-muted/30"}`} data-testid={`evidence-item-${ev.id}`}>
+                                                {isSp ? <FolderOpen className="w-3 h-3 text-blue-500 shrink-0" /> : <FileText className="w-3 h-3 text-muted-foreground shrink-0" />}
+                                                <a href={ev.evidenceUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline truncate flex-1 flex items-center gap-1">
+                                                  {displayName}
+                                                  <ExternalLink className="w-2.5 h-2.5 shrink-0 opacity-50" />
+                                                </a>
+                                                {isSp && <Badge className="text-[8px] bg-blue-100 text-blue-700 px-1 py-0 h-3.5">SharePoint</Badge>}
+                                                {isLocal && <Badge className="text-[8px] bg-green-100 text-green-700 px-1 py-0 h-3.5">Uploaded</Badge>}
+                                                {canEdit && (
+                                                  <button
+                                                    onClick={() => deleteEvidenceMutation.mutate(ev.id)}
+                                                    className="p-0.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors shrink-0"
+                                                    data-testid={`btn-delete-evidence-${ev.id}`}
+                                                  >
+                                                    <Trash2 className="h-3 w-3" />
+                                                  </button>
+                                                )}
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                      {itemEvidence.length === 0 && !evidenceMode[instance.id] && (
+                                        <p className="text-[10px] text-muted-foreground italic">No evidence attached</p>
+                                      )}
+                                      {evidenceMode[instance.id] === "upload" && (
+                                        <div className="space-y-2">
+                                          <div
+                                            className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors cursor-pointer hover:border-green-400 hover:bg-green-50/30 dark:hover:bg-green-950/10 border-muted`}
+                                            onClick={() => {
+                                              const input = document.createElement("input");
+                                              input.type = "file";
+                                              input.onchange = (e) => {
+                                                const file = (e.target as HTMLInputElement).files?.[0];
+                                                if (file) handleEvidenceFileUpload(instance.id, file);
+                                              };
+                                              input.click();
+                                            }}
+                                            data-testid={`dropzone-evidence-${instance.id}`}
+                                          >
+                                            {evidenceUploading === instance.id ? (
+                                              <div className="flex items-center justify-center gap-2 text-xs">
+                                                <Loader2 className="h-4 w-4 animate-spin text-green-600" />
+                                                <span>Uploading...</span>
+                                              </div>
+                                            ) : (
+                                              <div className="text-xs text-muted-foreground flex flex-col items-center gap-1">
+                                                <Upload className="h-5 w-5" />
+                                                Click to select a file to upload as evidence
+                                              </div>
+                                            )}
+                                          </div>
+                                          <Button variant="ghost" size="sm" className="h-6 text-[10px]" onClick={() => setEvidenceMode(prev => ({ ...prev, [instance.id]: null }))} data-testid={`btn-cancel-upload-${instance.id}`}>Cancel</Button>
+                                        </div>
+                                      )}
+                                      {evidenceMode[instance.id] === "sharepoint" && spBrowseItemId === instance.id && (
+                                        <div className="border rounded-lg p-3 space-y-2 bg-blue-50/30 dark:bg-blue-950/10">
+                                          <div className="flex items-center gap-2 text-xs font-medium text-blue-700">
+                                            <FolderOpen className="w-3.5 h-3.5" />
+                                            SharePoint — Select a file
+                                          </div>
+                                          <div className="flex items-center gap-1 text-[10px] text-muted-foreground flex-wrap">
+                                            {spFolderStack.map((f, idx) => (
+                                              <span key={idx} className="flex items-center gap-0.5">
+                                                {idx > 0 && <ChevronRight className="w-2.5 h-2.5" />}
+                                                <button
+                                                  className="hover:text-blue-600 hover:underline"
+                                                  onClick={() => setSpFolderStack(prev => prev.slice(0, idx + 1))}
+                                                  data-testid={`sp-breadcrumb-${idx}`}
+                                                >{f.name}</button>
+                                              </span>
+                                            ))}
+                                          </div>
+                                          {spBrowseLoading ? (
+                                            <div className="flex items-center justify-center py-4">
+                                              <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+                                            </div>
+                                          ) : (
+                                            <div className="max-h-48 overflow-y-auto space-y-0.5">
+                                              {!spBrowseData?.items?.length && <p className="text-[10px] text-muted-foreground py-2 text-center">No items found</p>}
+                                              {spBrowseData?.items?.map((item: any) => (
+                                                <div
+                                                  key={item.id}
+                                                  className={`flex items-center gap-2 text-xs p-1.5 rounded cursor-pointer transition-colors ${item.isFolder ? "hover:bg-blue-100/50" : "hover:bg-green-100/50"}`}
+                                                  onClick={() => {
+                                                    if (item.isFolder) {
+                                                      setSpFolderStack(prev => [...prev, { id: item.id, name: item.name }]);
+                                                    } else {
+                                                      handleSpFileSelect(instance.id, item.id, item.name);
+                                                    }
+                                                  }}
+                                                  data-testid={`sp-item-${item.id}`}
+                                                >
+                                                  {item.isFolder ? (
+                                                    <FolderOpen className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                                                  ) : (
+                                                    <FileText className="w-3.5 h-3.5 text-green-600 shrink-0" />
+                                                  )}
+                                                  <span className="truncate flex-1">{item.name}</span>
+                                                  {item.isFolder && <span className="text-[10px] text-muted-foreground">{item.childCount} items</span>}
+                                                  {!item.isFolder && spLinking === item.id && <Loader2 className="w-3 h-3 animate-spin text-blue-500" />}
+                                                </div>
+                                              ))}
+                                            </div>
+                                          )}
+                                          <Button variant="ghost" size="sm" className="h-6 text-[10px]" onClick={() => { setSpBrowseItemId(null); setEvidenceMode(prev => ({ ...prev, [instance.id]: null })); setSpFolderStack([{ id: null, name: "Root" }]); }} data-testid={`btn-cancel-sp-${instance.id}`}>Cancel</Button>
+                                        </div>
+                                      )}
+                                    </div>
                                   </div>
                                 )}
                               </div>

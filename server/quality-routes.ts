@@ -480,6 +480,64 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
+  app.post("/api/quality/project/:projectName/item/:itemInstanceId/evidence/upload", requireAuth, requireAdminOrQm, qmApprovalUpload.single("file"), async (req, res) => {
+    try {
+      const itemId = parseInt(req.params.itemInstanceId);
+      const file = req.file;
+      if (!file) return res.status(400).json({ error: "No file uploaded" });
+      const note = req.body.note || "";
+
+      const evidenceUrl = `/uploads/qm-approvals/${file.filename}`;
+      const [evidence] = await db.insert(qcItemEvidence).values({
+        itemInstanceId: itemId,
+        evidenceUrl,
+        evidenceNote: note || file.originalname,
+      }).returning();
+      res.json(evidence);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/quality/sp-browse", requireAuth, requireAdminOrQm, async (req, res) => {
+    try {
+      const { browseFolders, isSharePointConfigured } = await import("./sharepoint");
+      if (!isSharePointConfigured()) {
+        return res.status(400).json({ error: "SharePoint not configured" });
+      }
+      const { storage } = await import("./storage");
+      const settings = await storage.getSpSettings();
+      if (!settings?.driveId) return res.status(400).json({ error: "SharePoint drive not configured" });
+
+      const folderId = req.query.folderId as string | undefined;
+      const items = await browseFolders(settings.driveId, folderId || undefined);
+      res.json({ driveId: settings.driveId, items });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/quality/sp-file-link", requireAuth, requireAdminOrQm, async (req, res) => {
+    try {
+      const { isSharePointConfigured } = await import("./sharepoint");
+      if (!isSharePointConfigured()) return res.status(400).json({ error: "SharePoint not configured" });
+
+      const { storage } = await import("./storage");
+      const settings = await storage.getSpSettings();
+      if (!settings?.driveId) return res.status(400).json({ error: "SharePoint drive not configured" });
+
+      const itemId = req.query.itemId as string;
+      if (!itemId) return res.status(400).json({ error: "itemId required" });
+
+      const { getFileMetadata } = await import("./sharepoint");
+      const meta = await getFileMetadata(settings.driveId, itemId);
+      const webUrl = meta.webUrl || meta["@microsoft.graph.downloadUrl"] || "";
+      res.json({ name: meta.name, webUrl, size: meta.size });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.post("/api/quality/project/:projectName/item/:itemInstanceId/send-for-approval", requireAuth, qmApprovalUpload.single("file"), async (req, res) => {
     try {
       const itemId = parseInt(req.params.itemInstanceId);
