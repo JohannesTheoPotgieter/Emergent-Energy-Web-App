@@ -15,7 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import {
   Briefcase, Plus, FolderOpen, TrendingUp, TrendingDown, AlertTriangle,
-  Users, Zap, DollarSign, ShieldCheck, Search, ChevronRight, Wrench,
+  Users, Zap, DollarSign, ShieldCheck, Search, ChevronRight, ChevronDown, Wrench,
   CheckCircle2, Clock, XCircle, BarChart3, Activity,
 } from "lucide-react";
 import {
@@ -505,6 +505,7 @@ export default function PortfoliosPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [formData, setFormData] = useState({ name: "", clientName: "", description: "", status: "Active" });
+  const [expandedId, setExpandedId] = useState<number | null>(null);
 
   const { data: dashboard, isLoading } = useQuery<any>({
     queryKey: ["/api/portfolio-dashboard", viewMode],
@@ -592,87 +593,83 @@ export default function PortfoliosPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-6">
-          {portfoliosList.map((p: any) => (
-            <Card key={p.id} className="overflow-hidden" data-testid={`card-portfolio-${p.id}`}>
-              <div
-                className="p-5 cursor-pointer hover:bg-muted/30 transition-colors group"
-                onClick={() => navigate(`/portfolios/${p.id}`)}
-                data-testid={`link-portfolio-${p.id}`}
-              >
-                <div className="flex items-start gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h3 className="font-semibold text-base truncate group-hover:text-primary transition-colors" data-testid={`text-portfolio-name-${p.id}`}>
-                        {p.name}
-                      </h3>
-                      <Badge variant="outline" className={`text-[10px] shrink-0 ${healthColor(p.overallHealth)}`} data-testid={`badge-health-${p.id}`}>
-                        {p.overallHealth}
-                      </Badge>
-                      <Badge variant="outline" className="text-[10px] shrink-0">
-                        {p.status}
-                      </Badge>
+        <div className="space-y-3">
+          {portfoliosList.map((p: any) => {
+            const isExpanded = expandedId === p.id;
+            return (
+              <Card key={p.id} className="overflow-hidden" data-testid={`card-portfolio-${p.id}`}>
+                <div className="flex items-center">
+                  <button
+                    className="flex-1 p-4 text-left hover:bg-muted/30 transition-colors group"
+                    onClick={() => setExpandedId(isExpanded ? null : p.id)}
+                    data-testid={`toggle-portfolio-${p.id}`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`transition-transform ${isExpanded ? "rotate-0" : "-rotate-90"}`}>
+                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="font-semibold text-sm truncate" data-testid={`text-portfolio-name-${p.id}`}>
+                            {p.name}
+                          </h3>
+                          <Badge variant="outline" className={`text-[10px] shrink-0 ${healthColor(p.overallHealth)}`} data-testid={`badge-health-${p.id}`}>
+                            {p.overallHealth}
+                          </Badge>
+                          <Badge variant="outline" className="text-[10px] shrink-0">
+                            {p.status}
+                          </Badge>
+                          {p.clientName && (
+                            <span className="text-xs text-muted-foreground">Client: {p.clientName}</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1 flex-wrap">
+                          <span className="flex items-center gap-1">
+                            <Users className="h-3 w-3" />
+                            {p.projectCount} projects
+                          </span>
+                          {p.ownerName && <span>Owner: {p.ownerName}</span>}
+                          <span className="flex items-center gap-1">
+                            <Zap className="h-3 w-3" />
+                            {p.totalKwp?.toFixed(0) || 0} kWp
+                          </span>
+                          <span>
+                            Act: <span className={p.avgActualPct < p.avgExpectedPct - 5 ? "text-red-600 font-medium" : "text-emerald-600 font-medium"}>
+                              {p.avgActualPct}%
+                            </span>
+                            <span className="text-muted-foreground"> / Exp: {p.avgExpectedPct}%</span>
+                          </span>
+                          {p.behindCount > 0 && (
+                            <span className="flex items-center gap-1 text-red-600 font-medium">
+                              <AlertTriangle className="h-3 w-3" />
+                              {p.behindCount} behind
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                    {p.clientName && (
-                      <p className="text-sm text-muted-foreground mb-2" data-testid={`text-client-${p.id}`}>
-                        Client: {p.clientName}
-                      </p>
-                    )}
-                    <div className="flex items-center gap-4 text-sm flex-wrap">
-                      <span className="flex items-center gap-1">
-                        <Users className="h-3.5 w-3.5 text-muted-foreground" />
-                        {p.projectCount} projects
-                      </span>
-                      {p.ownerName && (
-                        <span className="text-muted-foreground">Owner: {p.ownerName}</span>
-                      )}
-                      <span className="flex items-center gap-1">
-                        <Zap className="h-3.5 w-3.5 text-muted-foreground" />
-                        {p.totalKwp?.toFixed(0) || 0} kWp
-                      </span>
-                      <span className="flex items-center gap-1">
-                        Act: <span className={p.avgActualPct < p.avgExpectedPct - 5 ? "text-red-600 font-medium" : "text-emerald-600 font-medium"}>
-                          {p.avgActualPct}%
-                        </span>
-                        <span className="text-muted-foreground">/ Exp: {p.avgExpectedPct}%</span>
-                      </span>
-                      {p.behindCount > 0 && (
-                        <span className="flex items-center gap-1 text-red-600">
-                          <AlertTriangle className="h-3.5 w-3.5" />
-                          {p.behindCount} behind
-                        </span>
-                      )}
-                    </div>
+                  </button>
+                  <button
+                    className="px-3 py-4 border-l hover:bg-muted/30 transition-colors self-stretch flex items-center"
+                    onClick={() => navigate(`/portfolios/${p.id}`)}
+                    title="View portfolio detail"
+                    data-testid={`link-portfolio-${p.id}`}
+                  >
+                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                  </button>
+                </div>
+
+                {isExpanded && p.projectCount > 0 && (
+                  <div className="border-t px-5 py-4">
+                    {viewMode === "management" && <ScheduleCharts portfolio={p} />}
+                    {viewMode === "finance" && <FinanceCharts portfolio={p} />}
+                    {viewMode === "quality" && <QualityCharts portfolio={p} />}
+                    {viewMode === "engineering" && <EngineeringCharts portfolio={p} />}
                   </div>
-                  <ChevronRight className="h-5 w-5 text-muted-foreground shrink-0 mt-1 opacity-0 group-hover:opacity-100 transition-opacity" />
-                </div>
-              </div>
-
-              {viewMode === "management" && p.projectCount > 0 && (
-                <div className="border-t px-5 py-4">
-                  <ScheduleCharts portfolio={p} />
-                </div>
-              )}
-
-              {viewMode === "finance" && p.projectCount > 0 && (
-                <div className="border-t px-5 py-4">
-                  <FinanceCharts portfolio={p} />
-                </div>
-              )}
-
-              {viewMode === "quality" && p.projectCount > 0 && (
-                <div className="border-t px-5 py-4">
-                  <QualityCharts portfolio={p} />
-                </div>
-              )}
-
-              {viewMode === "engineering" && p.projectCount > 0 && (
-                <div className="border-t px-5 py-4">
-                  <EngineeringCharts portfolio={p} />
-                </div>
-              )}
-            </Card>
-          ))}
+                )}
+              </Card>
+            );
+          })}
         </div>
       )}
 
