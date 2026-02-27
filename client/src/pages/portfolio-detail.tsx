@@ -326,6 +326,15 @@ export default function PortfolioDetailPage() {
   const [editData, setEditData] = useState<any>({});
   const [rolloutData, setRolloutData] = useState({ name: "", notes: "", phases: [{ phaseName: "", startDate: "", endDate: "" }] });
 
+  const { data: allUsers = [] } = useQuery<{ id: number; name: string }[]>({
+    queryKey: ["eng-team-members"],
+    queryFn: async () => {
+      const res = await fetch("/api/eng/team-members", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
   const { data: portfolio, isLoading } = useQuery<any>({
     queryKey: ["/api/portfolios", portfolioId],
     queryFn: () => fetch(`/api/portfolios/${portfolioId}`, { credentials: "include" }).then(r => r.json()),
@@ -358,9 +367,13 @@ export default function PortfolioDetailPage() {
 
   const updateMutation = useMutation({
     mutationFn: async (data: any) => {
+      const payload = { ...data };
+      if (payload.ownerUserId !== undefined) {
+        payload.ownerUserId = payload.ownerUserId && payload.ownerUserId !== "none" ? parseInt(payload.ownerUserId) : null;
+      }
       const res = await fetch(`/api/portfolios/${portfolioId}`, {
         method: "PUT", headers: { "Content-Type": "application/json" }, credentials: "include",
-        body: JSON.stringify(data),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error((await res.json()).error);
       return res.json();
@@ -521,7 +534,7 @@ export default function PortfolioDetailPage() {
             <span>{projects.length} projects</span>
           </div>
         </div>
-        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => { setEditData({ name: portfolio.name, clientName: portfolio.clientName || "", status: portfolio.status, description: portfolio.description || "" }); setEditOpen(true); }} data-testid="button-edit-portfolio">
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => { setEditData({ name: portfolio.name, clientName: portfolio.clientName || "", status: portfolio.status, description: portfolio.description || "", ownerUserId: portfolio.ownerUserId ? String(portfolio.ownerUserId) : "" }); setEditOpen(true); }} data-testid="button-edit-portfolio">
           <Edit className="h-3.5 w-3.5" /> Edit
         </Button>
       </div>
@@ -1136,6 +1149,18 @@ export default function PortfolioDetailPage() {
             <div>
               <label className="text-sm font-medium">Client Name</label>
               <Input value={editData.clientName || ""} onChange={e => setEditData((d: any) => ({ ...d, clientName: e.target.value }))} data-testid="input-edit-client" />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Owner</label>
+              <Select value={editData.ownerUserId || ""} onValueChange={v => setEditData((d: any) => ({ ...d, ownerUserId: v }))}>
+                <SelectTrigger data-testid="select-edit-owner"><SelectValue placeholder="Select owner..." /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No owner</SelectItem>
+                  {allUsers.map((u: any) => (
+                    <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <label className="text-sm font-medium">Status</label>

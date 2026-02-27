@@ -488,7 +488,7 @@ export default function PortfoliosPage() {
   const [viewMode, setViewMode] = useState<ViewMode>("management");
   const [createOpen, setCreateOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const [formData, setFormData] = useState({ name: "", clientName: "", description: "", status: "Active" });
+  const [formData, setFormData] = useState({ name: "", clientName: "", description: "", status: "Active", ownerUserId: "" });
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
   const { data: dashboard, isLoading } = useQuery<any>({
@@ -496,13 +496,24 @@ export default function PortfoliosPage() {
     queryFn: () => fetch(`/api/portfolio-dashboard?view=${viewMode}`, { credentials: "include" }).then(r => r.json()),
   });
 
+  const { data: allUsers = [] } = useQuery<{ id: number; name: string }[]>({
+    queryKey: ["eng-team-members"],
+    queryFn: async () => {
+      const res = await fetch("/api/eng/team-members", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
   const createMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
+      const payload: any = { ...data };
+      payload.ownerUserId = data.ownerUserId && data.ownerUserId !== "none" ? parseInt(data.ownerUserId) : null;
       const res = await fetch("/api/portfolios", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify(data),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error((await res.json()).error);
       return res.json();
@@ -510,7 +521,7 @@ export default function PortfoliosPage() {
     onSuccess: (created) => {
       qc.invalidateQueries({ queryKey: ["/api/portfolio-dashboard"] });
       setCreateOpen(false);
-      setFormData({ name: "", clientName: "", description: "", status: "Active" });
+      setFormData({ name: "", clientName: "", description: "", status: "Active", ownerUserId: "" });
       toast({ title: "Portfolio created", description: `"${created.name}" has been created` });
     },
     onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
@@ -680,6 +691,20 @@ export default function PortfoliosPage() {
                 placeholder="e.g., Mondi Group"
                 data-testid="input-portfolio-client"
               />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Owner</label>
+              <Select value={formData.ownerUserId} onValueChange={v => setFormData(f => ({ ...f, ownerUserId: v }))}>
+                <SelectTrigger data-testid="select-portfolio-owner">
+                  <SelectValue placeholder="Select owner..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No owner</SelectItem>
+                  {allUsers.map(u => (
+                    <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <label className="text-sm font-medium">Status</label>
