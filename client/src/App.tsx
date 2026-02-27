@@ -60,6 +60,7 @@ import PdDashboardPage from "@/pages/pd-dashboard";
 import PdTicketsPage from "@/pages/pd-tickets";
 import PdTicketCreatePage from "@/pages/pd-ticket-create";
 import PdTicketDetailPage from "@/pages/pd-ticket-detail";
+import MsIntegrationSettingsPage from "@/pages/ms-integration-settings";
 import { useAuth } from "@/hooks/use-auth";
 import { useProgramData } from "@/hooks/use-program-data";
 import { TrackerTable } from "@/components/dashboard/TrackerTable";
@@ -281,6 +282,7 @@ function ProtectedPages() {
         <Route path="/pd/tickets" component={PdTicketsPage} />
         <Route path="/pd/tickets/create" component={PdTicketCreatePage} />
         <Route path="/pd/tickets/:id" component={PdTicketDetailPage} />
+        <Route path="/admin/ms-integration" component={MsIntegrationSettingsPage} />
         <Route path="/admin/eng-templates">{() => <Redirect to="/admin/phase-templates" />}</Route>
 
         <Route component={NotFound} />

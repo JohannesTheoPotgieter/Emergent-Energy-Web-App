@@ -2,6 +2,7 @@ import { Router, type Express, type Request, type Response, type NextFunction } 
 import { requireAuth, requireAdmin } from './shared-middleware';
 import { storage } from "../storage";
 import { db } from "../db";
+import { sql } from "drizzle-orm";
 import { requirePermission } from "../permission-middleware";
 import passport from "passport";
 import multer from "multer";
@@ -888,6 +889,109 @@ router.get("/api/sp-files", requireAuth, requireAdmin, async (req, res) => {
   try {
     const files = await storage.getAllSpFiles();
     res.json(files);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==================== MS INTEGRATION SETTINGS ====================
+
+router.get("/api/admin/ms-integration", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const rows = await db.execute(sql`SELECT config_key, config_value FROM ms_integration_settings`);
+    const config: Record<string, any> = {};
+    for (const row of rows.rows) {
+      config[row.config_key as string] = row.config_value;
+    }
+    res.json(config);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put("/api/admin/ms-integration/:key", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { key } = req.params;
+    const allowed = ["feature_flags", "sharepoint_project_docs", "teams_config"];
+    if (!allowed.includes(key)) {
+      return res.status(400).json({ error: "Invalid config key" });
+    }
+    const userId = (req.user as any)?.id || null;
+    await db.execute(sql`
+      INSERT INTO ms_integration_settings (config_key, config_value, updated_by, updated_at)
+      VALUES (${key}, ${JSON.stringify(req.body)}::jsonb, ${userId}, NOW())
+      ON CONFLICT (config_key) DO UPDATE SET config_value = ${JSON.stringify(req.body)}::jsonb, updated_by = ${userId}, updated_at = NOW()
+    `);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/api/admin/ms-integration/test-sharepoint", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { siteUrl } = req.body;
+    if (!siteUrl) {
+      return res.status(400).json({ error: "siteUrl is required" });
+    }
+
+    const { getAccessToken: getSpToken } = await import("../sharepoint");
+
+    let resolvedSiteUrl = siteUrl.trim();
+    if (resolvedSiteUrl.endsWith("/")) resolvedSiteUrl = resolvedSiteUrl.slice(0, -1);
+
+    const urlMatch = resolvedSiteUrl.match(/^https?:\/\/([^/]+)(\/sites\/[^/]+)?/i);
+    if (!urlMatch) {
+      return res.status(400).json({ error: "Invalid SharePoint URL format. Expected: https://tenant.sharepoint.com/sites/SiteName" });
+    }
+    const hostname = urlMatch[1];
+    const sitePath = urlMatch[2] || "";
+
+    const token = await getSpToken();
+    
+    const siteRes = await fetch(`https://graph.microsoft.com/v1.0/sites/${hostname}:${sitePath}`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+    });
+    if (!siteRes.ok) {
+      const errText = await siteRes.text();
+      return res.json({ success: false, error: `Could not resolve site: ${siteRes.status} - ${errText}` });
+    }
+    const siteData = await siteRes.json();
+
+    const drivesRes = await fetch(`https://graph.microsoft.com/v1.0/sites/${siteData.id}/drives`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+    });
+    if (!drivesRes.ok) {
+      return res.json({ success: true, siteId: siteData.id, siteName: siteData.displayName, drives: [] });
+    }
+    const drivesData = await drivesRes.json();
+    const drives = (drivesData.value || []).map((d: any) => ({
+      id: d.id,
+      name: d.name,
+      description: d.description,
+      webUrl: d.webUrl,
+    }));
+
+    res.json({
+      success: true,
+      siteId: siteData.id,
+      siteName: siteData.displayName,
+      siteWebUrl: siteData.webUrl,
+      drives,
+    });
+  } catch (err: any) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+router.post("/api/admin/ms-integration/browse-drive", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { driveId, folderId } = req.body;
+    if (!driveId) return res.status(400).json({ error: "driveId is required" });
+
+    const { browseFolders } = await import("../sharepoint");
+    const items = await browseFolders(driveId, folderId || undefined);
+    res.json(items);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

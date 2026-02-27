@@ -219,6 +219,7 @@ function getRedesignedNavGroups(): NavGroup[] {
             { label: "Weekly Reviews", icon: CalendarCheck, path: "/weekly-reviews" },
             { label: "Change Audit", icon: Activity, path: "/admin/activity-log" },
             { label: "Approvals", icon: ShieldCheck, path: "/admin/approvals" },
+            { label: "Microsoft Integration", icon: Cog, path: "/admin/ms-integration" },
           ],
         },
       ],
