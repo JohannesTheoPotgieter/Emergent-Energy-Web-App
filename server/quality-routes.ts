@@ -2,6 +2,9 @@ import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, and, desc, sql, inArray } from "drizzle-orm";
 import { verifyToken } from "./jwt";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
 import {
   qcTemplate, qcTemplatePhase, qcTemplateGroup, qcTemplateItem,
   qcTemplateRiskQuestion, qcTemplatePostmortemMetric,
@@ -9,8 +12,19 @@ import {
   qcPlanLink, qcWarning, qcWarningEvent,
   qcPostmortem, qcPostmortemMetricValue, qcPostmortemSummary,
   qcAccessChallenge, calendarHoliday, projectPlan,
+  notifications, notificationThrottle,
 } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
+
+const qmApprovalUploadsDir = path.join(process.cwd(), "uploads", "qm-approvals");
+if (!fs.existsSync(qmApprovalUploadsDir)) fs.mkdirSync(qmApprovalUploadsDir, { recursive: true });
+const qmApprovalUpload = multer({
+  storage: multer.diskStorage({
+    destination: qmApprovalUploadsDir,
+    filename: (_req, file, cb) => cb(null, `${Date.now()}-${path.basename(file.originalname).replace(/[^a-zA-Z0-9._-]/g, '_')}`),
+  }),
+  limits: { fileSize: 50 * 1024 * 1024 },
+});
 
 type AppUser = { id: number; email: string; name: string; role: string; };
 
@@ -74,6 +88,37 @@ function requireAdminOrEpm(req: Request, res: Response, next: NextFunction) {
   const role = getUserRole(req);
   if (isAdminRole(role) || role === "eng_program_manager" || role === "ENGINEERING_MANAGER") return next();
   res.status(403).json({ error: "forbidden", message: "Admin or Engineering Program Manager access required" });
+}
+
+import { gt } from "drizzle-orm";
+
+async function createQmNotification(recipientUserId: number, eventType: string, title: string, body: string | null, opts: {
+  projectName?: string; linkedTaskId?: number;
+} = {}) {
+  const throttleKey = `${eventType}:${opts.linkedTaskId || 0}`;
+  const existing = await db.select().from(notificationThrottle)
+    .where(and(
+      eq(notificationThrottle.recipientUserId, recipientUserId),
+      eq(notificationThrottle.eventType, eventType),
+      eq(notificationThrottle.entityType, throttleKey.split(':')[0] || 'generic'),
+      eq(notificationThrottle.entityId, opts.linkedTaskId || 0),
+      gt(notificationThrottle.lastSentAt, new Date(Date.now() - 24 * 60 * 60 * 1000))
+    ));
+  if (existing.length > 0) return null;
+
+  const [notif] = await db.insert(notifications).values({
+    recipientUserId, eventType, title, body,
+    projectName: opts.projectName || null,
+    linkedTaskId: opts.linkedTaskId || null,
+  }).returning();
+
+  await db.insert(notificationThrottle).values({
+    recipientUserId, eventType,
+    entityType: throttleKey.split(':')[0] || 'generic',
+    entityId: opts.linkedTaskId || 0,
+  }).onConflictDoNothing();
+
+  return notif;
 }
 
 function businessDaysBetween(startStr: string, endStr: string, holidays: string[]): number {
@@ -431,6 +476,51 @@ export function registerQualityRoutes(app: Express) {
       }).returning();
       res.json(evidence);
     } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/quality/project/:projectName/item/:itemInstanceId/send-for-approval", requireAuth, qmApprovalUpload.single("file"), async (req, res) => {
+    try {
+      const itemId = parseInt(req.params.itemInstanceId);
+      const projectName = decodeURIComponent(req.params.projectName);
+      const approverUserId = parseInt(req.body.approverUserId);
+      if (!approverUserId) return res.status(400).json({ error: "Approver is required" });
+
+      const [existing] = await db.select().from(qcItemInstance).where(eq(qcItemInstance.id, itemId));
+      if (!existing) return res.status(404).json({ error: "Quality item not found" });
+
+      const note = req.body.note || "";
+      const file = req.file;
+
+      const [updated] = await db.update(qcItemInstance).set({
+        qmStatus: "review",
+        approvalComment: note.trim() || null,
+      }).where(eq(qcItemInstance.id, itemId)).returning();
+
+      if (file) {
+        const evidenceUrl = `/uploads/qm-approvals/${file.filename}`;
+        await db.insert(qcItemEvidence).values({
+          itemInstanceId: itemId,
+          evidenceUrl,
+          evidenceNote: `Submitted for approval: ${file.originalname}`,
+        });
+      }
+
+      await createQmNotification(approverUserId, "quality.submitted_for_approval",
+        `QM Approval needed: ${projectName}`,
+        `A quality item has been submitted for your approval${file ? ` with attachment: ${file.originalname}` : ""}`,
+        { projectName }
+      );
+
+      recalculateWarnings(projectName).catch(() => {});
+
+      res.json({
+        ...updated,
+        uploadedFile: file ? { filename: file.filename, originalName: file.originalname, size: file.size } : null,
+      });
+    } catch (err: any) {
+      console.error("[QM] Send for approval error:", err);
       res.status(500).json({ error: err.message });
     }
   });

@@ -8,7 +8,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Progress } from "@/components/ui/progress";
-import { AlertCircle, CheckCircle, ChevronDown, ChevronRight, FileText, Shield, AlertTriangle, Clock, User, Lock, Link2, X, Plus, Trash2 } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { AlertCircle, CheckCircle, ChevronDown, ChevronRight, FileText, Shield, AlertTriangle, Clock, User, Lock, Link2, X, Plus, Trash2, Send, Loader2, CheckCircle2 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { usePermission } from "@/hooks/use-permissions";
 
@@ -72,6 +74,11 @@ export function QualityTab({ projectName }: QualityTabProps) {
   const [showAddItem, setShowAddItem] = useState<number | null>(null);
   const [newItemName, setNewItemName] = useState("");
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+  const [sendForApprovalItem, setSendForApprovalItem] = useState<number | null>(null);
+  const [sfaApprover, setSfaApprover] = useState("");
+  const [sfaNote, setSfaNote] = useState("");
+  const [sfaFile, setSfaFile] = useState<File | null>(null);
+  const [sfaSending, setSfaSending] = useState(false);
   const isQmOrAdmin = ['admin', 'COO_ADMIN', 'CEO_ADMIN'].includes(user?.role || '') || ['quality_manager', 'QUALITY_MANAGER'].includes(user?.role || '');
   const canEdit = isQmOrAdmin;
   const { allowed: canDeleteQc } = usePermission('pd_quality', 'delete');
@@ -87,6 +94,18 @@ export function QualityTab({ projectName }: QualityTabProps) {
     enabled: !!projectName,
     refetchOnMount: "always",
     staleTime: 0,
+  });
+
+  const { data: teamMembers = [] } = useQuery<{ id: number; name: string }[]>({
+    queryKey: ["eng-team-members"],
+    queryFn: async () => {
+      const token = localStorage.getItem('auth_token');
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch("/api/eng/team-members", { headers, credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
   });
 
   const { data: warnings = [] } = useQuery({
@@ -666,6 +685,22 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                       </Badge>
                                     )}
 
+                                    {(() => {
+                                      const st = getItemQmStatus(instance);
+                                      const canSendForApproval = st === "not_started" || st === "fail" || st === "review";
+                                      return canSendForApproval ? (
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          className="h-8 text-xs gap-1 text-amber-600 border-amber-200 hover:bg-amber-50"
+                                          onClick={(e) => { e.stopPropagation(); setSendForApprovalItem(instance.id); }}
+                                          data-testid={`btn-send-for-approval-qm-${instance.id}`}
+                                        >
+                                          <Send className="w-3 h-3" /> Send for Approval
+                                        </Button>
+                                      ) : null;
+                                    })()}
+
                                     {canEdit && (
                                       <Button
                                         variant="ghost"
@@ -1057,6 +1092,115 @@ export function QualityTab({ projectName }: QualityTabProps) {
           </Card>
         );
       })}
+
+      <Dialog open={sendForApprovalItem !== null} onOpenChange={(open) => {
+        if (!open) { setSendForApprovalItem(null); setSfaApprover(""); setSfaNote(""); setSfaFile(null); }
+      }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Send className="h-4 w-4 text-amber-600" /> Send for Approval
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Approver <span className="text-red-500">*</span></Label>
+              <Select value={sfaApprover} onValueChange={setSfaApprover}>
+                <SelectTrigger className="h-9 text-sm" data-testid="select-qm-send-approver">
+                  <SelectValue placeholder="Select approver..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {teamMembers.filter((m: any) => m.id !== user?.id).map((m: any) => (
+                    <SelectItem key={m.id} value={String(m.id)}>{m.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Evidence File (optional)</Label>
+              <div
+                className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors cursor-pointer hover:border-amber-400 hover:bg-amber-50/30 dark:hover:bg-amber-950/10 ${sfaFile ? "border-amber-400 bg-amber-50/20" : "border-muted"}`}
+                onClick={() => {
+                  const input = document.createElement("input");
+                  input.type = "file";
+                  input.onchange = (e) => {
+                    const file = (e.target as HTMLInputElement).files?.[0];
+                    if (file) setSfaFile(file);
+                  };
+                  input.click();
+                }}
+                data-testid="dropzone-qm-approval-file"
+              >
+                {sfaFile ? (
+                  <div className="flex items-center justify-center gap-2 text-sm">
+                    <CheckCircle2 className="h-4 w-4 text-amber-600" />
+                    <span className="truncate max-w-[200px]">{sfaFile.name}</span>
+                    <button onClick={(e) => { e.stopPropagation(); setSfaFile(null); }} className="text-muted-foreground hover:text-red-500">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-xs text-muted-foreground">Click to upload evidence file</div>
+                )}
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Note (optional)</Label>
+              <Textarea
+                value={sfaNote}
+                onChange={(e) => setSfaNote(e.target.value)}
+                placeholder="Add context for the approver..."
+                className="min-h-[60px] text-sm"
+                data-testid="textarea-qm-send-approval-note"
+              />
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button
+                className="flex-1 h-9 text-sm bg-amber-600 hover:bg-amber-700 gap-1.5"
+                disabled={!sfaApprover || sfaSending}
+                onClick={async () => {
+                  if (!sendForApprovalItem) return;
+                  setSfaSending(true);
+                  try {
+                    const formData = new FormData();
+                    formData.append("approverUserId", sfaApprover);
+                    formData.append("note", sfaNote);
+                    if (sfaFile) formData.append("file", sfaFile);
+                    const token = localStorage.getItem("auth_token");
+                    const headers: Record<string, string> = {};
+                    if (token) headers["Authorization"] = `Bearer ${token}`;
+                    const res = await fetch(`/api/quality/project/${encodeURIComponent(projectName)}/item/${sendForApprovalItem}/send-for-approval`, {
+                      method: "POST",
+                      headers,
+                      body: formData,
+                      credentials: "include",
+                    });
+                    if (!res.ok) {
+                      const err = await res.json().catch(() => ({ error: "Failed" }));
+                      throw new Error(err.error);
+                    }
+                    setSendForApprovalItem(null);
+                    setSfaApprover(""); setSfaNote(""); setSfaFile(null);
+                    queryClient.invalidateQueries({ queryKey: ["quality-checklist", projectName] });
+                    queryClient.invalidateQueries({ queryKey: ["quality-evidence", projectName] });
+                  } catch (err: any) {
+                    console.error("Send for approval failed:", err);
+                  } finally {
+                    setSfaSending(false);
+                  }
+                }}
+                data-testid="btn-confirm-qm-send-approval"
+              >
+                {sfaSending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                {sfaSending ? "Sending..." : "Send for Approval"}
+              </Button>
+              <Button variant="outline" className="h-9 text-sm" onClick={() => { setSendForApprovalItem(null); setSfaApprover(""); setSfaNote(""); setSfaFile(null); }}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

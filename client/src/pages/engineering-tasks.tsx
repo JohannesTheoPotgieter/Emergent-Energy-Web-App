@@ -465,6 +465,11 @@ function TaskDetailDrawer({
   const [editValues, setEditValues] = useState<Record<string, string>>({});
   const [approvalComment, setApprovalComment] = useState("");
   const [showApprovalActions, setShowApprovalActions] = useState(false);
+  const [showSendForApproval, setShowSendForApproval] = useState(false);
+  const [sendApprovalApprover, setSendApprovalApprover] = useState("");
+  const [sendApprovalNote, setSendApprovalNote] = useState("");
+  const [sendApprovalFile, setSendApprovalFile] = useState<File | null>(null);
+  const [sendingForApproval, setSendingForApproval] = useState(false);
   const [drawerHoldDialog, setDrawerHoldDialog] = useState(false);
   const [drawerHoldReason, setDrawerHoldReason] = useState("");
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
@@ -747,31 +752,12 @@ function TaskDetailDrawer({
                 )}
               </div>
 
-              <div className="space-y-1">
-                <Label className="text-[10px] text-muted-foreground">Approver</Label>
-                <Select
-                  value={task.approverUserId ? String(task.approverUserId) : "none"}
-                  onValueChange={(v) => {
-                    const val = v === "none" ? null : parseInt(v);
-                    updateMutation.mutate({ approverUserId: val });
-                  }}
-                >
-                  <SelectTrigger className="h-8 text-xs" data-testid="select-approver">
-                    <SelectValue placeholder="Select approver" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No approver</SelectItem>
-                    {teamMembers.map(m => (
-                      <SelectItem key={m.id} value={String(m.id)}>
-                        {m.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
               {(task.status === "NEEDS APPROVAL" || task.status === "OPERATIONAL APPROVAL") && (
                 <div className="space-y-2 pt-1">
+                  <div className="p-2 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded text-xs text-amber-700 dark:text-amber-300 flex items-center gap-2">
+                    <Clock className="h-3.5 w-3.5 shrink-0" />
+                    Awaiting approval from {teamMembers.find(m => m.id === task.approverUserId)?.name || "approver"}
+                  </div>
                   <Textarea
                     value={approvalComment}
                     onChange={(e) => setApprovalComment(e.target.value)}
@@ -849,16 +835,128 @@ function TaskDetailDrawer({
                 </div>
               )}
 
-              {task.status !== "NEEDS APPROVAL" && task.status !== "OPERATIONAL APPROVAL" && task.status !== "PROVIDE FEEDBACK" && task.status !== "QC APPROVED" && task.status !== "COMPLETE" && task.approverUserId && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 text-xs text-amber-600 border-amber-200 hover:bg-amber-50 gap-1 w-full"
-                  onClick={() => updateMutation.mutate({ status: "NEEDS APPROVAL" })}
-                  data-testid="btn-submit-for-approval"
-                >
-                  <ShieldCheck className="h-3.5 w-3.5" /> Submit for Approval
-                </Button>
+              {task.status !== "NEEDS APPROVAL" && task.status !== "OPERATIONAL APPROVAL" && task.status !== "QC APPROVED" && task.status !== "COMPLETE" && (
+                <>
+                  <Button
+                    size="sm"
+                    className="h-8 text-xs bg-amber-600 hover:bg-amber-700 text-white gap-1.5 w-full"
+                    onClick={() => setShowSendForApproval(true)}
+                    data-testid="btn-send-for-approval"
+                  >
+                    <Send className="h-3.5 w-3.5" /> Send for Approval
+                  </Button>
+
+                  <Dialog open={showSendForApproval} onOpenChange={(open) => {
+                    setShowSendForApproval(open);
+                    if (!open) { setSendApprovalApprover(""); setSendApprovalNote(""); setSendApprovalFile(null); }
+                  }}>
+                    <DialogContent className="max-w-md">
+                      <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2 text-base">
+                          <Send className="h-4 w-4 text-amber-600" /> Send for Approval
+                        </DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-4 pt-2">
+                        <div className="space-y-1.5">
+                          <Label className="text-xs font-medium">Approver <span className="text-red-500">*</span></Label>
+                          <Select value={sendApprovalApprover} onValueChange={setSendApprovalApprover}>
+                            <SelectTrigger className="h-9 text-sm" data-testid="select-send-approver">
+                              <SelectValue placeholder="Select approver..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {teamMembers.filter(m => m.id !== user?.id).map(m => (
+                                <SelectItem key={m.id} value={String(m.id)}>{m.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs font-medium">Attachment (optional)</Label>
+                          <div
+                            className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors cursor-pointer hover:border-amber-400 hover:bg-amber-50/30 dark:hover:bg-amber-950/10 ${sendApprovalFile ? "border-amber-400 bg-amber-50/20" : "border-muted"}`}
+                            onClick={() => {
+                              const input = document.createElement("input");
+                              input.type = "file";
+                              input.onchange = (e) => {
+                                const file = (e.target as HTMLInputElement).files?.[0];
+                                if (file) setSendApprovalFile(file);
+                              };
+                              input.click();
+                            }}
+                            data-testid="dropzone-approval-file"
+                          >
+                            {sendApprovalFile ? (
+                              <div className="flex items-center justify-center gap-2 text-sm">
+                                <CheckCircle2 className="h-4 w-4 text-amber-600" />
+                                <span className="truncate max-w-[200px]">{sendApprovalFile.name}</span>
+                                <button onClick={(e) => { e.stopPropagation(); setSendApprovalFile(null); }} className="text-muted-foreground hover:text-red-500">
+                                  <X className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="text-xs text-muted-foreground">
+                                Click to upload a deliverable file
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs font-medium">Note (optional)</Label>
+                          <Textarea
+                            value={sendApprovalNote}
+                            onChange={(e) => setSendApprovalNote(e.target.value)}
+                            placeholder="Add context for the approver..."
+                            className="min-h-[60px] text-sm"
+                            data-testid="textarea-send-approval-note"
+                          />
+                        </div>
+                        <div className="flex gap-2 pt-2">
+                          <Button
+                            className="flex-1 h-9 text-sm bg-amber-600 hover:bg-amber-700 gap-1.5"
+                            disabled={!sendApprovalApprover || sendingForApproval}
+                            onClick={async () => {
+                              setSendingForApproval(true);
+                              try {
+                                const formData = new FormData();
+                                formData.append("approverUserId", sendApprovalApprover);
+                                formData.append("note", sendApprovalNote);
+                                if (sendApprovalFile) formData.append("file", sendApprovalFile);
+                                const token = localStorage.getItem("auth_token");
+                                const res = await fetch(`/api/eng/tasks/${task.id}/send-for-approval`, {
+                                  method: "POST",
+                                  headers: token ? { Authorization: `Bearer ${token}` } : {},
+                                  body: formData,
+                                  credentials: "include",
+                                });
+                                if (!res.ok) {
+                                  const err = await res.json().catch(() => ({ error: "Failed" }));
+                                  throw new Error(err.error);
+                                }
+                                toast({ title: "Sent for approval", description: "The approver has been notified" });
+                                setShowSendForApproval(false);
+                                setSendApprovalApprover(""); setSendApprovalNote(""); setSendApprovalFile(null);
+                                onUpdate();
+                                queryClient.invalidateQueries({ queryKey: ["task-comments", task.id] });
+                                queryClient.invalidateQueries({ queryKey: ["task-activity", task.id] });
+                              } catch (err: any) {
+                                toast({ title: "Error", description: err.message, variant: "destructive" });
+                              } finally {
+                                setSendingForApproval(false);
+                              }
+                            }}
+                            data-testid="btn-confirm-send-approval"
+                          >
+                            {sendingForApproval ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                            {sendingForApproval ? "Sending..." : "Send for Approval"}
+                          </Button>
+                          <Button variant="outline" className="h-9 text-sm" onClick={() => setShowSendForApproval(false)}>
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                </>
               )}
             </div>
 
