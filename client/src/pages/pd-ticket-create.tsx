@@ -12,9 +12,11 @@ import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
+import { Checkbox } from "@/components/ui/checkbox";
+import { PD_REQUEST_TYPE_TASK_TEMPLATES } from "@shared/schema";
 import {
   Loader2, Plus, ArrowLeft, Search, CheckCircle2, Building2, FolderKanban, FileEdit,
-  ChevronRight, MapPin, Zap, Battery, HardHat, CalendarIcon,
+  ChevronRight, MapPin, Zap, Battery, HardHat, CalendarIcon, ListTodo,
 } from "lucide-react";
 
 function pdFetch(url: string, opts?: RequestInit) {
@@ -36,6 +38,7 @@ const PRIORITIES = ["Critical", "High", "Medium", "Low"];
 const FUNDING_TYPES = ["PPA", "Cash", "Lease", "Hybrid", "Other"];
 const PROVINCES = ["Eastern Cape", "Free State", "Gauteng", "KwaZulu-Natal", "Limpopo", "Mpumalanga", "Northern Cape", "North West", "Western Cape"];
 
+
 export default function PdTicketCreatePage() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
@@ -53,6 +56,8 @@ export default function PdTicketCreatePage() {
   const [selectedProject, setSelectedProject] = useState<any>(null);
   const [createNewProject, setCreateNewProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
+
+  const [selectedTasks, setSelectedTasks] = useState<Set<string>>(new Set());
 
   const [form, setForm] = useState({
     projectSiteName: "",
@@ -95,6 +100,8 @@ export default function PdTicketCreatePage() {
   });
 
   const designers = useMemo(() => allUsers.filter((u: any) => u.role === "ENGINEER" || u.role === "PROJECT_DEVELOPER"), [allUsers]);
+
+  const availableTaskTemplates = useMemo(() => PD_REQUEST_TYPE_TASK_TEMPLATES[form.requestType] || [], [form.requestType]);
 
   const createClientMutation = useMutation({
     mutationFn: (name: string) => pdFetch("/api/pd/clients", { method: "POST", body: JSON.stringify({ name }) }),
@@ -149,6 +156,7 @@ export default function PdTicketCreatePage() {
       sizeKwp: form.sizeKwp ? parseFloat(form.sizeKwp) : null,
       batterySize: form.batterySize ? parseFloat(form.batterySize) : null,
       designerUserId: form.designerUserId ? parseInt(form.designerUserId) : null,
+      selectedTasks: Array.from(selectedTasks),
     };
 
     createTicketMutation.mutate(body);
@@ -355,7 +363,7 @@ export default function PdTicketCreatePage() {
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Request Type *</Label>
-                <Select value={form.requestType} onValueChange={v => setForm(p => ({ ...p, requestType: v }))}>
+                <Select value={form.requestType} onValueChange={v => { setForm(p => ({ ...p, requestType: v })); const templates = PD_REQUEST_TYPE_TASK_TEMPLATES[v] || []; setSelectedTasks(new Set(templates.map(t => t.title))); }}>
                   <SelectTrigger data-testid="select-request-type"><SelectValue placeholder="Select..." /></SelectTrigger>
                   <SelectContent>
                     {REQUEST_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
@@ -458,6 +466,68 @@ export default function PdTicketCreatePage() {
               <Label className="text-xs">Comments</Label>
               <Textarea value={form.comments} onChange={e => setForm(p => ({ ...p, comments: e.target.value }))} placeholder="Additional notes..." className="min-h-[80px]" data-testid="input-comments" />
             </div>
+
+            {availableTaskTemplates.length > 0 && (
+              <>
+                <Separator />
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <ListTodo className="h-4 w-4 text-violet-600" />
+                      <Label className="text-sm font-medium">Engineering Tasks to Spawn</Label>
+                      <Badge variant="secondary" className="text-[10px]">{selectedTasks.size}/{availableTaskTemplates.length}</Badge>
+                    </div>
+                    <div className="flex gap-1.5">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 text-[10px] px-2"
+                        onClick={() => setSelectedTasks(new Set(availableTaskTemplates.map(t => t.title)))}
+                        data-testid="btn-select-all-tasks"
+                      >Select All</Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 text-[10px] px-2"
+                        onClick={() => setSelectedTasks(new Set())}
+                        data-testid="btn-deselect-all-tasks"
+                      >Deselect All</Button>
+                    </div>
+                  </div>
+                  <div className="border rounded-lg divide-y">
+                    {availableTaskTemplates.map((tmpl, idx) => (
+                      <label
+                        key={idx}
+                        className={`flex items-center gap-3 px-3 py-2.5 cursor-pointer transition-colors ${selectedTasks.has(tmpl.title) ? "bg-violet-50/50 dark:bg-violet-950/10" : "hover:bg-muted/30"}`}
+                        data-testid={`task-template-${idx}`}
+                      >
+                        <Checkbox
+                          checked={selectedTasks.has(tmpl.title)}
+                          onCheckedChange={(checked) => {
+                            setSelectedTasks(prev => {
+                              const next = new Set(prev);
+                              if (checked) next.add(tmpl.title);
+                              else next.delete(tmpl.title);
+                              return next;
+                            });
+                          }}
+                          data-testid={`checkbox-task-${idx}`}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <span className="text-sm">{tmpl.title}</span>
+                        </div>
+                        <Badge variant={tmpl.priority === "High" ? "default" : "secondary"} className={`text-[10px] shrink-0 ${tmpl.priority === "High" ? "bg-red-100 text-red-700 hover:bg-red-100" : ""}`}>
+                          {tmpl.priority}
+                        </Badge>
+                      </label>
+                    ))}
+                  </div>
+                  {selectedTasks.size === 0 && (
+                    <p className="text-[10px] text-amber-600 flex items-center gap-1">No tasks selected — ticket will be created without engineering tasks.</p>
+                  )}
+                </div>
+              </>
+            )}
 
             <Separator />
 
