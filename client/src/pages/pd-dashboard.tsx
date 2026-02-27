@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, FileEdit, Plus, AlertTriangle, Clock, CheckCircle2, PauseCircle, FileStack } from "lucide-react";
 import { useLocation } from "wouter";
+import { usePermission } from "@/hooks/use-permissions";
 
 function pdFetch(url: string) {
   return fetch(url, { credentials: "include" }).then(r => { if (!r.ok) throw new Error("Failed"); return r.json(); });
@@ -11,6 +12,7 @@ function pdFetch(url: string) {
 
 export default function PdDashboardPage() {
   const [, navigate] = useLocation();
+  const { allowed: canView, loading: permLoading } = usePermission('pd_dashboard', 'view');
   const { data: stats, isLoading } = useQuery<{
     total: number; active: number; overdue: number; dueThisWeek: number; onHold: number; completed: number;
   }>({
@@ -24,6 +26,18 @@ export default function PdDashboardPage() {
   });
 
   const recentTickets = tickets.slice(0, 8);
+
+  if (!permLoading && !canView) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Card className="max-w-md w-full"><CardContent className="py-12 text-center">
+          <AlertTriangle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold mb-2">Access Denied</h2>
+          <p className="text-muted-foreground">You don't have permission to view the PD Dashboard.</p>
+        </CardContent></Card>
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">

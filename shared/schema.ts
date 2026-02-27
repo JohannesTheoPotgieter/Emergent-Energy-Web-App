@@ -2586,7 +2586,8 @@ export type PermissionEntity = 'projects' | 'financials' | 'quality' | 'engineer
   | 'portfolios' | 'notifications' | 'subcontractors' | 'cos_control' | 'cashflow_forecast' | 'home'
   | 'pd_overview' | 'pd_plan' | 'pd_finance' | 'pd_engineering' | 'pd_quality' | 'pd_history'
   | 'pd_revenue' | 'pd_expenditure' | 'pd_cos_tracker' | 'pd_cashflow' | 'pd_subcontractors'
-  | 'pd_eng_tasks' | 'pd_eng_stages' | 'pd_gantt' | 'pd_key_dates';
+  | 'pd_eng_tasks' | 'pd_eng_stages' | 'pd_gantt' | 'pd_key_dates'
+  | 'pd_tickets' | 'pd_dashboard' | 'pd_clients';
 export type PermissionAction = 'view' | 'edit' | 'approve' | 'override' | 'delete';
 
 export interface EntityPermissionRule {
