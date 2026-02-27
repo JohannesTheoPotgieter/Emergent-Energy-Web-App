@@ -2,6 +2,7 @@ import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
 import { rm, readFile, writeFile } from "fs/promises";
 import crypto from "crypto";
+import { execSync } from "child_process";
 
 // server deps to bundle to reduce openat(2) syscalls
 // which helps cold start times
@@ -56,11 +57,53 @@ async function buildAll() {
 
   await writeFile("version.json", JSON.stringify(versionData, null, 2));
 
+  let releaseNotes: { title: string; description: string }[] = [];
+  try {
+    let lastTag = "";
+    try {
+      lastTag = execSync("git describe --tags --abbrev=0 HEAD^ 2>/dev/null", { encoding: "utf-8" }).trim();
+    } catch {}
+
+    const range = lastTag ? `${lastTag}..HEAD` : "HEAD~30..HEAD";
+    const log = execSync(`git log ${range} --pretty=format:"%s" --no-merges 2>/dev/null`, { encoding: "utf-8" }).trim();
+
+    if (log) {
+      const commits = log.split("\n").filter(Boolean);
+      const seen = new Set<string>();
+      for (const msg of commits) {
+        const cleaned = msg.replace(/^["']|["']$/g, "").trim();
+        if (!cleaned || seen.has(cleaned.toLowerCase())) continue;
+        if (/^(merge|wip|fix typo|lint|format|chore)/i.test(cleaned)) continue;
+        seen.add(cleaned.toLowerCase());
+        const title = cleaned.length > 80 ? cleaned.slice(0, 77) + "..." : cleaned;
+        releaseNotes.push({ title, description: "" });
+      }
+    }
+
+    if (releaseNotes.length === 0) {
+      releaseNotes.push({ title: "Bug fixes and performance improvements", description: "" });
+    }
+
+    console.log(`Release notes: ${releaseNotes.length} items generated from git log`);
+  } catch (err) {
+    console.log("Could not generate release notes from git, using default");
+    releaseNotes = [{ title: "Bug fixes and performance improvements", description: "" }];
+  }
+
+  const releaseData = {
+    version: versionString,
+    buildNumber,
+    buildTime,
+    notes: releaseNotes,
+  };
+  await writeFile("release-notes.json", JSON.stringify(releaseData, null, 2));
+
   console.log("building client...");
   await viteBuild();
 
   console.log("writing build version...");
   await writeFile("dist/public/build-version.json", JSON.stringify({ buildId, buildTime, version: versionString, buildNumber }));
+  await writeFile("dist/public/release-notes.json", JSON.stringify(releaseData));
 
   console.log("building server...");
   const pkg = JSON.parse(await readFile("package.json", "utf-8"));

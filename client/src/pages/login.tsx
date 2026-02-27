@@ -5,50 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Lock, User, Info, X, Smartphone, Briefcase, ShieldCheck, UserCog, LayoutGrid, PauseCircle, FolderKanban, KeyRound } from "lucide-react";
-
-const CHANGELOG = [
-  {
-    icon: KeyRound,
-    title: "Granular Sub-Screen Permissions",
-    description: "Roles & Permissions now covers every sub-screen and drill-down in the app — 60 permission entities across 10 categories. New toggles for Triage Inbox, Unclassified Tasks, Pipeline Intake Inbox, SharePoint Sync, Portfolio Detail, Normalized Project View, Revenue Tracker, and Admin Roles itself. Every route now has its own permission control.",
-  },
-  {
-    icon: Briefcase,
-    title: "Project Development Sidebar Section",
-    description: "Project Development now has its own dedicated sidebar section that can be independently toggled per role in Admin Roles. COO, CEO, CCO, and Project Developers have access by default — other roles can be granted it through permissions.",
-  },
-  {
-    icon: Smartphone,
-    title: "Mobile-Friendly Engineering & Admin",
-    description: "Engineering Dashboard, My Tasks, and Admin Roles pages are now fully responsive on mobile. Task rows show compact badges on small screens, My Tasks uses card layouts instead of tables, and Admin permission grids stack cleanly on narrow devices.",
-  },
-  {
-    icon: UserCog,
-    title: "My Tasks View — Your Daily Cockpit",
-    description: "Engineers now have a dedicated My Tasks view showing only your assigned tasks, sorted into smart buckets: Overdue, Due Soon, On Hold, In Progress, and Everything Else. Inline edits for status, priority, due date, and quick notes — no need to open the full drawer for everyday updates.",
-  },
-  {
-    icon: LayoutGrid,
-    title: "Standup Mode for COO",
-    description: "A new Standup Mode toggle on the Engineering Dashboard gives managers a birds-eye view of all tasks bucketed by urgency and grouped by assignee. Inline edits, a clickable blockers counter, and priority sorting make daily standups faster and more focused.",
-  },
-  {
-    icon: PauseCircle,
-    title: "HOLD Workflow — Internal vs External Blocking",
-    description: "When putting a task on hold, you now must specify whether it's blocked Internally or Externally. This applies everywhere — the task drawer, board view, and quick update form. A colour-coded badge shows the blocked type at a glance across all views.",
-  },
-  {
-    icon: FolderKanban,
-    title: "Projects Assistance Requires a Linked Project",
-    description: "Setting a task to Projects Assistance now requires a linked project — no more orphaned assistance requests floating in the void. These tasks also appear in the linked project's Engineering Tasks tab with a clear visual indicator.",
-  },
-  {
-    icon: ShieldCheck,
-    title: "Send for Approval Workflow",
-    description: "Engineering tasks and quality items now have a dedicated Send for Approval flow with file upload, approver selection, and automatic notification creation. No more manually chasing approvers through chat.",
-  },
-];
+import { Lock, User, Info, X, Zap } from "lucide-react";
 
 export default function LoginPage() {
   const [, setLocation] = useLocation();
@@ -59,6 +16,7 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [showVersion, setShowVersion] = useState(false);
   const [versionInfo, setVersionInfo] = useState({ version: "0.0.005", buildTime: "", buildNumber: "" });
+  const [releaseNotes, setReleaseNotes] = useState<{ title: string; description: string }[]>([]);
 
   useEffect(() => {
     fetch("/api/version")
@@ -67,6 +25,9 @@ export default function LoginPage() {
         if (data.version) {
           const date = data.buildTime ? new Date(data.buildTime).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "";
           setVersionInfo({ version: data.version, buildTime: date, buildNumber: data.buildNumber || "" });
+        }
+        if (data.releaseNotes && Array.isArray(data.releaseNotes) && data.releaseNotes.length > 0) {
+          setReleaseNotes(data.releaseNotes);
         }
       })
       .catch(() => {});
@@ -195,18 +156,24 @@ export default function LoginPage() {
               </button>
             </div>
 
-            <div className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
-              {CHANGELOG.map((item, i) => (
-                <div key={i} className="flex gap-3" data-testid={`version-item-${i}`}>
-                  <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center mt-0.5">
-                    <item.icon className="w-4 h-4 text-emerald-600" />
+            <div className="overflow-y-auto flex-1 px-5 py-4 space-y-3">
+              {releaseNotes.length > 0 ? (
+                releaseNotes.map((item, i) => (
+                  <div key={i} className="flex gap-3" data-testid={`version-item-${i}`}>
+                    <div className="flex-shrink-0 w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center mt-0.5">
+                      <Zap className="w-3.5 h-3.5 text-emerald-600" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="text-sm font-semibold text-gray-900">{item.title}</h3>
+                      {item.description && (
+                        <p className="text-xs text-gray-500 mt-1 leading-relaxed">{item.description}</p>
+                      )}
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <h3 className="text-sm font-semibold text-gray-900">{item.title}</h3>
-                    <p className="text-xs text-gray-500 mt-1 leading-relaxed">{item.description}</p>
-                  </div>
-                </div>
-              ))}
+                ))
+              ) : (
+                <p className="text-sm text-gray-400 text-center py-4">No release notes available yet.</p>
+              )}
             </div>
 
             <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/50">
