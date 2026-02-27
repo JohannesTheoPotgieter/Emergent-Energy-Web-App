@@ -54,13 +54,32 @@ router.post("/api/invoice-patterns", requireAuth, async (req: Request, res: Resp
       return res.status(400).json({ error: "patternType, patternValue, and inferredType are required" });
     }
     const userId = (req as any).user?.id || null;
+
+    let resolvedCounterpartyId = counterpartyId || null;
+    if (counterpartyName && !resolvedCounterpartyId) {
+      const existing = await db.select().from(counterparties)
+        .where(eq(counterparties.nameCanonical, counterpartyName))
+        .limit(1);
+      if (existing.length > 0) {
+        resolvedCounterpartyId = existing[0].id;
+      } else {
+        const [newCp] = await db.insert(counterparties).values({
+          nameCanonical: counterpartyName,
+          typeDefault: inferredType || "OTHER",
+          isCore: false,
+          createdBy: userId,
+        }).returning();
+        resolvedCounterpartyId = newCp.id;
+      }
+    }
+
     const [rule] = await db
       .insert(invoicePatternRules)
       .values({
         patternType,
         patternValue,
         normalizedExample: normalizedExample || null,
-        counterpartyId: counterpartyId || null,
+        counterpartyId: resolvedCounterpartyId,
         counterpartyName: counterpartyName || null,
         inferredType,
         confidenceWeight: confidenceWeight || 50,
@@ -669,7 +688,18 @@ router.delete("/api/counterparties/:id", requireAuth, async (req: Request, res: 
   try {
     const id = parseInt(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
-    await db.delete(counterparties).where(eq(counterparties.id, id));
+    await db.transaction(async (tx) => {
+      await tx.update(normalizedCostLines)
+        .set({ counterpartyId: null })
+        .where(eq(normalizedCostLines.counterpartyId, id));
+      await tx.update(invoicePatternRules)
+        .set({ counterpartyId: null })
+        .where(eq(invoicePatternRules.counterpartyId, id));
+      await tx.update(invoicePatternMatches)
+        .set({ inferredCounterpartyId: null })
+        .where(eq(invoicePatternMatches.inferredCounterpartyId, id));
+      await tx.delete(counterparties).where(eq(counterparties.id, id));
+    });
     res.json({ ok: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
