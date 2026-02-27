@@ -310,11 +310,21 @@ export function registerEngineeringRoutes(app: Express) {
       if (updates.status === "HOLD" && !updates.holdReason) {
         return res.status(400).json({ error: "Hold reason required when setting status to HOLD" });
       }
+      if (updates.status === "HOLD") {
+        const bt = updates.blockedType || existing.blockedType;
+        if (!bt || !["Internal", "External"].includes(bt)) {
+          return res.status(400).json({ error: "Blocked type (Internal or External) required when setting status to HOLD" });
+        }
+      }
       if (updates.status && updates.status !== "HOLD" && existing.status === "HOLD" && !updates.holdReason) {
         updates.holdReason = null;
       }
-      if (updates.status === "PROJECTS ASSISTANCE" && !updates.requesterUserId && !existing.requesterUserId) {
-        return res.status(400).json({ error: "Requester required for PROJECTS ASSISTANCE status" });
+      if (updates.status === "PROJECTS ASSISTANCE") {
+        const projName = updates.projectName || existing.projectName;
+        const projId = updates.projectId || existing.projectId;
+        if ((!projName || projName === "Unassigned") && !projId) {
+          return res.status(400).json({ error: "A linked project is required when setting status to PROJECTS ASSISTANCE" });
+        }
       }
       if (updates.status === "NEEDS APPROVAL" && !updates.approverUserId && !existing.approverUserId) {
         return res.status(400).json({ error: "Approver required for NEEDS APPROVAL status" });
@@ -449,6 +459,9 @@ export function registerEngineeringRoutes(app: Express) {
       }
       if (updates.status === "HOLD" && !updates.holdReason) {
         return res.status(400).json({ error: "Hold reason required when setting status to HOLD" });
+      }
+      if (updates.status === "HOLD" && !updates.blockedType) {
+        return res.status(400).json({ error: "Blocked type (Internal or External) required when setting status to HOLD" });
       }
       if (updates.status === "NEEDS APPROVAL" && !updates.approverUserId) {
         return res.status(400).json({ error: "Approver required for NEEDS APPROVAL status" });
@@ -2143,13 +2156,21 @@ export function registerEngineeringRoutes(app: Express) {
       const cleanName = project.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ");
 
       const tasks = await db.select().from(operationalTasks)
-        .where(eq(operationalTasks.projectName, cleanName))
+        .where(or(
+          eq(operationalTasks.projectName, cleanName),
+          and(
+            eq(operationalTasks.status, "PROJECTS ASSISTANCE"),
+            eq(operationalTasks.projectId, projectId)
+          )
+        ))
         .orderBy(asc(operationalTasks.sortOrder), asc(operationalTasks.id));
+
+      const uniqueTasks = Array.from(new Map(tasks.map(t => [t.id, t])).values());
 
       res.json({
         projectName: cleanName,
         phase: project.phase,
-        tasks,
+        tasks: uniqueTasks,
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message });

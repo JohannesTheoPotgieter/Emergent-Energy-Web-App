@@ -977,6 +977,7 @@ export const operationalTasks = pgTable("operational_tasks", {
   requesterUserId: integer("requester_user_id").references(() => users.id),
   approverUserId: integer("approver_user_id").references(() => users.id),
   holdReason: text("hold_reason"),
+  blockedType: text("blocked_type"),
   approvalRequired: boolean("approval_required").notNull().default(false),
   startDate: text("start_date"),
   dueDate: text("due_date"),

@@ -1,10 +1,14 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useRef, useCallback } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/hooks/use-toast";
+import { TASK_STATUSES, TASK_PRIORITIES } from "@shared/schema";
 import {
   AlertTriangle,
   Wrench,
@@ -29,6 +33,9 @@ import {
   ExternalLink,
   UserCheck,
   Eye,
+  LayoutGrid,
+  Send,
+  Edit3,
 } from "lucide-react";
 import { PROJECT_PHASE_LABELS, type ProjectPhase } from "@shared/schema";
 
@@ -356,6 +363,404 @@ function WorkloadTable({ workload }: { workload: WorkloadEntry[] }) {
   );
 }
 
+async function engPatch(url: string, body: Record<string, any>) {
+  const token = localStorage.getItem("auth_token");
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const res = await fetch(url, { method: "PATCH", headers, body: JSON.stringify(body), credentials: "include" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Request failed" }));
+    throw new Error(err.error || "Request failed");
+  }
+  return res.json();
+}
+
+async function engPost(url: string, body: Record<string, any>) {
+  const token = localStorage.getItem("auth_token");
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body), credentials: "include" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Request failed" }));
+    throw new Error(err.error || "Request failed");
+  }
+  return res.json();
+}
+
+interface FullTask {
+  id: number;
+  title: string;
+  status: string;
+  priority: string;
+  dueDate: string | null;
+  assignees: string[] | null;
+  trackingRag: string | null;
+  projectName: string;
+  holdReason: string | null;
+  blockerReason: string | null;
+  blockedType: string | null;
+  completedAt: string | null;
+  taskTypeTag: string | null;
+  primaryWorkstream: string | null;
+  description: string | null;
+}
+
+const PRIORITY_ORDER: Record<string, number> = { "Urgent": 0, "High": 1, "Med": 2, "Low": 3 };
+
+function sortByPriorityThenDue(a: FullTask, b: FullTask) {
+  const pa = PRIORITY_ORDER[a.priority] ?? 4;
+  const pb = PRIORITY_ORDER[b.priority] ?? 4;
+  if (pa !== pb) return pa - pb;
+  if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
+  if (a.dueDate) return -1;
+  if (b.dueDate) return 1;
+  return 0;
+}
+
+function groupByAssignee(tasks: FullTask[]): Map<string, FullTask[]> {
+  const map = new Map<string, FullTask[]>();
+  for (const t of tasks) {
+    const names = t.assignees && t.assignees.length > 0 ? t.assignees.filter(Boolean) : ["Unassigned"];
+    for (const name of names) {
+      if (!map.has(name)) map.set(name, []);
+      map.get(name)!.push(t);
+    }
+  }
+  const sorted = new Map([...map.entries()].sort(([a], [b]) => {
+    if (a === "Unassigned") return 1;
+    if (b === "Unassigned") return -1;
+    return a.localeCompare(b);
+  }));
+  return sorted;
+}
+
+function InlineTaskRow({ task, onUpdate }: { task: FullTask; onUpdate: (id: number, updates: Record<string, any>) => void }) {
+  const [, setLocation] = useLocation();
+  const [quickNote, setQuickNote] = useState("");
+  const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && task.status !== "COMPLETE";
+  const { toast } = useToast();
+
+  const handleQuickNote = async () => {
+    if (!quickNote.trim()) return;
+    try {
+      await engPost(`/api/eng/tasks/${task.id}/comments`, { body: `[Quick Note] ${quickNote.trim()}` });
+      setQuickNote("");
+      toast({ title: "Note posted" });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    }
+  };
+
+  return (
+    <div
+      className="border-b last:border-b-0 hover:bg-muted/30 transition-colors text-xs"
+      data-testid={`standup-inline-task-${task.id}`}
+    >
+      <div className="flex items-center gap-2 px-3 py-2">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5">
+            <span className={`font-medium truncate ${priorityColors[task.priority] || ""}`}>
+              {task.title}
+            </span>
+            {task.blockedType && (
+              <Badge className={`text-[8px] px-1 py-0 ${task.blockedType === "External" ? "bg-orange-100 text-orange-700" : "bg-yellow-100 text-yellow-700"}`}>
+                {task.blockedType}
+              </Badge>
+            )}
+          </div>
+          <span className="text-[10px] text-muted-foreground">{displayProject(task.projectName)}</span>
+          {(task.holdReason || task.blockerReason) && (
+            <p className="text-[10px] text-red-500 mt-0.5 truncate">{task.holdReason || task.blockerReason}</p>
+          )}
+        </div>
+
+        <div className="flex items-center gap-1 shrink-0">
+          <Select
+            value={task.priority}
+            onValueChange={(val) => onUpdate(task.id, { priority: val })}
+          >
+            <SelectTrigger className="h-6 w-[60px] text-[10px] px-1.5" data-testid={`priority-select-${task.id}`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {TASK_PRIORITIES.map(p => (
+                <SelectItem key={p} value={p} className="text-xs">{p}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select
+            value={task.status}
+            onValueChange={(val) => onUpdate(task.id, { status: val })}
+          >
+            <SelectTrigger className="h-6 w-[100px] text-[10px] px-1.5" data-testid={`status-select-${task.id}`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {TASK_STATUSES.map(s => (
+                <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Input
+            type="date"
+            value={task.dueDate || ""}
+            onChange={(e) => onUpdate(task.id, { dueDate: e.target.value || null })}
+            className="h-6 w-[110px] text-[10px] px-1.5"
+            data-testid={`due-date-input-${task.id}`}
+          />
+
+          {task.dueDate && (
+            <span className={`text-[10px] w-[50px] text-right ${isOverdue ? "text-red-600 font-bold" : "text-muted-foreground"}`}>
+              {daysFromNow(task.dueDate)}
+            </span>
+          )}
+
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 w-6 p-0"
+            onClick={(e) => { e.stopPropagation(); setLocation(`/engineering/tasks?taskId=${task.id}`); }}
+            data-testid={`open-detail-${task.id}`}
+          >
+            <ExternalLink className="h-3 w-3" />
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-1.5 px-3 pb-2">
+        <Input
+          placeholder="Quick note..."
+          value={quickNote}
+          onChange={(e) => setQuickNote(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") handleQuickNote(); }}
+          className="h-5 text-[10px] flex-1"
+          data-testid={`quick-note-input-${task.id}`}
+        />
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-5 w-5 p-0"
+          onClick={handleQuickNote}
+          disabled={!quickNote.trim()}
+          data-testid={`quick-note-send-${task.id}`}
+        >
+          <Send className="h-3 w-3" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function AssigneeGroup({ name, tasks, onUpdate, defaultOpen }: { name: string; tasks: FullTask[]; onUpdate: (id: number, updates: Record<string, any>) => void; defaultOpen: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
+
+  return (
+    <div data-testid={`assignee-group-${name}`}>
+      <button
+        className="w-full flex items-center gap-2 px-4 py-1.5 text-left hover:bg-muted/20 transition-colors bg-muted/10"
+        onClick={() => setOpen(!open)}
+        data-testid={`toggle-assignee-${name}`}
+      >
+        {open ? <ChevronDown className="h-3 w-3 text-muted-foreground" /> : <ChevronRight className="h-3 w-3 text-muted-foreground" />}
+        <User className="h-3 w-3 text-muted-foreground" />
+        <span className="font-medium text-xs">{name}</span>
+        <span className="text-[10px] text-muted-foreground ml-auto">{tasks.length} task{tasks.length !== 1 ? "s" : ""}</span>
+      </button>
+      {open && (
+        <div>
+          {tasks.sort(sortByPriorityThenDue).map(t => (
+            <InlineTaskRow key={t.id} task={t} onUpdate={onUpdate} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StandupBucket({
+  title, icon, tasks, color, defaultOpen, testId, onUpdate,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  tasks: FullTask[];
+  color: string;
+  defaultOpen: boolean;
+  testId: string;
+  onUpdate: (id: number, updates: Record<string, any>) => void;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  const grouped = groupByAssignee(tasks);
+
+  if (tasks.length === 0) return null;
+
+  return (
+    <Card className="overflow-hidden" data-testid={testId}>
+      <button
+        className="w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-muted/20 transition-colors"
+        onClick={() => setOpen(!open)}
+        data-testid={`toggle-${testId}`}
+      >
+        {open ? <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" /> : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />}
+        <span className={`shrink-0 ${color}`}>{icon}</span>
+        <span className="font-semibold text-sm flex-1">{title}</span>
+        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${color} bg-opacity-10`}>{tasks.length}</span>
+      </button>
+      {open && (
+        <div className="border-t">
+          {[...grouped.entries()].map(([name, assigneeTasks]) => (
+            <AssigneeGroup
+              key={name}
+              name={name}
+              tasks={assigneeTasks}
+              onUpdate={onUpdate}
+              defaultOpen={grouped.size <= 5}
+            />
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function StandupModeView() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const blockersRef = useRef<HTMLDivElement>(null);
+
+  const { data: allTasks = [], isLoading } = useQuery<FullTask[]>({
+    queryKey: ["eng-standup-all-tasks"],
+    queryFn: () => engFetch("/api/eng/tasks"),
+    refetchOnMount: "always",
+    staleTime: 0,
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, updates }: { id: number; updates: Record<string, any> }) =>
+      engPatch(`/api/eng/tasks/${id}`, updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["eng-standup-all-tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["eng-standup"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Update failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const handleUpdate = useCallback((id: number, updates: Record<string, any>) => {
+    updateMutation.mutate({ id, updates });
+  }, [updateMutation]);
+
+  if (isLoading) {
+    return (
+      <div className="space-y-3">
+        {[1, 2, 3, 4].map(i => <div key={i} className="h-32 bg-muted animate-pulse rounded-xl" />)}
+      </div>
+    );
+  }
+
+  const today = new Date().toISOString().split("T")[0];
+  const sevenDays = new Date();
+  sevenDays.setDate(sevenDays.getDate() + 7);
+  const weekEnd = sevenDays.toISOString().split("T")[0];
+
+  const nonComplete = allTasks.filter(t => t.status !== "COMPLETE");
+
+  const overdueTasks = nonComplete.filter(t => t.dueDate && t.dueDate < today);
+  const overduIds = new Set(overdueTasks.map(t => t.id));
+
+  const dueSoonTasks = nonComplete.filter(t =>
+    t.dueDate && t.dueDate >= today && t.dueDate <= weekEnd && !overduIds.has(t.id)
+  );
+  const dueSoonIds = new Set(dueSoonTasks.map(t => t.id));
+
+  const holdTasks = nonComplete.filter(t => t.status === "HOLD" && !overduIds.has(t.id));
+  const holdIds = new Set(holdTasks.map(t => t.id));
+
+  const inProgressTasks = nonComplete.filter(t =>
+    t.status === "IN PROGRESS" && !overduIds.has(t.id) && !dueSoonIds.has(t.id) && !holdIds.has(t.id)
+  );
+  const inProgressIds = new Set(inProgressTasks.map(t => t.id));
+
+  const everythingElse = nonComplete.filter(t =>
+    !overduIds.has(t.id) && !dueSoonIds.has(t.id) && !holdIds.has(t.id) && !inProgressIds.has(t.id)
+  );
+
+  const blockerCount = overdueTasks.length + holdTasks.length;
+
+  const scrollToBlockers = () => {
+    blockersRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  return (
+    <div className="space-y-4">
+      {blockerCount > 0 && (
+        <button
+          onClick={scrollToBlockers}
+          className="flex items-center gap-1.5 text-red-600 bg-red-50 px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-red-100 transition-colors w-fit"
+          data-testid="standup-blocker-badge"
+        >
+          <ShieldAlert className="h-4 w-4" />
+          {blockerCount} blocker{blockerCount !== 1 ? "s" : ""} need attention
+        </button>
+      )}
+
+      <div ref={blockersRef}>
+        <StandupBucket
+          title="Overdue"
+          icon={<AlertTriangle className="h-4 w-4" />}
+          tasks={overdueTasks}
+          color="text-red-600"
+          defaultOpen={true}
+          testId="standup-bucket-overdue"
+          onUpdate={handleUpdate}
+        />
+      </div>
+
+      <StandupBucket
+        title="Due Soon (7 days)"
+        icon={<Timer className="h-4 w-4" />}
+        tasks={dueSoonTasks}
+        color="text-indigo-600"
+        defaultOpen={true}
+        testId="standup-bucket-due-soon"
+        onUpdate={handleUpdate}
+      />
+
+      <StandupBucket
+        title="On Hold"
+        icon={<PauseCircle className="h-4 w-4" />}
+        tasks={holdTasks}
+        color="text-amber-600"
+        defaultOpen={true}
+        testId="standup-bucket-hold"
+        onUpdate={handleUpdate}
+      />
+
+      <StandupBucket
+        title="In Progress"
+        icon={<Zap className="h-4 w-4" />}
+        tasks={inProgressTasks}
+        color="text-blue-600"
+        defaultOpen={false}
+        testId="standup-bucket-in-progress"
+        onUpdate={handleUpdate}
+      />
+
+      <StandupBucket
+        title="Everything Else"
+        icon={<ListTodo className="h-4 w-4" />}
+        tasks={everythingElse}
+        color="text-gray-600"
+        defaultOpen={false}
+        testId="standup-bucket-everything-else"
+        onUpdate={handleUpdate}
+      />
+    </div>
+  );
+}
+
 interface CompanyPriority {
   id: number;
   title: string;
@@ -463,6 +868,7 @@ export default function EngineeringDashboard() {
   const managerRoles = ["admin", "eng_program_manager", "CEO_ADMIN", "COO_ADMIN", "CCO", "PROGRAM_MANAGER", "CONSTRUCTION_MANAGER"];
   const isManagerRole = isAdmin || managerRoles.includes(userRole);
   const [showAllTasks, setShowAllTasks] = useState(isManagerRole);
+  const [standupMode, setStandupMode] = useState(false);
   const fullName = user?.name || "";
   const firstName = fullName.split(/\s+/)[0];
 
@@ -527,7 +933,7 @@ export default function EngineeringDashboard() {
           </div>
           <div>
             <h2 className="text-xl sm:text-2xl font-heading font-bold" data-testid="text-standup-title">
-              {showAllTasks ? "Engineering Standup" : `${firstName}'s Dashboard`}
+              {standupMode ? "Engineering Standup Mode" : showAllTasks ? "Engineering Standup" : `${firstName}'s Dashboard`}
             </h2>
             <p className="text-xs text-muted-foreground flex items-center gap-1.5">
               <Clock className="h-3 w-3" />
@@ -542,7 +948,19 @@ export default function EngineeringDashboard() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {firstName && isManagerRole && (
+          {isManagerRole && (
+            <Button
+              variant={standupMode ? "default" : "outline"}
+              size="sm"
+              className={`h-7 text-xs gap-1 ${standupMode ? "bg-orange-600 hover:bg-orange-700" : ""}`}
+              onClick={() => setStandupMode(!standupMode)}
+              data-testid="toggle-standup-mode"
+            >
+              <LayoutGrid className="h-3 w-3" />
+              {standupMode ? "Exit Standup" : "Standup Mode"}
+            </Button>
+          )}
+          {!standupMode && firstName && isManagerRole && (
             <Button
               variant={showAllTasks ? "default" : "outline"}
               size="sm"
@@ -557,7 +975,7 @@ export default function EngineeringDashboard() {
               )}
             </Button>
           )}
-          {totalBlockers > 0 && (
+          {!standupMode && totalBlockers > 0 && (
             <div className="flex items-center gap-1.5 text-red-600 bg-red-50 px-3 py-1.5 rounded-lg text-xs font-semibold" data-testid="blocker-alert">
               <ShieldAlert className="h-4 w-4" />
               {totalBlockers} blocker{totalBlockers !== 1 ? "s" : ""} need attention
@@ -566,6 +984,10 @@ export default function EngineeringDashboard() {
         </div>
       </div>
 
+      {standupMode ? (
+        <StandupModeView />
+      ) : (
+      <>
       <CompanyPrioritiesSection />
 
       <KpiStrip summary={summary} />
@@ -730,6 +1152,8 @@ export default function EngineeringDashboard() {
         </div>
         <ProjectHealthGrid projects={projectHealth} />
       </div>
+      </>
+      )}
     </div>
   );
 }
