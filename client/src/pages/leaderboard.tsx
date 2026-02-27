@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { usePermission } from "@/hooks/use-permissions";
@@ -25,6 +25,7 @@ import {
   Target,
   Award,
   ChevronRight,
+  ChevronDown,
   CheckCircle,
   ClipboardList,
   FileCheck,
@@ -162,6 +163,288 @@ const PENALTY_STAT_CONFIG = [
   { key: "unreadNotifications", label: "Unread Notifs (3d+)", icon: BellOff, color: "text-gray-500" },
   { key: "overdueQmTasks", label: "Overdue QM Tasks", icon: ClipboardX, color: "text-red-600" },
 ];
+
+interface DetailCategory {
+  count: number;
+  perPoint: number;
+  total: number;
+  items: Array<{ name: string; project: string; date: string | null }>;
+}
+
+interface DetailData {
+  pointValues: Record<string, number>;
+  penaltyValues: Record<string, number>;
+  earned: Record<string, DetailCategory>;
+  penalties: Record<string, DetailCategory>;
+}
+
+const EARNED_DETAIL_CONFIG: { key: string; label: string; icon: any; color: string }[] = [
+  { key: "tasksCompleted", label: "Tasks Completed", icon: CheckCircle, color: "text-green-600" },
+  { key: "approvalsGiven", label: "Approvals Given", icon: ShieldCheck, color: "text-purple-600" },
+  { key: "weeklyReviews", label: "Weekly Reviews", icon: FileCheck, color: "text-teal-600" },
+  { key: "importsCompleted", label: "Imports Done", icon: Upload, color: "text-orange-600" },
+  { key: "projectUpdates", label: "Project Updates", icon: ClipboardList, color: "text-blue-600" },
+  { key: "qualityApprovals", label: "QC Approvals", icon: Target, color: "text-pink-600" },
+  { key: "engStagesCompleted", label: "Eng Stages Done", icon: Wrench, color: "text-indigo-600" },
+  { key: "deliverablesUploaded", label: "Deliverables", icon: Paperclip, color: "text-rose-600" },
+];
+
+const PENALTY_DETAIL_CONFIG: { key: string; label: string; icon: any; color: string }[] = [
+  { key: "overdueTasks", label: "Overdue Tasks", icon: Clock, color: "text-red-500" },
+  { key: "plansBehind", label: "Plans Behind >15%", icon: BarChart3, color: "text-orange-500" },
+  { key: "qualityFailures", label: "QC Failures", icon: XCircle, color: "text-red-600" },
+  { key: "rejectedDeliverables", label: "Rejected Deliverables", icon: FileX, color: "text-amber-600" },
+  { key: "openQualityWarnings", label: "Open Warnings", icon: ShieldAlert, color: "text-yellow-600" },
+  { key: "overdueEngTasks", label: "Overdue Eng Tasks", icon: Cog, color: "text-red-500" },
+  { key: "overdueQmTasks", label: "Overdue QM Tasks", icon: ClipboardX, color: "text-red-600" },
+];
+
+function DetailLineItems({ cat, expanded, onToggle, config, type }: {
+  cat: DetailCategory;
+  expanded: boolean;
+  onToggle: () => void;
+  config: { label: string; icon: any; color: string };
+  type: "earned" | "penalty";
+}) {
+  if (cat.count === 0) return null;
+  const Icon = config.icon;
+  const isEarned = type === "earned";
+
+  return (
+    <div className="border border-gray-100 dark:border-gray-800 rounded-lg overflow-hidden" data-testid={`detail-${config.label.toLowerCase().replace(/\s+/g, '-')}`}>
+      <button
+        className={`w-full flex items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/50 ${expanded ? 'bg-muted/30' : ''}`}
+        onClick={onToggle}
+      >
+        <Icon className={`w-4 h-4 shrink-0 ${config.color}`} />
+        <span className="text-xs font-medium flex-1 truncate">{config.label}</span>
+        <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+          {cat.count} × {isEarned ? '+' : ''}{cat.perPoint}
+        </span>
+        <span className={`text-xs font-bold whitespace-nowrap ${isEarned ? 'text-green-600' : 'text-red-500'}`}>
+          = {isEarned ? '+' : ''}{cat.total}
+        </span>
+        {cat.items.length > 0 && (
+          <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+        )}
+      </button>
+      {expanded && cat.items.length > 0 && (
+        <div className="border-t border-gray-100 dark:border-gray-800 max-h-[200px] overflow-y-auto">
+          {cat.items.map((item, idx) => (
+            <div key={idx} className="flex items-center gap-2 px-3 py-1.5 text-[11px] border-b border-gray-50 dark:border-gray-900 last:border-b-0 hover:bg-muted/20">
+              <span className="text-muted-foreground w-4 text-right shrink-0">{idx + 1}.</span>
+              <div className="flex-1 min-w-0">
+                <span className="truncate block text-gray-700 dark:text-gray-300">{item.name || 'Unnamed'}</span>
+                {item.project && (
+                  <span className="text-[10px] text-muted-foreground truncate block">{item.project}</span>
+                )}
+              </div>
+              {item.date && (
+                <span className="text-[10px] text-muted-foreground whitespace-nowrap shrink-0">{item.date}</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function UserDetailDialog({ selectedUser, onClose }: { selectedUser: LeaderboardEntry | null; onClose: () => void }) {
+  const [detailData, setDetailData] = useState<DetailData | null>(null);
+  const [loadingDetails, setLoadingDetails] = useState(false);
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
+  const [detailTab, setDetailTab] = useState<"earned" | "penalties">("earned");
+
+  useEffect(() => {
+    if (!selectedUser) {
+      setDetailData(null);
+      setExpandedSections({});
+      setDetailTab("earned");
+      return;
+    }
+    setLoadingDetails(true);
+    const token = localStorage.getItem("auth_token");
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    fetch(`/api/gamification/user/${selectedUser.userId}/details`, { headers, credentials: "include" })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { setDetailData(d); setLoadingDetails(false); })
+      .catch(() => setLoadingDetails(false));
+  }, [selectedUser?.userId]);
+
+  const toggleSection = (key: string) => {
+    setExpandedSections(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const earnedTotal = detailData ? Object.values(detailData.earned).reduce((s, c) => s + c.total, 0) : 0;
+  const penaltyTotal = detailData ? Object.values(detailData.penalties).reduce((s, c) => s + c.total, 0) : 0;
+  const participationPts = detailData ? (detailData.pointValues?.participation || 10) : 10;
+
+  return (
+    <Dialog open={!!selectedUser} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="sm:max-w-[520px] max-h-[85vh] overflow-y-auto">
+        {selectedUser && (
+          <>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Award className="w-5 h-5 text-primary" />
+                {selectedUser.name}
+              </DialogTitle>
+              <DialogDescription>
+                {ROLE_LABELS[selectedUser.role] || selectedUser.role} — Level {selectedUser.level.level} {selectedUser.level.title}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-2">
+              <div className="flex items-center gap-3">
+                <div>
+                  <div className="text-3xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent" data-testid="text-total-points">
+                    {selectedUser.points}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">total points</div>
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
+                    <span>Lv.{selectedUser.level.level} {selectedUser.level.title}</span>
+                    <span>{selectedUser.level.nextThreshold} pts</span>
+                  </div>
+                  <Progress
+                    value={selectedUser.level.nextThreshold > selectedUser.level.currentThreshold
+                      ? ((selectedUser.points - selectedUser.level.currentThreshold) / (selectedUser.level.nextThreshold - selectedUser.level.currentThreshold)) * 100
+                      : 100}
+                    className="h-2"
+                  />
+                  <div className="flex items-center justify-between text-[10px] text-muted-foreground mt-1">
+                    <span className="text-green-600 font-medium">+{selectedUser.pointsEarned} earned</span>
+                    {selectedUser.pointsPenalty < 0 && (
+                      <span className="text-red-500 font-medium">{selectedUser.pointsPenalty} deducted</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {selectedUser.badges.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-medium mb-2">Badges ({selectedUser.badges.length})</h4>
+                  <div className="flex flex-wrap gap-1.5">
+                    {selectedUser.badges.map(b => (
+                      <div
+                        key={b.key}
+                        className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-muted text-[11px]"
+                        title={b.description}
+                      >
+                        <span>{b.icon}</span>
+                        <span className="font-medium">{b.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {loadingDetails && (
+                <div className="text-center py-4 text-xs text-muted-foreground">Loading point details...</div>
+              )}
+
+              {detailData && (
+                <div>
+                  <div className="flex items-center gap-1 mb-3">
+                    <button
+                      className={`text-xs px-3 py-1.5 rounded-md font-medium transition-colors ${detailTab === 'earned' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'text-muted-foreground hover:bg-muted/50'}`}
+                      onClick={() => setDetailTab("earned")}
+                      data-testid="btn-earned-tab"
+                    >
+                      <TrendingUp className="w-3 h-3 inline mr-1" />
+                      Earned (+{earnedTotal + participationPts})
+                    </button>
+                    <button
+                      className={`text-xs px-3 py-1.5 rounded-md font-medium transition-colors ${detailTab === 'penalties' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'text-muted-foreground hover:bg-muted/50'}`}
+                      onClick={() => setDetailTab("penalties")}
+                      data-testid="btn-penalties-tab"
+                    >
+                      <TrendingDown className="w-3 h-3 inline mr-1" />
+                      Penalties ({penaltyTotal})
+                    </button>
+                  </div>
+
+                  {detailTab === "earned" && (
+                    <div className="space-y-1.5">
+                      {EARNED_DETAIL_CONFIG.map(cfg => {
+                        const cat = detailData.earned[cfg.key];
+                        if (!cat) return null;
+                        return (
+                          <DetailLineItems
+                            key={cfg.key}
+                            cat={cat}
+                            expanded={!!expandedSections[cfg.key]}
+                            onToggle={() => toggleSection(cfg.key)}
+                            config={cfg}
+                            type="earned"
+                          />
+                        );
+                      })}
+                      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/30 border border-gray-100 dark:border-gray-800">
+                        <Users className="w-4 h-4 text-blue-500 shrink-0" />
+                        <span className="text-xs font-medium flex-1">Participation Bonus</span>
+                        <span className="text-xs font-bold text-green-600">+{participationPts}</span>
+                      </div>
+                      <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900/40 mt-2">
+                        <span className="text-xs font-semibold text-green-700 dark:text-green-400">Total Earned</span>
+                        <span className="text-sm font-bold text-green-700 dark:text-green-400">+{earnedTotal + participationPts}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {detailTab === "penalties" && (
+                    <div className="space-y-1.5">
+                      {penaltyTotal === 0 ? (
+                        <div className="text-center py-6 text-sm text-muted-foreground">
+                          <CheckCircle className="w-8 h-8 mx-auto mb-2 text-green-500" />
+                          No penalties — great job!
+                        </div>
+                      ) : (
+                        <>
+                          {PENALTY_DETAIL_CONFIG.map(cfg => {
+                            const cat = detailData.penalties[cfg.key];
+                            if (!cat || cat.count === 0) return null;
+                            return (
+                              <DetailLineItems
+                                key={cfg.key}
+                                cat={cat}
+                                expanded={!!expandedSections[`p_${cfg.key}`]}
+                                onToggle={() => toggleSection(`p_${cfg.key}`)}
+                                config={cfg}
+                                type="penalty"
+                              />
+                            );
+                          })}
+                          <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/40 mt-2">
+                            <span className="text-xs font-semibold text-red-700 dark:text-red-400">Total Penalties</span>
+                            <span className="text-sm font-bold text-red-700 dark:text-red-400">{penaltyTotal}</span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between px-3 py-2.5 rounded-lg bg-primary/5 border border-primary/20 mt-3">
+                    <span className="text-xs font-semibold">Net Total</span>
+                    <div className="text-right">
+                      <span className="text-sm font-bold">{Math.max(0, earnedTotal + participationPts + penaltyTotal)} pts</span>
+                      <div className="text-[10px] text-muted-foreground">
+                        +{earnedTotal + participationPts} earned {penaltyTotal < 0 ? ` ${penaltyTotal} penalties` : ''}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 export default function LeaderboardPage() {
   const { user } = useAuth();
@@ -414,122 +697,7 @@ export default function LeaderboardPage() {
         </div>
       )}
 
-      <Dialog open={!!selectedUser} onOpenChange={(open) => { if (!open) setSelectedUser(null); }}>
-        <DialogContent className="sm:max-w-[480px]">
-          {selectedUser && (
-            <>
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2">
-                  <Award className="w-5 h-5 text-primary" />
-                  {selectedUser.name}
-                </DialogTitle>
-                <DialogDescription>
-                  {ROLE_LABELS[selectedUser.role] || selectedUser.role} — Level {selectedUser.level.level} {selectedUser.level.title}
-                </DialogDescription>
-              </DialogHeader>
-
-              <div className="space-y-4 py-2">
-                <div className="flex items-center gap-3">
-                  <div>
-                    <div className="text-3xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
-                      {selectedUser.points}
-                    </div>
-                    {selectedUser.pointsPenalty < 0 && (
-                      <div className="flex items-center gap-1 text-xs text-red-500 mt-0.5">
-                        <TrendingDown className="w-3 h-3" />
-                        <span>{selectedUser.pointsPenalty} penalty</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
-                      <span>Lv.{selectedUser.level.level} {selectedUser.level.title}</span>
-                      <span>{selectedUser.level.nextThreshold} pts</span>
-                    </div>
-                    <Progress
-                      value={selectedUser.level.nextThreshold > selectedUser.level.currentThreshold
-                        ? ((selectedUser.points - selectedUser.level.currentThreshold) / (selectedUser.level.nextThreshold - selectedUser.level.currentThreshold)) * 100
-                        : 100}
-                      className="h-2"
-                    />
-                    {selectedUser.pointsEarned > 0 && (
-                      <div className="flex items-center justify-between text-[10px] text-muted-foreground mt-1">
-                        <span className="text-green-600">+{selectedUser.pointsEarned} earned</span>
-                        {selectedUser.pointsPenalty < 0 && (
-                          <span className="text-red-500">{selectedUser.pointsPenalty} deducted</span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div>
-                  <h4 className="text-sm font-medium mb-2">Badges ({selectedUser.badges.length})</h4>
-                  <div className="flex flex-wrap gap-2">
-                    {selectedUser.badges.map(b => (
-                      <div
-                        key={b.key}
-                        className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-muted text-xs"
-                        title={b.description}
-                      >
-                        <span>{b.icon}</span>
-                        <span className="font-medium">{b.name}</span>
-                      </div>
-                    ))}
-                    {selectedUser.badges.length === 0 && (
-                      <span className="text-xs text-muted-foreground">No badges earned yet</span>
-                    )}
-                  </div>
-                </div>
-
-                <div>
-                  <h4 className="text-sm font-medium mb-2">Activity Breakdown</h4>
-                  <div className="grid grid-cols-2 gap-2">
-                    {STAT_CONFIG.map(stat => {
-                      const Icon = stat.icon;
-                      const val = (selectedUser.stats as any)[stat.key] || 0;
-                      return (
-                        <div key={stat.key} className="flex items-center gap-2 p-2 rounded-lg bg-muted/50">
-                          <Icon className={`w-4 h-4 ${stat.color}`} />
-                          <div>
-                            <div className="text-sm font-bold">{val}</div>
-                            <div className="text-[10px] text-muted-foreground">{stat.label}</div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {selectedUser.penalties && Object.values(selectedUser.penalties).some(v => v > 0) && (
-                  <div>
-                    <h4 className="text-sm font-medium mb-2 flex items-center gap-1.5 text-red-600">
-                      <AlertTriangle className="w-4 h-4" />
-                      Penalties
-                    </h4>
-                    <div className="grid grid-cols-2 gap-2">
-                      {PENALTY_STAT_CONFIG.map(stat => {
-                        const Icon = stat.icon;
-                        const val = (selectedUser.penalties as any)[stat.key] || 0;
-                        if (val === 0) return null;
-                        return (
-                          <div key={stat.key} className="flex items-center gap-2 p-2 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/30" data-testid={`penalty-${stat.key}`}>
-                            <Icon className={`w-4 h-4 ${stat.color}`} />
-                            <div>
-                              <div className="text-sm font-bold text-red-700 dark:text-red-400">{val}</div>
-                              <div className="text-[10px] text-red-500/70">{stat.label}</div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
+      <UserDetailDialog selectedUser={selectedUser} onClose={() => setSelectedUser(null)} />
 
       {!isLoading && tab === "leaderboard" && data?.pointValues && (
         <Card>
