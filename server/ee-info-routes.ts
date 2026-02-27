@@ -820,4 +820,481 @@ export function registerEeInfoRoutes(app: Express) {
       res.status(500).json({ error: "Failed to run post-seed alignment" });
     }
   });
+
+  const OS_LIFECYCLE_STAGES = [
+    { slug: "os-p0-first-assessment", title: "First Assessment (P0)", sortOrder: 1, description: "Initial project evaluation and feasibility assessment" },
+    { slug: "os-p1-cost-proposal", title: "Cost Proposal (P1)", sortOrder: 2, description: "Detailed costing, design proposals, and client engagement" },
+    { slug: "os-p2-planning", title: "Planning & Handover (P2/P3)", sortOrder: 3, description: "PD/PM handover, financial close, and project planning" },
+    { slug: "os-p4-construction", title: "Construction (P4)", sortOrder: 4, description: "Installation, site management, and construction execution" },
+    { slug: "os-p5-commissioning", title: "Commissioning & QA (P5)", sortOrder: 5, description: "Quality assurance, testing, and commissioning" },
+    { slug: "os-p6-handover", title: "Handover (P6)", sortOrder: 6, description: "Client handover and defect liability period" },
+    { slug: "os-p7-closeout", title: "Closeout (P7)", sortOrder: 7, description: "Commercial close-out and post-mortem review" },
+  ];
+
+  const OS_DEPARTMENTS = [
+    { slug: "os-dept-engineering", title: "Engineering", sortOrder: 1, description: "Design, technical calculations, and engineering deliverables" },
+    { slug: "os-dept-finance", title: "Finance", sortOrder: 2, description: "Financial management, invoicing, and cost tracking" },
+    { slug: "os-dept-operations", title: "Operations", sortOrder: 3, description: "Day-to-day operational management" },
+    { slug: "os-dept-sales", title: "Sales", sortOrder: 4, description: "Business development and client relations" },
+    { slug: "os-dept-procurement", title: "Procurement", sortOrder: 5, description: "Supplier management and material sourcing" },
+    { slug: "os-dept-legal", title: "Legal", sortOrder: 6, description: "Contracts, compliance, and legal affairs" },
+    { slug: "os-dept-hr", title: "HR", sortOrder: 7, description: "Human resources and people management" },
+    { slug: "os-dept-executive", title: "Executive", sortOrder: 8, description: "Strategic leadership and governance" },
+    { slug: "os-dept-project-delivery", title: "Project Delivery", sortOrder: 9, description: "On-site project execution and management" },
+    { slug: "os-dept-om", title: "O&M", sortOrder: 10, description: "Operations and maintenance of completed projects" },
+  ];
+
+  app.post("/api/ee-info/os/seed", requireCOO, async (_req, res) => {
+    try {
+      const existing = await db.select({ slug: eeInfoNodes.slug }).from(eeInfoNodes)
+        .where(or(
+          sql`${eeInfoNodes.nodeType} = 'lifecycle_stage'`,
+          sql`${eeInfoNodes.nodeType} = 'department'`
+        ));
+      const existingSlugs = new Set(existing.map(n => n.slug));
+      const created: string[] = [];
+      const skipped: string[] = [];
+
+      for (const stage of OS_LIFECYCLE_STAGES) {
+        if (existingSlugs.has(stage.slug)) { skipped.push(stage.slug); continue; }
+        await db.insert(eeInfoNodes).values({
+          id: generateId(), slug: stage.slug, title: stage.title,
+          contentMarkdown: `# ${stage.title}\n\n${stage.description}`,
+          status: "published", category: "process", nodeType: "lifecycle_stage",
+          sortOrder: stage.sortOrder, tags: ["lifecycle", "os-map"],
+        });
+        created.push(stage.slug);
+      }
+
+      for (const dept of OS_DEPARTMENTS) {
+        if (existingSlugs.has(dept.slug)) { skipped.push(dept.slug); continue; }
+        await db.insert(eeInfoNodes).values({
+          id: generateId(), slug: dept.slug, title: dept.title,
+          contentMarkdown: `# ${dept.title}\n\n${dept.description}`,
+          status: "published", category: "process", nodeType: "department",
+          sortOrder: dept.sortOrder, tags: ["department", "os-map"],
+        });
+        created.push(dept.slug);
+      }
+
+      const allProcessNodes = await db.select().from(eeInfoNodes)
+        .where(and(
+          sql`${eeInfoNodes.category} = 'process'`,
+          sql`${eeInfoNodes.nodeType} = 'content'`
+        ));
+      let mapped = 0;
+      for (const node of allProcessNodes) {
+        const title = node.title.toLowerCase();
+        const content = (node.contentMarkdown || "").toLowerCase();
+        let deptSlug: string | null = null;
+        const stages: string[] = [];
+
+        if (/engineer|design|ifc|drawing|bom|technical/i.test(title + content)) deptSlug = "os-dept-engineering";
+        else if (/financ|invoice|cost|budget|revenue|cashflow/i.test(title + content)) deptSlug = "os-dept-finance";
+        else if (/procure|supplier|material|sourcing/i.test(title + content)) deptSlug = "os-dept-procurement";
+        else if (/legal|contract|compliance/i.test(title + content)) deptSlug = "os-dept-legal";
+        else if (/sales|business development|client|proposal/i.test(title + content)) deptSlug = "os-dept-sales";
+        else if (/construct|install|site|commission/i.test(title + content)) deptSlug = "os-dept-project-delivery";
+        else if (/handover|dlp|defect/i.test(title + content)) deptSlug = "os-dept-project-delivery";
+        else if (/executive|coo|ceo|strategic/i.test(title + content)) deptSlug = "os-dept-executive";
+        else if (/hr|people|recruit/i.test(title + content)) deptSlug = "os-dept-hr";
+        else if (/o&m|maintenance|operation/i.test(title + content)) deptSlug = "os-dept-om";
+        else deptSlug = "os-dept-operations";
+
+        if (/first assessment|feasibility|p0|epd1/i.test(title + content)) stages.push("os-p0-first-assessment");
+        if (/cost proposal|design proposal|p1|epd2/i.test(title + content)) stages.push("os-p1-cost-proposal");
+        if (/planning|handover|financial close|p2|p3/i.test(title + content)) stages.push("os-p2-planning");
+        if (/construct|install|p4/i.test(title + content)) stages.push("os-p4-construction");
+        if (/commission|qa|quality|p5/i.test(title + content)) stages.push("os-p5-commissioning");
+        if (/handover|dlp|p6/i.test(title + content)) stages.push("os-p6-handover");
+        if (/closeout|post-mortem|p7/i.test(title + content)) stages.push("os-p7-closeout");
+
+        if (deptSlug || stages.length > 0) {
+          await db.update(eeInfoNodes)
+            .set({
+              nodeType: "process",
+              departmentSlug: deptSlug || undefined,
+              lifecycleStages: stages.length > 0 ? stages : undefined,
+              updatedAt: new Date(),
+            })
+            .where(eq(eeInfoNodes.id, node.id));
+          mapped++;
+        }
+      }
+
+      const toolNodes = await db.select().from(eeInfoNodes)
+        .where(and(
+          sql`${eeInfoNodes.category} = 'tool'`,
+          sql`${eeInfoNodes.nodeType} = 'content'`
+        ));
+      for (const node of toolNodes) {
+        await db.update(eeInfoNodes).set({ nodeType: "tool", updatedAt: new Date() }).where(eq(eeInfoNodes.id, node.id));
+      }
+
+      const templateNodes = await db.select().from(eeInfoNodes)
+        .where(and(
+          sql`${eeInfoNodes.category} = 'template'`,
+          sql`${eeInfoNodes.nodeType} = 'content'`
+        ));
+      for (const node of templateNodes) {
+        await db.update(eeInfoNodes).set({ nodeType: "template", updatedAt: new Date() }).where(eq(eeInfoNodes.id, node.id));
+      }
+
+      res.json({
+        success: true,
+        created,
+        skipped,
+        processNodesMapped: mapped,
+        toolNodesMapped: toolNodes.length,
+        templateNodesMapped: templateNodes.length,
+      });
+    } catch (err) {
+      console.error("[EE-Info OS] Seed error:", err);
+      res.status(500).json({ error: "Failed to seed OS map data" });
+    }
+  });
+
+  app.get("/api/ee-info/os/lifecycle", requireAuth, async (_req, res) => {
+    try {
+      const stages = await db.select().from(eeInfoNodes)
+        .where(sql`${eeInfoNodes.nodeType} = 'lifecycle_stage'`)
+        .orderBy(eeInfoNodes.sortOrder);
+
+      const processes = await db.select().from(eeInfoNodes)
+        .where(sql`${eeInfoNodes.nodeType} = 'process'`);
+
+      const departments = await db.select().from(eeInfoNodes)
+        .where(sql`${eeInfoNodes.nodeType} = 'department'`)
+        .orderBy(eeInfoNodes.sortOrder);
+
+      const stagesWithData = stages.map(stage => {
+        const stageProcesses = processes.filter(p =>
+          Array.isArray(p.lifecycleStages) && (p.lifecycleStages as string[]).includes(stage.slug)
+        );
+        const deptSlugs = [...new Set(stageProcesses.map(p => p.departmentSlug).filter(Boolean))];
+        const stageDepts = departments.filter(d => deptSlugs.includes(d.slug));
+        return {
+          ...stage,
+          processes: stageProcesses.map(p => ({ id: p.id, slug: p.slug, title: p.title, status: p.status, departmentSlug: p.departmentSlug })),
+          departments: stageDepts.map(d => ({ id: d.id, slug: d.slug, title: d.title })),
+        };
+      });
+
+      res.json({ stages: stagesWithData, allDepartments: departments, totalProcesses: processes.length });
+    } catch (err) {
+      console.error("[EE-Info OS] Lifecycle error:", err);
+      res.status(500).json({ error: "Failed to fetch lifecycle data" });
+    }
+  });
+
+  app.get("/api/ee-info/os/departments", requireAuth, async (_req, res) => {
+    try {
+      const departments = await db.select().from(eeInfoNodes)
+        .where(sql`${eeInfoNodes.nodeType} = 'department'`)
+        .orderBy(eeInfoNodes.sortOrder);
+
+      const processes = await db.select().from(eeInfoNodes)
+        .where(sql`${eeInfoNodes.nodeType} = 'process'`);
+
+      const result = departments.map(dept => {
+        const deptProcesses = processes.filter(p => p.departmentSlug === dept.slug);
+        return {
+          ...dept,
+          processCount: deptProcesses.length,
+          activeProcesses: deptProcesses.filter(p => p.status === "published").length,
+          draftProcesses: deptProcesses.filter(p => p.status === "draft" || p.status === "stub").length,
+        };
+      });
+      res.json(result);
+    } catch (err) {
+      console.error("[EE-Info OS] Departments error:", err);
+      res.status(500).json({ error: "Failed to fetch departments" });
+    }
+  });
+
+  app.get("/api/ee-info/os/departments/:slug", requireAuth, async (req, res) => {
+    try {
+      const dept = await db.select().from(eeInfoNodes)
+        .where(and(eq(eeInfoNodes.slug, req.params.slug), sql`${eeInfoNodes.nodeType} = 'department'`))
+        .limit(1);
+      if (!dept.length) return res.status(404).json({ error: "Department not found" });
+
+      const processes = await db.select().from(eeInfoNodes)
+        .where(and(
+          sql`${eeInfoNodes.nodeType} = 'process'`,
+          eq(eeInfoNodes.departmentSlug, req.params.slug)
+        ))
+        .orderBy(eeInfoNodes.sortOrder);
+
+      const stages = await db.select().from(eeInfoNodes)
+        .where(sql`${eeInfoNodes.nodeType} = 'lifecycle_stage'`)
+        .orderBy(eeInfoNodes.sortOrder);
+
+      const grouped: Record<string, any[]> = {};
+      const ungrouped: any[] = [];
+      for (const proc of processes) {
+        const procStages = Array.isArray(proc.lifecycleStages) ? (proc.lifecycleStages as string[]) : [];
+        if (procStages.length === 0) { ungrouped.push(proc); continue; }
+        for (const stageSlug of procStages) {
+          if (!grouped[stageSlug]) grouped[stageSlug] = [];
+          grouped[stageSlug].push(proc);
+        }
+      }
+
+      const stageGroups = stages
+        .filter(s => grouped[s.slug])
+        .map(s => ({ stage: { id: s.id, slug: s.slug, title: s.title }, processes: grouped[s.slug] }));
+      if (ungrouped.length > 0) {
+        stageGroups.push({ stage: { id: "ungrouped", slug: "ungrouped", title: "General" }, processes: ungrouped });
+      }
+
+      const edges = await db.select().from(eeInfoEdges)
+        .where(or(
+          inArray(eeInfoEdges.fromNodeId, processes.map(p => p.id)),
+          inArray(eeInfoEdges.toNodeId, processes.map(p => p.id)),
+        ));
+
+      res.json({ department: dept[0], stageGroups, edges, totalProcesses: processes.length });
+    } catch (err) {
+      console.error("[EE-Info OS] Department detail error:", err);
+      res.status(500).json({ error: "Failed to fetch department detail" });
+    }
+  });
+
+  app.get("/api/ee-info/os/processes/:slug", requireAuth, async (req, res) => {
+    try {
+      const proc = await db.select().from(eeInfoNodes)
+        .where(eq(eeInfoNodes.slug, req.params.slug))
+        .limit(1);
+      if (!proc.length) return res.status(404).json({ error: "Process not found" });
+
+      const steps = await db.select().from(eeInfoNodes)
+        .where(and(
+          eq(eeInfoNodes.parentNodeId, proc[0].id),
+          sql`${eeInfoNodes.nodeType} = 'step'`
+        ))
+        .orderBy(eeInfoNodes.sortOrder);
+
+      const dept = proc[0].departmentSlug
+        ? await db.select().from(eeInfoNodes).where(eq(eeInfoNodes.slug, proc[0].departmentSlug)).limit(1)
+        : [];
+
+      const stageNodes = Array.isArray(proc[0].lifecycleStages) && (proc[0].lifecycleStages as string[]).length > 0
+        ? await db.select().from(eeInfoNodes).where(inArray(eeInfoNodes.slug, proc[0].lifecycleStages as string[]))
+        : [];
+
+      const edges = await db.select().from(eeInfoEdges)
+        .where(or(eq(eeInfoEdges.fromNodeId, proc[0].id), eq(eeInfoEdges.toNodeId, proc[0].id)));
+      const relatedIds = edges.map(e => e.fromNodeId === proc[0].id ? e.toNodeId : e.fromNodeId);
+      const relatedNodes = relatedIds.length > 0
+        ? await db.select().from(eeInfoNodes).where(inArray(eeInfoNodes.id, relatedIds))
+        : [];
+
+      res.json({
+        process: proc[0],
+        steps,
+        department: dept[0] || null,
+        lifecycleStages: stageNodes,
+        edges,
+        relatedProcesses: relatedNodes,
+      });
+    } catch (err) {
+      console.error("[EE-Info OS] Process detail error:", err);
+      res.status(500).json({ error: "Failed to fetch process detail" });
+    }
+  });
+
+  app.get("/api/ee-info/os/templates", requireAuth, async (req, res) => {
+    try {
+      const search = (req.query.search as string) || "";
+      const where = search
+        ? and(sql`${eeInfoNodes.nodeType} IN ('template')`, ilike(eeInfoNodes.title, `%${search}%`))
+        : sql`${eeInfoNodes.nodeType} IN ('template')`;
+
+      const templates = await db.select().from(eeInfoNodes).where(where).orderBy(eeInfoNodes.title);
+
+      const processLinks: Record<string, { slug: string; title: string }[]> = {};
+      if (templates.length > 0) {
+        const templateIds = templates.map(t => t.id);
+        const edges = await db.select().from(eeInfoEdges)
+          .where(or(
+            inArray(eeInfoEdges.fromNodeId, templateIds),
+            inArray(eeInfoEdges.toNodeId, templateIds),
+          ));
+        const linkedIds = new Set<string>();
+        for (const e of edges) {
+          if (templateIds.includes(e.fromNodeId)) linkedIds.add(e.toNodeId);
+          else linkedIds.add(e.fromNodeId);
+        }
+        if (linkedIds.size > 0) {
+          const linkedNodes = await db.select().from(eeInfoNodes)
+            .where(and(
+              inArray(eeInfoNodes.id, [...linkedIds]),
+              sql`${eeInfoNodes.nodeType} = 'process'`
+            ));
+          for (const e of edges) {
+            const templateId = templateIds.includes(e.fromNodeId) ? e.fromNodeId : e.toNodeId;
+            const otherId = templateId === e.fromNodeId ? e.toNodeId : e.fromNodeId;
+            const linked = linkedNodes.find(n => n.id === otherId);
+            if (linked) {
+              if (!processLinks[templateId]) processLinks[templateId] = [];
+              processLinks[templateId].push({ slug: linked.slug, title: linked.title });
+            }
+          }
+        }
+      }
+
+      res.json(templates.map(t => ({
+        ...t,
+        linkedProcesses: processLinks[t.id] || [],
+      })));
+    } catch (err) {
+      console.error("[EE-Info OS] Templates error:", err);
+      res.status(500).json({ error: "Failed to fetch templates" });
+    }
+  });
+
+  app.post("/api/ee-info/os/processes", requireCOO, async (req, res) => {
+    try {
+      const { title, departmentSlug, lifecycleStages } = req.body;
+      if (!title) return res.status(400).json({ error: "Title is required" });
+
+      const slug = slugify(title);
+      const existing = await db.select().from(eeInfoNodes).where(eq(eeInfoNodes.slug, slug)).limit(1);
+      if (existing.length) return res.status(409).json({ error: "A process with this name already exists" });
+
+      const id = generateId();
+      await db.insert(eeInfoNodes).values({
+        id, slug, title,
+        contentMarkdown: `# ${title}\n\n*Process shell — to be documented.*`,
+        status: "draft", category: "process", nodeType: "process",
+        departmentSlug: departmentSlug || null,
+        lifecycleStages: lifecycleStages || [],
+        tags: ["os-map", "process"],
+        createdBy: (req.user as any)?.name || "system",
+        updatedBy: (req.user as any)?.name || "system",
+      });
+
+      const node = await db.select().from(eeInfoNodes).where(eq(eeInfoNodes.id, id)).limit(1);
+      res.json(node[0]);
+    } catch (err) {
+      console.error("[EE-Info OS] Create process error:", err);
+      res.status(500).json({ error: "Failed to create process" });
+    }
+  });
+
+  app.post("/api/ee-info/os/processes/:slug/sop", requireCOO, async (req, res) => {
+    try {
+      const proc = await db.select().from(eeInfoNodes).where(eq(eeInfoNodes.slug, req.params.slug)).limit(1);
+      if (!proc.length) return res.status(404).json({ error: "Process not found" });
+
+      const sopTemplate = {
+        purpose: "",
+        triggers: [],
+        inputs: [],
+        outputs: [],
+        raci: [],
+        tools: [],
+        templates: [],
+        reviewCadence: "Quarterly",
+      };
+
+      const sopMarkdown = `# ${proc[0].title} — Standard Operating Procedure\n\n## Purpose\n*Define the purpose of this process.*\n\n## Triggers\n- *What initiates this process?*\n\n## Inputs\n- *What inputs are required?*\n\n## Steps\n1. *Step 1*\n2. *Step 2*\n3. *Step 3*\n\n## Outputs\n- *What does this process produce?*\n\n## RACI\n| Role | R | A | C | I |\n|------|---|---|---|---|\n| *Role* | | | | |\n\n## Tools\n- *List tools used*\n\n## Templates\n- *List templates used*\n\n## Review Cadence\nQuarterly`;
+
+      await db.update(eeInfoNodes)
+        .set({
+          sopData: sopTemplate,
+          contentMarkdown: sopMarkdown,
+          status: "draft",
+          updatedAt: new Date(),
+          updatedBy: (req.user as any)?.name || "system",
+        })
+        .where(eq(eeInfoNodes.id, proc[0].id));
+
+      const updated = await db.select().from(eeInfoNodes).where(eq(eeInfoNodes.id, proc[0].id)).limit(1);
+      res.json(updated[0]);
+    } catch (err) {
+      console.error("[EE-Info OS] Create SOP error:", err);
+      res.status(500).json({ error: "Failed to create SOP shell" });
+    }
+  });
+
+  app.put("/api/ee-info/os/nodes/:id", requireCOO, async (req, res) => {
+    try {
+      const node = await db.select().from(eeInfoNodes).where(eq(eeInfoNodes.id, req.params.id)).limit(1);
+      if (!node.length) return res.status(404).json({ error: "Node not found" });
+
+      const { title, contentMarkdown, status, departmentSlug, lifecycleStages, sopData, sortOrder, externalUrl, tags } = req.body;
+      const updates: any = { updatedAt: new Date(), updatedBy: (req.user as any)?.name || "system" };
+      if (title !== undefined) updates.title = title;
+      if (contentMarkdown !== undefined) {
+        await db.insert(eeInfoVersions).values({
+          id: generateId(), nodeId: node[0].id,
+          contentMarkdown: node[0].contentMarkdown,
+          changedBy: (req.user as any)?.name || "system",
+          changeNote: "Content updated via OS map",
+        });
+        updates.contentMarkdown = contentMarkdown;
+      }
+      if (status !== undefined) updates.status = status;
+      if (departmentSlug !== undefined) updates.departmentSlug = departmentSlug;
+      if (lifecycleStages !== undefined) updates.lifecycleStages = lifecycleStages;
+      if (sopData !== undefined) updates.sopData = sopData;
+      if (sortOrder !== undefined) updates.sortOrder = sortOrder;
+      if (externalUrl !== undefined) updates.externalUrl = externalUrl;
+      if (tags !== undefined) updates.tags = tags;
+
+      await db.update(eeInfoNodes).set(updates).where(eq(eeInfoNodes.id, req.params.id));
+      const updated = await db.select().from(eeInfoNodes).where(eq(eeInfoNodes.id, req.params.id)).limit(1);
+      res.json(updated[0]);
+    } catch (err) {
+      console.error("[EE-Info OS] Update node error:", err);
+      res.status(500).json({ error: "Failed to update node" });
+    }
+  });
+
+  app.post("/api/ee-info/os/processes/:processId/steps", requireCOO, async (req, res) => {
+    try {
+      const { title, description, sortOrder: order } = req.body;
+      if (!title) return res.status(400).json({ error: "Step title is required" });
+
+      const slug = slugify(title) + "-step-" + Date.now().toString(36);
+      const id = generateId();
+      await db.insert(eeInfoNodes).values({
+        id, slug, title,
+        contentMarkdown: description || "",
+        status: "published", category: "process", nodeType: "step",
+        parentNodeId: req.params.processId,
+        sortOrder: order || 0,
+        tags: ["step", "os-map"],
+        createdBy: (req.user as any)?.name || "system",
+        updatedBy: (req.user as any)?.name || "system",
+      });
+
+      const node = await db.select().from(eeInfoNodes).where(eq(eeInfoNodes.id, id)).limit(1);
+      res.json(node[0]);
+    } catch (err) {
+      console.error("[EE-Info OS] Create step error:", err);
+      res.status(500).json({ error: "Failed to create step" });
+    }
+  });
+
+  app.delete("/api/ee-info/os/nodes/:id", requireCOO, async (req, res) => {
+    try {
+      const node = await db.select().from(eeInfoNodes).where(eq(eeInfoNodes.id, req.params.id)).limit(1);
+      if (!node.length) return res.status(404).json({ error: "Node not found" });
+
+      await db.delete(eeInfoEdges).where(or(
+        eq(eeInfoEdges.fromNodeId, req.params.id),
+        eq(eeInfoEdges.toNodeId, req.params.id),
+      ));
+      await db.delete(eeInfoNodes).where(eq(eeInfoNodes.parentNodeId, req.params.id));
+      await db.delete(eeInfoNodes).where(eq(eeInfoNodes.id, req.params.id));
+
+      res.json({ success: true });
+    } catch (err) {
+      console.error("[EE-Info OS] Delete error:", err);
+      res.status(500).json({ error: "Failed to delete node" });
+    }
+  });
 }

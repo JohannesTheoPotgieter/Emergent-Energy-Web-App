@@ -52,6 +52,10 @@ import LeaderboardPage from "@/pages/leaderboard";
 import TrRegisterPage from "@/pages/tr-register";
 import FeedbackPage from "@/pages/feedback";
 import EeInfoPage from "@/pages/ee-info";
+import EeInfoOsPage from "@/pages/ee-info-os";
+import EeInfoDepartmentPage from "@/pages/ee-info-department";
+import EeInfoProcessPage from "@/pages/ee-info-process";
+import EeInfoTemplatesPage from "@/pages/ee-info-templates";
 import PMDashboard from "@/pages/pm-dashboard";
 import NotificationCenterPage from "@/pages/notification-center";
 import PortfoliosPage from "@/pages/portfolios";
@@ -273,6 +277,10 @@ function ProtectedPages() {
         <Route path="/tr-register" component={TrRegisterPage} />
         <Route path="/feedback" component={FeedbackPage} />
         <Route path="/ee-info" component={EeInfoPage} />
+        <Route path="/ee-info/os" component={EeInfoOsPage} />
+        <Route path="/ee-info/os/department/:slug" component={EeInfoDepartmentPage} />
+        <Route path="/ee-info/os/process/:slug" component={EeInfoProcessPage} />
+        <Route path="/ee-info/os/templates" component={EeInfoTemplatesPage} />
         <Route path="/pm-dashboard" component={PMDashboard} />
         <Route path="/notifications" component={NotificationCenterPage} />
         <Route path="/portfolios" component={PortfoliosPage} />

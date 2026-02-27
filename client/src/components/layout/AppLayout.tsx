@@ -47,6 +47,7 @@ import {
   Bell,
   FolderOpen,
   FileEdit,
+  Network,
 } from "lucide-react";
 import { UX_REDESIGN_ENABLED } from "@shared/schema";
 import { useProgramData } from "@/hooks/use-program-data";
@@ -202,6 +203,7 @@ function getRedesignedNavGroups(): NavGroup[] {
       items: [
         { label: "Feedback & Support", icon: MessageSquareText, path: "/feedback" },
         { label: "Emergent Energy Info", icon: BookOpen, path: "/ee-info" },
+        { label: "Operating System Map", icon: Network, path: "/ee-info/os" },
         { label: "Leaderboard", icon: Trophy, path: "/leaderboard" },
         { label: "Notifications", icon: Bell, path: "/notifications" },
       ],
