@@ -54,6 +54,8 @@ import {
   ShieldCheck,
   UserCheck,
   Trash2,
+  UserCog,
+  ExternalLink,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { usePermission } from "@/hooks/use-permissions";
@@ -130,6 +132,7 @@ interface Task {
   startDate: string | null;
   percentComplete: number;
   holdReason: string | null;
+  blockedType: string | null;
   trackingRag: string | null;
   summaryText: string | null;
   taskTypeTag: string | null;
@@ -292,7 +295,9 @@ function TaskCard({ task, onClick, onStatusChange }: { task: Task; onClick: () =
       </div>
       {task.holdReason && (
         <p className="text-[10px] text-red-500 mt-1 truncate flex items-center gap-0.5">
-          <PauseCircle className="h-3 w-3 shrink-0" /> {task.holdReason}
+          <PauseCircle className="h-3 w-3 shrink-0" />
+          {task.blockedType && <span className={`px-1 py-0 rounded text-[9px] font-semibold mr-0.5 ${task.blockedType === "External" ? "bg-orange-100 text-orange-700" : "bg-purple-100 text-purple-700"}`}>{task.blockedType}</span>}
+          {task.holdReason}
         </p>
       )}
       {task.trackingRag && (
@@ -345,12 +350,13 @@ function KanbanColumn({
   );
 }
 
-function PostUpdateForm({ taskId, currentStatus, onDone }: { taskId: number; currentStatus: string; onDone: () => void }) {
+function PostUpdateForm({ taskId, currentStatus, hasProject, onDone }: { taskId: number; currentStatus: string; hasProject: boolean; onDone: () => void }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [updateText, setUpdateText] = useState("");
   const [newStatus, setNewStatus] = useState(currentStatus);
   const [holdReason, setHoldReason] = useState("");
+  const [blockedType, setBlockedType] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const needsHoldReason = newStatus === "HOLD" && newStatus !== currentStatus;
@@ -359,6 +365,14 @@ function PostUpdateForm({ taskId, currentStatus, onDone }: { taskId: number; cur
     if (!updateText.trim() && newStatus === currentStatus) return;
     if (needsHoldReason && !holdReason.trim()) {
       toast({ title: "Hold reason required", variant: "destructive" });
+      return;
+    }
+    if (needsHoldReason && !blockedType) {
+      toast({ title: "Select blocked type (Internal or External)", variant: "destructive" });
+      return;
+    }
+    if (newStatus === "PROJECTS ASSISTANCE" && newStatus !== currentStatus && !hasProject) {
+      toast({ title: "Project required", description: "Link a project to this task before setting Projects Assistance status.", variant: "destructive" });
       return;
     }
     setSubmitting(true);
@@ -371,7 +385,10 @@ function PostUpdateForm({ taskId, currentStatus, onDone }: { taskId: number; cur
       }
       if (newStatus !== currentStatus) {
         const patch: Record<string, string> = { status: newStatus };
-        if (needsHoldReason) patch.holdReason = holdReason.trim();
+        if (needsHoldReason) {
+          patch.holdReason = holdReason.trim();
+          patch.blockedType = blockedType;
+        }
         await engFetch(`/api/eng/tasks/${taskId}`, {
           method: "PATCH",
           body: JSON.stringify(patch),
@@ -407,7 +424,7 @@ function PostUpdateForm({ taskId, currentStatus, onDone }: { taskId: number; cur
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span className="text-[10px] text-muted-foreground">Move to:</span>
-          <Select value={newStatus} onValueChange={(v) => { setNewStatus(v); if (v !== "HOLD") setHoldReason(""); }}>
+          <Select value={newStatus} onValueChange={(v) => { setNewStatus(v); if (v !== "HOLD") { setHoldReason(""); setBlockedType(""); } }}>
             <SelectTrigger className="h-7 text-[10px] w-[140px]" data-testid="select-post-update-status">
               <SelectValue />
             </SelectTrigger>
@@ -421,7 +438,7 @@ function PostUpdateForm({ taskId, currentStatus, onDone }: { taskId: number; cur
         <Button
           size="sm"
           className="h-7 text-xs bg-blue-600 hover:bg-blue-700"
-          disabled={submitting || (!updateText.trim() && newStatus === currentStatus) || (needsHoldReason && !holdReason.trim())}
+          disabled={submitting || (!updateText.trim() && newStatus === currentStatus) || (needsHoldReason && (!holdReason.trim() || !blockedType))}
           onClick={handleSubmit}
           data-testid="btn-post-update"
         >
@@ -430,7 +447,19 @@ function PostUpdateForm({ taskId, currentStatus, onDone }: { taskId: number; cur
         </Button>
       </div>
       {needsHoldReason && (
-        <div className="pt-1">
+        <div className="pt-1 space-y-2">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-muted-foreground whitespace-nowrap">Blocked:</span>
+            <Select value={blockedType} onValueChange={setBlockedType}>
+              <SelectTrigger className="h-7 text-[10px] w-[120px] border-amber-300" data-testid="select-post-update-blocked-type">
+                <SelectValue placeholder="Select type..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Internal" className="text-xs">Internal</SelectItem>
+                <SelectItem value="External" className="text-xs">External</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <Input
             value={holdReason}
             onChange={(e) => setHoldReason(e.target.value)}
@@ -472,6 +501,7 @@ function TaskDetailDrawer({
   const [sendingForApproval, setSendingForApproval] = useState(false);
   const [drawerHoldDialog, setDrawerHoldDialog] = useState(false);
   const [drawerHoldReason, setDrawerHoldReason] = useState("");
+  const [drawerBlockedType, setDrawerBlockedType] = useState("");
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const { allowed: canDelete } = usePermission('eng_tasks', 'delete');
@@ -546,6 +576,11 @@ function TaskDetailDrawer({
     if (newStatus === "HOLD") {
       setDrawerHoldDialog(true);
       setDrawerHoldReason("");
+      setDrawerBlockedType("");
+      return;
+    }
+    if (newStatus === "PROJECTS ASSISTANCE" && !task.projectName) {
+      toast({ title: "Project required", description: "Link a project to this task before setting Projects Assistance status.", variant: "destructive" });
       return;
     }
     if (newStatus === "NEEDS APPROVAL" && !task.approverUserId) {
@@ -620,6 +655,7 @@ function TaskDetailDrawer({
             <PostUpdateForm
               taskId={task.id}
               currentStatus={task.status}
+              hasProject={!!task.projectName}
               onDone={() => {
                 queryClient.invalidateQueries({ queryKey: ["eng-tasks"] });
                 onUpdate();
@@ -964,6 +1000,7 @@ function TaskDetailDrawer({
               <div className="p-3 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-lg">
                 <p className="text-xs font-semibold text-red-700 dark:text-red-400 flex items-center gap-1">
                   <AlertTriangle className="h-3.5 w-3.5" /> Hold Reason
+                  {task.blockedType && <Badge variant="outline" className={`ml-1 text-[10px] ${task.blockedType === "External" ? "border-orange-400 text-orange-700" : "border-purple-400 text-purple-700"}`}>{task.blockedType}</Badge>}
                 </p>
                 <p className="text-sm mt-1">{task.holdReason}</p>
               </div>
@@ -1206,6 +1243,18 @@ function TaskDetailDrawer({
           </DialogHeader>
           <div className="space-y-3 pt-2">
             <p className="text-sm text-muted-foreground">Please provide a reason for putting this task on hold.</p>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Blocked Type *</label>
+              <Select value={drawerBlockedType} onValueChange={setDrawerBlockedType}>
+                <SelectTrigger className="h-9" data-testid="select-drawer-blocked-type">
+                  <SelectValue placeholder="Internal or External..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Internal">Internal</SelectItem>
+                  <SelectItem value="External">External</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <Textarea
               value={drawerHoldReason}
               onChange={(e) => setDrawerHoldReason(e.target.value)}
@@ -1218,11 +1267,12 @@ function TaskDetailDrawer({
               <Button
                 size="sm"
                 className="bg-amber-600 hover:bg-amber-700"
-                disabled={!drawerHoldReason.trim()}
+                disabled={!drawerHoldReason.trim() || !drawerBlockedType}
                 onClick={() => {
-                  updateMutation.mutate({ status: "HOLD", holdReason: drawerHoldReason.trim() });
+                  updateMutation.mutate({ status: "HOLD", holdReason: drawerHoldReason.trim(), blockedType: drawerBlockedType });
                   setDrawerHoldDialog(false);
                   setDrawerHoldReason("");
+                  setDrawerBlockedType("");
                 }}
                 data-testid="btn-drawer-hold-confirm"
               >
@@ -1607,7 +1657,7 @@ function InlineListView({ tasks, onCardClick, onStatusChange, onPriorityChange }
                     data-testid={`text-task-title-${task.id}`}
                   >
                     {task.title}
-                    {task.holdReason && <p className="text-[10px] text-red-500 truncate">{task.holdReason}</p>}
+                    {task.holdReason && <p className="text-[10px] text-red-500 truncate">{task.blockedType && <span className={`px-1 py-0 rounded text-[9px] font-semibold mr-0.5 ${task.blockedType === "External" ? "bg-orange-100 text-orange-700" : "bg-purple-100 text-purple-700"}`}>{task.blockedType}</span>}{task.holdReason}</p>}
                   </td>
                   <td className="p-2 text-muted-foreground text-xs">
                     {task.projectName?.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
@@ -1663,11 +1713,354 @@ function InlineListView({ tasks, onCardClick, onStatusChange, onPriorityChange }
   );
 }
 
+function MyTasksView({
+  tasks,
+  myName,
+  onCardClick,
+  onStatusChange,
+  onPriorityChange,
+}: {
+  tasks: Task[];
+  myName: string;
+  onCardClick: (task: Task) => void;
+  onStatusChange: (id: number, status: string) => void;
+  onPriorityChange: (id: number, priority: string) => void;
+}) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [collapsedBuckets, setCollapsedBuckets] = useState<Set<string>>(new Set());
+  const [quickNotes, setQuickNotes] = useState<Record<number, string>>({});
+  const [postingNote, setPostingNote] = useState<Record<number, boolean>>({});
+  const [dueDates, setDueDates] = useState<Record<number, string>>({});
+  const [myStatusFilter, setMyStatusFilter] = useState<string>("all");
+  const [myPriorityFilter, setMyPriorityFilter] = useState<string>("all");
+  const [myProjectFilter, setMyProjectFilter] = useState<string>("all");
+  const [myDueFilter, setMyDueFilter] = useState<string>("all");
+  const [mySearch, setMySearch] = useState("");
+
+  const nameLower = myName.toLowerCase();
+  const myTasks = useMemo(() => {
+    return tasks.filter(t =>
+      (t.assignees || []).some(a => a && a.toLowerCase().startsWith(nameLower))
+    );
+  }, [tasks, nameLower]);
+
+  const filteredMyTasks = useMemo(() => {
+    return myTasks.filter(t => {
+      if (myStatusFilter !== "all" && t.status !== myStatusFilter) return false;
+      if (myPriorityFilter !== "all" && t.priority !== myPriorityFilter) return false;
+      if (myProjectFilter !== "all" && t.projectName !== myProjectFilter) return false;
+      if (myDueFilter === "overdue" && !isOverdue(t.dueDate, t.status)) return false;
+      if (myDueFilter === "today") {
+        if (!t.dueDate) return false;
+        const d = new Date(t.dueDate).toDateString();
+        if (d !== new Date().toDateString()) return false;
+      }
+      if (myDueFilter === "week" && !isDueThisWeek(t.dueDate, t.status) && !isOverdue(t.dueDate, t.status)) return false;
+      if (mySearch) {
+        const term = mySearch.toLowerCase();
+        return t.title.toLowerCase().includes(term) || t.projectName.toLowerCase().includes(term);
+      }
+      return true;
+    });
+  }, [myTasks, myStatusFilter, myPriorityFilter, myProjectFilter, myDueFilter, mySearch]);
+
+  const uniqueProjects = useMemo(() => {
+    return Array.from(new Set(myTasks.map(t => t.projectName).filter(Boolean))).sort();
+  }, [myTasks]);
+
+  const buckets = useMemo(() => {
+    const overdue: Task[] = [];
+    const dueSoon: Task[] = [];
+    const hold: Task[] = [];
+    const inProgress: Task[] = [];
+    const rest: Task[] = [];
+
+    for (const t of filteredMyTasks) {
+      if (isOverdue(t.dueDate, t.status)) {
+        overdue.push(t);
+      } else if (isDueThisWeek(t.dueDate, t.status) || (t.dueDate && new Date(t.dueDate).toDateString() === new Date().toDateString())) {
+        dueSoon.push(t);
+      } else if (t.status === "HOLD") {
+        hold.push(t);
+      } else if (t.status === "IN PROGRESS") {
+        inProgress.push(t);
+      } else if (t.status !== "COMPLETE") {
+        rest.push(t);
+      }
+    }
+
+    const priorityOrder: Record<string, number> = { Critical: 0, Urgent: 1, High: 2, Medium: 3, Low: 4 };
+    const sortByPriority = (a: Task, b: Task) => (priorityOrder[a.priority] ?? 5) - (priorityOrder[b.priority] ?? 5);
+    overdue.sort((a, b) => {
+      const aDate = a.dueDate ? new Date(a.dueDate).getTime() : 0;
+      const bDate = b.dueDate ? new Date(b.dueDate).getTime() : 0;
+      return aDate - bDate || sortByPriority(a, b);
+    });
+    dueSoon.sort((a, b) => {
+      const aDate = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
+      const bDate = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
+      return aDate - bDate || sortByPriority(a, b);
+    });
+    hold.sort(sortByPriority);
+    inProgress.sort(sortByPriority);
+    rest.sort(sortByPriority);
+
+    return [
+      { key: "overdue", label: "Overdue", icon: <AlertTriangle className="h-4 w-4 text-red-500" />, tasks: overdue, color: "border-l-red-500 bg-red-50/30 dark:bg-red-950/10" },
+      { key: "due-soon", label: "Due Today / Due Soon", icon: <Timer className="h-4 w-4 text-amber-500" />, tasks: dueSoon, color: "border-l-amber-500 bg-amber-50/30 dark:bg-amber-950/10" },
+      { key: "hold", label: "On Hold", icon: <PauseCircle className="h-4 w-4 text-red-400" />, tasks: hold, color: "border-l-red-400 bg-red-50/20 dark:bg-red-950/10" },
+      { key: "in-progress", label: "In Progress", icon: <ArrowRight className="h-4 w-4 text-blue-500" />, tasks: inProgress, color: "border-l-blue-500 bg-blue-50/30 dark:bg-blue-950/10" },
+      { key: "everything-else", label: "Everything Else", icon: <Circle className="h-4 w-4 text-gray-400" />, tasks: rest, color: "border-l-gray-400 bg-gray-50/30 dark:bg-gray-800/10" },
+    ];
+  }, [filteredMyTasks]);
+
+  const toggleBucket = (key: string) => {
+    setCollapsedBuckets(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+
+  const updateDueDateMutation = useMutation({
+    mutationFn: ({ taskId, dueDate }: { taskId: number; dueDate: string }) =>
+      engFetch(`/api/eng/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify({ dueDate: dueDate || null }) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["eng-tasks"] });
+      toast({ title: "Due date updated" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const postQuickNote = async (taskId: number) => {
+    const note = quickNotes[taskId]?.trim();
+    if (!note) return;
+    setPostingNote(prev => ({ ...prev, [taskId]: true }));
+    try {
+      await engFetch(`/api/eng/tasks/${taskId}/comments`, {
+        method: "POST",
+        body: JSON.stringify({ body: note }),
+      });
+      queryClient.invalidateQueries({ queryKey: ["eng-tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["task-comments", taskId] });
+      queryClient.invalidateQueries({ queryKey: ["task-activity", taskId] });
+      setQuickNotes(prev => ({ ...prev, [taskId]: "" }));
+      toast({ title: "Note posted" });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    } finally {
+      setPostingNote(prev => ({ ...prev, [taskId]: false }));
+    }
+  };
+
+  return (
+    <div className="space-y-4" data-testid="my-tasks-view">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 min-w-[150px] max-w-xs">
+          <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
+          <Input
+            data-testid="my-tasks-search"
+            placeholder="Search my tasks..."
+            className="pl-9 h-8 text-xs"
+            value={mySearch}
+            onChange={e => setMySearch(e.target.value)}
+          />
+        </div>
+        <Select value={myStatusFilter} onValueChange={setMyStatusFilter}>
+          <SelectTrigger className="w-[130px] h-8 text-xs" data-testid="my-tasks-filter-status">
+            <Filter className="h-3 w-3 mr-1" /><SelectValue placeholder="Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Statuses</SelectItem>
+            {TASK_STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={myPriorityFilter} onValueChange={setMyPriorityFilter}>
+          <SelectTrigger className="w-[110px] h-8 text-xs" data-testid="my-tasks-filter-priority">
+            <SelectValue placeholder="Priority" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Priorities</SelectItem>
+            {PRIORITIES.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        {uniqueProjects.length > 0 && (
+          <Select value={myProjectFilter} onValueChange={setMyProjectFilter}>
+            <SelectTrigger className="w-[140px] h-8 text-xs" data-testid="my-tasks-filter-project">
+              <FolderKanban className="h-3 w-3 mr-1" /><SelectValue placeholder="Project" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Projects</SelectItem>
+              {uniqueProjects.map(p => (
+                <SelectItem key={p} value={p}>{p.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        <Select value={myDueFilter} onValueChange={setMyDueFilter}>
+          <SelectTrigger className="w-[120px] h-8 text-xs" data-testid="my-tasks-filter-due">
+            <Calendar className="h-3 w-3 mr-1" /><SelectValue placeholder="Due" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Due Dates</SelectItem>
+            <SelectItem value="overdue">Overdue</SelectItem>
+            <SelectItem value="today">Due Today</SelectItem>
+            <SelectItem value="week">Due This Week</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {buckets.map(bucket => {
+        if (bucket.tasks.length === 0) return null;
+        const isCollapsed = collapsedBuckets.has(bucket.key);
+
+        return (
+          <div key={bucket.key} className={`border-l-4 rounded-lg border ${bucket.color}`} data-testid={`bucket-${bucket.key}`}>
+            <button
+              className="w-full flex items-center gap-2 px-4 py-3 hover:bg-muted/20 transition-colors"
+              onClick={() => toggleBucket(bucket.key)}
+              data-testid={`toggle-bucket-${bucket.key}`}
+            >
+              {isCollapsed ? <ChevronRight className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+              {bucket.icon}
+              <span className="font-semibold text-sm">{bucket.label}</span>
+              <Badge variant="secondary" className="text-[10px] ml-1">{bucket.tasks.length}</Badge>
+            </button>
+            {!isCollapsed && (
+              <div className="px-2 pb-2">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm min-w-[800px]">
+                    <thead>
+                      <tr className="text-[10px] text-muted-foreground border-b">
+                        <th className="text-left p-2 pl-3 w-[30%]">Task</th>
+                        <th className="text-left p-2 w-[14%]">Project</th>
+                        <th className="text-left p-2 w-[12%]">Status</th>
+                        <th className="text-left p-2 w-[10%]">Priority</th>
+                        <th className="text-left p-2 w-[10%]">Due Date</th>
+                        <th className="text-left p-2 w-[20%]">Quick Note</th>
+                        <th className="text-center p-2 w-[4%]"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bucket.tasks.map(task => {
+                        const projectDisplay = task.projectName?.replace(/_Tracker.*$/i, "").replace(/_/g, " ");
+                        const overdue = isOverdue(task.dueDate, task.status);
+                        return (
+                          <tr key={task.id} className="border-b hover:bg-muted/10 transition-colors" data-testid={`my-task-row-${task.id}`}>
+                            <td className="p-2 pl-3">
+                              <div className="flex flex-col">
+                                <span className="font-medium text-sm truncate max-w-[280px]" data-testid={`my-task-title-${task.id}`}>{task.title}</span>
+                                {task.holdReason && (
+                                  <span className="text-[10px] text-red-500 flex items-center gap-0.5 mt-0.5">
+                                    <PauseCircle className="h-3 w-3 shrink-0" />
+                                    {task.blockedType && <span className={`px-1 py-0 rounded text-[9px] font-semibold mr-0.5 ${task.blockedType === "External" ? "bg-orange-100 text-orange-700" : "bg-purple-100 text-purple-700"}`}>{task.blockedType}</span>}
+                                    {task.holdReason}
+                                  </span>
+                                )}
+                                {task.dueDate && overdue && (
+                                  <span className="text-[10px] text-red-600 font-semibold">{daysLabel(task.dueDate)}</span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="p-2 text-xs text-muted-foreground truncate max-w-[120px]">{projectDisplay}</td>
+                            <td className="p-2" onClick={e => e.stopPropagation()}>
+                              <Select value={task.status} onValueChange={v => { if (v !== task.status) onStatusChange(task.id, v); }}>
+                                <SelectTrigger className="h-7 text-[10px] w-[130px] border-none shadow-none p-0" data-testid={`my-task-status-${task.id}`}>
+                                  <Badge className={`text-[10px] ${statusColors[task.status] || "bg-gray-100"}`}>{task.status}</Badge>
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {TASK_STATUSES.map(s => <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>)}
+                                </SelectContent>
+                              </Select>
+                            </td>
+                            <td className="p-2" onClick={e => e.stopPropagation()}>
+                              <Select value={task.priority} onValueChange={v => { if (v !== task.priority) onPriorityChange(task.id, v); }}>
+                                <SelectTrigger className="h-7 text-[10px] w-[90px] border-none shadow-none p-0" data-testid={`my-task-priority-${task.id}`}>
+                                  <Badge className={`text-[10px] ${priorityColors[task.priority] || "bg-gray-100"}`}>{task.priority}</Badge>
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {PRIORITIES.map(p => <SelectItem key={p} value={p} className="text-xs">{p}</SelectItem>)}
+                                </SelectContent>
+                              </Select>
+                            </td>
+                            <td className="p-2" onClick={e => e.stopPropagation()}>
+                              <Input
+                                type="date"
+                                className="h-7 text-[10px] w-[120px] border-dashed"
+                                value={dueDates[task.id] ?? (task.dueDate ? task.dueDate.split("T")[0] : "")}
+                                onChange={e => setDueDates(prev => ({ ...prev, [task.id]: e.target.value }))}
+                                onBlur={() => {
+                                  const val = dueDates[task.id];
+                                  if (val !== undefined && val !== (task.dueDate ? task.dueDate.split("T")[0] : "")) {
+                                    updateDueDateMutation.mutate({ taskId: task.id, dueDate: val });
+                                  }
+                                }}
+                                data-testid={`my-task-due-${task.id}`}
+                              />
+                            </td>
+                            <td className="p-2" onClick={e => e.stopPropagation()}>
+                              <div className="flex items-center gap-1">
+                                <Input
+                                  placeholder="Add note..."
+                                  className="h-7 text-[10px] flex-1 min-w-0"
+                                  value={quickNotes[task.id] || ""}
+                                  onChange={e => setQuickNotes(prev => ({ ...prev, [task.id]: e.target.value }))}
+                                  onKeyDown={e => { if (e.key === "Enter" && quickNotes[task.id]?.trim()) postQuickNote(task.id); }}
+                                  data-testid={`my-task-note-${task.id}`}
+                                />
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 shrink-0"
+                                  disabled={!quickNotes[task.id]?.trim() || postingNote[task.id]}
+                                  onClick={() => postQuickNote(task.id)}
+                                  data-testid={`my-task-note-send-${task.id}`}
+                                >
+                                  {postingNote[task.id] ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
+                                </Button>
+                              </div>
+                            </td>
+                            <td className="p-2 text-center">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7"
+                                onClick={() => onCardClick(task)}
+                                title="Open details"
+                                data-testid={`my-task-open-${task.id}`}
+                              >
+                                <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
+                              </Button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {filteredMyTasks.length === 0 && (
+        <div className="text-center py-12 text-muted-foreground">
+          <UserCog className="h-12 w-12 mx-auto mb-3 opacity-30" />
+          <p className="text-lg font-medium">No tasks found</p>
+          <p className="text-sm mt-1">{myTasks.length === 0 ? "You have no assigned tasks" : "Adjust your filters to see tasks"}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function EngineeringTasksPage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [viewMode, setViewMode] = useState<"board" | "list" | "projects">("board");
+  const [viewMode, setViewMode] = useState<"board" | "list" | "projects" | "mytasks">("board");
   const [myTasksOnly, setMyTasksOnly] = useState(false);
   const [myName, setMyName] = useState(() => {
     const saved = getSavedMyName();
@@ -1699,7 +2092,7 @@ export default function EngineeringTasksPage() {
   });
 
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
-  const [holdDialog, setHoldDialog] = useState<{ taskId: number; reason: string } | null>(null);
+  const [holdDialog, setHoldDialog] = useState<{ taskId: number; reason: string; blockedType: string } | null>(null);
 
   const { data: tasks = [], isLoading } = useQuery<Task[]>({
     queryKey: ["eng-tasks"],
@@ -1750,8 +2143,8 @@ export default function EngineeringTasksPage() {
   });
 
   const updateStatusMutation = useMutation({
-    mutationFn: ({ taskId, status, holdReason }: { taskId: number; status: string; holdReason?: string }) =>
-      engFetch(`/api/eng/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify({ status, ...(holdReason ? { holdReason } : {}) }) }),
+    mutationFn: ({ taskId, status, holdReason, blockedType }: { taskId: number; status: string; holdReason?: string; blockedType?: string }) =>
+      engFetch(`/api/eng/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify({ status, ...(holdReason ? { holdReason } : {}), ...(blockedType ? { blockedType } : {}) }) }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["eng-tasks"] });
       toast({ title: "Status updated" });
@@ -1771,8 +2164,16 @@ export default function EngineeringTasksPage() {
 
   const requestStatusChange = useCallback((taskId: number, newStatus: string) => {
     if (newStatus === "HOLD") {
-      setHoldDialog({ taskId, reason: "" });
+      setHoldDialog({ taskId, reason: "", blockedType: "" });
       return;
+    }
+    if (newStatus === "PROJECTS ASSISTANCE") {
+      const task = tasks.find(t => t.id === taskId);
+      if (task && !task.projectName) {
+        setSelectedTask(task);
+        toast({ title: "Project required", description: "Link a project to this task before setting Projects Assistance status.", variant: "destructive" });
+        return;
+      }
     }
     if (newStatus === "NEEDS APPROVAL") {
       const task = tasks.find(t => t.id === taskId);
@@ -1952,6 +2353,19 @@ export default function EngineeringTasksPage() {
           </Dialog>
           <div className="flex border rounded-md">
             <Button
+              variant={viewMode === "mytasks" ? "default" : "ghost"}
+              size="sm"
+              className="h-8 px-2"
+              onClick={() => {
+                setViewMode("mytasks");
+                if (!myName) setShowNamePicker(true);
+              }}
+              data-testid="btn-view-mytasks"
+              title="My Tasks"
+            >
+              <UserCog className="h-4 w-4" />
+            </Button>
+            <Button
               variant={viewMode === "board" ? "default" : "ghost"}
               size="sm"
               className="h-8 px-2"
@@ -2102,7 +2516,7 @@ export default function EngineeringTasksPage() {
         </div>
       </div>
 
-      {myTasksOnly && (
+      {(myTasksOnly || viewMode === "mytasks") && (
         <PersonalKpiStrip tasks={tasks} myTasks={myTasks} />
       )}
 
@@ -2195,6 +2609,14 @@ export default function EngineeringTasksPage() {
             />
           ))}
         </div>
+      ) : viewMode === "mytasks" ? (
+        <MyTasksView
+          tasks={tasks}
+          myName={myName}
+          onCardClick={setSelectedTask}
+          onStatusChange={handleStatusChange}
+          onPriorityChange={handlePriorityChange}
+        />
       ) : viewMode === "projects" ? (
         <ProjectKanbanView
           tasks={filtered}
@@ -2234,6 +2656,18 @@ export default function EngineeringTasksPage() {
           </DialogHeader>
           <div className="space-y-3 pt-2">
             <p className="text-sm text-muted-foreground">Please provide a reason for putting this task on hold.</p>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Blocked Type *</label>
+              <Select value={holdDialog?.blockedType || ""} onValueChange={(v) => setHoldDialog(prev => prev ? { ...prev, blockedType: v } : null)}>
+                <SelectTrigger className="h-9" data-testid="select-hold-blocked-type">
+                  <SelectValue placeholder="Internal or External..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Internal">Internal</SelectItem>
+                  <SelectItem value="External">External</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <Textarea
               value={holdDialog?.reason || ""}
               onChange={(e) => setHoldDialog(prev => prev ? { ...prev, reason: e.target.value } : null)}
@@ -2246,10 +2680,10 @@ export default function EngineeringTasksPage() {
               <Button
                 size="sm"
                 className="bg-amber-600 hover:bg-amber-700"
-                disabled={!holdDialog?.reason?.trim()}
+                disabled={!holdDialog?.reason?.trim() || !holdDialog?.blockedType}
                 onClick={() => {
-                  if (holdDialog && holdDialog.reason.trim()) {
-                    updateStatusMutation.mutate({ taskId: holdDialog.taskId, status: "HOLD", holdReason: holdDialog.reason.trim() });
+                  if (holdDialog && holdDialog.reason.trim() && holdDialog.blockedType) {
+                    updateStatusMutation.mutate({ taskId: holdDialog.taskId, status: "HOLD", holdReason: holdDialog.reason.trim(), blockedType: holdDialog.blockedType });
                     setHoldDialog(null);
                   }
                 }}
