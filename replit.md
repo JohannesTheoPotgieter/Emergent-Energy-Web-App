@@ -19,7 +19,7 @@ Preferred communication style: Simple, everyday language.
 -   **Financial Year**: September to August. All FY calculations and date-based logic adhere to this boundary.
 -   **Project Detail Page**: Section-based navigation with pillars (Project Management, Engineering, Quality).
 -   **Project Creation**: COO/CEO can create projects, auto-generating engineering stage templates.
--   **Portfolio Management**: Group projects under portfolios with client association. Portfolio Dashboard with three view modes (Project Management, Finance, Quality). Portfolio Detail page with tabs for projects, finance rollups, quality rollups, engineering rollups, and rollout plans. Project assignment with COO-only move between portfolios. Nav links in PROJECT MANAGEMENT section.
+-   **Portfolio Management**: Group projects under portfolios with client association. Portfolio Dashboard with four view modes (Project Management, Finance, Quality, Engineering) — each with insightful Recharts visualizations (bar charts for Costed vs Actual revenue/expenses, pie charts for phase distribution and schedule health, progress bars for quality/engineering completion). Finance uses "Costed vs Actual" terminology sourced from `programExpense.budgetTotal` and `programInflows.revenueAmount`. Portfolio Detail page with tabs for projects, finance rollups, quality rollups, engineering rollups, and rollout plans. Project assignment with COO-only move between portfolios. Nav links in PROJECT MANAGEMENT section.
 
 ### Backend
 -   **Frameworks & Libraries**: Express.js with TypeScript.

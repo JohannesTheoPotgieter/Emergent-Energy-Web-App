@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,10 +15,487 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import {
   Briefcase, Plus, FolderOpen, TrendingUp, TrendingDown, AlertTriangle,
-  Users, Zap, DollarSign, ShieldCheck, Search, ChevronRight,
+  Users, Zap, DollarSign, ShieldCheck, Search, ChevronRight, Wrench,
+  CheckCircle2, Clock, XCircle, BarChart3, Activity,
 } from "lucide-react";
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell, Legend,
+  RadialBarChart, RadialBar,
+} from "recharts";
 
-type ViewMode = "management" | "finance" | "quality";
+type ViewMode = "management" | "finance" | "quality" | "engineering";
+
+const PHASE_COLORS: Record<string, string> = {
+  Construction: "#4472C4",
+  QA: "#ED7D31",
+  "Quality Assurance": "#ED7D31",
+  Commissioning: "#FFC000",
+  Handover: "#70AD47",
+  "Compliance Handover": "#5B9BD5",
+  "Commercial Close Out": "#A5A5A5",
+  DLP: "#9B59B6",
+  "Financial Close": "#2ECC71",
+  Planning: "#1ABC9C",
+  TBC: "#BDC3C7",
+  Hold: "#E74C3C",
+};
+const PIE_COLORS = ["#4472C4", "#ED7D31", "#FFC000", "#70AD47", "#5B9BD5", "#9B59B6", "#2ECC71", "#E74C3C", "#1ABC9C", "#A5A5A5"];
+
+function formatCurrency(v: number) {
+  if (Math.abs(v) >= 1e6) return `R ${(v / 1e6).toFixed(1)}M`;
+  if (Math.abs(v) >= 1e3) return `R ${(v / 1e3).toFixed(0)}K`;
+  return `R ${v.toFixed(0)}`;
+}
+
+function healthColor(h: string) {
+  if (h === "At Risk") return "bg-red-100 text-red-700 border-red-200";
+  if (h === "Behind") return "bg-amber-100 text-amber-700 border-amber-200";
+  return "bg-emerald-100 text-emerald-700 border-emerald-200";
+}
+
+function shortName(name: string) {
+  return (name || "").replace(/_Tracker$/i, "").replace(/_/g, " ").slice(0, 18);
+}
+
+function FinanceCharts({ portfolio }: { portfolio: any }) {
+  const breakdown = portfolio.projectFinanceBreakdown || [];
+  if (breakdown.length === 0) {
+    return (
+      <div className="text-center py-6 text-muted-foreground text-sm">
+        No financial data available for this portfolio's projects.
+      </div>
+    );
+  }
+
+  const revenueData = breakdown.filter((p: any) => p.costedRevenue > 0 || p.actualRevenue > 0).map((p: any) => ({
+    name: shortName(p.projectName),
+    Costed: Math.round(p.costedRevenue / 1000),
+    Actual: Math.round(p.actualRevenue / 1000),
+  }));
+
+  const expenseData = breakdown.filter((p: any) => p.costedExpenses > 0 || p.actualExpenses > 0).map((p: any) => ({
+    name: shortName(p.projectName),
+    Costed: Math.round(p.costedExpenses / 1000),
+    Actual: Math.round(p.actualExpenses / 1000),
+  }));
+
+  const gpData = breakdown.filter((p: any) => p.grossProfit !== 0 || p.costedRevenue > 0).map((p: any) => ({
+    name: shortName(p.projectName),
+    GP: Math.round(p.grossProfit / 1000),
+  }));
+
+  const fin = portfolio.finance || {};
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <Card><CardContent className="p-3">
+          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Costed Revenue</div>
+          <div className="text-lg font-bold mt-0.5" data-testid="text-fin-costed-revenue">{formatCurrency(fin.costedRevenue || 0)}</div>
+        </CardContent></Card>
+        <Card><CardContent className="p-3">
+          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Actual Revenue</div>
+          <div className="text-lg font-bold mt-0.5 text-blue-600" data-testid="text-fin-actual-revenue">{formatCurrency(fin.actualRevenue || 0)}</div>
+        </CardContent></Card>
+        <Card><CardContent className="p-3">
+          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Costed Expenses</div>
+          <div className="text-lg font-bold mt-0.5" data-testid="text-fin-costed-expenses">{formatCurrency(fin.costedExpenses || 0)}</div>
+        </CardContent></Card>
+        <Card><CardContent className="p-3">
+          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Actual Expenses</div>
+          <div className="text-lg font-bold mt-0.5 text-orange-600" data-testid="text-fin-actual-expenses">{formatCurrency(fin.actualExpenses || 0)}</div>
+        </CardContent></Card>
+      </div>
+
+      {revenueData.length > 0 && (
+        <Card data-testid="chart-revenue-costed-vs-actual">
+          <CardHeader className="pb-1 pt-3 px-4">
+            <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Revenue: Costed vs Actual (R'000)</CardTitle>
+          </CardHeader>
+          <CardContent className="p-2">
+            <ResponsiveContainer width="100%" height={Math.max(160, revenueData.length * 32)}>
+              <BarChart data={revenueData} layout="vertical" margin={{ left: 10, right: 20, top: 5, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v) => `${v}`} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={100} />
+                <Tooltip formatter={(v: number) => [`R ${v}K`, ""]} contentStyle={{ fontSize: 11 }} />
+                <Bar dataKey="Costed" fill="#93c5fd" radius={[0, 2, 2, 0]} barSize={12} />
+                <Bar dataKey="Actual" fill="#2563eb" radius={[0, 2, 2, 0]} barSize={12} />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
+
+      {expenseData.length > 0 && (
+        <Card data-testid="chart-expenses-costed-vs-actual">
+          <CardHeader className="pb-1 pt-3 px-4">
+            <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Expenses: Costed vs Actual (R'000)</CardTitle>
+          </CardHeader>
+          <CardContent className="p-2">
+            <ResponsiveContainer width="100%" height={Math.max(160, expenseData.length * 32)}>
+              <BarChart data={expenseData} layout="vertical" margin={{ left: 10, right: 20, top: 5, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v) => `${v}`} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={100} />
+                <Tooltip formatter={(v: number) => [`R ${v}K`, ""]} contentStyle={{ fontSize: 11 }} />
+                <Bar dataKey="Costed" fill="#fdba74" radius={[0, 2, 2, 0]} barSize={12} />
+                <Bar dataKey="Actual" fill="#ea580c" radius={[0, 2, 2, 0]} barSize={12} />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
+
+      {gpData.length > 0 && (
+        <Card data-testid="chart-gross-profit">
+          <CardHeader className="pb-1 pt-3 px-4">
+            <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Gross Profit by Project (R'000)</CardTitle>
+          </CardHeader>
+          <CardContent className="p-2">
+            <ResponsiveContainer width="100%" height={Math.max(160, gpData.length * 32)}>
+              <BarChart data={gpData} layout="vertical" margin={{ left: 10, right: 20, top: 5, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                <XAxis type="number" tick={{ fontSize: 10 }} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={100} />
+                <Tooltip formatter={(v: number) => [`R ${v}K`, "GP"]} contentStyle={{ fontSize: 11 }} />
+                <Bar dataKey="GP" radius={[0, 3, 3, 0]} barSize={14}>
+                  {gpData.map((entry: any, idx: number) => (
+                    <Cell key={idx} fill={entry.GP >= 0 ? "#16a34a" : "#dc2626"} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function ScheduleCharts({ portfolio }: { portfolio: any }) {
+  const schedule = portfolio.projectSchedule || [];
+  const phaseCounts = portfolio.phaseCounts || {};
+
+  if (schedule.length === 0) {
+    return (
+      <div className="text-center py-6 text-muted-foreground text-sm">
+        No schedule data available for this portfolio's projects.
+      </div>
+    );
+  }
+
+  const completionData = schedule.map((s: any) => ({
+    name: shortName(s.projectName),
+    "Act%": Math.round(s.actualPct * 10) / 10,
+    "Exp%": Math.round(s.expectedPct * 10) / 10,
+  }));
+
+  const phaseData = Object.entries(phaseCounts).map(([phase, count]) => ({
+    name: phase,
+    value: count as number,
+  }));
+
+  const onTrack = schedule.filter((s: any) => s.delta >= -5).length;
+  const behind = schedule.filter((s: any) => s.delta < -5 && s.delta >= -10).length;
+  const atRisk = schedule.filter((s: any) => s.delta < -10).length;
+  const healthData = [
+    { name: "On Track", value: onTrack, fill: "#16a34a" },
+    { name: "Behind", value: behind, fill: "#f59e0b" },
+    { name: "At Risk", value: atRisk, fill: "#dc2626" },
+  ].filter(d => d.value > 0);
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <Card><CardContent className="p-3">
+          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Projects</div>
+          <div className="text-lg font-bold mt-0.5" data-testid="text-schedule-projects">{schedule.length}</div>
+        </CardContent></Card>
+        <Card><CardContent className="p-3">
+          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Avg Act%</div>
+          <div className="text-lg font-bold mt-0.5" data-testid="text-schedule-avg-act">{portfolio.avgActualPct}%</div>
+        </CardContent></Card>
+        <Card><CardContent className="p-3">
+          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Avg Exp%</div>
+          <div className="text-lg font-bold mt-0.5" data-testid="text-schedule-avg-exp">{portfolio.avgExpectedPct}%</div>
+        </CardContent></Card>
+        <Card><CardContent className="p-3">
+          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Behind Schedule</div>
+          <div className={`text-lg font-bold mt-0.5 ${portfolio.behindCount > 0 ? 'text-red-600' : 'text-emerald-600'}`} data-testid="text-schedule-behind">{portfolio.behindCount}</div>
+        </CardContent></Card>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {phaseData.length > 0 && (
+          <Card>
+            <CardHeader className="pb-1 pt-3 px-4">
+              <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Projects by Phase</CardTitle>
+            </CardHeader>
+            <CardContent className="p-2 flex justify-center">
+              <ResponsiveContainer width="100%" height={200}>
+                <PieChart>
+                  <Pie data={phaseData} cx="50%" cy="50%" innerRadius={45} outerRadius={75} dataKey="value" paddingAngle={2} label={({ name, value }) => `${name} (${value})`} labelLine={false}>
+                    {phaseData.map((entry, idx) => (
+                      <Cell key={idx} fill={PHASE_COLORS[entry.name] || PIE_COLORS[idx % PIE_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip contentStyle={{ fontSize: 11 }} />
+                </PieChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        )}
+
+        {healthData.length > 0 && (
+          <Card>
+            <CardHeader className="pb-1 pt-3 px-4">
+              <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Schedule Health</CardTitle>
+            </CardHeader>
+            <CardContent className="p-2 flex justify-center">
+              <ResponsiveContainer width="100%" height={200}>
+                <PieChart>
+                  <Pie data={healthData} cx="50%" cy="50%" innerRadius={45} outerRadius={75} dataKey="value" paddingAngle={3} label={({ name, value }) => `${name} (${value})`} labelLine={false}>
+                    {healthData.map((entry, idx) => (
+                      <Cell key={idx} fill={entry.fill} />
+                    ))}
+                  </Pie>
+                  <Tooltip contentStyle={{ fontSize: 11 }} />
+                </PieChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
+      {completionData.length > 0 && (
+        <Card>
+          <CardHeader className="pb-1 pt-3 px-4">
+            <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Actual vs Expected Completion (%)</CardTitle>
+          </CardHeader>
+          <CardContent className="p-2">
+            <ResponsiveContainer width="100%" height={Math.max(180, completionData.length * 28)}>
+              <BarChart data={completionData} layout="vertical" margin={{ left: 10, right: 20, top: 5, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 10 }} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={100} />
+                <Tooltip contentStyle={{ fontSize: 11 }} />
+                <Bar dataKey="Exp%" fill="#93c5fd" radius={[0, 2, 2, 0]} barSize={10} />
+                <Bar dataKey="Act%" fill="#2563eb" radius={[0, 2, 2, 0]} barSize={10} />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function QualityCharts({ portfolio }: { portfolio: any }) {
+  const qs = portfolio.qualitySummary || { total: 0, approved: 0, pending: 0, failed: 0 };
+
+  if (qs.total === 0) {
+    return (
+      <div className="text-center py-6 text-muted-foreground text-sm">
+        <ShieldCheck className="h-8 w-8 mx-auto mb-2 opacity-40" />
+        No quality inspection data available for this portfolio's projects.
+      </div>
+    );
+  }
+
+  const pieData = [
+    { name: "Approved", value: qs.approved, fill: "#16a34a" },
+    { name: "Pending", value: qs.pending, fill: "#f59e0b" },
+    { name: "Failed", value: qs.failed, fill: "#dc2626" },
+  ].filter(d => d.value > 0);
+
+  const passRate = qs.total > 0 ? Math.round((qs.approved / qs.total) * 100) : 0;
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <Card><CardContent className="p-3">
+          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Total Items</div>
+          <div className="text-lg font-bold mt-0.5" data-testid="text-quality-total">{qs.total}</div>
+        </CardContent></Card>
+        <Card><CardContent className="p-3">
+          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Approved</div>
+          <div className="text-lg font-bold mt-0.5 text-emerald-600" data-testid="text-quality-approved">{qs.approved}</div>
+        </CardContent></Card>
+        <Card><CardContent className="p-3">
+          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Pending</div>
+          <div className="text-lg font-bold mt-0.5 text-amber-600" data-testid="text-quality-pending">{qs.pending}</div>
+        </CardContent></Card>
+        <Card><CardContent className="p-3">
+          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Pass Rate</div>
+          <div className={`text-lg font-bold mt-0.5 ${passRate >= 80 ? 'text-emerald-600' : passRate >= 50 ? 'text-amber-600' : 'text-red-600'}`} data-testid="text-quality-pass-rate">{passRate}%</div>
+        </CardContent></Card>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader className="pb-1 pt-3 px-4">
+            <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Inspection Status</CardTitle>
+          </CardHeader>
+          <CardContent className="p-2 flex justify-center">
+            <ResponsiveContainer width="100%" height={200}>
+              <PieChart>
+                <Pie data={pieData} cx="50%" cy="50%" innerRadius={45} outerRadius={75} dataKey="value" paddingAngle={3} label={({ name, value }) => `${name} (${value})`} labelLine={false}>
+                  {pieData.map((entry, idx) => (
+                    <Cell key={idx} fill={entry.fill} />
+                  ))}
+                </Pie>
+                <Tooltip contentStyle={{ fontSize: 11 }} />
+              </PieChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-1 pt-3 px-4">
+            <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Quality Summary</CardTitle>
+          </CardHeader>
+          <CardContent className="p-4">
+            <div className="space-y-3">
+              <div>
+                <div className="flex justify-between text-xs mb-1">
+                  <span className="text-muted-foreground">Approved</span>
+                  <span className="font-medium text-emerald-600">{qs.approved} / {qs.total}</span>
+                </div>
+                <div className="w-full bg-gray-100 dark:bg-gray-800 rounded-full h-2">
+                  <div className="bg-emerald-500 h-2 rounded-full transition-all" style={{ width: `${qs.total > 0 ? (qs.approved / qs.total) * 100 : 0}%` }} />
+                </div>
+              </div>
+              <div>
+                <div className="flex justify-between text-xs mb-1">
+                  <span className="text-muted-foreground">Pending</span>
+                  <span className="font-medium text-amber-600">{qs.pending} / {qs.total}</span>
+                </div>
+                <div className="w-full bg-gray-100 dark:bg-gray-800 rounded-full h-2">
+                  <div className="bg-amber-500 h-2 rounded-full transition-all" style={{ width: `${qs.total > 0 ? (qs.pending / qs.total) * 100 : 0}%` }} />
+                </div>
+              </div>
+              <div>
+                <div className="flex justify-between text-xs mb-1">
+                  <span className="text-muted-foreground">Failed / Rejected</span>
+                  <span className="font-medium text-red-600">{qs.failed} / {qs.total}</span>
+                </div>
+                <div className="w-full bg-gray-100 dark:bg-gray-800 rounded-full h-2">
+                  <div className="bg-red-500 h-2 rounded-full transition-all" style={{ width: `${qs.total > 0 ? (qs.failed / qs.total) * 100 : 0}%` }} />
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function EngineeringCharts({ portfolio }: { portfolio: any }) {
+  const eng = portfolio.engSummary || { total: 0, complete: 0, inProgress: 0, notStarted: 0 };
+
+  if (eng.total === 0) {
+    return (
+      <div className="text-center py-6 text-muted-foreground text-sm">
+        <Wrench className="h-8 w-8 mx-auto mb-2 opacity-40" />
+        No engineering stage data available for this portfolio's projects.
+      </div>
+    );
+  }
+
+  const pieData = [
+    { name: "Complete", value: eng.complete, fill: "#16a34a" },
+    { name: "In Progress", value: eng.inProgress, fill: "#2563eb" },
+    { name: "Not Started", value: eng.notStarted, fill: "#d1d5db" },
+  ].filter(d => d.value > 0);
+
+  const completionRate = eng.total > 0 ? Math.round((eng.complete / eng.total) * 100) : 0;
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <Card><CardContent className="p-3">
+          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Total Stages</div>
+          <div className="text-lg font-bold mt-0.5" data-testid="text-eng-total">{eng.total}</div>
+        </CardContent></Card>
+        <Card><CardContent className="p-3">
+          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Complete</div>
+          <div className="text-lg font-bold mt-0.5 text-emerald-600" data-testid="text-eng-complete">{eng.complete}</div>
+        </CardContent></Card>
+        <Card><CardContent className="p-3">
+          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">In Progress</div>
+          <div className="text-lg font-bold mt-0.5 text-blue-600" data-testid="text-eng-in-progress">{eng.inProgress}</div>
+        </CardContent></Card>
+        <Card><CardContent className="p-3">
+          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Completion Rate</div>
+          <div className={`text-lg font-bold mt-0.5 ${completionRate >= 80 ? 'text-emerald-600' : completionRate >= 50 ? 'text-amber-600' : 'text-red-600'}`} data-testid="text-eng-completion-rate">{completionRate}%</div>
+        </CardContent></Card>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader className="pb-1 pt-3 px-4">
+            <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Stage Status Distribution</CardTitle>
+          </CardHeader>
+          <CardContent className="p-2 flex justify-center">
+            <ResponsiveContainer width="100%" height={200}>
+              <PieChart>
+                <Pie data={pieData} cx="50%" cy="50%" innerRadius={45} outerRadius={75} dataKey="value" paddingAngle={3} label={({ name, value }) => `${name} (${value})`} labelLine={false}>
+                  {pieData.map((entry, idx) => (
+                    <Cell key={idx} fill={entry.fill} />
+                  ))}
+                </Pie>
+                <Tooltip contentStyle={{ fontSize: 11 }} />
+              </PieChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-1 pt-3 px-4">
+            <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Engineering Progress</CardTitle>
+          </CardHeader>
+          <CardContent className="p-4">
+            <div className="space-y-3">
+              <div>
+                <div className="flex justify-between text-xs mb-1">
+                  <span className="flex items-center gap-1 text-muted-foreground"><CheckCircle2 className="h-3 w-3 text-emerald-500" /> Complete</span>
+                  <span className="font-medium text-emerald-600">{eng.complete} / {eng.total}</span>
+                </div>
+                <div className="w-full bg-gray-100 dark:bg-gray-800 rounded-full h-2.5">
+                  <div className="bg-emerald-500 h-2.5 rounded-full transition-all" style={{ width: `${eng.total > 0 ? (eng.complete / eng.total) * 100 : 0}%` }} />
+                </div>
+              </div>
+              <div>
+                <div className="flex justify-between text-xs mb-1">
+                  <span className="flex items-center gap-1 text-muted-foreground"><Activity className="h-3 w-3 text-blue-500" /> In Progress</span>
+                  <span className="font-medium text-blue-600">{eng.inProgress} / {eng.total}</span>
+                </div>
+                <div className="w-full bg-gray-100 dark:bg-gray-800 rounded-full h-2.5">
+                  <div className="bg-blue-500 h-2.5 rounded-full transition-all" style={{ width: `${eng.total > 0 ? (eng.inProgress / eng.total) * 100 : 0}%` }} />
+                </div>
+              </div>
+              <div>
+                <div className="flex justify-between text-xs mb-1">
+                  <span className="flex items-center gap-1 text-muted-foreground"><Clock className="h-3 w-3 text-gray-400" /> Not Started</span>
+                  <span className="font-medium">{eng.notStarted} / {eng.total}</span>
+                </div>
+                <div className="w-full bg-gray-100 dark:bg-gray-800 rounded-full h-2.5">
+                  <div className="bg-gray-300 h-2.5 rounded-full transition-all" style={{ width: `${eng.total > 0 ? (eng.notStarted / eng.total) * 100 : 0}%` }} />
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
 
 export default function PortfoliosPage() {
   const { toast } = useToast();
@@ -58,18 +535,6 @@ export default function PortfoliosPage() {
     !search || p.name.toLowerCase().includes(search.toLowerCase()) || (p.clientName || "").toLowerCase().includes(search.toLowerCase())
   );
 
-  const formatCurrency = (v: number) => {
-    if (Math.abs(v) >= 1e6) return `R ${(v / 1e6).toFixed(1)}M`;
-    if (Math.abs(v) >= 1e3) return `R ${(v / 1e3).toFixed(0)}K`;
-    return `R ${v.toFixed(0)}`;
-  };
-
-  const healthColor = (h: string) => {
-    if (h === "At Risk") return "bg-red-100 text-red-700 border-red-200";
-    if (h === "Behind") return "bg-amber-100 text-amber-700 border-amber-200";
-    return "bg-emerald-100 text-emerald-700 border-emerald-200";
-  };
-
   return (
     <div className="space-y-6" data-testid="page-portfolios">
       <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -87,10 +552,11 @@ export default function PortfoliosPage() {
       <div className="flex items-center gap-3 flex-wrap">
         <div className="flex bg-muted rounded-lg p-0.5 gap-0.5">
           {([
-            { key: "management", label: "Project Management", icon: Briefcase },
-            { key: "finance", label: "Finance", icon: DollarSign },
-            { key: "quality", label: "Quality", icon: ShieldCheck },
-          ] as const).map(tab => (
+            { key: "management" as const, label: "Project Management", icon: Briefcase },
+            { key: "finance" as const, label: "Finance", icon: DollarSign },
+            { key: "quality" as const, label: "Quality", icon: ShieldCheck },
+            { key: "engineering" as const, label: "Engineering", icon: Wrench },
+          ]).map(tab => (
             <button key={tab.key}
               onClick={() => setViewMode(tab.key)}
               data-testid={`tab-${tab.key}`}
@@ -126,15 +592,14 @@ export default function PortfoliosPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-4">
+        <div className="space-y-6">
           {portfoliosList.map((p: any) => (
-            <Card
-              key={p.id}
-              className="hover:shadow-md transition-shadow cursor-pointer group"
-              onClick={() => navigate(`/portfolios/${p.id}`)}
-              data-testid={`card-portfolio-${p.id}`}
-            >
-              <CardContent className="p-5">
+            <Card key={p.id} className="overflow-hidden" data-testid={`card-portfolio-${p.id}`}>
+              <div
+                className="p-5 cursor-pointer hover:bg-muted/30 transition-colors group"
+                onClick={() => navigate(`/portfolios/${p.id}`)}
+                data-testid={`link-portfolio-${p.id}`}
+              >
                 <div className="flex items-start gap-4">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
@@ -153,62 +618,59 @@ export default function PortfoliosPage() {
                         Client: {p.clientName}
                       </p>
                     )}
-
-                    {viewMode === "management" && (
-                      <div className="flex items-center gap-4 text-sm flex-wrap">
-                        <span className="flex items-center gap-1">
-                          <Users className="h-3.5 w-3.5 text-muted-foreground" />
-                          {p.projectCount} projects
+                    <div className="flex items-center gap-4 text-sm flex-wrap">
+                      <span className="flex items-center gap-1">
+                        <Users className="h-3.5 w-3.5 text-muted-foreground" />
+                        {p.projectCount} projects
+                      </span>
+                      {p.ownerName && (
+                        <span className="text-muted-foreground">Owner: {p.ownerName}</span>
+                      )}
+                      <span className="flex items-center gap-1">
+                        <Zap className="h-3.5 w-3.5 text-muted-foreground" />
+                        {p.totalKwp?.toFixed(0) || 0} kWp
+                      </span>
+                      <span className="flex items-center gap-1">
+                        Act: <span className={p.avgActualPct < p.avgExpectedPct - 5 ? "text-red-600 font-medium" : "text-emerald-600 font-medium"}>
+                          {p.avgActualPct}%
                         </span>
-                        {p.ownerName && (
-                          <span className="text-muted-foreground">Owner: {p.ownerName}</span>
-                        )}
-                        <span className="flex items-center gap-1">
-                          <Zap className="h-3.5 w-3.5 text-muted-foreground" />
-                          {p.totalKwp?.toFixed(0) || 0} kWp
+                        <span className="text-muted-foreground">/ Exp: {p.avgExpectedPct}%</span>
+                      </span>
+                      {p.behindCount > 0 && (
+                        <span className="flex items-center gap-1 text-red-600">
+                          <AlertTriangle className="h-3.5 w-3.5" />
+                          {p.behindCount} behind
                         </span>
-                        <span className="flex items-center gap-1">
-                          Act: <span className={p.avgActualPct < p.avgExpectedPct - 5 ? "text-red-600 font-medium" : "text-emerald-600 font-medium"}>
-                            {p.avgActualPct}%
-                          </span>
-                          <span className="text-muted-foreground">/ Exp: {p.avgExpectedPct}%</span>
-                        </span>
-                        {p.behindCount > 0 && (
-                          <span className="flex items-center gap-1 text-red-600">
-                            <AlertTriangle className="h-3.5 w-3.5" />
-                            {p.behindCount} behind
-                          </span>
-                        )}
-                      </div>
-                    )}
-
-                    {viewMode === "finance" && (
-                      <div className="flex items-center gap-4 text-sm flex-wrap">
-                        <span>Revenue: <span className="font-medium">{formatCurrency(p.finance?.revenueRealised || 0)}</span>
-                          <span className="text-muted-foreground"> / {formatCurrency(p.finance?.totalPlannedRevenue || 0)}</span>
-                        </span>
-                        <span>COS: <span className="font-medium">{formatCurrency(p.finance?.cosRealised || 0)}</span>
-                          <span className="text-muted-foreground"> / {formatCurrency(p.finance?.totalPlannedExpenses || 0)}</span>
-                        </span>
-                        <span className={`font-medium ${(p.finance?.grossProfit || 0) >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                          GP: {formatCurrency(p.finance?.grossProfit || 0)}
-                        </span>
-                      </div>
-                    )}
-
-                    {viewMode === "quality" && (
-                      <div className="flex items-center gap-4 text-sm flex-wrap">
-                        <span>{p.projectCount} projects</span>
-                        <span>{p.totalKwp?.toFixed(0) || 0} kWp</span>
-                        <Badge variant="outline" className={healthColor(p.overallHealth)}>
-                          {p.overallHealth}
-                        </Badge>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
                   <ChevronRight className="h-5 w-5 text-muted-foreground shrink-0 mt-1 opacity-0 group-hover:opacity-100 transition-opacity" />
                 </div>
-              </CardContent>
+              </div>
+
+              {viewMode === "management" && p.projectCount > 0 && (
+                <div className="border-t px-5 py-4">
+                  <ScheduleCharts portfolio={p} />
+                </div>
+              )}
+
+              {viewMode === "finance" && p.projectCount > 0 && (
+                <div className="border-t px-5 py-4">
+                  <FinanceCharts portfolio={p} />
+                </div>
+              )}
+
+              {viewMode === "quality" && p.projectCount > 0 && (
+                <div className="border-t px-5 py-4">
+                  <QualityCharts portfolio={p} />
+                </div>
+              )}
+
+              {viewMode === "engineering" && p.projectCount > 0 && (
+                <div className="border-t px-5 py-4">
+                  <EngineeringCharts portfolio={p} />
+                </div>
+              )}
             </Card>
           ))}
         </div>
