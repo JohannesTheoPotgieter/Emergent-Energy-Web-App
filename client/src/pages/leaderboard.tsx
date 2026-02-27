@@ -174,6 +174,10 @@ interface DetailCategory {
 interface DetailData {
   pointValues: Record<string, number>;
   penaltyValues: Record<string, number>;
+  earnedTotal: number;
+  penaltyTotal: number;
+  netTotal: number;
+  participation: number;
   earned: Record<string, DetailCategory>;
   penalties: Record<string, DetailCategory>;
 }
@@ -187,6 +191,8 @@ const EARNED_DETAIL_CONFIG: { key: string; label: string; icon: any; color: stri
   { key: "qualityApprovals", label: "QC Approvals", icon: Target, color: "text-pink-600" },
   { key: "engStagesCompleted", label: "Eng Stages Done", icon: Wrench, color: "text-indigo-600" },
   { key: "deliverablesUploaded", label: "Deliverables", icon: Paperclip, color: "text-rose-600" },
+  { key: "engTasksOwned", label: "Eng Tasks Owned", icon: Hammer, color: "text-cyan-600" },
+  { key: "opsTasksAssigned", label: "Ops Tasks Assigned", icon: ClipboardCheck, color: "text-emerald-600" },
 ];
 
 const PENALTY_DETAIL_CONFIG: { key: string; label: string; icon: any; color: string }[] = [
@@ -196,6 +202,7 @@ const PENALTY_DETAIL_CONFIG: { key: string; label: string; icon: any; color: str
   { key: "rejectedDeliverables", label: "Rejected Deliverables", icon: FileX, color: "text-amber-600" },
   { key: "openQualityWarnings", label: "Open Warnings", icon: ShieldAlert, color: "text-yellow-600" },
   { key: "overdueEngTasks", label: "Overdue Eng Tasks", icon: Cog, color: "text-red-500" },
+  { key: "unreadNotifications", label: "Unread Notifs (3d+)", icon: BellOff, color: "text-gray-500" },
   { key: "overdueQmTasks", label: "Overdue QM Tasks", icon: ClipboardX, color: "text-red-600" },
 ];
 
@@ -277,9 +284,10 @@ function UserDetailDialog({ selectedUser, onClose }: { selectedUser: Leaderboard
     setExpandedSections(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const earnedTotal = detailData ? Object.values(detailData.earned).reduce((s, c) => s + c.total, 0) : 0;
-  const penaltyTotal = detailData ? Object.values(detailData.penalties).reduce((s, c) => s + c.total, 0) : 0;
-  const participationPts = detailData ? (detailData.pointValues?.participation || 10) : 10;
+  const earnedTotal = detailData?.earnedTotal ?? 0;
+  const penaltyTotal = detailData?.penaltyTotal ?? 0;
+  const netTotal = detailData?.netTotal ?? 0;
+  const participationPts = detailData?.participation ? (detailData.pointValues?.participation || 10) : 0;
 
   return (
     <Dialog open={!!selectedUser} onOpenChange={(open) => { if (!open) onClose(); }}>
@@ -355,7 +363,7 @@ function UserDetailDialog({ selectedUser, onClose }: { selectedUser: Leaderboard
                       data-testid="btn-earned-tab"
                     >
                       <TrendingUp className="w-3 h-3 inline mr-1" />
-                      Earned (+{earnedTotal + participationPts})
+                      Earned (+{earnedTotal})
                     </button>
                     <button
                       className={`text-xs px-3 py-1.5 rounded-md font-medium transition-colors ${detailTab === 'penalties' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'text-muted-foreground hover:bg-muted/50'}`}
@@ -383,14 +391,17 @@ function UserDetailDialog({ selectedUser, onClose }: { selectedUser: Leaderboard
                           />
                         );
                       })}
-                      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/30 border border-gray-100 dark:border-gray-800">
-                        <Users className="w-4 h-4 text-blue-500 shrink-0" />
-                        <span className="text-xs font-medium flex-1">Participation Bonus</span>
-                        <span className="text-xs font-bold text-green-600">+{participationPts}</span>
-                      </div>
+                      {participationPts > 0 && (
+                        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/30 border border-gray-100 dark:border-gray-800">
+                          <Users className="w-4 h-4 text-blue-500 shrink-0" />
+                          <span className="text-xs font-medium flex-1">Participation Bonus</span>
+                          <span className="text-[10px] text-muted-foreground">active user</span>
+                          <span className="text-xs font-bold text-green-600">+{participationPts}</span>
+                        </div>
+                      )}
                       <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900/40 mt-2">
                         <span className="text-xs font-semibold text-green-700 dark:text-green-400">Total Earned</span>
-                        <span className="text-sm font-bold text-green-700 dark:text-green-400">+{earnedTotal + participationPts}</span>
+                        <span className="text-sm font-bold text-green-700 dark:text-green-400">+{earnedTotal}</span>
                       </div>
                     </div>
                   )}
@@ -430,9 +441,9 @@ function UserDetailDialog({ selectedUser, onClose }: { selectedUser: Leaderboard
                   <div className="flex items-center justify-between px-3 py-2.5 rounded-lg bg-primary/5 border border-primary/20 mt-3">
                     <span className="text-xs font-semibold">Net Total</span>
                     <div className="text-right">
-                      <span className="text-sm font-bold">{Math.max(0, earnedTotal + participationPts + penaltyTotal)} pts</span>
+                      <span className="text-sm font-bold">{netTotal} pts</span>
                       <div className="text-[10px] text-muted-foreground">
-                        +{earnedTotal + participationPts} earned {penaltyTotal < 0 ? ` ${penaltyTotal} penalties` : ''}
+                        +{earnedTotal} earned{penaltyTotal < 0 ? ` ${penaltyTotal} penalties` : ''}
                       </div>
                     </div>
                   </div>
