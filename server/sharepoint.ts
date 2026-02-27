@@ -1,7 +1,7 @@
 import { storage } from "./storage";
 import type { SpFile, InsertSpFile, InsertChangeLedger, InsertImportRun } from "@shared/schema";
 
-async function getAccessToken(): Promise<string> {
+export async function getAccessToken(): Promise<string> {
   const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
   const xReplitToken = process.env.REPL_IDENTITY
     ? "repl " + process.env.REPL_IDENTITY
