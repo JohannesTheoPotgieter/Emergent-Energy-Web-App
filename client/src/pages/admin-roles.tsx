@@ -50,6 +50,7 @@ import {
   BookOpen,
   Settings,
   Lock,
+  Briefcase,
 } from "lucide-react";
 import {
   COMPANY_ROLE_LABELS,
@@ -127,6 +128,17 @@ const PERM_CATEGORIES: PermCat[] = [
     color: "bg-purple-500",
     items: [
       { entity: "pd_quality" as PermissionEntity, label: "Project Detail — Quality", actions: ["view", "edit", "delete"] },
+    ],
+  },
+  {
+    key: "project_dev",
+    label: "Project Development",
+    icon: Briefcase,
+    color: "bg-violet-500",
+    items: [
+      { entity: "pd_tickets" as PermissionEntity, label: "PD Tickets", actions: ["view", "edit", "delete"] },
+      { entity: "pd_dashboard" as PermissionEntity, label: "PD Dashboard", actions: ["view"] },
+      { entity: "pd_clients" as PermissionEntity, label: "Clients", actions: ["view", "edit"] },
     ],
   },
   {
