@@ -201,6 +201,10 @@ const PERM_CATEGORIES: PermCat[] = [
     color: "bg-cyan-600",
     items: [
       { entity: "ee_info" as PermissionEntity, label: "Emergent Energy Info (SOPs, Walkthroughs)", actions: ["view", "edit"] },
+      { entity: "ee_info_lifecycle" as PermissionEntity, label: "OS Map — Lifecycle Overview", actions: ["view", "edit"] },
+      { entity: "ee_info_departments" as PermissionEntity, label: "OS Map — Department Drilldown", actions: ["view", "edit", "delete"] },
+      { entity: "ee_info_processes" as PermissionEntity, label: "OS Map — Processes & SOPs", actions: ["view", "edit", "delete"] },
+      { entity: "ee_info_templates" as PermissionEntity, label: "OS Map — Templates Library", actions: ["view", "edit", "delete"] },
       { entity: "leaderboard" as PermissionEntity, label: "Leaderboard", actions: ["view"] },
       { entity: "feedback" as PermissionEntity, label: "Feedback & Support", actions: ["view", "edit"] },
       { entity: "notifications" as PermissionEntity, label: "Notifications", actions: ["view"] },

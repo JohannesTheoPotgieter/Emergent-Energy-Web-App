@@ -2589,7 +2589,8 @@ export type PermissionEntity = 'projects' | 'financials' | 'quality' | 'engineer
   | 'pd_eng_tasks' | 'pd_eng_stages' | 'pd_gantt' | 'pd_key_dates'
   | 'pd_tickets' | 'pd_dashboard' | 'pd_clients'
   | 'triage_inbox' | 'unclassified_tasks' | 'eng_sync' | 'eng_inbox'
-  | 'portfolio_detail' | 'project_normalized' | 'admin_roles' | 'revenue';
+  | 'portfolio_detail' | 'project_normalized' | 'admin_roles' | 'revenue'
+  | 'ee_info_lifecycle' | 'ee_info_departments' | 'ee_info_processes' | 'ee_info_templates';
 export type PermissionAction = 'view' | 'edit' | 'approve' | 'override' | 'delete';
 
 export interface EntityPermissionRule {
@@ -3079,6 +3080,38 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ACCOUNTANT'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO', 'PROGRAM_FINANCE_MANAGER', 'ACCOUNTANT'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO'],
+    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+  },
+  {
+    entity: 'ee_info_lifecycle',
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ACCOUNTANT', 'ENGINEER'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+  },
+  {
+    entity: 'ee_info_departments',
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ACCOUNTANT', 'ENGINEER'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+  },
+  {
+    entity: 'ee_info_processes',
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ACCOUNTANT', 'ENGINEER'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+  },
+  {
+    entity: 'ee_info_templates',
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ACCOUNTANT', 'ENGINEER'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
@@ -3801,6 +3834,22 @@ export const eeInfoNodes = pgTable("ee_info_nodes", {
   contentMarkdown: text("content_markdown"),
   status: text("status").notNull().default("stub"),
   category: text("category").notNull().default("unknown"),
+  nodeType: text("node_type").notNull().default("content"),
+  departmentSlug: text("department_slug"),
+  lifecycleStages: jsonb("lifecycle_stages").$type<string[]>().default([]),
+  sortOrder: integer("sort_order").notNull().default(0),
+  sopData: jsonb("sop_data").$type<{
+    purpose?: string;
+    triggers?: string[];
+    inputs?: string[];
+    outputs?: string[];
+    raci?: { role: string; responsible?: boolean; accountable?: boolean; consulted?: boolean; informed?: boolean }[];
+    tools?: { name: string; url?: string; type?: string }[];
+    templates?: { name: string; slug?: string; url?: string }[];
+    reviewCadence?: string;
+  }>(),
+  parentNodeId: text("parent_node_id"),
+  externalUrl: text("external_url"),
   tags: jsonb("tags").$type<string[]>().default([]),
   flowEnabled: boolean("flow_enabled").default(false),
   flowLane: text("flow_lane"),
