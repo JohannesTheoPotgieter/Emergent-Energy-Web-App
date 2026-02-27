@@ -1,0 +1,123 @@
+{
+  "calculations": {
+    "actPercent": {
+      "name": "Actual % Complete (Act%)",
+      "function": "computeProjectCompletion",
+      "location": "server/portfolio-routes.ts:11-52",
+      "method": "Duration-weighted average of task percentComplete values",
+      "inputs": ["project_plan.percentComplete", "project_plan.durationDays"],
+      "usedIn": ["Portfolio Dashboard", "Gantt Chart", "PM Dashboard", "Project Detail"]
+    },
+    "expectedPercent": {
+      "name": "Expected % Complete",
+      "function": "computeProjectCompletion + calcExpected",
+      "location": "server/portfolio-routes.ts:11-52, server/routes.ts:9546-9558",
+      "method": "Duration-weighted average; linear interpolation between actualStart and actualEnd vs today",
+      "inputs": ["project_plan.actualStart", "project_plan.actualEnd", "project_plan.durationDays", "currentDate"],
+      "usedIn": ["Portfolio Dashboard", "Gantt Chart", "PM Dashboard", "Project Detail"]
+    },
+    "delta": {
+      "name": "Schedule Delta",
+      "formula": "actPercent - expectedPercent",
+      "meaning": "Negative = behind schedule, Positive = ahead",
+      "usedIn": ["Gantt slippage warnings", "Portfolio health", "PM Dashboard"]
+    },
+    "rollupActPercent": {
+      "name": "Milestone Rollup Act%",
+      "function": "computeRollups",
+      "location": "server/routes.ts:9565-9637",
+      "method": "Duration-weighted average of child task percentComplete, recursive",
+      "inputs": ["child tasks' percentComplete", "child tasks' plannedDurationDays"]
+    },
+    "cosRealised": {
+      "name": "COS Realised",
+      "function": "aggregateCOS",
+      "location": "server/lib/calculations/cosAggregator.ts:56-91",
+      "method": "Sum of expense lines with status Invoiced or Paid",
+      "inputs": ["program_expense.amount", "program_expense.status"]
+    },
+    "cosUnrealised": {
+      "name": "COS Unrealised",
+      "method": "Sum of expense lines with status Planned or Committed",
+      "inputs": ["program_expense.amount", "program_expense.status"]
+    },
+    "totalCosted": {
+      "name": "Total Costed (Budget)",
+      "source": "program_expense.budgetTotal",
+      "usedIn": ["COS Tracker", "PM Dashboard", "Portfolio Finance"]
+    },
+    "revenueActual": {
+      "name": "Actual Revenue",
+      "source": "program_inflows.milestoneAmount",
+      "usedIn": ["Revenue Tracker", "Portfolio Finance", "Cashflow"]
+    },
+    "revenueCosted": {
+      "name": "Costed Revenue (Budget)",
+      "source": "program_inflows.revenueAmount",
+      "usedIn": ["Revenue Tracker", "Portfolio Finance"]
+    },
+    "grossProfit": {
+      "name": "Gross Profit",
+      "formula": "revenueActual - cosRealised",
+      "usedIn": ["Portfolio Finance", "PM Dashboard"]
+    },
+    "gpMargin": {
+      "name": "GP Margin %",
+      "formula": "(grossProfit / revenueActual) * 100",
+      "usedIn": ["Portfolio Finance"]
+    },
+    "cashflowBalance": {
+      "name": "Weekly Cashflow Balance",
+      "method": "Opening balance + cumulative (inflows - outflows) per week",
+      "inputs": ["cashflow_points", "program_expense", "program_inflows", "opex_budget"],
+      "usedIn": ["Cashflow Dashboard"]
+    },
+    "spendPercent": {
+      "name": "Spend %",
+      "formula": "(totalActualExpense / totalCosted) * 100",
+      "usedIn": ["PM Dashboard"]
+    },
+    "qualityPassRate": {
+      "name": "Quality Pass Rate",
+      "formula": "(approved / total) * 100",
+      "source": "qc_checklist items",
+      "usedIn": ["Quality Dashboard", "Portfolio Quality"]
+    },
+    "engineeringCompletionRate": {
+      "name": "Engineering Completion Rate",
+      "formula": "(completedStages / totalStages) * 100",
+      "source": "project_eng_stages",
+      "usedIn": ["Engineering Dashboard", "Portfolio Engineering"]
+    }
+  },
+  "dashboardMappings": {
+    "home": {
+      "endpoint": "/api/home/action-hub",
+      "kpis": ["unreadNotifications", "openTasks", "pendingApprovals", "overdueTasks"]
+    },
+    "pmDashboard": {
+      "endpoint": "/api/pm/dashboard",
+      "kpis": ["totalProjects", "totalContractValue", "avgSpendPercent", "grossProfitPercent", "activeTasks", "overdueTasks", "cosRealisedTotal", "cosFlaggedTotal"]
+    },
+    "portfolioDashboard": {
+      "endpoint": "/api/portfolio-dashboard",
+      "kpis": ["actPercent", "expectedPercent", "delta", "costedRevenue", "actualRevenue", "costedExpense", "actualExpense", "grossProfit", "gpMargin", "qualityPassRate", "engineeringCompletionRate"]
+    },
+    "cosTracker": {
+      "endpoint": "/api/cos-tracker",
+      "kpis": ["cosRealised", "cosUnrealised", "totalCosted", "variance", "variancePercent"]
+    },
+    "cashflow": {
+      "endpoint": "/api/cashflow-2026",
+      "kpis": ["openingBalance", "inflows", "outflows", "closingBalance", "availablePaymentCapacity"]
+    },
+    "engineeringDashboard": {
+      "endpoint": "/api/eng/standup",
+      "kpis": ["totalProjects", "activeTasks", "overdueTasks", "holdTasks", "pendingApprovals", "recentlyCompleted"]
+    },
+    "qualityDashboard": {
+      "endpoint": "/api/quality/checklists",
+      "kpis": ["totalProjects", "completedChecklists", "activeWarnings", "avgQmScore"]
+    }
+  }
+}

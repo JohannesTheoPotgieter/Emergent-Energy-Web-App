@@ -1,0 +1,48 @@
+{
+  "roles": {
+    "CEO_ADMIN": { "label": "CEO", "level": "executive", "isAdmin": true },
+    "COO_ADMIN": { "label": "COO", "level": "executive", "isAdmin": true },
+    "CCO": { "label": "CCO", "level": "c-suite", "isAdmin": false },
+    "CFO": { "label": "CFO", "level": "c-suite", "isAdmin": false },
+    "PROGRAM_MANAGER": { "label": "Program Manager", "level": "management", "isAdmin": false },
+    "PROGRAM_FINANCE_MANAGER": { "label": "Program Finance Manager", "level": "management", "isAdmin": false },
+    "CONSTRUCTION_MANAGER": { "label": "Construction Manager", "level": "management", "isAdmin": false },
+    "QUALITY_MANAGER": { "label": "Quality Manager", "level": "management", "isAdmin": false },
+    "ENGINEERING_MANAGER": { "label": "Engineering Manager", "level": "management", "isAdmin": false },
+    "PROJECT_MANAGER_SITE": { "label": "Project Manager", "level": "operational", "isAdmin": false },
+    "PROJECT_DEVELOPER": { "label": "Project Developer", "level": "operational", "isAdmin": false },
+    "ENGINEER": { "label": "Engineer", "level": "operational", "isAdmin": false },
+    "ACCOUNTANT": { "label": "Accountant", "level": "operational", "isAdmin": false },
+    "KEY_ACCOUNTS_MANAGER": { "label": "Key Accounts Manager", "level": "operational", "isAdmin": false }
+  },
+  "permissionEntities": [
+    "COCKPIT", "PROJECTS", "MONEY", "PROJECT_DEVELOPMENT",
+    "DELIVERY", "GOVERNANCE", "INFORMATION", "ADMIN",
+    "portfolios", "notifications", "subcontractors",
+    "cos_control", "cashflow_forecast", "home",
+    "ee_info_lifecycle", "ee_info_departments", "ee_info_processes", "ee_info_templates"
+  ],
+  "middlewareTypes": {
+    "requireAuth": "Basic authentication - any logged-in user",
+    "requireAdmin": "CEO_ADMIN, COO_ADMIN, or admin role only",
+    "requireCOO": "COO_ADMIN, admin, or CEO_ADMIN",
+    "requireRole": "Allow-list of specific roles",
+    "requirePermission": "Entity+action check against DB permissions with static fallback",
+    "requirePriorityAdmin": "Execs + PROGRAM_MANAGER",
+    "requireQmChallenge": "Quality Manager access code verification",
+    "requireEpmChallenge": "Engineering PM access code verification"
+  },
+  "frontendGuards": {
+    "ProtectedRoute": "Redirects to /auth/login if not authenticated",
+    "RoleGuard": "Role-based route filtering with redirects",
+    "usePermission": "Hook for conditional UI rendering",
+    "PermissionGate": "Component wrapper for permission-gated content"
+  },
+  "routeAccessMatrix": {
+    "adminOnly": ["/admin", "/admin/*"],
+    "pmRestricted": ["PM sees: /, /pm-dashboard, /projects, /project/:name, /engineering, /engineering/tasks, /engineering/inbox, /quality, /cashflow, /cos, /feedback"],
+    "epmRestricted": ["EPM sees: /, /engineering, /engineering/tasks, /engineering/inbox, /quality, /projects, /project/:name, /feedback"],
+    "qmRestricted": ["QM sees: /, /quality, /projects, /project/:name, /feedback"],
+    "fullAccess": ["CEO_ADMIN, COO_ADMIN, CCO, CFO, PROGRAM_MANAGER, PROGRAM_FINANCE_MANAGER, CONSTRUCTION_MANAGER see all routes"]
+  }
+}
