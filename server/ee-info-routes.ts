@@ -832,16 +832,19 @@ export function registerEeInfoRoutes(app: Express) {
   ];
 
   const OS_DEPARTMENTS = [
-    { slug: "os-dept-engineering", title: "Engineering", sortOrder: 1, description: "Design, technical calculations, and engineering deliverables" },
-    { slug: "os-dept-finance", title: "Finance", sortOrder: 2, description: "Financial management, invoicing, and cost tracking" },
-    { slug: "os-dept-operations", title: "Operations", sortOrder: 3, description: "Day-to-day operational management" },
-    { slug: "os-dept-sales", title: "Sales", sortOrder: 4, description: "Business development and client relations" },
-    { slug: "os-dept-procurement", title: "Procurement", sortOrder: 5, description: "Supplier management and material sourcing" },
-    { slug: "os-dept-legal", title: "Legal", sortOrder: 6, description: "Contracts, compliance, and legal affairs" },
-    { slug: "os-dept-hr", title: "HR", sortOrder: 7, description: "Human resources and people management" },
-    { slug: "os-dept-executive", title: "Executive", sortOrder: 8, description: "Strategic leadership and governance" },
-    { slug: "os-dept-project-delivery", title: "Project Delivery", sortOrder: 9, description: "On-site project execution and management" },
-    { slug: "os-dept-om", title: "O&M", sortOrder: 10, description: "Operations and maintenance of completed projects" },
+    { slug: "os-dept-exco", title: "Exco", sortOrder: 0, description: "Executive Committee - Strategic leadership and governance", parent: null },
+    { slug: "os-dept-engineering", title: "Engineering", sortOrder: 1, description: "Design, technical calculations, and engineering deliverables", parent: null },
+    { slug: "os-dept-finance", title: "Finance", sortOrder: 2, description: "Financial management, invoicing, and cost tracking", parent: null },
+    { slug: "os-dept-project-management", title: "Project Management", sortOrder: 3, description: "Project delivery, construction oversight, planning, and handover management", parent: null },
+    { slug: "os-dept-project-development", title: "Project Development", sortOrder: 4, description: "Business development, client relations, and deal management", parent: null },
+    { slug: "os-dept-quality", title: "Quality", sortOrder: 5, description: "Quality assurance, compliance, and standards management", parent: null },
+    { slug: "os-dept-legal", title: "Legal", sortOrder: 1, description: "Contracts, compliance, and legal affairs", parent: "os-dept-exco" },
+    { slug: "os-dept-procurement", title: "Procurement", sortOrder: 21, description: "Supplier management and material sourcing", parent: "os-dept-finance" },
+    { slug: "os-dept-operations", title: "Operations", sortOrder: 31, description: "Day-to-day operational management", parent: "os-dept-project-management" },
+    { slug: "os-dept-project-delivery", title: "Project Delivery", sortOrder: 32, description: "On-site project execution and management", parent: "os-dept-project-management" },
+    { slug: "os-dept-om", title: "O&M", sortOrder: 33, description: "Operations and maintenance of completed projects", parent: "os-dept-project-management" },
+    { slug: "os-dept-sales", title: "Sales", sortOrder: 41, description: "Business development and client relations", parent: "os-dept-project-development" },
+    { slug: "os-dept-hr", title: "HR", sortOrder: 42, description: "Human resources and people management", parent: "os-dept-project-development" },
   ];
 
   app.post("/api/ee-info/os/seed", requireCOO, async (_req, res) => {
@@ -866,13 +869,32 @@ export function registerEeInfoRoutes(app: Express) {
         created.push(stage.slug);
       }
 
-      for (const dept of OS_DEPARTMENTS) {
+      const deptIdMap: Record<string, string> = {};
+      for (const dept of OS_DEPARTMENTS.filter(d => !d.parent)) {
+        if (existingSlugs.has(dept.slug)) {
+          const ex = await db.select({ id: eeInfoNodes.id }).from(eeInfoNodes).where(sql`${eeInfoNodes.slug} = ${dept.slug}`);
+          if (ex.length > 0) deptIdMap[dept.slug] = ex[0].id;
+          skipped.push(dept.slug); continue;
+        }
+        const id = generateId();
+        deptIdMap[dept.slug] = id;
+        await db.insert(eeInfoNodes).values({
+          id, slug: dept.slug, title: dept.title,
+          contentMarkdown: `# ${dept.title}\n\n${dept.description}`,
+          status: "published", category: "process", nodeType: "department",
+          sortOrder: dept.sortOrder, tags: ["department", "os-map"],
+        });
+        created.push(dept.slug);
+      }
+      for (const dept of OS_DEPARTMENTS.filter(d => d.parent)) {
         if (existingSlugs.has(dept.slug)) { skipped.push(dept.slug); continue; }
+        const parentId = deptIdMap[dept.parent!] || null;
         await db.insert(eeInfoNodes).values({
           id: generateId(), slug: dept.slug, title: dept.title,
           contentMarkdown: `# ${dept.title}\n\n${dept.description}`,
           status: "published", category: "process", nodeType: "department",
-          sortOrder: dept.sortOrder, tags: ["department", "os-map"],
+          sortOrder: dept.sortOrder, tags: ["department", "os-map", "sub-department"],
+          parentNodeId: parentId,
         });
         created.push(dept.slug);
       }
@@ -889,17 +911,14 @@ export function registerEeInfoRoutes(app: Express) {
         let deptSlug: string | null = null;
         const stages: string[] = [];
 
-        if (/engineer|design|ifc|drawing|bom|technical/i.test(title + content)) deptSlug = "os-dept-engineering";
-        else if (/financ|invoice|cost|budget|revenue|cashflow/i.test(title + content)) deptSlug = "os-dept-finance";
-        else if (/procure|supplier|material|sourcing/i.test(title + content)) deptSlug = "os-dept-procurement";
-        else if (/legal|contract|compliance/i.test(title + content)) deptSlug = "os-dept-legal";
-        else if (/sales|business development|client|proposal/i.test(title + content)) deptSlug = "os-dept-sales";
-        else if (/construct|install|site|commission/i.test(title + content)) deptSlug = "os-dept-project-delivery";
-        else if (/handover|dlp|defect/i.test(title + content)) deptSlug = "os-dept-project-delivery";
-        else if (/executive|coo|ceo|strategic/i.test(title + content)) deptSlug = "os-dept-executive";
-        else if (/hr|people|recruit/i.test(title + content)) deptSlug = "os-dept-hr";
-        else if (/o&m|maintenance|operation/i.test(title + content)) deptSlug = "os-dept-om";
-        else deptSlug = "os-dept-operations";
+        if (/epd\d|engineer.*pack|red.team|data.tool|tender.*request|site.*visit.*request/i.test(title)) deptSlug = "os-dept-engineering";
+        else if (/epm\d|engineer|design|ifc|drawing|bom|technical/i.test(title + content)) deptSlug = "os-dept-engineering";
+        else if (/pma\d|financ|invoice|cost|budget|revenue|cashflow|payment|inventory|smart.import|procurement/i.test(title + content)) deptSlug = "os-dept-finance";
+        else if (/pm\d|construct|install|commission|planning.*pm|hse|hand.over|pdpm|project.initiation|compliance/i.test(title)) deptSlug = "os-dept-project-management";
+        else if (/pd\d|deal.clos|first.engagement|relationship|research.*client|final.offer|client.invoic/i.test(title + content)) deptSlug = "os-dept-project-development";
+        else if (/quality|qa|qc|inspection|audit/i.test(title + content)) deptSlug = "os-dept-quality";
+        else if (/executive|coo|ceo|strategic|legal|contract/i.test(title + content)) deptSlug = "os-dept-exco";
+        else deptSlug = "os-dept-project-management";
 
         if (/first assessment|feasibility|p0|epd1/i.test(title + content)) stages.push("os-p0-first-assessment");
         if (/cost proposal|design proposal|p1|epd2/i.test(title + content)) stages.push("os-p1-cost-proposal");
@@ -980,7 +999,8 @@ export function registerEeInfoRoutes(app: Express) {
         };
       });
 
-      res.json({ stages: stagesWithData, allDepartments: departments, totalProcesses: processes.length });
+      const mainDepartments = departments.filter(d => !d.parentNodeId);
+      res.json({ stages: stagesWithData, allDepartments: mainDepartments, totalProcesses: processes.length });
     } catch (err) {
       console.error("[EE-Info OS] Lifecycle error:", err);
       res.status(500).json({ error: "Failed to fetch lifecycle data" });
@@ -989,20 +1009,34 @@ export function registerEeInfoRoutes(app: Express) {
 
   app.get("/api/ee-info/os/departments", requireAuth, async (_req, res) => {
     try {
-      const departments = await db.select().from(eeInfoNodes)
+      const allDepartments = await db.select().from(eeInfoNodes)
         .where(sql`${eeInfoNodes.nodeType} = 'department'`)
         .orderBy(eeInfoNodes.sortOrder);
 
       const processes = await db.select().from(eeInfoNodes)
         .where(sql`${eeInfoNodes.nodeType} = 'process'`);
 
-      const result = departments.map(dept => {
-        const deptProcesses = processes.filter(p => p.departmentSlug === dept.slug);
+      const mainDepts = allDepartments.filter(d => !d.parentNodeId);
+      const subDepts = allDepartments.filter(d => !!d.parentNodeId);
+
+      const result = mainDepts.map(dept => {
+        const children = subDepts.filter(sd => sd.parentNodeId === dept.id);
+        const childSlugs = children.map(c => c.slug);
+        const allSlugs = [dept.slug, ...childSlugs];
+        const deptProcesses = processes.filter(p => allSlugs.includes(p.departmentSlug || ""));
         return {
           ...dept,
           processCount: deptProcesses.length,
           activeProcesses: deptProcesses.filter(p => p.status === "published").length,
           draftProcesses: deptProcesses.filter(p => p.status === "draft" || p.status === "stub").length,
+          subDepartments: children.map(c => {
+            const cProcs = processes.filter(p => p.departmentSlug === c.slug);
+            return {
+              ...c,
+              processCount: cProcs.length,
+              activeProcesses: cProcs.filter(p => p.status === "published").length,
+            };
+          }),
         };
       });
       res.json(result);

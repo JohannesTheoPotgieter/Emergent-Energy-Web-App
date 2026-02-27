@@ -39,27 +39,33 @@ function authFetch(url: string, opts: RequestInit = {}): Promise<Response> {
 }
 
 const DEPT_ICONS: Record<string, React.ReactNode> = {
+  "os-dept-exco": <Target className="h-4 w-4" />,
   "os-dept-engineering": <Wrench className="h-4 w-4" />,
   "os-dept-finance": <Scale className="h-4 w-4" />,
+  "os-dept-project-management": <HardHat className="h-4 w-4" />,
+  "os-dept-project-development": <Briefcase className="h-4 w-4" />,
+  "os-dept-quality": <ClipboardList className="h-4 w-4" />,
   "os-dept-operations": <Cog className="h-4 w-4" />,
   "os-dept-sales": <Briefcase className="h-4 w-4" />,
   "os-dept-procurement": <Truck className="h-4 w-4" />,
   "os-dept-legal": <Shield className="h-4 w-4" />,
   "os-dept-hr": <Users className="h-4 w-4" />,
-  "os-dept-executive": <Target className="h-4 w-4" />,
   "os-dept-project-delivery": <HardHat className="h-4 w-4" />,
   "os-dept-om": <Factory className="h-4 w-4" />,
 };
 
 const DEPT_COLORS: Record<string, { bg: string; border: string; text: string; badge: string }> = {
+  "os-dept-exco": { bg: "bg-indigo-50", border: "border-indigo-200", text: "text-indigo-700", badge: "bg-indigo-100 text-indigo-700" },
   "os-dept-engineering": { bg: "bg-orange-50", border: "border-orange-200", text: "text-orange-700", badge: "bg-orange-100 text-orange-700" },
   "os-dept-finance": { bg: "bg-emerald-50", border: "border-emerald-200", text: "text-emerald-700", badge: "bg-emerald-100 text-emerald-700" },
+  "os-dept-project-management": { bg: "bg-amber-50", border: "border-amber-200", text: "text-amber-700", badge: "bg-amber-100 text-amber-700" },
+  "os-dept-project-development": { bg: "bg-blue-50", border: "border-blue-200", text: "text-blue-700", badge: "bg-blue-100 text-blue-700" },
+  "os-dept-quality": { bg: "bg-cyan-50", border: "border-cyan-200", text: "text-cyan-700", badge: "bg-cyan-100 text-cyan-700" },
   "os-dept-operations": { bg: "bg-slate-50", border: "border-slate-200", text: "text-slate-700", badge: "bg-slate-100 text-slate-700" },
   "os-dept-sales": { bg: "bg-blue-50", border: "border-blue-200", text: "text-blue-700", badge: "bg-blue-100 text-blue-700" },
   "os-dept-procurement": { bg: "bg-violet-50", border: "border-violet-200", text: "text-violet-700", badge: "bg-violet-100 text-violet-700" },
   "os-dept-legal": { bg: "bg-red-50", border: "border-red-200", text: "text-red-700", badge: "bg-red-100 text-red-700" },
   "os-dept-hr": { bg: "bg-pink-50", border: "border-pink-200", text: "text-pink-700", badge: "bg-pink-100 text-pink-700" },
-  "os-dept-executive": { bg: "bg-indigo-50", border: "border-indigo-200", text: "text-indigo-700", badge: "bg-indigo-100 text-indigo-700" },
   "os-dept-project-delivery": { bg: "bg-amber-50", border: "border-amber-200", text: "text-amber-700", badge: "bg-amber-100 text-amber-700" },
   "os-dept-om": { bg: "bg-teal-50", border: "border-teal-200", text: "text-teal-700", badge: "bg-teal-100 text-teal-700" },
 };
@@ -409,26 +415,63 @@ function LifecycleOverview({
 
       <div className="mt-8">
         <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-          <Building2 className="h-4 w-4" /> All Departments
+          <Building2 className="h-4 w-4" /> Departments
         </h3>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
           {allDepts.map((dept: any) => {
             const colors = DEPT_COLORS[dept.slug] || DEPT_COLORS["os-dept-operations"];
+            const subs = dept.subDepartments || [];
+            const isExpanded = expandedDepts.has(`main-${dept.slug}`);
             return (
-              <button
-                key={dept.slug}
-                className={`flex flex-col items-center gap-2 p-4 rounded-xl border ${colors.border} ${colors.bg} hover:shadow-md transition-all group`}
-                onClick={() => onSelectDepartment(dept.slug)}
-                data-testid={`dept-card-${dept.slug}`}
-              >
-                <div className={`p-2 rounded-lg bg-white shadow-sm ${colors.text} group-hover:scale-110 transition-transform`}>
-                  {DEPT_ICONS[dept.slug] || <Building2 className="h-5 w-5" />}
-                </div>
-                <span className="text-xs font-semibold text-center">{dept.title}</span>
-                <div className="flex gap-1">
-                  <Badge variant="outline" className="text-[9px]">{dept.processCount || 0} processes</Badge>
-                </div>
-              </button>
+              <div key={dept.slug} className={`rounded-xl border ${colors.border} ${colors.bg} overflow-hidden transition-all hover:shadow-md`}>
+                <button
+                  className="w-full flex items-center gap-3 p-4 text-left group"
+                  onClick={() => onSelectDepartment(dept.slug)}
+                  data-testid={`dept-card-${dept.slug}`}
+                >
+                  <div className={`p-2.5 rounded-lg bg-white shadow-sm ${colors.text} group-hover:scale-110 transition-transform`}>
+                    {DEPT_ICONS[dept.slug] || <Building2 className="h-5 w-5" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm font-bold block">{dept.title}</span>
+                    <span className="text-[10px] text-muted-foreground">{dept.processCount || 0} processes</span>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                </button>
+                {subs.length > 0 && (
+                  <div className="border-t border-dashed px-4 pb-3 pt-2" style={{ borderColor: "inherit" }}>
+                    <button
+                      className="text-[10px] text-muted-foreground mb-1.5 flex items-center gap-1 hover:text-foreground transition-colors"
+                      onClick={() => toggleDept(`main-${dept.slug}`)}
+                      data-testid={`toggle-subs-${dept.slug}`}
+                    >
+                      {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                      {subs.length} sub-department{subs.length > 1 ? "s" : ""}
+                    </button>
+                    {isExpanded && (
+                      <div className="space-y-1">
+                        {subs.map((sub: any) => {
+                          const subColors = DEPT_COLORS[sub.slug] || colors;
+                          return (
+                            <button
+                              key={sub.slug}
+                              className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-white/60 border border-white hover:bg-white hover:shadow-sm transition-all text-left"
+                              onClick={() => onSelectDepartment(sub.slug)}
+                              data-testid={`sub-dept-${sub.slug}`}
+                            >
+                              <div className={`${subColors.text}`}>
+                                {DEPT_ICONS[sub.slug] || <Building2 className="h-3 w-3" />}
+                              </div>
+                              <span className="text-xs font-medium flex-1">{sub.title}</span>
+                              <Badge variant="outline" className="text-[8px]">{sub.processCount || 0}</Badge>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>
