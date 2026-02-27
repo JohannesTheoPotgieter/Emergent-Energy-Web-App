@@ -21,9 +21,293 @@ import {
   ArrowLeft, Plus, Trash2, DollarSign, TrendingUp, TrendingDown, Users,
   ShieldCheck, Wrench, Zap, AlertTriangle, ChevronRight, Edit, Calendar,
   Briefcase, Search, ArrowRightLeft, CheckCircle2, Flag, Layers, Clock, XCircle, Activity,
+  LayoutList, GanttChart, Diamond,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { format } from "date-fns";
+
+const MILESTONE_CONFIG = [
+  { name: "PD Handover", color: "#6366f1", bgColor: "#eef2ff" },
+  { name: "Construction Start", color: "#2563eb", bgColor: "#eff6ff" },
+  { name: "Commissioning", color: "#d97706", bgColor: "#fffbeb" },
+  { name: "Practical Completion", color: "#16a34a", bgColor: "#f0fdf4" },
+  { name: "O&M Handover", color: "#9333ea", bgColor: "#faf5ff" },
+  { name: "Client Handover", color: "#e11d48", bgColor: "#fff1f2" },
+];
+
+function PortfolioGanttChart({ projects }: { projects: any[] }) {
+  const [hoveredRow, setHoveredRow] = useState<number | null>(null);
+  const [tooltip, setTooltip] = useState<{ x: number; y: number; content: any } | null>(null);
+
+  const allDates: number[] = [];
+  for (const proj of projects) {
+    if (proj.projectStart) allDates.push(new Date(proj.projectStart + 'T00:00:00').getTime());
+    if (proj.projectEnd) allDates.push(new Date(proj.projectEnd + 'T00:00:00').getTime());
+    for (const kd of (proj.keyDates || [])) {
+      if (kd.effectiveDate) allDates.push(new Date(kd.effectiveDate + 'T00:00:00').getTime());
+    }
+  }
+
+  if (allDates.length === 0) {
+    return (
+      <Card><CardContent className="py-10 text-center text-muted-foreground">
+        No date data available for Gantt chart.
+      </CardContent></Card>
+    );
+  }
+
+  const minTime = Math.min(...allDates);
+  const maxTime = Math.max(...allDates);
+  const padDays = 30;
+  const timelineStart = minTime - padDays * 86400000;
+  const timelineEnd = maxTime + padDays * 86400000;
+  const timelineRange = timelineEnd - timelineStart;
+
+  const toPercent = (dateStr: string) => {
+    const t = new Date(dateStr + 'T00:00:00').getTime();
+    return ((t - timelineStart) / timelineRange) * 100;
+  };
+
+  const months: { label: string; left: number }[] = [];
+  const d = new Date(timelineStart);
+  d.setDate(1);
+  d.setMonth(d.getMonth() + 1);
+  while (d.getTime() < timelineEnd) {
+    const pct = ((d.getTime() - timelineStart) / timelineRange) * 100;
+    if (pct > 0 && pct < 100) {
+      months.push({ label: format(d, 'MMM yy'), left: pct });
+    }
+    d.setMonth(d.getMonth() + 1);
+  }
+
+  const todayPct = ((Date.now() - timelineStart) / timelineRange) * 100;
+
+  const ROW_HEIGHT = 48;
+  const HEADER_HEIGHT = 32;
+
+  return (
+    <Card data-testid="gantt-portfolio-plan">
+      <CardContent className="p-0">
+        <div className="overflow-x-auto">
+          <div className="flex" style={{ minWidth: 900 }}>
+            <div className="flex-shrink-0 border-r bg-slate-50/80" style={{ width: 220 }}>
+              <div className="border-b px-3 flex items-center text-[10px] font-semibold text-gray-500 uppercase tracking-wider" style={{ height: HEADER_HEIGHT }}>
+                Project
+              </div>
+              {projects.map((proj: any, idx: number) => {
+                const progressColor = proj.actualPct >= 90 ? 'text-green-700 bg-green-100' :
+                  proj.actualPct >= 50 ? 'text-blue-700 bg-blue-100' :
+                  proj.actualPct > 0 ? 'text-amber-700 bg-amber-100' : 'text-gray-500 bg-gray-100';
+                return (
+                  <div
+                    key={proj.projectId}
+                    className={`border-b px-3 flex items-center gap-2 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/40'} ${hoveredRow === idx ? 'bg-blue-50/60' : ''}`}
+                    style={{ height: ROW_HEIGHT }}
+                    onMouseEnter={() => setHoveredRow(idx)}
+                    onMouseLeave={() => setHoveredRow(null)}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <Link href={`/project/${encodeURIComponent(proj.projectName)}`} className="hover:underline">
+                        <div className="font-medium text-gray-800 text-[11px] truncate">{proj.projectName}</div>
+                      </Link>
+                      <div className="text-[9px] text-gray-400 truncate">{proj.pm || '—'} · {parseFloat(proj.sizeKwp || '0').toFixed(0)} kWp</div>
+                    </div>
+                    <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-bold flex-shrink-0 ${progressColor}`}>
+                      {Math.round(proj.actualPct)}%
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex-1 relative" style={{ minWidth: 600 }}>
+              <div className="border-b relative" style={{ height: HEADER_HEIGHT }}>
+                {months.map((m, i) => (
+                  <div
+                    key={i}
+                    className="absolute text-[9px] text-gray-400 font-medium whitespace-nowrap"
+                    style={{ left: `${m.left}%`, top: '50%', transform: 'translate(-50%, -50%)' }}
+                  >
+                    {m.label}
+                  </div>
+                ))}
+              </div>
+
+              {months.map((m, i) => (
+                <div
+                  key={i}
+                  className="absolute top-0 bottom-0 border-l border-dashed border-gray-100"
+                  style={{ left: `${m.left}%` }}
+                />
+              ))}
+
+              {todayPct > 0 && todayPct < 100 && (
+                <div
+                  className="absolute top-0 bottom-0 border-l-2 border-red-400 z-20"
+                  style={{ left: `${todayPct}%` }}
+                >
+                  <div className="absolute -top-0 -translate-x-1/2 bg-red-500 text-white text-[8px] px-1 rounded-b font-medium">
+                    Today
+                  </div>
+                </div>
+              )}
+
+              {projects.map((proj: any, idx: number) => {
+                const startPct = proj.projectStart ? toPercent(proj.projectStart) : null;
+                const endPct = proj.projectEnd ? toPercent(proj.projectEnd) : null;
+
+                const milestones = (proj.keyDates || [])
+                  .filter((kd: any) => kd.effectiveDate)
+                  .map((kd: any) => {
+                    const cfg = MILESTONE_CONFIG.find(m => m.name === kd.keyDateName);
+                    return {
+                      ...kd,
+                      pct: toPercent(kd.effectiveDate),
+                      color: cfg?.color || '#6b7280',
+                      bgColor: cfg?.bgColor || '#f3f4f6',
+                    };
+                  });
+
+                const barLeft = startPct != null ? startPct : (milestones.length > 0 ? Math.min(...milestones.map((m: any) => m.pct)) : 0);
+                const barRight = endPct != null ? endPct : (milestones.length > 0 ? Math.max(...milestones.map((m: any) => m.pct)) : 0);
+                const barWidth = Math.max(barRight - barLeft, 0.5);
+
+                const progressWidth = barWidth * (proj.actualPct / 100);
+
+                const behindSchedule = proj.delta < -5;
+
+                return (
+                  <div
+                    key={proj.projectId}
+                    className={`relative border-b transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/40'} ${hoveredRow === idx ? 'bg-blue-50/60' : ''}`}
+                    style={{ height: ROW_HEIGHT }}
+                    onMouseEnter={() => setHoveredRow(idx)}
+                    onMouseLeave={() => { setHoveredRow(null); setTooltip(null); }}
+                  >
+                    <div
+                      className={`absolute rounded-full ${behindSchedule ? 'ring-1 ring-red-400' : ''}`}
+                      style={{
+                        left: `${barLeft}%`,
+                        width: `${barWidth}%`,
+                        top: '35%',
+                        height: 12,
+                        backgroundColor: '#e2e8f0',
+                      }}
+                    >
+                      <div
+                        className="h-full rounded-full transition-all"
+                        style={{
+                          width: `${Math.min((proj.actualPct / 100) * 100, 100)}%`,
+                          backgroundColor: behindSchedule ? '#ef4444' : proj.actualPct >= 90 ? '#16a34a' : '#3b82f6',
+                        }}
+                      />
+
+                      {proj.expectedPct > 0 && (
+                        <div
+                          className="absolute top-0 bottom-0"
+                          style={{
+                            left: `${Math.min(proj.expectedPct, 100)}%`,
+                            width: 2,
+                            backgroundColor: '#f59e0b',
+                            borderRadius: 1,
+                          }}
+                          title={`Expected: ${Math.round(proj.expectedPct)}%`}
+                        />
+                      )}
+                    </div>
+
+                    {milestones.map((ms: any, mi: number) => {
+                      const isCommissioning = ms.keyDateName === "Commissioning";
+                      return (
+                        <div
+                          key={mi}
+                          className="absolute z-10 cursor-pointer"
+                          style={{
+                            left: `${ms.pct}%`,
+                            top: isCommissioning ? '8%' : '14%',
+                            transform: 'translateX(-50%)',
+                          }}
+                          onMouseEnter={(e) => {
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            setTooltip({
+                              x: rect.left + rect.width / 2,
+                              y: rect.top - 8,
+                              content: {
+                                project: proj.projectName,
+                                milestone: ms.keyDateName,
+                                date: ms.effectiveDate,
+                                phase: proj.phase,
+                                actPct: proj.actualPct,
+                                expPct: proj.expectedPct,
+                              },
+                            });
+                          }}
+                          onMouseLeave={() => setTooltip(null)}
+                        >
+                          {isCommissioning ? (
+                            <svg width="14" height="14" viewBox="0 0 14 14">
+                              <rect x="7" y="0" width="7" height="7" rx="1" transform="rotate(45 7 0)" fill={ms.color} />
+                            </svg>
+                          ) : (
+                            <div
+                              className="rounded-full border-2"
+                              style={{
+                                width: 10,
+                                height: 10,
+                                borderColor: ms.color,
+                                backgroundColor: ms.bgColor,
+                              }}
+                            />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {tooltip && (
+          <div
+            className="fixed z-50 pointer-events-none"
+            style={{ left: tooltip.x, top: tooltip.y, transform: 'translate(-50%, -100%)' }}
+          >
+            <div className="bg-gray-900 text-white rounded-lg shadow-lg px-3 py-2 text-[10px] space-y-0.5 max-w-[220px]">
+              <div className="font-semibold text-[11px]">{tooltip.content.project}</div>
+              <div className="text-gray-300">{tooltip.content.milestone}: <span className="text-white font-medium">{format(new Date(tooltip.content.date + 'T00:00:00'), 'dd MMM yyyy')}</span></div>
+              <div className="text-gray-300">Phase: {tooltip.content.phase || '—'}</div>
+              <div className="text-gray-300">Act: {Math.round(tooltip.content.actPct)}% · Exp: {Math.round(tooltip.content.expPct)}%</div>
+              <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900" />
+            </div>
+          </div>
+        )}
+      </CardContent>
+
+      <div className="px-4 py-2.5 border-t bg-slate-50/60 flex flex-wrap items-center gap-x-5 gap-y-1.5">
+        {MILESTONE_CONFIG.map((m) => (
+          <div key={m.name} className="flex items-center gap-1.5 text-[10px] text-gray-500">
+            {m.name === "Commissioning" ? (
+              <svg width="10" height="10" viewBox="0 0 10 10"><rect x="5" y="0" width="5" height="5" rx="1" transform="rotate(45 5 0)" fill={m.color} /></svg>
+            ) : (
+              <div className="rounded-full border-2" style={{ width: 8, height: 8, borderColor: m.color, backgroundColor: m.bgColor }} />
+            )}
+            <span>{m.name}</span>
+          </div>
+        ))}
+        <div className="flex items-center gap-1.5 text-[10px] text-gray-500">
+          <div className="w-4 h-1 bg-amber-500 rounded" />
+          <span>Expected %</span>
+        </div>
+        <div className="flex items-center gap-1.5 text-[10px] text-gray-500">
+          <div className="w-4 h-1 bg-red-400 rounded" />
+          <span>Behind &gt;5%</span>
+        </div>
+      </div>
+    </Card>
+  );
+}
 
 export default function PortfolioDetailPage() {
   const [, params] = useRoute("/portfolios/:id");
@@ -38,6 +322,7 @@ export default function PortfolioDetailPage() {
   const [assignOpen, setAssignOpen] = useState(false);
   const [rolloutOpen, setRolloutOpen] = useState(false);
   const [assignSearch, setAssignSearch] = useState("");
+  const [planView, setPlanView] = useState<"table" | "gantt">("gantt");
   const [editData, setEditData] = useState<any>({});
   const [rolloutData, setRolloutData] = useState({ name: "", notes: "", phases: [{ phaseName: "", startDate: "", endDate: "" }] });
 
@@ -673,6 +958,26 @@ export default function PortfolioDetailPage() {
               <h3 className="font-semibold text-sm">Portfolio Project Plan</h3>
               <p className="text-xs text-muted-foreground mt-0.5">Key milestone dates across all projects in this portfolio</p>
             </div>
+            <div className="flex items-center gap-1 border rounded-lg p-0.5 bg-muted/30">
+              <Button
+                variant={planView === "table" ? "secondary" : "ghost"}
+                size="sm"
+                className="h-7 px-2.5 gap-1 text-xs"
+                onClick={() => setPlanView("table")}
+                data-testid="button-plan-table-view"
+              >
+                <LayoutList className="h-3.5 w-3.5" /> Table
+              </Button>
+              <Button
+                variant={planView === "gantt" ? "secondary" : "ghost"}
+                size="sm"
+                className="h-7 px-2.5 gap-1 text-xs"
+                onClick={() => setPlanView("gantt")}
+                data-testid="button-plan-gantt-view"
+              >
+                <GanttChart className="h-3.5 w-3.5" /> Gantt
+              </Button>
+            </div>
           </div>
           {!portfolioKeyDates ? (
             <Card><CardContent className="py-10 text-center text-muted-foreground">
@@ -684,7 +989,7 @@ export default function PortfolioDetailPage() {
               <Calendar className="h-8 w-8 mx-auto mb-2 opacity-40" />
               No projects assigned to this portfolio yet.
             </CardContent></Card>
-          ) : (
+          ) : planView === "table" ? (
             <>
               <Card>
                 <CardContent className="p-0">
@@ -732,7 +1037,6 @@ export default function PortfolioDetailPage() {
                           const renderDateCell = (keyDateName: string, colorClass: string) => {
                             const dateInfo = kd(keyDateName);
                             const date = dateInfo?.effectiveDate;
-                            const linked = dateInfo?.linked;
                             if (!date) {
                               return (
                                 <td className="text-center px-2 py-2.5">
@@ -815,6 +1119,8 @@ export default function PortfolioDetailPage() {
                 </div>
               </div>
             </>
+          ) : (
+            <PortfolioGanttChart projects={portfolioKeyDates} />
           )}
         </TabsContent>
       </Tabs>
