@@ -2291,7 +2291,11 @@ export function registerEngineeringRoutes(app: Express) {
         `),
       ]);
 
-      const myEngApprovals = isAdmin ? engApprovals : engApprovals.filter(a => {
+      const myEngApprovals = engApprovals.filter(a => {
+        if (a.approverRole === "QA_REVIEW" || a.approverRole === "Quality Manager") {
+          return userRole === "QUALITY_MANAGER" || userRole === "quality_manager";
+        }
+        if (isAdmin) return true;
         if (a.approverUserId && a.approverUserId === userId) return true;
         if (a.approverRole) {
           const allowed = APPROVAL_ROLE_MAP[a.approverRole];
@@ -2300,8 +2304,7 @@ export function registerEngineeringRoutes(app: Express) {
         return false;
       });
 
-      const myQcItems = isAdmin ? qcItems :
-        (userRole === "QUALITY_MANAGER" || userRole === "quality_manager") ? qcItems : [];
+      const myQcItems = (userRole === "QUALITY_MANAGER" || userRole === "quality_manager") ? qcItems : [];
 
       const myDeliverables = deliverableItems;
 
