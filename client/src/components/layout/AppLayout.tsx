@@ -175,7 +175,7 @@ function getRedesignedNavGroups(): NavGroup[] {
     },
     {
       heading: "PROJECT DEVELOPMENT",
-      section: "PROJECTS",
+      section: "PROJECT_DEVELOPMENT",
       items: [
         { label: "PD Dashboard", icon: FileEdit, path: "/pd" },
         { label: "PD Tickets", icon: ClipboardList, path: "/pd/tickets" },
