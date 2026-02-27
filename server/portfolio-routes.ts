@@ -5,7 +5,7 @@ import { verifyToken } from "./jwt";
 import {
   portfolios, portfolioRolloutPlans, portfolioRolloutPhases,
   projectPortfolioAssignments, projectInfo, derivedProjectKpis, users,
-  qcChecklist, qcItemInstance,
+  qcChecklist, qcItemInstance, programExpense, programInflows, projectPlan,
 } from "@shared/schema";
 
 function jwtAuth(req: Request, _res: Response, next: NextFunction) {
@@ -287,16 +287,42 @@ export function registerPortfolioRoutes(app: Express) {
         kpis = await db.select().from(derivedProjectKpis).where(inArray(derivedProjectKpis.projectName, projectNames));
       }
 
+      let kpiPlannedRev = kpis.reduce((s, k) => s + (parseFloat(k.totalPlannedRevenue || "0") || 0), 0);
+      let kpiPlannedExp = kpis.reduce((s, k) => s + (parseFloat(k.totalPlannedExpenses || "0") || 0), 0);
+      let kpiActualRev = kpis.reduce((s, k) => s + (parseFloat(k.revenueRealised || "0") || 0), 0);
+      let kpiActualExp = kpis.reduce((s, k) => s + (parseFloat(k.cosRealised || "0") || 0), 0);
+      let kpiGP = kpis.reduce((s, k) => s + (parseFloat(k.grossProfit || "0") || 0), 0);
+
+      const rawExpenses = await db.select().from(programExpense).where(inArray(programExpense.projectName, projectNames));
+      const rawInflows = await db.select().from(programInflows).where(inArray(programInflows.projectName, projectNames));
+
+      const rawPlannedRev = rawInflows.reduce((s, r) => s + (parseFloat(String(r.revenueAmount || "0")) || 0), 0);
+      const rawPlannedExp = rawExpenses.reduce((s, e) => s + (parseFloat(String(e.budgetTotal || "0")) || 0), 0);
+      const rawActualExp = rawExpenses.reduce((s, e) => s + (parseFloat(String(e.actualCosTotal || "0")) || 0), 0);
+
+      const perProjectFinance = new Map<string, { plannedRev: number; actualRev: number; plannedExp: number; actualExp: number; gp: number }>();
+      for (const pn of projectNames) {
+        const projInflows = rawInflows.filter(r => r.projectName === pn);
+        const projExpenses = rawExpenses.filter(e => e.projectName === pn);
+        const kpi = kpis.find(k => k.projectName === pn);
+        const pRev = projInflows.reduce((s, r) => s + (parseFloat(String(r.revenueAmount || "0")) || 0), 0);
+        const pExp = projExpenses.reduce((s, e) => s + (parseFloat(String(e.budgetTotal || "0")) || 0), 0);
+        const aRev = kpi ? (parseFloat(kpi.revenueRealised || "0") || 0) : projInflows.reduce((s, r) => s + (parseFloat(String(r.revenueAmount || "0")) || 0), 0);
+        const aExp = projExpenses.reduce((s, e) => s + (parseFloat(String(e.actualCosTotal || "0")) || 0), 0);
+        perProjectFinance.set(pn, { plannedRev: pRev || (kpi ? parseFloat(kpi.totalPlannedRevenue || "0") || 0 : 0), actualRev: aRev, plannedExp: pExp || (kpi ? parseFloat(kpi.totalPlannedExpenses || "0") || 0 : 0), actualExp: aExp || (kpi ? parseFloat(kpi.cosRealised || "0") || 0 : 0), gp: aRev - aExp });
+      }
+
       const finance = {
-        totalPlannedRevenue: kpis.reduce((s, k) => s + (parseFloat(k.totalPlannedRevenue || "0") || 0), 0),
-        totalActualRevenue: kpis.reduce((s, k) => s + (parseFloat(k.revenueRealised || "0") || 0), 0),
-        totalPlannedExpenses: kpis.reduce((s, k) => s + (parseFloat(k.totalPlannedExpenses || "0") || 0), 0),
-        totalActualExpenses: kpis.reduce((s, k) => s + (parseFloat(k.cosRealised || "0") || 0), 0),
-        grossProfit: kpis.reduce((s, k) => s + (parseFloat(k.grossProfit || "0") || 0), 0),
+        totalPlannedRevenue: kpiPlannedRev > 0 ? kpiPlannedRev : rawPlannedRev,
+        totalActualRevenue: kpiActualRev > 0 ? kpiActualRev : rawPlannedRev,
+        totalPlannedExpenses: kpiPlannedExp > 0 ? kpiPlannedExp : rawPlannedExp,
+        totalActualExpenses: kpiActualExp > 0 ? kpiActualExp : rawActualExp,
+        grossProfit: kpiGP !== 0 ? kpiGP : ((kpiActualRev > 0 ? kpiActualRev : rawPlannedRev) - (kpiActualExp > 0 ? kpiActualExp : rawActualExp)),
         grossMarginPct: 0,
       };
-      if (finance.totalActualRevenue > 0) {
-        finance.grossMarginPct = Math.round((finance.grossProfit / finance.totalActualRevenue) * 10000) / 100;
+      const effectiveRev = finance.totalActualRevenue || finance.totalPlannedRevenue;
+      if (effectiveRev > 0) {
+        finance.grossMarginPct = Math.round((finance.grossProfit / effectiveRev) * 10000) / 100;
       }
 
       const scheduleItems = kpis.map(k => ({
@@ -346,6 +372,7 @@ export function registerPortfolioRoutes(app: Express) {
 
       const projectDetails = projects.map(p => {
         const kpi = kpis.find(k => k.projectName === p.projectName);
+        const rawFin = perProjectFinance.get(p.projectName);
         return {
           id: p.id,
           projectName: p.projectName,
@@ -358,11 +385,11 @@ export function registerPortfolioRoutes(app: Express) {
           actualPct: kpi ? parseFloat(kpi.avgActualPctComplete || "0") || 0 : 0,
           expectedPct: kpi ? parseFloat(kpi.avgExpectedPctComplete || "0") || 0 : 0,
           delta: kpi ? parseFloat(kpi.scheduleDelta || "0") || 0 : 0,
-          plannedRevenue: kpi ? parseFloat(kpi.totalPlannedRevenue || "0") || 0 : 0,
-          actualRevenue: kpi ? parseFloat(kpi.revenueRealised || "0") || 0 : 0,
-          plannedExpenses: kpi ? parseFloat(kpi.totalPlannedExpenses || "0") || 0 : 0,
-          actualExpenses: kpi ? parseFloat(kpi.cosRealised || "0") || 0 : 0,
-          grossProfit: kpi ? parseFloat(kpi.grossProfit || "0") || 0 : 0,
+          plannedRevenue: rawFin?.plannedRev || (kpi ? parseFloat(kpi.totalPlannedRevenue || "0") || 0 : 0),
+          actualRevenue: rawFin?.actualRev || (kpi ? parseFloat(kpi.revenueRealised || "0") || 0 : 0),
+          plannedExpenses: rawFin?.plannedExp || (kpi ? parseFloat(kpi.totalPlannedExpenses || "0") || 0 : 0),
+          actualExpenses: rawFin?.actualExp || (kpi ? parseFloat(kpi.cosRealised || "0") || 0 : 0),
+          grossProfit: rawFin?.gp ?? (kpi ? parseFloat(kpi.grossProfit || "0") || 0 : 0),
         };
       });
 
@@ -545,6 +572,96 @@ export function registerPortfolioRoutes(app: Express) {
       res.json({ portfolios: result, unassignedProjectCount: unassignedCount, totalPortfolios: allPortfolios.length });
     } catch (err: any) {
       console.error("[Portfolio] Dashboard error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/portfolios/:id/timeline", jwtAuth, requireAuth, async (req, res) => {
+    try {
+      const portfolioId = parseInt(req.params.id);
+      const assignments = await db.select().from(projectPortfolioAssignments).where(eq(projectPortfolioAssignments.portfolioId, portfolioId));
+      const projectIds = assignments.map(a => a.projectId);
+
+      if (projectIds.length === 0) return res.json([]);
+
+      const projects = await db.select().from(projectInfo).where(inArray(projectInfo.id, projectIds));
+      const projectNames = projects.map(p => p.projectName);
+
+      const plans = projectNames.length > 0
+        ? await db.select().from(projectPlan).where(inArray(projectPlan.projectName, projectNames))
+        : [];
+
+      const kpis = projectNames.length > 0
+        ? await db.select().from(derivedProjectKpis).where(inArray(derivedProjectKpis.projectName, projectNames))
+        : [];
+      const kpiMap = new Map(kpis.map(k => [k.projectName, k]));
+
+      const plansByProject = new Map<string, any[]>();
+      for (const p of plans) {
+        if (!plansByProject.has(p.projectName)) plansByProject.set(p.projectName, []);
+        plansByProject.get(p.projectName)!.push(p);
+      }
+
+      const timeline: any[] = [];
+
+      for (const proj of projects) {
+        const projPlans = plansByProject.get(proj.projectName) || [];
+        const kpi = kpiMap.get(proj.projectName);
+
+        let startDate: string | null = null;
+        let endDate: string | null = null;
+        let commDate: string | null = null;
+        let constructionStartDate: string | null = null;
+
+        for (const task of projPlans) {
+          const title = (task.title || "").toLowerCase();
+          const taskStart = task.actualStart || task.baselineStart;
+          const taskEnd = task.actualEnd || task.baselineEnd;
+
+          if (title.includes("site establishment") && taskStart) {
+            if (!startDate || taskStart < startDate) startDate = taskStart;
+          }
+          if (title.includes("handover to client") && taskEnd) {
+            if (!endDate || taskEnd > endDate) endDate = taskEnd;
+          }
+          if (title.includes("commissioning") && taskEnd) {
+            commDate = taskEnd;
+            if (!endDate || taskEnd > endDate) endDate = taskEnd;
+          }
+          if (title.includes("construction") && taskStart) {
+            constructionStartDate = taskStart;
+          }
+          if (taskStart && (!startDate || taskStart < startDate)) startDate = taskStart;
+          if (taskEnd && (!endDate || taskEnd > endDate)) endDate = taskEnd;
+        }
+
+        if (!startDate) startDate = (proj as any).constructionStartDate || null;
+        if (!endDate) endDate = (proj as any).clientHandoverDate || (proj as any).commissioningDate || null;
+        if (!commDate) commDate = (proj as any).commissioningDate || null;
+        if (!startDate) continue;
+
+        const actualPct = kpi ? parseFloat(kpi.avgActualPctComplete || "0") || 0 : 0;
+        const expectedPct = kpi ? parseFloat(kpi.avgExpectedPctComplete || "0") || 0 : 0;
+
+        timeline.push({
+          projectName: proj.projectName,
+          startDate,
+          endDate: endDate && endDate >= startDate ? endDate : startDate,
+          phase: proj.phase || null,
+          actualPct: Math.round(actualPct * 10) / 10,
+          expectedPct: Math.round(expectedPct * 10) / 10,
+          delta: Math.round((actualPct - expectedPct) * 10) / 10,
+          pm: proj.pm || null,
+          sizeKwp: proj.sizeKwp ?? null,
+          commissioningDate: commDate && commDate >= '1950-01-01' ? commDate : null,
+          constructionStartDate: constructionStartDate,
+        });
+      }
+
+      timeline.sort((a, b) => (a.startDate || "").localeCompare(b.startDate || ""));
+      res.json(timeline);
+    } catch (err: any) {
+      console.error("[Portfolio] Timeline error:", err);
       res.status(500).json({ error: err.message });
     }
   });
