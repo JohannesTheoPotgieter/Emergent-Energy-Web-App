@@ -5,33 +5,38 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Lock, User, Info, X, Sparkles, Shield, BookOpen, Bug, Trophy, CheckCircle } from "lucide-react";
+import { Lock, User, Info, X, Shield, Trophy, UserCog, LayoutGrid, PauseCircle, FolderKanban } from "lucide-react";
 
 const CHANGELOG = [
   {
-    icon: Trophy,
-    title: "Gamification: Badges & Leaderboard",
-    description: "Compete with your team! We track your tasks, approvals, imports, reviews, and project updates — then award you points and badges. 18 badges across 8 categories, 8 levels from Rookie to Titan, and a leaderboard with a podium for the top 3. May the best engineer win.",
+    icon: UserCog,
+    title: "My Tasks View — Your Daily Cockpit",
+    description: "Engineers now have a dedicated My Tasks view showing only your assigned tasks, sorted into smart buckets: Overdue, Due Soon, On Hold, In Progress, and Everything Else. Inline edits for status, priority, due date, and quick notes — no need to open the full drawer for everyday updates.",
   },
   {
-    icon: CheckCircle,
-    title: "Approvals Screen — One Place to Rule Them All",
-    description: "No more hunting for pending approvals across engineering gates, quality reviews, and deliverables. The new Admin Approvals screen shows everything in one place with Approve/Reject buttons and a confirmation dialog. Reject requires a reason — accountability still has a seat at the table.",
+    icon: LayoutGrid,
+    title: "Standup Mode for COO",
+    description: "A new Standup Mode toggle on the Engineering Dashboard gives managers a birds-eye view of all tasks bucketed by urgency and grouped by assignee. Inline edits, a clickable blockers counter, and priority sorting make daily standups faster and more focused.",
   },
   {
-    icon: Sparkles,
-    title: "Project Home from Lifecycle Board",
-    description: "You can now jump straight from any project card on the Lifecycle Board to its full Project Home page — the one with the PM, Engineering, and Quality pillar cards. No more digging through menus.",
+    icon: PauseCircle,
+    title: "HOLD Workflow — Internal vs External Blocking",
+    description: "When putting a task on hold, you now must specify whether it's blocked Internally or Externally. This applies everywhere — the task drawer, board view, and quick update form. A colour-coded badge shows the blocked type at a glance across all views.",
+  },
+  {
+    icon: FolderKanban,
+    title: "Projects Assistance Requires a Linked Project",
+    description: "Setting a task to Projects Assistance now requires a linked project — no more orphaned assistance requests floating in the void. These tasks also appear in the linked project's Engineering Tasks tab with a clear visual indicator.",
   },
   {
     icon: Shield,
-    title: "Project Data Accuracy Overhaul",
-    description: "Plan progress, task counts, contract values, budget totals, and quality gates on the Project Detail overview now pull from the correct data sources. No more phantom 0% stats or missing financials. The numbers actually mean something now.",
+    title: "Send for Approval Workflow",
+    description: "Engineering tasks and quality items now have a dedicated Send for Approval flow with file upload, approver selection, and automatic notification creation. No more manually chasing approvers through chat.",
   },
   {
-    icon: Bug,
-    title: "Engineering Tasks Filter Fixed",
-    description: "The task board no longer defaults to filtering by one person's name. It starts showing all tasks, and the filter pill now actually clears when you click the X. Revolutionary, we know.",
+    icon: Trophy,
+    title: "Portfolio Owner & Management",
+    description: "Portfolios now have an assigned owner. Create and edit dialogs include an owner selector, giving clear accountability for portfolio-level oversight and decision-making.",
   },
 ];
 
@@ -43,7 +48,7 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [showVersion, setShowVersion] = useState(false);
-  const [versionInfo, setVersionInfo] = useState({ version: "0.0.002", buildTime: "", buildNumber: "" });
+  const [versionInfo, setVersionInfo] = useState({ version: "0.0.003", buildTime: "", buildNumber: "" });
 
   useEffect(() => {
     fetch("/api/version")
