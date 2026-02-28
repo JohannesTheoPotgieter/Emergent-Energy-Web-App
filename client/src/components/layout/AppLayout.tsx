@@ -51,6 +51,7 @@ import {
   Plug,
   MessageSquare,
   Handshake,
+  Compass,
 } from "lucide-react";
 import { UX_REDESIGN_ENABLED } from "@shared/schema";
 import { useProgramData } from "@/hooks/use-program-data";
@@ -63,6 +64,9 @@ import { Input } from "@/components/ui/input";
 import { DatabaseStatusBanner } from "@/components/DatabaseStatusBanner";
 import { UploadValidationReport } from "@/components/UploadValidationReport";
 import { NotificationBell } from "@/components/NotificationBell";
+import { InteractiveTutorial } from "@/components/InteractiveTutorial";
+import { getScreenTour } from "@/data/screen-tours";
+import type { ScreenTourStep } from "@/data/screen-tours";
 
 interface NavItem {
   label: string;
@@ -272,8 +276,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     staleTime: Infinity,
   });
 
+  const [screenTourActive, setScreenTourActive] = useState(false);
+  const screenTour = getScreenTour(location);
+  const screenTourSteps = screenTour ? screenTour.steps.map((s: ScreenTourStep) => ({
+    targetSelector: s.targetSelector,
+    title: s.title,
+    description: s.description,
+    position: s.position,
+  })) : null;
+
   useEffect(() => {
     setMobileOpen(false);
+    setScreenTourActive(false);
   }, [location]);
 
   useEffect(() => {
@@ -592,6 +606,25 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             {children}
           </div>
         </div>
+
+        {screenTourSteps && location !== "/" && (
+          <button
+            onClick={() => setScreenTourActive(true)}
+            className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-4 py-2.5 shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-200 text-sm font-medium"
+            data-testid="button-screen-tour"
+          >
+            <Compass className="h-4 w-4" />
+            <span className="hidden sm:inline">Take a Tour</span>
+          </button>
+        )}
+
+        {screenTourActive && screenTourSteps && (
+          <InteractiveTutorial
+            active={screenTourActive}
+            onComplete={() => setScreenTourActive(false)}
+            externalSteps={screenTourSteps}
+          />
+        )}
       </main>
     </div>
   );

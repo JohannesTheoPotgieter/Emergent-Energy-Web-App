@@ -53,6 +53,7 @@ Preferred communication style: Simple, everyday language.
 -   **Home Greeting System**: Role-based, randomized greetings.
 -   **Home Action Hub**: Personalized home screen with stat cards, actionable sections for My Tasks, Pending Approvals, Notifications, Company Priorities, and Quick Navigation links.
 -   **Interactive Tutorial**: Spotlight-style onboarding tour that auto-starts for new users. Highlights 9 key dashboard features (search, projects, priority queue, stats, tasks, notifications, sidebar). Integrated with the guidance system via `use-guidance.ts`. Accessible with keyboard navigation and ARIA attributes. Replayable via "Take a Tour" button on home page.
+-   **Context-Aware Screen Tours**: Floating "Take a Tour" button (bottom-right) on every major page. Each screen has its own tour steps defined in `client/src/data/screen-tours.ts`, covering 20+ pages (Execution Dashboard, Projects, Engineering, Quality, COS, Cashflow, Lifecycle Board, Smart Import, Collaboration Hub, Portfolios, PM Dashboard, Leaderboard, Teams Chat, Notifications, EE Info, Weekly Reviews, My Tool, Subcontractors, Admin Roles, Project Detail, Portfolio Detail). The `InteractiveTutorial` component accepts external steps via `externalSteps` prop. Home page keeps its own dedicated role-based tour.
 
 ### Gamification System
 -   **Module**: Badge and leaderboard system tracking user activity, awarding points and badges for actions (task completion, approvals, reviews, imports).
