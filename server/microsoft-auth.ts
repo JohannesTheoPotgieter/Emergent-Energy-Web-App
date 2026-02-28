@@ -51,7 +51,7 @@ export async function getAuthorizationUrl(state?: string): Promise<string> {
     state: state || "",
     prompt: "select_account",
   };
-  return client.getAuthUrl(authUrlRequest);
+  return client.getAuthCodeUrl(authUrlRequest);
 }
 
 export async function handleCallback(code: string): Promise<{
