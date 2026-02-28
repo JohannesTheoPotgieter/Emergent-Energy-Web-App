@@ -653,7 +653,7 @@ export async function registerRoutes(
       }
       const vPath = path.default.resolve("version.json");
       const data = JSON.parse(await fs.readFile(vPath, "utf-8"));
-      const version = `${data.major}.${data.minor}.${String(data.patch).padStart(3, "0")}`;
+      const version = `${data.major}.${data.minor}.${data.patch}`;
       const lu = data.lastUpdated ? new Date(data.lastUpdated) : new Date();
       const buildNumber = `${String(lu.getFullYear()).slice(2)}${String(lu.getMonth() + 1).padStart(2, "0")}${String(lu.getDate()).padStart(2, "0")}`;
       let releaseNotes: { title: string; description: string }[] = [];
