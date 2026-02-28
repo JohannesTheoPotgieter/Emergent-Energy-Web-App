@@ -1,7 +1,7 @@
-# Emergent Energy Dashboard
+# Emergent Energy Dashboard — V1.0.0
 
 ## Overview
-The Emergent Energy Dashboard is a full-stack web application designed for tracking and managing renewable energy projects. Its primary purpose is to provide real-time insights into project metrics, financial performance, and scheduling through the processing of Excel data. The application aims to enhance operational efficiency, streamline project oversight, and support strategic decision-making, aspiring to be a leading platform for renewable energy project management. Key capabilities include financial tracking, project and quality management, and advanced Smart Excel Import functionality. The business vision is to provide a comprehensive tool that simplifies complex project data into actionable intelligence, driving better outcomes in the renewable energy sector.
+The Emergent Energy Dashboard (V1.0.0, released 28 February 2026) is a full-stack web application for managing renewable energy projects end-to-end. It covers project management with lifecycle tracking, financial oversight (COS, cashflow, revenue, expenditure), engineering operations (5-stage checklist, task board, deliverables), quality management, and cross-department collaboration (Teams chat, notifications, approvals). Integrated with Microsoft 365 (Outlook, SharePoint, Teams) via Azure AD SSO. See RELEASE_NOTES.md for full details.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
@@ -24,7 +24,7 @@ Preferred communication style: Simple, everyday language.
 
 ### Backend
 -   **Frameworks & Libraries**: Express.js with TypeScript.
--   **Authentication & Authorization**: Passport.js with local strategy + Microsoft 365 SSO via `@azure/msal-node`. PostgreSQL-backed sessions, role-based access control (RBAC), rate limiting, and granular permission middleware. Microsoft login maps Azure AD identity to existing users by email/username and stores `microsoft_id` on users table. Frontend `usePermission` hook fetches DB entity permission overrides. Admin Roles page (`/admin/roles`) redesigned with tab-based layout for Role Permissions, Project Detail Access, and User Management. Permission entities expanded to include `portfolios`, `notifications`, `subcontractors`, `cos_control`, `cashflow_forecast`, `home`.
+-   **Authentication & Authorization**: Passport.js with local strategy + Microsoft 365 SSO via `@azure/msal-node`. PostgreSQL-backed sessions, role-based access control (RBAC), rate limiting, and granular permission middleware. Microsoft login maps Azure AD identity to existing users by email/username and stores `microsoft_id` on users table. Frontend `usePermission` hook fetches DB entity permission overrides. Admin Roles page (`/admin/roles`) redesigned with tab-based layout for Role Permissions, Project Detail Access, and User Management. Permission entities expanded to include `portfolios`, `notifications`, `subcontractors`, `cos_control`, `cashflow_forecast`, `home`, `teams_chat`, `financial_integration`, `pd_collaboration`, `operational_tasks`, `gamification`.
 -   **File Handling**: Multer for uploads, `exceljs` for parsing.
 -   **Data Storage**: PostgreSQL with Drizzle ORM, ensuring transactional safety and reprocessing.
 -   **Logic**: Pure-function modules for computations, automated backfill system for computed columns, and audit trails for data mutations.
