@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getQueryFn, apiRequest } from "@/lib/queryClient";
+import { InteractiveTutorial, useInteractiveTutorial } from "@/components/InteractiveTutorial";
 import {
   Flag,
   Loader2,
@@ -36,6 +37,7 @@ import {
   FileText,
   MessageSquare,
   Building2,
+  Compass,
 } from "lucide-react";
 
 const ROLE_COMPLIMENTS: Record<string, string[]> = {
@@ -922,6 +924,14 @@ export default function Home() {
   const queryClient = useQueryClient();
   const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
   const canEdit = isAdmin || (companyRole && ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO"].includes(companyRole));
+  const tutorial = useInteractiveTutorial();
+
+  useEffect(() => {
+    if (user && !tutorial.completed) {
+      const timer = setTimeout(() => tutorial.start(), 1200);
+      return () => clearTimeout(timer);
+    }
+  }, [user, tutorial.completed]);
 
   const isFriday = new Date().getDay() === 5;
   const userRole = companyRole || user?.role || "default";
@@ -982,6 +992,18 @@ export default function Home() {
             {new Date().toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" })}
           </p>
         </div>
+        {tutorial.completed && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs gap-1.5"
+            onClick={() => { tutorial.reset(); tutorial.start(); }}
+            data-testid="button-replay-tour"
+          >
+            <Compass className="h-3.5 w-3.5" />
+            Take a Tour
+          </Button>
+        )}
       </div>
 
       {(() => {
@@ -1235,6 +1257,7 @@ export default function Home() {
         </>
       ) : null}
 
+      <InteractiveTutorial active={tutorial.active} onComplete={tutorial.stop} />
     </div>
   );
 }

@@ -51,6 +51,7 @@ Preferred communication style: Simple, everyday language.
 -   **Walkthroughs**: 37 interactive step-by-step guides covering application functionality.
 -   **Home Greeting System**: Role-based, randomized greetings.
 -   **Home Action Hub**: Personalized home screen with stat cards, actionable sections for My Tasks, Pending Approvals, Notifications, Company Priorities, and Quick Navigation links.
+-   **Interactive Tutorial**: Spotlight-style onboarding tour that auto-starts for new users. Highlights 9 key dashboard features (search, projects, priority queue, stats, tasks, notifications, sidebar). Integrated with the guidance system via `use-guidance.ts`. Accessible with keyboard navigation and ARIA attributes. Replayable via "Take a Tour" button on home page.
 
 ### Gamification System
 -   **Module**: Badge and leaderboard system tracking user activity, awarding points and badges for actions (task completion, approvals, reviews, imports).
