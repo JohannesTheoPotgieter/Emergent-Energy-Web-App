@@ -17,7 +17,7 @@ Preferred communication style: Simple, everyday language.
 -   **Plan Management**: Full plan structuring system with hierarchical milestones supporting Create Milestone, Group, Convert to Milestone, and Ungroup operations. Milestones auto-compute rollup values. `project_plan_overrides` store user-defined hierarchy, ensuring Smart Import does not overwrite it. `TaskGridView` supports inline hierarchy.
 -   **Terminology**: All financial metrics use "Actual vs Costed" terminology, with "Costed" as the user-facing label for `budget_total`.
 -   **Financial Year**: September to August, influencing all FY calculations.
--   **Project Detail Page**: Section-based navigation with pillars (Project Management, Engineering, Quality).
+-   **Project Detail Page**: Section-based navigation with pillars (Project Management, Engineering, Quality). Overview includes embedded Project Chat (Teams-style) and SharePoint Files browser tabs.
 -   **Project Creation**: COO/CEO can create projects, auto-generating engineering stage templates.
 -   **Portfolio Management**: Group projects under portfolios with client association. Portfolio Dashboard with four view modes (Project Management, Finance, Quality, Engineering) featuring Recharts visualizations and "Costed vs Actual" financial terminology. Portfolio Detail page with tabs for projects, finance, quality, engineering rollups, and rollout plans. Project assignment with COO-only move between portfolios.
 

@@ -34,6 +34,8 @@ import { ProjectHistoryTab } from "@/components/tabs/ProjectHistoryTab";
 import EngineeringStagesTab from "@/components/tabs/EngineeringStagesTab";
 import { WeeklyReviewWizard } from "@/components/WeeklyReviewWizard";
 import { GuidancePrompt, getPhaseGuidance } from "@/components/MicroGuidance";
+import { ProjectChatTab } from "@/components/tabs/ProjectChatTab";
+import { SharePointFilesTab } from "@/components/tabs/SharePointFilesTab";
 import { useProgramData } from "@/hooks/use-program-data";
 import { useAuth } from "@/hooks/use-auth";
 import { PROJECT_PHASES, LIFECYCLE_PHASES, PROJECT_PHASE_LABELS, TASK_STATUSES, type ProjectPhase, checkPermission } from "@shared/schema";
@@ -1212,6 +1214,11 @@ export default function ProjectDetailPage() {
               </CardContent>
             </Card>
             )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <ProjectChatTab projectName={projectName} />
+            <SharePointFilesTab projectName={projectName} />
           </div>
 
           {projectInfoId && <PhaseHistoryTimeline projectId={projectInfoId} />}

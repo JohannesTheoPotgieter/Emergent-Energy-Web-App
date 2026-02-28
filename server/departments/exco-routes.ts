@@ -1515,6 +1515,158 @@ router.post("/api/teams/groups/:id/files", requireAuth, chatUpload.single("file"
   }
 });
 
+router.get("/api/teams/project-group/:projectName", requireAuth, async (req, res) => {
+  try {
+    const { teamsChatGroups, teamsChatMembers, users: usersTable, projectInfo: piTable } = await import("@shared/schema");
+    const pName = decodeURIComponent(req.params.projectName);
+    const userId = (req.user as any).id;
+    const userRole = (req.user as any).role;
+    const isCoo = COO_ROLES.includes(userRole);
+
+    if (!isCoo) {
+      const [proj] = await db.select().from(piTable).where(eq(piTable.projectName, pName)).limit(1);
+      if (!proj) return res.status(404).json({ error: "Project not found" });
+      const userName = (req.user as any).name || (req.user as any).username || "";
+      const isPmOrPd = proj.pmUserId === userId || (proj.pd && proj.pd.toLowerCase() === userName.toLowerCase());
+      const existingGroup = await db.select().from(teamsChatGroups)
+        .where(and(eq(teamsChatGroups.groupType, "project"), eq(teamsChatGroups.projectName, pName)))
+        .limit(1);
+      if (existingGroup.length > 0) {
+        const memberCheck = await db.select().from(teamsChatMembers)
+          .where(and(eq(teamsChatMembers.groupId, existingGroup[0].id), eq(teamsChatMembers.userId, userId)))
+          .limit(1);
+        if (!isPmOrPd && memberCheck.length === 0) {
+          return res.status(403).json({ error: "You don't have access to this project chat" });
+        }
+      } else if (!isPmOrPd) {
+        return res.status(403).json({ error: "Only the PM or PD can start a project chat" });
+      }
+    }
+
+    let [group] = await db.select().from(teamsChatGroups)
+      .where(and(eq(teamsChatGroups.groupType, "project"), eq(teamsChatGroups.projectName, pName)))
+      .limit(1);
+
+    if (!group) {
+      [group] = await db.insert(teamsChatGroups).values({
+        name: `${pName} — Project Chat`,
+        groupType: "project",
+        projectName: pName,
+        description: `Auto-created project chat for ${pName}`,
+        createdBy: userId,
+      }).returning();
+
+      await db.insert(teamsChatMembers).values({
+        groupId: group.id,
+        userId,
+        role: "admin",
+        addedBy: userId,
+      });
+    }
+
+    const members = await db.select({
+      id: teamsChatMembers.id,
+      groupId: teamsChatMembers.groupId,
+      userId: teamsChatMembers.userId,
+      role: teamsChatMembers.role,
+      addedAt: teamsChatMembers.addedAt,
+      userName: usersTable.name,
+      userRole: usersTable.role,
+    })
+      .from(teamsChatMembers)
+      .innerJoin(usersTable, eq(teamsChatMembers.userId, usersTable.id))
+      .where(eq(teamsChatMembers.groupId, group.id));
+
+    const isMember = members.some(m => m.userId === userId);
+
+    if (!isMember) {
+      await db.insert(teamsChatMembers).values({
+        groupId: group.id,
+        userId,
+        role: "member",
+        addedBy: userId,
+      }).onConflictDoNothing();
+    }
+
+    res.json({
+      ...group,
+      members,
+      memberCount: members.length + (isMember ? 0 : 1),
+      isMember: true,
+    });
+  } catch (err: any) {
+    console.error("[Teams Project Group] Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/api/sp-config", requireAuth, async (req, res) => {
+  try {
+    const settings = await storage.getSpSettings();
+    if (!settings) return res.json(null);
+    res.json({
+      driveId: settings.driveId,
+      folderItemId: settings.folderItemId,
+      folderPath: settings.folderPath,
+      enabled: settings.enabled,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/api/sp-project-browse", requireAuth, async (req, res) => {
+  try {
+    const driveId = req.query.driveId as string;
+    const folderId = req.query.folderId as string | undefined;
+    if (!driveId) {
+      return res.status(400).json({ error: "driveId is required" });
+    }
+    const { browseFolders } = await import("../sharepoint");
+    const items = await browseFolders(driveId, folderId || undefined);
+    res.json(items);
+  } catch (err: any) {
+    console.error("[SP Browse] Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/api/sp-project-files", requireAuth, async (req, res) => {
+  try {
+    const driveId = req.query.driveId as string;
+    const folderId = req.query.folderId as string;
+    if (!driveId || !folderId) {
+      return res.status(400).json({ error: "driveId and folderId are required" });
+    }
+    const { getAccessToken } = await import("../sharepoint");
+    const token = await getAccessToken();
+    const url = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${folderId}/children`;
+    const graphRes = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+    });
+    if (!graphRes.ok) {
+      const text = await graphRes.text();
+      throw new Error(`Graph API ${graphRes.status}: ${text}`);
+    }
+    const data = await graphRes.json();
+    const items = (data.value || []).map((item: any) => ({
+      id: item.id,
+      name: item.name,
+      size: item.size,
+      lastModified: item.lastModifiedDateTime,
+      isFolder: !!item.folder,
+      childCount: item.folder?.childCount ?? 0,
+      webUrl: item.webUrl,
+      mimeType: item.file?.mimeType,
+      downloadUrl: item["@microsoft.graph.downloadUrl"],
+    }));
+    res.json(items);
+  } catch (err: any) {
+    console.error("[SP Files] Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export function registerExcoRoutes(app: Express) {
   app.use(router);
 }
