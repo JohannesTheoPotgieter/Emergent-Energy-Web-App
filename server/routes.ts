@@ -818,6 +818,94 @@ export async function registerRoutes(
     res.status(401).json({ error: "Not authenticated", message: "Not authenticated" });
   });
 
+  // ─── Microsoft 365 OAuth Login ───
+  const msAuth = await import("./microsoft-auth");
+
+  app.get("/api/auth/microsoft/config", (_req, res) => {
+    res.json({ enabled: msAuth.isMicrosoftAuthConfigured() });
+  });
+
+  app.get("/api/auth/microsoft", async (req, res) => {
+    try {
+      if (!msAuth.isMicrosoftAuthConfigured()) {
+        return res.status(503).json({ error: "Microsoft authentication is not configured" });
+      }
+      const authUrl = await msAuth.getAuthorizationUrl();
+      res.redirect(authUrl);
+    } catch (err: any) {
+      console.error("[MS Auth] Error generating auth URL:", err);
+      res.redirect("/auth/login?error=ms_auth_failed");
+    }
+  });
+
+  app.get("/api/auth/microsoft/callback", async (req, res) => {
+    try {
+      const { code, error: msError } = req.query;
+      if (msError || !code) {
+        console.error("[MS Auth] Callback error:", msError);
+        return res.redirect("/auth/login?error=ms_auth_denied");
+      }
+
+      const result = await msAuth.handleCallback(code as string);
+      if (!result.msProfile) {
+        return res.redirect("/auth/login?error=ms_profile_failed");
+      }
+
+      const msEmail = result.msProfile.mail?.toLowerCase() || result.msProfile.userPrincipalName?.toLowerCase();
+      const msId = result.msProfile.id;
+
+      if (!msEmail) {
+        return res.redirect("/auth/login?error=ms_no_email");
+      }
+
+      let matchedUser = await db.select().from(users).where(eq(users.microsoft_id, msId)).limit(1);
+      
+      if (matchedUser.length === 0) {
+        matchedUser = await db.select().from(users).where(
+          sql`LOWER(${users.email}) = ${msEmail}`
+        ).limit(1);
+
+        if (matchedUser.length === 0) {
+          const emailPrefix = msEmail.split("@")[0];
+          matchedUser = await db.select().from(users).where(
+            sql`LOWER(${users.username}) = ${emailPrefix}`
+          ).limit(1);
+        }
+
+        if (matchedUser.length > 0) {
+          await db.update(users).set({ microsoft_id: msId }).where(eq(users.id, matchedUser[0].id));
+        }
+      }
+
+      if (matchedUser.length === 0) {
+        console.log("[MS Auth] No matching user found for:", msEmail);
+        return res.redirect(`/auth/login?error=ms_no_account&email=${encodeURIComponent(msEmail)}`);
+      }
+
+      const dbUser = matchedUser[0];
+      const sessionUser = { id: dbUser.id, email: dbUser.email, name: dbUser.name, role: dbUser.role };
+
+      req.logIn(sessionUser, (err) => {
+        if (err) {
+          console.error("[MS Auth] Session error:", err);
+          return res.redirect("/auth/login?error=ms_session_failed");
+        }
+
+        const token = generateToken({
+          userId: dbUser.id,
+          email: dbUser.email,
+          name: dbUser.name,
+          role: dbUser.role,
+        });
+
+        res.redirect(`/auth/ms-callback?token=${encodeURIComponent(token)}&user=${encodeURIComponent(JSON.stringify(sessionUser))}`);
+      });
+    } catch (err: any) {
+      console.error("[MS Auth] Callback error:", err);
+      res.redirect("/auth/login?error=ms_auth_failed");
+    }
+  });
+
   app.get("/api/pm-assignable-users", async (req, res) => {
     try {
       const pmUsers = await db.select({
