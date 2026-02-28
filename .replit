@@ -49,3 +49,4 @@ integrations = ["outlook:1.0.0"]
 [userenv.shared]
 QM_ACCESS_CODE = "2026"
 AZURE_TENANT_ID = "d6319480-d61b-4f33-adac-b7bc740c2fad"
+AZURE_CLIENT_ID = "d2fd99cb-d94c-44eb-93a2-a7456c314a32"
