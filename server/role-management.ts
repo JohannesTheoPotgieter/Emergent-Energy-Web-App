@@ -42,7 +42,7 @@ function requireAdmin(req: Request, res: Response, next: NextFunction) {
   res.status(403).json({ error: "Admin access required" });
 }
 
-const VALID_SECTIONS = new Set(["COCKPIT", "PROJECTS", "MONEY", "PROJECT_DEVELOPMENT", "DELIVERY", "GOVERNANCE", "INFORMATION", "ADMIN"]);
+const VALID_SECTIONS = new Set(["COCKPIT", "PROJECTS", "MONEY", "PROJECT_DEVELOPMENT", "DELIVERY", "GOVERNANCE", "COLLABORATION", "INFORMATION", "ADMIN"]);
 const SECTION_MIGRATION: Record<string, string> = {
   EXCO: "COCKPIT",
   MY_TOOL: "COCKPIT",
