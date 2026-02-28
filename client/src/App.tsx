@@ -68,8 +68,8 @@ import { format } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 
-const EPM_ALLOWED_PATHS = ["/", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/projects", "/feedback"];
-const PM_ALLOWED_PATHS = ["/", "/pm-dashboard", "/projects", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/cashflow", "/cos", "/feedback"];
+const EPM_ALLOWED_PATHS = ["/", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/projects", "/feedback", "/settings/integrations"];
+const PM_ALLOWED_PATHS = ["/", "/pm-dashboard", "/projects", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/cashflow", "/cos", "/feedback", "/settings/integrations"];
 
 function RoleGuard({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -96,7 +96,7 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
   }
 
   if (user?.role === "quality_manager") {
-    const qmAllowed = ["/", "/quality", "/projects", "/feedback"];
+    const qmAllowed = ["/", "/quality", "/projects", "/feedback", "/settings/integrations"];
     const allowed = qmAllowed.some(p => 
       p === location || (p === "/projects" && location.startsWith("/project/"))
     );
@@ -282,6 +282,7 @@ function ProtectedPages() {
         <Route path="/pd/tickets" component={PdTicketsPage} />
         <Route path="/pd/tickets/create" component={PdTicketCreatePage} />
         <Route path="/pd/tickets/:id" component={PdTicketDetailPage} />
+        <Route path="/settings/integrations" component={MsIntegrationSettingsPage} />
         <Route path="/admin/ms-integration" component={MsIntegrationSettingsPage} />
         <Route path="/admin/eng-templates">{() => <Redirect to="/admin/phase-templates" />}</Route>
 

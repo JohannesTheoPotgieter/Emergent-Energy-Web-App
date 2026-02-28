@@ -10562,6 +10562,50 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/ms-integration/status", requireAuth, async (req, res) => {
+    try {
+      const outlookStatus = await outlook.getConnectionStatus();
+
+      let config: Record<string, any> = {};
+      try {
+        const rows = await db.execute(sql`SELECT config_key, config_value FROM ms_integration_settings`);
+        for (const row of rows.rows) {
+          config[row.config_key as string] = row.config_value;
+        }
+      } catch {}
+
+      const featureFlags = config.feature_flags || {};
+      const spConfig = config.sharepoint_project_docs || {};
+      const teamsConfig = config.teams_config || {};
+
+      res.json({
+        outlook: {
+          configured: outlookStatus.configured,
+          connected: outlookStatus.connected,
+          email: outlookStatus.email || null,
+        },
+        sharepoint: {
+          enabled: !!featureFlags.feature_ms_sharepoint_docs,
+          connected: spConfig.connectionStatus === "connected",
+          siteName: spConfig.siteName || null,
+          driveName: spConfig.driveName || null,
+        },
+        teams: {
+          enabled: !!featureFlags.feature_ms_teams,
+          configured: !!(teamsConfig.unansweredThresholdHours || teamsConfig.tags?.length),
+          tags: teamsConfig.tags || [],
+        },
+        user: {
+          id: (req.user as any)?.id,
+          name: (req.user as any)?.name,
+          role: (req.user as any)?.role,
+        },
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get("/api/outlook/events", requireAuth, async (req, res) => {
     try {
       const { start, end } = req.query;

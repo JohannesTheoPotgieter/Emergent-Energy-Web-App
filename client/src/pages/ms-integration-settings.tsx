@@ -86,8 +86,15 @@ interface OutlookConnection {
   email?: string;
 }
 
+interface MsIntegrationStatus {
+  outlook: { configured: boolean; connected: boolean; email: string | null };
+  sharepoint: { enabled: boolean; connected: boolean; siteName: string | null; driveName: string | null };
+  teams: { enabled: boolean; configured: boolean; tags: string[] };
+  user: { id: number; name: string; role: string };
+}
+
 export default function MsIntegrationSettingsPage() {
-  const { isAdmin } = useAuth();
+  const { isAdmin, user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -107,6 +114,15 @@ export default function MsIntegrationSettingsPage() {
     unansweredThresholdHours: 48,
     hotThresholdHours: 24,
     tags: ["finance-payment", "finance-invoice", "decision", "risk", "blocked", "snag", "client", "internal"],
+  });
+
+  const { data: integrationStatus } = useQuery<MsIntegrationStatus>({
+    queryKey: ["/api/ms-integration/status"],
+    queryFn: async () => {
+      const res = await authFetch("/api/ms-integration/status");
+      if (!res.ok) throw new Error("Failed to load status");
+      return res.json();
+    },
   });
 
   const { data: outlookStatus, refetch: refetchOutlook } = useQuery<OutlookConnection>({
@@ -140,6 +156,7 @@ export default function MsIntegrationSettingsPage() {
       if (!res.ok) throw new Error("Failed to load config");
       return res.json();
     },
+    enabled: isAdmin,
   });
 
   useEffect(() => {
@@ -220,21 +237,7 @@ export default function MsIntegrationSettingsPage() {
     saveConfigMutation.mutate({ key: "teams_config", value: teamsConfig });
   };
 
-  if (!isAdmin) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Card className="max-w-md w-full">
-          <CardContent className="py-12 text-center">
-            <AlertTriangle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
-            <h2 className="text-xl font-semibold mb-2" data-testid="text-access-denied">Access Denied</h2>
-            <p className="text-muted-foreground">Only administrators can access integration settings.</p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  if (isLoading) {
+  if (isLoading && isAdmin) {
     return (
       <div className="flex items-center justify-center py-20" data-testid="loading-spinner">
         <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
@@ -244,6 +247,146 @@ export default function MsIntegrationSettingsPage() {
 
   const spConfig = config?.sharepoint_project_docs;
   const isConnected = spConfig?.connectionStatus === "connected";
+
+  const outlookConnected = integrationStatus?.outlook?.connected || outlookStatus?.connected;
+  const outlookEmail = integrationStatus?.outlook?.email || outlookStatus?.email;
+  const outlookConfigured = integrationStatus?.outlook?.configured ?? outlookStatus?.configured;
+  const spEnabled = integrationStatus?.sharepoint?.enabled || featureFlags.feature_ms_sharepoint_docs;
+  const spConnected = integrationStatus?.sharepoint?.connected || isConnected;
+  const teamsEnabled = integrationStatus?.teams?.enabled || featureFlags.feature_ms_teams;
+
+  if (!isAdmin) {
+    return (
+      <div className="space-y-6 max-w-[960px] mx-auto" data-testid="ms-integration-status-page">
+        <header>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 flex items-center gap-2" data-testid="text-page-title">
+            <Settings2 className="h-7 w-7 text-blue-600" />
+            Microsoft Integration Status
+          </h1>
+          <p className="text-sm text-gray-500 mt-1">
+            View the status of Outlook, SharePoint, and Teams connections linked to your account
+          </p>
+        </header>
+
+        <Card data-testid="card-user-info">
+          <CardContent className="py-5">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
+                <span className="text-sm font-bold text-blue-700">{user?.name?.charAt(0)?.toUpperCase() || "?"}</span>
+              </div>
+              <div>
+                <p className="text-sm font-semibold" data-testid="text-user-name">{user?.name || "User"}</p>
+                <p className="text-xs text-muted-foreground" data-testid="text-user-role">{(user as any)?.companyRole || (user as any)?.role || "Team Member"}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Card data-testid="card-outlook-status">
+            <CardContent className="py-5">
+              <div className="flex items-center gap-3 mb-3">
+                <div className={`p-2.5 rounded-lg ${outlookConnected ? "bg-blue-100" : "bg-gray-100"}`}>
+                  <Mail className={`h-5 w-5 ${outlookConnected ? "text-blue-600" : "text-gray-400"}`} />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold">Outlook</p>
+                  <Badge variant="outline" className={`text-[10px] mt-0.5 ${outlookConnected ? "bg-emerald-50 text-emerald-700 border-emerald-200" : outlookConfigured === false ? "bg-gray-50 text-gray-500 border-gray-200" : "bg-amber-50 text-amber-700 border-amber-200"}`} data-testid="badge-outlook-user-status">
+                    {outlookConnected ? "Connected" : outlookConfigured === false ? "Not Set Up" : "Disconnected"}
+                  </Badge>
+                </div>
+              </div>
+              <div className="text-xs text-muted-foreground space-y-1.5">
+                {outlookConnected && outlookEmail && (
+                  <div className="flex items-center gap-1.5">
+                    <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+                    <span>{outlookEmail}</span>
+                  </div>
+                )}
+                <p>Calendar sync, email access, approval emails</p>
+              </div>
+              {outlookConnected && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1 mt-3 text-xs"
+                  onClick={handleRefreshOutlook}
+                  disabled={refreshingOutlook}
+                  data-testid="button-user-refresh-outlook"
+                >
+                  {refreshingOutlook ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                  Refresh Connection
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card data-testid="card-sharepoint-status">
+            <CardContent className="py-5">
+              <div className="flex items-center gap-3 mb-3">
+                <div className={`p-2.5 rounded-lg ${spConnected && spEnabled ? "bg-green-100" : "bg-gray-100"}`}>
+                  <FileText className={`h-5 w-5 ${spConnected && spEnabled ? "text-green-600" : "text-gray-400"}`} />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold">SharePoint</p>
+                  <Badge variant="outline" className={`text-[10px] mt-0.5 ${spConnected && spEnabled ? "bg-emerald-50 text-emerald-700 border-emerald-200" : !spEnabled ? "bg-gray-50 text-gray-500 border-gray-200" : "bg-amber-50 text-amber-700 border-amber-200"}`} data-testid="badge-sp-user-status">
+                    {spConnected && spEnabled ? "Connected" : !spEnabled ? "Not Enabled" : "Not Configured"}
+                  </Badge>
+                </div>
+              </div>
+              <div className="text-xs text-muted-foreground space-y-1.5">
+                {spConnected && integrationStatus?.sharepoint?.siteName && (
+                  <div className="flex items-center gap-1.5">
+                    <Folder className="h-3 w-3 text-green-500" />
+                    <span>{integrationStatus.sharepoint.siteName}</span>
+                  </div>
+                )}
+                <p>Project document storage and browsing</p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card data-testid="card-teams-status">
+            <CardContent className="py-5">
+              <div className="flex items-center gap-3 mb-3">
+                <div className={`p-2.5 rounded-lg ${teamsEnabled ? "bg-purple-100" : "bg-gray-100"}`}>
+                  <MessageSquare className={`h-5 w-5 ${teamsEnabled ? "text-purple-600" : "text-gray-400"}`} />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold">Teams</p>
+                  <Badge variant="outline" className={`text-[10px] mt-0.5 ${teamsEnabled ? "bg-purple-50 text-purple-700 border-purple-200" : "bg-gray-50 text-gray-500 border-gray-200"}`} data-testid="badge-teams-user-status">
+                    {teamsEnabled ? "Enabled" : "Not Enabled"}
+                  </Badge>
+                </div>
+              </div>
+              <div className="text-xs text-muted-foreground space-y-1.5">
+                <p>Link Teams messages to projects, create tasks</p>
+                {teamsEnabled && integrationStatus?.teams?.tags && (
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {integrationStatus.teams.tags.slice(0, 4).map(tag => (
+                      <Badge key={tag} variant="outline" className="text-[9px] py-0 px-1">{tag}</Badge>
+                    ))}
+                    {integrationStatus.teams.tags.length > 4 && (
+                      <Badge variant="outline" className="text-[9px] py-0 px-1">+{integrationStatus.teams.tags.length - 4}</Badge>
+                    )}
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card>
+          <CardContent className="py-4">
+            <div className="flex items-start gap-2 text-xs text-muted-foreground">
+              <Shield className="h-4 w-4 text-slate-400 shrink-0 mt-0.5" />
+              <p>Integration settings are managed by administrators. Contact your COO or system admin if you need changes to these connections.</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-[960px] mx-auto" data-testid="ms-integration-settings-page">
@@ -325,18 +468,18 @@ export default function MsIntegrationSettingsPage() {
             <Card>
               <CardContent className="py-5">
                 <div className="flex items-center gap-3 mb-3">
-                  <div className={`p-2 rounded-lg ${outlookStatus?.connected ? "bg-blue-100" : "bg-gray-100"}`}>
-                    <Mail className={`h-5 w-5 ${outlookStatus?.connected ? "text-blue-600" : "text-gray-400"}`} />
+                  <div className={`p-2 rounded-lg ${outlookConnected ? "bg-blue-100" : "bg-gray-100"}`}>
+                    <Mail className={`h-5 w-5 ${outlookConnected ? "text-blue-600" : "text-gray-400"}`} />
                   </div>
                   <div>
                     <p className="text-sm font-semibold">Outlook Connection</p>
-                    <Badge variant="outline" className={`text-[10px] ${outlookStatus?.connected ? "bg-blue-50 text-blue-700 border-blue-200" : outlookStatus?.configured === false ? "bg-gray-50 text-gray-500 border-gray-200" : "bg-amber-50 text-amber-700 border-amber-200"}`} data-testid="badge-outlook-status">
-                      {outlookStatus?.connected ? "Connected" : outlookStatus?.configured === false ? "Not Configured" : "Disconnected"}
+                    <Badge variant="outline" className={`text-[10px] ${outlookConnected ? "bg-blue-50 text-blue-700 border-blue-200" : outlookConfigured === false ? "bg-gray-50 text-gray-500 border-gray-200" : "bg-amber-50 text-amber-700 border-amber-200"}`} data-testid="badge-outlook-status">
+                      {outlookConnected ? "Connected" : outlookConfigured === false ? "Not Configured" : "Disconnected"}
                     </Badge>
                   </div>
                 </div>
                 <div className="text-xs text-muted-foreground space-y-1">
-                  {outlookStatus?.connected && outlookStatus.email && <p>Account: {outlookStatus.email}</p>}
+                  {outlookConnected && outlookEmail && <p>Account: {outlookEmail}</p>}
                   <p>Calendar, Email, Approvals</p>
                   <p>Powers My Tool features</p>
                 </div>
