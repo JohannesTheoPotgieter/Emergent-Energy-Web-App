@@ -5,6 +5,9 @@ import { db } from "../db";
 import { requirePermission } from "../permission-middleware";
 import { eq, and, or, sql, isNull } from "drizzle-orm";
 import { projectInfo } from "@shared/schema";
+import path from "path";
+import fs from "fs";
+import multer from "multer";
 
 const router = Router();
 
@@ -1340,6 +1343,14 @@ router.delete("/api/teams/groups/:id/members/:userId", requireAuth, async (req, 
   }
 });
 
+async function checkGroupMembership(groupId: number, userId: number): Promise<boolean> {
+  const { teamsChatMembers } = await import("@shared/schema");
+  const membership = await db.select().from(teamsChatMembers)
+    .where(and(eq(teamsChatMembers.groupId, groupId), eq(teamsChatMembers.userId, userId)))
+    .limit(1);
+  return membership.length > 0;
+}
+
 router.get("/api/teams/groups/:id/messages", requireAuth, async (req, res) => {
   try {
     const { teamsChatMessages, users: usersTable } = await import("@shared/schema");
@@ -1354,6 +1365,10 @@ router.get("/api/teams/groups/:id/messages", requireAuth, async (req, res) => {
       senderUserId: teamsChatMessages.senderUserId,
       teamsMessageId: teamsChatMessages.teamsMessageId,
       isFromTeams: teamsChatMessages.isFromTeams,
+      fileName: teamsChatMessages.fileName,
+      filePath: teamsChatMessages.filePath,
+      fileSize: teamsChatMessages.fileSize,
+      fileType: teamsChatMessages.fileType,
       createdAt: teamsChatMessages.createdAt,
       userName: usersTable.name,
     })
@@ -1376,10 +1391,17 @@ router.post("/api/teams/groups/:id/messages", requireAuth, async (req, res) => {
     const groupId = parseInt(req.params.id);
     const userId = (req.user as any).id;
     const userName = (req.user as any).name;
+    const userRole = (req.user as any).role;
     const { content } = req.body;
 
     if (!content?.trim()) {
       return res.status(400).json({ error: "content is required" });
+    }
+
+    const isCoo = COO_ROLES.includes(userRole);
+    if (!isCoo) {
+      const isMember = await checkGroupMembership(groupId, userId);
+      if (!isMember) return res.status(403).json({ error: "You must be a member of this channel to send messages" });
     }
 
     const [msg] = await db.insert(teamsChatMessages).values({
@@ -1393,6 +1415,55 @@ router.post("/api/teams/groups/:id/messages", requireAuth, async (req, res) => {
     res.json(msg);
   } catch (err: any) {
     console.error("[Teams Groups] Send message error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+const chatUploadDir = path.join(process.cwd(), "uploads", "chat-files");
+const chatStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    if (!fs.existsSync(chatUploadDir)) fs.mkdirSync(chatUploadDir, { recursive: true });
+    cb(null, chatUploadDir);
+  },
+  filename: (_req, file, cb) => {
+    const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+    cb(null, `${unique}-${file.originalname}`);
+  },
+});
+const chatUpload = multer({ storage: chatStorage, limits: { fileSize: 25 * 1024 * 1024 } });
+
+router.post("/api/teams/groups/:id/files", requireAuth, chatUpload.single("file"), async (req: any, res) => {
+  try {
+    const { teamsChatMessages } = await import("@shared/schema");
+    const groupId = parseInt(req.params.id);
+    const userId = (req.user as any).id;
+    const userName = (req.user as any).name;
+    const userRole = (req.user as any).role;
+    const file = req.file;
+
+    if (!file) return res.status(400).json({ error: "No file uploaded" });
+
+    const isCoo = COO_ROLES.includes(userRole);
+    if (!isCoo) {
+      const isMember = await checkGroupMembership(groupId, userId);
+      if (!isMember) return res.status(403).json({ error: "You must be a member of this channel to upload files" });
+    }
+
+    const [msg] = await db.insert(teamsChatMessages).values({
+      groupId,
+      senderUserId: userId,
+      senderName: userName,
+      content: req.body.content?.trim() || `Shared a file: ${file.originalname}`,
+      isFromTeams: false,
+      fileName: file.originalname,
+      filePath: `/uploads/chat-files/${file.filename}`,
+      fileSize: file.size,
+      fileType: file.mimetype,
+    }).returning();
+
+    res.json(msg);
+  } catch (err: any) {
+    console.error("[Teams Groups] File upload error:", err);
     res.status(500).json({ error: err.message });
   }
 });

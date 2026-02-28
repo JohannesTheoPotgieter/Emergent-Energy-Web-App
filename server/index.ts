@@ -13,6 +13,7 @@ import pg from "pg";
 import { dbMode, dbConfig, initializeDatabase, db } from "./db";
 import { sql } from "drizzle-orm";
 import { runBackfill } from "./lib/backfill";
+import path from "path";
 import { startScheduler } from "./importPipeline";
 import { startMilestoneChecker } from "./milestone-notifications";
 import { registerAdminRoutes } from "./departments/admin-routes";
@@ -51,6 +52,8 @@ app.use(
     },
   }),
 );
+
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 
 app.use(express.urlencoded({ extended: false }));
 
