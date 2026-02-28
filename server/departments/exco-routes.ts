@@ -1117,6 +1117,286 @@ router.get("/api/exec/cockpit", requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
+// ─── Teams Chat Groups ───
+
+const COO_ROLES = ["COO_ADMIN", "CEO_ADMIN", "admin"];
+
+router.get("/api/teams/groups", requireAuth, async (req, res) => {
+  try {
+    const { teamsChatGroups, teamsChatMembers, users: usersTable } = await import("@shared/schema");
+    const userId = (req.user as any).id;
+    const userRole = (req.user as any).role;
+    const isCoo = COO_ROLES.includes(userRole);
+
+    const allGroups = await db.select().from(teamsChatGroups).orderBy(teamsChatGroups.groupType, teamsChatGroups.name);
+
+    const members = await db.select({
+      id: teamsChatMembers.id,
+      groupId: teamsChatMembers.groupId,
+      userId: teamsChatMembers.userId,
+      role: teamsChatMembers.role,
+      addedAt: teamsChatMembers.addedAt,
+      userName: usersTable.name,
+      userRole: usersTable.role,
+      userEmail: usersTable.email,
+    })
+      .from(teamsChatMembers)
+      .innerJoin(usersTable, eq(teamsChatMembers.userId, usersTable.id));
+
+    const membersByGroup: Record<number, any[]> = {};
+    for (const m of members) {
+      if (!membersByGroup[m.groupId]) membersByGroup[m.groupId] = [];
+      membersByGroup[m.groupId].push(m);
+    }
+
+    const groups = allGroups.map(g => {
+      const groupMembers = membersByGroup[g.id] || [];
+      const isMember = groupMembers.some(m => m.userId === userId);
+      const isGroupAdmin = groupMembers.some(m => m.userId === userId && m.role === "admin");
+      return {
+        ...g,
+        members: groupMembers,
+        memberCount: groupMembers.length,
+        isMember,
+        isGroupAdmin,
+        canManage: isCoo || isGroupAdmin || g.createdBy === userId,
+      };
+    });
+
+    res.json(groups);
+  } catch (err: any) {
+    console.error("[Teams Groups] Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/api/teams/groups", requireAuth, async (req, res) => {
+  try {
+    const { teamsChatGroups, teamsChatMembers } = await import("@shared/schema");
+    const userId = (req.user as any).id;
+    const userRole = (req.user as any).role;
+    const isCoo = COO_ROLES.includes(userRole);
+
+    const { name, groupType, department, projectName, projectId, description } = req.body;
+
+    if (!name || !groupType) {
+      return res.status(400).json({ error: "name and groupType are required" });
+    }
+
+    if (groupType === "project" && !isCoo) {
+      const { projectInfo: piTable } = await import("@shared/schema");
+      if (projectName) {
+        const proj = await db.select().from(piTable)
+          .where(eq(piTable.projectName, projectName)).limit(1);
+        if (proj.length > 0 && proj[0].pmUserId !== userId) {
+          return res.status(403).json({ error: "Only the PM or COO can create project groups" });
+        }
+      }
+    }
+
+    const [group] = await db.insert(teamsChatGroups).values({
+      name,
+      groupType,
+      department: department || null,
+      projectName: projectName || null,
+      projectId: projectId || null,
+      description: description || null,
+      createdBy: userId,
+    }).returning();
+
+    await db.insert(teamsChatMembers).values({
+      groupId: group.id,
+      userId,
+      role: "admin",
+      addedBy: userId,
+    });
+
+    res.json(group);
+  } catch (err: any) {
+    console.error("[Teams Groups] Create error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete("/api/teams/groups/:id", requireAuth, async (req, res) => {
+  try {
+    const { teamsChatGroups, teamsChatMembers } = await import("@shared/schema");
+    const groupId = parseInt(req.params.id);
+    const userId = (req.user as any).id;
+    const userRole = (req.user as any).role;
+    const isCoo = COO_ROLES.includes(userRole);
+
+    const [group] = await db.select().from(teamsChatGroups).where(eq(teamsChatGroups.id, groupId));
+    if (!group) return res.status(404).json({ error: "Group not found" });
+
+    if (!isCoo && group.createdBy !== userId) {
+      const adminMember = await db.select().from(teamsChatMembers)
+        .where(and(eq(teamsChatMembers.groupId, groupId), eq(teamsChatMembers.userId, userId), eq(teamsChatMembers.role, "admin")));
+      if (adminMember.length === 0) {
+        return res.status(403).json({ error: "Only group admin or COO can delete groups" });
+      }
+    }
+
+    await db.delete(teamsChatGroups).where(eq(teamsChatGroups.id, groupId));
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Teams Groups] Delete error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/api/teams/groups/:id/members", requireAuth, async (req, res) => {
+  try {
+    const { teamsChatGroups, teamsChatMembers } = await import("@shared/schema");
+    const groupId = parseInt(req.params.id);
+    const actingUserId = (req.user as any).id;
+    const actingRole = (req.user as any).role;
+    const isCoo = COO_ROLES.includes(actingRole);
+
+    const [group] = await db.select().from(teamsChatGroups).where(eq(teamsChatGroups.id, groupId));
+    if (!group) return res.status(404).json({ error: "Group not found" });
+
+    if (!isCoo && group.createdBy !== actingUserId) {
+      const adminCheck = await db.select().from(teamsChatMembers)
+        .where(and(eq(teamsChatMembers.groupId, groupId), eq(teamsChatMembers.userId, actingUserId), eq(teamsChatMembers.role, "admin")));
+      if (adminCheck.length === 0) {
+        if (group.groupType === "project") {
+          const { projectInfo: piTable } = await import("@shared/schema");
+          if (group.projectName) {
+            const proj = await db.select().from(piTable)
+              .where(eq(piTable.projectName, group.projectName)).limit(1);
+            if (proj.length === 0 || proj[0].pmUserId !== actingUserId) {
+              return res.status(403).json({ error: "Only the PM, group admin, or COO can manage members" });
+            }
+          } else {
+            return res.status(403).json({ error: "Only group admin or COO can manage members" });
+          }
+        } else {
+          return res.status(403).json({ error: "Only group admin or COO can manage members" });
+        }
+      }
+    }
+
+    const { userIds, role: memberRole } = req.body;
+    if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
+      return res.status(400).json({ error: "userIds array is required" });
+    }
+
+    const results = [];
+    for (const uid of userIds) {
+      try {
+        const [member] = await db.insert(teamsChatMembers).values({
+          groupId,
+          userId: uid,
+          role: memberRole || "member",
+          addedBy: actingUserId,
+        }).onConflictDoNothing().returning();
+        if (member) results.push(member);
+      } catch {}
+    }
+
+    res.json({ added: results.length });
+  } catch (err: any) {
+    console.error("[Teams Groups] Add members error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete("/api/teams/groups/:id/members/:userId", requireAuth, async (req, res) => {
+  try {
+    const { teamsChatGroups, teamsChatMembers } = await import("@shared/schema");
+    const groupId = parseInt(req.params.id);
+    const targetUserId = parseInt(req.params.userId);
+    const actingUserId = (req.user as any).id;
+    const actingRole = (req.user as any).role;
+    const isCoo = COO_ROLES.includes(actingRole);
+
+    if (!isCoo && actingUserId !== targetUserId) {
+      const [group] = await db.select().from(teamsChatGroups).where(eq(teamsChatGroups.id, groupId));
+      if (!group) return res.status(404).json({ error: "Group not found" });
+
+      const adminCheck = await db.select().from(teamsChatMembers)
+        .where(and(eq(teamsChatMembers.groupId, groupId), eq(teamsChatMembers.userId, actingUserId), eq(teamsChatMembers.role, "admin")));
+      if (adminCheck.length === 0 && group.createdBy !== actingUserId) {
+        if (group.groupType === "project" && group.projectName) {
+          const { projectInfo: piTable } = await import("@shared/schema");
+          const proj = await db.select().from(piTable)
+            .where(eq(piTable.projectName, group.projectName)).limit(1);
+          if (proj.length === 0 || proj[0].pmUserId !== actingUserId) {
+            return res.status(403).json({ error: "Not authorized to remove members" });
+          }
+        } else {
+          return res.status(403).json({ error: "Not authorized to remove members" });
+        }
+      }
+    }
+
+    await db.delete(teamsChatMembers)
+      .where(and(eq(teamsChatMembers.groupId, groupId), eq(teamsChatMembers.userId, targetUserId)));
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Teams Groups] Remove member error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/api/teams/groups/:id/messages", requireAuth, async (req, res) => {
+  try {
+    const { teamsChatMessages, users: usersTable } = await import("@shared/schema");
+    const groupId = parseInt(req.params.id);
+    const limit = parseInt(req.query.limit as string) || 50;
+
+    const messages = await db.select({
+      id: teamsChatMessages.id,
+      groupId: teamsChatMessages.groupId,
+      content: teamsChatMessages.content,
+      senderName: teamsChatMessages.senderName,
+      senderUserId: teamsChatMessages.senderUserId,
+      teamsMessageId: teamsChatMessages.teamsMessageId,
+      isFromTeams: teamsChatMessages.isFromTeams,
+      createdAt: teamsChatMessages.createdAt,
+      userName: usersTable.name,
+    })
+      .from(teamsChatMessages)
+      .leftJoin(usersTable, eq(teamsChatMessages.senderUserId, usersTable.id))
+      .where(eq(teamsChatMessages.groupId, groupId))
+      .orderBy(sql`${teamsChatMessages.createdAt} DESC`)
+      .limit(limit);
+
+    res.json(messages.reverse());
+  } catch (err: any) {
+    console.error("[Teams Groups] Messages error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/api/teams/groups/:id/messages", requireAuth, async (req, res) => {
+  try {
+    const { teamsChatMessages } = await import("@shared/schema");
+    const groupId = parseInt(req.params.id);
+    const userId = (req.user as any).id;
+    const userName = (req.user as any).name;
+    const { content } = req.body;
+
+    if (!content?.trim()) {
+      return res.status(400).json({ error: "content is required" });
+    }
+
+    const [msg] = await db.insert(teamsChatMessages).values({
+      groupId,
+      senderUserId: userId,
+      senderName: userName,
+      content: content.trim(),
+      isFromTeams: false,
+    }).returning();
+
+    res.json(msg);
+  } catch (err: any) {
+    console.error("[Teams Groups] Send message error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export function registerExcoRoutes(app: Express) {
   app.use(router);
 }
