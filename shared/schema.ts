@@ -4045,3 +4045,49 @@ export const BADGE_DEFINITIONS: Record<string, { name: string; description: stri
   penalty_qm_overdue: { name: "QM Bottleneck", description: "5+ overdue quality tasks — quality at risk", icon: "🔴", threshold: 5, category: "penalties" },
   clean_record: { name: "Clean Record", description: "No penalties — zero overdue, behind, or quality issues", icon: "🌟", threshold: 0, category: "excellence" },
 };
+
+export const teamsChatGroups = pgTable("teams_chat_groups", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  groupType: text("group_type").notNull().default("department"),
+  department: text("department"),
+  projectName: text("project_name"),
+  projectId: integer("project_id").references(() => projectInfo.id),
+  teamsChatId: text("teams_chat_id"),
+  description: text("description"),
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertTeamsChatGroupSchema = createInsertSchema(teamsChatGroups).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertTeamsChatGroup = z.infer<typeof insertTeamsChatGroupSchema>;
+export type TeamsChatGroup = typeof teamsChatGroups.$inferSelect;
+
+export const teamsChatMembers = pgTable("teams_chat_members", {
+  id: serial("id").primaryKey(),
+  groupId: integer("group_id").notNull().references(() => teamsChatGroups.id, { onDelete: "cascade" }),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  role: text("role").notNull().default("member"),
+  addedBy: integer("added_by").references(() => users.id),
+  addedAt: timestamp("added_at").notNull().defaultNow(),
+});
+
+export const insertTeamsChatMemberSchema = createInsertSchema(teamsChatMembers).omit({ id: true, addedAt: true });
+export type InsertTeamsChatMember = z.infer<typeof insertTeamsChatMemberSchema>;
+export type TeamsChatMember = typeof teamsChatMembers.$inferSelect;
+
+export const teamsChatMessages = pgTable("teams_chat_messages", {
+  id: serial("id").primaryKey(),
+  groupId: integer("group_id").notNull().references(() => teamsChatGroups.id, { onDelete: "cascade" }),
+  senderUserId: integer("sender_user_id").references(() => users.id),
+  senderName: text("sender_name"),
+  content: text("content").notNull(),
+  teamsMessageId: text("teams_message_id"),
+  isFromTeams: boolean("is_from_teams").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertTeamsChatMessageSchema = createInsertSchema(teamsChatMessages).omit({ id: true, createdAt: true });
+export type InsertTeamsChatMessage = z.infer<typeof insertTeamsChatMessageSchema>;
+export type TeamsChatMessage = typeof teamsChatMessages.$inferSelect;
