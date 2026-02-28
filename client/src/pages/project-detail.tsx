@@ -574,6 +574,7 @@ export default function ProjectDetailPage() {
     engStages: canViewPerm("pd_eng_stages"),
     gantt: canViewPerm("pd_gantt"),
     keyDates: canViewPerm("pd_key_dates"),
+    collaboration: canViewPerm("pd_collaboration"),
   };
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -1225,6 +1226,7 @@ export default function ProjectDetailPage() {
             </Card>
             )}
 
+            {canViewSubTab.collaboration && (
             <Card
               className="group cursor-pointer hover:shadow-lg hover:border-indigo-300 transition-all duration-200 relative overflow-hidden"
               onClick={() => navigateToSection("collaboration")}
@@ -1272,6 +1274,7 @@ export default function ProjectDetailPage() {
                 </div>
               </CardContent>
             </Card>
+            )}
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -1580,7 +1583,7 @@ export default function ProjectDetailPage() {
         </div>
       )}
 
-      {activeSection === "collaboration" && (
+      {activeSection === "collaboration" && canViewSubTab.collaboration && (
         <div className="space-y-4" data-testid="collaboration-section">
           <Button variant="ghost" size="sm" onClick={() => navigateToSection("overview")} className="gap-2 -ml-2" data-testid="button-back-overview">
             <ArrowLeft className="h-4 w-4" />

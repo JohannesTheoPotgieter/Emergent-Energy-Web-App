@@ -357,7 +357,7 @@ function getFYRange(date: Date = new Date()): { start: string; end: string } {
 
 // ==================== PROGRAM COS CONTROL ====================
 
-router.get("/api/program/cos", async (req, res) => {
+router.get("/api/program/cos", requireAuth, async (req, res) => {
   try {
     const { projectName, startDate, endDate, atRiskDays = '30' } = req.query;
     const atRiskDaysNum = parseInt(atRiskDays as string, 10) || 30;
@@ -1333,7 +1333,7 @@ router.get("/api/program-expenses/:projectName", async (req, res) => {
   }
 });
 
-router.get("/api/program-inflows", async (req, res) => {
+router.get("/api/program-inflows", requireAuth, async (req, res) => {
   try {
     const { projectName, startDate, endDate, applyOverrides } = req.query;
     let inflows;
@@ -1370,7 +1370,7 @@ router.get("/api/program-inflows", async (req, res) => {
 
 // ==================== CASHFLOW & PLANNING OVERRIDES ====================
 
-router.get("/api/cashflow", async (req, res) => {
+router.get("/api/cashflow", requireAuth, async (req, res) => {
   try {
     const projectParam = req.query.project || req.query.projectName;
     const { startDate, endDate } = req.query;
@@ -1534,7 +1534,7 @@ router.get("/api/cashflow", async (req, res) => {
   }
 });
 
-router.get("/api/cashflow/planning-overrides", async (req, res) => {
+router.get("/api/cashflow/planning-overrides", requireAuth, async (req, res) => {
   try {
     const { projectName } = req.query;
     let overrides;
@@ -2456,7 +2456,7 @@ router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, r
 
 // ==================== FINANCE REVENUE OVERRIDES ====================
 
-router.get("/api/finance/revenue/overrides", async (req, res) => {
+router.get("/api/finance/revenue/overrides", requireAuth, async (req, res) => {
   try {
     const { projectName } = req.query;
     if (!projectName || typeof projectName !== 'string') {
@@ -2518,7 +2518,7 @@ router.delete("/api/finance/revenue/overrides/:projectName", requireAuth, requir
 
 // ==================== FINANCE COS OVERRIDES ====================
 
-router.get("/api/finance/cos/overrides", async (req, res) => {
+router.get("/api/finance/cos/overrides", requireAuth, async (req, res) => {
   try {
     const { projectName } = req.query;
     if (!projectName || typeof projectName !== 'string') {
@@ -2580,7 +2580,7 @@ router.delete("/api/finance/cos/overrides/:projectName", requireAuth, requireAdm
 
 // ==================== FINANCE REVENUE & COS DATA ====================
 
-router.get("/api/finance/revenue", async (req, res) => {
+router.get("/api/finance/revenue", requireAuth, async (req, res) => {
   try {
     const { projectName, startDate, endDate, applyOverrides } = req.query;
     let data;
@@ -2609,7 +2609,7 @@ router.get("/api/finance/revenue", async (req, res) => {
   }
 });
 
-router.get("/api/finance/cos", async (req, res) => {
+router.get("/api/finance/cos", requireAuth, async (req, res) => {
   try {
     const { projectName, startDate, endDate, applyOverrides } = req.query;
     let data;
