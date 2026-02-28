@@ -1,13 +1,15 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { Link, useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getQueryFn, apiRequest } from "@/lib/queryClient";
 import { InteractiveTutorial, useInteractiveTutorial } from "@/components/InteractiveTutorial";
+import { DEFAULT_WIDGET_ORDER, WIDGET_DEFINITIONS } from "@shared/schema";
 import {
   Flag,
   Loader2,
@@ -38,6 +40,13 @@ import {
   MessageSquare,
   Building2,
   Compass,
+  Settings2,
+  GripVertical,
+  ChevronUp,
+  ChevronDown,
+  X,
+  RotateCcw,
+  EyeOff,
 } from "lucide-react";
 
 const ROLE_COMPLIMENTS: Record<string, string[]> = {
@@ -918,6 +927,119 @@ function MyProjectsHub({ projects, userName }: { projects: ProjectSummary[]; use
   );
 }
 
+interface WidgetConfig {
+  widgetOrder: string[];
+  hiddenWidgets: string[];
+}
+
+function WidgetConfigPanel({
+  config,
+  onSave,
+  onClose,
+}: {
+  config: WidgetConfig;
+  onSave: (config: WidgetConfig) => void;
+  onClose: () => void;
+}) {
+  const [order, setOrder] = useState<string[]>([...config.widgetOrder]);
+  const [hidden, setHidden] = useState<string[]>([...config.hiddenWidgets]);
+
+  const moveUp = (index: number) => {
+    if (index <= 0) return;
+    const newOrder = [...order];
+    [newOrder[index - 1], newOrder[index]] = [newOrder[index], newOrder[index - 1]];
+    setOrder(newOrder);
+  };
+
+  const moveDown = (index: number) => {
+    if (index >= order.length - 1) return;
+    const newOrder = [...order];
+    [newOrder[index], newOrder[index + 1]] = [newOrder[index + 1], newOrder[index]];
+    setOrder(newOrder);
+  };
+
+  const toggleVisibility = (widgetId: string) => {
+    setHidden(prev =>
+      prev.includes(widgetId) ? prev.filter(h => h !== widgetId) : [...prev, widgetId]
+    );
+  };
+
+  const resetDefaults = () => {
+    setOrder([...DEFAULT_WIDGET_ORDER]);
+    setHidden([]);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" data-testid="widget-config-overlay">
+      <Card className="w-full max-w-md mx-4 shadow-2xl max-h-[80vh] overflow-hidden flex flex-col">
+        <CardHeader className="pb-3 flex flex-row items-center justify-between">
+          <CardTitle className="text-base font-semibold">Customise Dashboard</CardTitle>
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onClose} data-testid="widget-config-close">
+            <X className="h-4 w-4" />
+          </Button>
+        </CardHeader>
+        <CardContent className="overflow-y-auto flex-1 pb-4">
+          <p className="text-xs text-muted-foreground mb-4">Drag widgets to reorder, or toggle them on and off.</p>
+          <div className="space-y-1">
+            {order.map((widgetId, index) => {
+              const def = WIDGET_DEFINITIONS[widgetId];
+              if (!def) return null;
+              const isHidden = hidden.includes(widgetId);
+              return (
+                <div
+                  key={widgetId}
+                  className={`flex items-center gap-2 rounded-lg border px-3 py-2 transition-colors ${isHidden ? "bg-muted/50 opacity-60" : "bg-background"}`}
+                  data-testid={`widget-item-${widgetId}`}
+                >
+                  <GripVertical className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium">{def.label}</div>
+                    <div className="text-[11px] text-muted-foreground truncate">{def.description}</div>
+                  </div>
+                  <div className="flex items-center gap-0.5 flex-shrink-0">
+                    <Button
+                      variant="ghost" size="icon" className="h-7 w-7"
+                      onClick={() => moveUp(index)}
+                      disabled={index === 0}
+                      data-testid={`widget-up-${widgetId}`}
+                    >
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost" size="icon" className="h-7 w-7"
+                      onClick={() => moveDown(index)}
+                      disabled={index === order.length - 1}
+                      data-testid={`widget-down-${widgetId}`}
+                    >
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    </Button>
+                    <Switch
+                      checked={!isHidden}
+                      onCheckedChange={() => toggleVisibility(widgetId)}
+                      data-testid={`widget-toggle-${widgetId}`}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+        <div className="border-t px-6 py-3 flex items-center justify-between">
+          <Button variant="ghost" size="sm" onClick={resetDefaults} className="text-xs gap-1" data-testid="widget-reset">
+            <RotateCcw className="h-3.5 w-3.5" /> Reset
+          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={onClose} data-testid="widget-cancel">Cancel</Button>
+            <Button size="sm" onClick={() => onSave({ widgetOrder: order, hiddenWidgets: hidden })} data-testid="widget-save">
+              Save Layout
+            </Button>
+          </div>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 export default function Home() {
   const { user, isAdmin } = useAuth();
   const [, navigate] = useLocation();
@@ -925,6 +1047,33 @@ export default function Home() {
   const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
   const canEdit = isAdmin || (companyRole && ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO"].includes(companyRole));
   const tutorial = useInteractiveTutorial();
+  const [showWidgetConfig, setShowWidgetConfig] = useState(false);
+
+  const { data: widgetConfig } = useQuery<WidgetConfig>({
+    queryKey: ["dashboard-widget-config"],
+    queryFn: async () => {
+      const res = await fetch("/api/dashboard/widget-config", { credentials: "include" });
+      if (!res.ok) return { widgetOrder: [...DEFAULT_WIDGET_ORDER], hiddenWidgets: [] };
+      return res.json();
+    },
+    staleTime: 300_000,
+  });
+
+  const saveWidgetConfigMutation = useMutation({
+    mutationFn: async (config: WidgetConfig) => {
+      await apiRequest("PUT", "/api/dashboard/widget-config", config);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dashboard-widget-config"] });
+      setShowWidgetConfig(false);
+    },
+  });
+
+  const activeWidgetOrder = useMemo(() => {
+    const order = widgetConfig?.widgetOrder || [...DEFAULT_WIDGET_ORDER];
+    const hidden = new Set(widgetConfig?.hiddenWidgets || []);
+    return order.filter(w => !hidden.has(w));
+  }, [widgetConfig]);
 
   useEffect(() => {
     if (user && !tutorial.completed) {
@@ -980,6 +1129,176 @@ export default function Home() {
     hub.approvalCounts.total > 0
   );
 
+  const renderWidget = useCallback((widgetId: string) => {
+    switch (widgetId) {
+      case "my_projects":
+        return user?.name ? <MyProjectsHub key="my_projects" projects={allProjects} userName={user.name} /> : null;
+
+      case "company_priorities":
+        return <CompanyPrioritiesCards key="company_priorities" isAdmin={!!canEdit} priorities={priorities} isLoading={prioritiesLoading} />;
+
+      case "action_banner":
+        if (!hub || !hasActions) return null;
+        return (
+          <div key="action_banner" className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3 flex items-center gap-3" data-testid="action-banner">
+            <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0" />
+            <div className="flex-1 text-sm">
+              <span className="font-medium text-amber-800 dark:text-amber-300">Items need your attention: </span>
+              <span className="text-amber-700 dark:text-amber-400">
+                {[
+                  hub.overdueTaskCount > 0 && `${hub.overdueTaskCount} overdue task${hub.overdueTaskCount > 1 ? 's' : ''}`,
+                  hub.approvalCounts.total > 0 && `${hub.approvalCounts.total} pending approval${hub.approvalCounts.total > 1 ? 's' : ''}`,
+                  hub.actionRequired.length > 0 && `${hub.actionRequired.length} action${hub.actionRequired.length > 1 ? 's' : ''} required`,
+                ].filter(Boolean).join(' · ')}
+              </span>
+            </div>
+          </div>
+        );
+
+      case "priority_queue":
+        return hub ? <PriorityQueue key="priority_queue" hub={hub} /> : null;
+
+      case "stat_cards":
+        if (!hub) return null;
+        return (
+          <div key="stat_cards" className="grid grid-cols-2 sm:grid-cols-4 gap-3" data-testid="stat-cards">
+            <StatCard icon={Bell} label="Unread Notifications" value={hub.unreadCount} color="bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400" href="/notifications" testId="stat-unread" />
+            <StatCard icon={ListTodo} label="My Open Tasks" value={hub.myTasks.length} color="bg-indigo-100 text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-400" href="/engineering" testId="stat-tasks" />
+            <StatCard icon={ClipboardCheck} label="Pending Approvals" value={hub.approvalCounts.total} color="bg-purple-100 text-purple-600 dark:bg-purple-900/50 dark:text-purple-400" href="/approvals" testId="stat-approvals" />
+            <StatCard icon={AlertTriangle} label="Overdue Tasks" value={hub.overdueTaskCount} color={hub.overdueTaskCount > 0 ? "bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-400" : "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/50 dark:text-emerald-400"} href="/engineering" testId="stat-overdue" />
+          </div>
+        );
+
+      case "my_tasks":
+        if (!hub || hub.myTasks.length === 0) return null;
+        return (
+          <Card key="my_tasks" className="shadow-sm" data-testid="card-my-tasks">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                  <ListTodo className="h-4 w-4 text-indigo-500" />
+                  My Tasks
+                  {hub.overdueTaskCount > 0 && (
+                    <Badge variant="destructive" className="text-[10px] px-1.5 py-0">{hub.overdueTaskCount} overdue</Badge>
+                  )}
+                </CardTitle>
+                <Link href="/engineering">
+                  <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" data-testid="button-view-all-tasks">
+                    View all <ArrowRight className="h-3 w-3" />
+                  </Button>
+                </Link>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {hub.myTasks.map(task => <TaskItem key={task.id} task={task} />)}
+              </div>
+            </CardContent>
+          </Card>
+        );
+
+      case "pending_approvals":
+        if (!hub || hub.approvalCounts.total === 0) return null;
+        return (
+          <Card key="pending_approvals" className="shadow-sm" data-testid="card-approvals">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                  <ClipboardCheck className="h-4 w-4 text-purple-500" />
+                  Pending Approvals
+                  <Badge className="text-[10px] px-1.5 py-0 bg-purple-600">{hub.approvalCounts.total}</Badge>
+                </CardTitle>
+                <Link href="/approvals">
+                  <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" data-testid="button-view-approvals">
+                    View all <ArrowRight className="h-3 w-3" />
+                  </Button>
+                </Link>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-2 mb-3">
+                {hub.approvalCounts.engineering > 0 && (
+                  <Badge variant="outline" className="text-[11px] gap-1"><Wrench className="w-3 h-3" />{hub.approvalCounts.engineering} Engineering</Badge>
+                )}
+                {hub.approvalCounts.quality > 0 && (
+                  <Badge variant="outline" className="text-[11px] gap-1"><Shield className="w-3 h-3" />{hub.approvalCounts.quality} Quality</Badge>
+                )}
+                {hub.approvalCounts.deliverable > 0 && (
+                  <Badge variant="outline" className="text-[11px] gap-1"><FileCheck className="w-3 h-3" />{hub.approvalCounts.deliverable} Deliverable</Badge>
+                )}
+                {hub.approvalCounts.taskDeliverable > 0 && (
+                  <Badge variant="outline" className="text-[11px] gap-1 border-orange-300 text-orange-700"><FileCheck className="w-3 h-3" />{hub.approvalCounts.taskDeliverable} Pending Acknowledgment</Badge>
+                )}
+              </div>
+              <div className="space-y-2">
+                {hub.pendingApprovals.map(approval => <ApprovalItem key={approval.id} approval={approval} />)}
+              </div>
+            </CardContent>
+          </Card>
+        );
+
+      case "notifications":
+        if (!hub || (hub.actionRequired.length === 0 && hub.recentNotifications.length === 0)) return null;
+        return (
+          <Card key="notifications" className="shadow-sm" data-testid="card-notifications">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                  <Bell className="h-4 w-4 text-blue-500" />
+                  Notifications
+                  {hub.unreadCount > 0 && <Badge className="text-[10px] px-1.5 py-0 bg-blue-600">{hub.unreadCount}</Badge>}
+                </CardTitle>
+                <Link href="/notifications">
+                  <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" data-testid="button-view-notifications">
+                    View all <ArrowRight className="h-3 w-3" />
+                  </Button>
+                </Link>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {hub.actionRequired.length > 0 && (
+                  <>
+                    {hub.actionRequired.slice(0, 4).map(notif => (
+                      <NotificationItem key={notif.id} notif={notif} onMarkRead={(id) => markReadMutation.mutate([id])} />
+                    ))}
+                    {hub.actionRequired.length > 4 && (
+                      <Link href="/notifications">
+                        <p className="text-xs text-blue-500 hover:text-blue-700 cursor-pointer pl-1">+{hub.actionRequired.length - 4} more actions required...</p>
+                      </Link>
+                    )}
+                  </>
+                )}
+                {hub.actionRequired.length === 0 && hub.recentNotifications.map(notif => (
+                  <NotificationItem key={notif.id} notif={notif} onMarkRead={(id) => markReadMutation.mutate([id])} />
+                ))}
+                {hub.actionRequired.length > 0 && hub.recentNotifications.length > 0 && (
+                  <>
+                    <div className="border-t border-border/50 pt-2 mt-2">
+                      <p className="text-[11px] text-muted-foreground font-medium uppercase tracking-wider mb-2">Recent</p>
+                    </div>
+                    {hub.recentNotifications
+                      .filter(n => !hub.actionRequired.some((a: any) => a.id === n.id))
+                      .slice(0, 3)
+                      .map(notif => <NotificationItem key={notif.id} notif={notif} onMarkRead={(id) => markReadMutation.mutate([id])} />)}
+                  </>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        );
+
+      default:
+        return null;
+    }
+  }, [hub, hasActions, user, allProjects, canEdit, priorities, prioritiesLoading, markReadMutation]);
+
+  const gridWidgets = ["my_tasks", "pending_approvals", "notifications"];
+  const gridItems = activeWidgetOrder.filter(w => gridWidgets.includes(w));
+  const topWidgets = activeWidgetOrder.filter(w => !gridWidgets.includes(w));
+  const hasAnyGridContent = hub && (hub.myTasks.length > 0 || hub.approvalCounts.total > 0 || hub.actionRequired.length > 0 || hub.recentNotifications.length > 0);
+  const allClear = hub && hub.myTasks.length === 0 && hub.approvalCounts.total === 0 && hub.recentNotifications.length === 0;
+
   return (
     <div className="space-y-5 max-w-7xl mx-auto" data-testid="home-page">
       <div className="flex items-center justify-between">
@@ -992,18 +1311,30 @@ export default function Home() {
             {new Date().toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" })}
           </p>
         </div>
-        {tutorial.completed && (
+        <div className="flex items-center gap-2">
           <Button
             variant="outline"
             size="sm"
             className="h-8 text-xs gap-1.5"
-            onClick={() => { tutorial.reset(); tutorial.start(); }}
-            data-testid="button-replay-tour"
+            onClick={() => setShowWidgetConfig(true)}
+            data-testid="button-customise-dashboard"
           >
-            <Compass className="h-3.5 w-3.5" />
-            Take a Tour
+            <Settings2 className="h-3.5 w-3.5" />
+            Customise
           </Button>
-        )}
+          {tutorial.completed && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs gap-1.5"
+              onClick={() => { tutorial.reset(); tutorial.start(); }}
+              data-testid="button-replay-tour"
+            >
+              <Compass className="h-3.5 w-3.5" />
+              Take a Tour
+            </Button>
+          )}
+        </div>
       </div>
 
       {(() => {
@@ -1031,231 +1362,38 @@ export default function Home() {
 
       <ProjectQuickSearch projects={allProjects} isLoading={projectsLoading} />
 
-      {user?.name && (
-        <MyProjectsHub projects={allProjects} userName={user.name} />
-      )}
-
-      <CompanyPrioritiesCards isAdmin={!!canEdit} priorities={priorities} isLoading={prioritiesLoading} />
-
       {hubLoading ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
-      ) : hub ? (
+      ) : (
         <>
-          {hasActions && (
-            <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3 flex items-center gap-3" data-testid="action-banner">
-              <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0" />
-              <div className="flex-1 text-sm">
-                <span className="font-medium text-amber-800 dark:text-amber-300">Items need your attention: </span>
-                <span className="text-amber-700 dark:text-amber-400">
-                  {[
-                    hub.overdueTaskCount > 0 && `${hub.overdueTaskCount} overdue task${hub.overdueTaskCount > 1 ? 's' : ''}`,
-                    hub.approvalCounts.total > 0 && `${hub.approvalCounts.total} pending approval${hub.approvalCounts.total > 1 ? 's' : ''}`,
-                    hub.actionRequired.length > 0 && `${hub.actionRequired.length} action${hub.actionRequired.length > 1 ? 's' : ''} required`,
-                  ].filter(Boolean).join(' · ')}
-                </span>
-              </div>
+          {topWidgets.map(w => renderWidget(w))}
+
+          {gridItems.length > 0 && hasAnyGridContent && (
+            <div className="grid gap-5 lg:grid-cols-2">
+              {gridItems.map(w => renderWidget(w))}
+              {allClear && (
+                <Card className="shadow-sm lg:col-span-2" data-testid="card-all-clear">
+                  <CardContent className="flex flex-col items-center justify-center py-10">
+                    <CheckCircle2 className="w-10 h-10 text-emerald-500 mb-3" />
+                    <h3 className="font-semibold text-lg">You're all caught up</h3>
+                    <p className="text-sm text-muted-foreground mt-1">No pending tasks, approvals, or notifications right now.</p>
+                  </CardContent>
+                </Card>
+              )}
             </div>
           )}
-
-          <PriorityQueue hub={hub} />
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3" data-testid="stat-cards">
-            <StatCard
-              icon={Bell}
-              label="Unread Notifications"
-              value={hub.unreadCount}
-              color="bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400"
-              href="/notifications"
-              testId="stat-unread"
-            />
-            <StatCard
-              icon={ListTodo}
-              label="My Open Tasks"
-              value={hub.myTasks.length}
-              color="bg-indigo-100 text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-400"
-              href="/engineering"
-              testId="stat-tasks"
-            />
-            <StatCard
-              icon={ClipboardCheck}
-              label="Pending Approvals"
-              value={hub.approvalCounts.total}
-              color="bg-purple-100 text-purple-600 dark:bg-purple-900/50 dark:text-purple-400"
-              href="/approvals"
-              testId="stat-approvals"
-            />
-            <StatCard
-              icon={AlertTriangle}
-              label="Overdue Tasks"
-              value={hub.overdueTaskCount}
-              color={hub.overdueTaskCount > 0 ? "bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-400" : "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/50 dark:text-emerald-400"}
-              href="/engineering"
-              testId="stat-overdue"
-            />
-          </div>
-
-          <div className="grid gap-5 lg:grid-cols-2">
-            {hub.myTasks.length > 0 && (
-              <Card className="shadow-sm" data-testid="card-my-tasks">
-                <CardHeader className="pb-2">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                      <ListTodo className="h-4 w-4 text-indigo-500" />
-                      My Tasks
-                      {hub.overdueTaskCount > 0 && (
-                        <Badge variant="destructive" className="text-[10px] px-1.5 py-0">{hub.overdueTaskCount} overdue</Badge>
-                      )}
-                    </CardTitle>
-                    <Link href="/engineering">
-                      <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" data-testid="button-view-all-tasks">
-                        View all <ArrowRight className="h-3 w-3" />
-                      </Button>
-                    </Link>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    {hub.myTasks.map(task => (
-                      <TaskItem key={task.id} task={task} />
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {hub.approvalCounts.total > 0 && (
-              <Card className="shadow-sm" data-testid="card-approvals">
-                <CardHeader className="pb-2">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                      <ClipboardCheck className="h-4 w-4 text-purple-500" />
-                      Pending Approvals
-                      <Badge className="text-[10px] px-1.5 py-0 bg-purple-600">{hub.approvalCounts.total}</Badge>
-                    </CardTitle>
-                    <Link href="/approvals">
-                      <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" data-testid="button-view-approvals">
-                        View all <ArrowRight className="h-3 w-3" />
-                      </Button>
-                    </Link>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex flex-wrap gap-2 mb-3">
-                    {hub.approvalCounts.engineering > 0 && (
-                      <Badge variant="outline" className="text-[11px] gap-1">
-                        <Wrench className="w-3 h-3" />
-                        {hub.approvalCounts.engineering} Engineering
-                      </Badge>
-                    )}
-                    {hub.approvalCounts.quality > 0 && (
-                      <Badge variant="outline" className="text-[11px] gap-1">
-                        <Shield className="w-3 h-3" />
-                        {hub.approvalCounts.quality} Quality
-                      </Badge>
-                    )}
-                    {hub.approvalCounts.deliverable > 0 && (
-                      <Badge variant="outline" className="text-[11px] gap-1">
-                        <FileCheck className="w-3 h-3" />
-                        {hub.approvalCounts.deliverable} Deliverable
-                      </Badge>
-                    )}
-                    {hub.approvalCounts.taskDeliverable > 0 && (
-                      <Badge variant="outline" className="text-[11px] gap-1 border-orange-300 text-orange-700">
-                        <FileCheck className="w-3 h-3" />
-                        {hub.approvalCounts.taskDeliverable} Pending Acknowledgment
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="space-y-2">
-                    {hub.pendingApprovals.map(approval => (
-                      <ApprovalItem key={approval.id} approval={approval} />
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {(hub.actionRequired.length > 0 || hub.recentNotifications.length > 0) && (
-              <Card className="shadow-sm" data-testid="card-notifications">
-                <CardHeader className="pb-2">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                      <Bell className="h-4 w-4 text-blue-500" />
-                      Notifications
-                      {hub.unreadCount > 0 && (
-                        <Badge className="text-[10px] px-1.5 py-0 bg-blue-600">{hub.unreadCount}</Badge>
-                      )}
-                    </CardTitle>
-                    <Link href="/notifications">
-                      <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" data-testid="button-view-notifications">
-                        View all <ArrowRight className="h-3 w-3" />
-                      </Button>
-                    </Link>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    {hub.actionRequired.length > 0 && (
-                      <>
-                        {hub.actionRequired.slice(0, 4).map(notif => (
-                          <NotificationItem
-                            key={notif.id}
-                            notif={notif}
-                            onMarkRead={(id) => markReadMutation.mutate([id])}
-                          />
-                        ))}
-                        {hub.actionRequired.length > 4 && (
-                          <Link href="/notifications">
-                            <p className="text-xs text-blue-500 hover:text-blue-700 cursor-pointer pl-1">
-                              +{hub.actionRequired.length - 4} more actions required...
-                            </p>
-                          </Link>
-                        )}
-                      </>
-                    )}
-                    {hub.actionRequired.length === 0 && hub.recentNotifications.map(notif => (
-                      <NotificationItem
-                        key={notif.id}
-                        notif={notif}
-                        onMarkRead={(id) => markReadMutation.mutate([id])}
-                      />
-                    ))}
-                    {hub.actionRequired.length > 0 && hub.recentNotifications.length > 0 && (
-                      <>
-                        <div className="border-t border-border/50 pt-2 mt-2">
-                          <p className="text-[11px] text-muted-foreground font-medium uppercase tracking-wider mb-2">Recent</p>
-                        </div>
-                        {hub.recentNotifications
-                          .filter(n => !hub.actionRequired.some((a: any) => a.id === n.id))
-                          .slice(0, 3)
-                          .map(notif => (
-                            <NotificationItem
-                              key={notif.id}
-                              notif={notif}
-                              onMarkRead={(id) => markReadMutation.mutate([id])}
-                            />
-                          ))}
-                      </>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {hub.myTasks.length === 0 && hub.approvalCounts.total === 0 && hub.recentNotifications.length === 0 && (
-              <Card className="shadow-sm lg:col-span-2" data-testid="card-all-clear">
-                <CardContent className="flex flex-col items-center justify-center py-10">
-                  <CheckCircle2 className="w-10 h-10 text-emerald-500 mb-3" />
-                  <h3 className="font-semibold text-lg">You're all caught up</h3>
-                  <p className="text-sm text-muted-foreground mt-1">No pending tasks, approvals, or notifications right now.</p>
-                </CardContent>
-              </Card>
-            )}
-          </div>
         </>
-      ) : null}
+      )}
+
+      {showWidgetConfig && widgetConfig && (
+        <WidgetConfigPanel
+          config={widgetConfig}
+          onSave={(cfg) => saveWidgetConfigMutation.mutate(cfg)}
+          onClose={() => setShowWidgetConfig(false)}
+        />
+      )}
 
       <InteractiveTutorial active={tutorial.active} onComplete={tutorial.stop} role={userRole} />
     </div>

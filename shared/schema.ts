@@ -4175,3 +4175,37 @@ export const financialIntegrationRules = pgTable("financial_integration_rules", 
 export const insertFinancialIntegrationRuleSchema = createInsertSchema(financialIntegrationRules).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertFinancialIntegrationRule = z.infer<typeof insertFinancialIntegrationRuleSchema>;
 export type FinancialIntegrationRule = typeof financialIntegrationRules.$inferSelect;
+
+export const dashboardWidgetConfig = pgTable("dashboard_widget_config", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  widgetOrder: jsonb("widget_order").notNull().$type<string[]>(),
+  hiddenWidgets: jsonb("hidden_widgets").notNull().$type<string[]>(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertDashboardWidgetConfigSchema = createInsertSchema(dashboardWidgetConfig).omit({ id: true, updatedAt: true });
+export type InsertDashboardWidgetConfig = z.infer<typeof insertDashboardWidgetConfigSchema>;
+export type DashboardWidgetConfig = typeof dashboardWidgetConfig.$inferSelect;
+
+export const DEFAULT_WIDGET_ORDER = [
+  "my_projects",
+  "company_priorities",
+  "action_banner",
+  "priority_queue",
+  "stat_cards",
+  "my_tasks",
+  "pending_approvals",
+  "notifications",
+] as const;
+
+export const WIDGET_DEFINITIONS: Record<string, { label: string; description: string }> = {
+  my_projects: { label: "My Projects", description: "Projects assigned to you with status and progress" },
+  company_priorities: { label: "Company Priorities", description: "Organisation-wide priority items" },
+  action_banner: { label: "Attention Banner", description: "Alert bar for overdue tasks and pending approvals" },
+  priority_queue: { label: "Priority Queue", description: "Your most urgent action items sorted by urgency" },
+  stat_cards: { label: "Statistics Cards", description: "Quick summary of notifications, tasks, approvals" },
+  my_tasks: { label: "My Tasks", description: "List of tasks assigned to you" },
+  pending_approvals: { label: "Pending Approvals", description: "Approvals waiting for your action" },
+  notifications: { label: "Notifications", description: "Recent and action-required notifications" },
+};
