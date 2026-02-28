@@ -95,8 +95,17 @@ Preferred communication style: Simple, everyday language.
 -   **tailwindcss**
 
 ### Third-Party Integrations
--   **Microsoft Graph API**: For Outlook calendar integration.
+-   **Microsoft Graph API**: For Outlook calendar, SharePoint, and Teams integration.
 -   **Read.ai**: For meeting data ingestion via webhooks.
+
+### Microsoft Integration
+-   **Outlook**: Connected via Replit Connector (OAuth). Powers calendar sync, email access, approval emails.
+-   **SharePoint**: Document library browsing and file management via Graph API. Admin configures site/drive.
+-   **Teams**: Message linking to projects, tagging, hot thread tracking.
+-   **Status Endpoint**: `/api/ms-integration/status` (any authenticated user) returns consolidated status for all three services.
+-   **Admin Settings**: `/api/admin/ms-integration` endpoints (admin-only) for feature flags, SharePoint site config, Teams thresholds.
+-   **User Access**: All users can view integration status at `/settings/integrations`. Admins manage settings at `/admin/ms-integration`.
+-   **Admin Routes**: Registered via `registerAdminRoutes()` from `server/departments/admin-routes.ts` in `server/index.ts`.
 
 ## UX Quick Wins (Implemented)
 

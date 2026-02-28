@@ -15,6 +15,7 @@ import { sql } from "drizzle-orm";
 import { runBackfill } from "./lib/backfill";
 import { startScheduler } from "./importPipeline";
 import { startMilestoneChecker } from "./milestone-notifications";
+import { registerAdminRoutes } from "./departments/admin-routes";
 
 const app = express();
 const httpServer = createServer(app);
@@ -447,6 +448,7 @@ async function backfillPmUserIds() {
     );
   `)).catch(err => console.error('[Portfolio] Table creation error:', err));
 
+  registerAdminRoutes(app);
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
