@@ -452,6 +452,9 @@ async function backfillPmUserIds() {
   `)).catch(err => console.error('[Portfolio] Table creation error:', err));
 
   registerAdminRoutes(app);
+  const { financialIntegrationRouter } = await import("./departments/financial-integration-routes");
+  app.use(financialIntegrationRouter);
+
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {

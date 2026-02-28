@@ -1,13 +1,68 @@
-import { Router, type Express, type Request, type Response } from "express";
+import { Router, type Express, type Request, type Response, type NextFunction } from "express";
 import { requireAuth, requireAdmin } from './shared-middleware';
 import { storage } from "../storage";
 import { db } from "../db";
 import { requirePermission } from "../permission-middleware";
 import { z } from "zod";
-import { insertBudgetSchema, OVERRIDE_CATEGORIES, cosStatusOverrides } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { insertBudgetSchema, OVERRIDE_CATEGORIES, cosStatusOverrides, financialEditRequests, notifications, users } from "@shared/schema";
+import { eq, inArray } from "drizzle-orm";
 import { classifyExpenseState } from "../lib/calculations/stateClassifier";
 import { recordOverride } from "../lib/audit/diff-engine";
+
+const FINANCIAL_APPROVER_ROLES = ["COO_ADMIN", "CEO_ADMIN", "admin", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER"];
+
+function requireAdminOrFinancialEditor(req: Request, res: Response, next: NextFunction) {
+  const role = req.user?.role;
+  if (role === "admin" || role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
+  if (role === "PROJECT_MANAGER_SITE" || role === "PROGRAM_MANAGER" || role === "PROGRAM_FINANCE_MANAGER" || role === "CONSTRUCTION_MANAGER") return next();
+  res.status(403).json({ error: "admin_required", message: "Admin or financial editor access required", code: "ADMIN_REQUIRED" });
+}
+
+function isPmOnlyRole(role: string | undefined): boolean {
+  return role === "PROJECT_MANAGER_SITE";
+}
+
+async function createPendingEditRequest(
+  userId: number,
+  projectName: string,
+  editType: string,
+  editTarget: string,
+  editPayload: any,
+  editSummary: string
+) {
+  const [saved] = await db.insert(financialEditRequests).values({
+    projectName,
+    requestedByUserId: userId,
+    editType,
+    editTarget,
+    editPayload: typeof editPayload === "string" ? editPayload : JSON.stringify(editPayload),
+    editSummary,
+    isCriticalPath: false,
+    affectsRevenue: editType.includes("revenue"),
+    affectsExpenditure: editType.includes("expenditure"),
+    affectsQuality: false,
+    status: "pending",
+  }).returning();
+
+  const recipients = await db.select({ id: users.id }).from(users)
+    .where(inArray(users.role, FINANCIAL_APPROVER_ROLES));
+  const [requestor] = await db.select({ name: users.name }).from(users).where(eq(users.id, userId));
+
+  for (const r of recipients) {
+    if (r.id === userId) continue;
+    await db.insert(notifications).values({
+      recipientUserId: r.id,
+      eventType: "financial.edit_request",
+      title: `Edit Request: ${projectName}`,
+      body: `${requestor?.name || "A PM"} submitted a ${editType} edit requiring approval. ${editSummary}`,
+      projectName,
+      requiresConfirmation: true,
+      changeDetails: JSON.stringify({ requestId: saved.id, editType, editSummary }),
+    });
+  }
+
+  return saved;
+}
 
 const router = Router();
 
