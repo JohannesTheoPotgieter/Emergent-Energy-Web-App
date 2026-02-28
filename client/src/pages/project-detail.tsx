@@ -1216,6 +1216,190 @@ export default function ProjectDetailPage() {
             )}
           </div>
 
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {canViewTab.expenditure && (
+            <Card className="relative overflow-hidden" data-testid="overview-expenditure">
+              <div className="absolute top-0 left-0 right-0 h-1 bg-violet-500" />
+              <CardContent className="p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-9 h-9 rounded-lg bg-violet-100 flex items-center justify-center">
+                      <DollarSign className="h-4.5 w-4.5 text-violet-600" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-sm">Expenditure Breakdown</h3>
+                      <p className="text-[10px] text-muted-foreground">Actual vs Costed by category</p>
+                    </div>
+                  </div>
+                  <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-violet-600" onClick={() => navigateToSection("project-management", "expenditure")} data-testid="button-goto-expenditure">
+                    View Details <ArrowRight className="h-3 w-3" />
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3 text-center">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Costed</p>
+                    <p className="text-sm font-bold">R{(budgetTotal / 1000).toFixed(0)}k</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Actual</p>
+                    <p className={`text-sm font-bold ${costRag === "red" ? "text-red-600" : costRag === "amber" ? "text-amber-600" : ""}`}>R{(totalExpenses / 1000).toFixed(0)}k</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Variance</p>
+                    <p className={`text-sm font-bold ${(budgetTotal - totalExpenses) < 0 ? "text-red-600" : "text-emerald-600"}`}>
+                      {(budgetTotal - totalExpenses) >= 0 ? "" : "-"}R{(Math.abs(budgetTotal - totalExpenses) / 1000).toFixed(0)}k
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
+                  {(() => {
+                    const categories = (expenseData as any[]).reduce((acc: Record<string, { actual: number; budget: number }>, e: any) => {
+                      const cat = e.expenseCategory || "Uncategorised";
+                      if (!acc[cat]) acc[cat] = { actual: 0, budget: 0 };
+                      acc[cat].actual += Number(e.expenseActualTotal) || 0;
+                      acc[cat].budget += Number(e.budgetTotal) || 0;
+                      return acc;
+                    }, {});
+                    const sorted = Object.entries(categories).sort((a, b) => b[1].actual - a[1].actual);
+                    const maxVal = Math.max(...sorted.map(([, v]) => Math.max(v.actual, v.budget)), 1);
+                    if (sorted.length === 0) return <p className="text-xs text-muted-foreground text-center py-4">No expenditure data</p>;
+                    return sorted.map(([cat, vals]) => {
+                      const overBudget = vals.actual > vals.budget && vals.budget > 0;
+                      return (
+                        <div key={cat} className="space-y-0.5" data-testid={`exp-cat-${cat.replace(/\s+/g, "-").toLowerCase()}`}>
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="truncate max-w-[140px] text-muted-foreground">{cat}</span>
+                            <span className={`font-medium ${overBudget ? "text-red-600" : ""}`}>
+                              R{(vals.actual / 1000).toFixed(0)}k / R{(vals.budget / 1000).toFixed(0)}k
+                            </span>
+                          </div>
+                          <div className="flex gap-0.5 h-2">
+                            <div className="h-full bg-violet-200 rounded-full overflow-hidden flex-1">
+                              <div className="h-full bg-violet-500 rounded-full transition-all" style={{ width: `${Math.min((vals.budget / maxVal) * 100, 100)}%` }} />
+                            </div>
+                            <div className="h-full bg-gray-100 rounded-full overflow-hidden flex-1">
+                              <div className={`h-full rounded-full transition-all ${overBudget ? "bg-red-500" : "bg-emerald-500"}`} style={{ width: `${Math.min((vals.actual / maxVal) * 100, 100)}%` }} />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+                <div className="flex items-center gap-4 text-[10px] text-muted-foreground pt-1 border-t">
+                  <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-violet-500" /> Costed</div>
+                  <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-emerald-500" /> Actual</div>
+                  <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-red-500" /> Over Budget</div>
+                </div>
+              </CardContent>
+            </Card>
+            )}
+
+            {canViewTab.overview && (
+            <Card className="relative overflow-hidden" data-testid="overview-plan-summary">
+              <div className="absolute top-0 left-0 right-0 h-1 bg-sky-500" />
+              <CardContent className="p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-9 h-9 rounded-lg bg-sky-100 flex items-center justify-center">
+                      <CalendarDays className="h-4.5 w-4.5 text-sky-600" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-sm">Project Plan</h3>
+                      <p className="text-[10px] text-muted-foreground">Task progress & milestones</p>
+                    </div>
+                  </div>
+                  <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-sky-600" onClick={() => navigateToSection("project-management", "gantt")} data-testid="button-goto-plan">
+                    View Plan <ArrowRight className="h-3 w-3" />
+                  </Button>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">Overall Progress</span>
+                    <span className="font-semibold">{planCompletionPct.toFixed(0)}% ({completedPlanTasks.length}/{planTasks.length})</span>
+                  </div>
+                  <div className="w-full h-3 bg-muted rounded-full overflow-hidden">
+                    <div className="h-full bg-sky-500 rounded-full transition-all" style={{ width: `${planCompletionPct}%` }} />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-4 gap-2 text-center">
+                  <div>
+                    <p className="text-lg font-bold">{planTasks.length}</p>
+                    <p className="text-[10px] text-muted-foreground">Total</p>
+                  </div>
+                  <div>
+                    <p className="text-lg font-bold text-emerald-600">{completedPlanTasks.length}</p>
+                    <p className="text-[10px] text-muted-foreground">Done</p>
+                  </div>
+                  <div>
+                    <p className={`text-lg font-bold ${overduePlanTasks.length > 0 ? "text-red-600" : ""}`}>{overduePlanTasks.length}</p>
+                    <p className="text-[10px] text-muted-foreground">Overdue</p>
+                  </div>
+                  <div>
+                    <p className="text-lg font-bold text-sky-600">{planTasks.length - completedPlanTasks.length - overduePlanTasks.length}</p>
+                    <p className="text-[10px] text-muted-foreground">On Track</p>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1">
+                  {(() => {
+                    if (planTasks.length === 0) return <p className="text-xs text-muted-foreground text-center py-3">No plan data uploaded yet</p>;
+                    const urgent = [...overduePlanTasks]
+                      .sort((a: any, b: any) => {
+                        const aEnd = a.endDate || a.actualEnd || "";
+                        const bEnd = b.endDate || b.actualEnd || "";
+                        return aEnd.localeCompare(bEnd);
+                      })
+                      .slice(0, 5);
+                    if (urgent.length === 0) {
+                      const upcoming = planTasks
+                        .filter((t: any) => {
+                          const endDate = t.endDate || t.actualEnd;
+                          const pct = Number(t.actualPctComplete);
+                          const isComplete = t.status === "Complete" || t.status === "Done" || (pct >= 1);
+                          return endDate && endDate >= today && !isComplete;
+                        })
+                        .sort((a: any, b: any) => (a.endDate || a.actualEnd || "").localeCompare(b.endDate || b.actualEnd || ""))
+                        .slice(0, 5);
+                      if (upcoming.length === 0) return <p className="text-xs text-emerald-600 text-center py-3">All tasks are on track</p>;
+                      return upcoming.map((t: any, i: number) => (
+                        <div key={i} className="flex items-center gap-2 text-[11px] py-1 px-2 rounded bg-gray-50 hover:bg-gray-100 cursor-pointer" onClick={() => navigateToSection("project-management", "gantt")} data-testid={`row-plan-upcoming-${t.id || i}`}>
+                          <Circle className="h-2.5 w-2.5 text-sky-400 shrink-0" />
+                          <span className="truncate flex-1">{t.taskName || t.task_name || "Task"}</span>
+                          <span className="text-muted-foreground shrink-0">{t.endDate || t.actualEnd || ""}</span>
+                          <span className="text-sky-600 font-medium shrink-0">{((Number(t.actualPctComplete) || 0) * 100).toFixed(0)}%</span>
+                        </div>
+                      ));
+                    }
+                    return urgent.map((t: any, i: number) => {
+                      const endDate = t.endDate || t.actualEnd || "";
+                      const daysLate = endDate ? Math.floor((new Date().getTime() - new Date(endDate).getTime()) / (1000 * 60 * 60 * 24)) : 0;
+                      return (
+                        <div key={i} className="flex items-center gap-2 text-[11px] py-1 px-2 rounded bg-red-50 border border-red-100 hover:bg-red-100 cursor-pointer" onClick={() => navigateToSection("project-management", "gantt")} data-testid={`row-plan-overdue-${t.id || i}`}>
+                          <AlertCircle className="h-3 w-3 text-red-500 shrink-0" />
+                          <span className="truncate flex-1">{t.taskName || t.task_name || "Task"}</span>
+                          <Badge variant="destructive" className="text-[9px] px-1 py-0 shrink-0">{daysLate}d late</Badge>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+
+                <div className="flex items-center gap-2 pt-1 border-t">
+                  <RagDot color={scheduleRag} />
+                  <span className={`text-xs font-medium ${ragColor(scheduleRag)}`}>
+                    {scheduleRag === "green" ? "All tasks on schedule" : scheduleRag === "amber" ? `${overduePlanTasks.length} task${overduePlanTasks.length !== 1 ? "s" : ""} overdue` : `${overduePlanTasks.length} tasks behind schedule`}
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+            )}
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <ProjectChatTab projectName={projectName} />
             <SharePointFilesTab projectName={projectName} />
