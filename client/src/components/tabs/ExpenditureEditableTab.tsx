@@ -268,7 +268,14 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
       if (!response.ok) throw new Error("Failed to save overrides");
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      if (data?.status === "pending_approval") {
+        toast({ title: "Submitted for Approval", description: "Your expenditure edit has been sent to management for approval." });
+        queryClient.invalidateQueries({ queryKey: ["financial-edit-requests"] });
+        queryClient.invalidateQueries({ queryKey: ["financial-warnings"] });
+        setEdits(new Map());
+        return;
+      }
       queryClient.invalidateQueries({ queryKey: breakdownKey });
       queryClient.invalidateQueries({ predicate: (query) => {
         const key = query.queryKey[0];

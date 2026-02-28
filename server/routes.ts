@@ -7253,19 +7253,17 @@ export async function registerRoutes(
       const existingOverrides = await storage.getTaskOverridesByScenario(scenario.id);
       const existing = existingOverrides.find(o => o.importedTaskId === id);
 
+      let result;
       if (existing) {
-        // Update existing override
-        const updated = await storage.updateTaskOverride(existing.id, {
+        result = await storage.updateTaskOverride(existing.id, {
           overrideStartDate: startDate || existing.overrideStartDate,
           overrideEndDate: endDate || existing.overrideEndDate,
           overrideName: name || existing.overrideName,
           overrideTaskNo: taskNo || existing.overrideTaskNo,
           overrideComment: comment || existing.overrideComment,
         });
-        res.json(updated);
       } else {
-        // Create new override
-        const created = await storage.createTaskOverride({
+        result = await storage.createTaskOverride({
           scenarioId: scenario.id,
           importedTaskId: id,
           overrideStartDate: startDate || null,
@@ -7276,7 +7274,45 @@ export async function registerRoutes(
           deletedFlag: 0,
           isNewTask: 0,
         });
-        res.json(created);
+      }
+      res.json(result);
+
+      try {
+        const { milestoneTaskLinks, expenseTaskLinks, notifications: notificationsTable, users: usersTable } = await import("@shared/schema");
+        const APPROVER_ROLES = ["COO_ADMIN", "CEO_ADMIN", "admin", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER"];
+        const [revLinks, expLinks] = await Promise.all([
+          db.select().from(milestoneTaskLinks).where(eq(milestoneTaskLinks.projectName, projectName)),
+          db.select().from(expenseTaskLinks).where(eq(expenseTaskLinks.projectName, projectName)),
+        ]);
+        const hasRevImpact = revLinks.some(l => Math.abs(l.taskId) === id);
+        const hasExpImpact = expLinks.some(l => Math.abs(l.taskId) === id);
+        if (hasRevImpact || hasExpImpact) {
+          const flags: string[] = [];
+          if (hasRevImpact) flags.push("Revenue");
+          if (hasExpImpact) flags.push("Expenditure");
+          const editDesc = [
+            startDate && `start date → ${startDate}`,
+            endDate && `end date → ${endDate}`,
+            name && `name → "${name}"`,
+          ].filter(Boolean).join(", ");
+          const approvers = await db.select({ id: usersTable.id }).from(usersTable)
+            .where(inArray(usersTable.role, APPROVER_ROLES));
+          const actorName = req.user?.name || req.user?.username || "Someone";
+          for (const appr of approvers) {
+            if (appr.id === req.user?.id) continue;
+            await db.insert(notificationsTable).values({
+              recipientUserId: appr.id,
+              eventType: "financial.plan_task_impact",
+              title: `[FINANCIAL] Plan Task Edit: ${projectName}`,
+              body: `${actorName} edited task #${id} (${editDesc || "fields changed"}). This task is linked to ${flags.join(" & ")} items. Please verify financial alignment.`,
+              projectName,
+              linkedPlanItemId: id,
+              isRead: false,
+            });
+          }
+        }
+      } catch (crossErr: any) {
+        console.warn("[fin-cross] Plan-to-financial notification failed:", crossErr.message);
       }
     } catch (error: any) {
       console.error("Error updating task:", error);

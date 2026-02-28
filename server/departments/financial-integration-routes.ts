@@ -555,4 +555,103 @@ router.get("/api/financial-integration/role-access", requireAuth, async (req: Re
   });
 });
 
+router.get("/api/financial-integration/rules/:projectName", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const projectName = req.params.projectName;
+    const rules = await db.select({
+      rule: financialIntegrationRules,
+      createdBy: { id: users.id, name: users.name },
+    })
+      .from(financialIntegrationRules)
+      .leftJoin(users, eq(financialIntegrationRules.createdByUserId, users.id))
+      .where(eq(financialIntegrationRules.projectName, projectName))
+      .orderBy(desc(financialIntegrationRules.createdAt));
+
+    res.json(rules.map(r => ({
+      ...r.rule,
+      createdByName: r.createdBy?.name || "Unknown",
+    })));
+  } catch (error: any) {
+    console.error("[fin-rules] List error:", error);
+    res.status(500).json({ error: "Failed to fetch rules" });
+  }
+});
+
+router.post("/api/financial-integration/rules", requireAuth, requireFinancialApprover, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const { projectName, ruleType, ruleConfig } = req.body;
+
+    if (!projectName || !ruleType || !ruleConfig) {
+      return res.status(400).json({ error: "projectName, ruleType, and ruleConfig are required" });
+    }
+
+    const validRuleTypes = [
+      "budget_threshold",
+      "revenue_milestone_linking",
+      "expenditure_auto_flag",
+      "critical_path_protection",
+      "approval_bypass",
+      "variance_alert_threshold",
+    ];
+    if (!validRuleTypes.includes(ruleType)) {
+      return res.status(400).json({ error: `Invalid rule type. Must be one of: ${validRuleTypes.join(", ")}` });
+    }
+
+    const [saved] = await db.insert(financialIntegrationRules).values({
+      projectName,
+      ruleType,
+      ruleConfig: typeof ruleConfig === "string" ? ruleConfig : JSON.stringify(ruleConfig),
+      isActive: true,
+      createdByUserId: userId,
+    }).returning();
+
+    res.json(saved);
+  } catch (error: any) {
+    console.error("[fin-rules] Create error:", error);
+    res.status(500).json({ error: "Failed to create rule" });
+  }
+});
+
+router.patch("/api/financial-integration/rules/:ruleId", requireAuth, requireFinancialApprover, async (req: Request, res: Response) => {
+  try {
+    const ruleId = parseInt(req.params.ruleId);
+    const { ruleConfig, isActive } = req.body;
+
+    const updates: any = { updatedAt: new Date() };
+    if (ruleConfig !== undefined) {
+      updates.ruleConfig = typeof ruleConfig === "string" ? ruleConfig : JSON.stringify(ruleConfig);
+    }
+    if (isActive !== undefined) {
+      updates.isActive = isActive;
+    }
+
+    const [updated] = await db.update(financialIntegrationRules)
+      .set(updates)
+      .where(eq(financialIntegrationRules.id, ruleId))
+      .returning();
+
+    if (!updated) return res.status(404).json({ error: "Rule not found" });
+    res.json(updated);
+  } catch (error: any) {
+    console.error("[fin-rules] Update error:", error);
+    res.status(500).json({ error: "Failed to update rule" });
+  }
+});
+
+router.delete("/api/financial-integration/rules/:ruleId", requireAuth, requireFinancialApprover, async (req: Request, res: Response) => {
+  try {
+    const ruleId = parseInt(req.params.ruleId);
+    const [deleted] = await db.delete(financialIntegrationRules)
+      .where(eq(financialIntegrationRules.id, ruleId))
+      .returning();
+
+    if (!deleted) return res.status(404).json({ error: "Rule not found" });
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error("[fin-rules] Delete error:", error);
+    res.status(500).json({ error: "Failed to delete rule" });
+  }
+});
+
 export { router as financialIntegrationRouter };

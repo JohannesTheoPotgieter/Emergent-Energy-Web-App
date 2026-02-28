@@ -134,7 +134,13 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
       if (!res.ok) throw new Error("Failed to save changes");
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      if (data?.status === "pending_approval") {
+        toast({ title: "Submitted for Approval", description: "Your revenue edit has been sent to management for approval." });
+        queryClient.invalidateQueries({ queryKey: ["financial-edit-requests"] });
+        queryClient.invalidateQueries({ queryKey: ["financial-warnings"] });
+        return;
+      }
       queryClient.invalidateQueries({ queryKey: ["revenue-tab", projectName] });
       invalidateDashboardQueries(queryClient);
       toast({ title: "Changes saved", description: "Revenue tracking updates saved successfully" });
