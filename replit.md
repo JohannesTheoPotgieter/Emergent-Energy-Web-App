@@ -23,7 +23,7 @@ Preferred communication style: Simple, everyday language.
 
 ### Backend
 -   **Frameworks & Libraries**: Express.js with TypeScript.
--   **Authentication & Authorization**: Passport.js with local strategy, PostgreSQL-backed sessions, role-based access control (RBAC), rate limiting, and granular permission middleware. Frontend `usePermission` hook fetches DB entity permission overrides. Admin Roles page (`/admin/roles`) redesigned with tab-based layout for Role Permissions, Project Detail Access, and User Management. Permission entities expanded to include `portfolios`, `notifications`, `subcontractors`, `cos_control`, `cashflow_forecast`, `home`.
+-   **Authentication & Authorization**: Passport.js with local strategy + Microsoft 365 SSO via `@azure/msal-node`. PostgreSQL-backed sessions, role-based access control (RBAC), rate limiting, and granular permission middleware. Microsoft login maps Azure AD identity to existing users by email/username and stores `microsoft_id` on users table. Frontend `usePermission` hook fetches DB entity permission overrides. Admin Roles page (`/admin/roles`) redesigned with tab-based layout for Role Permissions, Project Detail Access, and User Management. Permission entities expanded to include `portfolios`, `notifications`, `subcontractors`, `cos_control`, `cashflow_forecast`, `home`.
 -   **File Handling**: Multer for uploads, `exceljs` for parsing.
 -   **Data Storage**: PostgreSQL with Drizzle ORM, ensuring transactional safety and reprocessing.
 -   **Logic**: Pure-function modules for computations, automated backfill system for computed columns, and audit trails for data mutations.
@@ -67,6 +67,14 @@ Preferred communication style: Simple, everyday language.
 -   **Module**: Notifies Program Manager, Program Finance Manager, and Construction Manager about plan task data edits for confirmation in the Excel tracker.
 -   **Workflow**: Recipients can confirm, which auto-confirms related notifications.
 -   **Triggers**: Edits to plan task fields and structure operations.
+
+### Email/Message to Task
+-   **Module**: Create project-linked operational tasks directly from Outlook emails or Teams messages.
+-   **Endpoint**: `POST /api/outlook/email-to-task` with `targetType: "operational_new"` creates an `operational_task` linked to a project, with assignee, priority, and due date.
+-   **Email Link**: Each task maintains a traceable link back to the source email/message via `mytool_email_links`.
+-   **Notifications**: Assignee receives a notification when a task is created and assigned to them.
+-   **UI**: `CreateTaskFromSourceDialog` reusable component with project search, user assignment, priority, and due date fields. Integrated into the Triage Inbox and All Emails tab.
+-   **Access**: Admin-only. Backend validates project existence before task creation.
 
 ### Deploy Cache & Session Clearing
 -   **Build Versioning**: Frontend detects new deployments and clears client-side cache/session.
