@@ -17,6 +17,7 @@ import {
   ListTodo, ShieldCheck, Clock, History, ArrowRight, Loader2,
   Wrench, PlusCircle, Circle, Calendar, PauseCircle, AlertTriangle,
   ChevronDown, ChevronUp, Eye, Play, Zap, Target, Users, Trash2, Plus,
+  MessageSquare, FolderOpen, Bell, Mail, ThumbsUp, ThumbsDown, FileCheck, Inbox,
 } from "lucide-react";
 import { ProjectPlanTab } from "@/components/tabs/ProjectPlanTab";
 import { RevenueTrackingTab } from "@/components/tabs/RevenueTrackingTab";
@@ -37,6 +38,8 @@ import { WeeklyReviewWizard } from "@/components/WeeklyReviewWizard";
 import { GuidancePrompt, getPhaseGuidance } from "@/components/MicroGuidance";
 import { ProjectChatTab } from "@/components/tabs/ProjectChatTab";
 import { SharePointFilesTab } from "@/components/tabs/SharePointFilesTab";
+import { ProjectApprovalsTab } from "@/components/tabs/ProjectApprovalsTab";
+import { ProjectNotificationsTab } from "@/components/tabs/ProjectNotificationsTab";
 import { useProgramData } from "@/hooks/use-program-data";
 import { useAuth } from "@/hooks/use-auth";
 import { PROJECT_PHASES, LIFECYCLE_PHASES, PROJECT_PHASE_LABELS, TASK_STATUSES, type ProjectPhase, checkPermission } from "@shared/schema";
@@ -487,12 +490,18 @@ const OLD_TAB_TO_SECTION: Record<string, { section: string; subTab: string }> = 
   "engineering": { section: "engineering", subTab: "eng-tasks" },
   "money": { section: "project-management", subTab: "revenue-tracking" },
   "plan": { section: "project-management", subTab: "gantt" },
+  "chat": { section: "collaboration", subTab: "chat" },
+  "sharepoint": { section: "collaboration", subTab: "sharepoint" },
+  "approvals": { section: "collaboration", subTab: "approvals" },
+  "notifications": { section: "collaboration", subTab: "notifications" },
+  "collaboration": { section: "collaboration", subTab: "chat" },
 };
 
 const SECTION_DEFAULT_SUBTAB: Record<string, string> = {
   "project-management": "task-grid",
   engineering: "eng-tasks",
   quality: "quality",
+  collaboration: "chat",
 };
 
 function RagDot({ color }: { color: "green" | "amber" | "red" }) {
@@ -1037,7 +1046,7 @@ export default function ProjectDetailPage() {
 
       {activeSection === "overview" && (
         <div className="space-y-6" data-testid="overview-section">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {canViewTab.overview && (
             <Card
               className="group cursor-pointer hover:shadow-lg hover:border-blue-300 transition-all duration-200 relative overflow-hidden"
@@ -1215,6 +1224,54 @@ export default function ProjectDetailPage() {
               </CardContent>
             </Card>
             )}
+
+            <Card
+              className="group cursor-pointer hover:shadow-lg hover:border-indigo-300 transition-all duration-200 relative overflow-hidden"
+              onClick={() => navigateToSection("collaboration")}
+              data-testid="pillar-collaboration"
+            >
+              <div className="absolute top-0 left-0 right-0 h-1 bg-indigo-500" />
+              <CardContent className="p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center">
+                      <MessageSquare className="h-5 w-5 text-indigo-600" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-sm">Collaboration</h3>
+                      <p className="text-[10px] text-muted-foreground">Chat, Files, Approvals & Alerts</p>
+                    </div>
+                  </div>
+                  <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-indigo-500 transition-colors" />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-center">
+                  <div className="flex items-center gap-1.5 justify-center">
+                    <MessageSquare className="h-3.5 w-3.5 text-indigo-500" />
+                    <span className="text-xs text-muted-foreground">Chat</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 justify-center">
+                    <FolderOpen className="h-3.5 w-3.5 text-indigo-500" />
+                    <span className="text-xs text-muted-foreground">SharePoint</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 justify-center">
+                    <FileCheck className="h-3.5 w-3.5 text-indigo-500" />
+                    <span className="text-xs text-muted-foreground">Approvals</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 justify-center">
+                    <Bell className="h-3.5 w-3.5 text-indigo-500" />
+                    <span className="text-xs text-muted-foreground">Notifications</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1 border-t">
+                  <Inbox className="h-3.5 w-3.5 text-indigo-500" />
+                  <span className="text-xs font-medium text-muted-foreground">
+                    All communication in one place
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -1403,11 +1460,6 @@ export default function ProjectDetailPage() {
 
           <FinancialIntegrationPanel projectName={projectName} />
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <ProjectChatTab projectName={projectName} />
-            <SharePointFilesTab projectName={projectName} />
-          </div>
-
           {projectInfoId && <PhaseHistoryTimeline projectId={projectInfoId} />}
         </div>
       )}
@@ -1525,6 +1577,36 @@ export default function ProjectDetailPage() {
             Back to Overview
           </Button>
           <QualityTab projectName={projectName} />
+        </div>
+      )}
+
+      {activeSection === "collaboration" && (
+        <div className="space-y-4" data-testid="collaboration-section">
+          <Button variant="ghost" size="sm" onClick={() => navigateToSection("overview")} className="gap-2 -ml-2" data-testid="button-back-overview">
+            <ArrowLeft className="h-4 w-4" />
+            Back to Overview
+          </Button>
+
+          <div className="flex gap-1.5 flex-wrap border-b pb-2" data-testid="collab-sub-tabs">
+            <Button size="sm" variant={activeSubTab === "chat" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("chat")} data-testid="subtab-chat">
+              <MessageSquare className="h-3 w-3 mr-1" /> Chat
+            </Button>
+            <Button size="sm" variant={activeSubTab === "sharepoint" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("sharepoint")} data-testid="subtab-sharepoint">
+              <FolderOpen className="h-3 w-3 mr-1" /> SharePoint Files
+            </Button>
+            <div className="w-px h-5 bg-border self-center mx-1" />
+            <Button size="sm" variant={activeSubTab === "approvals" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("approvals")} data-testid="subtab-approvals">
+              <FileCheck className="h-3 w-3 mr-1" /> Approvals & Deliverables
+            </Button>
+            <Button size="sm" variant={activeSubTab === "notifications" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("notifications")} data-testid="subtab-notifications">
+              <Bell className="h-3 w-3 mr-1" /> Notifications
+            </Button>
+          </div>
+
+          {activeSubTab === "chat" && <ProjectChatTab projectName={projectName} />}
+          {activeSubTab === "sharepoint" && <SharePointFilesTab projectName={projectName} />}
+          {activeSubTab === "approvals" && <ProjectApprovalsTab projectName={projectName} projectInfoId={projectInfoId ?? null} />}
+          {activeSubTab === "notifications" && <ProjectNotificationsTab projectName={projectName} />}
         </div>
       )}
 
