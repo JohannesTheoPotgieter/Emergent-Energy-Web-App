@@ -7,10 +7,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { useState } from "react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import {
   AlertTriangle, AlertCircle, Info, Link2, ShieldAlert,
   CheckCircle, XCircle, Clock, TrendingUp, DollarSign,
-  FileText, ChevronDown, ChevronUp, Loader2,
+  FileText, ChevronDown, ChevronUp, Loader2, Settings, Plus, Trash2, ToggleLeft,
 } from "lucide-react";
 
 const engFetch = (url: string, opts?: RequestInit) =>
@@ -77,6 +79,25 @@ function SyncBar({ label, linked, total, percent }: { label: string; linked: num
   );
 }
 
+interface IntegrationRule {
+  id: number;
+  projectName: string;
+  ruleType: string;
+  ruleConfig: string;
+  isActive: boolean;
+  createdByName?: string;
+  createdAt: string;
+}
+
+const RULE_TYPE_LABELS: Record<string, string> = {
+  budget_threshold: "Budget Threshold Alert",
+  revenue_milestone_linking: "Revenue Milestone Linking",
+  expenditure_auto_flag: "Expenditure Auto-Flag",
+  critical_path_protection: "Critical Path Protection",
+  approval_bypass: "Approval Bypass",
+  variance_alert_threshold: "Variance Alert Threshold",
+};
+
 export function FinancialIntegrationPanel({ projectName }: { projectName: string }) {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -84,6 +105,9 @@ export function FinancialIntegrationPanel({ projectName }: { projectName: string
   const [expanded, setExpanded] = useState(false);
   const [reviewDialog, setReviewDialog] = useState<EditRequest | null>(null);
   const [reviewComment, setReviewComment] = useState("");
+  const [showRules, setShowRules] = useState(false);
+  const [newRuleType, setNewRuleType] = useState("");
+  const [newRuleConfig, setNewRuleConfig] = useState("");
 
   const { data: warnings = [] } = useQuery<IntegrationWarning[]>({
     queryKey: ["financial-warnings", projectName],
@@ -116,6 +140,60 @@ export function FinancialIntegrationPanel({ projectName }: { projectName: string
       return res.json();
     },
     staleTime: 300000,
+  });
+
+  const { data: rules = [] } = useQuery<IntegrationRule[]>({
+    queryKey: ["financial-rules", projectName],
+    queryFn: async () => {
+      const res = await engFetch(`/api/financial-integration/rules/${encodeURIComponent(projectName)}`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!projectName && !!roleAccess?.canApprove,
+    staleTime: 120000,
+  });
+
+  const createRuleMutation = useMutation({
+    mutationFn: async ({ ruleType, ruleConfig }: { ruleType: string; ruleConfig: string }) => {
+      const res = await engFetch("/api/financial-integration/rules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectName, ruleType, ruleConfig }),
+      });
+      if (!res.ok) throw new Error("Failed to create rule");
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Rule created" });
+      queryClient.invalidateQueries({ queryKey: ["financial-rules"] });
+      setNewRuleType("");
+      setNewRuleConfig("");
+    },
+  });
+
+  const toggleRuleMutation = useMutation({
+    mutationFn: async ({ id, isActive }: { id: number; isActive: boolean }) => {
+      const res = await engFetch(`/api/financial-integration/rules/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive }),
+      });
+      if (!res.ok) throw new Error("Failed to toggle rule");
+      return res.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["financial-rules"] }),
+  });
+
+  const deleteRuleMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await engFetch(`/api/financial-integration/rules/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete rule");
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Rule deleted" });
+      queryClient.invalidateQueries({ queryKey: ["financial-rules"] });
+    },
   });
 
   const { data: pendingRequests = [] } = useQuery<EditRequest[]>({
@@ -256,6 +334,65 @@ export function FinancialIntegrationPanel({ projectName }: { projectName: string
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+
+          {expanded && roleAccess?.canApprove && (
+            <div className="space-y-1.5 border-t pt-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
+                  <Settings className="h-3 w-3" />
+                  Integration Rules
+                </div>
+                <Button variant="ghost" size="sm" className="h-5 text-[10px] px-1.5" onClick={() => setShowRules(!showRules)} data-testid="button-toggle-rules">
+                  {showRules ? "Hide" : "Configure"}
+                </Button>
+              </div>
+              {showRules && (
+                <div className="space-y-1.5">
+                  {rules.map(rule => (
+                    <div key={rule.id} className={`flex items-center gap-2 text-[11px] py-1.5 px-2 rounded border ${rule.isActive ? "bg-emerald-50 border-emerald-100" : "bg-gray-50 border-gray-200 opacity-60"}`} data-testid={`rule-${rule.id}`}>
+                      <ToggleLeft className={`h-3 w-3 shrink-0 cursor-pointer ${rule.isActive ? "text-emerald-600" : "text-gray-400"}`} onClick={() => toggleRuleMutation.mutate({ id: rule.id, isActive: !rule.isActive })} />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium truncate">{RULE_TYPE_LABELS[rule.ruleType] || rule.ruleType}</p>
+                        <p className="text-muted-foreground truncate">{rule.ruleConfig}</p>
+                      </div>
+                      <Button variant="ghost" size="sm" className="h-4 w-4 p-0 text-red-400 hover:text-red-600" onClick={() => deleteRuleMutation.mutate(rule.id)} data-testid={`button-delete-rule-${rule.id}`}>
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  ))}
+                  <div className="flex items-center gap-1.5 pt-1">
+                    <Select value={newRuleType} onValueChange={setNewRuleType}>
+                      <SelectTrigger className="h-7 text-[10px] flex-1" data-testid="select-rule-type">
+                        <SelectValue placeholder="Rule type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(RULE_TYPE_LABELS).map(([k, v]) => (
+                          <SelectItem key={k} value={k} className="text-xs">{v}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      placeholder="Config (e.g. 25%)"
+                      value={newRuleConfig}
+                      onChange={e => setNewRuleConfig(e.target.value)}
+                      className="h-7 text-[10px] flex-1"
+                      data-testid="input-rule-config"
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 w-7 p-0 shrink-0"
+                      disabled={!newRuleType || !newRuleConfig || createRuleMutation.isPending}
+                      onClick={() => createRuleMutation.mutate({ ruleType: newRuleType, ruleConfig: newRuleConfig })}
+                      data-testid="button-add-rule"
+                    >
+                      <Plus className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

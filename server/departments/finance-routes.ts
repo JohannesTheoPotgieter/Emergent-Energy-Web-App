@@ -1637,7 +1637,7 @@ router.get("/api/revenue-tracking/overrides", async (req, res) => {
   }
 });
 
-router.post("/api/revenue-tracking/overrides", requireAuth, requireAdmin, requirePermission('financials', 'edit'), async (req, res) => {
+router.post("/api/revenue-tracking/overrides", requireAuth, requireAdminOrFinancialEditor, requirePermission('financials', 'edit'), async (req, res) => {
   try {
     const { overrides, overrideCategory, overrideComment } = req.body;
     if (!Array.isArray(overrides)) {
@@ -1650,6 +1650,26 @@ router.post("/api/revenue-tracking/overrides", requireAuth, requireAdmin, requir
       return res.status(400).json({ error: "Override comment is required (min 3 characters)" });
     }
     const userId = req.user?.id;
+    const userRole = req.user?.role;
+
+    if (isPmOnlyRole(userRole)) {
+      const projectNames = [...new Set(overrides.map((o: any) => o.projectName))];
+      const editSummary = `Revenue override: ${overrides.length} field(s) across ${projectNames.length} project(s). Category: ${overrideCategory}. Comment: ${overrideComment.trim()}`;
+      const saved = await createPendingEditRequest(
+        userId!,
+        projectNames[0] || "Unknown",
+        "revenue_override",
+        "revenue_tracking",
+        { overrides, overrideCategory, overrideComment },
+        editSummary
+      );
+      return res.json({
+        message: "Your revenue edit has been submitted for approval",
+        status: "pending_approval",
+        requestId: saved.id,
+      });
+    }
+
     const overridesWithUser = overrides.map((o: any) => ({ ...o, createdBy: userId }));
     const saved = await storage.upsertManyRevenueTrackingOverrides(overridesWithUser);
 
@@ -1886,10 +1906,30 @@ router.get("/api/revenue-tab/:projectName", async (req, res) => {
   }
 });
 
-router.post("/api/revenue-tab/:projectName/costed", requireAuth, requireAdmin, async (req, res) => {
+router.post("/api/revenue-tab/:projectName/costed", requireAuth, requireAdminOrFinancialEditor, async (req, res) => {
   try {
     const projectName = req.params.projectName;
     const { revenue, expenditure } = req.body;
+    const userId = req.user?.id;
+    const userRole = req.user?.role;
+
+    if (isPmOnlyRole(userRole)) {
+      const editSummary = `Costed values update: Revenue=${revenue || 'unchanged'}, Expenditure=${expenditure || 'unchanged'} [REVENUE IMPACT]`;
+      const saved = await createPendingEditRequest(
+        userId!,
+        projectName,
+        "costed_values",
+        "revenue_costed",
+        { revenue, expenditure },
+        editSummary
+      );
+      return res.json({
+        message: "Your costed values edit has been submitted for approval",
+        status: "pending_approval",
+        requestId: saved.id,
+      });
+    }
+
     const saved = await storage.upsertProjectRevenueSummary({
       projectName,
       plannedRevenue: revenue?.toString() ?? null,
@@ -1946,13 +1986,33 @@ router.get("/api/revenue-tab/:projectName/task-alerts", requireAuth, requireAdmi
   }
 });
 
-router.post("/api/revenue-tab/:projectName/link-task", requireAuth, requireAdmin, async (req, res) => {
+router.post("/api/revenue-tab/:projectName/link-task", requireAuth, requireAdminOrFinancialEditor, async (req, res) => {
   try {
     const projectName = req.params.projectName;
     const { milestoneRowNumber, taskId } = req.body;
     if (!milestoneRowNumber || !taskId) {
       return res.status(400).json({ error: "milestoneRowNumber and taskId are required" });
     }
+    const userId = req.user?.id;
+    const userRole = req.user?.role;
+
+    if (isPmOnlyRole(userRole)) {
+      const editSummary = `Link revenue milestone #${milestoneRowNumber} to task #${taskId} [REVENUE IMPACT]`;
+      const saved = await createPendingEditRequest(
+        userId!,
+        projectName,
+        "milestone_link",
+        "revenue_task_link",
+        { milestoneRowNumber, taskId },
+        editSummary
+      );
+      return res.json({
+        message: "Your milestone link request has been submitted for approval",
+        status: "pending_approval",
+        requestId: saved.id,
+      });
+    }
+
     const link = await storage.upsertMilestoneTaskLink(projectName, milestoneRowNumber, taskId);
     res.json(link);
   } catch (error) {
@@ -1961,7 +2021,7 @@ router.post("/api/revenue-tab/:projectName/link-task", requireAuth, requireAdmin
   }
 });
 
-router.post("/api/revenue-tab/:projectName/date-override", requireAuth, requireAdmin, async (req, res) => {
+router.post("/api/revenue-tab/:projectName/date-override", requireAuth, requireAdminOrFinancialEditor, async (req, res) => {
   try {
     const projectName = req.params.projectName;
     const { milestoneRowNumber, dateOverride, reason } = req.body;
@@ -2012,7 +2072,7 @@ router.get("/api/expenditure/overrides", async (req, res) => {
   }
 });
 
-router.post("/api/expenditure/overrides", requireAuth, requireAdmin, requirePermission('financials', 'edit'), async (req, res) => {
+router.post("/api/expenditure/overrides", requireAuth, requireAdminOrFinancialEditor, requirePermission('financials', 'edit'), async (req, res) => {
   try {
     const { overrides, overrideCategory, overrideComment } = req.body;
     if (!Array.isArray(overrides)) {
@@ -2025,6 +2085,28 @@ router.post("/api/expenditure/overrides", requireAuth, requireAdmin, requirePerm
       return res.status(400).json({ error: "Override comment is required (min 3 characters)" });
     }
     const userId = req.user?.id;
+    const userRole = req.user?.role;
+
+    if (isPmOnlyRole(userRole)) {
+      const projectNames = [...new Set(overrides.map((o: any) => o.projectName))];
+      const hasHighExpense = overrides.some((o: any) => o.fieldName === "expenseActualTotal" && Number(o.overrideValue) > 50000);
+      const hasBudgetChange = overrides.some((o: any) => o.fieldName === "budgetTotal");
+      const editSummary = `Expenditure override: ${overrides.length} field(s). Category: ${overrideCategory}. Comment: ${overrideComment.trim()}${hasHighExpense ? " [HIGH EXPENSE]" : ""}${hasBudgetChange ? " [BUDGET CHANGE]" : ""}`;
+      const saved = await createPendingEditRequest(
+        userId!,
+        projectNames[0] || "Unknown",
+        "expenditure_override",
+        "expenditure_tracking",
+        { overrides, overrideCategory, overrideComment },
+        editSummary
+      );
+      return res.json({
+        message: "Your expenditure edit has been submitted for approval",
+        status: "pending_approval",
+        requestId: saved.id,
+      });
+    }
+
     const overridesWithUser = overrides.map((o: any) => ({ ...o, createdBy: userId }));
     const saved = await storage.upsertManyExpenditureOverrides(overridesWithUser);
 
@@ -2137,7 +2219,7 @@ router.get("/api/expense-task-links/:projectName", requireAuth, requireAdmin, as
   }
 });
 
-router.post("/api/expense-task-links/:projectName", requireAuth, requireAdmin, async (req, res) => {
+router.post("/api/expense-task-links/:projectName", requireAuth, requireAdminOrFinancialEditor, async (req, res) => {
   try {
     const { expenseId, taskId } = req.body;
     if (!expenseId || taskId === undefined) {
@@ -2151,7 +2233,7 @@ router.post("/api/expense-task-links/:projectName", requireAuth, requireAdmin, a
   }
 });
 
-router.delete("/api/expense-task-links/:projectName/:expenseId", requireAuth, requireAdmin, async (req, res) => {
+router.delete("/api/expense-task-links/:projectName/:expenseId", requireAuth, requireAdminOrFinancialEditor, async (req, res) => {
   try {
     await storage.deleteExpenseTaskLink(req.params.projectName, parseInt(req.params.expenseId));
     res.json({ success: true });
@@ -2160,7 +2242,7 @@ router.delete("/api/expense-task-links/:projectName/:expenseId", requireAuth, re
   }
 });
 
-router.post("/api/expense-task-links/:projectName/:expenseId/date-override", requireAuth, requireAdmin, async (req, res) => {
+router.post("/api/expense-task-links/:projectName/:expenseId/date-override", requireAuth, requireAdminOrFinancialEditor, async (req, res) => {
   try {
     const { dateOverride, reason } = req.body;
     await storage.updateExpenseTaskLinkDateOverride(req.params.projectName, parseInt(req.params.expenseId), dateOverride, reason);
