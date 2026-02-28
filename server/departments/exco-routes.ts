@@ -689,15 +689,83 @@ router.get("/api/outlook/messages/:id", requireAuth, async (req, res) => {
 router.post("/api/outlook/email-to-task", requireAuth, requireAdmin, async (req, res) => {
   try {
     const userId = (req.user as any).id;
-    const { outlookMessageId, subject, sender, receivedAt, snippet, webLink, targetType, targetId } = req.body;
+    const {
+      outlookMessageId, subject, sender, receivedAt, snippet, webLink,
+      targetType, targetId,
+      projectName, assigneeUserId, priority, dueDate, description,
+      sourceType,
+    } = req.body;
 
     if (!subject) {
       return res.status(400).json({ error: "subject is required" });
     }
 
     let taskId: number | null = null;
+    let operationalTaskId: number | null = null;
 
-    if (targetType === "new") {
+    if (targetType === "operational_new") {
+      if (!projectName) {
+        return res.status(400).json({ error: "projectName is required for project tasks" });
+      }
+
+      const projectExists = await db.select({ id: projectInfo.id })
+        .from(projectInfo)
+        .where(eq(projectInfo.projectName, projectName))
+        .limit(1);
+      if (projectExists.length === 0) {
+        return res.status(400).json({ error: `Project "${projectName}" not found` });
+      }
+      const sourceLabel = sourceType === "teams" ? "Teams Message" : "Outlook Email";
+      const notesLines = [];
+      if (sender) notesLines.push(`Source: ${sourceLabel} from ${sender}`);
+      if (receivedAt) notesLines.push(`Date: ${new Date(receivedAt).toLocaleDateString()}`);
+      if (snippet) notesLines.push(`\n${snippet}`);
+      if (webLink) notesLines.push(`\nLink: ${webLink}`);
+
+      const opTask = await storage.createOperationalTask({
+        projectName,
+        title: subject,
+        description: description || notesLines.join("\n") || null,
+        status: "TO DO",
+        priority: priority || "Med",
+        ownerUserId: assigneeUserId ? parseInt(String(assigneeUserId)) : null,
+        requesterUserId: userId,
+        dueDate: dueDate || null,
+        sortOrder: 0,
+        externalSource: sourceType === "teams" ? "teams_message" : "outlook_email",
+        externalTaskId: outlookMessageId || null,
+        createdBy: userId,
+        domain: "BOTH",
+        percentComplete: 0,
+      });
+      operationalTaskId = opTask.id;
+
+      await storage.createTaskActivityLog({
+        taskId: opTask.id,
+        actorId: userId,
+        actionType: 'created',
+        fieldName: 'source',
+        oldValue: null,
+        newValue: `Created from ${sourceLabel}`,
+      });
+
+      if (assigneeUserId && parseInt(String(assigneeUserId)) !== userId) {
+        try {
+          const { notifications } = await import("@shared/schema");
+          await db.insert(notifications).values({
+            recipientUserId: parseInt(String(assigneeUserId)),
+            eventType: "task.assigned",
+            title: `New task assigned: ${subject}`,
+            body: `You've been assigned a task from ${sourceLabel}: "${subject}" on project ${projectName}`,
+            projectName,
+            linkedTaskId: opTask.id,
+            isRead: false,
+          });
+        } catch (notifErr) {
+          console.error("[Email-to-task] Notification error:", notifErr);
+        }
+      }
+    } else if (targetType === "new") {
       const task = await storage.createMytoolTask({
         ownerUserId: userId,
         title: subject,
@@ -710,6 +778,8 @@ router.post("/api/outlook/email-to-task", requireAuth, requireAdmin, async (req,
       taskId = task.id;
     } else if (targetType === "mytool" && targetId) {
       taskId = parseInt(String(targetId));
+    } else if (targetType === "operational" && targetId) {
+      operationalTaskId = parseInt(String(targetId));
     }
 
     const emailLink = await storage.createEmailLink({
@@ -720,12 +790,16 @@ router.post("/api/outlook/email-to-task", requireAuth, requireAdmin, async (req,
       outlookMessageId: outlookMessageId || null,
       webLink: webLink || null,
       linkedTaskId: taskId,
-      linkedOperationalTaskId: targetType === "operational" && targetId ? parseInt(String(targetId)) : null,
+      linkedOperationalTaskId: operationalTaskId,
       linkedPriorityId: null,
       createdBy: userId,
     });
 
-    res.json({ task: taskId ? { id: taskId } : null, emailLink });
+    res.json({
+      task: taskId ? { id: taskId } : null,
+      operationalTask: operationalTaskId ? { id: operationalTaskId } : null,
+      emailLink,
+    });
   } catch (err: any) {
     console.error("[Outlook] Email-to-task error:", err);
     res.status(500).json({ error: err.message });

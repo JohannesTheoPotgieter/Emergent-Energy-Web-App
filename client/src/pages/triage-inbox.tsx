@@ -28,7 +28,10 @@ import {
   Trash2,
   ExternalLink,
   AlertCircle,
+  ListTodo,
+  Inbox,
 } from "lucide-react";
+import CreateTaskFromSourceDialog from "@/components/CreateTaskFromSourceDialog";
 
 interface TriageEmail {
   id: string;
@@ -65,9 +68,18 @@ export default function TriageInboxPage() {
   const [activeTab, setActiveTab] = useState("inbox");
   const [newRuleType, setNewRuleType] = useState("keyword");
   const [newRuleValue, setNewRuleValue] = useState("");
-  const [createTaskEmailId, setCreateTaskEmailId] = useState<string | null>(null);
-  const [taskBucket, setTaskBucket] = useState("personal");
-  const [taskProjectName, setTaskProjectName] = useState("");
+  const [emailSearch, setEmailSearch] = useState("");
+  const [emailSearchTerm, setEmailSearchTerm] = useState("");
+  const [taskDialogOpen, setTaskDialogOpen] = useState(false);
+  const [selectedSource, setSelectedSource] = useState<{
+    sourceType: "email" | "teams";
+    outlookMessageId?: string;
+    subject: string;
+    sender?: string;
+    receivedAt?: string;
+    snippet?: string;
+    webLink?: string;
+  } | null>(null);
 
   const { data: triageData, isLoading: triageLoading } = useQuery<TriageInboxData>({
     queryKey: ["/api/mytool/triage-inbox"],
@@ -79,31 +91,16 @@ export default function TriageInboxPage() {
     enabled: isAdmin,
   });
 
-  const { data: allProjects = [] } = useQuery<Array<{ project_name: string }>>({
-    queryKey: ["/api/projects-summary"],
-    select: (data: any[]) => data.map((p: any) => ({ project_name: p.project_name })),
-    enabled: isAdmin && taskBucket === "project",
-  });
-
-  const createTaskMutation = useMutation({
-    mutationFn: (data: {
-      outlookMessageId: string;
-      subject: string;
-      sender: string;
-      receivedAt: string;
-      snippet: string;
-      webLink: string;
-      targetType: string;
-    }) => apiRequest("POST", "/api/outlook/email-to-task", data),
-    onSuccess: () => {
-      toast({ title: "Task created from email" });
-      setCreateTaskEmailId(null);
-      setTaskBucket("personal");
-      setTaskProjectName("");
-      queryClient.invalidateQueries({ queryKey: ["/api/mytool/triage-inbox"] });
+  const { data: allEmails = [], isLoading: emailsLoading } = useQuery<TriageEmail[]>({
+    queryKey: ["/api/outlook/messages", emailSearchTerm],
+    queryFn: async () => {
+      const params = new URLSearchParams({ top: "30" });
+      if (emailSearchTerm) params.set("search", emailSearchTerm);
+      const res = await fetch(`/api/outlook/messages?${params}`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
     },
-    onError: (err: any) =>
-      toast({ title: "Failed to create task", description: err.message, variant: "destructive" }),
+    enabled: activeTab === "all-emails",
   });
 
   const createRuleMutation = useMutation({
@@ -157,16 +154,17 @@ export default function TriageInboxPage() {
     );
   }
 
-  const handleCreateTask = (email: TriageEmail) => {
-    createTaskMutation.mutate({
+  const openTaskDialog = (email: TriageEmail) => {
+    setSelectedSource({
+      sourceType: "email",
       outlookMessageId: email.id,
-      subject: email.subject || "(No subject)",
-      sender: email.sender || email.senderEmail || "",
+      subject: email.subject,
+      sender: email.sender || email.senderEmail || undefined,
       receivedAt: email.receivedAt,
-      snippet: email.snippet?.slice(0, 200) || "",
-      webLink: email.webLink || "",
-      targetType: "new",
+      snippet: email.snippet || undefined,
+      webLink: email.webLink || undefined,
     });
+    setTaskDialogOpen(true);
   };
 
   const flagged = triageData?.flagged || [];
@@ -175,7 +173,6 @@ export default function TriageInboxPage() {
   const totalItems = flagged.length + keywordMatches.length + senderMatches.length;
 
   function renderEmailCard(email: TriageEmail, groupPrefix: string) {
-    const isCreating = createTaskEmailId === email.id;
     return (
       <Card key={email.id} className="border-border/50" data-testid={`${groupPrefix}-email-${email.id}`}>
         <CardContent className="p-4 space-y-2">
@@ -206,71 +203,16 @@ export default function TriageInboxPage() {
             </p>
           )}
           <div className="flex items-center gap-2 pt-1">
-            {!isCreating ? (
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 text-xs"
-                onClick={() => setCreateTaskEmailId(email.id)}
-                data-testid={`button-create-task-${email.id}`}
-              >
-                <Plus className="h-3 w-3 mr-1" />
-                Create Task
-              </Button>
-            ) : (
-              <div className="flex flex-wrap items-center gap-2 w-full" data-testid={`task-form-${email.id}`}>
-                <Select value={taskBucket} onValueChange={setTaskBucket}>
-                  <SelectTrigger className="h-7 text-xs w-28" data-testid={`select-bucket-${email.id}`}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="personal">Personal</SelectItem>
-                    <SelectItem value="project">Project</SelectItem>
-                    <SelectItem value="company_ops">Company Ops</SelectItem>
-                  </SelectContent>
-                </Select>
-                {taskBucket === "project" && (
-                  <Select value={taskProjectName} onValueChange={setTaskProjectName}>
-                    <SelectTrigger className="h-7 text-xs w-40" data-testid={`select-project-${email.id}`}>
-                      <SelectValue placeholder="Select project" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {allProjects.map((p) => (
-                        <SelectItem key={p.project_name} value={p.project_name}>
-                          {p.project_name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-                <Button
-                  size="sm"
-                  className="h-7 text-xs"
-                  disabled={createTaskMutation.isPending}
-                  onClick={() => handleCreateTask(email)}
-                  data-testid={`button-confirm-task-${email.id}`}
-                >
-                  {createTaskMutation.isPending ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : (
-                    "Save"
-                  )}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 text-xs"
-                  onClick={() => {
-                    setCreateTaskEmailId(null);
-                    setTaskBucket("personal");
-                    setTaskProjectName("");
-                  }}
-                  data-testid={`button-cancel-task-${email.id}`}
-                >
-                  Cancel
-                </Button>
-              </div>
-            )}
+            <Button
+              size="sm"
+              variant="default"
+              className="h-7 text-xs gap-1"
+              onClick={() => openTaskDialog(email)}
+              data-testid={`button-create-task-${email.id}`}
+            >
+              <ListTodo className="h-3 w-3" />
+              Create Project Task
+            </Button>
             {email.webLink && (
               <a
                 href={email.webLink}
@@ -299,6 +241,10 @@ export default function TriageInboxPage() {
           <TabsTrigger value="inbox" data-testid="tab-trigger-inbox">
             <Mail className="h-4 w-4 mr-1.5" />
             Triage Inbox
+          </TabsTrigger>
+          <TabsTrigger value="all-emails" data-testid="tab-trigger-all-emails">
+            <Inbox className="h-4 w-4 mr-1.5" />
+            All Emails
           </TabsTrigger>
           <TabsTrigger value="rules" data-testid="tab-trigger-rules">
             <Shield className="h-4 w-4 mr-1.5" />
@@ -363,6 +309,54 @@ export default function TriageInboxPage() {
                 </div>
               )}
             </>
+          )}
+        </TabsContent>
+
+        <TabsContent value="all-emails" className="space-y-4 mt-4" data-testid="tab-content-all-emails">
+          <div className="flex items-center gap-3" data-testid="email-search-bar">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search emails..."
+                value={emailSearch}
+                onChange={(e) => setEmailSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") setEmailSearchTerm(emailSearch);
+                }}
+                className="pl-9"
+                data-testid="input-email-search"
+              />
+            </div>
+            <Button
+              variant="outline"
+              onClick={() => setEmailSearchTerm(emailSearch)}
+              data-testid="button-search-emails"
+            >
+              Search
+            </Button>
+          </div>
+
+          {emailsLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              <span className="ml-2 text-muted-foreground">Loading emails...</span>
+            </div>
+          ) : allEmails.length === 0 ? (
+            <Card>
+              <CardContent className="flex flex-col items-center gap-4 py-12">
+                <Inbox className="h-12 w-12 text-muted-foreground" />
+                <h3 className="text-lg font-medium">No Emails Found</h3>
+                <p className="text-muted-foreground text-center text-sm">
+                  {emailSearchTerm
+                    ? "No emails match your search. Try different keywords."
+                    : "Connect your Outlook account to browse emails."}
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-2">
+              {allEmails.map((email: any) => renderEmailCard(email, "all"))}
+            </div>
           )}
         </TabsContent>
 
@@ -494,6 +488,12 @@ export default function TriageInboxPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <CreateTaskFromSourceDialog
+        open={taskDialogOpen}
+        onOpenChange={setTaskDialogOpen}
+        source={selectedSource}
+      />
     </div>
   );
 }
