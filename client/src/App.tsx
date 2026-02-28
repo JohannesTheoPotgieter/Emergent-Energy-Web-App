@@ -64,6 +64,7 @@ import MsIntegrationSettingsPage from "@/pages/ms-integration-settings";
 import MsCallbackPage from "@/pages/ms-callback";
 import TeamsChatsPage from "@/pages/teams-chats";
 import AdminMsMappingPage from "@/pages/admin-ms-mapping";
+import CollaborationPage from "@/pages/collaboration";
 import { useAuth } from "@/hooks/use-auth";
 import { useProgramData } from "@/hooks/use-program-data";
 import { TrackerTable } from "@/components/dashboard/TrackerTable";
@@ -71,8 +72,8 @@ import { format } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 
-const EPM_ALLOWED_PATHS = ["/", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/projects", "/feedback", "/settings/integrations"];
-const PM_ALLOWED_PATHS = ["/", "/pm-dashboard", "/projects", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/cashflow", "/cos", "/feedback", "/settings/integrations"];
+const EPM_ALLOWED_PATHS = ["/", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/projects", "/feedback", "/settings/integrations", "/collaboration", "/notifications", "/teams/chats"];
+const PM_ALLOWED_PATHS = ["/", "/pm-dashboard", "/projects", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/cashflow", "/cos", "/feedback", "/settings/integrations", "/collaboration", "/notifications", "/teams/chats"];
 
 function RoleGuard({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -99,7 +100,7 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
   }
 
   if (user?.role === "quality_manager") {
-    const qmAllowed = ["/", "/quality", "/projects", "/feedback", "/settings/integrations"];
+    const qmAllowed = ["/", "/quality", "/projects", "/feedback", "/settings/integrations", "/collaboration", "/notifications", "/teams/chats"];
     const allowed = qmAllowed.some(p => 
       p === location || (p === "/projects" && location.startsWith("/project/"))
     );
@@ -289,6 +290,7 @@ function ProtectedPages() {
         <Route path="/admin/ms-integration" component={MsIntegrationSettingsPage} />
         <Route path="/teams/chats" component={TeamsChatsPage} />
         <Route path="/admin/ms-mapping" component={AdminMsMappingPage} />
+        <Route path="/collaboration" component={CollaborationPage} />
         <Route path="/admin/eng-templates">{() => <Redirect to="/admin/phase-templates" />}</Route>
 
         <Route component={NotFound} />

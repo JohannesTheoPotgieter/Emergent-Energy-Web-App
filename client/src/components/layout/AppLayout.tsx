@@ -50,6 +50,7 @@ import {
   Network,
   Plug,
   MessageSquare,
+  Handshake,
 } from "lucide-react";
 import { UX_REDESIGN_ENABLED } from "@shared/schema";
 import { useProgramData } from "@/hooks/use-program-data";
@@ -201,14 +202,21 @@ function getRedesignedNavGroups(): NavGroup[] {
       ],
     },
     {
+      heading: "COLLABORATION",
+      section: "COLLABORATION",
+      items: [
+        { label: "Collaboration Hub", icon: Handshake, path: "/collaboration" },
+        { label: "Teams Chat", icon: MessageSquare, path: "/teams/chats" },
+        { label: "Notifications", icon: Bell, path: "/notifications" },
+      ],
+    },
+    {
       heading: "INFORMATION",
       section: "INFORMATION",
       items: [
         { label: "Feedback & Support", icon: MessageSquareText, path: "/feedback" },
         { label: "Emergent Energy Info", icon: BookOpen, path: "/ee-info" },
         { label: "Leaderboard", icon: Trophy, path: "/leaderboard" },
-        { label: "Notifications", icon: Bell, path: "/notifications" },
-        { label: "Teams Chat", icon: MessageSquare, path: "/teams/chats" },
         { label: "Integration Status", icon: Plug, path: "/settings/integrations" },
       ],
     },
