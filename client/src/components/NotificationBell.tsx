@@ -49,7 +49,6 @@ export function NotificationBell() {
   const markReadMutation = useMutation({
     mutationFn: async (ids: number[]) => {
       await fetch("/api/notifications/mark-read", {
-        credentials: "include",
         method: "POST",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
         credentials: "include",
@@ -65,7 +64,6 @@ export function NotificationBell() {
   const markAllReadMutation = useMutation({
     mutationFn: async () => {
       await fetch("/api/notifications/mark-all-read", {
-        credentials: "include",
         method: "POST",
         headers: authHeaders(),
         credentials: "include",
@@ -80,7 +78,6 @@ export function NotificationBell() {
   const confirmMutation = useMutation({
     mutationFn: async (notifId: number) => {
       const res = await fetch(`/api/notifications/${notifId}/confirm`, {
-        credentials: "include",
         method: "POST",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
         credentials: "include",
