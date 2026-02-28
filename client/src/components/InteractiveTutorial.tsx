@@ -9,11 +9,11 @@ import {
   Briefcase, Star, Shield, Building2,
 } from "lucide-react";
 
-interface TutorialStep {
+export interface TutorialStep {
   targetSelector?: string;
   title: string;
   description: string;
-  icon: React.ReactNode;
+  icon?: React.ReactNode;
   position?: "top" | "bottom" | "left" | "right" | "center";
 }
 
@@ -191,10 +191,11 @@ interface Props {
   active: boolean;
   onComplete: () => void;
   role?: string;
+  externalSteps?: TutorialStep[];
 }
 
-export function InteractiveTutorial({ active, onComplete, role = "" }: Props) {
-  const steps = useMemo(() => getTutorialSteps(role), [role]);
+export function InteractiveTutorial({ active, onComplete, role = "", externalSteps }: Props) {
+  const steps = useMemo(() => externalSteps || getTutorialSteps(role), [role, externalSteps]);
   const [step, setStep] = useState(0);
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
@@ -348,9 +349,15 @@ export function InteractiveTutorial({ active, onComplete, role = "" }: Props) {
       >
         <div className="p-5">
           <div className="flex items-start justify-between mb-3">
-            <div className={`flex items-center justify-center rounded-lg ${isCentered && (isFirst || isLast) ? "w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 text-white" : "w-9 h-9 bg-blue-100 text-blue-600"}`}>
-              {currentStep.icon}
-            </div>
+            {currentStep.icon ? (
+              <div className={`flex items-center justify-center rounded-lg ${isCentered && (isFirst || isLast) ? "w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 text-white" : "w-9 h-9 bg-blue-100 text-blue-600"}`}>
+                {currentStep.icon}
+              </div>
+            ) : (
+              <div className={`flex items-center justify-center rounded-lg ${isCentered && isFirst ? "w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 text-white" : "w-9 h-9 bg-blue-100 text-blue-600"}`}>
+                <Sparkles className={isCentered && isFirst ? "h-6 w-6" : "h-5 w-5"} />
+              </div>
+            )}
             <button
               onClick={handleComplete}
               className="text-gray-400 hover:text-gray-600 transition-colors"
