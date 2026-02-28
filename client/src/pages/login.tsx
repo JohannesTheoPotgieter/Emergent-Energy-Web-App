@@ -5,7 +5,17 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Lock, User, Info, X, Zap } from "lucide-react";
+import { Lock, User, Info, X, Zap, AlertCircle } from "lucide-react";
+
+const MS_ERROR_MESSAGES: Record<string, string> = {
+  ms_auth_failed: "Microsoft sign-in failed. Please try again.",
+  ms_auth_denied: "Microsoft sign-in was cancelled or denied.",
+  ms_profile_failed: "Could not retrieve your Microsoft profile.",
+  ms_no_email: "No email address found on your Microsoft account.",
+  ms_no_account: "No matching account found. Contact your administrator.",
+  ms_session_failed: "Session could not be established. Please try again.",
+  ms_parse_failed: "Sign-in completed but data was invalid. Please try again.",
+};
 
 export default function LoginPage() {
   const [, setLocation] = useLocation();
@@ -15,6 +25,8 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [showVersion, setShowVersion] = useState(false);
+  const [showManualLogin, setShowManualLogin] = useState(false);
+  const [msEnabled, setMsEnabled] = useState(false);
   const [versionInfo, setVersionInfo] = useState({ version: "0.0.005", buildTime: "", buildNumber: "" });
   const [releaseNotes, setReleaseNotes] = useState<{ title: string; description: string }[]>([]);
 
@@ -31,6 +43,22 @@ export default function LoginPage() {
         }
       })
       .catch(() => {});
+
+    fetch("/api/auth/microsoft/config")
+      .then((r) => r.json())
+      .then((data) => setMsEnabled(data.enabled))
+      .catch(() => {});
+
+    const params = new URLSearchParams(window.location.search);
+    const msError = params.get("error");
+    const msEmail = params.get("email");
+    if (msError) {
+      let msg = MS_ERROR_MESSAGES[msError] || "An error occurred during sign-in.";
+      if (msError === "ms_no_account" && msEmail) {
+        msg = `No account found for ${msEmail}. Contact your administrator to get access.`;
+      }
+      setError(msg);
+    }
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -54,6 +82,10 @@ export default function LoginPage() {
     }
   };
 
+  const handleMicrosoftLogin = () => {
+    window.location.href = "/api/auth/microsoft";
+  };
+
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-white p-4" data-testid="page-login">
       <div className="w-full max-w-sm space-y-8">
@@ -67,56 +99,106 @@ export default function LoginPage() {
           <p className="text-sm text-gray-500">Sign in to your account</p>
         </div>
 
+        {error && (
+          <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 border border-red-200" data-testid="text-login-error">
+            <AlertCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+            <p className="text-xs text-red-700">{error}</p>
+          </div>
+        )}
+
         <Card className="border border-gray-200">
-          <CardContent className="p-6">
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="username">Username</Label>
-                <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <Input
-                    id="username"
-                    type="text"
-                    placeholder="Enter your username"
-                    value={username}
-                    onChange={(e) => { setUsername(e.target.value); setError(""); }}
-                    autoFocus
-                    autoComplete="username"
-                    disabled={isLoading}
-                    className="pl-10"
-                    data-testid="input-username"
-                  />
+          <CardContent className="p-6 space-y-4">
+            {msEnabled && (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full h-11 gap-3 text-sm font-medium border-gray-300 hover:bg-gray-50"
+                  onClick={handleMicrosoftLogin}
+                  data-testid="button-ms-login"
+                >
+                  <svg className="h-5 w-5" viewBox="0 0 21 21" fill="none">
+                    <rect x="1" y="1" width="9" height="9" fill="#F25022" />
+                    <rect x="11" y="1" width="9" height="9" fill="#7FBA00" />
+                    <rect x="1" y="11" width="9" height="9" fill="#00A4EF" />
+                    <rect x="11" y="11" width="9" height="9" fill="#FFB900" />
+                  </svg>
+                  Sign in with Microsoft 365
+                </Button>
+
+                {!showManualLogin && (
+                  <div className="text-center">
+                    <button
+                      type="button"
+                      onClick={() => setShowManualLogin(true)}
+                      className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+                      data-testid="button-show-manual-login"
+                    >
+                      Use username & password instead
+                    </button>
+                  </div>
+                )}
+
+                {showManualLogin && (
+                  <div className="relative my-2">
+                    <div className="absolute inset-0 flex items-center">
+                      <span className="w-full border-t border-gray-200" />
+                    </div>
+                    <div className="relative flex justify-center text-xs">
+                      <span className="bg-white px-2 text-gray-400">or</span>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {(!msEnabled || showManualLogin) && (
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="username">Username</Label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <Input
+                      id="username"
+                      type="text"
+                      placeholder="Enter your username"
+                      value={username}
+                      onChange={(e) => { setUsername(e.target.value); setError(""); }}
+                      autoFocus
+                      autoComplete="username"
+                      disabled={isLoading}
+                      className="pl-10"
+                      data-testid="input-username"
+                    />
+                  </div>
                 </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <Input
-                    id="password"
-                    type="password"
-                    placeholder="Enter your password"
-                    value={password}
-                    onChange={(e) => { setPassword(e.target.value); setError(""); }}
-                    autoComplete="current-password"
-                    disabled={isLoading}
-                    className="pl-10"
-                    data-testid="input-password"
-                  />
+                <div className="space-y-2">
+                  <Label htmlFor="password">Password</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <Input
+                      id="password"
+                      type="password"
+                      placeholder="Enter your password"
+                      value={password}
+                      onChange={(e) => { setPassword(e.target.value); setError(""); }}
+                      autoComplete="current-password"
+                      disabled={isLoading}
+                      className="pl-10"
+                      data-testid="input-password"
+                    />
+                  </div>
                 </div>
-              </div>
-              {error && (
-                <p className="text-xs text-red-600" data-testid="text-login-error">{error}</p>
-              )}
-              <Button
-                type="submit"
-                className="w-full bg-[#16a34a] hover:bg-[#15803d]"
-                disabled={isLoading || !username || !password}
-                data-testid="button-login"
-              >
-                {isLoading ? "Signing in..." : "Sign In"}
-              </Button>
-            </form>
+                <Button
+                  type="submit"
+                  className="w-full bg-[#16a34a] hover:bg-[#15803d]"
+                  disabled={isLoading || !username || !password}
+                  data-testid="button-login"
+                >
+                  {isLoading ? "Signing in..." : "Sign In"}
+                </Button>
+              </form>
+            )}
           </CardContent>
         </Card>
 

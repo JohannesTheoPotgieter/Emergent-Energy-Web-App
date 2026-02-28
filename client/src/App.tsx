@@ -61,6 +61,7 @@ import PdTicketsPage from "@/pages/pd-tickets";
 import PdTicketCreatePage from "@/pages/pd-ticket-create";
 import PdTicketDetailPage from "@/pages/pd-ticket-detail";
 import MsIntegrationSettingsPage from "@/pages/ms-integration-settings";
+import MsCallbackPage from "@/pages/ms-callback";
 import { useAuth } from "@/hooks/use-auth";
 import { useProgramData } from "@/hooks/use-program-data";
 import { TrackerTable } from "@/components/dashboard/TrackerTable";
@@ -297,6 +298,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/auth/login" component={LoginPage} />
+      <Route path="/auth/ms-callback" component={MsCallbackPage} />
       <Route>
         <ProtectedRoute>
           <ProtectedPages />
