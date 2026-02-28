@@ -12,6 +12,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { Link } from "wouter";
 import {
   Send,
   Loader2,
@@ -21,6 +22,7 @@ import {
   FileText,
   Download,
   UserPlus,
+  ExternalLink,
   X,
   MessageSquare,
 } from "lucide-react";
@@ -204,6 +206,17 @@ export function ProjectChatTab({ projectName }: { projectName: string }) {
           <Badge variant="outline" className="text-[10px] border-gray-500 text-gray-300">
             {group?.memberCount || 0} members
           </Badge>
+          <Link href={`/project/${encodeURIComponent(projectName)}`}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 text-[10px] text-gray-300 hover:text-white hover:bg-gray-700 gap-1 px-2"
+              data-testid="button-goto-project"
+            >
+              <ExternalLink className="h-3 w-3" />
+              View Project
+            </Button>
+          </Link>
         </div>
         <div className="flex items-center gap-1">
           {canManageMembers && (

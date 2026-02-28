@@ -1257,7 +1257,7 @@ export default function Home() {
         </>
       ) : null}
 
-      <InteractiveTutorial active={tutorial.active} onComplete={tutorial.stop} />
+      <InteractiveTutorial active={tutorial.active} onComplete={tutorial.stop} role={userRole} />
     </div>
   );
 }

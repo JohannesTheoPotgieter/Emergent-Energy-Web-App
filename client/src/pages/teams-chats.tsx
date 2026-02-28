@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
+import { Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
@@ -44,6 +45,7 @@ import {
   ChevronDown,
   Building2,
   FolderKanban,
+  ExternalLink,
 } from "lucide-react";
 import { format, formatDistanceToNow, isToday, isYesterday } from "date-fns";
 
@@ -443,6 +445,14 @@ export default function TeamsChatsPage() {
                 <Badge variant="outline" className="text-[10px] shrink-0 hidden sm:inline-flex">
                   {selectedGroup.groupType === "department" ? selectedGroup.department : selectedGroup.projectName}
                 </Badge>
+                {selectedGroup.groupType === "project" && selectedGroup.projectName && (
+                  <Link href={`/project/${encodeURIComponent(selectedGroup.projectName)}`}>
+                    <Button variant="ghost" size="sm" className="h-6 text-[10px] gap-1 px-2 text-blue-600 hover:text-blue-700" data-testid="button-goto-project-detail">
+                      <ExternalLink className="h-3 w-3" />
+                      View Project
+                    </Button>
+                  </Link>
+                )}
               </div>
               <div className="flex items-center gap-1">
                 <button
