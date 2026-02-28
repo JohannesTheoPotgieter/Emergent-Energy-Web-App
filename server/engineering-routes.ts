@@ -12,6 +12,7 @@ import {
   projectTeamMembers, projectPlan, qcWarning, qcWarningEvent,
   qcItemInstance, qcChecklist, qcTemplateItem, users, projectInfo, projectPhaseHistory,
   projectEngApprovals, projectEngStages, engStageTemplates,
+  dashboardWidgetConfig, DEFAULT_WIDGET_ORDER,
   phaseTemplate as phaseTemplateTbl,
   uploadMetadata, refreshLogs, writebackAuditLog, phaseTemplateApplication,
   TASK_STATUSES, TASK_WORKSTREAMS, TASK_PRIORITIES, PROJECT_PHASES,
@@ -122,6 +123,7 @@ export function registerEngineeringRoutes(app: Express) {
   app.use("/api/notifications", jwtAuth);
   app.use("/api/project-team", jwtAuth);
   app.use("/api/home", jwtAuth);
+  app.use("/api/dashboard", jwtAuth);
 
   // ========== PROJECT TEAM MEMBERSHIP ==========
 
@@ -2628,6 +2630,69 @@ export function registerEngineeringRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error("Home action hub error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/dashboard/widget-config", requireAuth, async (req, res) => {
+    try {
+      const currentUser = getUser(req);
+      const [config] = await db
+        .select()
+        .from(dashboardWidgetConfig)
+        .where(eq(dashboardWidgetConfig.userId, currentUser.id));
+
+      if (!config) {
+        return res.json({
+          widgetOrder: [...DEFAULT_WIDGET_ORDER],
+          hiddenWidgets: [],
+        });
+      }
+
+      return res.json({
+        widgetOrder: config.widgetOrder,
+        hiddenWidgets: config.hiddenWidgets,
+      });
+    } catch (err: any) {
+      console.error("Widget config GET error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put("/api/dashboard/widget-config", requireAuth, async (req, res) => {
+    try {
+      const currentUser = getUser(req);
+      const { widgetOrder, hiddenWidgets } = req.body;
+
+      if (!Array.isArray(widgetOrder) || !Array.isArray(hiddenWidgets)) {
+        return res.status(400).json({ error: "widgetOrder and hiddenWidgets must be arrays" });
+      }
+
+      const [existing] = await db
+        .select()
+        .from(dashboardWidgetConfig)
+        .where(eq(dashboardWidgetConfig.userId, currentUser.id));
+
+      if (existing) {
+        await db
+          .update(dashboardWidgetConfig)
+          .set({
+            widgetOrder,
+            hiddenWidgets,
+            updatedAt: new Date(),
+          })
+          .where(eq(dashboardWidgetConfig.userId, currentUser.id));
+      } else {
+        await db.insert(dashboardWidgetConfig).values({
+          userId: currentUser.id,
+          widgetOrder,
+          hiddenWidgets,
+        });
+      }
+
+      return res.json({ success: true });
+    } catch (err: any) {
+      console.error("Widget config PUT error:", err);
       res.status(500).json({ error: err.message });
     }
   });
