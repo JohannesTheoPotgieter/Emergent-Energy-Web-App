@@ -63,6 +63,13 @@ Preferred communication style: Simple, everyday language.
 -   **Filtering**: Each user sees only applicable approvals based on roles or assignments. Admins (COO/CEO) can view all approvals.
 -   **Actions**: Approve/reject functionality directly updates underlying records.
 
+### Teams Chat Groups
+-   **Module**: MS Teams-styled channel-based group chat system with department and project channels, file sharing, and member management.
+-   **DB Tables**: `teams_chat_groups`, `teams_chat_members`, `teams_chat_messages` with file attachment fields (`file_name`, `file_path`, `file_size`, `file_type`).
+-   **Backend**: CRUD routes for groups, members, messages, and file uploads via multer (25MB limit). Membership checks on send/upload. Files served from `/uploads/chat-files/`.
+-   **Frontend**: MS Teams-inspired UI at `/teams/chats` with dark sidebar, channel list, message bubbles with avatars, date separators, file attachments with inline image preview, and members panel.
+-   **Access**: COO/CEO can manage any channel. PMs can manage project channels for their projects. Group admins and creators can manage their channels.
+
 ### Plan Change Tracker Confirmation
 -   **Module**: Notifies Program Manager, Program Finance Manager, and Construction Manager about plan task data edits for confirmation in the Excel tracker.
 -   **Workflow**: Recipients can confirm, which auto-confirms related notifications.

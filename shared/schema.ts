@@ -4085,6 +4085,10 @@ export const teamsChatMessages = pgTable("teams_chat_messages", {
   content: text("content").notNull(),
   teamsMessageId: text("teams_message_id"),
   isFromTeams: boolean("is_from_teams").notNull().default(false),
+  fileName: text("file_name"),
+  filePath: text("file_path"),
+  fileSize: integer("file_size"),
+  fileType: text("file_type"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
