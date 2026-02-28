@@ -1120,9 +1120,56 @@ router.get("/api/exec/cockpit", requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
-// ─── Teams Chat Groups ───
+// ─── Microsoft Account Mapping ───
 
 const COO_ROLES = ["COO_ADMIN", "CEO_ADMIN", "admin"];
+
+router.get("/api/admin/users/microsoft-mapping", requireAuth, async (req, res) => {
+  try {
+    const userRole = (req.user as any).role;
+    if (!COO_ROLES.includes(userRole)) return res.status(403).json({ error: "Admin access required" });
+
+    const { users: usersTable } = await import("@shared/schema");
+    const allUsers = await db.select({
+      id: usersTable.id,
+      name: usersTable.name,
+      username: usersTable.username,
+      email: usersTable.email,
+      role: usersTable.role,
+      microsoftId: usersTable.microsoft_id,
+    }).from(usersTable).orderBy(usersTable.name);
+
+    res.json(allUsers);
+  } catch (err: any) {
+    console.error("[MS Mapping] Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch("/api/admin/users/:id/microsoft-id", requireAuth, async (req, res) => {
+  try {
+    const userRole = (req.user as any).role;
+    if (!COO_ROLES.includes(userRole)) return res.status(403).json({ error: "Admin access required" });
+
+    const userId = parseInt(req.params.id);
+    const { microsoftId, email } = req.body;
+
+    const { users: usersTable } = await import("@shared/schema");
+    await db.update(usersTable)
+      .set({
+        microsoft_id: microsoftId || null,
+        ...(email ? { email } : {}),
+      })
+      .where(eq(usersTable.id, userId));
+
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("[MS Mapping] Update error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Teams Chat Groups ───
 
 router.get("/api/teams/groups", requireAuth, async (req, res) => {
   try {

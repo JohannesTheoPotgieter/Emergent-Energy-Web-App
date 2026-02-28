@@ -49,6 +49,7 @@ import {
   FileEdit,
   Network,
   Plug,
+  MessageSquare,
 } from "lucide-react";
 import { UX_REDESIGN_ENABLED } from "@shared/schema";
 import { useProgramData } from "@/hooks/use-program-data";
@@ -123,6 +124,7 @@ function getLegacyNavGroups(): NavGroup[] {
         { label: "Feedback & Support", icon: MessageSquareText, path: "/feedback" },
         { label: "Leaderboard", icon: Trophy, path: "/leaderboard" },
         { label: "Notifications", icon: Bell, path: "/notifications" },
+        { label: "Teams Chat", icon: MessageSquare, path: "/teams/chats" },
       ],
     },
     {
@@ -206,6 +208,7 @@ function getRedesignedNavGroups(): NavGroup[] {
         { label: "Emergent Energy Info", icon: BookOpen, path: "/ee-info" },
         { label: "Leaderboard", icon: Trophy, path: "/leaderboard" },
         { label: "Notifications", icon: Bell, path: "/notifications" },
+        { label: "Teams Chat", icon: MessageSquare, path: "/teams/chats" },
         { label: "Integration Status", icon: Plug, path: "/settings/integrations" },
       ],
     },
@@ -222,6 +225,7 @@ function getRedesignedNavGroups(): NavGroup[] {
             { label: "Change Audit", icon: Activity, path: "/admin/activity-log" },
             { label: "Approvals", icon: ShieldCheck, path: "/admin/approvals" },
             { label: "Microsoft Integration", icon: Cog, path: "/admin/ms-integration" },
+            { label: "MS Account Mapping", icon: Users, path: "/admin/ms-mapping" },
           ],
         },
       ],

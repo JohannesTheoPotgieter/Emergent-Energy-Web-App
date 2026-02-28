@@ -62,6 +62,8 @@ import PdTicketCreatePage from "@/pages/pd-ticket-create";
 import PdTicketDetailPage from "@/pages/pd-ticket-detail";
 import MsIntegrationSettingsPage from "@/pages/ms-integration-settings";
 import MsCallbackPage from "@/pages/ms-callback";
+import TeamsChatsPage from "@/pages/teams-chats";
+import AdminMsMappingPage from "@/pages/admin-ms-mapping";
 import { useAuth } from "@/hooks/use-auth";
 import { useProgramData } from "@/hooks/use-program-data";
 import { TrackerTable } from "@/components/dashboard/TrackerTable";
@@ -285,6 +287,8 @@ function ProtectedPages() {
         <Route path="/pd/tickets/:id" component={PdTicketDetailPage} />
         <Route path="/settings/integrations" component={MsIntegrationSettingsPage} />
         <Route path="/admin/ms-integration" component={MsIntegrationSettingsPage} />
+        <Route path="/teams/chats" component={TeamsChatsPage} />
+        <Route path="/admin/ms-mapping" component={AdminMsMappingPage} />
         <Route path="/admin/eng-templates">{() => <Redirect to="/admin/phase-templates" />}</Route>
 
         <Route component={NotFound} />
