@@ -4095,3 +4095,42 @@ export const teamsChatMessages = pgTable("teams_chat_messages", {
 export const insertTeamsChatMessageSchema = createInsertSchema(teamsChatMessages).omit({ id: true, createdAt: true });
 export type InsertTeamsChatMessage = z.infer<typeof insertTeamsChatMessageSchema>;
 export type TeamsChatMessage = typeof teamsChatMessages.$inferSelect;
+
+export const financialEditRequests = pgTable("financial_edit_requests", {
+  id: serial("id").primaryKey(),
+  projectName: text("project_name").notNull(),
+  requestedByUserId: integer("requested_by_user_id").notNull().references(() => users.id),
+  editType: text("edit_type").notNull(),
+  editTarget: text("edit_target").notNull(),
+  editPayload: text("edit_payload").notNull(),
+  editSummary: text("edit_summary").notNull(),
+  isCriticalPath: boolean("is_critical_path").notNull().default(false),
+  affectsRevenue: boolean("affects_revenue").notNull().default(false),
+  affectsExpenditure: boolean("affects_expenditure").notNull().default(false),
+  affectsQuality: boolean("affects_quality").notNull().default(false),
+  status: text("status").notNull().default("pending"),
+  reviewedByUserId: integer("reviewed_by_user_id"),
+  reviewComment: text("review_comment"),
+  reviewedAt: timestamp("reviewed_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertFinancialEditRequestSchema = createInsertSchema(financialEditRequests).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertFinancialEditRequest = z.infer<typeof insertFinancialEditRequestSchema>;
+export type FinancialEditRequest = typeof financialEditRequests.$inferSelect;
+
+export const financialIntegrationRules = pgTable("financial_integration_rules", {
+  id: serial("id").primaryKey(),
+  projectName: text("project_name").notNull(),
+  ruleType: text("rule_type").notNull(),
+  ruleConfig: text("rule_config").notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  createdByUserId: integer("created_by_user_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertFinancialIntegrationRuleSchema = createInsertSchema(financialIntegrationRules).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertFinancialIntegrationRule = z.infer<typeof insertFinancialIntegrationRuleSchema>;
+export type FinancialIntegrationRule = typeof financialIntegrationRules.$inferSelect;

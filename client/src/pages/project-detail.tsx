@@ -31,6 +31,7 @@ import TaskGridView from "@/components/TaskGridView";
 import KeyDatesPanel from "@/components/KeyDatesPanel";
 import { QualityTab } from "@/components/tabs/QualityTab";
 import { ProjectHistoryTab } from "@/components/tabs/ProjectHistoryTab";
+import { FinancialIntegrationPanel } from "@/components/FinancialIntegrationPanel";
 import EngineeringStagesTab from "@/components/tabs/EngineeringStagesTab";
 import { WeeklyReviewWizard } from "@/components/WeeklyReviewWizard";
 import { GuidancePrompt, getPhaseGuidance } from "@/components/MicroGuidance";
@@ -1399,6 +1400,8 @@ export default function ProjectDetailPage() {
             </Card>
             )}
           </div>
+
+          <FinancialIntegrationPanel projectName={projectName} />
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <ProjectChatTab projectName={projectName} />
