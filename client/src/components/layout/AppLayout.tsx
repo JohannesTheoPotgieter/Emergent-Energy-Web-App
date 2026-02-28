@@ -161,6 +161,15 @@ function getRedesignedNavGroups(): NavGroup[] {
       ],
     },
     {
+      heading: "COLLABORATION",
+      section: "COLLABORATION",
+      items: [
+        { label: "Collaboration Hub", icon: Handshake, path: "/collaboration" },
+        { label: "Teams Chat", icon: MessageSquare, path: "/teams/chats" },
+        { label: "Notifications", icon: Bell, path: "/notifications" },
+      ],
+    },
+    {
       heading: "PROJECT MANAGEMENT",
       section: "PROJECTS",
       items: [
@@ -203,15 +212,6 @@ function getRedesignedNavGroups(): NavGroup[] {
       section: "GOVERNANCE",
       items: [
         { label: "Quality Dashboard", icon: ShieldCheck, path: "/quality" },
-      ],
-    },
-    {
-      heading: "COLLABORATION",
-      section: "COLLABORATION",
-      items: [
-        { label: "Collaboration Hub", icon: Handshake, path: "/collaboration" },
-        { label: "Teams Chat", icon: MessageSquare, path: "/teams/chats" },
-        { label: "Notifications", icon: Bell, path: "/notifications" },
       ],
     },
     {
