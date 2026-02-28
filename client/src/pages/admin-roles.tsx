@@ -99,6 +99,7 @@ const PERM_CATEGORIES: PermCat[] = [
       { entity: "company_priorities" as PermissionEntity, label: "Company Priorities", actions: ["view", "edit", "delete"] },
       { entity: "lifecycle" as PermissionEntity, label: "Lifecycle Board (Phases, Gates, Merge)", actions: ["view", "edit", "override"] },
       { entity: "meetings" as PermissionEntity, label: "Meetings (Calendar, Read.ai)", actions: ["view", "edit"] },
+      { entity: "operational_tasks" as PermissionEntity, label: "Operational Tasks (Email-to-Task)", actions: ["view", "edit", "delete"] },
     ],
   },
   {
@@ -134,6 +135,7 @@ const PERM_CATEGORIES: PermCat[] = [
       { entity: "subcontractors" as PermissionEntity, label: "Procurement / Subcontractors", actions: ["view", "edit", "delete"] },
       { entity: "procurement" as PermissionEntity, label: "Procurement Data", actions: ["view", "edit"] },
       { entity: "invoice_patterns" as PermissionEntity, label: "Invoice Patterns", actions: ["view", "edit"] },
+      { entity: "financial_integration" as PermissionEntity, label: "Financial Integration (Edit Requests, Rules, Sync)", actions: ["view", "edit", "approve"] },
     ],
   },
   {
@@ -180,6 +182,7 @@ const PERM_CATEGORIES: PermCat[] = [
       { entity: "pd_eng_tasks" as PermissionEntity, label: "Engineering Tasks (Detail)", actions: ["view", "edit", "delete"] },
       { entity: "pd_eng_stages" as PermissionEntity, label: "Engineering Stages (Detail)", actions: ["view", "edit", "approve"] },
       { entity: "pd_quality" as PermissionEntity, label: "Quality Tab", actions: ["view", "edit", "approve", "delete"] },
+      { entity: "pd_collaboration" as PermissionEntity, label: "Collaboration (Chat, SharePoint, Approvals, Notifications)", actions: ["view", "edit"] },
       { entity: "pd_history" as PermissionEntity, label: "History / Audit", actions: ["view"] },
     ],
   },
@@ -208,6 +211,8 @@ const PERM_CATEGORIES: PermCat[] = [
       { entity: "leaderboard" as PermissionEntity, label: "Leaderboard", actions: ["view"] },
       { entity: "feedback" as PermissionEntity, label: "Feedback & Support", actions: ["view", "edit"] },
       { entity: "notifications" as PermissionEntity, label: "Notifications", actions: ["view"] },
+      { entity: "teams_chat" as PermissionEntity, label: "Teams Chat Groups (Channels, Messages, Files)", actions: ["view", "edit", "delete"] },
+      { entity: "gamification" as PermissionEntity, label: "Gamification (Badges, Points, Levels)", actions: ["view"] },
     ],
   },
   {

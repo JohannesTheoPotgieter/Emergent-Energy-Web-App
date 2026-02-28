@@ -906,7 +906,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/pm-assignable-users", async (req, res) => {
+  app.get("/api/pm-assignable-users", requireAuth, async (req, res) => {
     try {
       const pmUsers = await db.select({
         id: users.id,
@@ -920,7 +920,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/pd-assignable-users", async (req, res) => {
+  app.get("/api/pd-assignable-users", requireAuth, async (req, res) => {
     try {
       const pdUsers = await db.select({
         id: users.id,
@@ -936,7 +936,7 @@ export async function registerRoutes(
 
   // ==================== OVERVIEW API ====================
 
-  app.get("/api/overview", async (req, res) => {
+  app.get("/api/overview", requireAuth, async (req, res) => {
     try {
       const [allProjectInfo, allExpenses, rawInflows, allPlans, latestRefresh, allTaskLinks, allOpTasks, allNormCostsOv, allNormRevOv, allNormPlansOv] = await Promise.all([
         storage.getAllProjectInfo(),
@@ -1105,7 +1105,7 @@ export async function registerRoutes(
     };
   }
 
-  app.get("/api/home/summary", async (req, res) => {
+  app.get("/api/home/summary", requireAuth, async (req, res) => {
     try {
       const [allProjectInfo, legacyExpenses, legacyRawInflows, legacyPlans, latestRefresh, revenueSummaries, allTaskLinks, allOpTasks, allPlanOverrides] = await Promise.all([
         storage.getAllProjectInfo(),
@@ -1382,7 +1382,7 @@ export async function registerRoutes(
   });
 
   // Get/Save home notes
-  app.get("/api/home/notes", async (req, res) => {
+  app.get("/api/home/notes", requireAuth, async (req, res) => {
     try {
       const notes = await storage.getHomeNotes();
       res.json(notes || { highlightsNotes: '', constructionNotes: '', financeNotes: '', preparedBy: '' });
@@ -1412,7 +1412,7 @@ export async function registerRoutes(
 
   // ==================== PROGRAM COS API (fixed) ====================
 
-  app.get("/api/program/cos", async (req, res) => {
+  app.get("/api/program/cos", requireAuth, async (req, res) => {
     try {
       const { projectName, startDate, endDate, atRiskDays = '30' } = req.query;
       const atRiskDaysNum = parseInt(atRiskDays as string, 10) || 30;
@@ -1696,7 +1696,7 @@ export async function registerRoutes(
     return diff;
   }
 
-  app.get("/api/projects-summary", async (req, res) => {
+  app.get("/api/projects-summary", requireAuth, async (req, res) => {
     try {
       const [allProjectInfo, allExpenses, rawInflows, rawPlans, allEditableFields, allTaskLinks, allOpTasks, uploadMetaRows, committedSmartImports, allNormCosts, allNormRevenue, allNormPlans, allPlanOverrides, lastImportRows] = await Promise.all([
         storage.getAllProjectInfo(),
@@ -3832,7 +3832,7 @@ export async function registerRoutes(
 
   // ==================== DASHBOARD DATA ROUTES ====================
 
-  app.get("/api/dashboard", async (req, res) => {
+  app.get("/api/dashboard", requireAuth, async (req, res) => {
     try {
       const [projects, expenses, revenues, tasks, latestRefresh] = await Promise.all([
         storage.getAllProjects(),
@@ -3869,7 +3869,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/projects/:id", async (req, res) => {
+  app.get("/api/projects/:id", requireAuth, async (req, res) => {
     try {
       const id = parseInt(String(req.params.id));
       if (isNaN(id)) {
@@ -3887,7 +3887,7 @@ export async function registerRoutes(
 
   // ==================== EXPENSES ROUTES ====================
 
-  app.get("/api/expenses", async (req, res) => {
+  app.get("/api/expenses", requireAuth, async (req, res) => {
     try {
       const { projectId } = req.query;
       if (projectId && typeof projectId === 'string') {
@@ -3903,7 +3903,7 @@ export async function registerRoutes(
 
   // ==================== REVENUES ROUTES ====================
 
-  app.get("/api/revenues", async (req, res) => {
+  app.get("/api/revenues", requireAuth, async (req, res) => {
     try {
       const { projectId } = req.query;
       if (projectId && typeof projectId === 'string') {
@@ -3919,7 +3919,7 @@ export async function registerRoutes(
 
   // ==================== TASKS ROUTES ====================
 
-  app.get("/api/tasks", async (req, res) => {
+  app.get("/api/tasks", requireAuth, async (req, res) => {
     try {
       const { projectId } = req.query;
       if (projectId && typeof projectId === 'string') {
@@ -3935,7 +3935,7 @@ export async function registerRoutes(
 
   // ==================== BUDGETS ROUTES (Admin Only) ====================
 
-  app.get("/api/budgets", async (req, res) => {
+  app.get("/api/budgets", requireAuth, async (req, res) => {
     try {
       const budgets = await storage.getAllBudgets();
       res.json(budgets);
@@ -4386,7 +4386,7 @@ export async function registerRoutes(
 
   // ==================== PROGRAM DATA ROUTES ====================
 
-  app.get("/api/program-expenses", async (req, res) => {
+  app.get("/api/program-expenses", requireAuth, async (req, res) => {
     try {
       const { projectName, startDate, endDate, applyOverrides } = req.query;
       let expenses;
@@ -4417,7 +4417,7 @@ export async function registerRoutes(
   });
 
   // Parameterized route for fetching expenses by project name in URL path
-  app.get("/api/program-expenses/:projectName", async (req, res) => {
+  app.get("/api/program-expenses/:projectName", requireAuth, async (req, res) => {
     try {
       const { projectName } = req.params;
       const { applyOverrides } = req.query;
@@ -4436,7 +4436,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/program-inflows", async (req, res) => {
+  app.get("/api/program-inflows", requireAuth, async (req, res) => {
     try {
       const { projectName, startDate, endDate, applyOverrides } = req.query;
       let inflows;
@@ -4472,7 +4472,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/project-plans", async (req, res) => {
+  app.get("/api/project-plans", requireAuth, async (req, res) => {
     try {
       const { projectName, applyOverrides } = req.query;
       let plans;
@@ -4494,7 +4494,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/project-plan/overrides", async (req, res) => {
+  app.get("/api/project-plan/overrides", requireAuth, async (req, res) => {
     try {
       const { projectName } = req.query;
       if (!projectName || typeof projectName !== 'string') {
@@ -4507,7 +4507,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/project-plan/:projectName", async (req, res) => {
+  app.get("/api/project-plan/:projectName", requireAuth, async (req, res) => {
     try {
       const projectName = req.params.projectName;
       const { applyOverrides } = req.query;
@@ -4525,7 +4525,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/project-info", async (req, res) => {
+  app.get("/api/project-info", requireAuth, async (req, res) => {
     try {
       const info = await storage.getAllProjectInfo();
       res.json(info);
@@ -4569,7 +4569,7 @@ export async function registerRoutes(
 
   // ==================== FINANCIAL DATA ROUTES ====================
 
-  app.get("/api/cashflow", async (req, res) => {
+  app.get("/api/cashflow", requireAuth, async (req, res) => {
     try {
       const projectParam = req.query.project || req.query.projectName;
       const { startDate, endDate } = req.query;
@@ -4750,7 +4750,7 @@ export async function registerRoutes(
   });
 
   // Planning overrides API
-  app.get("/api/cashflow/planning-overrides", async (req, res) => {
+  app.get("/api/cashflow/planning-overrides", requireAuth, async (req, res) => {
     try {
       const { projectName } = req.query;
       let overrides;
@@ -5138,7 +5138,7 @@ export async function registerRoutes(
   });
 
   // Revenue Tracking Overrides API
-  app.get("/api/revenue-tracking/overrides", async (req, res) => {
+  app.get("/api/revenue-tracking/overrides", requireAuth, async (req, res) => {
     try {
       const { projectName } = req.query;
       if (!projectName || typeof projectName !== 'string') {
@@ -5201,7 +5201,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/revenue-tab/:projectName", async (req, res) => {
+  app.get("/api/revenue-tab/:projectName", requireAuth, async (req, res) => {
     try {
       const projectName = req.params.projectName;
 
@@ -5566,7 +5566,7 @@ export async function registerRoutes(
   });
 
   // Expenditure Overrides API
-  app.get("/api/expenditure/overrides", async (req, res) => {
+  app.get("/api/expenditure/overrides", requireAuth, async (req, res) => {
     try {
       const { projectName } = req.query;
       if (!projectName || typeof projectName !== 'string') {
@@ -6113,7 +6113,7 @@ export async function registerRoutes(
   });
 
   // Finance Revenue Overrides API
-  app.get("/api/finance/revenue/overrides", async (req, res) => {
+  app.get("/api/finance/revenue/overrides", requireAuth, async (req, res) => {
     try {
       const { projectName } = req.query;
       if (!projectName || typeof projectName !== 'string') {
@@ -6175,7 +6175,7 @@ export async function registerRoutes(
   });
 
   // Finance COS Overrides API
-  app.get("/api/finance/cos/overrides", async (req, res) => {
+  app.get("/api/finance/cos/overrides", requireAuth, async (req, res) => {
     try {
       const { projectName } = req.query;
       if (!projectName || typeof projectName !== 'string') {
@@ -6231,7 +6231,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/finance/revenue", async (req, res) => {
+  app.get("/api/finance/revenue", requireAuth, async (req, res) => {
     try {
       const { projectName, startDate, endDate, applyOverrides } = req.query;
       let data;
@@ -6261,7 +6261,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/finance/cos", async (req, res) => {
+  app.get("/api/finance/cos", requireAuth, async (req, res) => {
     try {
       const { projectName, startDate, endDate, applyOverrides } = req.query;
       let data;
@@ -6305,7 +6305,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/refresh/latest", async (req, res) => {
+  app.get("/api/refresh/latest", requireAuth, async (req, res) => {
     try {
       const latest = await storage.getLatestRefresh();
       res.json({ lastRefresh: latest?.refreshedAt?.toISOString() || null });
@@ -6521,7 +6521,7 @@ export async function registerRoutes(
   });
 
   // Get/set folder path for data import
-  app.get("/api/admin/folder-config", async (req, res) => {
+  app.get("/api/admin/folder-config", requireAuth, requireAdmin, async (req, res) => {
     try {
       const folderPath = process.env.TRACKER_FOLDER_PATH || path.join(process.cwd(), 'uploads');
       const exists = fs.existsSync(folderPath);
@@ -6761,7 +6761,7 @@ export async function registerRoutes(
   });
 
   // Get refresh history
-  app.get("/api/admin/refresh-history", async (req, res) => {
+  app.get("/api/admin/refresh-history", requireAuth, requireAdmin, async (req, res) => {
     try {
       const uploads = await storage.getAllUploads();
       const latest = await storage.getLatestRefresh();
@@ -6803,7 +6803,7 @@ export async function registerRoutes(
 
   // ==================== UPLOAD HISTORY ROUTE ====================
 
-  app.get("/api/uploads", async (req, res) => {
+  app.get("/api/uploads", requireAuth, async (req, res) => {
     try {
       const uploads = await storage.getAllUploads();
       res.json(uploads);
@@ -7140,7 +7140,7 @@ export async function registerRoutes(
   // ==================== PROJECT PLAN SCHEDULING API ====================
 
   // Get working plan with CPM calculation for a project
-  app.get("/api/projects/:projectName/working-plan", async (req, res) => {
+  app.get("/api/projects/:projectName/working-plan", requireAuth, async (req, res) => {
     try {
       const { projectName } = req.params;
       const decodedName = decodeURIComponent(projectName);
@@ -7489,7 +7489,7 @@ export async function registerRoutes(
   });
 
   // Get schedule change notices
-  app.get("/api/projects/:projectName/change-notices", async (req, res) => {
+  app.get("/api/projects/:projectName/change-notices", requireAuth, async (req, res) => {
     try {
       const { projectName } = req.params;
       const decodedName = decodeURIComponent(projectName);
