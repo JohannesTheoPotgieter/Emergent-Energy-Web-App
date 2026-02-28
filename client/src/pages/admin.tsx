@@ -182,7 +182,6 @@ export default function AdminPage() {
     if (activeProjectNames.length > 0) {
       try {
         await fetch("/api/admin/mark-active", {
-          credentials: "include",
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ projectNames: activeProjectNames }),
@@ -613,7 +612,6 @@ export default function AdminPage() {
                     setProgressInfo({ current: 0, total: 0, currentFile: "Starting..." });
                     try {
                       const res = await fetch("/api/admin/refresh-data", {
-                        credentials: "include",
                         method: "POST",
                         credentials: "include",
                         headers: { "Accept": "text/event-stream" },

@@ -33,7 +33,6 @@ export function EpmChallengeModal({ open, onSuccess, onClose }: EpmChallengeModa
       if (token) headers["Authorization"] = `Bearer ${token}`;
 
       const res = await fetch("/api/engineering/access/verify", {
-        credentials: "include",
         method: "POST",
         headers,
         credentials: "include",

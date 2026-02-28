@@ -33,7 +33,6 @@ export function QmChallengeModal({ open, onSuccess, onClose }: QmChallengeModalP
       if (token) headers["Authorization"] = `Bearer ${token}`;
 
       const res = await fetch("/api/quality/access/verify", {
-        credentials: "include",
         method: "POST",
         headers,
         credentials: "include",
