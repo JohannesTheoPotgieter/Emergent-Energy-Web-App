@@ -730,23 +730,21 @@ export default function ProjectDetailPage() {
     : "—";
   const completionNum = projectInfo?.project_pct_complete != null ? projectInfo.project_pct_complete * 100 : 0;
   const isAdmin = ['admin', 'COO_ADMIN', 'CEO_ADMIN'].includes(user?.role || '');
-  const totalRevenueCosted = (revenueData as any[]).reduce((s: number, r: any) => s + (Number(r.revenueAmount) || 0), 0);
   const totalRevenueActual = (revenueData as any[]).reduce((s: number, r: any) => s + (Number(r.milestoneAmount) || 0), 0);
-  const contractValue = projectInfo?.contract_value || totalRevenueCosted || 0;
+  const contractValue = projectInfo?.contract_value || totalRevenueActual || 0;
   const totalBudgetFromExpenses = (expenseData as any[]).reduce((s: number, e: any) => s + (Number(e.budgetTotal) || 0), 0);
   const budgetTotal = projectInfo?.budget_total || totalBudgetFromExpenses || 0;
 
   const planTasks = projectPlanData as any[];
   const today = new Date().toISOString().split("T")[0];
   const overduePlanTasks = planTasks.filter((t: any) => {
-    const endDate = t.endDate || t.actualEnd;
-    const pct = Number(t.actualPctComplete);
-    const isComplete = t.status === "Complete" || t.status === "Done" || (pct >= 1);
-    return endDate && endDate < today && !isComplete;
+    const endDate = t.actualEnd || t.endDate;
+    const pct = Number(t.actualPctComplete) || 0;
+    return endDate && endDate < today && pct < 1;
   });
   const completedPlanTasks = planTasks.filter((t: any) => {
-    const pct = Number(t.actualPctComplete);
-    return t.status === "Complete" || t.status === "Done" || (pct >= 1);
+    const pct = Number(t.actualPctComplete) || 0;
+    return pct >= 1;
   });
   const planCompletionPct = planTasks.length > 0 ? (completedPlanTasks.length / planTasks.length) * 100 : 0;
   const scheduleRag: "green" | "amber" | "red" = overduePlanTasks.length === 0 ? "green" : overduePlanTasks.length <= 3 ? "amber" : "red";
@@ -787,7 +785,7 @@ export default function ProjectDetailPage() {
     if (r.paymentReceivedDate) return s + (Number(r.milestoneAmount) || 0);
     return s;
   }, 0);
-  const revenueRealisedPct = contractValue > 0 ? (totalRevenueActual / contractValue) * 100 : 0;
+  const revenueRealisedPct = contractValue > 0 ? (totalPaidInflows / contractValue) * 100 : 0;
 
   const cosRealisedPct = budgetTotal > 0 ? (totalExpenses / budgetTotal) * 100 : 0;
   const marginDelta = revenueRealisedPct - cosRealisedPct;
@@ -818,8 +816,8 @@ export default function ProjectDetailPage() {
         result.push({ severity: "warning", message: `Revenue milestone "${r.milestoneName || "Unnamed"}" due within 14 days — no invoice raised`, key: `rev-${r.id || r.milestoneName}` });
       }
     });
-    if (totalExpenses > totalRevenueActual && totalRevenueActual > 0) {
-      result.push({ severity: "warning", message: `COS (R${totalExpenses.toLocaleString()}) exceeds actual revenue (R${totalRevenueActual.toLocaleString()})`, key: "cos-exceeds-rev" });
+    if (totalExpenses > totalPaidInflows && totalPaidInflows > 0) {
+      result.push({ severity: "warning", message: `COS (R${totalExpenses.toLocaleString()}) exceeds paid revenue (R${totalPaidInflows.toLocaleString()})`, key: "cos-exceeds-rev" });
     }
     const engTaskAlerts = engDataForAlerts?.tasks || [];
     const overdueEng = engTaskAlerts.filter((t: any) => t.dueDate && t.dueDate < today && t.status !== "COMPLETE");
@@ -1172,38 +1170,37 @@ export default function ProjectDetailPage() {
                     if (planTasks.length === 0) return <p className="text-xs text-muted-foreground text-center py-3">No plan data uploaded yet</p>;
                     const urgent = [...overduePlanTasks]
                       .sort((a: any, b: any) => {
-                        const aEnd = a.endDate || a.actualEnd || "";
-                        const bEnd = b.endDate || b.actualEnd || "";
+                        const aEnd = a.actualEnd || a.endDate || "";
+                        const bEnd = b.actualEnd || b.endDate || "";
                         return aEnd.localeCompare(bEnd);
                       })
                       .slice(0, 5);
                     if (urgent.length === 0) {
                       const upcoming = planTasks
                         .filter((t: any) => {
-                          const endDate = t.endDate || t.actualEnd;
-                          const pct = Number(t.actualPctComplete);
-                          const isComplete = t.status === "Complete" || t.status === "Done" || (pct >= 1);
-                          return endDate && endDate >= today && !isComplete;
+                          const endDate = t.actualEnd || t.endDate;
+                          const pct = Number(t.actualPctComplete) || 0;
+                          return endDate && endDate >= today && pct < 1;
                         })
-                        .sort((a: any, b: any) => (a.endDate || a.actualEnd || "").localeCompare(b.endDate || b.actualEnd || ""))
+                        .sort((a: any, b: any) => (a.actualEnd || a.endDate || "").localeCompare(b.actualEnd || b.endDate || ""))
                         .slice(0, 5);
                       if (upcoming.length === 0) return <p className="text-xs text-emerald-600 text-center py-3">All tasks are on track</p>;
                       return upcoming.map((t: any, i: number) => (
-                        <div key={i} className="flex items-center gap-2 text-[11px] py-1 px-2 rounded bg-gray-50 hover:bg-gray-100 cursor-pointer" onClick={() => navigateToSection("project-management", "gantt")} data-testid={`row-plan-upcoming-${t.id || i}`}>
+                        <div key={i} className="flex items-center gap-2 text-[11px] py-1.5 px-2 rounded bg-gray-50 hover:bg-gray-100 cursor-pointer" onClick={() => navigateToSection("project-management", "gantt")} data-testid={`row-plan-upcoming-${t.id || i}`}>
                           <Circle className="h-2.5 w-2.5 text-sky-400 shrink-0" />
-                          <span className="truncate flex-1">{t.taskName || t.task_name || "Task"}</span>
-                          <span className="text-muted-foreground shrink-0">{t.endDate || t.actualEnd || ""}</span>
+                          <span className="truncate flex-1 font-medium">{t.highLevelProgramme || t.taskName || t.task_name || "Unnamed task"}</span>
+                          <span className="text-muted-foreground shrink-0">{t.actualEnd || t.endDate || ""}</span>
                           <span className="text-sky-600 font-medium shrink-0">{((Number(t.actualPctComplete) || 0) * 100).toFixed(0)}%</span>
                         </div>
                       ));
                     }
                     return urgent.map((t: any, i: number) => {
-                      const endDate = t.endDate || t.actualEnd || "";
+                      const endDate = t.actualEnd || t.endDate || "";
                       const daysLate = endDate ? Math.floor((new Date().getTime() - new Date(endDate).getTime()) / (1000 * 60 * 60 * 24)) : 0;
                       return (
-                        <div key={i} className="flex items-center gap-2 text-[11px] py-1 px-2 rounded bg-red-50 border border-red-100 hover:bg-red-100 cursor-pointer" onClick={() => navigateToSection("project-management", "gantt")} data-testid={`row-plan-overdue-${t.id || i}`}>
+                        <div key={i} className="flex items-center gap-2 text-[11px] py-1.5 px-2 rounded bg-red-50 border border-red-100 hover:bg-red-100 cursor-pointer" onClick={() => navigateToSection("project-management", "gantt")} data-testid={`row-plan-overdue-${t.id || i}`}>
                           <AlertCircle className="h-3 w-3 text-red-500 shrink-0" />
-                          <span className="truncate flex-1">{t.taskName || t.task_name || "Task"}</span>
+                          <span className="truncate flex-1 font-medium">{t.highLevelProgramme || t.taskName || t.task_name || "Unnamed task"}</span>
                           <Badge variant="destructive" className="text-[9px] px-1 py-0 shrink-0">{daysLate}d late</Badge>
                         </div>
                       );
