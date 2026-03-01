@@ -1,0 +1,215 @@
+You are working inside an existing production web application for Emergent Energy (solar/BESS EPC). 
+Your job: optimize UX flow + layout across roles WITHOUT breaking or rewriting existing working functionality.
+
+ABSOLUTE NON-NEGOTIABLES
+1) Do NOT break existing features, routes, database schema, permissions, integrations, or APIs.
+2) Do NOT create parallel sources of truth.
+3) The “project tracker import” foundation layer is the PRIMARY source of truth for operational/financial detail.
+4) All dashboards, summaries, role views, and derived KPIs must pull from the foundation import tables (or existing derived views built from them).
+5) If any screen currently bypasses the foundation layer (manual fields, duplicate tables, separate calculations), you must:
+   - identify it
+   - document it
+   - re-wire it to the foundation layer (or justify clearly why it cannot be)
+6) Prefer re-using existing services/components and existing derived layers. Add new only when necessary.
+
+TARGET ROLES (must be supported distinctly)
+- CEO
+- COO (super admin)
+- Head of Project Development (HoPD)
+- CFO
+- Program Manager
+- Program Finance Manager
+- Construction Manager
+- Quality Manager
+- Engineer (any engineering employee)
+- Project Manager
+- Project Developer
+
+PRIMARY OUTCOME
+A role-based UX that:
+- is modern, reactive, and efficiency-first
+- has consistent nav + naming + icons
+- has zero duplicates / zero confusion / zero dead buttons
+- supports fast “golden path” workflows per role
+- uses foundation import data to drive EVERYTHING (project detail → derived → dashboards)
+
+PHASE 0 — SAFETY + DATA & UX INVENTORY (must do before changing UI)
+A) Data Spine Audit (Foundation Layer)
+1) Locate and document the foundation import layer:
+   - which tables hold imported data
+   - which tables/views are “derived” from import
+   - which parts of UI read from which tables/services
+2) Produce a “Data Lineage Map” that traces:
+   Project → Imported Sheets (plan/expenditure/revenue/etc) → Normalized tables → Derived KPIs → UI pages
+3) Identify and flag:
+   - duplicate data stores
+   - manual entry fields that replicate imported values
+   - calculations done in UI that should be derived centrally
+   - any dashboards not tied to import data
+4) Add a small internal “Data Source Debug” panel (dev-only):
+   - on each major page show: primary API endpoints + tables/views backing the page
+   - last import timestamp per project
+   - warnings when data is stale or missing prerequisites
+
+B) UX Inventory (Routes / Pages / Actions)
+1) Crawl and list all current:
+   - routes/pages/views
+   - nav items / sidebars / menus
+   - buttons/actions (labels, icons, enabled criteria)
+   - role-based permission rules (where enforced)
+   - repeated components/screens
+2) Produce a “UX Inventory Report” JSON + human-readable summary:
+   - page_id, route, title, purpose, primary actions, role visibility, data dependencies (tables/services)
+   - flags: duplicate_suspected, dead_button_suspected, confusing_label, inconsistent_icon, missing_empty_state
+3) Add lightweight “UI Telemetry (dev only)”:
+   - clicks on disabled buttons
+   - navigation to pages with missing/stale data
+   - API errors tied to page/action
+   (No external services. Use internal logs / console / internal debug panel.)
+
+PHASE 1 — INFORMATION ARCHITECTURE + ROLE HOME DASHBOARDS
+Build a single consistent navigation model that matches current functionality.
+Rules:
+- Same icon set, same naming convention, no duplicates.
+- Any page lives in ONE logical place. Other placements are shortcuts, not duplicates.
+- Company priorities must always be visible on Home for all roles.
+
+ROLE HOME PAGES (must be distinct)
+Implement role-based home dashboards.
+Each home MUST include:
+- “Company priorities” (always visible)
+- “My priorities” (overdue items, blockers, escalations)
+- “My projects” (filtered by role assignment)
+- “Alerts” (risk flags, missing data, import staleness, blockers)
+- “Quick actions” (3–6 max)
+
+IMPORTANT: Each home widget must be powered by foundation import data or derived views from it.
+If a widget uses non-foundation data, you must either migrate it or label it as “non-foundation” with a plan to fix.
+
+Default role dashboard content:
+CEO:
+- Company KPIs, portfolio delivery health, margin/cash headline, top escalations.
+COO (super admin):
+- Cross-dept blockers, system health, permission/admin, all escalations, data lineage warnings.
+HoPD:
+- PD pipeline health + handovers pending (must link to project records).
+CFO:
+- cashflow, COS movements, receivables/payables, approvals needed.
+Program Manager:
+- portfolio delivery health, schedule risk, resourcing conflicts, escalations.
+Program Finance Manager:
+- COS actions, invoice/payment exceptions, approvals, finance data integrity warnings.
+Construction Manager:
+- active sites, safety/quality flags, weekly plan, snags/RFIs.
+Quality Manager:
+- QA gates, NCRs/snags, audits, handover pack readiness, defects by project.
+Engineer:
+- engineering task queue, reviews, deliverable uploads, “missing inputs” from import.
+Project Manager:
+- plan vs actual, procurement blockers, VO/change control, next milestones.
+Project Developer:
+- pipeline tasks, client actions needed, feasibility/cost proposal tasks, handover prep.
+
+PHASE 2 — WORKFLOW OPTIMIZATION (ROLE-BASED GOLDEN PATHS)
+For each role, map and implement the top 5 workflows (“golden paths”).
+For each workflow:
+- reduce steps/clicks
+- clarify next action and state
+- eliminate dead ends
+- ensure every step pulls from foundation import data where applicable
+
+Also implement “data prerequisite gates”:
+- If imported data is missing/stale for a workflow, the UI must:
+  - clearly show what is missing
+  - link to the fix (import page / data capture page that is canonical)
+  - prevent incorrect actions (no silent failures)
+
+PHASE 3 — REMOVE DUPLICATES / DEAD UI / CONFUSION
+Implement a “No Confusion” cleanup:
+- Identify duplicates: same function/data shown in multiple pages.
+- Consolidate to one canonical page fed by foundation/derived data.
+- Replace duplicates with shortcuts to the canonical page.
+- Remove dead buttons OR convert into disabled-with-tooltip:
+  - explain prerequisites
+  - link to fix
+- Every button must have:
+  - enabled criteria
+  - loading state
+  - success/failure feedback
+  - permission checks
+  - confirmations only for real risk (delete/irreversible)
+
+PHASE 4 — CONSISTENCY SYSTEM (UI RULES)
+Create a small internal UX system (no major rewrite):
+- Standard page header: Title + context (Project/Portfolio) + primary CTA + breadcrumbs
+- Standard tables: filter, sort, search, column chooser (unify existing patterns)
+- Standard status chips aligned to current statuses
+- Standard empty states:
+  - “No data yet” + CTA to import/create
+  - “No permission”
+  - “Missing prerequisite” + link
+- Standard forms:
+  - required fields, inline validation, consistent save/cancel
+- Standard icons and naming:
+  - create mapping: old_label → new_label (document every rename)
+
+PHASE 5 — DATA INTEGRITY GUARDRAILS (FOUNDATION-FIRST ENFORCEMENT)
+Implement guardrails so the UX cannot drift from the foundation layer:
+1) Create a “Data Contract” per major module/page:
+   - required foundation tables/views
+   - required fields
+   - freshness rules (e.g., last import timestamp)
+2) Add runtime warnings in dev mode when a page uses non-canonical data.
+3) Where possible, centralize calculations in the derived layer, not the UI.
+4) Ensure “Project” is the join key everywhere. Avoid new IDs unless already present.
+
+PHASE 6 — PERMISSIONS + VISIBILITY
+- Enforce role-based access consistently in UI (hide forbidden actions, not just disable).
+- COO has admin-only controls.
+- Every action must check permissions client-side (visibility) and server-side (security).
+
+PHASE 7 — QA / NO-REGRESSION TESTING (ROLE + DATA)
+Create automated tests and a manual QA script:
+1) Route smoke test — every page loads for each role.
+2) Button audit test — every visible button works or is disabled with reason.
+3) Golden path tests — top workflows per role.
+4) Permission tests — forbidden pages/actions not accessible.
+5) Data lineage tests — key dashboards show correct aggregation from foundation import tables.
+
+Deliverables:
+- QA checklist by role (CEO, COO, HoPD, CFO, Program Manager, Program Finance, Construction, Quality, Engineer, PM, PD)
+- Automated tests integrated into repo runner
+- “UX Changes Log”:
+  - pages consolidated
+  - labels changed
+  - buttons removed/disabled
+  - any new components added
+- “Data Lineage Map” and “Data Contract” docs stored in repo
+
+IMPLEMENTATION CONSTRAINTS
+- Work iteratively in small PR-sized commits:
+  1) Inventory + data lineage + debug panels
+  2) Nav + role homes (foundation-backed)
+  3) Golden paths
+  4) Cleanup duplicates/dead UI
+  5) Consistency system + guardrails
+  6) Tests + QA pack
+- After each phase: app compiles, tests pass, and critical flows still work.
+
+BEFORE YOU START — ASK ME ONLY FOR THESE REQUIRED INPUTS (and nothing else)
+If you cannot discover these directly from the codebase:
+1) What is the current tech stack (frontend + backend + auth)?
+2) Where are roles defined (DB table, JWT claims, config)?
+3) Which tables/views are the foundation import layer + derived KPIs?
+4) Which 3 role workflows are currently most painful?
+If not provided, proceed by discovering from the repo and output assumptions in the Inventory Reports.
+
+SUCCESS CRITERIA (must be provably true)
+- Foundation import data drives all key dashboards and summaries
+- No duplicate pages for same function (canonical + shortcuts only)
+- Zero dead buttons
+- Role home dashboards implemented with correct default landing per role
+- Top workflows per role faster + clearer
+- Consistent naming/icons/empty states
+- Permission correctness verified
+- Data lineage map + guardrails + tests delivered
