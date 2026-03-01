@@ -66,6 +66,8 @@ import TeamsChatsPage from "@/pages/teams-chats";
 import AdminMsMappingPage from "@/pages/admin-ms-mapping";
 import CollaborationPage from "@/pages/collaboration";
 import FinancialLinkingPage from "@/pages/financial-linking";
+import PMOnTheGoHome from "@/pages/pm-on-the-go-home";
+import PMOnTheGoProject from "@/pages/pm-on-the-go-project";
 import { useAuth } from "@/hooks/use-auth";
 import { useProgramData } from "@/hooks/use-program-data";
 import { TrackerTable } from "@/components/dashboard/TrackerTable";
@@ -74,7 +76,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 
 const EPM_ALLOWED_PATHS = ["/", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/projects", "/feedback", "/settings/integrations", "/collaboration", "/notifications", "/teams/chats"];
-const PM_ALLOWED_PATHS = ["/", "/pm-dashboard", "/projects", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/cashflow", "/cos", "/feedback", "/settings/integrations", "/collaboration", "/notifications", "/teams/chats"];
+const PM_ALLOWED_PATHS = ["/", "/pm-dashboard", "/pm/on-the-go", "/projects", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/cashflow", "/cos", "/feedback", "/settings/integrations", "/collaboration", "/notifications", "/teams/chats"];
 
 function RoleGuard({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -84,7 +86,7 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
 
   if (companyRole === "PROJECT_MANAGER_SITE") {
     const allowed = PM_ALLOWED_PATHS.some(p =>
-      p === location || (p === "/projects" && location.startsWith("/project/"))
+      p === location || (p === "/projects" && location.startsWith("/project/")) || (p === "/pm/on-the-go" && location.startsWith("/pm/on-the-go"))
     );
     if (!allowed) {
       return <Redirect to="/pm-dashboard" />;
@@ -293,6 +295,8 @@ function ProtectedPages() {
         <Route path="/teams/chats" component={TeamsChatsPage} />
         <Route path="/admin/ms-mapping" component={AdminMsMappingPage} />
         <Route path="/collaboration" component={CollaborationPage} />
+        <Route path="/pm/on-the-go" component={PMOnTheGoHome} />
+        <Route path="/pm/on-the-go/project/:projectId" component={PMOnTheGoProject} />
         <Route path="/admin/eng-templates">{() => <Redirect to="/admin/phase-templates" />}</Route>
 
         <Route component={NotFound} />

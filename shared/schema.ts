@@ -4361,3 +4361,85 @@ export function getWidgetsForRole(role: string): string[] {
     return def.roles.includes(role);
   });
 }
+
+export const pmActionTypeEnum = pgEnum('pm_action_type', [
+  'site_visit', 'generate_po', 'link_invoice', 'raise_variation',
+  'log_delay', 'log_risk', 'upload_photo', 'update_progress', 'escalate'
+]);
+
+export const pmActionStatusEnum = pgEnum('pm_action_status', [
+  'pending', 'approved', 'rejected', 'completed'
+]);
+
+export const pmSafetyStatusEnum = pgEnum('pm_safety_status', ['clear', 'issue_open']);
+
+export const pmSiteVisits = pgTable("pm_site_visits", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull(),
+  userId: integer("user_id").notNull(),
+  visitDate: date("visit_date").notNull(),
+  notes: text("notes"),
+  weatherConditions: text("weather_conditions"),
+  safetyStatus: pmSafetyStatusEnum("safety_status").default("clear"),
+  photoIds: jsonb("photo_ids").default([]),
+  createdAt: timestamp("created_at").defaultNow(),
+  createdBy: text("created_by"),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  updatedBy: text("updated_by"),
+  source: text("source").default("on_the_go"),
+});
+
+export const insertPmSiteVisitSchema = createInsertSchema(pmSiteVisits).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertPmSiteVisit = z.infer<typeof insertPmSiteVisitSchema>;
+export type PmSiteVisit = typeof pmSiteVisits.$inferSelect;
+
+export const pmOnTheGoActions = pgTable("pm_on_the_go_actions", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull(),
+  userId: integer("user_id").notNull(),
+  actionType: pmActionTypeEnum("action_type").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  severity: text("severity"),
+  amount: decimal("amount", { precision: 15, scale: 2 }),
+  status: pmActionStatusEnum("status").default("pending"),
+  relatedEntityId: integer("related_entity_id"),
+  relatedEntityType: text("related_entity_type"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow(),
+  createdBy: text("created_by"),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  updatedBy: text("updated_by"),
+  source: text("source").default("on_the_go"),
+});
+
+export const insertPmOnTheGoActionSchema = createInsertSchema(pmOnTheGoActions).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertPmOnTheGoAction = z.infer<typeof insertPmOnTheGoActionSchema>;
+export type PmOnTheGoAction = typeof pmOnTheGoActions.$inferSelect;
+
+export const pmComplianceTracking = pgTable("pm_compliance_tracking", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull(),
+  userId: integer("user_id").notNull(),
+  weekStartDate: date("week_start_date").notNull(),
+  dailyDiaryDone: jsonb("daily_diary_done").default([]),
+  weeklyProgressDone: boolean("weekly_progress_done").default(false),
+  weeklyRiskDone: boolean("weekly_risk_done").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertPmComplianceTrackingSchema = createInsertSchema(pmComplianceTracking).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertPmComplianceTracking = z.infer<typeof insertPmComplianceTrackingSchema>;
+export type PmComplianceTracking = typeof pmComplianceTracking.$inferSelect;
+
+export const pmModePreferences = pgTable("pm_mode_preferences", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().unique(),
+  preferredMode: text("preferred_mode").default("full_detail"),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertPmModePreferenceSchema = createInsertSchema(pmModePreferences).omit({ id: true, updatedAt: true });
+export type InsertPmModePreference = z.infer<typeof insertPmModePreferenceSchema>;
+export type PmModePreference = typeof pmModePreferences.$inferSelect;

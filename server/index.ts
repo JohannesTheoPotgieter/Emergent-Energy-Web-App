@@ -314,7 +314,81 @@ async function backfillPmUserIds() {
     await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP`));
   } catch (e) {}
 
-  
+  try {
+    await db.execute(sql.raw(`
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'pm_action_type') THEN
+          CREATE TYPE pm_action_type AS ENUM ('site_visit','generate_po','link_invoice','raise_variation','log_delay','log_risk','upload_photo','update_progress','escalate');
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'pm_action_status') THEN
+          CREATE TYPE pm_action_status AS ENUM ('pending','approved','rejected','completed');
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'pm_safety_status') THEN
+          CREATE TYPE pm_safety_status AS ENUM ('clear','issue_open');
+        END IF;
+      END $$;
+
+      CREATE TABLE IF NOT EXISTS pm_site_visits (
+        id SERIAL PRIMARY KEY,
+        project_id INTEGER NOT NULL REFERENCES project_info(id),
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        visit_date DATE NOT NULL,
+        notes TEXT,
+        weather_conditions TEXT,
+        safety_status pm_safety_status DEFAULT 'clear',
+        photo_ids JSONB DEFAULT '[]',
+        created_at TIMESTAMP DEFAULT NOW(),
+        created_by TEXT,
+        updated_at TIMESTAMP DEFAULT NOW(),
+        updated_by TEXT,
+        source TEXT DEFAULT 'on_the_go'
+      );
+
+      CREATE TABLE IF NOT EXISTS pm_on_the_go_actions (
+        id SERIAL PRIMARY KEY,
+        project_id INTEGER NOT NULL REFERENCES project_info(id),
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        action_type pm_action_type NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT,
+        severity TEXT,
+        amount DECIMAL(15,2),
+        status pm_action_status DEFAULT 'pending',
+        related_entity_id INTEGER,
+        related_entity_type TEXT,
+        metadata JSONB,
+        created_at TIMESTAMP DEFAULT NOW(),
+        created_by TEXT,
+        updated_at TIMESTAMP DEFAULT NOW(),
+        updated_by TEXT,
+        source TEXT DEFAULT 'on_the_go'
+      );
+
+      CREATE TABLE IF NOT EXISTS pm_compliance_tracking (
+        id SERIAL PRIMARY KEY,
+        project_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        week_start_date DATE NOT NULL,
+        daily_diary_done JSONB DEFAULT '[]',
+        weekly_progress_done BOOLEAN DEFAULT FALSE,
+        weekly_risk_done BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE(project_id, user_id, week_start_date)
+      );
+
+      CREATE TABLE IF NOT EXISTS pm_mode_preferences (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL UNIQUE REFERENCES users(id),
+        preferred_mode TEXT DEFAULT 'full_detail',
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
+    `));
+    log('PM On-The-Go tables created/verified');
+  } catch (e: any) {
+    log('PM On-The-Go tables error: ' + e.message);
+  }
+
   const { seedQualityTemplate } = await import("./seed-quality-template");
   await seedQualityTemplate().catch(err => console.error('[Seed] Quality template error:', err));
 
@@ -373,6 +447,9 @@ async function backfillPmUserIds() {
 
   const { registerPmRoutes } = await import("./pm-routes");
   registerPmRoutes(app);
+
+  const { registerPmOnTheGoRoutes } = await import("./pm-on-the-go-routes");
+  registerPmOnTheGoRoutes(app);
 
   const { registerTrRegisterRoutes, seedTrRegisterData } = await import("./tr-register-routes");
   registerTrRegisterRoutes(app);
