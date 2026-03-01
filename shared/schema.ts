@@ -4189,25 +4189,123 @@ export type InsertDashboardWidgetConfig = z.infer<typeof insertDashboardWidgetCo
 export type DashboardWidgetConfig = typeof dashboardWidgetConfig.$inferSelect;
 
 export const DEFAULT_WIDGET_ORDER = [
+  "quick_actions",
   "my_projects",
   "company_priorities",
   "action_banner",
+  "portfolio_health",
+  "financial_headline",
+  "alerts",
   "priority_queue",
   "stat_cards",
+  "schedule_risk",
+  "quality_overview",
+  "engineering_queue",
+  "data_health",
   "my_tasks",
   "pending_approvals",
   "notifications",
 ] as const;
 
 export const WIDGET_DEFINITIONS: Record<string, { label: string; description: string; roles?: string[] }> = {
+  quick_actions: { label: "Quick Actions", description: "Fast shortcuts to your most-used pages" },
   my_projects: { label: "My Projects", description: "Projects assigned to you with status and progress", roles: ["CEO_ADMIN", "COO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER", "PROJECT_MANAGER_SITE", "PROJECT_DEVELOPER"] },
   company_priorities: { label: "Company Priorities", description: "Organisation-wide priority items", roles: ["CEO_ADMIN", "COO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER"] },
   action_banner: { label: "Attention Banner", description: "Alert bar for overdue tasks and pending approvals" },
+  portfolio_health: { label: "Portfolio Health", description: "Portfolio delivery KPIs and project status overview", roles: ["CEO_ADMIN", "COO_ADMIN", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER"] },
+  financial_headline: { label: "Financial Headline", description: "Revenue, margin, and cash position summary", roles: ["CEO_ADMIN", "COO_ADMIN", "CFO", "PROGRAM_FINANCE_MANAGER"] },
+  alerts: { label: "Alerts", description: "Risk flags, stale imports, budget overruns, and blockers" },
   priority_queue: { label: "Priority Queue", description: "Your most urgent action items sorted by urgency" },
   stat_cards: { label: "Statistics Cards", description: "Quick summary of notifications, tasks, approvals" },
+  schedule_risk: { label: "Schedule Risk", description: "Projects behind plan with slippage details", roles: ["CEO_ADMIN", "COO_ADMIN", "PROGRAM_MANAGER", "CONSTRUCTION_MANAGER", "PROJECT_MANAGER_SITE"] },
+  quality_overview: { label: "Quality Overview", description: "QA gate status and quality warnings summary", roles: ["COO_ADMIN", "QUALITY_MANAGER", "CONSTRUCTION_MANAGER"] },
+  engineering_queue: { label: "Engineering Queue", description: "Your engineering tasks and pending reviews", roles: ["ENGINEER", "ENGINEERING_MANAGER"] },
+  data_health: { label: "Data Health", description: "Import staleness and data integrity warnings across projects", roles: ["COO_ADMIN", "CEO_ADMIN"] },
   my_tasks: { label: "My Tasks", description: "List of tasks assigned to you", roles: ["CEO_ADMIN", "COO_ADMIN", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER", "ENGINEERING_MANAGER", "ENGINEER", "PROJECT_MANAGER_SITE", "QUALITY_MANAGER"] },
   pending_approvals: { label: "Pending Approvals", description: "Approvals waiting for your action", roles: ["CEO_ADMIN", "COO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER", "ENGINEERING_MANAGER", "QUALITY_MANAGER"] },
   notifications: { label: "Notifications", description: "Recent and action-required notifications" },
+};
+
+export const ROLE_QUICK_ACTIONS: Record<string, Array<{ label: string; path: string; icon: string }>> = {
+  CEO_ADMIN: [
+    { label: "Portfolio Overview", path: "/dashboard", icon: "BarChart3" },
+    { label: "Cashflow", path: "/cashflow", icon: "Wallet" },
+    { label: "Approvals", path: "/admin/approvals", icon: "ClipboardCheck" },
+    { label: "Lifecycle Board", path: "/lifecycle-board", icon: "Layers" },
+  ],
+  COO_ADMIN: [
+    { label: "Lifecycle Board", path: "/lifecycle-board", icon: "Layers" },
+    { label: "Smart Import", path: "/smart-import", icon: "FileSpreadsheet" },
+    { label: "Admin Settings", path: "/admin/settings", icon: "Settings" },
+    { label: "Approvals", path: "/admin/approvals", icon: "ClipboardCheck" },
+    { label: "Activity Log", path: "/admin/activity-log", icon: "Activity" },
+  ],
+  CFO: [
+    { label: "Cashflow", path: "/cashflow", icon: "Wallet" },
+    { label: "COS Tracker", path: "/cos", icon: "TrendingUp" },
+    { label: "Approvals", path: "/admin/approvals", icon: "ClipboardCheck" },
+    { label: "Invoice Patterns", path: "/invoice-patterns", icon: "FileSpreadsheet" },
+  ],
+  PROGRAM_MANAGER: [
+    { label: "Execution Board", path: "/dashboard", icon: "Gauge" },
+    { label: "Smart Import", path: "/smart-import", icon: "FileSpreadsheet" },
+    { label: "TR Register", path: "/tr-register", icon: "ClipboardList" },
+    { label: "Portfolios", path: "/portfolios", icon: "FolderOpen" },
+  ],
+  PROGRAM_FINANCE_MANAGER: [
+    { label: "COS Tracker", path: "/cos", icon: "TrendingUp" },
+    { label: "Cashflow", path: "/cashflow", icon: "Wallet" },
+    { label: "Invoice Patterns", path: "/invoice-patterns", icon: "FileSpreadsheet" },
+    { label: "Smart Import", path: "/smart-import", icon: "FileSpreadsheet" },
+  ],
+  CONSTRUCTION_MANAGER: [
+    { label: "Engineering Tasks", path: "/engineering/tasks", icon: "ListTodo" },
+    { label: "Quality Dashboard", path: "/quality", icon: "ShieldCheck" },
+    { label: "Projects", path: "/projects", icon: "FolderKanban" },
+    { label: "TR Register", path: "/tr-register", icon: "ClipboardList" },
+  ],
+  QUALITY_MANAGER: [
+    { label: "Quality Dashboard", path: "/quality", icon: "ShieldCheck" },
+    { label: "Projects", path: "/projects", icon: "FolderKanban" },
+    { label: "Engineering", path: "/engineering", icon: "HardHat" },
+  ],
+  ENGINEERING_MANAGER: [
+    { label: "Engineering", path: "/engineering", icon: "HardHat" },
+    { label: "Task Board", path: "/engineering/tasks", icon: "ListTodo" },
+    { label: "Engineering Inbox", path: "/engineering/inbox", icon: "Inbox" },
+    { label: "Quality", path: "/quality", icon: "ShieldCheck" },
+  ],
+  ENGINEER: [
+    { label: "Task Board", path: "/engineering/tasks", icon: "ListTodo" },
+    { label: "Engineering Inbox", path: "/engineering/inbox", icon: "Inbox" },
+    { label: "Projects", path: "/projects", icon: "FolderKanban" },
+  ],
+  PROJECT_MANAGER_SITE: [
+    { label: "PM Dashboard", path: "/pm-dashboard", icon: "Briefcase" },
+    { label: "Projects", path: "/projects", icon: "FolderKanban" },
+    { label: "COS Tracker", path: "/cos", icon: "TrendingUp" },
+    { label: "Engineering Tasks", path: "/engineering/tasks", icon: "ListTodo" },
+  ],
+  PROJECT_DEVELOPER: [
+    { label: "PD Dashboard", path: "/pd", icon: "FileEdit" },
+    { label: "PD Tickets", path: "/pd/tickets", icon: "ClipboardList" },
+    { label: "Projects", path: "/projects", icon: "FolderKanban" },
+    { label: "Cashflow", path: "/cashflow", icon: "Wallet" },
+  ],
+  CCO: [
+    { label: "Portfolio Overview", path: "/dashboard", icon: "BarChart3" },
+    { label: "Projects", path: "/projects", icon: "FolderKanban" },
+    { label: "Cashflow", path: "/cashflow", icon: "Wallet" },
+  ],
+  ACCOUNTANT: [
+    { label: "Cashflow", path: "/cashflow", icon: "Wallet" },
+    { label: "COS Tracker", path: "/cos", icon: "TrendingUp" },
+    { label: "Projects", path: "/projects", icon: "FolderKanban" },
+  ],
+  KEY_ACCOUNTS_MANAGER: [
+    { label: "Projects", path: "/projects", icon: "FolderKanban" },
+    { label: "Portfolios", path: "/portfolios", icon: "FolderOpen" },
+  ],
 };
 
 export function getWidgetsForRole(role: string): string[] {

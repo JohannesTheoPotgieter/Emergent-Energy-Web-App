@@ -52,6 +52,7 @@ import {
   Percent,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import DataSourceDebug from "@/components/DataSourceDebug";
 
 async function pmFetch(url: string) {
   const token = localStorage.getItem("auth_token");
@@ -894,6 +895,15 @@ export default function PMDashboard() {
           <CalendarTab navigate={navigate} pmUserId={pmIdParam} />
         </TabsContent>
       </Tabs>
+
+      <DataSourceDebug
+        pageName="PM Dashboard"
+        dataSources={[
+          { endpoint: "/api/pm/dashboard", tables: ["project_info", "normalized_cost_lines", "normalized_plan_tasks", "engineering_tasks"], description: "PM projects, financials, task counts" },
+          { endpoint: "/api/pm/priority-items", tables: ["engineering_tasks", "normalized_cost_lines", "project_info"], description: "Priority items: overdue, holds, approvals" },
+          { endpoint: "/api/pm/calendar-events", tables: ["project_info", "engineering_tasks", "normalized_plan_tasks"], description: "Milestone and task calendar events" },
+        ]}
+      />
     </div>
   );
 }

@@ -45,7 +45,8 @@ Preferred communication style: Simple, everyday language.
 -   **Knowledge Base**: Wiki-style system providing SOP-enriched nodes for various processes.
 -   **Operating System Map**: Integrated into the `/ee-info` page with Lifecycle Overview, Department Drilldown, and Process Detail.
 -   **Walkthroughs**: Interactive step-by-step guides covering application functionality.
--   **Home Screen**: Features role-based greetings, a personalized Action Hub with stat cards, tasks, approvals, notifications, and an interactive tutorial for onboarding. Context-aware screen tours are available on major pages.
+-   **Home Screen**: Features role-based greetings, a personalized Action Hub with stat cards, tasks, approvals, notifications, and an interactive tutorial for onboarding. Context-aware screen tours are available on major pages. Role-specific widgets include Quick Actions, Portfolio Health, Financial Headline, Schedule Risk, Quality Overview, Engineering Queue, Data Health, and Alerts — all powered by foundation import data.
+-   **Data Source Debug Panel**: Dev-only collapsible panel (`DataSourceDebug.tsx`) on major pages showing API endpoints, backing tables, import timestamps, and stale data warnings.
 
 ### Gamification System
 -   **Module**: Badge and leaderboard system tracking user activity, awarding points for positive actions, and applying penalties for negative behaviors.

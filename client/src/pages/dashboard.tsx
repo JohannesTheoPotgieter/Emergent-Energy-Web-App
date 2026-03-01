@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useLocation, Link } from "wouter";
 import { usePermission } from "@/hooks/use-permissions";
+import DataSourceDebug from "@/components/DataSourceDebug";
 import { format } from "date-fns";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -1340,6 +1341,15 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       )}
+
+      <DataSourceDebug
+        pageName="Dashboard"
+        dataSources={[
+          { endpoint: "/api/program-dashboard", tables: ["project_info", "normalized_cost_lines", "normalized_revenue_lines", "normalized_plan_tasks"], description: "KPIs, COS, portfolio timeline, PM table" },
+          { endpoint: "/api/dashboard/high-priority", tables: ["normalized_cost_lines", "normalized_revenue_lines", "normalized_plan_tasks", "project_info"], description: "Overdue expenses, revenue outstanding, behind-plan projects" },
+          { endpoint: "/api/projects-summary", tables: ["project_info", "normalized_cost_lines", "normalized_revenue_lines"], description: "Project-level summaries for risk scoring" },
+        ]}
+      />
     </div>
   );
 }

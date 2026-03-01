@@ -9,7 +9,8 @@ import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getQueryFn, apiRequest } from "@/lib/queryClient";
 import { InteractiveTutorial, useInteractiveTutorial } from "@/components/InteractiveTutorial";
-import { DEFAULT_WIDGET_ORDER, WIDGET_DEFINITIONS, getWidgetsForRole } from "@shared/schema";
+import DataSourceDebug from "@/components/DataSourceDebug";
+import { DEFAULT_WIDGET_ORDER, WIDGET_DEFINITIONS, getWidgetsForRole, ROLE_QUICK_ACTIONS } from "@shared/schema";
 import {
   Flag,
   Loader2,
@@ -28,7 +29,6 @@ import {
   FileCheck,
   Shield,
   Zap,
-  TrendingDown,
   AlertCircle,
   CircleDot,
   Eye,
@@ -47,6 +47,24 @@ import {
   X,
   RotateCcw,
   EyeOff,
+  BarChart3,
+  Wallet,
+  TrendingUp,
+  TrendingDown as TrendingDownIcon,
+  Gauge,
+  Layers,
+  ShieldCheck,
+  HardHat,
+  Briefcase,
+  FileEdit,
+  Activity,
+  Inbox,
+  FolderKanban,
+  FileSpreadsheet,
+  ClipboardList,
+  DollarSign,
+  Percent,
+  DatabaseZap,
 } from "lucide-react";
 
 const ROLE_COMPLIMENTS: Record<string, string[]> = {
@@ -335,7 +353,7 @@ const EVENT_ICONS: Record<string, any> = {
   "deliverable.acknowledged": CheckCircle2,
   "milestone.approaching": Clock,
   "milestone.commissioning_soon": AlertTriangle,
-  "project.behind_schedule": TrendingDown,
+  "project.behind_schedule": TrendingDownIcon,
   "project.phase_changed": Zap,
 };
 
@@ -612,6 +630,12 @@ interface ProjectSummary {
   pd?: string | null;
   project_pct_complete?: number | null;
   expected_pct_complete?: number | null;
+  delta_vs_expected?: number | null;
+  actual_revenue?: number | null;
+  actual_expenses?: number | null;
+  gp_percent?: number | null;
+  revenue_outstanding?: number | null;
+  expenses_due?: number | null;
   project_info_id?: number | null;
   is_active?: boolean;
   has_tracker_import?: boolean;
@@ -927,6 +951,478 @@ function MyProjectsHub({ projects, userName }: { projects: ProjectSummary[]; use
   );
 }
 
+const ICON_MAP: Record<string, any> = {
+  BarChart3, Wallet, ClipboardCheck, Layers, FileSpreadsheet, Settings: Settings2,
+  Activity, TrendingUp, ClipboardList, FolderOpen, ShieldCheck, HardHat,
+  ListTodo, Inbox, FolderKanban, Briefcase, FileEdit, Gauge,
+};
+
+function QuickActionsWidget({ role }: { role: string }) {
+  const [, navigate] = useLocation();
+  const actions = ROLE_QUICK_ACTIONS[role] || ROLE_QUICK_ACTIONS["PROGRAM_MANAGER"] || [];
+  if (actions.length === 0) return null;
+
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2" data-testid="quick-actions">
+      {actions.map((action) => {
+        const Icon = ICON_MAP[action.icon] || ArrowRight;
+        return (
+          <button
+            key={action.path}
+            className="flex flex-col items-center gap-1.5 p-3 rounded-lg border border-border/50 bg-card hover:bg-muted/50 transition-colors cursor-pointer group"
+            onClick={() => navigate(action.path)}
+            data-testid={`quick-action-${action.label.toLowerCase().replace(/\s+/g, "-")}`}
+          >
+            <div className="p-2 rounded-md bg-primary/5 group-hover:bg-primary/10 transition-colors">
+              <Icon className="h-4 w-4 text-primary" />
+            </div>
+            <span className="text-[11px] font-medium text-center leading-tight">{action.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function PortfolioHealthWidget({ projects }: { projects: ProjectSummary[] }) {
+  const activeProjects = projects.filter(p => p.is_active !== false);
+  const totalProjects = activeProjects.length;
+  const onTrack = activeProjects.filter(p => {
+    const delta = (p.delta_vs_expected ?? 0);
+    return delta > -0.05;
+  }).length;
+  const behind = activeProjects.filter(p => (p.delta_vs_expected ?? 0) <= -0.05).length;
+  const completed = activeProjects.filter(p => (p.project_pct_complete ?? 0) >= 0.99).length;
+  const avgCompletion = totalProjects > 0
+    ? activeProjects.reduce((s, p) => s + (p.project_pct_complete ?? 0), 0) / totalProjects
+    : 0;
+
+  const phases: Record<string, number> = {};
+  for (const p of activeProjects) {
+    const phase = p.phase || "Unknown";
+    phases[phase] = (phases[phase] || 0) + 1;
+  }
+  const topPhases = Object.entries(phases).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+  return (
+    <Card className="shadow-sm" data-testid="portfolio-health">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+          <BarChart3 className="h-4 w-4 text-blue-500" />
+          Portfolio Health
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+          <div className="text-center p-2 rounded-lg bg-blue-50 dark:bg-blue-950/30">
+            <div className="text-xl font-bold text-blue-700 dark:text-blue-400" data-testid="portfolio-total">{totalProjects}</div>
+            <div className="text-[10px] text-muted-foreground uppercase">Active Projects</div>
+          </div>
+          <div className="text-center p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/30">
+            <div className="text-xl font-bold text-emerald-700 dark:text-emerald-400" data-testid="portfolio-on-track">{onTrack}</div>
+            <div className="text-[10px] text-muted-foreground uppercase">On Track</div>
+          </div>
+          <div className="text-center p-2 rounded-lg bg-red-50 dark:bg-red-950/30">
+            <div className="text-xl font-bold text-red-700 dark:text-red-400" data-testid="portfolio-behind">{behind}</div>
+            <div className="text-[10px] text-muted-foreground uppercase">Behind Plan</div>
+          </div>
+          <div className="text-center p-2 rounded-lg bg-purple-50 dark:bg-purple-950/30">
+            <div className="text-xl font-bold text-purple-700 dark:text-purple-400" data-testid="portfolio-avg">{Math.round(avgCompletion * 100)}%</div>
+            <div className="text-[10px] text-muted-foreground uppercase">Avg Completion</div>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {topPhases.map(([phase, count]) => (
+            <Badge key={phase} variant="outline" className="text-[10px] gap-1">
+              {phase} <span className="font-bold">{count}</span>
+            </Badge>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function FinancialHeadlineWidget({ projects }: { projects: ProjectSummary[] }) {
+  const activeProjects = projects.filter(p => p.is_active !== false);
+  const totalRevenue = activeProjects.reduce((s, p) => s + (p.actual_revenue ?? 0), 0);
+  const totalExpenses = activeProjects.reduce((s, p) => s + (p.actual_expenses ?? 0), 0);
+  const grossProfit = totalRevenue - totalExpenses;
+  const gpPercent = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
+  const revenueOutstanding = activeProjects.reduce((s, p) => s + (p.revenue_outstanding ?? 0), 0);
+  const expensesDue = activeProjects.reduce((s, p) => s + (p.expenses_due ?? 0), 0);
+
+  const fmt = (v: number) => {
+    if (Math.abs(v) >= 1_000_000) return `R${(v / 1_000_000).toFixed(1)}M`;
+    if (Math.abs(v) >= 1_000) return `R${(v / 1_000).toFixed(0)}K`;
+    return `R${v.toFixed(0)}`;
+  };
+
+  return (
+    <Card className="shadow-sm" data-testid="financial-headline">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+          <DollarSign className="h-4 w-4 text-emerald-500" />
+          Financial Headline
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div className="text-center p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/30">
+            <div className="text-lg font-bold text-emerald-700 dark:text-emerald-400" data-testid="fin-revenue">{fmt(totalRevenue)}</div>
+            <div className="text-[10px] text-muted-foreground uppercase">Total Revenue</div>
+          </div>
+          <div className="text-center p-2 rounded-lg bg-blue-50 dark:bg-blue-950/30">
+            <div className="text-lg font-bold text-blue-700 dark:text-blue-400" data-testid="fin-expenses">{fmt(totalExpenses)}</div>
+            <div className="text-[10px] text-muted-foreground uppercase">Total Expenses</div>
+          </div>
+          <div className="text-center p-2 rounded-lg bg-purple-50 dark:bg-purple-950/30">
+            <div className={`text-lg font-bold ${grossProfit >= 0 ? "text-purple-700 dark:text-purple-400" : "text-red-600"}`} data-testid="fin-gp">{fmt(grossProfit)}</div>
+            <div className="text-[10px] text-muted-foreground uppercase">Gross Profit</div>
+          </div>
+          <div className="text-center p-2 rounded-lg bg-amber-50 dark:bg-amber-950/30">
+            <div className={`text-lg font-bold ${gpPercent >= 15 ? "text-amber-700 dark:text-amber-400" : "text-red-600"}`} data-testid="fin-gp-pct">{gpPercent.toFixed(1)}%</div>
+            <div className="text-[10px] text-muted-foreground uppercase">GP Margin</div>
+          </div>
+          <div className="text-center p-2 rounded-lg bg-orange-50 dark:bg-orange-950/30">
+            <div className="text-lg font-bold text-orange-700 dark:text-orange-400" data-testid="fin-outstanding">{fmt(revenueOutstanding)}</div>
+            <div className="text-[10px] text-muted-foreground uppercase">Rev Outstanding</div>
+          </div>
+          <div className="text-center p-2 rounded-lg bg-red-50 dark:bg-red-950/30">
+            <div className="text-lg font-bold text-red-700 dark:text-red-400" data-testid="fin-due">{fmt(expensesDue)}</div>
+            <div className="text-[10px] text-muted-foreground uppercase">Expenses Due</div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ScheduleRiskWidget({ projects }: { projects: ProjectSummary[] }) {
+  const [, navigate] = useLocation();
+  const atRisk = useMemo(() => {
+    return projects
+      .filter(p => p.is_active !== false && (p.delta_vs_expected ?? 0) < -0.05)
+      .sort((a, b) => (a.delta_vs_expected ?? 0) - (b.delta_vs_expected ?? 0))
+      .slice(0, 8);
+  }, [projects]);
+
+  if (atRisk.length === 0) return null;
+
+  return (
+    <Card className="shadow-sm border-l-4 border-l-red-400" data-testid="schedule-risk">
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+            <TrendingDownIcon className="h-4 w-4 text-red-500" />
+            Schedule Risk
+            <Badge variant="destructive" className="text-[10px] px-1.5 py-0">{atRisk.length}</Badge>
+          </CardTitle>
+          <Link href="/dashboard">
+            <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" data-testid="button-view-execution">
+              Execution Board <ArrowRight className="h-3 w-3" />
+            </Button>
+          </Link>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-2">
+          {atRisk.map(p => {
+            const slippage = Math.abs(Math.round((p.delta_vs_expected ?? 0) * 100));
+            const progress = Math.round((p.project_pct_complete ?? 0) * 100);
+            return (
+              <div
+                key={p.project_name}
+                className="flex items-center gap-3 p-2 rounded-lg border border-red-100 dark:border-red-900/30 bg-red-50/30 dark:bg-red-950/10 cursor-pointer hover:bg-red-50 transition-colors"
+                onClick={() => navigate(`/project/${encodeURIComponent(p.project_name)}`)}
+                data-testid={`risk-project-${p.project_name}`}
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{cleanProjectName(p.project_name)}</p>
+                  <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                    <span>{p.phase}</span>
+                    <span>{progress}% complete</span>
+                  </div>
+                </div>
+                <Badge variant="destructive" className="text-[10px] px-1.5 py-0 shrink-0">
+                  -{slippage}% behind
+                </Badge>
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function AlertsWidget({ projects }: { projects: ProjectSummary[] }) {
+  const activeProjects = projects.filter(p => p.is_active !== false);
+
+  const alerts = useMemo(() => {
+    const result: Array<{ id: string; type: "stale" | "behind" | "overrun" | "missing"; title: string; detail: string; severity: "red" | "amber" }> = [];
+
+    for (const p of activeProjects) {
+      const importDaysAgo = p.last_import_at
+        ? Math.floor((Date.now() - new Date(p.last_import_at).getTime()) / (1000 * 60 * 60 * 24))
+        : null;
+
+      if (importDaysAgo !== null && importDaysAgo > 14) {
+        result.push({
+          id: `stale-${p.project_name}`,
+          type: "stale",
+          title: `${cleanProjectName(p.project_name)} — Stale Data`,
+          detail: `Last import ${importDaysAgo} days ago`,
+          severity: importDaysAgo > 30 ? "red" : "amber",
+        });
+      }
+
+      if ((p.delta_vs_expected ?? 0) < -0.15) {
+        result.push({
+          id: `behind-${p.project_name}`,
+          type: "behind",
+          title: `${cleanProjectName(p.project_name)} — Significantly Behind`,
+          detail: `${Math.abs(Math.round((p.delta_vs_expected ?? 0) * 100))}% behind expected`,
+          severity: "red",
+        });
+      }
+
+      if ((p.gp_percent ?? 1) < 0) {
+        result.push({
+          id: `overrun-${p.project_name}`,
+          type: "overrun",
+          title: `${cleanProjectName(p.project_name)} — Budget Overrun`,
+          detail: `GP margin: ${((p.gp_percent ?? 0) * 100).toFixed(1)}%`,
+          severity: "red",
+        });
+      }
+    }
+
+    result.sort((a, b) => (a.severity === "red" ? 0 : 1) - (b.severity === "red" ? 0 : 1));
+    return result.slice(0, 10);
+  }, [activeProjects]);
+
+  if (alerts.length === 0) return null;
+
+  const iconMap = { stale: DatabaseZap, behind: TrendingDownIcon, overrun: DollarSign, missing: AlertTriangle };
+
+  return (
+    <Card className="shadow-sm" data-testid="alerts-widget">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4 text-amber-500" />
+          Alerts
+          <Badge className="text-[10px] px-1.5 py-0 bg-amber-600">{alerts.length}</Badge>
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-1.5">
+          {alerts.map(alert => {
+            const Icon = iconMap[alert.type];
+            return (
+              <div
+                key={alert.id}
+                className={`flex items-center gap-2.5 p-2 rounded-lg border text-sm ${
+                  alert.severity === "red"
+                    ? "border-red-200 bg-red-50/30 dark:border-red-900/30 dark:bg-red-950/10"
+                    : "border-amber-200 bg-amber-50/30 dark:border-amber-900/30 dark:bg-amber-950/10"
+                }`}
+                data-testid={`alert-${alert.id}`}
+              >
+                <Icon className={`h-4 w-4 shrink-0 ${alert.severity === "red" ? "text-red-500" : "text-amber-500"}`} />
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-xs truncate">{alert.title}</p>
+                  <p className="text-[11px] text-muted-foreground">{alert.detail}</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function DataHealthWidget({ projects }: { projects: ProjectSummary[] }) {
+  const activeProjects = projects.filter(p => p.is_active !== false);
+
+  const stats = useMemo(() => {
+    let staleCount = 0;
+    let neverImported = 0;
+    let freshCount = 0;
+    let oldestStale: { name: string; days: number } | null = null;
+
+    for (const p of activeProjects) {
+      if (!p.last_import_at) {
+        neverImported++;
+        continue;
+      }
+      const daysAgo = Math.floor((Date.now() - new Date(p.last_import_at).getTime()) / (1000 * 60 * 60 * 24));
+      if (daysAgo > 14) {
+        staleCount++;
+        if (!oldestStale || daysAgo > oldestStale.days) {
+          oldestStale = { name: cleanProjectName(p.project_name), days: daysAgo };
+        }
+      } else {
+        freshCount++;
+      }
+    }
+
+    return { staleCount, neverImported, freshCount, total: activeProjects.length, oldestStale };
+  }, [activeProjects]);
+
+  return (
+    <Card className="shadow-sm" data-testid="data-health">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+          <DatabaseZap className="h-4 w-4 text-blue-500" />
+          Data Health
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-3 gap-3 mb-3">
+          <div className="text-center p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/30">
+            <div className="text-lg font-bold text-emerald-700 dark:text-emerald-400" data-testid="data-fresh">{stats.freshCount}</div>
+            <div className="text-[10px] text-muted-foreground uppercase">Fresh</div>
+          </div>
+          <div className="text-center p-2 rounded-lg bg-amber-50 dark:bg-amber-950/30">
+            <div className="text-lg font-bold text-amber-700 dark:text-amber-400" data-testid="data-stale">{stats.staleCount}</div>
+            <div className="text-[10px] text-muted-foreground uppercase">Stale (&gt;14d)</div>
+          </div>
+          <div className="text-center p-2 rounded-lg bg-red-50 dark:bg-red-950/30">
+            <div className="text-lg font-bold text-red-700 dark:text-red-400" data-testid="data-never">{stats.neverImported}</div>
+            <div className="text-[10px] text-muted-foreground uppercase">No Import</div>
+          </div>
+        </div>
+        {stats.oldestStale && (
+          <p className="text-[11px] text-muted-foreground">
+            Oldest stale: <span className="font-medium">{stats.oldestStale.name}</span> ({stats.oldestStale.days}d ago)
+          </p>
+        )}
+        <Link href="/smart-import">
+          <Button variant="outline" size="sm" className="h-7 text-xs gap-1 mt-2 w-full" data-testid="button-smart-import">
+            <FileSpreadsheet className="h-3 w-3" /> Go to Smart Import
+          </Button>
+        </Link>
+      </CardContent>
+    </Card>
+  );
+}
+
+function QualityOverviewWidget() {
+  const { data: checklists = [], isLoading } = useQuery<any[]>({
+    queryKey: ["/api/quality/checklists"],
+    queryFn: async () => {
+      const res = await fetch("/api/quality/checklists", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    staleTime: 120000,
+  });
+
+  const { data: warnings = [] } = useQuery<any[]>({
+    queryKey: ["/api/quality/warnings", "open"],
+    queryFn: async () => {
+      const res = await fetch("/api/quality/warnings?status=open", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    staleTime: 120000,
+  });
+
+  if (isLoading) return null;
+
+  const totalProjects = checklists.length;
+  const completedCount = checklists.filter((c: any) => c.overallProgress >= 100).length;
+  const warningCount = warnings.length;
+
+  return (
+    <Card className="shadow-sm" data-testid="quality-overview">
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 text-emerald-500" />
+            Quality Overview
+          </CardTitle>
+          <Link href="/quality">
+            <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" data-testid="button-view-quality">
+              Dashboard <ArrowRight className="h-3 w-3" />
+            </Button>
+          </Link>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-3 gap-3">
+          <div className="text-center p-2 rounded-lg bg-blue-50 dark:bg-blue-950/30">
+            <div className="text-lg font-bold text-blue-700 dark:text-blue-400" data-testid="quality-total">{totalProjects}</div>
+            <div className="text-[10px] text-muted-foreground uppercase">Checklists</div>
+          </div>
+          <div className="text-center p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/30">
+            <div className="text-lg font-bold text-emerald-700 dark:text-emerald-400" data-testid="quality-complete">{completedCount}</div>
+            <div className="text-[10px] text-muted-foreground uppercase">Complete</div>
+          </div>
+          <div className="text-center p-2 rounded-lg bg-amber-50 dark:bg-amber-950/30">
+            <div className="text-lg font-bold text-amber-700 dark:text-amber-400" data-testid="quality-warnings">{warningCount}</div>
+            <div className="text-[10px] text-muted-foreground uppercase">Warnings</div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function EngineeringQueueWidget() {
+  const { data: standup, isLoading } = useQuery<any>({
+    queryKey: ["/api/eng/dashboard/standup"],
+    queryFn: async () => {
+      const res = await fetch("/api/eng/dashboard/standup", { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    staleTime: 120000,
+  });
+
+  if (isLoading || !standup) return null;
+
+  return (
+    <Card className="shadow-sm" data-testid="engineering-queue">
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+            <HardHat className="h-4 w-4 text-orange-500" />
+            Engineering Queue
+          </CardTitle>
+          <Link href="/engineering/tasks">
+            <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" data-testid="button-view-eng-tasks">
+              Task Board <ArrowRight className="h-3 w-3" />
+            </Button>
+          </Link>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="text-center p-2 rounded-lg bg-blue-50 dark:bg-blue-950/30">
+            <div className="text-lg font-bold text-blue-700 dark:text-blue-400" data-testid="eng-active">{standup?.kpis?.activeTasks ?? 0}</div>
+            <div className="text-[10px] text-muted-foreground uppercase">Active</div>
+          </div>
+          <div className="text-center p-2 rounded-lg bg-red-50 dark:bg-red-950/30">
+            <div className="text-lg font-bold text-red-700 dark:text-red-400" data-testid="eng-overdue">{standup?.kpis?.overdueTasks ?? 0}</div>
+            <div className="text-[10px] text-muted-foreground uppercase">Overdue</div>
+          </div>
+          <div className="text-center p-2 rounded-lg bg-purple-50 dark:bg-purple-950/30">
+            <div className="text-lg font-bold text-purple-700 dark:text-purple-400" data-testid="eng-approvals">{standup?.kpis?.needsApproval ?? 0}</div>
+            <div className="text-[10px] text-muted-foreground uppercase">Approvals</div>
+          </div>
+          <div className="text-center p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/30">
+            <div className="text-lg font-bold text-emerald-700 dark:text-emerald-400" data-testid="eng-done">{standup?.kpis?.doneRecently ?? 0}</div>
+            <div className="text-[10px] text-muted-foreground uppercase">Done (24h)</div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 interface WidgetConfig {
   widgetOrder: string[];
   hiddenWidgets: string[];
@@ -1142,11 +1638,35 @@ export default function Home() {
 
   const renderWidget = useCallback((widgetId: string) => {
     switch (widgetId) {
+      case "quick_actions":
+        return <QuickActionsWidget key="quick_actions" role={userRole} />;
+
       case "my_projects":
         return user?.name ? <MyProjectsHub key="my_projects" projects={allProjects} userName={user.name} /> : null;
 
       case "company_priorities":
         return <CompanyPrioritiesCards key="company_priorities" isAdmin={!!canEdit} priorities={priorities} isLoading={prioritiesLoading} />;
+
+      case "portfolio_health":
+        return allProjects.length > 0 ? <PortfolioHealthWidget key="portfolio_health" projects={allProjects} /> : null;
+
+      case "financial_headline":
+        return allProjects.length > 0 ? <FinancialHeadlineWidget key="financial_headline" projects={allProjects} /> : null;
+
+      case "alerts":
+        return allProjects.length > 0 ? <AlertsWidget key="alerts" projects={allProjects} /> : null;
+
+      case "schedule_risk":
+        return allProjects.length > 0 ? <ScheduleRiskWidget key="schedule_risk" projects={allProjects} /> : null;
+
+      case "quality_overview":
+        return <QualityOverviewWidget key="quality_overview" />;
+
+      case "engineering_queue":
+        return <EngineeringQueueWidget key="engineering_queue" />;
+
+      case "data_health":
+        return allProjects.length > 0 ? <DataHealthWidget key="data_health" projects={allProjects} /> : null;
 
       case "action_banner":
         if (!hub || !hasActions) return null;
@@ -1302,12 +1822,12 @@ export default function Home() {
       default:
         return null;
     }
-  }, [hub, hasActions, user, allProjects, canEdit, priorities, prioritiesLoading, markReadMutation]);
+  }, [hub, hasActions, user, allProjects, canEdit, priorities, prioritiesLoading, markReadMutation, userRole]);
 
-  const gridWidgets = ["my_tasks", "pending_approvals", "notifications"];
+  const gridWidgets = ["my_tasks", "pending_approvals", "notifications", "quality_overview", "engineering_queue", "data_health"];
   const gridItems = activeWidgetOrder.filter(w => gridWidgets.includes(w));
   const topWidgets = activeWidgetOrder.filter(w => !gridWidgets.includes(w));
-  const hasAnyGridContent = hub && (hub.myTasks.length > 0 || hub.approvalCounts.total > 0 || hub.actionRequired.length > 0 || hub.recentNotifications.length > 0);
+  const hasAnyGridContent = gridItems.length > 0 && (hub || gridItems.some(w => ["quality_overview", "engineering_queue", "data_health"].includes(w)));
   const allClear = hub && hub.myTasks.length === 0 && hub.approvalCounts.total === 0 && hub.recentNotifications.length === 0;
 
   return (
@@ -1408,6 +1928,16 @@ export default function Home() {
       )}
 
       <InteractiveTutorial active={tutorial.active} onComplete={tutorial.stop} role={userRole} />
+
+      <DataSourceDebug
+        pageName="Home"
+        dataSources={[
+          { endpoint: "/api/action-hub", tables: ["notifications", "engineering_tasks", "project_plan_tasks", "approvals"], description: "Notifications, tasks, approvals hub" },
+          { endpoint: "/api/company-priorities", tables: ["company_priorities", "company_priority_links"], description: "Company-wide priorities" },
+          { endpoint: "/api/projects-summary", tables: ["project_info", "normalized_cost_lines", "normalized_revenue_lines", "normalized_plan_tasks"], description: "All projects summary KPIs" },
+          { endpoint: "/api/user/widget-config", tables: ["user_widget_configs"], description: "User widget layout preferences" },
+        ]}
+      />
     </div>
   );
 }
