@@ -22,16 +22,31 @@
   </head>
   <body>
     <div id="root">
-      <div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #f1f5f9; font-family: Inter, sans-serif;">
+      <div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; background: linear-gradient(135deg, #f0fdf4 0%, #f1f5f9 40%, #ecfdf5 100%); font-family: Inter, sans-serif;">
         <div style="text-align: center;">
-          <img src="/emergent-logo.png" alt="Emergent Energy" style="height: 48px; margin: 0 auto 24px; display: block;" />
-          <div style="width: 48px; height: 48px; border: 3px solid #16a34a; border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 16px;"></div>
-          <p style="color: #475569;">Loading Emergent Energy Dashboard...</p>
+          <div style="position: relative; width: 80px; height: 80px; margin: 0 auto 24px;">
+            <img src="/emergent-leaf.png" alt="Emergent Energy" style="width: 52px; height: 52px; object-fit: contain; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 2; animation: leaf-breathe 2.5s ease-in-out infinite;" />
+            <div style="position: absolute; inset: 0; border: 2px solid transparent; border-top-color: #16a34a; border-right-color: #16a34a; border-radius: 50%; animation: orbit 1.2s linear infinite;"></div>
+            <div style="position: absolute; inset: 4px; border: 1.5px solid transparent; border-bottom-color: #22c55e44; border-left-color: #22c55e44; border-radius: 50%; animation: orbit 2s linear infinite reverse;"></div>
+          </div>
+          <p style="color: #16a34a; font-weight: 500; font-size: 14px; letter-spacing: 0.5px;">Powering up...</p>
+          <div style="width: 120px; height: 3px; background: #e2e8f0; border-radius: 4px; margin: 12px auto 0; overflow: hidden;">
+            <div style="width: 40%; height: 100%; background: linear-gradient(90deg, #16a34a, #22c55e); border-radius: 4px; animation: charge 1.5s ease-in-out infinite;"></div>
+          </div>
         </div>
       </div>
       <style>
-        @keyframes spin {
+        @keyframes orbit {
           to { transform: rotate(360deg); }
+        }
+        @keyframes leaf-breathe {
+          0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+          50% { transform: translate(-50%, -50%) scale(1.05); opacity: 0.85; }
+        }
+        @keyframes charge {
+          0% { transform: translateX(-100%); }
+          50% { transform: translateX(150%); }
+          100% { transform: translateX(300%); }
         }
       </style>
     </div>

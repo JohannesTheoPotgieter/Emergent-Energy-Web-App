@@ -89,14 +89,14 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-white p-4" data-testid="page-login">
-      <div className="w-full max-w-sm space-y-8">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-emerald-50/50 via-white to-green-50/30 p-4" data-testid="page-login">
+      <div className="w-full max-w-sm space-y-8 animate-float-in">
         <div className="text-center space-y-3">
-          <div className="w-16 h-16 rounded-2xl mx-auto flex items-center justify-center overflow-hidden">
+          <div className="w-18 h-18 rounded-2xl mx-auto flex items-center justify-center animate-solar-pulse">
             <img
               src="/emergent-leaf.png"
               alt="Emergent Energy"
-              className="w-16 h-16 object-cover"
+              className="w-16 h-16 object-cover animate-glow-pulse"
               data-testid="img-logo"
             />
           </div>
@@ -113,14 +113,14 @@ export default function LoginPage() {
           </div>
         )}
 
-        <Card className="border border-gray-200">
+        <Card className="border border-gray-200 energy-glow-border">
           <CardContent className="p-6 space-y-4">
             {msEnabled && (
               <>
                 <Button
                   type="button"
                   variant="outline"
-                  className="w-full h-11 gap-3 text-sm font-medium border-gray-300 hover:bg-gray-50"
+                  className="w-full h-11 gap-3 text-sm font-medium border-gray-300 hover:bg-gray-50 transition-all duration-300 hover:border-emerald-300 hover:shadow-sm"
                   onClick={handleMicrosoftLogin}
                   data-testid="button-ms-login"
                 >
@@ -198,7 +198,7 @@ export default function LoginPage() {
                 </div>
                 <Button
                   type="submit"
-                  className="w-full bg-[#16a34a] hover:bg-[#15803d]"
+                  className="w-full bg-[#16a34a] hover:bg-[#15803d] energy-button transition-all duration-300 hover:shadow-lg hover:shadow-emerald-500/20"
                   disabled={isLoading || !username || !password}
                   data-testid="button-login"
                 >
