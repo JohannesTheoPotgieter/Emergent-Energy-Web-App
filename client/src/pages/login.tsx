@@ -91,13 +91,18 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-white p-4" data-testid="page-login">
       <div className="w-full max-w-sm space-y-8">
-        <div className="text-center space-y-4">
-          <img
-            src="/emergent-logo.png"
-            alt="Emergent Energy"
-            className="h-16 mx-auto object-contain"
-            data-testid="img-logo"
-          />
+        <div className="text-center space-y-3">
+          <div className="w-16 h-16 rounded-2xl mx-auto flex items-center justify-center overflow-hidden">
+            <img
+              src="/emergent-leaf.png"
+              alt="Emergent Energy"
+              className="w-16 h-16 object-cover"
+              data-testid="img-logo"
+            />
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight text-gray-900" data-testid="text-title">
+            Emergent Energy
+          </h1>
           <p className="text-sm text-gray-500">Sign in to your account</p>
         </div>
 
