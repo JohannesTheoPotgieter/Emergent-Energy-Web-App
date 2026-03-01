@@ -126,3 +126,15 @@ Preferred communication style: Simple, everyday language.
 -   **Outlook**: Connected via Replit Connector (OAuth) for calendar sync, email access, and approval emails.
 -   **SharePoint**: Document library browsing and file management via Graph API.
 -   **Teams**: Message linking to projects, tagging, and hot thread tracking.
+
+### Global Audit Logging
+-   **Module**: Centralized `server/audit-logger.ts` provides `logAuditFromReq()` utility for fire-and-forget audit logging.
+-   **Table**: `audit_events` — stores actorRole, userId, userName, source, entityType, entityId, action, changesJson, projectName, ipAddress, requestPath, requestMethod, createdAt.
+-   **Coverage**: All write endpoints (POST/PUT/PATCH/DELETE) across all route files: routes.ts, engineering-routes.ts, quality-routes.ts, pm-on-the-go-routes.ts, eng-stage-routes.ts, lifecycle-routes.ts, portfolio-routes.ts, weekly-review-routes.ts.
+-   **Indexes**: entity_type+entity_id, project_name, created_at DESC, user_id.
+
+### Version & Release Notes
+-   **Version**: `version.json` (major/minor/patch/lastUpdated) — currently V1.0.0.
+-   **Release Notes**: `release-notes.json` with structured notes array displayed on login page.
+-   **API**: `GET /api/version` serves version info + release notes.
+-   **Easter Egg**: Login page release notes modal has interactive "First Electron" Easter egg (7 clicks to unlock).

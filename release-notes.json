@@ -1,0 +1,48 @@
+{
+  "notes": [
+    {
+      "title": "🎉 V1.0 — We Actually Did It",
+      "description": "After countless late nights, questionable design decisions, and more TypeScript than any human should endure — Emergent Energy Dashboard is officially Version 1. This isn't a beta. This isn't a preview. This is the real deal. Pop the champagne."
+    },
+    {
+      "title": "Comprehensive Audit Logging",
+      "description": "Every click, change, update, and notification is now tracked across all functions and tables. Full history logging with user, timestamp, and change details — because accountability is the new black."
+    },
+    {
+      "title": "PM On-The-Go Mode",
+      "description": "Mobile-first project management for site PMs. Log site visits, raise POs, track variations, report delays, escalate issues — all from the field. Includes compliance tracking for daily diaries and weekly progress."
+    },
+    {
+      "title": "Excel Sync Acknowledgment System",
+      "description": "When project data changes, Construction Managers, Program Managers, and Finance Managers get notified to confirm they've synced the underlying Excel files. No more 'I didn't know it changed' excuses."
+    },
+    {
+      "title": "Enhanced Roles & Permissions",
+      "description": "11 permission categories with 60+ granular entity controls. Admins can fine-tune exactly who sees what, who edits what, and who approves what — down to the button level."
+    },
+    {
+      "title": "EE Info Interactive Operating System",
+      "description": "Company-wide process map with lifecycle flows, network views, live metrics, and role-based simulation. Navigate the entire Emergent Energy operating system in one interactive dashboard."
+    },
+    {
+      "title": "5-Stage Engineering Checklist System",
+      "description": "Template-driven engineering stages from First Assessment through Handover Pack. Stage gating with COO override, deliverable tracking, and SharePoint integration for document management."
+    },
+    {
+      "title": "Gamification & Leaderboard",
+      "description": "Badge and point system tracking user activity across 8 progression levels. Because everything is more fun when there's a scoreboard."
+    },
+    {
+      "title": "Teams Chat & Collaboration Hub",
+      "description": "MS Teams-styled channel chat with department and project channels, file sharing, and a unified collaboration hub bringing SharePoint, approvals, and deliverables together."
+    },
+    {
+      "title": "Interactive Onboarding & Screen Tours",
+      "description": "Context-aware walkthroughs and guided tours on every major page. New users get up to speed without reading a 200-page manual nobody wrote."
+    },
+    {
+      "title": "🥚 Easter Egg: The First Electron",
+      "description": "Legend has it, if you click this release note exactly 7 times, nothing happens. But you smiled, didn't you? That's the power of V1. Welcome to Emergent Energy — where electrons flow and so does the data. Here's to building the future, one solar panel at a time. ⚡"
+    }
+  ]
+}
