@@ -91,13 +91,13 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-white p-4" data-testid="page-login">
       <div className="w-full max-w-sm space-y-8">
-        <div className="text-center space-y-2">
-          <div className="w-14 h-14 bg-[#16a34a] rounded-xl mx-auto flex items-center justify-center">
-            <img src="/logo.png" className="w-9 h-9 brightness-0 invert" alt="Logo" />
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight text-gray-900" data-testid="text-title">
-            Emergent Energy
-          </h1>
+        <div className="text-center space-y-4">
+          <img
+            src="/emergent-logo.png"
+            alt="Emergent Energy"
+            className="h-14 mx-auto object-contain"
+            data-testid="img-logo"
+          />
           <p className="text-sm text-gray-500">Sign in to your account</p>
         </div>
 
