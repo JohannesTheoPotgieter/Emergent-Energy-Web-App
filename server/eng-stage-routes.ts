@@ -548,11 +548,24 @@ export function registerEngStageRoutes(app: Express) {
         const allTasks = await db.select({ status: projectEngTasks.status })
           .from(projectEngTasks).where(eq(projectEngTasks.projectEngStageId, task.stageId));
         const anyInProgress = allTasks.some(t => t.status === "in_progress" || t.status === "complete");
-        const [currentStage] = await db.select({ status: projectEngStages.status })
+        const [currentStage] = await db.select({ status: projectEngStages.status, projectId: projectEngStages.projectId })
           .from(projectEngStages).where(eq(projectEngStages.id, task.stageId));
         if (currentStage?.status === "not_started" && anyInProgress) {
           await db.update(projectEngStages).set({ status: "in_progress", startedAt: new Date() })
             .where(eq(projectEngStages.id, task.stageId));
+        }
+        if (currentStage) {
+          const [proj] = await db.select({ projectName: projectInfo.projectName })
+            .from(projectInfo).where(eq(projectInfo.id, currentStage.projectId));
+          if (proj) {
+            sendExcelSyncNotification({
+              projectName: proj.projectName,
+              changedByUserId: user.id,
+              changeType: "engineering_task_update",
+              changeDescription: `Engineering stage task updated${status ? ` to "${status}"` : ""}.`,
+              details: { taskId, status, notes },
+            }).catch(() => {});
+          }
         }
       }
 
@@ -820,6 +833,18 @@ export function registerEngStageRoutes(app: Express) {
       await db.update(projectEngStages).set({ status: "complete", completedAt: new Date() })
         .where(eq(projectEngStages.id, stageId));
 
+      const [stageProj] = await db.select({ projectName: projectInfo.projectName })
+        .from(projectInfo).where(eq(projectInfo.id, stage.projectId));
+      if (stageProj) {
+        sendExcelSyncNotification({
+          projectName: stageProj.projectName,
+          changedByUserId: getUser(req).id,
+          changeType: "engineering_stage_complete",
+          changeDescription: `Engineering stage "${stage.templateName}" completed.`,
+          details: { stageId, stageName: stage.templateName },
+        }).catch(() => {});
+      }
+
       logAuditFromReq(req, { entityType: "eng_stage_gate", entityId: String(stageId), action: "approve", changesJson: { description: "Stage completed", stageName: stage.templateName } });
       res.json({ success: true, missing: [] });
     } catch (err: any) {
@@ -844,6 +869,22 @@ export function registerEngStageRoutes(app: Express) {
         overrideReason: reason,
       }).where(eq(projectEngStages.id, stageId));
 
+      const [overrideStage] = await db.select({ projectId: projectEngStages.projectId })
+        .from(projectEngStages).where(eq(projectEngStages.id, stageId));
+      if (overrideStage) {
+        const [proj] = await db.select({ projectName: projectInfo.projectName })
+          .from(projectInfo).where(eq(projectInfo.id, overrideStage.projectId));
+        if (proj) {
+          sendExcelSyncNotification({
+            projectName: proj.projectName,
+            changedByUserId: user.id,
+            changeType: "engineering_stage_override",
+            changeDescription: `Engineering stage override-completed: ${reason}`,
+            details: { stageId, reason },
+          }).catch(() => {});
+        }
+      }
+
       logAuditFromReq(req, { entityType: "eng_stage_gate", entityId: String(stageId), action: "override", changesJson: { description: "Stage override completed", reason } });
       res.json({ success: true });
     } catch (err: any) {
@@ -862,6 +903,23 @@ export function registerEngStageRoutes(app: Express) {
         if (!current?.startedAt) updates.startedAt = new Date();
       }
       await db.update(projectEngStages).set(updates).where(eq(projectEngStages.id, stageId));
+
+      const [statusStage] = await db.select({ projectId: projectEngStages.projectId })
+        .from(projectEngStages).where(eq(projectEngStages.id, stageId));
+      if (statusStage) {
+        const [proj] = await db.select({ projectName: projectInfo.projectName })
+          .from(projectInfo).where(eq(projectInfo.id, statusStage.projectId));
+        if (proj) {
+          sendExcelSyncNotification({
+            projectName: proj.projectName,
+            changedByUserId: getUser(req).id,
+            changeType: "engineering_stage_status",
+            changeDescription: `Engineering stage status changed to "${status}".`,
+            details: { stageId, status },
+          }).catch(() => {});
+        }
+      }
+
       logAuditFromReq(req, { entityType: "eng_stage_item", entityId: String(stageId), action: "update", changesJson: { description: "Stage status updated", status } });
       res.json({ success: true });
     } catch (err: any) {

@@ -376,11 +376,15 @@ function PermissionsTab({ toast, shared }: { toast: any; shared: ReturnType<type
   const [editLabelValue, setEditLabelValue] = useState("");
   const [deletingRole, setDeletingRole] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set(PERM_CATEGORIES.map(c => c.key)));
+  const [showSaveAllConfirm, setShowSaveAllConfirm] = useState(false);
+  const [savingAll, setSavingAll] = useState(false);
 
   useEffect(() => { if (roles.length > 0 && !selectedRole) setSelectedRole(roles[0].role); }, [roles, selectedRole]);
 
   const currentRole = roles.find(r => r.role === selectedRole);
   const hasChanges = !!pendingChanges[selectedRole];
+  const hasAnyChanges = Object.keys(pendingChanges).length > 0;
+  const changedRoleCount = Object.keys(pendingChanges).length;
 
   const effectiveSections = useMemo(() => {
     if (!currentRole) return [] as string[];
@@ -409,6 +413,28 @@ function PermissionsTab({ toast, shared }: { toast: any; shared: ReturnType<type
       } else { const d = await res.json(); toast({ title: "Error", description: d.error || "Failed to save.", variant: "destructive" }); }
     } catch { toast({ title: "Error", description: "Failed to save.", variant: "destructive" }); }
     finally { setSaving(false); }
+  };
+
+  const handleSaveAll = async () => {
+    setSavingAll(true);
+    const roleKeys = Object.keys(pendingChanges);
+    let successCount = 0;
+    let failCount = 0;
+    for (const roleKey of roleKeys) {
+      try {
+        const res = await fetch(`/api/roles/${roleKey}`, { method: "PUT", headers: getAuthHeaders(), credentials: "include", body: JSON.stringify(pendingChanges[roleKey]) });
+        if (res.ok) { successCount++; } else { failCount++; }
+      } catch { failCount++; }
+    }
+    if (successCount > 0) {
+      toast({ title: "All Changes Saved", description: `${successCount} role(s) updated successfully.${failCount > 0 ? ` ${failCount} failed.` : ""}` });
+      setPendingChanges({});
+      loadRoles();
+    } else if (failCount > 0) {
+      toast({ title: "Error", description: `Failed to save ${failCount} role(s).`, variant: "destructive" });
+    }
+    setSavingAll(false);
+    setShowSaveAllConfirm(false);
   };
 
   const handleCreate = async () => {
@@ -540,6 +566,12 @@ function PermissionsTab({ toast, shared }: { toast: any; shared: ReturnType<type
                       </Button>
                     </>
                   )}
+                  {hasAnyChanges && changedRoleCount > 1 && (
+                    <Button size="sm" className="bg-blue-600 hover:bg-blue-700" onClick={() => setShowSaveAllConfirm(true)} disabled={savingAll} data-testid="btn-save-all-changes">
+                      {savingAll ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}
+                      Save All ({changedRoleCount})
+                    </Button>
+                  )}
                 </div>
               </div>
 
@@ -594,13 +626,13 @@ function PermissionsTab({ toast, shared }: { toast: any; shared: ReturnType<type
                         <div className="border-t border-gray-100">
                           <div className="px-4 py-1.5 bg-gray-50/60 flex items-center justify-end gap-1.5">
                             <Button variant="outline" size="sm" className="h-5 text-[10px] px-2 border-green-200 text-green-700 hover:bg-green-50" onClick={() => setCategoryPreset(cat, "all")} data-testid={`preset-full-${cat.key}`}>
-                              Full Access
+                              <Check className="h-2.5 w-2.5 mr-0.5" /> Select All
                             </Button>
                             <Button variant="outline" size="sm" className="h-5 text-[10px] px-2 border-blue-200 text-blue-700 hover:bg-blue-50" onClick={() => setCategoryPreset(cat, "view")} data-testid={`preset-view-${cat.key}`}>
                               View Only
                             </Button>
                             <Button variant="outline" size="sm" className="h-5 text-[10px] px-2 border-red-200 text-red-700 hover:bg-red-50" onClick={() => setCategoryPreset(cat, "none")} data-testid={`preset-none-${cat.key}`}>
-                              None
+                              <X className="h-2.5 w-2.5 mr-0.5" /> Deselect All
                             </Button>
                           </div>
                           <div className="divide-y">
@@ -634,18 +666,31 @@ function PermissionsTab({ toast, shared }: { toast: any; shared: ReturnType<type
                 })}
               </div>
 
-              {hasChanges && (
+              {hasAnyChanges && (
                 <div className="sticky bottom-4 z-10">
                   <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 shadow-lg">
                     <div className="flex items-center gap-2">
                       <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
-                      <span className="text-sm font-medium text-amber-800">Unsaved changes for {currentRole.label}</span>
+                      <span className="text-sm font-medium text-amber-800">
+                        {changedRoleCount === 1
+                          ? `Unsaved changes for ${currentRole?.label || selectedRole}`
+                          : `Unsaved changes for ${changedRoleCount} roles`}
+                      </span>
                     </div>
                     <div className="flex items-center gap-2 self-end sm:self-auto">
-                      <Button size="sm" variant="ghost" className="text-amber-700 h-8" onClick={() => setPendingChanges(prev => { const n = { ...prev }; delete n[selectedRole]; return n; })} data-testid="btn-discard-bottom">Discard</Button>
-                      <Button size="sm" className="bg-green-600 hover:bg-green-700 h-8" onClick={handleSave} disabled={saving} data-testid="btn-save-bottom">
-                        {saving ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}Save
-                      </Button>
+                      {hasChanges && (
+                        <Button size="sm" variant="ghost" className="text-amber-700 h-8" onClick={() => setPendingChanges(prev => { const n = { ...prev }; delete n[selectedRole]; return n; })} data-testid="btn-discard-bottom">Discard Current</Button>
+                      )}
+                      {hasChanges && (
+                        <Button size="sm" className="bg-green-600 hover:bg-green-700 h-8" onClick={handleSave} disabled={saving} data-testid="btn-save-bottom">
+                          {saving ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}Save
+                        </Button>
+                      )}
+                      {changedRoleCount > 1 && (
+                        <Button size="sm" className="bg-blue-600 hover:bg-blue-700 h-8" onClick={() => setShowSaveAllConfirm(true)} disabled={savingAll} data-testid="btn-save-all-bottom">
+                          {savingAll ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}Save All ({changedRoleCount})
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -654,6 +699,34 @@ function PermissionsTab({ toast, shared }: { toast: any; shared: ReturnType<type
           )}
         </div>
       </div>
+
+      <Dialog open={showSaveAllConfirm} onOpenChange={setShowSaveAllConfirm}>
+        <DialogContent data-testid="dialog-save-all-confirm">
+          <DialogHeader><DialogTitle>Save All Changes</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-gray-600">You have unsaved changes for {changedRoleCount} role(s):</p>
+            <ul className="text-sm space-y-1">
+              {Object.keys(pendingChanges).map(roleKey => {
+                const roleObj = roles.find(r => r.role === roleKey);
+                return (
+                  <li key={roleKey} className="flex items-center gap-2" data-testid={`save-all-role-${roleKey}`}>
+                    <span className="h-1.5 w-1.5 rounded-full bg-amber-400 inline-block" />
+                    <span className="font-medium">{roleObj?.label || roleKey}</span>
+                  </li>
+                );
+              })}
+            </ul>
+            <p className="text-sm text-gray-500">Are you sure you want to save all changes?</p>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setShowSaveAllConfirm(false)} data-testid="btn-cancel-save-all">Cancel</Button>
+            <Button className="bg-blue-600 hover:bg-blue-700" onClick={handleSaveAll} disabled={savingAll} data-testid="btn-confirm-save-all">
+              {savingAll ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}
+              Save All Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={showCreateRole} onOpenChange={setShowCreateRole}>
         <DialogContent data-testid="dialog-create-role">
