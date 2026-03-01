@@ -21,6 +21,7 @@ import {
 } from "@shared/schema";
 import { applyTemplate } from "./template-routes";
 import { requirePermission } from "./permission-middleware";
+import { sendExcelSyncNotification } from "./excel-sync-notifications";
 
 const approvalUploadsDir = path.join(process.cwd(), "uploads", "approvals");
 if (!fs.existsSync(approvalUploadsDir)) fs.mkdirSync(approvalUploadsDir, { recursive: true });
@@ -360,6 +361,14 @@ export function registerEngineeringRoutes(app: Express) {
             `Task status: ${updated.title}`, `Status changed from "${existing.status}" to "${updates.status}"`,
             { projectName: updated.projectName, linkedTaskId: id });
         }
+
+        sendExcelSyncNotification({
+          projectName: updated.projectName || "Unknown",
+          changedByUserId: getUser(req).id,
+          changeType: "engineering_task_update",
+          changeDescription: `Engineering task "${updated.title}" status changed from "${existing.status}" to "${updates.status}".`,
+          details: { taskId: id, taskTitle: updated.title, oldStatus: existing.status, newStatus: updates.status },
+        }).catch(() => {});
       }
 
       res.json(updated);

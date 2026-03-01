@@ -16,6 +16,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { isOutlookConfigured, sendMail } from "./outlook";
+import { sendExcelSyncNotification } from "./excel-sync-notifications";
 
 const photoUploadDir = path.join(process.cwd(), "uploads", "pm-photos");
 if (!fs.existsSync(photoUploadDir)) {
@@ -496,6 +497,14 @@ export function registerPmOnTheGoRoutes(app: Express) {
           );
         }
 
+        sendExcelSyncNotification({
+          projectName: pName,
+          changedByUserId: user.id,
+          changeType: "pm_otg_action",
+          changeDescription: `Site visit logged by ${user.name}. Safety: ${safetyStatus || "clear"}.`,
+          details: { actionType: "site_visit", safetyStatus, visitId: visit.id },
+        }).catch(() => {});
+
         res.json({ success: true, visit });
       } catch (err: any) {
         console.error("[PM-OTG] Site visit error:", err.message);
@@ -545,6 +554,14 @@ export function registerPmOnTheGoRoutes(app: Express) {
           user.name
         );
 
+        sendExcelSyncNotification({
+          projectName: pName,
+          changedByUserId: user.id,
+          changeType: "pm_otg_action",
+          changeDescription: `PO request ${poNumber} by ${user.name}.`,
+          details: { actionType: "generate_po", poNumber, amount, supplier },
+        }).catch(() => {});
+
         res.json({ success: true, action });
       } catch (err: any) {
         res.status(500).json({ error: err.message });
@@ -591,6 +608,14 @@ export function registerPmOnTheGoRoutes(app: Express) {
           pName,
           user.name
         );
+
+        sendExcelSyncNotification({
+          projectName: pName,
+          changedByUserId: user.id,
+          changeType: "pm_otg_action",
+          changeDescription: `Invoice ${invoiceNumber} linked by ${user.name}.`,
+          details: { actionType: "link_invoice", invoiceNumber, amount, poReference },
+        }).catch(() => {});
 
         res.json({ success: true, action });
       } catch (err: any) {
@@ -640,6 +665,14 @@ export function registerPmOnTheGoRoutes(app: Express) {
           user.name
         );
 
+        sendExcelSyncNotification({
+          projectName: pName,
+          changedByUserId: user.id,
+          changeType: "pm_otg_action",
+          changeDescription: `Variation order raised by ${user.name} for R${parseFloat(amount).toLocaleString()}.`,
+          details: { actionType: "raise_variation", amount, description, justification },
+        }).catch(() => {});
+
         res.json({ success: true, action });
       } catch (err: any) {
         res.status(500).json({ error: err.message });
@@ -686,6 +719,14 @@ export function registerPmOnTheGoRoutes(app: Express) {
           pName,
           user.name
         );
+
+        sendExcelSyncNotification({
+          projectName: pName,
+          changedByUserId: user.id,
+          changeType: "pm_otg_action",
+          changeDescription: `Delay of ${daysDelayed || "?"} days logged by ${user.name}.`,
+          details: { actionType: "log_delay", daysDelayed, impact, description },
+        }).catch(() => {});
 
         res.json({ success: true, action });
       } catch (err: any) {
@@ -734,6 +775,14 @@ export function registerPmOnTheGoRoutes(app: Express) {
           user.name
         );
 
+        sendExcelSyncNotification({
+          projectName: pName,
+          changedByUserId: user.id,
+          changeType: "pm_otg_action",
+          changeDescription: `${severity} risk logged by ${user.name}.`,
+          details: { actionType: "log_risk", severity, description, mitigationNotes },
+        }).catch(() => {});
+
         res.json({ success: true, action });
       } catch (err: any) {
         res.status(500).json({ error: err.message });
@@ -772,6 +821,15 @@ export function registerPmOnTheGoRoutes(app: Express) {
             source: "on_the_go",
           })
           .returning();
+
+        const pName = await getProjectName(projectId);
+        sendExcelSyncNotification({
+          projectName: pName,
+          changedByUserId: user.id,
+          changeType: "pm_otg_action",
+          changeDescription: `Photo uploaded by ${user.name}.`,
+          details: { actionType: "upload_photo", caption },
+        }).catch(() => {});
 
         res.json({ success: true, action, photoUrl });
       } catch (err: any) {
@@ -819,6 +877,14 @@ export function registerPmOnTheGoRoutes(app: Express) {
           pName,
           user.name
         );
+
+        sendExcelSyncNotification({
+          projectName: pName,
+          changedByUserId: user.id,
+          changeType: "pm_otg_action",
+          changeDescription: `Progress updated to ${pct}% by ${user.name}.`,
+          details: { actionType: "update_progress", progressPercent: pct, notes },
+        }).catch(() => {});
 
         const weekStart = getWeekStart();
         await db.execute(sql`
@@ -885,6 +951,14 @@ export function registerPmOnTheGoRoutes(app: Express) {
           pName,
           user.name
         );
+
+        sendExcelSyncNotification({
+          projectName: pName,
+          changedByUserId: user.id,
+          changeType: "pm_otg_action",
+          changeDescription: `Project escalated by ${user.name}. Level: ${escalationLevel || "High"}.`,
+          details: { actionType: "escalate", escalationLevel, urgency, description },
+        }).catch(() => {});
 
         res.json({ success: true, action });
       } catch (err: any) {

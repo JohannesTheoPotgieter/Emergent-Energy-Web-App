@@ -15,6 +15,7 @@ import {
   notifications, notificationThrottle,
 } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
+import { sendExcelSyncNotification } from "./excel-sync-notifications";
 
 const qmApprovalUploadsDir = path.join(process.cwd(), "uploads", "qm-approvals");
 if (!fs.existsSync(qmApprovalUploadsDir)) fs.mkdirSync(qmApprovalUploadsDir, { recursive: true });
@@ -420,6 +421,15 @@ export function registerQualityRoutes(app: Express) {
       const [updated] = await db.update(qcItemInstance).set(updates).where(eq(qcItemInstance.id, itemId)).returning();
       const pName = decodeURIComponent(req.params.projectName);
       recalculateWarnings(pName).catch(() => {});
+
+      sendExcelSyncNotification({
+        projectName: pName,
+        changedByUserId: getUser(req).id,
+        changeType: "quality_update",
+        changeDescription: "Quality checklist item was updated.",
+        details: { itemInstanceId: itemId, qmStatus: qmStatus || undefined },
+      }).catch(() => {});
+
       res.json(updated);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -761,6 +771,18 @@ export function registerQualityRoutes(app: Express) {
       await db.insert(qcWarningEvent).values({
         warningId, eventType: "acknowledged", note, actorUserId: getUser(req).id,
       });
+
+      const [warning] = await db.select().from(qcWarning).where(eq(qcWarning.id, warningId));
+      if (warning) {
+        sendExcelSyncNotification({
+          projectName: warning.projectName,
+          changedByUserId: getUser(req).id,
+          changeType: "quality_update",
+          changeDescription: `QC warning acknowledged: ${warning.title}`,
+          details: { warningId, warningType: warning.warningType, note },
+        }).catch(() => {});
+      }
+
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
