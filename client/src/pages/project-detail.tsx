@@ -42,6 +42,7 @@ import { ProjectApprovalsTab } from "@/components/tabs/ProjectApprovalsTab";
 import { ProjectNotificationsTab } from "@/components/tabs/ProjectNotificationsTab";
 import { useProgramData } from "@/hooks/use-program-data";
 import { useAuth } from "@/hooks/use-auth";
+import DataSourceDebug from "@/components/DataSourceDebug";
 import { PROJECT_PHASES, LIFECYCLE_PHASES, PROJECT_PHASE_LABELS, TASK_STATUSES, type ProjectPhase, checkPermission } from "@shared/schema";
 import { usePermission } from "@/hooks/use-permissions";
 
@@ -1498,6 +1499,18 @@ export default function ProjectDetailPage() {
           onClose={() => setPhaseModalOpen(false)}
         />
       )}
+
+      <DataSourceDebug
+        pageName="Project Detail"
+        dataSources={[
+          { endpoint: "/api/projects-summary", tables: ["project_info", "normalized_cost_lines", "normalized_revenue_lines", "normalized_plan_tasks"], description: "Project summary data" },
+          { endpoint: `/api/projects/${projectInfoId}/eng-tasks`, tables: ["engineering_tasks"], description: "Engineering tasks for this project" },
+          { endpoint: `/api/projects/${projectInfoId}/phase-history`, tables: ["phase_history"], description: "Phase transition history" },
+          { endpoint: "/api/normalized-plan-tasks", tables: ["normalized_plan_tasks"], description: "Gantt / project plan tasks" },
+          { endpoint: "/api/normalized-cost-lines", tables: ["normalized_cost_lines"], description: "Expenditure line items" },
+          { endpoint: "/api/normalized-revenue-lines", tables: ["normalized_revenue_lines"], description: "Revenue tracking line items" },
+        ]}
+      />
     </div>
   );
 }
