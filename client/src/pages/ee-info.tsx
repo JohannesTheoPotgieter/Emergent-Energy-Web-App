@@ -21,6 +21,7 @@ import {
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
+import CompanyOverviewMap from "@/components/CompanyOverviewMap";
 import { WALKTHROUGHS, WALKTHROUGH_CATEGORIES, type Walkthrough } from "@/data/walkthroughs";
 
 function authHeaders(): Record<string, string> {
@@ -1148,6 +1149,798 @@ function TemplatesLibrary({ onSelectProcess }: { onSelectProcess: (slug: string)
   );
 }
 
+interface RoleSimConfig {
+  roleKey: string;
+  roleLabel: string;
+  department: string;
+  rhythm: { frequency: string; activity: string }[];
+  nonNegotiables: string[];
+  inputs: string[];
+  outputs: string[];
+  escalationPath: { role: string; when: string }[];
+  dashboards: { label: string; path: string }[];
+  topActions: { title: string; description: string; urgency: "high" | "medium" | "low" }[];
+}
+
+const ROLE_SIMULATIONS: RoleSimConfig[] = [
+  {
+    roleKey: "COO_ADMIN",
+    roleLabel: "COO / Admin",
+    department: "EXCO",
+    rhythm: [
+      { frequency: "Daily", activity: "Review Engineering Standup board for blockers and overdue tasks" },
+      { frequency: "Daily", activity: "Check Execution Dashboard for project health across portfolio" },
+      { frequency: "Weekly", activity: "Run Weekly Review wizard across all active projects" },
+      { frequency: "Weekly", activity: "Review COS Control for budget variance exceptions" },
+      { frequency: "Weekly", activity: "Check Lifecycle Board for phase-gate readiness" },
+      { frequency: "Monthly", activity: "Review Cashflow Forecast for liquidity planning" },
+    ],
+    nonNegotiables: [
+      "Approve all lifecycle phase transitions (gate reviews)",
+      "Resolve HOLD/blocked tasks within 24 hours",
+      "Complete Weekly Review for every active project",
+      "Review and approve engineering stage gate overrides",
+      "Sign off on quality management escalations",
+    ],
+    inputs: [
+      "Excel tracker imports (via Smart Import)",
+      "Engineering task status updates from team",
+      "Quality checklist submissions from QM",
+      "Cashflow actuals from Finance",
+      "Subcontractor performance reports",
+    ],
+    outputs: [
+      "Weekly Review reports with RAG status per project",
+      "Phase transition approvals and audit trail",
+      "Blocker resolution decisions",
+      "Resource reallocation directives",
+      "Exception approvals (budget overrides, gate overrides)",
+    ],
+    escalationPath: [
+      { role: "CEO", when: "Budget overrun >25% or project at risk of cancellation" },
+      { role: "CFO", when: "Cashflow shortfall or payment delays >30 days" },
+      { role: "Legal", when: "Contract disputes or compliance issues" },
+    ],
+    dashboards: [
+      { label: "Execution Dashboard", path: "/dashboard" },
+      { label: "Engineering Dashboard", path: "/engineering" },
+      { label: "COS Control", path: "/cos-control" },
+      { label: "Lifecycle Board", path: "/lifecycle-board" },
+      { label: "Weekly Reviews", path: "/weekly-reviews" },
+      { label: "Cashflow Forecast", path: "/cashflow-forecast" },
+      { label: "Quality Dashboard", path: "/quality" },
+    ],
+    topActions: [
+      { title: "Review blockers in Standup Mode", description: "Check all HOLD tasks and resolve external/internal blocks", urgency: "high" },
+      { title: "Run Weekly Review", description: "Assess each active project's progress and set RAG status", urgency: "high" },
+      { title: "Check phase-gate readiness", description: "Review projects ready for lifecycle phase transitions", urgency: "medium" },
+      { title: "Review COS exceptions", description: "Identify projects with budget variance >15%", urgency: "medium" },
+      { title: "Update project priorities", description: "Re-prioritize tasks based on current portfolio needs", urgency: "low" },
+    ],
+  },
+  {
+    roleKey: "ENGINEERING_MANAGER",
+    roleLabel: "Engineering Manager",
+    department: "Engineering",
+    rhythm: [
+      { frequency: "Daily", activity: "Review My Tasks view for overdue and due-today items" },
+      { frequency: "Daily", activity: "Update task statuses and add progress notes" },
+      { frequency: "Daily", activity: "Check Engineering Dashboard KPIs" },
+      { frequency: "Weekly", activity: "Review engineering stage checklists for active projects" },
+      { frequency: "Weekly", activity: "Assign and re-prioritize team tasks" },
+      { frequency: "Monthly", activity: "Review engineering deliverable completion rates" },
+    ],
+    nonNegotiables: [
+      "Update task status daily for all assigned items",
+      "Complete engineering stage checklists before gate reviews",
+      "Upload deliverables with proper documentation",
+      "Flag blockers immediately using HOLD workflow with reason",
+      "Attend and prepare for daily standup",
+    ],
+    inputs: [
+      "Project plans and specifications from Project Development",
+      "Quality requirements from QM team",
+      "Budget constraints from Finance",
+      "Client feedback and change requests",
+      "Subcontractor deliverables and reports",
+    ],
+    outputs: [
+      "Engineering stage checklist completions",
+      "Technical deliverables (drawings, specs, reports)",
+      "Task status updates and progress notes",
+      "HOLD/blocker notifications with resolution paths",
+      "Stage gate readiness recommendations",
+    ],
+    escalationPath: [
+      { role: "COO", when: "Resource constraints blocking multiple projects" },
+      { role: "Project Manager", when: "Scope changes affecting timeline or budget" },
+      { role: "Quality Manager", when: "Technical compliance issues or failed inspections" },
+    ],
+    dashboards: [
+      { label: "Engineering Dashboard", path: "/engineering" },
+      { label: "Engineering Tasks", path: "/engineering/tasks" },
+      { label: "Lifecycle Board", path: "/lifecycle-board" },
+      { label: "Engineering Sync", path: "/engineering/sync" },
+    ],
+    topActions: [
+      { title: "Clear overdue tasks", description: "Update or reschedule all tasks past their due date", urgency: "high" },
+      { title: "Complete stage checklists", description: "Fill in pending engineering stage items for active projects", urgency: "high" },
+      { title: "Upload pending deliverables", description: "Attach technical documents to relevant stage tasks", urgency: "medium" },
+      { title: "Review HOLD items", description: "Check if any blocked tasks can be unblocked", urgency: "medium" },
+      { title: "Plan next week's priorities", description: "Assign and prioritize tasks for the upcoming week", urgency: "low" },
+    ],
+  },
+  {
+    roleKey: "PROGRAM_MANAGER",
+    roleLabel: "Program / Project Manager",
+    department: "Project Management",
+    rhythm: [
+      { frequency: "Daily", activity: "Check project progress on Execution Dashboard" },
+      { frequency: "Daily", activity: "Review notifications for plan changes and approvals" },
+      { frequency: "Weekly", activity: "Update project plan tasks and milestones" },
+      { frequency: "Weekly", activity: "Review revenue tracking and milestone invoicing" },
+      { frequency: "Weekly", activity: "Coordinate with subcontractors on deliverables" },
+      { frequency: "Monthly", activity: "Run Smart Import with latest Excel trackers" },
+    ],
+    nonNegotiables: [
+      "Keep project plans current (re-import trackers regularly)",
+      "Track revenue milestones and invoice status",
+      "Update project phase when milestones are met",
+      "Respond to approval requests within 24 hours",
+      "Maintain subcontractor delivery schedules",
+    ],
+    inputs: [
+      "Excel tracker files from site teams",
+      "Invoice confirmations from Finance",
+      "Engineering stage completion updates",
+      "Quality checklist results",
+      "Client communications and approvals",
+    ],
+    outputs: [
+      "Updated project plans via Smart Import",
+      "Revenue milestone tracking and invoice requests",
+      "Project status reports for Weekly Review",
+      "Subcontractor coordination updates",
+      "Phase transition requests to COO",
+    ],
+    escalationPath: [
+      { role: "COO", when: "Project behind schedule >10% or budget overrun" },
+      { role: "Finance Manager", when: "Invoice disputes or payment delays" },
+      { role: "Engineering Manager", when: "Technical issues blocking construction" },
+    ],
+    dashboards: [
+      { label: "Execution Dashboard", path: "/dashboard" },
+      { label: "Projects", path: "/projects" },
+      { label: "Smart Import", path: "/smart-import" },
+      { label: "PM Dashboard", path: "/pm-dashboard" },
+      { label: "Cashflow", path: "/cashflow" },
+      { label: "Subcontractor Dashboard", path: "/subcontractor-dashboard" },
+    ],
+    topActions: [
+      { title: "Import latest tracker files", description: "Run Smart Import with updated Excel files from site", urgency: "high" },
+      { title: "Review revenue milestones", description: "Check which milestones are ready for invoicing", urgency: "high" },
+      { title: "Update project statuses", description: "Ensure all project RAG statuses are current", urgency: "medium" },
+      { title: "Check subcontractor deliveries", description: "Verify pending subcontractor deliverables", urgency: "medium" },
+      { title: "Prepare for Weekly Review", description: "Gather project data for the upcoming review session", urgency: "low" },
+    ],
+  },
+  {
+    roleKey: "PROGRAM_FINANCE_MANAGER",
+    roleLabel: "Finance Manager",
+    department: "Finance",
+    rhythm: [
+      { frequency: "Daily", activity: "Review COS Control for new variance alerts" },
+      { frequency: "Daily", activity: "Process invoice confirmations and payment dates" },
+      { frequency: "Weekly", activity: "Update cashflow actuals and forecasts" },
+      { frequency: "Weekly", activity: "Review revenue milestone payment status" },
+      { frequency: "Monthly", activity: "Reconcile finance revenue and COS monthly tables" },
+      { frequency: "Monthly", activity: "Prepare financial close reports" },
+    ],
+    nonNegotiables: [
+      "Confirm invoice dates and payment dates promptly",
+      "Flag budget overruns >15% immediately",
+      "Maintain accurate cashflow forecasts",
+      "Reconcile monthly revenue vs expenditure",
+      "Process milestone payments within SLA",
+    ],
+    inputs: [
+      "Expenditure breakdown data from Smart Import",
+      "Revenue milestone invoices from PM",
+      "PO numbers and supplier invoices",
+      "Bank statements for payment confirmation",
+      "Budget forecasts from project teams",
+    ],
+    outputs: [
+      "COS variance reports and exception alerts",
+      "Cashflow forecasts and liquidity reports",
+      "Invoice confirmation updates in system",
+      "Monthly financial close summaries",
+      "Budget vs actual analysis per project",
+    ],
+    escalationPath: [
+      { role: "CFO", when: "Cashflow shortfall or liquidity risk" },
+      { role: "COO", when: "Budget overrun >25% on any project" },
+      { role: "Project Manager", when: "Missing invoices or payment documentation" },
+    ],
+    dashboards: [
+      { label: "COS Control", path: "/cos-control" },
+      { label: "Cashflow", path: "/cashflow" },
+      { label: "Cashflow Forecast", path: "/cashflow-forecast" },
+      { label: "Revenue Tracking", path: "/revenue" },
+      { label: "Budget", path: "/budget" },
+    ],
+    topActions: [
+      { title: "Review COS exceptions", description: "Check projects with variance >15% for immediate attention", urgency: "high" },
+      { title: "Confirm pending invoices", description: "Update invoice dates and payment confirmations", urgency: "high" },
+      { title: "Update cashflow forecast", description: "Refresh projected inflows and outflows for next 4 weeks", urgency: "medium" },
+      { title: "Reconcile monthly figures", description: "Ensure finance tables match imported tracker data", urgency: "medium" },
+      { title: "Prepare financial summary", description: "Generate portfolio-level financial report", urgency: "low" },
+    ],
+  },
+  {
+    roleKey: "QUALITY_MANAGER",
+    roleLabel: "Quality Manager",
+    department: "Quality",
+    rhythm: [
+      { frequency: "Daily", activity: "Review quality approval requests in notifications" },
+      { frequency: "Daily", activity: "Check QM Dashboard for overdue quality items" },
+      { frequency: "Weekly", activity: "Audit quality checklists across active projects" },
+      { frequency: "Weekly", activity: "Review and approve quality gate submissions" },
+      { frequency: "Monthly", activity: "Analyze quality scores and trend data" },
+    ],
+    nonNegotiables: [
+      "Review and respond to approval requests within 24 hours",
+      "Maintain quality checklists for all active projects",
+      "Set pass/fail status on restricted quality items",
+      "Attach evidence to completed quality checks",
+      "Escalate quality failures immediately",
+    ],
+    inputs: [
+      "Quality checklist submissions from project teams",
+      "Evidence documents and photos from site",
+      "Engineering deliverables for quality review",
+      "Subcontractor quality reports",
+      "Approval requests from team members",
+    ],
+    outputs: [
+      "Quality gate approvals/rejections",
+      "QM score reports per project",
+      "Quality exception notifications",
+      "Corrective action requests",
+      "Quality trend analysis reports",
+    ],
+    escalationPath: [
+      { role: "COO", when: "Critical quality failure or safety concern" },
+      { role: "Engineering Manager", when: "Technical non-compliance requiring redesign" },
+      { role: "Project Manager", when: "Quality delays impacting project timeline" },
+    ],
+    dashboards: [
+      { label: "QM Dashboard", path: "/quality" },
+      { label: "Projects", path: "/projects" },
+      { label: "Approvals", path: "/admin/approvals" },
+    ],
+    topActions: [
+      { title: "Process approval queue", description: "Review and respond to pending quality approval requests", urgency: "high" },
+      { title: "Check overdue quality items", description: "Follow up on quality checks past their due date", urgency: "high" },
+      { title: "Audit active project checklists", description: "Verify quality checklists are being maintained", urgency: "medium" },
+      { title: "Review evidence attachments", description: "Ensure proper documentation for completed items", urgency: "medium" },
+      { title: "Update quality templates", description: "Refine checklist templates based on lessons learned", urgency: "low" },
+    ],
+  },
+  {
+    roleKey: "CONSTRUCTION_MANAGER",
+    roleLabel: "Construction Manager",
+    department: "Project Delivery",
+    rhythm: [
+      { frequency: "Daily", activity: "Update construction task progress" },
+      { frequency: "Daily", activity: "Review site delivery schedules" },
+      { frequency: "Weekly", activity: "Coordinate with subcontractors on site activities" },
+      { frequency: "Weekly", activity: "Update project plan actuals (start/end dates)" },
+      { frequency: "Monthly", activity: "Review construction stage gate progress" },
+    ],
+    nonNegotiables: [
+      "Update actual start and end dates for construction tasks",
+      "Report site issues and blockers immediately",
+      "Coordinate material deliveries with procurement",
+      "Ensure safety compliance on all active sites",
+      "Submit quality evidence for construction milestones",
+    ],
+    inputs: [
+      "Project plans and construction schedules",
+      "Material delivery confirmations",
+      "Subcontractor availability and progress",
+      "Quality requirements and checklists",
+      "Weather and site condition reports",
+    ],
+    outputs: [
+      "Construction progress updates",
+      "Site issue reports and blocker notifications",
+      "Quality evidence (photos, test results)",
+      "Material usage and wastage reports",
+      "Subcontractor performance feedback",
+    ],
+    escalationPath: [
+      { role: "COO", when: "Safety incidents or major site delays" },
+      { role: "Project Manager", when: "Schedule slippage >5 days" },
+      { role: "Procurement", when: "Material shortages or delivery failures" },
+    ],
+    dashboards: [
+      { label: "Execution Dashboard", path: "/dashboard" },
+      { label: "Projects", path: "/projects" },
+      { label: "Engineering Tasks", path: "/engineering/tasks" },
+      { label: "Subcontractor Dashboard", path: "/subcontractor-dashboard" },
+    ],
+    topActions: [
+      { title: "Update site progress", description: "Log today's construction progress for active sites", urgency: "high" },
+      { title: "Check material deliveries", description: "Verify scheduled deliveries for this week", urgency: "high" },
+      { title: "Submit quality evidence", description: "Upload photos and test results for completed work", urgency: "medium" },
+      { title: "Review subcontractor schedule", description: "Confirm subcontractor availability for upcoming work", urgency: "medium" },
+      { title: "Flag site issues", description: "Report any blockers or safety concerns", urgency: "low" },
+    ],
+  },
+  {
+    roleKey: "PROJECT_DEVELOPER",
+    roleLabel: "Project Developer",
+    department: "Project Development",
+    rhythm: [
+      { frequency: "Daily", activity: "Review PD ticket queue and incoming requests" },
+      { frequency: "Daily", activity: "Update development pipeline progress" },
+      { frequency: "Weekly", activity: "Assess new project feasibility" },
+      { frequency: "Weekly", activity: "Prepare cost proposals and first assessments" },
+      { frequency: "Monthly", activity: "Review development pipeline metrics" },
+    ],
+    nonNegotiables: [
+      "Complete First Assessment within SLA for new leads",
+      "Prepare accurate cost proposals with supporting data",
+      "Maintain development pipeline visibility",
+      "Handover project packages with complete documentation",
+      "Track PD tickets and respond within 24 hours",
+    ],
+    inputs: [
+      "New project leads and client enquiries",
+      "Site survey data and solar resource assessments",
+      "Utility connection requirements",
+      "Legal and regulatory requirements",
+      "Market pricing and component costs",
+    ],
+    outputs: [
+      "First Assessment reports",
+      "Cost Proposals (CP)",
+      "Feasibility studies",
+      "Project handover packages to PM",
+      "Development pipeline status updates",
+    ],
+    escalationPath: [
+      { role: "COO", when: "Strategic decisions on large projects" },
+      { role: "Legal", when: "Contract or regulatory complications" },
+      { role: "Engineering Manager", when: "Technical feasibility questions" },
+    ],
+    dashboards: [
+      { label: "PD Dashboard", path: "/pd-dashboard" },
+      { label: "PD Tickets", path: "/pd-tickets" },
+      { label: "Lifecycle Board", path: "/lifecycle-board" },
+      { label: "Projects", path: "/projects" },
+    ],
+    topActions: [
+      { title: "Process PD ticket queue", description: "Review and respond to incoming development tickets", urgency: "high" },
+      { title: "Complete pending first assessments", description: "Finalize FA reports for projects in pipeline", urgency: "high" },
+      { title: "Update cost proposals", description: "Refresh pricing on active proposals", urgency: "medium" },
+      { title: "Prepare handover packages", description: "Document completed developments for PM transition", urgency: "medium" },
+      { title: "Review pipeline metrics", description: "Analyze conversion rates and pipeline health", urgency: "low" },
+    ],
+  },
+  {
+    roleKey: "ENGINEER",
+    roleLabel: "Engineer",
+    department: "Engineering",
+    rhythm: [
+      { frequency: "Daily", activity: "Check My Tasks for assigned engineering work" },
+      { frequency: "Daily", activity: "Update task progress and add notes" },
+      { frequency: "Weekly", activity: "Complete engineering stage checklist items" },
+      { frequency: "Weekly", activity: "Upload technical deliverables" },
+      { frequency: "Monthly", activity: "Review engineering standards and templates" },
+    ],
+    nonNegotiables: [
+      "Complete assigned tasks by due date",
+      "Upload deliverables with proper naming and versioning",
+      "Flag technical issues using HOLD workflow",
+      "Follow engineering stage checklist requirements",
+      "Attend daily standup prepared with status updates",
+    ],
+    inputs: [
+      "Task assignments from Engineering Manager",
+      "Project specifications and design requirements",
+      "Client feedback and revision requests",
+      "Quality standards and compliance requirements",
+      "Component datasheets and technical references",
+    ],
+    outputs: [
+      "Technical drawings and designs",
+      "Engineering calculations and reports",
+      "Stage checklist item completions",
+      "Task status updates and progress notes",
+      "Technical review comments",
+    ],
+    escalationPath: [
+      { role: "Engineering Manager", when: "Technical challenges requiring senior input" },
+      { role: "Quality Manager", when: "Compliance or standards questions" },
+      { role: "Project Manager", when: "Scope clarification needed" },
+    ],
+    dashboards: [
+      { label: "Engineering Tasks", path: "/engineering/tasks" },
+      { label: "Engineering Dashboard", path: "/engineering" },
+      { label: "Projects", path: "/projects" },
+    ],
+    topActions: [
+      { title: "Complete overdue tasks", description: "Address all tasks past their due date", urgency: "high" },
+      { title: "Upload pending deliverables", description: "Attach completed technical documents", urgency: "high" },
+      { title: "Update task statuses", description: "Set current status on all assigned tasks", urgency: "medium" },
+      { title: "Review stage checklist items", description: "Complete pending checklist items for your projects", urgency: "medium" },
+      { title: "Add progress notes", description: "Document what was accomplished today", urgency: "low" },
+    ],
+  },
+  {
+    roleKey: "ACCOUNTANT",
+    roleLabel: "Accountant",
+    department: "Finance",
+    rhythm: [
+      { frequency: "Daily", activity: "Process invoice confirmations and payment updates" },
+      { frequency: "Daily", activity: "Review expenditure entries for accuracy" },
+      { frequency: "Weekly", activity: "Reconcile payment dates with bank records" },
+      { frequency: "Weekly", activity: "Update revenue milestone payment status" },
+      { frequency: "Monthly", activity: "Prepare month-end financial close entries" },
+    ],
+    nonNegotiables: [
+      "Confirm invoice dates accurately",
+      "Match PO numbers to invoices",
+      "Update payment dates when funds clear",
+      "Flag duplicate or suspicious entries",
+      "Complete month-end reconciliation on time",
+    ],
+    inputs: [
+      "Supplier invoices and PO numbers",
+      "Bank statements and payment confirmations",
+      "Revenue milestone invoice copies",
+      "Expenditure data from Smart Import",
+      "Budget allocation schedules",
+    ],
+    outputs: [
+      "Confirmed invoice and payment dates",
+      "Expenditure reconciliation reports",
+      "Revenue collection status updates",
+      "Month-end financial close entries",
+      "Exception reports for Finance Manager",
+    ],
+    escalationPath: [
+      { role: "Finance Manager", when: "Payment discrepancies or missing documentation" },
+      { role: "Project Manager", when: "Invoice queries or PO mismatches" },
+    ],
+    dashboards: [
+      { label: "COS Control", path: "/cos-control" },
+      { label: "Revenue Tracking", path: "/revenue" },
+      { label: "Cashflow", path: "/cashflow" },
+    ],
+    topActions: [
+      { title: "Confirm pending invoices", description: "Update invoice date confirmations in the system", urgency: "high" },
+      { title: "Process payment updates", description: "Mark payments as received based on bank records", urgency: "high" },
+      { title: "Reconcile expenditure entries", description: "Verify imported data matches source documents", urgency: "medium" },
+      { title: "Update revenue collections", description: "Track milestone payment receipt status", urgency: "medium" },
+      { title: "Prepare close entries", description: "Compile month-end financial entries", urgency: "low" },
+    ],
+  },
+  {
+    roleKey: "KEY_ACCOUNTS_MANAGER",
+    roleLabel: "Key Accounts Manager",
+    department: "Sales",
+    rhythm: [
+      { frequency: "Daily", activity: "Monitor client communications and requests" },
+      { frequency: "Weekly", activity: "Review portfolio performance for key clients" },
+      { frequency: "Weekly", activity: "Coordinate with PM on client project updates" },
+      { frequency: "Monthly", activity: "Prepare client reports and performance summaries" },
+    ],
+    nonNegotiables: [
+      "Respond to client enquiries within 24 hours",
+      "Maintain accurate portfolio data per client",
+      "Coordinate project updates with PMs before client meetings",
+      "Track client satisfaction and escalate concerns",
+    ],
+    inputs: [
+      "Client communications and meeting notes",
+      "Portfolio performance data",
+      "Project status updates from PMs",
+      "Revenue and billing status from Finance",
+      "Quality reports for client projects",
+    ],
+    outputs: [
+      "Client status reports and presentations",
+      "Portfolio performance summaries",
+      "New business referrals to PD team",
+      "Client feedback to internal teams",
+      "Contract renewal recommendations",
+    ],
+    escalationPath: [
+      { role: "COO", when: "Client relationship at risk or contract disputes" },
+      { role: "Project Manager", when: "Project delivery concerns from client" },
+      { role: "Finance Manager", when: "Billing disputes or payment issues" },
+    ],
+    dashboards: [
+      { label: "Portfolios", path: "/portfolios" },
+      { label: "Projects", path: "/projects" },
+      { label: "Execution Dashboard", path: "/dashboard" },
+      { label: "Collaboration Hub", path: "/collaboration" },
+    ],
+    topActions: [
+      { title: "Review client project statuses", description: "Check portfolio health for upcoming client meetings", urgency: "high" },
+      { title: "Respond to client queries", description: "Address outstanding client communications", urgency: "high" },
+      { title: "Update portfolio data", description: "Ensure portfolio groupings are current", urgency: "medium" },
+      { title: "Prepare client report", description: "Compile performance data for client presentation", urgency: "medium" },
+      { title: "Identify upsell opportunities", description: "Review completed projects for expansion potential", urgency: "low" },
+    ],
+  },
+];
+
+const URGENCY_STYLES: Record<string, { bg: string; text: string; label: string }> = {
+  high: { bg: "bg-red-50 border-red-200", text: "text-red-700", label: "Urgent" },
+  medium: { bg: "bg-amber-50 border-amber-200", text: "text-amber-700", label: "Important" },
+  low: { bg: "bg-blue-50 border-blue-200", text: "text-blue-700", label: "Plan" },
+};
+
+function RoleBasedSimulation() {
+  const [, navigate] = useLocation();
+  const { user } = useAuth();
+  const userRole = user?.role || (user as any)?.companyRole || "";
+  const defaultRole = ROLE_SIMULATIONS.find(r => r.roleKey === userRole)?.roleKey || "";
+  const [selectedRole, setSelectedRole] = useState<string>(defaultRole);
+  const [expandedPanel, setExpandedPanel] = useState<string | null>("rhythm");
+
+  const config = ROLE_SIMULATIONS.find(r => r.roleKey === selectedRole);
+
+  const togglePanel = (panel: string) => {
+    setExpandedPanel(prev => prev === panel ? null : panel);
+  };
+
+  return (
+    <div className="space-y-4" data-testid="role-simulation">
+      <Card className="shadow-sm">
+        <CardContent className="pt-5 pb-4 px-5">
+          <div className="flex items-start gap-4 flex-wrap">
+            <div className="flex-1 min-w-[200px]">
+              <h3 className="text-sm font-semibold flex items-center gap-2 mb-1">
+                <UserCheck className="h-4 w-4 text-blue-600" />
+                Role-Based Simulation
+              </h3>
+              <p className="text-xs text-muted-foreground">Select your role to see your daily rhythm, responsibilities, and key dashboards.</p>
+            </div>
+            <Select value={selectedRole} onValueChange={setSelectedRole}>
+              <SelectTrigger className="w-[220px] h-9" data-testid="select-simulation-role">
+                <SelectValue placeholder="Select your role..." />
+              </SelectTrigger>
+              <SelectContent>
+                {ROLE_SIMULATIONS.map(r => (
+                  <SelectItem key={r.roleKey} value={r.roleKey}>{r.roleLabel}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
+
+      {!config && (
+        <Card className="border-dashed">
+          <CardContent className="py-12 text-center">
+            <Users className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
+            <p className="text-sm text-muted-foreground">Select a role above to see the simulation.</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {config && (
+        <div className="space-y-3" data-testid={`simulation-panels-${config.roleKey}`}>
+          <div className="flex items-center gap-2 px-1">
+            <Badge className="bg-slate-800 text-white text-xs">{config.roleLabel}</Badge>
+            <Badge variant="outline" className="text-[10px]">{config.department}</Badge>
+          </div>
+
+          <Card className="overflow-hidden">
+            <button
+              className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-slate-50 transition-colors text-left"
+              onClick={() => togglePanel("rhythm")}
+              data-testid="panel-toggle-rhythm"
+            >
+              <div className="flex items-center gap-2.5">
+                <div className="p-1.5 rounded-md bg-blue-50 text-blue-600"><Clock className="h-4 w-4" /></div>
+                <span className="text-sm font-semibold">Your Daily/Weekly Rhythm</span>
+              </div>
+              {expandedPanel === "rhythm" ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+            </button>
+            {expandedPanel === "rhythm" && (
+              <div className="px-5 pb-4 border-t">
+                <div className="space-y-2 mt-3">
+                  {config.rhythm.map((r, i) => (
+                    <div key={i} className="flex items-start gap-3 p-2.5 rounded-lg bg-slate-50">
+                      <Badge variant="outline" className={`text-[9px] shrink-0 mt-0.5 ${r.frequency === "Daily" ? "bg-blue-50 text-blue-700 border-blue-200" : r.frequency === "Weekly" ? "bg-violet-50 text-violet-700 border-violet-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"}`}>
+                        {r.frequency}
+                      </Badge>
+                      <span className="text-xs text-slate-700">{r.activity}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </Card>
+
+          <Card className="overflow-hidden">
+            <button
+              className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-slate-50 transition-colors text-left"
+              onClick={() => togglePanel("nonneg")}
+              data-testid="panel-toggle-nonneg"
+            >
+              <div className="flex items-center gap-2.5">
+                <div className="p-1.5 rounded-md bg-red-50 text-red-600"><Shield className="h-4 w-4" /></div>
+                <span className="text-sm font-semibold">Your Non-Negotiables</span>
+              </div>
+              {expandedPanel === "nonneg" ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+            </button>
+            {expandedPanel === "nonneg" && (
+              <div className="px-5 pb-4 border-t">
+                <div className="space-y-1.5 mt-3">
+                  {config.nonNegotiables.map((item, i) => (
+                    <div key={i} className="flex items-start gap-2.5 p-2.5 rounded-lg bg-red-50/50">
+                      <AlertCircle className="h-3.5 w-3.5 text-red-500 shrink-0 mt-0.5" />
+                      <span className="text-xs text-slate-700">{item}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </Card>
+
+          <Card className="overflow-hidden">
+            <button
+              className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-slate-50 transition-colors text-left"
+              onClick={() => togglePanel("io")}
+              data-testid="panel-toggle-io"
+            >
+              <div className="flex items-center gap-2.5">
+                <div className="p-1.5 rounded-md bg-emerald-50 text-emerald-600"><ArrowRight className="h-4 w-4" /></div>
+                <span className="text-sm font-semibold">Your Inputs & Outputs</span>
+              </div>
+              {expandedPanel === "io" ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+            </button>
+            {expandedPanel === "io" && (
+              <div className="px-5 pb-4 border-t">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
+                  <div>
+                    <h4 className="text-xs font-semibold text-slate-500 mb-2 flex items-center gap-1"><ArrowLeft className="h-3 w-3" /> INPUTS</h4>
+                    <div className="space-y-1.5">
+                      {config.inputs.map((item, i) => (
+                        <div key={i} className="flex items-start gap-2 p-2 rounded-lg bg-emerald-50/50">
+                          <FolderOpen className="h-3 w-3 text-emerald-500 shrink-0 mt-0.5" />
+                          <span className="text-xs text-slate-700">{item}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-semibold text-slate-500 mb-2 flex items-center gap-1">OUTPUTS <ArrowRight className="h-3 w-3" /></h4>
+                    <div className="space-y-1.5">
+                      {config.outputs.map((item, i) => (
+                        <div key={i} className="flex items-start gap-2 p-2 rounded-lg bg-blue-50/50">
+                          <FileText className="h-3 w-3 text-blue-500 shrink-0 mt-0.5" />
+                          <span className="text-xs text-slate-700">{item}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </Card>
+
+          <Card className="overflow-hidden">
+            <button
+              className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-slate-50 transition-colors text-left"
+              onClick={() => togglePanel("escalation")}
+              data-testid="panel-toggle-escalation"
+            >
+              <div className="flex items-center gap-2.5">
+                <div className="p-1.5 rounded-md bg-amber-50 text-amber-600"><ChevronUp className="h-4 w-4" /></div>
+                <span className="text-sm font-semibold">Your Escalation Path</span>
+              </div>
+              {expandedPanel === "escalation" ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+            </button>
+            {expandedPanel === "escalation" && (
+              <div className="px-5 pb-4 border-t">
+                <div className="space-y-2 mt-3">
+                  {config.escalationPath.map((esc, i) => (
+                    <div key={i} className="flex items-start gap-3 p-3 rounded-lg border border-amber-200 bg-amber-50/30">
+                      <div className="p-1.5 rounded-full bg-amber-100">
+                        <Users className="h-3.5 w-3.5 text-amber-700" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold text-slate-800">{esc.role}</p>
+                        <p className="text-[11px] text-slate-500 mt-0.5">{esc.when}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </Card>
+
+          <Card className="overflow-hidden">
+            <button
+              className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-slate-50 transition-colors text-left"
+              onClick={() => togglePanel("dashboards")}
+              data-testid="panel-toggle-dashboards"
+            >
+              <div className="flex items-center gap-2.5">
+                <div className="p-1.5 rounded-md bg-violet-50 text-violet-600"><Layers className="h-4 w-4" /></div>
+                <span className="text-sm font-semibold">Your Dashboards</span>
+              </div>
+              {expandedPanel === "dashboards" ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+            </button>
+            {expandedPanel === "dashboards" && (
+              <div className="px-5 pb-4 border-t">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-3">
+                  {config.dashboards.map((db, i) => (
+                    <button
+                      key={i}
+                      className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-slate-200 hover:border-blue-300 hover:bg-blue-50 transition-all text-left group"
+                      onClick={() => navigate(db.path)}
+                      data-testid={`dashboard-link-${i}`}
+                    >
+                      <ExternalLink className="h-3.5 w-3.5 text-slate-400 group-hover:text-blue-600 shrink-0" />
+                      <span className="text-xs font-medium text-slate-700 group-hover:text-blue-600 truncate">{db.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </Card>
+
+          <Card className="overflow-hidden">
+            <button
+              className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-slate-50 transition-colors text-left"
+              onClick={() => togglePanel("actions")}
+              data-testid="panel-toggle-actions"
+            >
+              <div className="flex items-center gap-2.5">
+                <div className="p-1.5 rounded-md bg-slate-800 text-white"><Zap className="h-4 w-4" /></div>
+                <span className="text-sm font-semibold">Top 5 Actions Right Now</span>
+              </div>
+              {expandedPanel === "actions" ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+            </button>
+            {expandedPanel === "actions" && (
+              <div className="px-5 pb-4 border-t">
+                <div className="space-y-2 mt-3">
+                  {config.topActions.map((action, i) => {
+                    const style = URGENCY_STYLES[action.urgency];
+                    return (
+                      <div key={i} className={`flex items-start gap-3 p-3 rounded-lg border ${style.bg}`} data-testid={`action-card-${i}`}>
+                        <div className="w-6 h-6 rounded-full bg-slate-800 text-white flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">
+                          {i + 1}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <span className="text-xs font-semibold text-slate-800">{action.title}</span>
+                            <Badge variant="outline" className={`text-[8px] ${style.text} border-current`}>{style.label}</Badge>
+                          </div>
+                          <p className="text-[11px] text-slate-500">{action.description}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function WalkthroughTab() {
   const [, navigate] = useLocation();
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -1339,10 +2132,12 @@ function WalkthroughTab() {
 }
 
 type OsView = { type: "lifecycle" } | { type: "department"; slug: string } | { type: "process"; slug: string };
+type OsMode = "map" | "drilldown";
 
 export default function EeInfoPage() {
   const [activeTab, setActiveTab] = useState("os");
   const [osView, setOsView] = useState<OsView>({ type: "lifecycle" });
+  const [osMode, setOsMode] = useState<OsMode>("map");
 
   const { user } = useAuth();
   const userRole = user?.role || (user as any)?.companyRole || null;
@@ -1380,32 +2175,50 @@ export default function EeInfoPage() {
           <TabsTrigger value="walkthroughs" className="gap-1 text-xs" data-testid="tab-walkthroughs">
             <GraduationCap className="h-3.5 w-3.5" /> Walkthroughs
           </TabsTrigger>
+          <TabsTrigger value="simulation" className="gap-1 text-xs" data-testid="tab-simulation">
+            <UserCheck className="h-3.5 w-3.5" /> Role Simulation
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="os" className="mt-3">
-          {osView.type === "lifecycle" && (
-            <LifecycleOverview
-              onSelectDepartment={handleSelectDepartment}
-              onSelectProcess={handleSelectProcess}
-              isCOO={isCOO}
-            />
+          <div className="flex items-center gap-1.5 mb-3">
+            <Button size="sm" variant={osMode === "map" ? "default" : "outline"} className="h-7 text-xs gap-1" onClick={() => setOsMode("map")} data-testid="button-os-map">
+              <Layers className="h-3 w-3" /> Overview Map
+            </Button>
+            <Button size="sm" variant={osMode === "drilldown" ? "default" : "outline"} className="h-7 text-xs gap-1" onClick={() => setOsMode("drilldown")} data-testid="button-os-drilldown">
+              <Network className="h-3 w-3" /> Drill Down
+            </Button>
+          </div>
+          {osMode === "map" && (
+            <CompanyOverviewMap isCOO={isCOO} userId={user?.id} />
           )}
-          {osView.type === "department" && (
-            <DepartmentDrilldown
-              slug={osView.slug}
-              onBack={handleBackToLifecycle}
-              onSelectProcess={handleSelectProcess}
-              isCOO={isCOO}
-            />
-          )}
-          {osView.type === "process" && (
-            <ProcessDetailView
-              slug={osView.slug}
-              onBack={handleBackToLifecycle}
-              onSelectDepartment={handleSelectDepartment}
-              onSelectProcess={handleSelectProcess}
-              isCOO={isCOO}
-            />
+          {osMode === "drilldown" && (
+            <>
+              {osView.type === "lifecycle" && (
+                <LifecycleOverview
+                  onSelectDepartment={handleSelectDepartment}
+                  onSelectProcess={handleSelectProcess}
+                  isCOO={isCOO}
+                />
+              )}
+              {osView.type === "department" && (
+                <DepartmentDrilldown
+                  slug={osView.slug}
+                  onBack={handleBackToLifecycle}
+                  onSelectProcess={handleSelectProcess}
+                  isCOO={isCOO}
+                />
+              )}
+              {osView.type === "process" && (
+                <ProcessDetailView
+                  slug={osView.slug}
+                  onBack={handleBackToLifecycle}
+                  onSelectDepartment={handleSelectDepartment}
+                  onSelectProcess={handleSelectProcess}
+                  isCOO={isCOO}
+                />
+              )}
+            </>
           )}
         </TabsContent>
 
@@ -1415,6 +2228,10 @@ export default function EeInfoPage() {
 
         <TabsContent value="walkthroughs" className="mt-3">
           <WalkthroughTab />
+        </TabsContent>
+
+        <TabsContent value="simulation" className="mt-3">
+          <RoleBasedSimulation />
         </TabsContent>
       </Tabs>
     </div>

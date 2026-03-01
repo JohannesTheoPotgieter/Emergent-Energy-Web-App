@@ -1,6 +1,6 @@
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { eeInfoNodes, eeInfoEdges, eeInfoAssets, eeInfoVersions, eeInfoSettings } from "@shared/schema";
+import { eeInfoNodes, eeInfoEdges, eeInfoAssets, eeInfoVersions, eeInfoSettings, eeInfoNodeDetails, eeInfoNodeEditors, eeInfoNodeMetrics, projectInfo } from "@shared/schema";
 import { eq, sql, ilike, and, or, inArray } from "drizzle-orm";
 import * as fs from "fs";
 import * as path from "path";
@@ -1329,6 +1329,275 @@ export function registerEeInfoRoutes(app: Express) {
     } catch (err) {
       console.error("[EE-Info OS] Delete error:", err);
       res.status(500).json({ error: "Failed to delete node" });
+    }
+  });
+
+  const isEditorForNode = async (nodeId: string, userId: number): Promise<boolean> => {
+    const editors = await db.select().from(eeInfoNodeEditors)
+      .where(and(eq(eeInfoNodeEditors.nodeId, nodeId), eq(eeInfoNodeEditors.userId, userId), eq(eeInfoNodeEditors.canEdit, true)));
+    return editors.length > 0;
+  };
+
+  const isCOORole = (user: any): boolean => {
+    const role = user?.role || user?.companyRole;
+    return role === "COO_ADMIN" || role === "admin" || role === "CEO_ADMIN";
+  };
+
+  app.get("/api/ee-info/nodes/:nodeId/details", requireAuth, async (req, res) => {
+    try {
+      const { nodeId } = req.params;
+      const details = await db.select().from(eeInfoNodeDetails).where(eq(eeInfoNodeDetails.nodeId, nodeId));
+      res.json(details[0] || null);
+    } catch (err) {
+      console.error("[EE-Info] Error fetching node details:", err);
+      res.status(500).json({ error: "Failed to fetch node details" });
+    }
+  });
+
+  app.put("/api/ee-info/nodes/:nodeId/details", requireAuth, async (req, res) => {
+    try {
+      const { nodeId } = req.params;
+      const user = req.user as any;
+      const userId = user?.id;
+
+      if (!isCOORole(user)) {
+        const canEdit = await isEditorForNode(nodeId, userId);
+        if (!canEdit) return res.status(403).json({ error: "forbidden", message: "You do not have permission to edit this node's details" });
+      }
+
+      const node = await db.select().from(eeInfoNodes).where(eq(eeInfoNodes.id, nodeId)).limit(1);
+      if (!node.length) return res.status(404).json({ error: "Node not found" });
+
+      const { purpose, inputs, steps, outputs, raci, toolsDocs, risksFailureModes } = req.body;
+
+      const existing = await db.select().from(eeInfoNodeDetails).where(eq(eeInfoNodeDetails.nodeId, nodeId));
+
+      if (existing.length > 0) {
+        const updates: any = { updatedAt: new Date(), updatedBy: user?.name || String(userId) };
+        if (purpose !== undefined) updates.purpose = purpose;
+        if (inputs !== undefined) updates.inputs = inputs;
+        if (steps !== undefined) updates.steps = steps;
+        if (outputs !== undefined) updates.outputs = outputs;
+        if (raci !== undefined) updates.raci = raci;
+        if (toolsDocs !== undefined) updates.toolsDocs = toolsDocs;
+        if (risksFailureModes !== undefined) updates.risksFailureModes = risksFailureModes;
+
+        await db.update(eeInfoNodeDetails).set(updates).where(eq(eeInfoNodeDetails.nodeId, nodeId));
+        const [updated] = await db.select().from(eeInfoNodeDetails).where(eq(eeInfoNodeDetails.nodeId, nodeId));
+        res.json(updated);
+      } else {
+        await db.insert(eeInfoNodeDetails).values({
+          nodeId,
+          purpose: purpose || null,
+          inputs: inputs || null,
+          steps: steps || null,
+          outputs: outputs || null,
+          raci: raci || null,
+          toolsDocs: toolsDocs || null,
+          risksFailureModes: risksFailureModes || null,
+          updatedAt: new Date(),
+          updatedBy: user?.name || String(userId),
+        });
+        const [created] = await db.select().from(eeInfoNodeDetails).where(eq(eeInfoNodeDetails.nodeId, nodeId));
+        res.json(created);
+      }
+    } catch (err) {
+      console.error("[EE-Info] Error updating node details:", err);
+      res.status(500).json({ error: "Failed to update node details" });
+    }
+  });
+
+  app.get("/api/ee-info/nodes/:nodeId/editors", requireAuth, async (req, res) => {
+    try {
+      const { nodeId } = req.params;
+      const editors = await db.select().from(eeInfoNodeEditors).where(eq(eeInfoNodeEditors.nodeId, nodeId));
+      res.json(editors);
+    } catch (err) {
+      console.error("[EE-Info] Error fetching node editors:", err);
+      res.status(500).json({ error: "Failed to fetch node editors" });
+    }
+  });
+
+  app.post("/api/ee-info/nodes/:nodeId/editors", requireAuth, requireCOO, async (req, res) => {
+    try {
+      const { nodeId } = req.params;
+      const { userId, canEdit, canManageChildren } = req.body;
+      if (!userId) return res.status(400).json({ error: "userId is required" });
+
+      const node = await db.select().from(eeInfoNodes).where(eq(eeInfoNodes.id, nodeId)).limit(1);
+      if (!node.length) return res.status(404).json({ error: "Node not found" });
+
+      const existing = await db.select().from(eeInfoNodeEditors)
+        .where(and(eq(eeInfoNodeEditors.nodeId, nodeId), eq(eeInfoNodeEditors.userId, userId)));
+      if (existing.length > 0) {
+        await db.update(eeInfoNodeEditors).set({
+          canEdit: canEdit !== undefined ? canEdit : true,
+          canManageChildren: canManageChildren !== undefined ? canManageChildren : false,
+        }).where(eq(eeInfoNodeEditors.id, existing[0].id));
+        const [updated] = await db.select().from(eeInfoNodeEditors).where(eq(eeInfoNodeEditors.id, existing[0].id));
+        return res.json(updated);
+      }
+
+      const [created] = await db.insert(eeInfoNodeEditors).values({
+        nodeId,
+        userId,
+        canEdit: canEdit !== undefined ? canEdit : true,
+        canManageChildren: canManageChildren !== undefined ? canManageChildren : false,
+      }).returning();
+      res.status(201).json(created);
+    } catch (err) {
+      console.error("[EE-Info] Error adding node editor:", err);
+      res.status(500).json({ error: "Failed to add node editor" });
+    }
+  });
+
+  app.delete("/api/ee-info/nodes/:nodeId/editors/:editorId", requireAuth, requireCOO, async (req, res) => {
+    try {
+      const editorId = parseInt(req.params.editorId, 10);
+      if (isNaN(editorId)) return res.status(400).json({ error: "Invalid editor ID" });
+      await db.delete(eeInfoNodeEditors).where(eq(eeInfoNodeEditors.id, editorId));
+      res.json({ success: true });
+    } catch (err) {
+      console.error("[EE-Info] Error removing node editor:", err);
+      res.status(500).json({ error: "Failed to remove node editor" });
+    }
+  });
+
+  app.get("/api/ee-info/nodes/:nodeId/metrics", requireAuth, async (req, res) => {
+    try {
+      const { nodeId } = req.params;
+      const metrics = await db.select().from(eeInfoNodeMetrics)
+        .where(eq(eeInfoNodeMetrics.nodeId, nodeId))
+        .orderBy(eeInfoNodeMetrics.sortOrder);
+      res.json(metrics);
+    } catch (err) {
+      console.error("[EE-Info] Error fetching node metrics:", err);
+      res.status(500).json({ error: "Failed to fetch node metrics" });
+    }
+  });
+
+  app.post("/api/ee-info/nodes/:nodeId/metrics", requireAuth, requireCOO, async (req, res) => {
+    try {
+      const { nodeId } = req.params;
+      const { metricKey, metricQueryType, config, displayFormat, sortOrder } = req.body;
+      if (!metricKey) return res.status(400).json({ error: "metricKey is required" });
+
+      const node = await db.select().from(eeInfoNodes).where(eq(eeInfoNodes.id, nodeId)).limit(1);
+      if (!node.length) return res.status(404).json({ error: "Node not found" });
+
+      const [created] = await db.insert(eeInfoNodeMetrics).values({
+        nodeId,
+        metricKey,
+        metricQueryType: metricQueryType || "project_count",
+        config: config || null,
+        displayFormat: displayFormat || "number",
+        sortOrder: sortOrder || 0,
+      }).returning();
+      res.status(201).json(created);
+    } catch (err) {
+      console.error("[EE-Info] Error adding node metric:", err);
+      res.status(500).json({ error: "Failed to add node metric" });
+    }
+  });
+
+  app.delete("/api/ee-info/nodes/:nodeId/metrics/:metricId", requireAuth, requireCOO, async (req, res) => {
+    try {
+      const metricId = parseInt(req.params.metricId, 10);
+      if (isNaN(metricId)) return res.status(400).json({ error: "Invalid metric ID" });
+      await db.delete(eeInfoNodeMetrics).where(eq(eeInfoNodeMetrics.id, metricId));
+      res.json({ success: true });
+    } catch (err) {
+      console.error("[EE-Info] Error removing node metric:", err);
+      res.status(500).json({ error: "Failed to remove node metric" });
+    }
+  });
+
+  const liveMetricsCache = new Map<string, { data: any; expiresAt: number }>();
+  const CACHE_TTL_MS = 60_000;
+
+  app.get("/api/ee-info/nodes/:nodeId/metrics/live", requireAuth, async (req, res) => {
+    try {
+      const { nodeId } = req.params;
+
+      const cached = liveMetricsCache.get(nodeId);
+      if (cached && cached.expiresAt > Date.now()) {
+        return res.json(cached.data);
+      }
+
+      const metricConfigs = await db.select().from(eeInfoNodeMetrics)
+        .where(eq(eeInfoNodeMetrics.nodeId, nodeId))
+        .orderBy(eeInfoNodeMetrics.sortOrder);
+
+      if (metricConfigs.length === 0) {
+        const emptyResult = { nodeId, metrics: [] };
+        liveMetricsCache.set(nodeId, { data: emptyResult, expiresAt: Date.now() + CACHE_TTL_MS });
+        return res.json(emptyResult);
+      }
+
+      const node = await db.select().from(eeInfoNodes).where(eq(eeInfoNodes.id, nodeId)).limit(1);
+      const nodeSlug = node[0]?.slug || "";
+      const nodeTitle = node[0]?.title || "";
+
+      const allProjects = await db.select().from(projectInfo);
+
+      const computedMetrics = metricConfigs.map(mc => {
+        const cfg = (mc.config as Record<string, any>) || {};
+        let value: number | string = 0;
+
+        switch (mc.metricQueryType) {
+          case "project_stage": {
+            const phaseFilter = cfg.phase || nodeTitle;
+            value = allProjects.filter(p => p.isActive && p.phase && p.phase.toLowerCase().includes(phaseFilter.toLowerCase())).length;
+            break;
+          }
+          case "project_count": {
+            if (cfg.filter === "overdue") {
+              value = allProjects.filter(p => {
+                if (!p.isActive) return false;
+                if (p.commissioningDate) {
+                  const cd = new Date(p.commissioningDate);
+                  if (!isNaN(cd.getTime()) && cd < new Date()) return true;
+                }
+                return false;
+              }).length;
+            } else if (cfg.filter === "active") {
+              value = allProjects.filter(p => p.isActive).length;
+            } else if (cfg.phase) {
+              value = allProjects.filter(p => p.isActive && p.phase === cfg.phase).length;
+            } else {
+              value = allProjects.length;
+            }
+            break;
+          }
+          case "custom": {
+            if (cfg.sumField === "contractValue") {
+              value = allProjects.reduce((sum, p) => {
+                const v = p.contractValue ? parseFloat(String(p.contractValue)) : 0;
+                return sum + (isNaN(v) ? 0 : v);
+              }, 0);
+            } else {
+              value = 0;
+            }
+            break;
+          }
+          default:
+            value = 0;
+        }
+
+        return {
+          metricKey: mc.metricKey,
+          value,
+          displayFormat: mc.displayFormat,
+          sortOrder: mc.sortOrder,
+        };
+      });
+
+      const result = { nodeId, metrics: computedMetrics };
+      liveMetricsCache.set(nodeId, { data: result, expiresAt: Date.now() + CACHE_TTL_MS });
+      res.json(result);
+    } catch (err) {
+      console.error("[EE-Info] Error computing live metrics:", err);
+      res.status(500).json({ error: "Failed to compute live metrics" });
     }
   });
 }

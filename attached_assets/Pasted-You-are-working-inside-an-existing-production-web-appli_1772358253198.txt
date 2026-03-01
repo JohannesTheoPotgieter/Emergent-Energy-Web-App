@@ -1,0 +1,249 @@
+You are working inside an existing production web application for Emergent Energy.
+DO NOT break existing functionality.
+DO NOT rename existing routes, tables, components, or permissions without explicit instruction.
+Prefer reusing existing infrastructure (auth, roles, projects, dashboards, navigation, UI components).
+If anything is unclear, list assumptions and ask Johannes before implementing.
+
+OBJECTIVE
+Enhance the existing “Emergent Energy Info” section to become:
+1) An Interactive App Walkthrough (UI guidance + role-based operational simulation)
+2) A LIVE Interactive Company Process Overview (departments + project lifecycle + drill-down)
+
+This must feel like an “operating system”, not admin documentation.
+It must drive behavior and clarity.
+
+------------------------------------------------------------
+SECTION A: INFORMATION ARCHITECTURE (NO UI YET)
+------------------------------------------------------------
+
+A1) Create a new domain/module: emergent_energy_info
+- Keep code modular and isolated.
+- Add tests for permissions and CRUD.
+- Add seed data only if required for initial structure (minimal).
+
+A2) Data model (create tables only if missing)
+You must first inspect existing DB schema and reuse existing tables where possible.
+If equivalents exist, do NOT create duplicates; extend safely.
+
+Required concepts:
+1) Node: A clickable item in the company map (e.g., Department, Stage, Process, Gate, Role, Tool)
+2) Edge: Relationship between nodes (touches, next, depends_on, produces, consumes)
+3) Structured Detail: Purpose, Inputs, Steps, Outputs, RACI, Tools/Docs, Risks/Failure Modes
+4) Permissions: Who can edit which nodes (assigned users) while COO retains full control
+5) Live Metrics Config: Ability to map a node to live project queries
+
+Proposed tables (only if not already present):
+- ee_info_nodes
+  - id (uuid/int)
+  - type (enum: department, lifecycle_stage, process, gate, role, tool, doc, page)
+  - title
+  - short_description
+  - status (active/archived)
+  - icon_key (string)
+  - sort_order
+  - owner_user_id (nullable)
+  - created_by_user_id
+  - updated_by_user_id
+  - created_at, updated_at
+
+- ee_info_edges
+  - id
+  - from_node_id
+  - to_node_id
+  - relationship_type (enum: next, touches, depends_on, produces, consumes, governs)
+  - label (nullable)
+  - sort_order
+
+- ee_info_node_details
+  - id
+  - node_id (unique)
+  - purpose (richtext/markdown)
+  - inputs (richtext/markdown)
+  - steps (richtext/markdown)
+  - outputs (richtext/markdown)
+  - raci (json)  // structure: [{role, accountable, responsible, consulted, informed}]
+  - tools_docs (json) // links to internal pages or SharePoint pointers
+  - risks_failure_modes (richtext/markdown)
+
+- ee_info_node_editors
+  - id
+  - node_id
+  - user_id
+  - can_edit (bool)
+  - can_manage_children (bool)
+  - created_at
+
+- ee_info_node_metrics
+  - id
+  - node_id
+  - metric_key (string) // e.g. "active_projects_count", "overdue_gates_count"
+  - metric_query_type (enum: project_stage, project_tag, custom_sql_safe, api_function)
+  - config (json) // depends on query type
+  - display_format (enum: number, currency, percent, duration)
+  - sort_order
+
+A3) Permission rules (non-negotiable)
+- COO role: full access to create/edit/delete nodes, edges, details, editor assignments, metrics mappings.
+- Assigned editors: can edit only the nodes they are assigned to (ee_info_node_editors).
+- Assigned editors can only edit: title, descriptions, details (purpose/inputs/steps/outputs/RACI/tools/risks) for their nodes.
+- Only COO can:
+  - create/delete nodes
+  - create/delete edges
+  - assign editors
+  - configure metrics mappings
+  - change node type
+  - archive nodes
+- Everyone else: read-only.
+
+Implement server-side enforcement (not just UI hiding).
+Add automated tests for these permission boundaries.
+
+------------------------------------------------------------
+SECTION B: LIVE INTERACTIVE COMPANY OVERVIEW (UI)
+------------------------------------------------------------
+
+B1) Emergent Energy Overview landing
+Inside existing “Emergent Energy Info” section, add 2 tabs:
+- “Interactive Walkthrough”
+- “Company Overview”
+
+B2) Company Overview UX requirements
+This is an interactive live map:
+- Left panel: “Map” (graph/network + optional lifecycle flow mode)
+- Right panel: “Detail” (structured detail + live metrics + linked items)
+
+Map modes:
+1) Lifecycle Flow Mode: guided left-to-right (or top-down) stages, with departments overlayed.
+2) Network Mode: nodes/edges graph view showing “what touches what”.
+
+User actions:
+- Clicking any node updates the Detail panel.
+- Hover shows quick stats: live metrics (e.g. active projects, overdue items).
+- Filter controls:
+  - filter by node type (department/stage/process/gate)
+  - filter by lifecycle stage
+  - filter by department
+  - search nodes by name
+
+Live metrics:
+- For each node, display configured metrics.
+- Metrics must pull from existing project data tables (projects, statuses, tags, gates, etc.).
+- If no existing fields exist to compute a requested metric, flag it clearly and ask Johannes which field/table is source of truth.
+- Cache metrics with short TTL (e.g. 60–180 seconds) to avoid heavy DB load.
+
+Drill-down navigation:
+- Each node can have children (e.g. Department → Processes → Gates).
+- Provide breadcrumb trail.
+- Provide “Related nodes” list based on edges.
+
+Editing (COO + assigned editors only):
+- Edit button appears only if allowed.
+- Editors can update structured detail and node summary.
+- COO can additionally manage edges, metrics, and editor assignments.
+
+B3) Seed structure (minimum viable)
+Create an initial “skeleton” map with placeholders (not hardcoded in UI; seeded into DB):
+Departments (at least):
+- Project Development
+- Engineering
+- Project Management (incl Finance)
+- Procurement
+- Quality
+- HSE/Compliance (note: begins post PD handover in our business)
+- O&M (Matriarch handover)
+
+Lifecycle stages (at least):
+- First Assessment
+- Cost Proposal
+- CP Signed
+- Project Handover (PD → PM)
+- Planning/Engineering Pack
+- Procurement
+- Construction
+- Commissioning
+- Handover to Matriarch
+
+Add edges showing basic flow (relationship_type = next) across lifecycle stages.
+Add edges linking departments to stages they touch (relationship_type = touches).
+
+IMPORTANT: Do not invent missing business rules.
+Use placeholders where needed. Make placeholders obvious in UI with “Needs definition”.
+
+------------------------------------------------------------
+SECTION C: INTERACTIVE APP WALKTHROUGH (UI)
+------------------------------------------------------------
+
+C1) Two modes inside “Interactive Walkthrough”
+- “Guided UI Tour”
+- “Role-Based Simulation”
+
+C2) Guided UI Tour
+- Overlay walkthrough, step-by-step, highlights real UI components across the app.
+- Must be maintainable: steps stored in DB or a config file, not hardcoded scattered.
+- Steps include:
+  - title
+  - body text
+  - selector/route target
+  - required role(s)
+  - next step
+
+C3) Role-Based Simulation
+User selects their role (PM, Engineer, Finance, Quality, COO, etc.)
+Then system shows:
+- “Your daily/weekly rhythm”
+- “Your non-negotiables”
+- “Your inputs and outputs”
+- “Your escalation path”
+- “Your dashboards”
+- “Your top 5 actions right now” (based on live data if possible)
+
+This simulation must link back to:
+- Company Overview nodes (processes/stages)
+- Real areas in the app (deep links)
+
+If “top actions right now” needs data we don’t have, show a stub card:
+“Data needed: _______ (source of truth?)”
+
+------------------------------------------------------------
+SECTION D: NON-FUNCTIONAL REQUIREMENTS
+------------------------------------------------------------
+
+D1) Performance
+- Map should load fast. Use paginated / lazy loading if needed.
+- Cache metrics.
+- Avoid N+1 queries.
+
+D2) Auditability
+- Track updated_by and updated_at for node and details edits.
+- Provide “last updated” indicator in UI.
+
+D3) Tests
+- Unit tests for permissions
+- Integration tests for:
+  - COO can create nodes/edges/assign editors/configure metrics
+  - Editor can edit only assigned node details
+  - Read-only users cannot edit anything
+
+D4) No breaking changes
+- Must not break existing navigation, home screen, or dashboards.
+- Add routes/components safely.
+
+------------------------------------------------------------
+SECTION E: QUESTIONS YOU MUST ASK JOHANNES BEFORE FINALIZING
+------------------------------------------------------------
+
+Before implementing metrics mappings, ask Johannes (do not guess):
+1) What is the current source-of-truth field for “project lifecycle stage” in the DB?
+2) What defines “overdue” (date field + rule) for gates/stages?
+3) What roles exist in auth (exact role keys), and which one is COO?
+4) Where are project handover milestones stored (CP signed, PD→PM handover, handover to Matriarch)?
+
+Only ask these if you cannot find them in the schema.
+
+DELIVERABLES
+- Working UI in Emergent Energy Info with both tabs
+- DB tables/migrations only if needed
+- Seeded skeleton structure (editable)
+- Permission-safe editing
+- Live metrics framework with caching
+- Tests passing

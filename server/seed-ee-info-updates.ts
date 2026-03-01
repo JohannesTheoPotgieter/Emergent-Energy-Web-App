@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { eeInfoNodes } from "@shared/schema";
+import { eeInfoNodes, eeInfoNodeDetails, eeInfoNodeMetrics } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 
@@ -1445,8 +1445,374 @@ export async function seedEeInfoUpdates() {
       console.log(`[EE-Info-Update] SOP enriched: ${node.title}`);
     }
 
+    await seedNodeDetailsAndMetrics();
+
     console.log("[EE-Info-Update] Seed updates complete.");
   } catch (err) {
     console.error("[EE-Info-Update] Error:", err);
   }
+}
+
+interface NodeDetailSeed {
+  slug: string;
+  purpose: string;
+  inputs: string;
+  steps: string;
+  outputs: string;
+  raci: { role: string; responsible?: boolean; accountable?: boolean; consulted?: boolean; informed?: boolean }[];
+  toolsDocs: { name: string; url?: string; type?: string }[];
+  risksFailureModes: string;
+}
+
+interface NodeMetricSeed {
+  slug: string;
+  metrics: {
+    metricKey: string;
+    metricQueryType: string;
+    config: Record<string, any>;
+    displayFormat: string;
+    sortOrder: number;
+  }[];
+}
+
+const LIFECYCLE_STAGE_DETAILS: NodeDetailSeed[] = [
+  {
+    slug: "first-assessment-request-epd1",
+    purpose: "Provide a high-level technical and financial feasibility analysis for a prospective project so the Head of Project Development can decide whether to proceed to Cost Proposal.",
+    inputs: "Site visit report, Client brief / RFI, Hand over charter, Geo-coordinates and aerial imagery",
+    steps: "1. Project Developer loads FA request on pre-engineering board\n2. Head of PD sets priority\n3. Quality Manager assigns to Design Engineer\n4. Design Engineer executes FA (PVSOL simulation, layout, yield)\n5. Quality Manager reviews output\n6. Design Engineer closes ticket and notifies PD",
+    outputs: "FA Template (yield, layout, high-level costed estimate), PVSOL simulation file, Pre-engineering board ticket marked complete",
+    raci: [
+      { role: "Project Developer", responsible: true },
+      { role: "Head of Project Development", accountable: true },
+      { role: "Quality Manager", consulted: true },
+      { role: "Design Engineer", responsible: true },
+      { role: "COO", informed: true },
+    ],
+    toolsDocs: [
+      { name: "PVSOL", type: "tool" },
+      { name: "SharePoint", type: "tool" },
+      { name: "MS Teams", type: "tool" },
+      { name: "FA Template", type: "template" },
+    ],
+    risksFailureModes: "Incomplete site data leads to inaccurate yield estimates. Missing aerial imagery delays FA execution. PVSOL simulation not reviewed can propagate errors to Cost Proposal stage.",
+  },
+  {
+    slug: "cost-proposal-request-epd2",
+    purpose: "Produce a detailed, client-ready cost proposal covering system design, bill of materials, installation cost, and project timeline for formal offer submission.",
+    inputs: "Approved First Assessment, Client scope confirmation (kWp target, roof/ground, storage), Up-to-date utility tariff schedule",
+    steps: "1. PD loads Cost Proposal request on pre-engineering board\n2. Head of PD sets priority\n3. Quality Manager assigns to Design Engineer\n4. Engineer executes detailed design (PVsyst, SLD, BOM)\n5. Quality Manager reviews output\n6. Engineer compiles Cost Proposal document\n7. Ticket closed and PD notified",
+    outputs: "Cost Proposal document, Detailed BOM, Single Line Diagram (SLD), PVsyst report, Project timeline estimate",
+    raci: [
+      { role: "Design Engineer", responsible: true },
+      { role: "Head of Project Development", accountable: true },
+      { role: "Quality Manager", consulted: true },
+      { role: "Project Developer", informed: true },
+    ],
+    toolsDocs: [
+      { name: "PVsyst", type: "tool" },
+      { name: "SharePoint", type: "tool" },
+      { name: "Cost Proposal Template", type: "template" },
+    ],
+    risksFailureModes: "Inaccurate BOM pricing leads to margin erosion. Outdated tariff schedules affect financial viability. Incomplete SLD delays engineering approval.",
+  },
+  {
+    slug: "engineering-pack-epm1",
+    purpose: "Deliver a complete Issued For Construction (IFC) engineering package including all drawings, calculations, and specifications required for safe and compliant installation.",
+    inputs: "Approved Cost Proposal, Confirmed project scope, Site survey data, Client approval to proceed",
+    steps: "1. Engineering pack request created from lifecycle board\n2. Engineer assigned and scope confirmed\n3. Detailed design and calculations completed\n4. Drawings produced (layout, SLD, mounting details)\n5. Internal design review conducted\n6. IFC pack compiled and approved\n7. Pack issued to construction team",
+    outputs: "IFC Drawing Package, Structural calculations, Electrical calculations, Equipment specifications, Construction method statement",
+    raci: [
+      { role: "Design Engineer", responsible: true },
+      { role: "Head of Engineering", accountable: true },
+      { role: "Quality Manager", consulted: true },
+      { role: "Project Manager", informed: true },
+      { role: "Construction Manager", informed: true },
+    ],
+    toolsDocs: [
+      { name: "AutoCAD", type: "tool" },
+      { name: "SharePoint", type: "tool" },
+      { name: "Engineering Stage Templates", type: "template" },
+    ],
+    risksFailureModes: "Design errors lead to rework on site. Missing structural calculations risk safety incidents. Incomplete specifications cause procurement delays.",
+  },
+  {
+    slug: "commissioning-epm2",
+    purpose: "Formally commission the solar installation, verify system performance, and prepare all documentation required for handover to Operations & Maintenance.",
+    inputs: "Completed construction (QA Gate 3 passed), All test equipment calibrated, Grid connection approval (if applicable), Client availability for witness testing",
+    steps: "1. Pre-commissioning checks completed\n2. System energisation under controlled conditions\n3. Performance tests (IV curve, thermal imaging)\n4. Grid compliance testing (if applicable)\n5. SSEG registration submitted\n6. Commissioning report compiled\n7. System handed over to O&M",
+    outputs: "Commissioning report, Performance test results, SSEG registration confirmation, O&M handover documentation, As-built drawings",
+    raci: [
+      { role: "Design Engineer", responsible: true },
+      { role: "Head of Engineering", accountable: true },
+      { role: "Quality Manager", consulted: true },
+      { role: "Project Manager", informed: true },
+      { role: "COO", informed: true },
+    ],
+    toolsDocs: [
+      { name: "IV Curve Tracer", type: "tool" },
+      { name: "Thermal Camera", type: "tool" },
+      { name: "Commissioning Template", type: "template" },
+    ],
+    risksFailureModes: "Incomplete pre-commissioning checks risk equipment damage. Missing SSEG registration delays grid connection. Insufficient performance documentation affects warranty claims.",
+  },
+  {
+    slug: "sop-construction-qa",
+    purpose: "Ensure every solar installation meets quality and safety standards through a structured 3-gate inspection procedure conducted at defined construction milestones.",
+    inputs: "IFC engineering pack, Construction schedule, Quality checklists (Gate 1/2/3), Site access arrangements",
+    steps: "1. PM notifies QM that gate milestone reached\n2. QM schedules site visit within 2 business days\n3. Inspector conducts gate-specific checklist\n4. Findings recorded in Quality Dashboard\n5. Failed gates require rework and re-inspection\n6. All gate approvals recorded with signature and timestamp",
+    outputs: "QA inspection reports, Photo evidence, Gate approval records, Rework action items (if any)",
+    raci: [
+      { role: "Quality Manager", responsible: true, accountable: true },
+      { role: "Project Manager", consulted: true },
+      { role: "Construction Manager", consulted: true },
+      { role: "COO", informed: true },
+    ],
+    toolsDocs: [
+      { name: "Quality Dashboard", type: "tool" },
+      { name: "SharePoint", type: "tool" },
+      { name: "QA Gate Checklists", type: "template" },
+    ],
+    risksFailureModes: "Skipping gate inspections leads to latent defects. Insufficient photo evidence weakens warranty claims. Delayed inspections stall construction progress.",
+  },
+  {
+    slug: "engineering-stage-gating",
+    purpose: "Control when engineering stages can be marked complete through defined gate rules that must be satisfied before progression.",
+    inputs: "Engineering task checklist, Required deliverables, QA approval status, Technical signoff status",
+    steps: "1. All required tasks marked complete\n2. Required deliverables uploaded\n3. QA Review approval obtained (for Handover Pack)\n4. Technical Signoff obtained (for Handover Pack)\n5. Stage gate validated by system\n6. Stage marked complete",
+    outputs: "Stage completion record, Audit trail of gate satisfaction, COO override log (if applicable)",
+    raci: [
+      { role: "Design Engineer", responsible: true },
+      { role: "Head of Engineering", accountable: true },
+      { role: "Quality Manager", consulted: true },
+      { role: "COO", informed: true },
+    ],
+    toolsDocs: [
+      { name: "Engineering Dashboard", type: "tool" },
+      { name: "Lifecycle Board", type: "tool" },
+    ],
+    risksFailureModes: "Bypassing gates without COO override creates compliance gaps. Missing deliverables at handover delays project close-out. Unsigned technical signoffs expose liability.",
+  },
+  {
+    slug: "weekly-review-process",
+    purpose: "Provide structured weekly project status reporting by Project Managers to enable program oversight and early risk identification.",
+    inputs: "Current project schedule status, Financial data (COS, cashflow), Risk register updates, Quality inspection status, Site progress photos",
+    steps: "1. Schedule — Is the project on track?\n2. Costed — Any financial variances?\n3. Risks — Active risk assessment\n4. Quality — Inspection and QA status\n5. Actions — Next week's deliverables\n6. Summary — Overall status for management",
+    outputs: "Weekly review report, Updated risk register, Action item list, Status summary for program dashboard",
+    raci: [
+      { role: "Project Manager", responsible: true },
+      { role: "Program Manager", accountable: true },
+      { role: "Construction Manager", consulted: true },
+      { role: "COO", informed: true },
+    ],
+    toolsDocs: [
+      { name: "Weekly Review Wizard", type: "tool" },
+      { name: "PM Dashboard", type: "tool" },
+    ],
+    risksFailureModes: "Incomplete weekly reviews mask project issues. Late submissions delay management decisions. Inaccurate status reporting creates false confidence.",
+  },
+];
+
+const DEPARTMENT_DETAILS: NodeDetailSeed[] = [
+  {
+    slug: "quality-manager",
+    purpose: "Manage quality assurance across all projects, conduct inspections, and ensure compliance with safety and quality standards.",
+    inputs: "Construction milestone notifications, Engineering deliverables for review, Quality checklists, Site inspection reports",
+    steps: "Needs definition",
+    outputs: "QA Gate approvals, Inspection reports, Quality dashboard updates, Handover Pack QA Review approval",
+    raci: [
+      { role: "Quality Manager", responsible: true, accountable: true },
+      { role: "Head of Engineering", consulted: true },
+      { role: "COO", informed: true },
+    ],
+    toolsDocs: [
+      { name: "Quality Dashboard", type: "tool", url: "/qm-dashboard" },
+      { name: "Engineering Stage Approvals", type: "tool" },
+    ],
+    risksFailureModes: "Needs definition",
+  },
+  {
+    slug: "head-of-engineering",
+    purpose: "Oversee the Engineering Department, manage engineering team workload, and ensure stage gate requirements are met across all projects.",
+    inputs: "Project pipeline from lifecycle board, Engineering task assignments, Stage gate status reports, Resource availability",
+    steps: "Needs definition",
+    outputs: "Engineering dashboard reports, Task assignments, Stage template configurations, Engineering resource plans",
+    raci: [
+      { role: "Head of Engineering", responsible: true, accountable: true },
+      { role: "Quality Manager", consulted: true },
+      { role: "COO", informed: true },
+    ],
+    toolsDocs: [
+      { name: "Engineering Dashboard", type: "tool", url: "/engineering-dashboard" },
+      { name: "Engineering Task Board", type: "tool", url: "/engineering-tasks" },
+      { name: "Stage Templates Admin", type: "tool", url: "/eng-template-admin" },
+    ],
+    risksFailureModes: "Needs definition",
+  },
+  {
+    slug: "project-manager",
+    purpose: "Day-to-day management of assigned projects on site, including schedule tracking, subcontractor coordination, and weekly reporting.",
+    inputs: "Project brief and scope, IFC engineering pack, Construction schedule, Subcontractor contracts",
+    steps: "Needs definition",
+    outputs: "Weekly review reports, Project status updates, Subcontractor progress reports, Payment certificate approvals",
+    raci: [
+      { role: "Project Manager", responsible: true },
+      { role: "Program Manager", accountable: true },
+      { role: "Construction Manager", consulted: true },
+      { role: "COO", informed: true },
+    ],
+    toolsDocs: [
+      { name: "PM Dashboard", type: "tool", url: "/pm-dashboard" },
+      { name: "Weekly Review Wizard", type: "tool", url: "/weekly-reviews" },
+      { name: "Project Detail", type: "tool", url: "/projects" },
+    ],
+    risksFailureModes: "Needs definition",
+  },
+  {
+    slug: "project-engineer",
+    purpose: "Execute engineering tasks, complete stage checklist items, upload deliverables, and provide technical signoff for Handover Pack.",
+    inputs: "Engineering task assignments, Design specifications, Site survey data, Previous stage outputs",
+    steps: "Needs definition",
+    outputs: "Design drawings, Calculations, Engineering deliverables, Technical signoff",
+    raci: [
+      { role: "Design Engineer", responsible: true },
+      { role: "Head of Engineering", accountable: true },
+      { role: "Quality Manager", consulted: true },
+    ],
+    toolsDocs: [
+      { name: "Engineering Task Board", type: "tool", url: "/engineering-tasks" },
+      { name: "Engineering Stages", type: "tool" },
+    ],
+    risksFailureModes: "Needs definition",
+  },
+];
+
+const LIFECYCLE_STAGE_METRICS: NodeMetricSeed[] = [
+  {
+    slug: "first-assessment-request-epd1",
+    metrics: [
+      { metricKey: "active_projects", metricQueryType: "project_stage", config: { phase: "First Assessment" }, displayFormat: "number", sortOrder: 0 },
+      { metricKey: "overdue_projects", metricQueryType: "project_count", config: { phase: "First Assessment", condition: "overdue" }, displayFormat: "number", sortOrder: 1 },
+    ],
+  },
+  {
+    slug: "cost-proposal-request-epd2",
+    metrics: [
+      { metricKey: "active_projects", metricQueryType: "project_stage", config: { phase: "Cost Proposal" }, displayFormat: "number", sortOrder: 0 },
+      { metricKey: "overdue_projects", metricQueryType: "project_count", config: { phase: "Cost Proposal", condition: "overdue" }, displayFormat: "number", sortOrder: 1 },
+    ],
+  },
+  {
+    slug: "engineering-pack-epm1",
+    metrics: [
+      { metricKey: "active_projects", metricQueryType: "project_stage", config: { phase: "Engineering" }, displayFormat: "number", sortOrder: 0 },
+      { metricKey: "overdue_projects", metricQueryType: "project_count", config: { phase: "Engineering", condition: "overdue" }, displayFormat: "number", sortOrder: 1 },
+    ],
+  },
+  {
+    slug: "sop-construction-qa",
+    metrics: [
+      { metricKey: "active_projects", metricQueryType: "project_stage", config: { phase: "Construction" }, displayFormat: "number", sortOrder: 0 },
+      { metricKey: "overdue_projects", metricQueryType: "project_count", config: { phase: "Construction", condition: "overdue" }, displayFormat: "number", sortOrder: 1 },
+    ],
+  },
+  {
+    slug: "commissioning-epm2",
+    metrics: [
+      { metricKey: "active_projects", metricQueryType: "project_stage", config: { phase: "Commissioning" }, displayFormat: "number", sortOrder: 0 },
+      { metricKey: "overdue_projects", metricQueryType: "project_count", config: { phase: "Commissioning", condition: "overdue" }, displayFormat: "number", sortOrder: 1 },
+    ],
+  },
+  {
+    slug: "engineering-stage-gating",
+    metrics: [
+      { metricKey: "active_projects", metricQueryType: "project_stage", config: { phase: "QA/Handover" }, displayFormat: "number", sortOrder: 0 },
+      { metricKey: "overdue_projects", metricQueryType: "project_count", config: { phase: "QA/Handover", condition: "overdue" }, displayFormat: "number", sortOrder: 1 },
+    ],
+  },
+  {
+    slug: "weekly-review-process",
+    metrics: [
+      { metricKey: "active_projects", metricQueryType: "project_count", config: { condition: "active" }, displayFormat: "number", sortOrder: 0 },
+    ],
+  },
+];
+
+const DEPARTMENT_METRICS: NodeMetricSeed[] = [
+  {
+    slug: "quality-manager",
+    metrics: [
+      { metricKey: "projects_touching_dept", metricQueryType: "project_count", config: { department: "quality" }, displayFormat: "number", sortOrder: 0 },
+    ],
+  },
+  {
+    slug: "head-of-engineering",
+    metrics: [
+      { metricKey: "projects_touching_dept", metricQueryType: "project_count", config: { department: "engineering" }, displayFormat: "number", sortOrder: 0 },
+    ],
+  },
+  {
+    slug: "project-manager",
+    metrics: [
+      { metricKey: "projects_touching_dept", metricQueryType: "project_count", config: { department: "project_management" }, displayFormat: "number", sortOrder: 0 },
+    ],
+  },
+  {
+    slug: "project-engineer",
+    metrics: [
+      { metricKey: "projects_touching_dept", metricQueryType: "project_count", config: { department: "engineering" }, displayFormat: "number", sortOrder: 0 },
+    ],
+  },
+];
+
+async function seedNodeDetailsAndMetrics() {
+  const allDetails = [...LIFECYCLE_STAGE_DETAILS, ...DEPARTMENT_DETAILS];
+
+  for (const detail of allDetails) {
+    const nodes = await db.select().from(eeInfoNodes).where(eq(eeInfoNodes.slug, detail.slug));
+    if (nodes.length === 0) continue;
+    const node = nodes[0];
+
+    const existing = await db.select().from(eeInfoNodeDetails).where(eq(eeInfoNodeDetails.nodeId, node.id));
+    if (existing.length > 0) continue;
+
+    await db.insert(eeInfoNodeDetails).values({
+      nodeId: node.id,
+      purpose: detail.purpose,
+      inputs: detail.inputs,
+      steps: detail.steps,
+      outputs: detail.outputs,
+      raci: detail.raci,
+      toolsDocs: detail.toolsDocs,
+      risksFailureModes: detail.risksFailureModes,
+      updatedAt: new Date(),
+      updatedBy: "system",
+    });
+    console.log(`[EE-Info-Update] Created node details for: ${node.title}`);
+  }
+
+  const allMetrics = [...LIFECYCLE_STAGE_METRICS, ...DEPARTMENT_METRICS];
+
+  for (const metricSeed of allMetrics) {
+    const nodes = await db.select().from(eeInfoNodes).where(eq(eeInfoNodes.slug, metricSeed.slug));
+    if (nodes.length === 0) continue;
+    const node = nodes[0];
+
+    const existing = await db.select().from(eeInfoNodeMetrics).where(eq(eeInfoNodeMetrics.nodeId, node.id));
+    if (existing.length > 0) continue;
+
+    for (const metric of metricSeed.metrics) {
+      await db.insert(eeInfoNodeMetrics).values({
+        nodeId: node.id,
+        metricKey: metric.metricKey,
+        metricQueryType: metric.metricQueryType,
+        config: metric.config,
+        displayFormat: metric.displayFormat,
+        sortOrder: metric.sortOrder,
+      });
+    }
+    console.log(`[EE-Info-Update] Created ${metricSeed.metrics.length} metrics for: ${node.title}`);
+  }
+
+  console.log("[EE-Info-Update] Node details and metrics seeding complete.");
 }
