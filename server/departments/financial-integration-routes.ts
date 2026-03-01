@@ -654,4 +654,132 @@ router.delete("/api/financial-integration/rules/:ruleId", requireAuth, requireFi
   }
 });
 
+router.get("/api/financial-integration/suggested-rules/:projectName", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const projectName = req.params.projectName;
+    const suggestions: {
+      id: string;
+      ruleType: string;
+      ruleConfig: string;
+      title: string;
+      description: string;
+      severity: "critical" | "warning" | "info";
+      reason: string;
+    }[] = [];
+
+    const expenses = await storage.getProgramExpensesByProject(projectName);
+    const inflows = await storage.getProgramInflowsByProject(projectName);
+    const planTasks = await storage.getProjectPlansByProject(projectName);
+    const revSummary = await storage.getProjectRevenueSummary(projectName);
+
+    const existingRules = await db.select()
+      .from(financialIntegrationRules)
+      .where(and(eq(financialIntegrationRules.projectName, projectName), eq(financialIntegrationRules.isActive, true)));
+
+    const existingRuleTypes = new Set(existingRules.map(r => r.ruleType));
+
+    const expLinks = await db.select().from(expenseTaskLinks).where(eq(expenseTaskLinks.projectName, projectName));
+    const revLinks = await db.select().from(milestoneTaskLinks).where(eq(milestoneTaskLinks.projectName, projectName));
+
+    const totalBudget = expenses.reduce((s: number, e: any) => s + (Number(e.budgetTotal) || 0), 0);
+    const totalActual = expenses.reduce((s: number, e: any) => s + (Number(e.expenseActualTotal) || 0), 0);
+    if (totalBudget > 0) {
+      const utilPct = Math.round((totalActual / totalBudget) * 100);
+      if (utilPct > 80 && !existingRuleTypes.has("budget_threshold")) {
+        suggestions.push({
+          id: "suggest-budget-threshold",
+          ruleType: "budget_threshold",
+          ruleConfig: "90%",
+          title: "Budget Threshold Alert",
+          description: "Get alerted when spending reaches 90% of budget",
+          severity: "warning",
+          reason: `Current spend is at ${utilPct}% of budget`,
+        });
+      }
+    }
+
+    const expensesWithAmount = expenses.filter((e: any) => (Number(e.expenseActualTotal) || 0) > 0);
+    const unlinkedExpenses = expensesWithAmount.filter((e: any) => !expLinks.some(l => l.expenseId === e.id));
+    if (expensesWithAmount.length > 0) {
+      const unlinkedPct = Math.round((unlinkedExpenses.length / expensesWithAmount.length) * 100);
+      if (unlinkedPct > 50) {
+        suggestions.push({
+          id: "suggest-auto-linking",
+          ruleType: "expenditure_auto_flag",
+          ruleConfig: JSON.stringify({ autoLink: true, threshold: "50%" }),
+          title: "Auto-Link Expenses to Plan Tasks",
+          description: "Automatically suggest linking expenses to related plan tasks based on date and category matching",
+          severity: "info",
+          reason: `${unlinkedPct}% of expenses (${unlinkedExpenses.length} of ${expensesWithAmount.length}) are not linked to plan tasks`,
+        });
+      }
+    }
+
+    const milestonesWithAmount = inflows.filter((r: any) => (Number(r.milestoneAmount) || 0) > 0);
+    const unlinkedMilestones = milestonesWithAmount.filter((r: any) => !revLinks.some(l => l.milestoneRowNumber === r.rowNumber));
+    if (unlinkedMilestones.length > 0 && !existingRuleTypes.has("revenue_milestone_linking")) {
+      suggestions.push({
+        id: "suggest-revenue-milestone-alert",
+        ruleType: "revenue_milestone_linking",
+        ruleConfig: "14 days",
+        title: "Revenue Milestone Date Alert",
+        description: "Get alerted 14 days before revenue milestone due dates to ensure timely invoicing and collection",
+        severity: "warning",
+        reason: `${unlinkedMilestones.length} revenue milestone(s) have no date alerts configured`,
+      });
+    }
+
+    const largeExpensesNoPo = expenses.filter((e: any) => {
+      const amount = Number(e.expenseActualTotal) || 0;
+      const po = (e.expensePoNumber || "").trim();
+      return amount > 50000 && !po;
+    });
+    if (largeExpensesNoPo.length > 0 && !existingRuleTypes.has("expenditure_auto_flag")) {
+      const totalNoPo = largeExpensesNoPo.reduce((s: number, e: any) => s + (Number(e.expenseActualTotal) || 0), 0);
+      suggestions.push({
+        id: "suggest-po-requirement",
+        ruleType: "expenditure_auto_flag",
+        ruleConfig: JSON.stringify({ requirePO: true, threshold: 50000 }),
+        title: "PO Requirement for Large Expenses",
+        description: "Auto-flag expenses over R50,000 that don't have a purchase order number",
+        severity: "warning",
+        reason: `${largeExpensesNoPo.length} expense(s) totalling R${(totalNoPo / 1000).toFixed(0)}k exceed R50k without a PO`,
+      });
+    }
+
+    if (revSummary) {
+      const actualProfit = Number(revSummary.actualProfit) || 0;
+      const actualMargin = Number(revSummary.actualMargin) || 0;
+      if (actualProfit < 0 || actualMargin < 0) {
+        suggestions.push({
+          id: "suggest-margin-protection",
+          ruleType: "critical_path_protection",
+          ruleConfig: JSON.stringify({ marginFloor: "0%", alertOnNegative: true }),
+          title: "GP Margin Protection",
+          description: "Enable alerts when gross profit margin drops below zero to prevent further losses",
+          severity: "critical",
+          reason: `Current GP margin is ${(actualMargin * 100).toFixed(1)}% — project is loss-making`,
+        });
+      }
+    }
+
+    if (!existingRuleTypes.has("variance_alert_threshold")) {
+      suggestions.push({
+        id: "suggest-variance-threshold",
+        ruleType: "variance_alert_threshold",
+        ruleConfig: JSON.stringify({ threshold: "15%", compareField: "budget_vs_actual" }),
+        title: "Budget Variance Alert",
+        description: "Get notified when any expense category deviates more than 15% from budget",
+        severity: "info",
+        reason: "No variance threshold rules are configured for this project",
+      });
+    }
+
+    res.json({ suggestions });
+  } catch (error: any) {
+    console.error("[fin-integration] Suggested rules error:", error);
+    res.status(500).json({ error: "Failed to generate suggested rules" });
+  }
+});
+
 export { router as financialIntegrationRouter };

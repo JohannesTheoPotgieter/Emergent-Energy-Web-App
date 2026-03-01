@@ -65,6 +65,7 @@ import MsCallbackPage from "@/pages/ms-callback";
 import TeamsChatsPage from "@/pages/teams-chats";
 import AdminMsMappingPage from "@/pages/admin-ms-mapping";
 import CollaborationPage from "@/pages/collaboration";
+import FinancialLinkingPage from "@/pages/financial-linking";
 import { useAuth } from "@/hooks/use-auth";
 import { useProgramData } from "@/hooks/use-program-data";
 import { TrackerTable } from "@/components/dashboard/TrackerTable";
@@ -238,6 +239,7 @@ function ProtectedPages() {
         }}</Route>
         <Route path="/dashboard" component={Dashboard} />
         <Route path="/projects" component={ProjectsSummary} />
+        <Route path="/project/:projectName/financial-linking" component={FinancialLinkingPage} />
         <Route path="/project/:projectName" component={ProjectDetailPage} />
         <Route path="/cashflow" component={CashflowPage} />
         <Route path="/revenue" component={RevenueTracker} />

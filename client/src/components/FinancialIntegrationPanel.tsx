@@ -12,8 +12,9 @@ import { Input } from "@/components/ui/input";
 import {
   AlertTriangle, AlertCircle, Info, Link2, ShieldAlert,
   CheckCircle, XCircle, Clock, TrendingUp, DollarSign,
-  FileText, ChevronDown, ChevronUp, Loader2, Settings, Plus, Trash2, ToggleLeft,
+  FileText, ChevronDown, ChevronUp, Loader2, Settings, Plus, Trash2, ToggleLeft, ArrowRight,
 } from "lucide-react";
+import { Link } from "wouter";
 
 const engFetch = (url: string, opts?: RequestInit) =>
   fetch(url, { credentials: "include", ...opts });
@@ -289,6 +290,11 @@ export function FinancialIntegrationPanel({ projectName }: { projectName: string
               </div>
               <SyncBar label="Expenditure → Plan" linked={syncStatus.expenditure.linked} total={syncStatus.expenditure.total} percent={syncStatus.expenditure.linkPercent} />
               <SyncBar label="Revenue → Plan" linked={syncStatus.revenue.linked} total={syncStatus.revenue.total} percent={syncStatus.revenue.linkPercent} />
+              <Link href={`/project/${encodeURIComponent(projectName)}/financial-linking`}>
+                <Button variant="outline" size="sm" className="w-full h-7 text-xs gap-1.5 mt-1" data-testid="button-manage-linking">
+                  <Link2 className="h-3 w-3" /> Manage Linking <ArrowRight className="h-3 w-3 ml-auto" />
+                </Button>
+              </Link>
             </div>
           )}
 
