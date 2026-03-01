@@ -4210,7 +4210,7 @@ export const DEFAULT_WIDGET_ORDER = [
 export const WIDGET_DEFINITIONS: Record<string, { label: string; description: string; roles?: string[] }> = {
   quick_actions: { label: "Quick Actions", description: "Fast shortcuts to your most-used pages" },
   my_projects: { label: "My Projects", description: "Projects assigned to you with status and progress", roles: ["CEO_ADMIN", "COO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER", "PROJECT_MANAGER_SITE", "PROJECT_DEVELOPER"] },
-  company_priorities: { label: "Company Priorities", description: "Organisation-wide priority items", roles: ["CEO_ADMIN", "COO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER"] },
+  company_priorities: { label: "Company Priorities", description: "Organisation-wide priority items" },
   action_banner: { label: "Attention Banner", description: "Alert bar for overdue tasks and pending approvals" },
   portfolio_health: { label: "Portfolio Health", description: "Portfolio delivery KPIs and project status overview", roles: ["CEO_ADMIN", "COO_ADMIN", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER"] },
   financial_headline: { label: "Financial Headline", description: "Revenue, margin, and cash position summary", roles: ["CEO_ADMIN", "COO_ADMIN", "CFO", "PROGRAM_FINANCE_MANAGER"] },
