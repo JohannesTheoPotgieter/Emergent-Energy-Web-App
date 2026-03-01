@@ -730,8 +730,9 @@ export default function ProjectDetailPage() {
     : "—";
   const completionNum = projectInfo?.project_pct_complete != null ? projectInfo.project_pct_complete * 100 : 0;
   const isAdmin = ['admin', 'COO_ADMIN', 'CEO_ADMIN'].includes(user?.role || '');
-  const totalRevenueFromInflows = (revenueData as any[]).reduce((s: number, r: any) => s + (Number(r.milestoneAmount) || 0), 0);
-  const contractValue = projectInfo?.contract_value || totalRevenueFromInflows || 0;
+  const totalRevenueCosted = (revenueData as any[]).reduce((s: number, r: any) => s + (Number(r.revenueAmount) || 0), 0);
+  const totalRevenueActual = (revenueData as any[]).reduce((s: number, r: any) => s + (Number(r.milestoneAmount) || 0), 0);
+  const contractValue = projectInfo?.contract_value || totalRevenueCosted || 0;
   const totalBudgetFromExpenses = (expenseData as any[]).reduce((s: number, e: any) => s + (Number(e.budgetTotal) || 0), 0);
   const budgetTotal = projectInfo?.budget_total || totalBudgetFromExpenses || 0;
 
@@ -786,18 +787,9 @@ export default function ProjectDetailPage() {
     if (r.paymentReceivedDate) return s + (Number(r.milestoneAmount) || 0);
     return s;
   }, 0);
-  const revenueRealisedPct = contractValue > 0 ? (totalPaidInflows / contractValue) * 100 : 0;
+  const revenueRealisedPct = contractValue > 0 ? (totalRevenueActual / contractValue) * 100 : 0;
 
-  const cosRealisedTotal = (expenseData as any[]).reduce((s: number, e: any) => {
-    const hasInvoice = !!(e.expenseInvoiceNumber && String(e.expenseInvoiceNumber).trim());
-    const hasInvDate = !!(e.expenseInvoicedDate && String(e.expenseInvoicedDate).trim());
-    const hasPO = !!(e.expensePoNumber && String(e.expensePoNumber).trim());
-    if (!hasPO || !hasInvoice || !hasInvDate) return s;
-    const dateConfirmed = e.invoiceDateConfirmed === true || e.invoiceDateFontColor === 'black';
-    if (!dateConfirmed) return s;
-    return s + (Number(e.expenseActualTotal) || 0);
-  }, 0);
-  const cosRealisedPct = budgetTotal > 0 ? (cosRealisedTotal / budgetTotal) * 100 : 0;
+  const cosRealisedPct = budgetTotal > 0 ? (totalExpenses / budgetTotal) * 100 : 0;
   const marginDelta = revenueRealisedPct - cosRealisedPct;
 
   const hasRedRag = scheduleRag === "red" || costRag === "red" || qualityRag === "red";
@@ -826,9 +818,8 @@ export default function ProjectDetailPage() {
         result.push({ severity: "warning", message: `Revenue milestone "${r.milestoneName || "Unnamed"}" due within 14 days — no invoice raised`, key: `rev-${r.id || r.milestoneName}` });
       }
     });
-    const totalRev = (revenueData as any[]).reduce((s: number, r: any) => s + (Number(r.milestoneAmount) || 0), 0);
-    if (totalExpenses > totalRev && totalRev > 0) {
-      result.push({ severity: "warning", message: `COS (R${totalExpenses.toLocaleString()}) exceeds linked revenue (R${totalRev.toLocaleString()})`, key: "cos-exceeds-rev" });
+    if (totalExpenses > totalRevenueActual && totalRevenueActual > 0) {
+      result.push({ severity: "warning", message: `COS (R${totalExpenses.toLocaleString()}) exceeds actual revenue (R${totalRevenueActual.toLocaleString()})`, key: "cos-exceeds-rev" });
     }
     const engTaskAlerts = engDataForAlerts?.tasks || [];
     const overdueEng = engTaskAlerts.filter((t: any) => t.dueDate && t.dueDate < today && t.status !== "COMPLETE");
@@ -1047,73 +1038,6 @@ export default function ProjectDetailPage() {
 
       {activeSection === "overview" && (
         <div className="space-y-6" data-testid="overview-section">
-          <div className="flex flex-wrap gap-2" data-testid="section-nav-strip">
-            {canViewTab.overview && (
-              <button
-                className="group flex items-center gap-2 px-4 py-2.5 rounded-lg border bg-background hover:shadow-md hover:border-blue-300 transition-all"
-                onClick={() => navigateToSection("project-management")}
-                data-testid="nav-project-management"
-              >
-                <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
-                  <ListTodo className="h-4 w-4 text-blue-600" />
-                </div>
-                <div className="text-left">
-                  <p className="text-sm font-semibold">Project Management</p>
-                  <p className="text-[10px] text-muted-foreground">Plan, Finance & Tasks</p>
-                </div>
-                <ArrowRight className="h-3.5 w-3.5 text-muted-foreground group-hover:text-blue-500 ml-1" />
-              </button>
-            )}
-            {canViewTab.engineering && (
-              <button
-                className="group flex items-center gap-2 px-4 py-2.5 rounded-lg border bg-background hover:shadow-md hover:border-orange-300 transition-all"
-                onClick={() => navigateToSection("engineering")}
-                data-testid="nav-engineering"
-              >
-                <div className="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center">
-                  <Wrench className="h-4 w-4 text-orange-600" />
-                </div>
-                <div className="text-left">
-                  <p className="text-sm font-semibold">Engineering</p>
-                  <p className="text-[10px] text-muted-foreground">Tasks & Stage Checklists</p>
-                </div>
-                <ArrowRight className="h-3.5 w-3.5 text-muted-foreground group-hover:text-orange-500 ml-1" />
-              </button>
-            )}
-            {canViewTab.quality && (
-              <button
-                className="group flex items-center gap-2 px-4 py-2.5 rounded-lg border bg-background hover:shadow-md hover:border-emerald-300 transition-all"
-                onClick={() => navigateToSection("quality")}
-                data-testid="nav-quality"
-              >
-                <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center">
-                  <ShieldCheck className="h-4 w-4 text-emerald-600" />
-                </div>
-                <div className="text-left">
-                  <p className="text-sm font-semibold">Quality</p>
-                  <p className="text-[10px] text-muted-foreground">Checklists & Gates</p>
-                </div>
-                <ArrowRight className="h-3.5 w-3.5 text-muted-foreground group-hover:text-emerald-500 ml-1" />
-              </button>
-            )}
-            {canViewSubTab.collaboration && (
-              <button
-                className="group flex items-center gap-2 px-4 py-2.5 rounded-lg border bg-background hover:shadow-md hover:border-indigo-300 transition-all"
-                onClick={() => navigateToSection("collaboration")}
-                data-testid="nav-collaboration"
-              >
-                <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
-                  <MessageSquare className="h-4 w-4 text-indigo-600" />
-                </div>
-                <div className="text-left">
-                  <p className="text-sm font-semibold">Collaboration</p>
-                  <p className="text-[10px] text-muted-foreground">Chat, Files & Alerts</p>
-                </div>
-                <ArrowRight className="h-3.5 w-3.5 text-muted-foreground group-hover:text-indigo-500 ml-1" />
-              </button>
-            )}
-          </div>
-
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {canViewTab.expenditure && (
             <Card className="relative overflow-hidden" data-testid="overview-expenditure">

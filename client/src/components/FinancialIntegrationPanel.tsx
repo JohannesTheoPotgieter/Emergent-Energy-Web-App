@@ -248,7 +248,7 @@ export function FinancialIntegrationPanel({ projectName }: { projectName: string
   const warningCount = warnings.filter(w => w.severity === "warning").length;
   const infoCount = warnings.filter(w => w.severity === "info").length;
 
-  if (warnings.length === 0 && !syncStatus && pendingRequests.length === 0) return null;
+  const hasContent = warnings.length > 0 || !!syncStatus || pendingRequests.length > 0;
 
   const syncColor = syncStatus?.syncStatus === "good" ? "text-emerald-600" : syncStatus?.syncStatus === "partial" ? "text-amber-600" : "text-red-600";
   const syncBg = syncStatus?.syncStatus === "good" ? "bg-emerald-50" : syncStatus?.syncStatus === "partial" ? "bg-amber-50" : "bg-red-50";
@@ -257,7 +257,11 @@ export function FinancialIntegrationPanel({ projectName }: { projectName: string
     <>
       <Card className="relative overflow-hidden border-l-4 border-l-indigo-500" data-testid="financial-integration-panel">
         <CardContent className="p-4 space-y-3">
-          <div className="flex items-center justify-between">
+          <button
+            className="flex items-center justify-between w-full text-left cursor-pointer"
+            onClick={() => setExpanded(!expanded)}
+            data-testid="button-toggle-integration"
+          >
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
                 <Link2 className="h-4 w-4 text-indigo-600" />
@@ -271,13 +275,11 @@ export function FinancialIntegrationPanel({ projectName }: { projectName: string
               {criticalCount > 0 && <Badge variant="destructive" className="text-[9px]" data-testid="badge-critical-count">{criticalCount} critical</Badge>}
               {warningCount > 0 && <Badge className="text-[9px] bg-amber-100 text-amber-700 hover:bg-amber-100" data-testid="badge-warning-count">{warningCount} warning{warningCount !== 1 ? "s" : ""}</Badge>}
               {pendingRequests.length > 0 && <Badge variant="outline" className="text-[9px] border-blue-300 text-blue-600" data-testid="badge-pending-edits">{pendingRequests.length} pending</Badge>}
-              <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setExpanded(!expanded)} data-testid="button-toggle-integration">
-                {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-              </Button>
+              {expanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
             </div>
-          </div>
+          </button>
 
-          {syncStatus && (
+          {expanded && syncStatus && (
             <div className={`rounded-lg ${syncBg} p-3 space-y-2`}>
               <div className="flex items-center justify-between">
                 <span className="text-xs font-medium">Sync Status</span>
@@ -290,9 +292,9 @@ export function FinancialIntegrationPanel({ projectName }: { projectName: string
             </div>
           )}
 
-          {warnings.length > 0 && (
-            <div className="space-y-1.5 max-h-[120px] overflow-y-auto pr-1">
-              {(expanded ? warnings : warnings.slice(0, 3)).map((w, i) => (
+          {expanded && warnings.length > 0 && (
+            <div className="space-y-1.5 max-h-[200px] overflow-y-auto pr-1">
+              {warnings.map((w, i) => (
                 <div key={i} className={`flex items-start gap-2 text-[11px] py-1.5 px-2 rounded ${
                   w.severity === "critical" ? "bg-red-50 border border-red-100" :
                   w.severity === "warning" ? "bg-amber-50 border border-amber-100" :
@@ -303,12 +305,11 @@ export function FinancialIntegrationPanel({ projectName }: { projectName: string
                   <SeverityBadge severity={w.severity} />
                 </div>
               ))}
-              {!expanded && warnings.length > 3 && (
-                <button className="text-[10px] text-blue-600 hover:underline w-full text-center py-1" onClick={() => setExpanded(true)} data-testid="button-show-more-warnings">
-                  +{warnings.length - 3} more
-                </button>
-              )}
             </div>
+          )}
+
+          {!expanded && hasContent && (
+            <p className="text-[10px] text-muted-foreground">Tap to view sync status, warnings & integration rules</p>
           )}
 
           {expanded && pendingRequests.length > 0 && roleAccess?.canApprove && (
