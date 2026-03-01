@@ -16,6 +16,7 @@ import {
 } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
 import { sendExcelSyncNotification } from "./excel-sync-notifications";
+import { logAuditFromReq } from "./audit-logger";
 
 const qmApprovalUploadsDir = path.join(process.cwd(), "uploads", "qm-approvals");
 if (!fs.existsSync(qmApprovalUploadsDir)) fs.mkdirSync(qmApprovalUploadsDir, { recursive: true });
@@ -430,6 +431,7 @@ export function registerQualityRoutes(app: Express) {
         details: { itemInstanceId: itemId, qmStatus: qmStatus || undefined },
       }).catch(() => {});
 
+      logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(itemId), action: "update", projectName: pName, changesJson: { description: "Quality checklist item updated", qmStatus } });
       res.json(updated);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -469,6 +471,7 @@ export function registerQualityRoutes(app: Express) {
       const [updated] = await db.update(qcItemInstance).set(updates).where(eq(qcItemInstance.id, itemId)).returning();
       const pName = decodeURIComponent(req.params.projectName);
       recalculateWarnings(pName).catch(() => {});
+      logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(itemId), action: approved ? "approve" : "update", projectName: pName, changesJson: { description: approved ? "Quality item approved" : "Quality item approval revoked" } });
       res.json(updated);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -484,6 +487,7 @@ export function registerQualityRoutes(app: Express) {
       const [evidence] = await db.insert(qcItemEvidence).values({
         itemInstanceId: itemId, evidenceUrl, evidenceNote,
       }).returning();
+      logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(itemId), action: "update", projectName: decodeURIComponent(req.params.projectName), changesJson: { description: "Evidence added", evidenceUrl } });
       res.json(evidence);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -503,6 +507,7 @@ export function registerQualityRoutes(app: Express) {
         evidenceUrl,
         evidenceNote: note || file.originalname,
       }).returning();
+      logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(itemId), action: "update", projectName: decodeURIComponent(req.params.projectName), changesJson: { description: "Evidence file uploaded", fileName: file.originalname } });
       res.json(evidence);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -583,6 +588,7 @@ export function registerQualityRoutes(app: Express) {
 
       recalculateWarnings(projectName).catch(() => {});
 
+      logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(itemId), action: "update", projectName, changesJson: { description: "Sent for approval", approverUserId } });
       res.json({
         ...updated,
         uploadedFile: file ? { filename: file.filename, originalName: file.originalname, size: file.size } : null,
@@ -596,6 +602,7 @@ export function registerQualityRoutes(app: Express) {
   app.delete("/api/quality/evidence/:evidenceId", requireAuth, requireAdminOrQm, async (req, res) => {
     try {
       await db.delete(qcItemEvidence).where(eq(qcItemEvidence.id, parseInt(req.params.evidenceId)));
+      logAuditFromReq(req, { entityType: "quality_checklist", entityId: req.params.evidenceId, action: "delete", changesJson: { description: "Evidence deleted" } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -643,6 +650,7 @@ export function registerQualityRoutes(app: Express) {
         qmStatus: "not_started",
       }).returning();
 
+      logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(item.id), action: "create", projectName: pName, changesJson: { description: "Quality item created", itemName } });
       res.json(item);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -670,6 +678,7 @@ export function registerQualityRoutes(app: Express) {
 
       recalculateWarnings(pName).catch(() => {});
 
+      logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(itemId), action: "delete", projectName: pName, changesJson: { description: "Quality item deleted" } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -689,6 +698,7 @@ export function registerQualityRoutes(app: Express) {
       const [updated] = await db.update(qcRiskAnswer).set(updates).where(eq(qcRiskAnswer.id, riskAnswerId)).returning();
       const pName = decodeURIComponent(req.params.projectName);
       recalculateWarnings(pName).catch(() => {});
+      logAuditFromReq(req, { entityType: "qc_risk_answer", entityId: String(riskAnswerId), action: "update", projectName: pName, changesJson: { description: "Risk answer updated", answerYesno, answerText } });
       res.json(updated);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -783,6 +793,7 @@ export function registerQualityRoutes(app: Express) {
         }).catch(() => {});
       }
 
+      logAuditFromReq(req, { entityType: "qc_warning", entityId: String(warningId), action: "update", projectName: warning?.projectName, changesJson: { description: "QC warning acknowledged", warningType: warning?.warningType } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -797,6 +808,7 @@ export function registerQualityRoutes(app: Express) {
       await db.insert(qcWarningEvent).values({
         warningId, eventType: "resolved", note, actorUserId: getUser(req).id,
       });
+      logAuditFromReq(req, { entityType: "qc_warning", entityId: String(warningId), action: "update", changesJson: { description: "QC warning resolved" } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -825,6 +837,7 @@ export function registerQualityRoutes(app: Express) {
         projectName, planItemId, itemInstanceId: itemInstanceId || null, phaseId: phaseId || null, linkType: linkType || "phase_task",
       }).returning();
       recalculateWarnings(projectName).catch(() => {});
+      logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(link.id), action: "create", projectName, changesJson: { description: "Plan link created", planItemId } });
       res.json(link);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -836,6 +849,7 @@ export function registerQualityRoutes(app: Express) {
       const [deletedLink] = await db.select().from(qcPlanLink).where(eq(qcPlanLink.id, parseInt(req.params.linkId)));
       await db.delete(qcPlanLink).where(eq(qcPlanLink.id, parseInt(req.params.linkId)));
       if (deletedLink) recalculateWarnings(deletedLink.projectName).catch(() => {});
+      logAuditFromReq(req, { entityType: "quality_checklist", entityId: req.params.linkId, action: "delete", projectName: deletedLink?.projectName, changesJson: { description: "Plan link deleted" } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1024,6 +1038,7 @@ export function registerQualityRoutes(app: Express) {
     try {
       const projectName = decodeURIComponent(req.params.projectName);
       const count = await recalculateWarnings(projectName);
+      logAuditFromReq(req, { entityType: "qc_warning", entityId: "0", action: "create", projectName, changesJson: { description: "Warnings recalculated", warningsGenerated: count } });
       res.json({ success: true, warningsGenerated: count });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1123,6 +1138,7 @@ export function registerQualityRoutes(app: Express) {
         completedByUserId: getUser(req).id,
       }).where(eq(qcPostmortem.id, pm.id));
 
+      logAuditFromReq(req, { entityType: "quality_template", entityId: String(pm.id), action: "create", projectName, changesJson: { description: "Post-mortem completed", contractorScore, engineeringScore, redFlag } });
       res.json({ success: true, contractorScore, engineeringScore, redFlag });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1144,6 +1160,7 @@ export function registerQualityRoutes(app: Express) {
     try {
       const { date, name, countryCode } = req.body;
       const [h] = await db.insert(calendarHoliday).values({ date, name, countryCode: countryCode || "ZA" }).returning();
+      logAuditFromReq(req, { entityType: "quality_template", entityId: String(h.id), action: "create", changesJson: { description: "Holiday created", date, name } });
       res.json(h);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1153,6 +1170,7 @@ export function registerQualityRoutes(app: Express) {
   app.delete("/api/quality/holidays/:id", requireAuth, requireRole("admin"), async (req, res) => {
     try {
       await db.delete(calendarHoliday).where(eq(calendarHoliday.id, parseInt(req.params.id)));
+      logAuditFromReq(req, { entityType: "quality_template", entityId: req.params.id, action: "delete", changesJson: { description: "Holiday deleted" } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1207,6 +1225,7 @@ export function registerQualityRoutes(app: Express) {
       if (!newRole) return res.status(400).json({ error: "Role is required" });
       const { users } = await import("@shared/schema");
       const [updated] = await db.update(users).set({ role: newRole }).where(eq(users.id, userId)).returning();
+      logAuditFromReq(req, { entityType: "quality_template", entityId: String(userId), action: "update", changesJson: { description: "User role updated", newRole, userName: updated.name } });
       res.json({ id: updated.id, email: updated.email, name: updated.name, role: updated.role });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1265,6 +1284,7 @@ export function registerQualityRoutes(app: Express) {
         results.push({ project: projectName, status: "created" });
       }
 
+      logAuditFromReq(req, { entityType: "quality_template", entityId: "0", action: "create", changesJson: { description: "Bulk checklists created", count: results.filter(r => r.status === "created").length } });
       res.json({ success: true, results });
     } catch (err: any) {
       console.error("[Bulk Create Checklists]", err);

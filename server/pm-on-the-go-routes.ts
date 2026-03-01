@@ -17,6 +17,7 @@ import path from "path";
 import fs from "fs";
 import { isOutlookConfigured, sendMail } from "./outlook";
 import { sendExcelSyncNotification } from "./excel-sync-notifications";
+import { logAuditFromReq } from "./audit-logger";
 
 const photoUploadDir = path.join(process.cwd(), "uploads", "pm-photos");
 if (!fs.existsSync(photoUploadDir)) {
@@ -252,6 +253,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
         } else {
           await db.insert(pmModePreferences).values({ userId: user.id, preferredMode: mode });
         }
+        logAuditFromReq(req, { entityType: "pm_mode_preference", entityId: String(user.id), action: "update", changesJson: { description: "Mode preference updated", mode } });
         res.json({ mode });
       } catch (err: any) {
         res.status(500).json({ error: err.message });
@@ -505,6 +507,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
           details: { actionType: "site_visit", safetyStatus, visitId: visit.id },
         }).catch(() => {});
 
+        logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(visit.id), action: "create", projectName: pName, changesJson: { description: "Site visit logged", safetyStatus, photoCount: photoIds.length } });
         res.json({ success: true, visit });
       } catch (err: any) {
         console.error("[PM-OTG] Site visit error:", err.message);
@@ -562,6 +565,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
           details: { actionType: "generate_po", poNumber, amount, supplier },
         }).catch(() => {});
 
+        logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(action.id), action: "create", projectName: pName, changesJson: { description: "PO request generated", poNumber, amount, supplier } });
         res.json({ success: true, action });
       } catch (err: any) {
         res.status(500).json({ error: err.message });
@@ -617,6 +621,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
           details: { actionType: "link_invoice", invoiceNumber, amount, poReference },
         }).catch(() => {});
 
+        logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(action.id), action: "create", projectName: pName, changesJson: { description: "Invoice linked", invoiceNumber, amount, poReference } });
         res.json({ success: true, action });
       } catch (err: any) {
         res.status(500).json({ error: err.message });
@@ -673,6 +678,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
           details: { actionType: "raise_variation", amount, description, justification },
         }).catch(() => {});
 
+        logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(action.id), action: "create", projectName: pName, changesJson: { description: "Variation order raised", amount, justification } });
         res.json({ success: true, action });
       } catch (err: any) {
         res.status(500).json({ error: err.message });
@@ -728,6 +734,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
           details: { actionType: "log_delay", daysDelayed, impact, description },
         }).catch(() => {});
 
+        logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(action.id), action: "create", projectName: pName, changesJson: { description: "Delay logged", daysDelayed, impact } });
         res.json({ success: true, action });
       } catch (err: any) {
         res.status(500).json({ error: err.message });
@@ -783,6 +790,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
           details: { actionType: "log_risk", severity, description, mitigationNotes },
         }).catch(() => {});
 
+        logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(action.id), action: "create", projectName: pName, changesJson: { description: "Risk logged", severity, mitigationNotes } });
         res.json({ success: true, action });
       } catch (err: any) {
         res.status(500).json({ error: err.message });
@@ -831,6 +839,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
           details: { actionType: "upload_photo", caption },
         }).catch(() => {});
 
+        logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(action.id), action: "create", projectName: pName, changesJson: { description: "Photo uploaded", caption } });
         res.json({ success: true, action, photoUrl });
       } catch (err: any) {
         res.status(500).json({ error: err.message });
@@ -900,6 +909,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
           `).catch(() => {});
         });
 
+        logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(action.id), action: "create", projectName: pName, changesJson: { description: "Progress updated", progressPercent: pct, notes } });
         res.json({ success: true, action });
       } catch (err: any) {
         res.status(500).json({ error: err.message });
@@ -960,6 +970,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
           details: { actionType: "escalate", escalationLevel, urgency, description },
         }).catch(() => {});
 
+        logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(action.id), action: "create", projectName: pName, changesJson: { description: "Escalation raised", escalationLevel, urgency } });
         res.json({ success: true, action });
       } catch (err: any) {
         res.status(500).json({ error: err.message });
@@ -1040,6 +1051,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
           `).catch(() => {});
         });
 
+        logAuditFromReq(req, { entityType: "pm_compliance", entityId: String(projectId), action: "update", changesJson: { description: "Weekly risk compliance confirmed", weekStart } });
         res.json({ success: true });
       } catch (err: any) {
         res.status(500).json({ error: err.message });

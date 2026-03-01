@@ -16,6 +16,7 @@ import {
   projectInfo,
 } from "@shared/schema";
 import { sendExcelSyncNotification } from "./excel-sync-notifications";
+import { logAuditFromReq } from "./audit-logger";
 
 const UPLOADS_DIR = path.join(process.cwd(), "uploads", "eng-deliverables");
 if (!fs.existsSync(UPLOADS_DIR)) {
@@ -178,6 +179,7 @@ export function registerEngStageRoutes(app: Express) {
       const id = parseInt(req.params.id);
       const { isActive } = req.body;
       await db.update(engStageTemplates).set({ isActive }).where(eq(engStageTemplates.id, id));
+      logAuditFromReq(req, { entityType: "eng_stage_template", entityId: String(id), action: "update", changesJson: { description: "Stage template updated", isActive } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -200,6 +202,7 @@ export function registerEngStageRoutes(app: Express) {
         sequence: sequence ?? (Number(maxSeq[0]?.max || 0) + 1),
         defaultOwnerRole: defaultOwnerRole || null,
       }).returning();
+      logAuditFromReq(req, { entityType: "eng_stage_item", entityId: String(task.id), action: "create", changesJson: { description: "Task template created", title } });
       res.json(task);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -220,6 +223,7 @@ export function registerEngStageRoutes(app: Express) {
       if (defaultOwnerRole !== undefined) updates.defaultOwnerRole = defaultOwnerRole || null;
       const [updated] = await db.update(engTaskTemplates).set(updates).where(eq(engTaskTemplates.id, taskId)).returning();
       if (!updated) return res.status(404).json({ error: "Task template not found" });
+      logAuditFromReq(req, { entityType: "eng_stage_item", entityId: String(taskId), action: "update", changesJson: { description: "Task template updated", title } });
       res.json(updated);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -233,6 +237,7 @@ export function registerEngStageRoutes(app: Express) {
       const taskId = parseInt(req.params.taskId);
       const [deleted] = await db.delete(engTaskTemplates).where(eq(engTaskTemplates.id, taskId)).returning();
       if (!deleted) return res.status(404).json({ error: "Task template not found" });
+      logAuditFromReq(req, { entityType: "eng_stage_item", entityId: String(taskId), action: "delete", changesJson: { description: "Task template deleted", title: deleted.title } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -254,6 +259,7 @@ export function registerEngStageRoutes(app: Express) {
         allowedFileTypes: allowedFileTypes || null,
         requiredCount: requiredCount || 1,
       }).returning();
+      logAuditFromReq(req, { entityType: "eng_stage_item", entityId: String(deliverable.id), action: "create", changesJson: { description: "Deliverable template created", name } });
       res.json(deliverable);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -274,6 +280,7 @@ export function registerEngStageRoutes(app: Express) {
       if (requiredCount !== undefined) updates.requiredCount = requiredCount;
       const [updated] = await db.update(engDeliverableTemplates).set(updates).where(eq(engDeliverableTemplates.id, delId)).returning();
       if (!updated) return res.status(404).json({ error: "Deliverable template not found" });
+      logAuditFromReq(req, { entityType: "eng_stage_item", entityId: String(delId), action: "update", changesJson: { description: "Deliverable template updated", name } });
       res.json(updated);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -287,6 +294,7 @@ export function registerEngStageRoutes(app: Express) {
       const delId = parseInt(req.params.delId);
       const [deleted] = await db.delete(engDeliverableTemplates).where(eq(engDeliverableTemplates.id, delId)).returning();
       if (!deleted) return res.status(404).json({ error: "Deliverable template not found" });
+      logAuditFromReq(req, { entityType: "eng_stage_item", entityId: String(delId), action: "delete", changesJson: { description: "Deliverable template deleted", name: deleted.name } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -318,6 +326,7 @@ export function registerEngStageRoutes(app: Express) {
         return res.status(400).json({ error: "All stages already generated or no active templates" });
       }
 
+      logAuditFromReq(req, { entityType: "eng_project_stage", entityId: String(projectId), action: "create", projectName: project.projectName, changesJson: { description: "Engineering stages generated", stagesCreated: result.stagesCreated, stageDetails: result.stageDetails } });
       res.json({ success: true, ...result });
     } catch (err: any) {
       console.error("[EngStages] Generate error:", err.message);
@@ -531,6 +540,7 @@ export function registerEngStageRoutes(app: Express) {
       if (hasDeliverable !== undefined) updates.hasDeliverable = hasDeliverable;
 
       await db.update(projectEngTasks).set(updates).where(eq(projectEngTasks.id, taskId));
+      logAuditFromReq(req, { entityType: "eng_stage_item", entityId: String(taskId), action: "update", changesJson: { description: "Stage task updated", status, notes } });
 
       const [task] = await db.select({ stageId: projectEngTasks.projectEngStageId })
         .from(projectEngTasks).where(eq(projectEngTasks.id, taskId));
@@ -578,6 +588,7 @@ export function registerEngStageRoutes(app: Express) {
         approvalStatus: "pending",
       }).returning();
 
+      logAuditFromReq(req, { entityType: "eng_stage_item", entityId: String(deliverable.id), action: "create", changesJson: { description: "Task deliverable uploaded", fileName: file.originalname } });
       res.json({ deliverable });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -611,6 +622,7 @@ export function registerEngStageRoutes(app: Express) {
         approvedAt: new Date(),
       }).where(eq(projectEngDeliverables.id, id));
 
+      logAuditFromReq(req, { entityType: "eng_stage_item", entityId: String(id), action: status === "approved" ? "approve" : "reject", changesJson: { description: `Deliverable ${status}`, fileName: deliverable.fileName } });
       res.json({ success: true, status });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -642,6 +654,7 @@ export function registerEngStageRoutes(app: Express) {
         sharepointFolderPath,
       }).returning();
 
+      logAuditFromReq(req, { entityType: "eng_stage_item", entityId: String(deliverable.id), action: "create", changesJson: { description: "Stage deliverable uploaded", fileName: file.originalname } });
       res.json({ deliverable });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -675,6 +688,7 @@ export function registerEngStageRoutes(app: Express) {
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
 
       await db.delete(projectEngDeliverables).where(eq(projectEngDeliverables.id, id));
+      logAuditFromReq(req, { entityType: "eng_stage_item", entityId: String(id), action: "delete", changesJson: { description: "Deliverable deleted", fileName: deliverable.fileName } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -723,6 +737,7 @@ export function registerEngStageRoutes(app: Express) {
         }
       }
 
+      logAuditFromReq(req, { entityType: "eng_stage_gate", entityId: String(id), action: status === "approved" ? "approve" : "reject", projectName: proj?.projectName, changesJson: { description: `Stage gate ${status}`, stageName: stage?.templateName, approverRole: approval.approverRole } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -805,6 +820,7 @@ export function registerEngStageRoutes(app: Express) {
       await db.update(projectEngStages).set({ status: "complete", completedAt: new Date() })
         .where(eq(projectEngStages.id, stageId));
 
+      logAuditFromReq(req, { entityType: "eng_stage_gate", entityId: String(stageId), action: "approve", changesJson: { description: "Stage completed", stageName: stage.templateName } });
       res.json({ success: true, missing: [] });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -828,6 +844,7 @@ export function registerEngStageRoutes(app: Express) {
         overrideReason: reason,
       }).where(eq(projectEngStages.id, stageId));
 
+      logAuditFromReq(req, { entityType: "eng_stage_gate", entityId: String(stageId), action: "override", changesJson: { description: "Stage override completed", reason } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -845,6 +862,7 @@ export function registerEngStageRoutes(app: Express) {
         if (!current?.startedAt) updates.startedAt = new Date();
       }
       await db.update(projectEngStages).set(updates).where(eq(projectEngStages.id, stageId));
+      logAuditFromReq(req, { entityType: "eng_stage_item", entityId: String(stageId), action: "update", changesJson: { description: "Stage status updated", status } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });

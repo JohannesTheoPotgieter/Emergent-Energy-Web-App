@@ -7,6 +7,7 @@ import {
   projectPortfolioAssignments, projectInfo, users,
   qcChecklist, qcItemInstance, programExpense, programInflows, projectPlan,
 } from "@shared/schema";
+import { logAuditFromReq } from "./audit-logger";
 
 function computeProjectCompletion(plans: any[]): { actualPct: number; expectedPct: number; delta: number } {
   const todayStr = new Date().toISOString().split("T")[0];
@@ -191,6 +192,7 @@ export function registerPortfolioRoutes(app: Express) {
         updatedBy: userId,
       }).returning();
 
+      logAuditFromReq(req, { entityType: "portfolio", entityId: String(created.id), action: "create", changesJson: { description: "Portfolio created", name: created.name } });
       res.json(created);
     } catch (err: any) {
       console.error("[Portfolio] Create error:", err);
@@ -214,6 +216,7 @@ export function registerPortfolioRoutes(app: Express) {
       const [updated] = await db.update(portfolios).set(updates).where(eq(portfolios.id, id)).returning();
       if (!updated) return res.status(404).json({ error: "Portfolio not found" });
 
+      logAuditFromReq(req, { entityType: "portfolio", entityId: String(id), action: "update", changesJson: { description: "Portfolio updated", name: updated.name } });
       res.json(updated);
     } catch (err: any) {
       console.error("[Portfolio] Update error:", err);
@@ -225,6 +228,7 @@ export function registerPortfolioRoutes(app: Express) {
     try {
       const id = parseInt(req.params.id);
       await db.delete(portfolios).where(eq(portfolios.id, id));
+      logAuditFromReq(req, { entityType: "portfolio", entityId: String(id), action: "delete", changesJson: { description: "Portfolio deleted" } });
       res.json({ success: true });
     } catch (err: any) {
       console.error("[Portfolio] Delete error:", err);
@@ -256,6 +260,7 @@ export function registerPortfolioRoutes(app: Express) {
         assignedBy: userId,
       }).returning();
 
+      logAuditFromReq(req, { entityType: "portfolio_assignment", entityId: String(assignment.id), action: "create", changesJson: { description: "Project assigned to portfolio", projectId, portfolioId } });
       res.json(assignment);
     } catch (err: any) {
       console.error("[Portfolio] Assign error:", err);
@@ -277,6 +282,7 @@ export function registerPortfolioRoutes(app: Express) {
           .set({ portfolioId: targetPortfolioId, movedBy: userId, movedAt: new Date() })
           .where(eq(projectPortfolioAssignments.projectId, projectId))
           .returning();
+        logAuditFromReq(req, { entityType: "portfolio_assignment", entityId: String(updated.id), action: "update", changesJson: { description: "Project moved to portfolio", projectId, targetPortfolioId } });
         res.json(updated);
       } else {
         const [assignment] = await db.insert(projectPortfolioAssignments).values({
@@ -284,6 +290,7 @@ export function registerPortfolioRoutes(app: Express) {
           portfolioId: targetPortfolioId,
           assignedBy: userId,
         }).returning();
+        logAuditFromReq(req, { entityType: "portfolio_assignment", entityId: String(assignment.id), action: "create", changesJson: { description: "Project assigned to portfolio via move", projectId, targetPortfolioId } });
         res.json(assignment);
       }
     } catch (err: any) {
@@ -299,6 +306,7 @@ export function registerPortfolioRoutes(app: Express) {
       await db.delete(projectPortfolioAssignments).where(
         and(eq(projectPortfolioAssignments.portfolioId, portfolioId), eq(projectPortfolioAssignments.projectId, projectId))
       );
+      logAuditFromReq(req, { entityType: "portfolio_assignment", entityId: String(projectId), action: "delete", changesJson: { description: "Project removed from portfolio", portfolioId, projectId } });
       res.json({ success: true });
     } catch (err: any) {
       console.error("[Portfolio] Remove project error:", err);
@@ -514,6 +522,7 @@ export function registerPortfolioRoutes(app: Express) {
         }
       }
 
+      logAuditFromReq(req, { entityType: "portfolio_rollout", entityId: String(plan.id), action: "create", changesJson: { description: "Rollout plan created", name: plan.name, portfolioId } });
       res.json(plan);
     } catch (err: any) {
       console.error("[Portfolio] Create rollout plan error:", err);
@@ -548,6 +557,7 @@ export function registerPortfolioRoutes(app: Express) {
         }
       }
 
+      logAuditFromReq(req, { entityType: "portfolio_rollout", entityId: String(planId), action: "update", changesJson: { description: "Rollout plan updated", name: updated?.name } });
       res.json(updated);
     } catch (err: any) {
       console.error("[Portfolio] Update rollout plan error:", err);
@@ -559,6 +569,7 @@ export function registerPortfolioRoutes(app: Express) {
     try {
       const planId = parseInt(req.params.planId);
       await db.delete(portfolioRolloutPlans).where(eq(portfolioRolloutPlans.id, planId));
+      logAuditFromReq(req, { entityType: "portfolio_rollout", entityId: String(planId), action: "delete", changesJson: { description: "Rollout plan deleted" } });
       res.json({ success: true });
     } catch (err: any) {
       console.error("[Portfolio] Delete rollout plan error:", err);

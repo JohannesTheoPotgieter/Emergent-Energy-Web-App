@@ -22,6 +22,7 @@ import {
 import { applyTemplate } from "./template-routes";
 import { requirePermission } from "./permission-middleware";
 import { sendExcelSyncNotification } from "./excel-sync-notifications";
+import { logAuditFromReq } from "./audit-logger";
 
 const approvalUploadsDir = path.join(process.cwd(), "uploads", "approvals");
 if (!fs.existsSync(approvalUploadsDir)) fs.mkdirSync(approvalUploadsDir, { recursive: true });
@@ -153,6 +154,7 @@ export function registerEngineeringRoutes(app: Express) {
     try {
       const { projectName, userId, roleOnProject } = req.body;
       const [member] = await db.insert(projectTeamMembers).values({ projectName, userId, roleOnProject }).returning();
+      logAuditFromReq(req, { entityType: "project_team", entityId: String(member.id), action: "create", projectName, changesJson: { description: "Team member added", userId, roleOnProject } });
       res.json(member);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -162,6 +164,7 @@ export function registerEngineeringRoutes(app: Express) {
   app.delete("/api/project-team/:id", requireAuth, requireAdminOrEpm, async (req, res) => {
     try {
       await db.delete(projectTeamMembers).where(eq(projectTeamMembers.id, parseInt(req.params.id)));
+      logAuditFromReq(req, { entityType: "project_team", entityId: req.params.id, action: "delete", changesJson: { description: "Team member removed" } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -891,6 +894,7 @@ export function registerEngineeringRoutes(app: Express) {
         actorUserId: getUser(req).id,
       });
 
+      logAuditFromReq(req, { entityType: "deliverable", entityId: String(del.id), action: "create", projectName: data.projectName, changesJson: { description: "Deliverable created", title: del.title } });
       res.json(del);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -927,6 +931,7 @@ export function registerEngineeringRoutes(app: Express) {
         }
       }
 
+      logAuditFromReq(req, { entityType: "deliverable", entityId: String(id), action: "update", projectName: updated.projectName, changesJson: { description: "Deliverable updated", status: updates.status, title: updated.title } });
       res.json(updated);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -957,6 +962,7 @@ export function registerEngineeringRoutes(app: Express) {
           { projectName: updated.projectName, linkedDeliverableId: id });
       }
 
+      logAuditFromReq(req, { entityType: "deliverable", entityId: String(id), action: "update", projectName: updated?.projectName, changesJson: { description: "Feedback provided", feedbackText } });
       res.json(updated);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -995,6 +1001,7 @@ export function registerEngineeringRoutes(app: Express) {
         actorUserId: getUser(req).id,
       });
 
+      logAuditFromReq(req, { entityType: "deliverable", entityId: String(id), action: "update", projectName: updated.projectName, changesJson: { description: "Deliverable revised", newVersion, changeReason } });
       res.json({ deliverable: updated, version });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1008,6 +1015,7 @@ export function registerEngineeringRoutes(app: Express) {
         deliverableId: parseInt(req.params.id),
         uploadedByUserId: getUser(req).id,
       }).returning();
+      logAuditFromReq(req, { entityType: "deliverable", entityId: req.params.id, action: "update", changesJson: { description: "File attached to deliverable", fileName: file.fileName } });
       res.json(file);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1020,6 +1028,7 @@ export function registerEngineeringRoutes(app: Express) {
         .set({ isApproved: true })
         .where(eq(deliverableFiles.id, parseInt(req.params.fileId)))
         .returning();
+      logAuditFromReq(req, { entityType: "deliverable", entityId: req.params.fileId, action: "approve", changesJson: { description: "Deliverable file approved" } });
       res.json(file);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1148,6 +1157,7 @@ export function registerEngineeringRoutes(app: Express) {
           .where(eq(notifications.id, related.id));
       }
 
+      logAuditFromReq(req, { entityType: "notification", entityId: String(notifId), action: "update", changesJson: { description: "Notification confirmed", eventType: notif.eventType, relatedCount: relatedNotifs.length } });
       res.json({ success: true, confirmedBy: confirmer?.name || "Unknown", confirmedAt: new Date() });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1183,6 +1193,7 @@ export function registerEngineeringRoutes(app: Express) {
         webUrl: webUrl || null,
         uploadedByUserId: getUser(req).id,
       }).returning();
+      logAuditFromReq(req, { entityType: "file_pointer", entityId: String(pointer.id), action: "create", changesJson: { description: "File pointer created", fileName, entityType } });
       res.json(pointer);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1192,6 +1203,7 @@ export function registerEngineeringRoutes(app: Express) {
   app.delete("/api/eng/file-pointers/:id", requireAuth, async (req, res) => {
     try {
       await db.delete(spFilePointers).where(eq(spFilePointers.id, parseInt(req.params.id)));
+      logAuditFromReq(req, { entityType: "file_pointer", entityId: req.params.id, action: "delete", changesJson: { description: "File pointer deleted" } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1314,6 +1326,7 @@ export function registerEngineeringRoutes(app: Express) {
       const id = parseInt(req.params.id);
       const updates = { ...req.body, updatedAt: new Date() };
       const [updated] = await db.update(qcWarning).set(updates).where(eq(qcWarning.id, id)).returning();
+      logAuditFromReq(req, { entityType: "qc_warning", entityId: String(id), action: "update", changesJson: { description: "Warning updated", status: req.body.status } });
 
       if (req.body.status) {
         await db.insert(qcWarningEvent).values({
@@ -1339,6 +1352,7 @@ export function registerEngineeringRoutes(app: Express) {
         note: req.body.reason || "Acknowledged - proceeding anyway",
         actorUserId: getUser(req).id,
       });
+      logAuditFromReq(req, { entityType: "qc_warning", entityId: String(id), action: "update", changesJson: { description: "Warning acknowledged", reason: req.body.reason } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
