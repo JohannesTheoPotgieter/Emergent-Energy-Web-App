@@ -295,6 +295,14 @@ export function registerEngineeringRoutes(app: Express) {
         });
       }
 
+      sendExcelSyncNotification({
+        projectName: task.projectName || "Unknown",
+        changedByUserId: getUser(req).id,
+        changeType: "engineering_task_created",
+        changeDescription: `Engineering task created: "${task.title}".`,
+        details: { taskId: task.id, title: task.title, status: task.status },
+      }).catch(() => {});
+
       res.json(task);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -599,6 +607,14 @@ export function registerEngineeringRoutes(app: Express) {
         await tx.delete(operationalTasks).where(eq(operationalTasks.id, id));
       });
 
+      sendExcelSyncNotification({
+        projectName: existing.projectName || "Unknown",
+        changedByUserId: getUser(req).id,
+        changeType: "engineering_task_deleted",
+        changeDescription: `Engineering task deleted: "${existing.title}".`,
+        details: { taskId: id, title: existing.title },
+      }).catch(() => {});
+
       res.json({ success: true, message: `Task "${existing.title}" deleted` });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -634,6 +650,17 @@ export function registerEngineeringRoutes(app: Express) {
           });
         }
       }
+      const bulkProjectNames = [...new Set(updatedTasks.map(t => t.projectName).filter(Boolean))];
+      for (const pn of bulkProjectNames) {
+        sendExcelSyncNotification({
+          projectName: pn || "Unknown",
+          changedByUserId: getUser(req).id,
+          changeType: "engineering_task_bulk_update",
+          changeDescription: `Bulk update: ${updatedTasks.filter(t => t.projectName === pn).length} task(s) updated.`,
+          details: { taskIds, updates },
+        }).catch(() => {});
+      }
+
       res.json({ updated: updatedTasks.length, tasks: updatedTasks });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -930,6 +957,14 @@ export function registerEngineeringRoutes(app: Express) {
             { projectName: updated.projectName, linkedDeliverableId: id });
         }
       }
+
+      sendExcelSyncNotification({
+        projectName: updated.projectName || "Unknown",
+        changedByUserId: getUser(req).id,
+        changeType: "deliverable_update",
+        changeDescription: `Deliverable "${updated.title}" updated${updates.status ? ` to "${updates.status}"` : ""}.`,
+        details: { deliverableId: id, title: updated.title, status: updates.status },
+      }).catch(() => {});
 
       logAuditFromReq(req, { entityType: "deliverable", entityId: String(id), action: "update", projectName: updated.projectName, changesJson: { description: "Deliverable updated", status: updates.status, title: updated.title } });
       res.json(updated);

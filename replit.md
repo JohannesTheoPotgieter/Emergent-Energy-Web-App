@@ -71,7 +71,7 @@ Preferred communication style: Simple, everyday language.
 -   **Module**: `server/excel-sync-notifications.ts` — fires `excel_sync_confirmation` notifications whenever ANY project data changes (project info, expenses, revenue, engineering, quality, PM On-The-Go actions).
 -   **Recipients**: PROGRAM_MANAGER, PROGRAM_FINANCE_MANAGER, CONSTRUCTION_MANAGER roles.
 -   **Dedup**: 2-minute throttle per project+changeType via `notification_throttle` table.
--   **Hooked into**: routes.ts (7 endpoints), engineering-routes.ts, eng-stage-routes.ts, quality-routes.ts, pm-on-the-go-routes.ts (9 action endpoints).
+-   **Hooked into**: routes.ts (22 endpoints), engineering-routes.ts (5 endpoints), eng-stage-routes.ts (4 endpoints), quality-routes.ts (7 endpoints), pm-on-the-go-routes.ts (9 action endpoints).
 
 ### PM On-The-Go Mode
 -   **Module**: Mobile-first project management interface exclusively for `PROJECT_MANAGER_SITE` role users.
@@ -82,10 +82,11 @@ Preferred communication style: Simple, everyday language.
 -   **Financial Boundaries**: PM can request POs and link invoices (status: pending) but cannot approve.
 
 ### Roles & Permissions (Enhanced)
--   **Admin Page**: `admin-roles.tsx` — 11 permission categories with 60+ granular entity permissions (View/Edit/Approve/Override/Delete).
+-   **Admin Page**: `admin-roles.tsx` — 11 permission categories with 82 granular entity permissions (View/Edit/Approve/Override/Delete).
 -   **Categories**: Cockpit, Project Management, Finance, Engineering, Quality & Governance, Project Detail Tabs, Project Development, Information, Collaboration, Data & Reports, Admin.
+-   **UI Features**: Select All/Deselect All per category, Save All Changes with confirmation dialog, count badges per category.
 -   **Backend**: `server/permission-middleware.ts` with `requirePermission(entity, action)` middleware + 60s cache.
--   **Defaults**: `ENTITY_PERMISSION_DEFAULTS` in `shared/schema.ts` for all entities.
+-   **Defaults**: `ENTITY_PERMISSION_DEFAULTS` in `shared/schema.ts` for all 82 entities.
 
 ### Email/Message to Task
 -   **Module**: Enables creating project-linked operational tasks directly from Outlook emails or Teams messages via a dedicated endpoint.
