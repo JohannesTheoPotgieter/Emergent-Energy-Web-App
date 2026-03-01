@@ -1,0 +1,200 @@
+REPLIT PROMPT — IMPLEMENT “PM ON-THE-GO MODE” (MOBILE-FIRST) FOR PROJECT MANAGER ROLE ONLY
+DO NOT BREAK ANY EXISTING FUNCTIONALITY. DO NOT REFACTOR UNRELATED AREAS. DO NOT “IMPROVE” THINGS OUTSIDE THIS SCOPE.
+IF ANY REQUIRED TABLE/FIELD/ENDPOINT DOES NOT EXIST, ASK ME BEFORE CREATING NEW ONES.
+IF YOU MUST ADD NEW DATA STRUCTURES, KEEP THEM MINIMAL, NORMALISED, AND LINKED TO THE EXISTING PROJECT SPINE.
+EVERY NEW WRITE MUST HAVE: created_at, created_by, updated_at, updated_by, source (“on_the_go”/“full_detail”), and an audit log entry.
+ALL ACTIONS MUST WORK ON ANDROID + IPHONE BROWSERS (RESPONSIVE). NO OFFLINE MODE.
+
+GOAL
+Create a “Project Management On-The-Go Mode” that is ONLY available to users with the Project Manager role.
+PMs must be able to instantly flip between:
+- On-The-Go Mode (fast capture + trigger + escalate, mobile-first)
+- Full Detail Mode (existing current desktop-style experience)
+
+On-The-Go Mode must feel fast and not like admin.
+Full Detail Mode must remain unchanged.
+
+SCOPE: ROLE + MODE SWITCHING (NON-NEGOTIABLE)
+1) Role gating
+- Only users with role = “Project Manager” can access On-The-Go Mode routes and actions.
+- All other roles must NEVER see the toggle, menu items, or routes.
+- Server-side authorization required (do not rely on client checks).
+
+2) Mode switching
+- Add a persistent mode switch visible ONLY to Project Managers:
+  - Toggle labels: “On-The-Go” and “Full Detail”
+  - Must be visible in the header/nav for PMs (both mobile and desktop).
+  - Must be 1 tap/click to switch. No deep settings screens.
+- Persist the user’s last choice per device (local storage) AND per user (server preference) so it “sticks”:
+  - If conflict: device preference wins.
+- Auto-suggest On-The-Go when viewport is mobile-sized, BUT do not force it:
+  - Show a one-time prompt: “Switch to On-The-Go?” with “Yes” / “No” and “Don’t ask again on this device”.
+
+IMPLEMENTATION NOTE:
+- Do NOT change existing “Full Detail” pages. Instead, create parallel On-The-Go pages and route PMs based on mode.
+
+KEY REQUIREMENTS (ON-THE-GO MODE)
+A) PM On-The-Go Home
+- Page: “My Active Projects — Control View”
+- Only show projects where logged-in user is assigned as PM (use existing permission model).
+- Each project card shows (pull from existing data sources; if missing, show “—”):
+  1) Budget vs Spent
+  2) Open Risks count
+  3) VO Pending value
+  4) Schedule % complete
+  5) Open Escalations count / status
+- Tap card opens On-The-Go Project Control screen.
+
+B) On-The-Go Project Control Screen
+- Top: “Project Health Snapshot” (single compact section, minimal scrolling)
+  - Budget / Committed / Spent
+  - VO Pending
+  - Cashflow status (On Track / Risk / Critical) — if not already defined, propose rule and ASK ME before finalizing
+  - Schedule status / days behind/ahead (use existing plan data if present)
+  - Safety status (Clear / Issue Open)
+- Below: BIG ACTION BUTTONS (thumb friendly)
+  1. Log Site Visit
+  2. Generate PO
+  3. Link / Share Invoice
+  4. Raise Variation
+  5. Log Delay
+  6. Log Risk
+  7. Upload Photo
+  8. Update Progress %
+  9. Escalate
+
+C) Speed constraints
+- Each action form must be minimal fields, strong defaults.
+- Use dropdowns not typing where possible.
+- Voice note optional: if no speech service exists, implement audio upload only (no external speech APIs without approval).
+
+D) Mandatory discipline enforcement (PM only)
+- If project stage/status = Construction (or equivalent), enforce:
+  1) Daily Site Diary entry (Log Site Visit) once per day
+  2) Weekly Progress % update before Friday 12:00 (Africa/Johannesburg)
+  3) Weekly Risk update (risk touched OR explicit “no change” confirmation)
+- Show “Non-Compliant Reporting” badge on project card and project control page.
+- Provide compliance widget: Today diary done? This week progress done? This week risk done?
+
+E) Financial boundaries (PM capture, finance approve)
+- PM (mobile) CAN:
+  - Generate PO (request only; status “Pending Finance Approval”)
+  - Upload/link invoices to a project/PO (status “Pending Finance Review”)
+  - Mark “Work Confirmed Complete” (boolean)
+- PM CANNOT:
+  - Approve POs
+  - Approve invoices
+  - Modify baseline budgets
+- Keep existing finance approval workflow intact; if missing, implement minimal status fields + notifications ONLY.
+
+F) Instant notifications (email + in-app)
+When PM creates any of these events, notify instantly:
+- Delay logged
+- Risk logged (any severity; include severity field)
+- Safety issue logged
+- Client instruction captured (implement as Risk type or separate type only if existing model supports)
+- Variation raised
+- PO generated
+- Invoice linked/uploaded
+Notifications must go to:
+- In-app notification center (existing OR minimal new)
+- Email to: Program Manager + COO
+If role-to-email mapping is unclear, ASK ME where to pull recipients from (do not guess).
+
+Add spam control:
+- De-duplicate identical notifications within 2 minutes.
+
+DATA MODEL (DO NOT ASSUME)
+1) First, inspect current database and code for existing equivalents:
+- Projects + PM assignment
+- Risks register
+- Variations (VO)
+- Site diary / daily logs
+- Procurement / PO
+- Invoices / cost tracking
+- Attachments / documents (SharePoint integration)
+- Notifications subsystem
+- Project status/stage values
+
+2) ONLY if missing, propose minimal new tables (do not create duplicates):
+- project_mobile_site_visit
+- project_po_requests (or extend existing PO entity with status if appropriate)
+- project_invoice_links (or extend existing invoice entity with status if appropriate)
+- project_escalations (if none exists)
+- notifications (if none exists)
+- audit_log (if none exists)
+
+Before creating ANY new tables:
+- Produce a schema comparison report:
+  “Existing tables/fields we will reuse” vs “Missing; propose minimal additions”
+- THEN ask me for approval if any addition changes business logic.
+
+ATTACHMENTS / PHOTOS
+- Must support quick photo upload and attach to:
+  - project AND optionally a specific event (site visit/risk/VO/PO/invoice/escalation).
+- Use existing storage approach.
+- If SharePoint is source-of-truth but mobile upload path isn’t implemented:
+  - upload to existing app storage and mark “Pending SharePoint Sync”
+  - DO NOT implement SharePoint API without credentials/approval.
+
+ROUTES / NAVIGATION (DO NOT BREAK EXISTING)
+- Keep all existing Full Detail routes exactly as-is.
+- Add new On-The-Go routes under a clear namespace, e.g.:
+  /pm/on-the-go
+  /pm/on-the-go/projects
+  /pm/on-the-go/projects/:projectId
+- The mode toggle simply routes between:
+  - On-The-Go route namespace
+  - Existing Full Detail pages
+
+UI REQUIREMENTS
+- On-The-Go: mobile-first, big buttons, minimal scrolling.
+- Full Detail: unchanged.
+- Consistent icons + naming with existing app.
+
+SECURITY
+- Enforce PM role + project assignment at API level.
+- All write endpoints must validate:
+  - user has PM role
+  - user is assigned PM on that project
+
+TESTING (NON-NEGOTIABLE)
+Implement automated tests:
+1) PM role gating:
+- Non-PM cannot access On-The-Go routes/endpoints (403)
+2) Mode switching:
+- PM can toggle between modes and preference persists per device
+3) Each of the 9 actions:
+- Creates correct record
+- Updates snapshot counts
+- Creates notifications (in-app + email queued)
+4) Compliance rules:
+- Daily diary enforcement for construction status
+- Weekly progress by Fri 12:00 (Africa/Johannesburg)
+- Weekly risk update requirement
+5) Regression:
+- Existing Full Detail flows unchanged
+
+DELIVERABLES
+A) On-The-Go Mode only for PM role
+B) One-tap toggle between On-The-Go and Full Detail
+C) Minimal DB migrations (only if needed)
+D) Backend endpoints + documentation
+E) Tests + test run output
+F) Config note: where Program Manager and COO email recipients are resolved from
+
+IMPLEMENTATION ORDER
+1) Audit schema + code and report reuse vs gaps.
+2) Add PM-only mode preference + header toggle.
+3) Add On-The-Go route namespace + guard middleware.
+4) Build PM On-The-Go Home.
+5) Build Project Control screen + snapshot queries.
+6) Implement 9 action endpoints + minimal UI.
+7) Implement notifications (in-app + email).
+8) Implement compliance checks + badges.
+9) Tests + regression confirmation.
+
+HARD RULES
+- Do not remove or rename existing routes or fields.
+- Do not change existing COS/cashflow logic.
+- Ask me if: project status values, PM assignment fields, or recipient mapping are unclear.
