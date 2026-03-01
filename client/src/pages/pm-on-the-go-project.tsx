@@ -1,0 +1,747 @@
+import { useState, useCallback } from "react";
+import { useParams, useLocation } from "wouter";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Slider } from "@/components/ui/slider";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { useToast } from "@/hooks/use-toast";
+import {
+  ArrowLeft,
+  RefreshCw,
+  MapPin,
+  FileText,
+  Receipt,
+  GitBranch,
+  Clock,
+  AlertTriangle,
+  Camera,
+  TrendingUp,
+  Megaphone,
+  CheckCircle2,
+  Circle,
+  Shield,
+  ShieldAlert,
+  Loader2,
+} from "lucide-react";
+
+function getAuthHeaders(): Record<string, string> {
+  const token = localStorage.getItem("auth_token");
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  return headers;
+}
+
+async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(url, {
+    ...options,
+    credentials: "include",
+    headers: { ...getAuthHeaders(), ...options?.headers },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || err.message || "Request failed");
+  }
+  return res.json();
+}
+
+interface Snapshot {
+  projectId: number;
+  projectName: string;
+  phase: string | null;
+  budget: number;
+  committed: number;
+  spent: number;
+  spendPercent: number;
+  voPending: number;
+  cashflowStatus: "on_track" | "risk" | "critical";
+  schedulePct: number;
+  expectedPct: number;
+  daysBehindAhead: number;
+  safetyStatus: string;
+}
+
+interface Compliance {
+  weekStartDate: string;
+  dailyDiaryDone: string[];
+  weeklyProgressDone: boolean;
+  weeklyRiskDone: boolean;
+}
+
+type ActionType =
+  | "site_visit"
+  | "generate_po"
+  | "link_invoice"
+  | "raise_variation"
+  | "log_delay"
+  | "log_risk"
+  | "upload_photo"
+  | "update_progress"
+  | "escalate";
+
+const ACTION_CONFIG: {
+  type: ActionType;
+  label: string;
+  icon: typeof MapPin;
+  color: string;
+}[] = [
+  { type: "site_visit", label: "Log Site Visit", icon: MapPin, color: "bg-blue-600 hover:bg-blue-700" },
+  { type: "generate_po", label: "Generate PO", icon: FileText, color: "bg-indigo-600 hover:bg-indigo-700" },
+  { type: "link_invoice", label: "Link Invoice", icon: Receipt, color: "bg-purple-600 hover:bg-purple-700" },
+  { type: "raise_variation", label: "Raise Variation", icon: GitBranch, color: "bg-orange-600 hover:bg-orange-700" },
+  { type: "log_delay", label: "Log Delay", icon: Clock, color: "bg-amber-600 hover:bg-amber-700" },
+  { type: "log_risk", label: "Log Risk", icon: AlertTriangle, color: "bg-red-600 hover:bg-red-700" },
+  { type: "upload_photo", label: "Upload Photo", icon: Camera, color: "bg-teal-600 hover:bg-teal-700" },
+  { type: "update_progress", label: "Update Progress", icon: TrendingUp, color: "bg-emerald-600 hover:bg-emerald-700" },
+  { type: "escalate", label: "Escalate", icon: Megaphone, color: "bg-rose-600 hover:bg-rose-700" },
+];
+
+function formatZAR(value: number): string {
+  return `R ${value.toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+}
+
+export default function PMOnTheGoProject() {
+  const params = useParams<{ projectId: string }>();
+  const projectId = parseInt(params.projectId || "0");
+  const [, navigate] = useLocation();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [activeAction, setActiveAction] = useState<ActionType | null>(null);
+
+  const { data: snapshot, isLoading: snapshotLoading, refetch: refetchSnapshot } = useQuery<Snapshot>({
+    queryKey: ["pm-otg-snapshot", projectId],
+    queryFn: () => apiFetch(`/api/pm-otg/projects/${projectId}/snapshot`),
+    enabled: projectId > 0,
+  });
+
+  const { data: compliance, refetch: refetchCompliance } = useQuery<Compliance>({
+    queryKey: ["pm-otg-compliance", projectId],
+    queryFn: () => apiFetch(`/api/pm-otg/projects/${projectId}/compliance`),
+    enabled: projectId > 0,
+  });
+
+  const refreshAll = useCallback(() => {
+    refetchSnapshot();
+    refetchCompliance();
+  }, [refetchSnapshot, refetchCompliance]);
+
+  const riskConfirmMutation = useMutation({
+    mutationFn: () =>
+      apiFetch(`/api/pm-otg/projects/${projectId}/compliance/risk-confirm`, { method: "POST" }),
+    onSuccess: () => {
+      toast({ title: "Risk review confirmed" });
+      refetchCompliance();
+    },
+  });
+
+  if (snapshotLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!snapshot) {
+    return (
+      <div className="p-4 space-y-4">
+        <Button variant="ghost" onClick={() => navigate("/pm/on-the-go")} data-testid="btn-back-home">
+          <ArrowLeft className="w-4 h-4 mr-2" /> Back
+        </Button>
+        <Card className="p-8 text-center text-muted-foreground">Project not found or not assigned.</Card>
+      </div>
+    );
+  }
+
+  const today = new Date().toISOString().split("T")[0];
+  const diaryDoneToday = compliance?.dailyDiaryDone?.includes(today) || false;
+  const progressDone = compliance?.weeklyProgressDone || false;
+  const riskDone = compliance?.weeklyRiskDone || false;
+
+  return (
+    <div className="p-3 sm:p-4 space-y-4 max-w-4xl mx-auto pb-20">
+      <div className="flex items-center justify-between">
+        <Button variant="ghost" size="sm" onClick={() => navigate("/pm/on-the-go")} data-testid="btn-back-home">
+          <ArrowLeft className="w-4 h-4 mr-1" /> Back
+        </Button>
+        <Button variant="outline" size="sm" onClick={refreshAll} data-testid="btn-refresh-project">
+          <RefreshCw className="w-4 h-4 mr-1" /> Refresh
+        </Button>
+      </div>
+
+      <h2 className="text-xl sm:text-2xl font-heading font-bold truncate" data-testid="text-pm-otg-project-title">
+        {snapshot.projectName}
+      </h2>
+
+      <Card className="p-3 sm:p-4 space-y-3" data-testid="card-health-snapshot">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium text-muted-foreground">Health Snapshot</span>
+          {snapshot.phase && <Badge variant="outline" data-testid="badge-phase">{snapshot.phase}</Badge>}
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <p className="text-xs text-muted-foreground">Budget</p>
+            <p className="text-sm font-semibold" data-testid="text-budget">{formatZAR(snapshot.budget)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Committed</p>
+            <p className="text-sm font-semibold" data-testid="text-committed">{formatZAR(snapshot.committed)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Spent</p>
+            <p className="text-sm font-semibold" data-testid="text-spent">{formatZAR(snapshot.spent)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">VO Pending</p>
+            <p className="text-sm font-semibold" data-testid="text-vo-pending">{formatZAR(snapshot.voPending)}</p>
+          </div>
+        </div>
+
+        <div>
+          <div className="flex justify-between text-xs mb-1">
+            <span>Spend: {snapshot.spendPercent}%</span>
+          </div>
+          <Progress value={Math.min(snapshot.spendPercent, 100)} className="h-2" data-testid="progress-spend" />
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <Badge
+            variant={snapshot.cashflowStatus === "on_track" ? "default" : "destructive"}
+            className={
+              snapshot.cashflowStatus === "on_track"
+                ? "bg-green-600"
+                : snapshot.cashflowStatus === "risk"
+                ? "bg-amber-500"
+                : "bg-red-600"
+            }
+            data-testid="badge-cashflow-status"
+          >
+            Cashflow: {snapshot.cashflowStatus === "on_track" ? "On Track" : snapshot.cashflowStatus === "risk" ? "Risk" : "Critical"}
+          </Badge>
+
+          <Badge variant="outline" data-testid="badge-schedule">
+            Schedule: {snapshot.schedulePct}% ({snapshot.daysBehindAhead >= 0 ? `+${snapshot.daysBehindAhead}` : snapshot.daysBehindAhead} days)
+          </Badge>
+
+          {snapshot.safetyStatus === "clear" ? (
+            <Badge className="bg-green-600" data-testid="badge-safety">
+              <Shield className="w-3 h-3 mr-1" /> Safety Clear
+            </Badge>
+          ) : (
+            <Badge variant="destructive" data-testid="badge-safety">
+              <ShieldAlert className="w-3 h-3 mr-1" /> Safety Issue
+            </Badge>
+          )}
+        </div>
+      </Card>
+
+      <Card className="p-3 sm:p-4" data-testid="card-compliance">
+        <span className="text-sm font-medium text-muted-foreground mb-2 block">Compliance</span>
+        <div className="flex items-center gap-4 flex-wrap">
+          <ComplianceCheck label="Diary Today" done={diaryDoneToday} testId="compliance-diary" />
+          <ComplianceCheck label="Progress (Week)" done={progressDone} testId="compliance-progress" />
+          <div className="flex items-center gap-1.5">
+            {riskDone ? (
+              <CheckCircle2 className="w-4 h-4 text-green-500" />
+            ) : (
+              <Circle className="w-4 h-4 text-muted-foreground" />
+            )}
+            <span className="text-sm" data-testid="compliance-risk">Risk (Week)</span>
+            {!riskDone && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs h-6 px-2"
+                onClick={() => riskConfirmMutation.mutate()}
+                disabled={riskConfirmMutation.isPending}
+                data-testid="btn-confirm-risk"
+              >
+                Confirm
+              </Button>
+            )}
+          </div>
+        </div>
+      </Card>
+
+      <div className="grid grid-cols-3 gap-2 sm:gap-3" data-testid="grid-actions">
+        {ACTION_CONFIG.map(({ type, label, icon: Icon, color }) => (
+          <Button
+            key={type}
+            variant="default"
+            className={`${color} h-20 sm:h-24 flex flex-col items-center justify-center gap-1 text-white text-xs sm:text-sm font-medium rounded-xl`}
+            onClick={() => setActiveAction(type)}
+            data-testid={`btn-action-${type}`}
+          >
+            <Icon className="w-6 h-6 sm:w-7 sm:h-7" />
+            <span className="text-center leading-tight">{label}</span>
+          </Button>
+        ))}
+      </div>
+
+      {activeAction && (
+        <ActionDialog
+          actionType={activeAction}
+          projectId={projectId}
+          onClose={() => setActiveAction(null)}
+          onSuccess={() => {
+            setActiveAction(null);
+            refreshAll();
+            queryClient.invalidateQueries({ queryKey: ["pm-otg-snapshot", projectId] });
+            queryClient.invalidateQueries({ queryKey: ["pm-otg-compliance", projectId] });
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ComplianceCheck({ label, done, testId }: { label: string; done: boolean; testId: string }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      {done ? (
+        <CheckCircle2 className="w-4 h-4 text-green-500" />
+      ) : (
+        <Circle className="w-4 h-4 text-muted-foreground" />
+      )}
+      <span className="text-sm" data-testid={testId}>{label}</span>
+    </div>
+  );
+}
+
+function ActionDialog({
+  actionType,
+  projectId,
+  onClose,
+  onSuccess,
+}: {
+  actionType: ActionType;
+  projectId: number;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const { toast } = useToast();
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async (endpoint: string, body: Record<string, any>, isFormData = false) => {
+    setSubmitting(true);
+    try {
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      if (!isFormData) headers["Content-Type"] = "application/json";
+
+      const res = await fetch(`/api/pm-otg/projects/${projectId}/${endpoint}`, {
+        method: "POST",
+        credentials: "include",
+        headers,
+        body: isFormData ? (body as any) : JSON.stringify(body),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Failed" }));
+        throw new Error(err.error || "Request failed");
+      }
+
+      toast({ title: "Action submitted successfully" });
+      onSuccess();
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const config = ACTION_CONFIG.find((a) => a.type === actionType)!;
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <config.icon className="w-5 h-5" />
+            {config.label}
+          </DialogTitle>
+          <DialogDescription>Fill in the details and submit.</DialogDescription>
+        </DialogHeader>
+
+        {actionType === "site_visit" && (
+          <SiteVisitForm onSubmit={handleSubmit} submitting={submitting} />
+        )}
+        {actionType === "generate_po" && (
+          <GeneratePoForm onSubmit={handleSubmit} submitting={submitting} />
+        )}
+        {actionType === "link_invoice" && (
+          <LinkInvoiceForm onSubmit={handleSubmit} submitting={submitting} />
+        )}
+        {actionType === "raise_variation" && (
+          <RaiseVariationForm onSubmit={handleSubmit} submitting={submitting} />
+        )}
+        {actionType === "log_delay" && (
+          <LogDelayForm onSubmit={handleSubmit} submitting={submitting} />
+        )}
+        {actionType === "log_risk" && (
+          <LogRiskForm onSubmit={handleSubmit} submitting={submitting} />
+        )}
+        {actionType === "upload_photo" && (
+          <UploadPhotoForm onSubmit={handleSubmit} submitting={submitting} />
+        )}
+        {actionType === "update_progress" && (
+          <UpdateProgressForm onSubmit={handleSubmit} submitting={submitting} />
+        )}
+        {actionType === "escalate" && (
+          <EscalateForm onSubmit={handleSubmit} submitting={submitting} />
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+type FormSubmit = (endpoint: string, body: any, isFormData?: boolean) => Promise<void>;
+
+function SiteVisitForm({ onSubmit, submitting }: { onSubmit: FormSubmit; submitting: boolean }) {
+  const [visitDate, setVisitDate] = useState(new Date().toISOString().split("T")[0]);
+  const [notes, setNotes] = useState("");
+  const [weather, setWeather] = useState("clear");
+  const [safety, setSafety] = useState("clear");
+  const [files, setFiles] = useState<FileList | null>(null);
+
+  const handleSubmit = () => {
+    const fd = new FormData();
+    fd.append("visitDate", visitDate);
+    fd.append("notes", notes);
+    fd.append("weatherConditions", weather);
+    fd.append("safetyStatus", safety);
+    if (files) {
+      Array.from(files).forEach((f) => fd.append("photos", f));
+    }
+    onSubmit("site-visit", fd, true);
+  };
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <Label htmlFor="sv-date">Date</Label>
+        <Input id="sv-date" type="date" value={visitDate} onChange={(e) => setVisitDate(e.target.value)} data-testid="input-sv-date" />
+      </div>
+      <div>
+        <Label htmlFor="sv-notes">Notes</Label>
+        <Textarea id="sv-notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Site visit notes..." data-testid="input-sv-notes" />
+      </div>
+      <div>
+        <Label>Weather</Label>
+        <Select value={weather} onValueChange={setWeather}>
+          <SelectTrigger data-testid="select-sv-weather"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="clear">Clear</SelectItem>
+            <SelectItem value="cloudy">Cloudy</SelectItem>
+            <SelectItem value="rain">Rain</SelectItem>
+            <SelectItem value="windy">Windy</SelectItem>
+            <SelectItem value="storm">Storm</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <div>
+        <Label>Safety Status</Label>
+        <div className="flex gap-4 mt-1">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="radio" name="safety" value="clear" checked={safety === "clear"} onChange={() => setSafety("clear")} data-testid="radio-safety-clear" />
+            <span className="text-sm">Clear</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="radio" name="safety" value="issue_open" checked={safety === "issue_open"} onChange={() => setSafety("issue_open")} data-testid="radio-safety-issue" />
+            <span className="text-sm">Issue Open</span>
+          </label>
+        </div>
+      </div>
+      <div>
+        <Label htmlFor="sv-photos">Photos / Audio</Label>
+        <Input id="sv-photos" type="file" accept="image/*,audio/*" multiple onChange={(e) => setFiles(e.target.files)} data-testid="input-sv-photos" />
+      </div>
+      <Button onClick={handleSubmit} disabled={submitting} className="w-full" data-testid="btn-submit-site-visit">
+        {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+        Log Site Visit
+      </Button>
+    </div>
+  );
+}
+
+function GeneratePoForm({ onSubmit, submitting }: { onSubmit: FormSubmit; submitting: boolean }) {
+  const [poNumber, setPoNumber] = useState("");
+  const [description, setDescription] = useState("");
+  const [amount, setAmount] = useState("");
+  const [supplier, setSupplier] = useState("");
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <Label htmlFor="po-number">PO Number *</Label>
+        <Input id="po-number" value={poNumber} onChange={(e) => setPoNumber(e.target.value)} placeholder="PO-001" data-testid="input-po-number" />
+      </div>
+      <div>
+        <Label htmlFor="po-desc">Description *</Label>
+        <Textarea id="po-desc" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="PO description..." data-testid="input-po-description" />
+      </div>
+      <div>
+        <Label htmlFor="po-amount">Amount (ZAR)</Label>
+        <Input id="po-amount" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" data-testid="input-po-amount" />
+      </div>
+      <div>
+        <Label htmlFor="po-supplier">Supplier</Label>
+        <Input id="po-supplier" value={supplier} onChange={(e) => setSupplier(e.target.value)} placeholder="Supplier name" data-testid="input-po-supplier" />
+      </div>
+      <Button onClick={() => onSubmit("generate-po", { poNumber, description, amount, supplier })} disabled={submitting || !poNumber || !description} className="w-full" data-testid="btn-submit-generate-po">
+        {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+        Generate PO Request
+      </Button>
+    </div>
+  );
+}
+
+function LinkInvoiceForm({ onSubmit, submitting }: { onSubmit: FormSubmit; submitting: boolean }) {
+  const [invoiceNumber, setInvoiceNumber] = useState("");
+  const [amount, setAmount] = useState("");
+  const [poReference, setPoReference] = useState("");
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <Label htmlFor="inv-number">Invoice Number *</Label>
+        <Input id="inv-number" value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} placeholder="INV-001" data-testid="input-inv-number" />
+      </div>
+      <div>
+        <Label htmlFor="inv-amount">Amount (ZAR)</Label>
+        <Input id="inv-amount" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" data-testid="input-inv-amount" />
+      </div>
+      <div>
+        <Label htmlFor="inv-po">PO Reference</Label>
+        <Input id="inv-po" value={poReference} onChange={(e) => setPoReference(e.target.value)} placeholder="PO-001" data-testid="input-inv-po" />
+      </div>
+      <Button onClick={() => onSubmit("link-invoice", { invoiceNumber, amount, poReference })} disabled={submitting || !invoiceNumber} className="w-full" data-testid="btn-submit-link-invoice">
+        {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+        Link Invoice
+      </Button>
+    </div>
+  );
+}
+
+function RaiseVariationForm({ onSubmit, submitting }: { onSubmit: FormSubmit; submitting: boolean }) {
+  const [description, setDescription] = useState("");
+  const [amount, setAmount] = useState("");
+  const [justification, setJustification] = useState("");
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <Label htmlFor="vo-desc">Description *</Label>
+        <Textarea id="vo-desc" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Variation description..." data-testid="input-vo-description" />
+      </div>
+      <div>
+        <Label htmlFor="vo-amount">Amount (ZAR) *</Label>
+        <Input id="vo-amount" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" data-testid="input-vo-amount" />
+      </div>
+      <div>
+        <Label htmlFor="vo-just">Justification</Label>
+        <Textarea id="vo-just" value={justification} onChange={(e) => setJustification(e.target.value)} placeholder="Why is this variation needed?" data-testid="input-vo-justification" />
+      </div>
+      <Button onClick={() => onSubmit("raise-variation", { description, amount, justification })} disabled={submitting || !description || !amount} className="w-full" data-testid="btn-submit-raise-variation">
+        {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+        Raise Variation Order
+      </Button>
+    </div>
+  );
+}
+
+function LogDelayForm({ onSubmit, submitting }: { onSubmit: FormSubmit; submitting: boolean }) {
+  const [description, setDescription] = useState("");
+  const [daysDelayed, setDaysDelayed] = useState("");
+  const [impact, setImpact] = useState("Medium");
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <Label htmlFor="delay-desc">Description *</Label>
+        <Textarea id="delay-desc" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Describe the delay..." data-testid="input-delay-description" />
+      </div>
+      <div>
+        <Label htmlFor="delay-days">Days Delayed</Label>
+        <Input id="delay-days" type="number" value={daysDelayed} onChange={(e) => setDaysDelayed(e.target.value)} placeholder="0" data-testid="input-delay-days" />
+      </div>
+      <div>
+        <Label>Impact</Label>
+        <Select value={impact} onValueChange={setImpact}>
+          <SelectTrigger data-testid="select-delay-impact"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="Low">Low</SelectItem>
+            <SelectItem value="Medium">Medium</SelectItem>
+            <SelectItem value="High">High</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <Button onClick={() => onSubmit("log-delay", { description, daysDelayed, impact })} disabled={submitting || !description} className="w-full" data-testid="btn-submit-log-delay">
+        {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+        Log Delay
+      </Button>
+    </div>
+  );
+}
+
+function LogRiskForm({ onSubmit, submitting }: { onSubmit: FormSubmit; submitting: boolean }) {
+  const [description, setDescription] = useState("");
+  const [severity, setSeverity] = useState("Medium");
+  const [mitigationNotes, setMitigationNotes] = useState("");
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <Label htmlFor="risk-desc">Description *</Label>
+        <Textarea id="risk-desc" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Describe the risk..." data-testid="input-risk-description" />
+      </div>
+      <div>
+        <Label>Severity *</Label>
+        <Select value={severity} onValueChange={setSeverity}>
+          <SelectTrigger data-testid="select-risk-severity"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="Low">Low</SelectItem>
+            <SelectItem value="Medium">Medium</SelectItem>
+            <SelectItem value="High">High</SelectItem>
+            <SelectItem value="Critical">Critical</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <div>
+        <Label htmlFor="risk-mitigation">Mitigation Notes</Label>
+        <Textarea id="risk-mitigation" value={mitigationNotes} onChange={(e) => setMitigationNotes(e.target.value)} placeholder="Mitigation plan..." data-testid="input-risk-mitigation" />
+      </div>
+      <Button onClick={() => onSubmit("log-risk", { description, severity, mitigationNotes })} disabled={submitting || !description || !severity} className="w-full" data-testid="btn-submit-log-risk">
+        {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+        Log Risk
+      </Button>
+    </div>
+  );
+}
+
+function UploadPhotoForm({ onSubmit, submitting }: { onSubmit: FormSubmit; submitting: boolean }) {
+  const [file, setFile] = useState<File | null>(null);
+  const [caption, setCaption] = useState("");
+  const [linkedEvent, setLinkedEvent] = useState("");
+
+  const handleSubmit = () => {
+    if (!file) return;
+    const fd = new FormData();
+    fd.append("photo", file);
+    fd.append("caption", caption);
+    fd.append("linkedEvent", linkedEvent);
+    onSubmit("upload-photo", fd, true);
+  };
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <Label htmlFor="photo-file">Photo *</Label>
+        <Input id="photo-file" type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] || null)} data-testid="input-photo-file" />
+      </div>
+      <div>
+        <Label htmlFor="photo-caption">Caption</Label>
+        <Input id="photo-caption" value={caption} onChange={(e) => setCaption(e.target.value)} placeholder="Optional caption" data-testid="input-photo-caption" />
+      </div>
+      <div>
+        <Label htmlFor="photo-event">Link to Event</Label>
+        <Input id="photo-event" value={linkedEvent} onChange={(e) => setLinkedEvent(e.target.value)} placeholder="e.g. Site Visit #12" data-testid="input-photo-event" />
+      </div>
+      <Button onClick={handleSubmit} disabled={submitting || !file} className="w-full" data-testid="btn-submit-upload-photo">
+        {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+        Upload Photo
+      </Button>
+    </div>
+  );
+}
+
+function UpdateProgressForm({ onSubmit, submitting }: { onSubmit: FormSubmit; submitting: boolean }) {
+  const [progressPercent, setProgressPercent] = useState(50);
+  const [notes, setNotes] = useState("");
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <Label>Progress: {progressPercent}%</Label>
+        <Slider
+          value={[progressPercent]}
+          onValueChange={(v) => setProgressPercent(v[0])}
+          min={0}
+          max={100}
+          step={1}
+          className="mt-2"
+          data-testid="slider-progress"
+        />
+      </div>
+      <div>
+        <Label htmlFor="prog-notes">Notes</Label>
+        <Textarea id="prog-notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Progress update notes..." data-testid="input-progress-notes" />
+      </div>
+      <Button onClick={() => onSubmit("update-progress", { progressPercent: String(progressPercent), notes })} disabled={submitting} className="w-full" data-testid="btn-submit-update-progress">
+        {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+        Update Progress
+      </Button>
+    </div>
+  );
+}
+
+function EscalateForm({ onSubmit, submitting }: { onSubmit: FormSubmit; submitting: boolean }) {
+  const [description, setDescription] = useState("");
+  const [escalationLevel, setEscalationLevel] = useState("High");
+  const [urgency, setUrgency] = useState("High");
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <Label htmlFor="esc-desc">Description *</Label>
+        <Textarea id="esc-desc" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What needs escalation?" data-testid="input-esc-description" />
+      </div>
+      <div>
+        <Label>Escalation Level</Label>
+        <Select value={escalationLevel} onValueChange={setEscalationLevel}>
+          <SelectTrigger data-testid="select-esc-level"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="Medium">Medium</SelectItem>
+            <SelectItem value="High">High</SelectItem>
+            <SelectItem value="Critical">Critical</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <div>
+        <Label>Urgency</Label>
+        <Select value={urgency} onValueChange={setUrgency}>
+          <SelectTrigger data-testid="select-esc-urgency"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="Medium">Medium</SelectItem>
+            <SelectItem value="High">High</SelectItem>
+            <SelectItem value="Critical">Critical</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <Button onClick={() => onSubmit("escalate", { description, escalationLevel, urgency })} disabled={submitting || !description} className="w-full" data-testid="btn-submit-escalate">
+        {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+        Escalate
+      </Button>
+    </div>
+  );
+}

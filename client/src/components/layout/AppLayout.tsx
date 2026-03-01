@@ -52,6 +52,7 @@ import {
   MessageSquare,
   Handshake,
   Compass,
+  Smartphone,
 } from "lucide-react";
 import { UX_REDESIGN_ENABLED } from "@shared/schema";
 import { useProgramData } from "@/hooks/use-program-data";
@@ -65,6 +66,7 @@ import { DatabaseStatusBanner } from "@/components/DatabaseStatusBanner";
 import { UploadValidationReport } from "@/components/UploadValidationReport";
 import { NotificationBell } from "@/components/NotificationBell";
 import { InteractiveTutorial } from "@/components/InteractiveTutorial";
+import { PmModeToggle } from "@/components/PmModeToggle";
 import { getScreenTour } from "@/data/screen-tours";
 import type { ScreenTourStep } from "@/data/screen-tours";
 
@@ -176,6 +178,7 @@ function getRedesignedNavGroups(): NavGroup[] {
         { label: "Execution Board", icon: Gauge, path: "/dashboard" },
         { label: "Project Summary", icon: FolderKanban, path: "/projects" },
         { label: "PM Dashboard", icon: Briefcase, path: "/pm-dashboard" },
+        { label: "On-The-Go", icon: Smartphone, path: "/pm/on-the-go" },
         { label: "TR Register", icon: ClipboardList, path: "/tr-register" },
         { label: "Smart Import", icon: FileSpreadsheet, path: "/smart-import" },
         { label: "Portfolios", icon: FolderOpen, path: "/portfolios" },
@@ -367,8 +370,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         }).map((group) => {
           let visibleItems = group.items.filter(item => {
             if (item.path === "/engineering/sync" && companyRole !== "COO_ADMIN") return false;
+            if (item.path === "/pm/on-the-go" && companyRole !== "PROJECT_MANAGER_SITE") return false;
             if (companyRole === "PROJECT_MANAGER_SITE") {
-              const pmVisiblePaths = ["/projects", "/pm-dashboard", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/cashflow", "/cos", "/portfolios"];
+              const pmVisiblePaths = ["/projects", "/pm-dashboard", "/pm/on-the-go", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/cashflow", "/cos", "/portfolios"];
               return pmVisiblePaths.some(p => item.path === p);
             }
             return true;
@@ -569,6 +573,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               <Input placeholder="Search projects..." className="pl-9 h-9 bg-muted/30 border-none focus-visible:ring-1" />
             </div>
             
+            <PmModeToggle />
+
             <NotificationBell />
 
             <div className="h-8 w-px bg-border mx-1 hidden sm:block" />
