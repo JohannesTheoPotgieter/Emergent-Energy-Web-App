@@ -9,7 +9,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getQueryFn, apiRequest } from "@/lib/queryClient";
 import { InteractiveTutorial, useInteractiveTutorial } from "@/components/InteractiveTutorial";
-import { DEFAULT_WIDGET_ORDER, WIDGET_DEFINITIONS } from "@shared/schema";
+import { DEFAULT_WIDGET_ORDER, WIDGET_DEFINITIONS, getWidgetsForRole } from "@shared/schema";
 import {
   Flag,
   Loader2,
@@ -936,12 +936,17 @@ function WidgetConfigPanel({
   config,
   onSave,
   onClose,
+  allowedWidgets,
 }: {
   config: WidgetConfig;
   onSave: (config: WidgetConfig) => void;
   onClose: () => void;
+  allowedWidgets?: Set<string>;
 }) {
-  const [order, setOrder] = useState<string[]>([...config.widgetOrder]);
+  const [order, setOrder] = useState<string[]>(() => {
+    if (!allowedWidgets) return [...config.widgetOrder];
+    return config.widgetOrder.filter(w => allowedWidgets.has(w));
+  });
   const [hidden, setHidden] = useState<string[]>([...config.hiddenWidgets]);
 
   const moveUp = (index: number) => {
@@ -965,7 +970,8 @@ function WidgetConfigPanel({
   };
 
   const resetDefaults = () => {
-    setOrder([...DEFAULT_WIDGET_ORDER]);
+    const defaults = [...DEFAULT_WIDGET_ORDER] as string[];
+    setOrder(allowedWidgets ? defaults.filter(w => allowedWidgets.has(w)) : defaults);
     setHidden([]);
   };
 
@@ -1069,11 +1075,16 @@ export default function Home() {
     },
   });
 
+  const roleWidgets = useMemo(() => {
+    const role = companyRole || user?.role || "";
+    return new Set(getWidgetsForRole(role));
+  }, [companyRole, user?.role]);
+
   const activeWidgetOrder = useMemo(() => {
     const order = widgetConfig?.widgetOrder || [...DEFAULT_WIDGET_ORDER];
     const hidden = new Set(widgetConfig?.hiddenWidgets || []);
-    return order.filter(w => !hidden.has(w));
-  }, [widgetConfig]);
+    return order.filter(w => !hidden.has(w) && roleWidgets.has(w));
+  }, [widgetConfig, roleWidgets]);
 
   useEffect(() => {
     if (user && !tutorial.completed) {
@@ -1392,6 +1403,7 @@ export default function Home() {
           config={widgetConfig}
           onSave={(cfg) => saveWidgetConfigMutation.mutate(cfg)}
           onClose={() => setShowWidgetConfig(false)}
+          allowedWidgets={roleWidgets}
         />
       )}
 
