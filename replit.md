@@ -67,6 +67,26 @@ Preferred communication style: Simple, everyday language.
 -   **Module**: Notifies Program Manager, Program Finance Manager, and Construction Manager about plan task data edits for confirmation.
 -   **Workflow**: Recipients can confirm, which auto-confirms related notifications.
 
+### Excel Sync Acknowledgment System
+-   **Module**: `server/excel-sync-notifications.ts` — fires `excel_sync_confirmation` notifications whenever ANY project data changes (project info, expenses, revenue, engineering, quality, PM On-The-Go actions).
+-   **Recipients**: PROGRAM_MANAGER, PROGRAM_FINANCE_MANAGER, CONSTRUCTION_MANAGER roles.
+-   **Dedup**: 2-minute throttle per project+changeType via `notification_throttle` table.
+-   **Hooked into**: routes.ts (7 endpoints), engineering-routes.ts, eng-stage-routes.ts, quality-routes.ts, pm-on-the-go-routes.ts (9 action endpoints).
+
+### PM On-The-Go Mode
+-   **Module**: Mobile-first project management interface exclusively for `PROJECT_MANAGER_SITE` role users.
+-   **Tables**: `pm_site_visits`, `pm_on_the_go_actions`, `pm_compliance_tracking`, `pm_mode_preferences`.
+-   **Routes**: `/api/pm-otg/*` in `server/pm-on-the-go-routes.ts` — mode preference, project snapshots, 9 action endpoints, compliance tracking.
+-   **Frontend**: Toggle in header (`PmModeToggle.tsx`), home page (`pm-on-the-go-home.tsx`), project control page (`pm-on-the-go-project.tsx`).
+-   **Compliance**: Daily site diary, weekly progress, weekly risk update enforcement for construction projects.
+-   **Financial Boundaries**: PM can request POs and link invoices (status: pending) but cannot approve.
+
+### Roles & Permissions (Enhanced)
+-   **Admin Page**: `admin-roles.tsx` — 11 permission categories with 60+ granular entity permissions (View/Edit/Approve/Override/Delete).
+-   **Categories**: Cockpit, Project Management, Finance, Engineering, Quality & Governance, Project Detail Tabs, Project Development, Information, Collaboration, Data & Reports, Admin.
+-   **Backend**: `server/permission-middleware.ts` with `requirePermission(entity, action)` middleware + 60s cache.
+-   **Defaults**: `ENTITY_PERMISSION_DEFAULTS` in `shared/schema.ts` for all entities.
+
 ### Email/Message to Task
 -   **Module**: Enables creating project-linked operational tasks directly from Outlook emails or Teams messages via a dedicated endpoint.
 -   **Notifications**: Assignee receives a notification upon task creation.

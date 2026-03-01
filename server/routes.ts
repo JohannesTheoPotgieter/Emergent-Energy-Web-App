@@ -24,6 +24,7 @@ import { recordOverride, recordManualEdit } from "./lib/audit/diff-engine";
 import { OVERRIDE_CATEGORIES } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
 import { createNameResolver, fetchAllNormalized, mergeExpensesOnly, mergeInflowsOnly, mergePlansOnly } from "./lib/data-merge";
+import { sendExcelSyncNotification } from "./excel-sync-notifications";
 
 function isCosRealisedCheck(exp: any): boolean {
   const hasInvoice = !!(exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim());
@@ -2229,6 +2230,15 @@ export async function registerRoutes(
         }
       }
       const result = await storage.upsertProjectEditableFields(data as any);
+
+      sendExcelSyncNotification({
+        projectName,
+        changedByUserId: req.user?.id || 0,
+        changeType: "project_info_update",
+        changeDescription: "Project summary fields were edited.",
+        details: parsed,
+      }).catch(() => {});
+
       res.json(result);
     } catch (error) {
       console.error("Project edit error:", error);
@@ -4557,6 +4567,15 @@ export async function registerRoutes(
       const parsed = editSchema.parse(req.body);
       const updated = await storage.updateProjectInfoById(id, parsed as any);
       if (!updated) return res.status(404).json({ error: "Project not found" });
+
+      sendExcelSyncNotification({
+        projectName: updated.projectName,
+        changedByUserId: req.user?.id || 0,
+        changeType: "project_info_update",
+        changeDescription: "Project info was updated.",
+        details: parsed,
+      }).catch(() => {});
+
       res.json(updated);
     } catch (error) {
       console.error("Project info update error:", error);
@@ -4914,6 +4933,13 @@ export async function registerRoutes(
 
       const notifyStructureChange = (desc: string) => {
         sendPlanChangeNotifications(rawProjectName, userId, desc, [{ operation, tasks: data?.taskRowNumbers || [] }]);
+        sendExcelSyncNotification({
+          projectName: rawProjectName,
+          changedByUserId: userId || 0,
+          changeType: "plan_structure_change",
+          changeDescription: desc,
+          details: { operation, data },
+        }).catch(() => {});
       };
 
       if (operation === "createMilestone") {
@@ -5130,6 +5156,15 @@ export async function registerRoutes(
         createdBy: userId,
       }));
       await storage.upsertManyProjectPlanOverrides(overrides);
+
+      sendExcelSyncNotification({
+        projectName,
+        changedByUserId: userId || 0,
+        changeType: "plan_task_deletion",
+        changeDescription: `${rowNumbers.length} task(s) deleted from project plan.`,
+        details: { rowNumbers },
+      }).catch(() => {});
+
       res.json({ message: `Deleted ${rowNumbers.length} task(s)` });
     } catch (error) {
       console.error("[PlanDelete] Error:", error);
@@ -5437,6 +5472,14 @@ export async function registerRoutes(
         console.warn("[audit] Revenue summary audit failed:", auditErr.message);
       }
 
+      sendExcelSyncNotification({
+        projectName,
+        changedByUserId: req.user?.id || 0,
+        changeType: "revenue_costed_update",
+        changeDescription: "Revenue costed values were updated.",
+        details: { revenue, expenditure },
+      }).catch(() => {});
+
       res.json(saved);
     } catch (error) {
       console.error("Save costed error:", error);
@@ -5707,6 +5750,15 @@ export async function registerRoutes(
         return res.status(400).json({ error: "expenseId and taskId are required" });
       }
       const link = await storage.upsertExpenseTaskLink(req.params.projectName, expenseId, taskId, (req.user as any)?.id);
+
+      sendExcelSyncNotification({
+        projectName: req.params.projectName,
+        changedByUserId: (req.user as any)?.id || 0,
+        changeType: "expense_edit",
+        changeDescription: "Expense task link was updated.",
+        details: { expenseId, taskId },
+      }).catch(() => {});
+
       res.json(link);
     } catch (error) {
       console.error("Link expense task error:", error);
@@ -7524,6 +7576,14 @@ export async function registerRoutes(
         documentationUpdated: 0,
         createdBy: createdBy || null,
       });
+
+      sendExcelSyncNotification({
+        projectName: decodedName,
+        changedByUserId: req.user?.id || 0,
+        changeType: "change_notice",
+        changeDescription: `Schedule change notice created: ${summary}`,
+        details: { summary, oldFinishDate, newFinishDate, criticalPathDelta },
+      }).catch(() => {});
 
       res.json(created);
     } catch (error: any) {

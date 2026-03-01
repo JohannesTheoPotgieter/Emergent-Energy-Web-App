@@ -26,6 +26,7 @@ function parseChangeDetails(raw: string | null | undefined) {
 
 const EVENT_TYPE_LABELS: Record<string, { label: string; icon: typeof Bell; color: string }> = {
   "plan.change_confirmation": { label: "Plan Change", icon: FileSpreadsheet, color: "text-amber-600 bg-amber-50" },
+  "excel_sync_confirmation": { label: "Excel Sync", icon: FileSpreadsheet, color: "text-orange-600 bg-orange-50" },
   "task.assigned": { label: "Task Assigned", icon: ClipboardCheck, color: "text-blue-600 bg-blue-50" },
   "task.status_changed": { label: "Status Update", icon: ArrowRight, color: "text-indigo-600 bg-indigo-50" },
   "task.approaching_deadline": { label: "Deadline Approaching", icon: Clock, color: "text-orange-600 bg-orange-50" },

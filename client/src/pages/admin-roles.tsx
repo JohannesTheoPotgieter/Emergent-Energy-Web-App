@@ -52,6 +52,8 @@ import {
   Lock,
   Briefcase,
   FileText,
+  MessageSquare,
+  Database,
 } from "lucide-react";
 import {
   COMPANY_ROLE_LABELS,
@@ -100,6 +102,7 @@ const PERM_CATEGORIES: PermCat[] = [
       { entity: "lifecycle" as PermissionEntity, label: "Lifecycle Board (Phases, Gates, Merge)", actions: ["view", "edit", "override"] },
       { entity: "meetings" as PermissionEntity, label: "Meetings (Calendar, Read.ai)", actions: ["view", "edit"] },
       { entity: "operational_tasks" as PermissionEntity, label: "Operational Tasks (Email-to-Task)", actions: ["view", "edit", "delete"] },
+      { entity: "dashboard_widgets" as PermissionEntity, label: "Home Dashboard Widgets", actions: ["view", "edit"] },
     ],
   },
   {
@@ -118,6 +121,9 @@ const PERM_CATEGORIES: PermCat[] = [
       { entity: "portfolio_detail" as PermissionEntity, label: "Portfolio Detail (Gantt, Rollups, Key Dates, Rollout)", actions: ["view", "edit", "delete"] },
       { entity: "create_project" as PermissionEntity, label: "Create Project", actions: ["edit"] },
       { entity: "approvals" as PermissionEntity, label: "Approvals (Eng Gates, Quality, Deliverables)", actions: ["view", "approve"] },
+      { entity: "pm_on_the_go" as PermissionEntity, label: "PM On-The-Go Mode", actions: ["view", "edit"] },
+      { entity: "weekly_review_wizard" as PermissionEntity, label: "Weekly Review Wizard", actions: ["view", "edit"] },
+      { entity: "project_creation" as PermissionEntity, label: "Project Creation", actions: ["edit"] },
     ],
   },
   {
@@ -136,6 +142,7 @@ const PERM_CATEGORIES: PermCat[] = [
       { entity: "procurement" as PermissionEntity, label: "Procurement Data", actions: ["view", "edit"] },
       { entity: "invoice_patterns" as PermissionEntity, label: "Invoice Patterns", actions: ["view", "edit"] },
       { entity: "financial_integration" as PermissionEntity, label: "Financial Integration (Edit Requests, Rules, Sync)", actions: ["view", "edit", "approve"] },
+      { entity: "financial_linking" as PermissionEntity, label: "Financial Linking (Revenue/Expense to Plan)", actions: ["view", "edit"] },
     ],
   },
   {
@@ -213,6 +220,30 @@ const PERM_CATEGORIES: PermCat[] = [
       { entity: "notifications" as PermissionEntity, label: "Notifications", actions: ["view"] },
       { entity: "teams_chat" as PermissionEntity, label: "Teams Chat Groups (Channels, Messages, Files)", actions: ["view", "edit", "delete"] },
       { entity: "gamification" as PermissionEntity, label: "Gamification (Badges, Points, Levels)", actions: ["view"] },
+    ],
+  },
+  {
+    key: "collaboration",
+    label: "Collaboration",
+    icon: MessageSquare,
+    color: "bg-pink-500",
+    items: [
+      { entity: "collaboration_hub" as PermissionEntity, label: "Collaboration Hub", actions: ["view", "edit"] },
+      { entity: "sharepoint_files" as PermissionEntity, label: "SharePoint Files", actions: ["view", "edit", "delete"] },
+      { entity: "project_chat" as PermissionEntity, label: "Project Chat", actions: ["view", "edit"] },
+      { entity: "deliverables" as PermissionEntity, label: "Deliverables & Approvals", actions: ["view", "edit", "approve"] },
+      { entity: "excel_sync_ack" as PermissionEntity, label: "Excel Sync Acknowledgments", actions: ["view", "approve"] },
+    ],
+  },
+  {
+    key: "data_reports",
+    label: "Data & Reports",
+    icon: Database,
+    color: "bg-teal-500",
+    items: [
+      { entity: "data_import" as PermissionEntity, label: "Data Import (Smart Import, Excel)", actions: ["view", "edit"] },
+      { entity: "data_export" as PermissionEntity, label: "Data Export & Reports", actions: ["view"] },
+      { entity: "audit_trail" as PermissionEntity, label: "Audit Trail & Change History", actions: ["view"] },
     ],
   },
   {

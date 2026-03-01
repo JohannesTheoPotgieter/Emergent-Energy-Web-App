@@ -15,6 +15,7 @@ import {
   projectEngApprovals,
   projectInfo,
 } from "@shared/schema";
+import { sendExcelSyncNotification } from "./excel-sync-notifications";
 
 const UPLOADS_DIR = path.join(process.cwd(), "uploads", "eng-deliverables");
 if (!fs.existsSync(UPLOADS_DIR)) {
@@ -699,6 +700,28 @@ export function registerEngStageRoutes(app: Express) {
         approverUserId: user.id,
         updatedAt: new Date(),
       }).where(eq(projectEngApprovals.id, id));
+
+      const [stage] = await db.select({
+        projectId: projectEngStages.projectId,
+        templateName: engStageTemplates.name,
+      })
+        .from(projectEngStages)
+        .innerJoin(engStageTemplates, eq(projectEngStages.stageTemplateId, engStageTemplates.id))
+        .where(eq(projectEngStages.id, approval.projectEngStageId));
+
+      if (stage) {
+        const [proj] = await db.select({ projectName: projectInfo.projectName })
+          .from(projectInfo).where(eq(projectInfo.id, stage.projectId));
+        if (proj) {
+          sendExcelSyncNotification({
+            projectName: proj.projectName,
+            changedByUserId: user.id,
+            changeType: "engineering_stage_gate",
+            changeDescription: `Stage gate "${stage.templateName}" ${status} by ${user.name || "unknown"}.`,
+            details: { approvalId: id, stageName: stage.templateName, status, comments },
+          }).catch(() => {});
+        }
+      }
 
       res.json({ success: true });
     } catch (err: any) {
