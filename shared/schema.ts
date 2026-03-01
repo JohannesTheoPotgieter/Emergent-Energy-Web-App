@@ -2515,6 +2515,8 @@ export const auditSourceEnum = pgEnum('audit_source', ['UI', 'IMPORT', 'SETTINGS
 export const auditEvents = pgTable("audit_events", {
   id: serial("id").primaryKey(),
   actorRole: text("actor_role").notNull(),
+  userId: integer("user_id"),
+  userName: text("user_name"),
   source: auditSourceEnum("source").notNull().default('UI'),
   entityType: text("entity_type").notNull(),
   entityId: text("entity_id"),
@@ -2522,6 +2524,9 @@ export const auditEvents = pgTable("audit_events", {
   changesJson: jsonb("changes_json"),
   projectName: text("project_name"),
   correlationId: text("correlation_id"),
+  ipAddress: text("ip_address"),
+  requestPath: text("request_path"),
+  requestMethod: text("request_method"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 export const insertAuditEventSchema = createInsertSchema(auditEvents).omit({ id: true, createdAt: true });

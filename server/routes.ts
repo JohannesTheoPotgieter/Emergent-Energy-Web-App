@@ -25,6 +25,7 @@ import { OVERRIDE_CATEGORIES } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
 import { createNameResolver, fetchAllNormalized, mergeExpensesOnly, mergeInflowsOnly, mergePlansOnly } from "./lib/data-merge";
 import { sendExcelSyncNotification } from "./excel-sync-notifications";
+import { logAuditFromReq } from "./audit-logger";
 
 function isCosRealisedCheck(exp: any): boolean {
   const hasInvoice = !!(exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim());
@@ -1404,6 +1405,7 @@ export async function registerRoutes(
         constructionNotes: constructionNotes || null,
         financeNotes: financeNotes || null
       });
+      logAuditFromReq(req, { entityType: "home_notes", action: "update", changesJson: { description: "Home notes updated", preparedBy } });
       res.json(result);
     } catch (error) {
       console.error("Home notes save error:", error);
@@ -2185,6 +2187,7 @@ export async function registerRoutes(
       return res.status(400).json({ error: "No file uploaded" });
     }
     const fileUrl = `/api/financial-close/files/${req.file.filename}`;
+    logAuditFromReq(req, { entityType: "financial_close_doc", action: "upload", entityId: req.file.originalname, changesJson: { description: "Financial close document uploaded", filename: req.file.originalname } });
     res.json({ url: fileUrl, filename: req.file.originalname });
   });
 
@@ -2239,6 +2242,7 @@ export async function registerRoutes(
         details: parsed,
       }).catch(() => {});
 
+      logAuditFromReq(req, { entityType: "project_info", action: "update", entityId: projectName, projectName, changesJson: { description: "Project summary fields edited", ...parsed } });
       res.json(result);
     } catch (error) {
       console.error("Project edit error:", error);
@@ -2261,6 +2265,7 @@ export async function registerRoutes(
         latestUpdateBy: latestUpdate ? roleName : null,
       };
       const result = await storage.upsertProjectEditableFields(data as any);
+      logAuditFromReq(req, { entityType: "project_info", action: "update_comment", entityId: projectName, projectName, changesJson: { description: "Latest update comment changed", latestUpdate } });
       res.json(result);
     } catch (error) {
       console.error("Latest update error:", error);
@@ -2276,6 +2281,7 @@ export async function registerRoutes(
       });
       const { escalationLevel } = schema.parse(req.body);
       const result = await storage.updateProjectInfoById(id, { escalationLevel });
+      logAuditFromReq(req, { entityType: "project_info", action: "escalation_update", entityId: String(id), changesJson: { description: "Escalation level updated", escalationLevel } });
       res.json(result);
     } catch (error) {
       console.error("Escalation update error:", error);
@@ -2510,6 +2516,7 @@ export async function registerRoutes(
         clearedWeeks = await storage.deleteAllCashflowWeeklyManualAfter(nextWeekStr);
       }
 
+      logAuditFromReq(req, { entityType: "cashflow_balance", action: "update", entityId: weekStartDate, changesJson: { description: "Opening balance updated", weekStartDate, openingBalance, clearForward } });
       res.json({ ...result, clearedWeeks });
     } catch (error) {
       console.error("Opening balance save error:", error);
@@ -2552,6 +2559,7 @@ export async function registerRoutes(
         });
         await storage.deleteCashflowWeeklyManual(weekStartDate);
       }
+      logAuditFromReq(req, { entityType: "cashflow_balance", action: "delete", entityId: weekStartDate, changesJson: { description: "Opening balance deleted", weekStartDate } });
       res.json({ ok: true });
     } catch (error) {
       console.error("Opening balance delete error:", error);
@@ -2566,6 +2574,7 @@ export async function registerRoutes(
         return res.status(400).json({ error: "monthKey and amount required" });
       }
       const result = await storage.upsertOpexBudgetMonthly(monthKey, String(amount));
+      logAuditFromReq(req, { entityType: "opex_budget", action: "update", entityId: monthKey, changesJson: { description: "OPEX budget updated", monthKey, amount } });
       res.json(result);
     } catch (error) {
       console.error("OPEX budget save error:", error);
@@ -2590,6 +2599,7 @@ export async function registerRoutes(
         return res.status(400).json({ error: "weekStartDate and opexAmount required" });
       }
       const result = await storage.upsertOpexWeeklyManual(weekStartDate, String(opexAmount));
+      logAuditFromReq(req, { entityType: "opex_weekly", action: "update", entityId: weekStartDate, changesJson: { description: "OPEX weekly override updated", weekStartDate, opexAmount } });
       res.json(result);
     } catch (error) {
       console.error("OPEX weekly save error:", error);
@@ -2604,6 +2614,7 @@ export async function registerRoutes(
         return res.status(400).json({ error: "weekStartDate required" });
       }
       await storage.deleteOpexWeeklyManual(weekStartDate);
+      logAuditFromReq(req, { entityType: "opex_weekly", action: "delete", entityId: weekStartDate, changesJson: { description: "OPEX weekly override deleted", weekStartDate } });
       res.json({ success: true });
     } catch (error) {
       console.error("OPEX weekly delete error:", error);
@@ -2641,6 +2652,7 @@ export async function registerRoutes(
         user?.username || user?.name || null
       );
 
+      logAuditFromReq(req, { entityType: "available_payment", action: "update", entityId: weekStartDate, changesJson: { description: "Available payment override updated", weekStartDate, overrideValue, reason } });
       res.json(result);
     } catch (error) {
       console.error("Available payment save error:", error);
@@ -2668,6 +2680,7 @@ export async function registerRoutes(
         });
         await storage.deleteAvailablePaymentOverride(weekStartDate);
       }
+      logAuditFromReq(req, { entityType: "available_payment", action: "delete", entityId: weekStartDate, changesJson: { description: "Available payment override deleted", weekStartDate } });
       res.json({ ok: true });
     } catch (error) {
       console.error("Available payment delete error:", error);
@@ -2702,6 +2715,7 @@ export async function registerRoutes(
         outstanding: outstanding != null ? String(outstanding) : null,
         budget: budget != null ? String(budget) : null,
       });
+      logAuditFromReq(req, { entityType: "tracker_monthly", action: "update", entityId: `${trackerType}|${monthKey}`, changesJson: { description: "Tracker monthly entry updated", trackerType, monthKey, realised, outstanding, budget } });
       res.json(result);
     } catch (error) {
       console.error("Tracker monthly save error:", error);
@@ -3138,6 +3152,7 @@ export async function registerRoutes(
         console.warn("[audit] COS realisation toggle audit failed:", auditErr.message);
       }
 
+      logAuditFromReq(req, { entityType: "cos_realisation", action: "toggle", entityId: String(id), projectName: expense.projectName, changesJson: { description: `${realised ? 'Marked' : 'Unmarked'} as COS realised`, expenseId: id, realised } });
       res.json({ success: true, id, realised });
     } catch (error) {
       console.error("Toggle realised error:", error);
@@ -3958,6 +3973,7 @@ export async function registerRoutes(
     try {
       const parsed = insertBudgetSchema.parse(req.body);
       const budget = await storage.createBudget(parsed);
+      logAuditFromReq(req, { entityType: "budget", action: "create", entityId: String(budget.id), changesJson: { description: "Budget created", ...parsed } });
       res.status(201).json(budget);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -3974,6 +3990,7 @@ export async function registerRoutes(
       if (!deleted) {
         return res.status(404).json({ error: "Budget not found", message: "Budget not found" });
       }
+      logAuditFromReq(req, { entityType: "budget", action: "delete", entityId: String(id), changesJson: { description: "Budget deleted" } });
       res.json({ message: "Budget deleted" });
     } catch (error) {
       res.status(500).json({ error: "Failed to delete budget", message: "Failed to delete budget" });
@@ -4267,6 +4284,7 @@ export async function registerRoutes(
         status: results.every(r => r.status === "success") ? "success" : "partial"
       });
 
+      logAuditFromReq(req, { entityType: "file_upload", action: "create", changesJson: { description: `Uploaded ${files.length} file(s)`, fileCount: files.length, projectNames: results.filter(r => r.project_name).map(r => r.project_name) }, source: "IMPORT" });
       res.json({ 
         message: `Processed ${files.length} file(s)`,
         results 
@@ -4576,6 +4594,7 @@ export async function registerRoutes(
         details: parsed,
       }).catch(() => {});
 
+      logAuditFromReq(req, { entityType: "project_info", action: "update", entityId: String(id), projectName: updated.projectName, changesJson: { description: "Project info updated", ...parsed } });
       res.json(updated);
     } catch (error) {
       console.error("Project info update error:", error);
@@ -4831,6 +4850,7 @@ export async function registerRoutes(
         console.warn("[audit] Planning override audit failed (non-blocking):", auditErr.message);
       }
 
+      logAuditFromReq(req, { entityType: "cashflow_override", action: "create", changesJson: { description: `${overrides.length} planning override(s) saved`, count: overrides.length, projectNames: [...new Set(overrides.map((o: any) => o.projectName))] } });
       res.json({ message: "Planning overrides saved", count: saved.length, overrides: saved });
     } catch (error) {
       res.status(500).json({ 
@@ -4847,6 +4867,7 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Project name required", message: "Project name is required" });
       }
       await storage.deletePlanningOverridesByProject(projectName);
+      logAuditFromReq(req, { entityType: "cashflow_override", action: "delete", projectName, changesJson: { description: "All planning overrides deleted for project", projectName } });
       res.json({ message: `Planning overrides deleted for project: ${projectName}` });
     } catch (error) {
       res.status(500).json({ error: "Failed to delete planning overrides", message: "Failed to delete planning overrides" });
@@ -4900,6 +4921,7 @@ export async function registerRoutes(
         );
       }
 
+      logAuditFromReq(req, { entityType: "plan_override", action: "create", projectName: overrides[0]?.projectName, changesJson: { description: `${overrides.length} plan override(s) saved`, count: overrides.length, fields: [...new Set(overrides.map((o: any) => o.fieldName))] } });
       res.json({ message: "Project plan overrides saved", count: saved.length, overrides: saved });
     } catch (error) {
       res.status(500).json({ error: "Failed to save project plan overrides", message: error instanceof Error ? error.message : "Failed to save project plan overrides" });
@@ -4913,6 +4935,7 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Project name required", message: "Project name is required" });
       }
       await storage.deleteProjectPlanOverridesByProject(projectName);
+      logAuditFromReq(req, { entityType: "plan_override", action: "delete", projectName, changesJson: { description: "All plan overrides deleted for project", projectName } });
       res.json({ message: `Project plan overrides deleted for project: ${projectName}` });
     } catch (error) {
       res.status(500).json({ error: "Failed to delete project plan overrides", message: "Failed to delete project plan overrides" });
@@ -5134,6 +5157,7 @@ export async function registerRoutes(
         return res.json({ message: `Renumbered ${overridesToSave.length} tasks` });
       }
 
+      logAuditFromReq(req, { entityType: "plan_structure", action: "update", projectName: rawProjectName, changesJson: { description: `Plan structure operation: ${operation}`, operation, projectName: rawProjectName } });
       return res.status(400).json({ error: `Unknown operation: ${operation}` });
     } catch (error: any) {
       console.error("[plan-structure] Error:", error);
@@ -5165,6 +5189,7 @@ export async function registerRoutes(
         details: { rowNumbers },
       }).catch(() => {});
 
+      logAuditFromReq(req, { entityType: "plan_task", action: "delete", projectName, changesJson: { description: `${rowNumbers.length} task(s) deleted from plan`, rowNumbers } });
       res.json({ message: `Deleted ${rowNumbers.length} task(s)` });
     } catch (error) {
       console.error("[PlanDelete] Error:", error);
@@ -5217,6 +5242,7 @@ export async function registerRoutes(
         console.warn("[audit] Revenue override audit failed:", auditErr.message);
       }
 
+      logAuditFromReq(req, { entityType: "revenue_tracking_override", action: "create", changesJson: { description: `${overrides.length} revenue tracking override(s) saved`, count: overrides.length, projectNames: [...new Set(overrides.map((o: any) => o.projectName))] } });
       res.json({ message: "Revenue tracking overrides saved", count: saved.length, overrides: saved });
     } catch (error) {
       res.status(500).json({ error: "Failed to save revenue tracking overrides", message: error instanceof Error ? error.message : "Failed to save revenue tracking overrides" });
@@ -5230,6 +5256,7 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Project name required", message: "Project name is required" });
       }
       await storage.deleteRevenueTrackingOverridesByProject(projectName);
+      logAuditFromReq(req, { entityType: "revenue_tracking_override", action: "delete", projectName, changesJson: { description: "All revenue tracking overrides deleted for project", projectName } });
       res.json({ message: `Revenue tracking overrides deleted for project: ${projectName}` });
     } catch (error) {
       res.status(500).json({ error: "Failed to delete revenue tracking overrides", message: "Failed to delete revenue tracking overrides" });
@@ -5480,6 +5507,7 @@ export async function registerRoutes(
         details: { revenue, expenditure },
       }).catch(() => {});
 
+      logAuditFromReq(req, { entityType: "revenue", action: "costed_update", projectName, changesJson: { description: "Revenue costed values updated", revenue, expenditure } });
       res.json(saved);
     } catch (error) {
       console.error("Save costed error:", error);
@@ -5549,6 +5577,7 @@ export async function registerRoutes(
         console.warn("[audit] Milestone task link audit failed:", auditErr.message);
       }
 
+      logAuditFromReq(req, { entityType: "revenue_link", action: "create", projectName, changesJson: { description: "Milestone linked to task", milestoneRowNumber, taskId } });
       res.json(link);
     } catch (error) {
       console.error("Link task error:", error);
@@ -5589,6 +5618,7 @@ export async function registerRoutes(
         console.warn("[audit] Milestone date override audit failed:", auditErr.message);
       }
 
+      logAuditFromReq(req, { entityType: "revenue_date_override", action: "update", projectName, changesJson: { description: "Milestone date overridden", milestoneRowNumber, dateOverride, reason } });
       res.json({ success: true });
     } catch (error) {
       console.error("Date override error:", error);
@@ -5601,6 +5631,7 @@ export async function registerRoutes(
       const projectName = req.params.projectName;
       const milestoneRowNumber = parseInt(req.params.milestoneRowNumber);
       await storage.deleteMilestoneTaskLink(projectName, milestoneRowNumber);
+      logAuditFromReq(req, { entityType: "revenue_link", action: "delete", projectName, changesJson: { description: "Milestone task link removed", milestoneRowNumber } });
       res.json({ success: true });
     } catch (error) {
       console.error("Unlink task error:", error);
@@ -5712,6 +5743,7 @@ export async function registerRoutes(
         console.warn("[audit] Expenditure override audit failed:", auditErr.message);
       }
 
+      logAuditFromReq(req, { entityType: "expenditure_override", action: "create", changesJson: { description: `${overrides.length} expenditure override(s) saved`, count: overrides.length, projectNames: [...new Set(overrides.map((o: any) => o.projectName))] } });
       res.json({ message: "Expenditure overrides saved and applied", count: saved.length, overrides: saved });
     } catch (error) {
       console.error("Failed to save expenditure overrides:", error);
@@ -5726,6 +5758,7 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Project name required", message: "Project name is required" });
       }
       await storage.deleteExpenditureOverridesByProject(projectName);
+      logAuditFromReq(req, { entityType: "expenditure_override", action: "delete", projectName, changesJson: { description: "All expenditure overrides deleted for project", projectName } });
       res.json({ message: `Expenditure overrides deleted for project: ${projectName}` });
     } catch (error) {
       res.status(500).json({ error: "Failed to delete expenditure overrides", message: "Failed to delete expenditure overrides" });
@@ -5759,6 +5792,7 @@ export async function registerRoutes(
         details: { expenseId, taskId },
       }).catch(() => {});
 
+      logAuditFromReq(req, { entityType: "expense_link", action: "create", projectName: req.params.projectName, changesJson: { description: "Expense linked to task", expenseId, taskId } });
       res.json(link);
     } catch (error) {
       console.error("Link expense task error:", error);
@@ -5769,6 +5803,7 @@ export async function registerRoutes(
   app.delete("/api/expense-task-links/:projectName/:expenseId", requireAuth, requireAdmin, async (req, res) => {
     try {
       await storage.deleteExpenseTaskLink(req.params.projectName, parseInt(req.params.expenseId));
+      logAuditFromReq(req, { entityType: "expense_link", action: "delete", projectName: req.params.projectName, changesJson: { description: "Expense task link removed", expenseId: req.params.expenseId } });
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: "Failed to unlink task" });
@@ -5798,6 +5833,7 @@ export async function registerRoutes(
         console.warn("[audit] Expense date override audit failed:", auditErr.message);
       }
 
+      logAuditFromReq(req, { entityType: "expense_date_override", action: "update", projectName, changesJson: { description: "Expense date overridden", expenseId, dateOverride, reason } });
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: "Failed to save date override" });
@@ -5845,6 +5881,7 @@ export async function registerRoutes(
         console.warn("[audit] Manual expense add audit failed:", auditErr.message);
       }
 
+      logAuditFromReq(req, { entityType: "expense_line", action: "create", projectName, changesJson: { description: "Manual expense line added", expenseCategory, expenseLineItem } });
       res.json(newExpense);
     } catch (error) {
       console.error("Add expense line error:", error);
@@ -5885,6 +5922,7 @@ export async function registerRoutes(
         console.warn("[audit] Manual category add audit failed:", auditErr.message);
       }
 
+      logAuditFromReq(req, { entityType: "expense_category", action: "create", projectName, changesJson: { description: "Manual expense category added", categoryName } });
       res.json(newCategory);
     } catch (error) {
       console.error("Add category error:", error);
@@ -5941,6 +5979,7 @@ export async function registerRoutes(
         console.warn("[audit] Insert task as expense audit failed:", auditErr.message);
       }
 
+      logAuditFromReq(req, { entityType: "expense_line", action: "create", projectName, changesJson: { description: "Task inserted as expense line", taskId, taskTitle, expenseCategory } });
       res.json(newExpense);
     } catch (error) {
       console.error("Insert task as line error:", error);
@@ -5991,6 +6030,7 @@ export async function registerRoutes(
         console.warn("[audit] Font color toggle audit failed:", auditErr.message);
       }
 
+      logAuditFromReq(req, { entityType: "expenditure_font_color", action: "toggle", projectName, changesJson: { description: `Font color toggled to ${color}`, rowNumber, field, color } });
       res.json({ success: true });
     } catch (error) {
       console.error("Font color toggle error:", error);
@@ -6146,6 +6186,7 @@ export async function registerRoutes(
         });
       }
 
+      logAuditFromReq(req, { entityType: "cos_override", action: "update", entityId: String(expenseId), projectName, changesJson: { description: "COS status overridden", overrideStatus, originalStatus, reason } });
       res.json({ success: true });
     } catch (error) {
       console.error("COS override error:", error);
@@ -6157,6 +6198,7 @@ export async function registerRoutes(
     try {
       const expenseId = parseInt(req.params.expenseId);
       await db.delete(cosStatusOverrides).where(eq(cosStatusOverrides.expenseId, expenseId));
+      logAuditFromReq(req, { entityType: "cos_override", action: "delete", entityId: String(expenseId), changesJson: { description: "COS status override removed" } });
       res.json({ success: true });
     } catch (error) {
       console.error("COS override delete error:", error);
@@ -6207,6 +6249,7 @@ export async function registerRoutes(
         }
       } catch (auditErr: any) { console.warn("[audit] Finance revenue override audit failed:", auditErr.message); }
 
+      logAuditFromReq(req, { entityType: "finance_revenue_override", action: "create", changesJson: { description: `${overrides.length} finance revenue override(s) saved`, count: overrides.length, projectNames: [...new Set(overrides.map((o: any) => o.projectName))] } });
       res.json({ message: "Finance revenue overrides saved", count: saved.length, overrides: saved });
     } catch (error) {
       res.status(500).json({ error: "Failed to save finance revenue overrides", message: error instanceof Error ? error.message : "Failed to save finance revenue overrides" });
@@ -6220,6 +6263,7 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Project name required", message: "Project name is required" });
       }
       await storage.deleteFinanceRevenueOverridesByProject(projectName);
+      logAuditFromReq(req, { entityType: "finance_revenue_override", action: "delete", projectName, changesJson: { description: "All finance revenue overrides deleted for project", projectName } });
       res.json({ message: `Finance revenue overrides deleted for project: ${projectName}` });
     } catch (error) {
       res.status(500).json({ error: "Failed to delete finance revenue overrides", message: "Failed to delete finance revenue overrides" });
@@ -6264,6 +6308,7 @@ export async function registerRoutes(
         }
       } catch (auditErr: any) { console.warn("[audit] Finance COS override audit failed:", auditErr.message); }
 
+      logAuditFromReq(req, { entityType: "finance_cos_override", action: "create", changesJson: { description: `${overrides.length} finance COS override(s) saved`, count: overrides.length, projectNames: [...new Set(overrides.map((o: any) => o.projectName))] } });
       res.json({ message: "Finance COS overrides saved", count: saved.length, overrides: saved });
     } catch (error) {
       res.status(500).json({ error: "Failed to save finance COS overrides", message: error instanceof Error ? error.message : "Failed to save finance COS overrides" });
@@ -6277,6 +6322,7 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Project name required", message: "Project name is required" });
       }
       await storage.deleteFinanceCosOverridesByProject(projectName);
+      logAuditFromReq(req, { entityType: "finance_cos_override", action: "delete", projectName, changesJson: { description: "All finance COS overrides deleted for project", projectName } });
       res.json({ message: `Finance COS overrides deleted for project: ${projectName}` });
     } catch (error) {
       res.status(500).json({ error: "Failed to delete finance COS overrides", message: "Failed to delete finance COS overrides" });
@@ -6550,7 +6596,7 @@ export async function registerRoutes(
     
     try {
       const result = await storage.clearAllData();
-      
+      logAuditFromReq(req, { entityType: "admin", action: "clear_all_data", changesJson: { description: "All data cleared", tablesCleared: result.tablesCleared.length, filesDeleted: result.filesDeleted } });
       res.json({
         success: true,
         message: `Cleared ${result.tablesCleared.length} tables and deleted ${result.filesDeleted} file(s)`,
@@ -6619,7 +6665,7 @@ export async function registerRoutes(
       process.env.TRACKER_FOLDER_PATH = resolvedPath;
       
       const files = fs.readdirSync(resolvedPath).filter(f => /\.(xlsx|xlsm|xls)$/i.test(f));
-      
+      logAuditFromReq(req, { entityType: "admin", action: "folder_config", changesJson: { description: "Folder path configured", folderPath: resolvedPath, fileCount: files.length } });
       res.json({ 
         success: true, 
         folderPath: resolvedPath, 
@@ -6806,6 +6852,7 @@ export async function registerRoutes(
       }
       await storage.markProjectsActive(projectNames);
       const counts = await storage.getProjectCounts();
+      logAuditFromReq(req, { entityType: "admin", action: "mark_active", changesJson: { description: `${projectNames.length} project(s) marked active`, projectNames } });
       res.json({ success: true, projectCounts: counts });
     } catch (error: any) {
       res.status(500).json({ error: "Failed to mark projects active", message: error.message });
@@ -7281,6 +7328,7 @@ export async function registerRoutes(
         await storage.resetScenario(scenario.id);
       }
 
+      logAuditFromReq(req, { entityType: "working_plan", action: "reset", projectName, changesJson: { description: "Working plan reset to baseline" } });
       res.json({ success: true, message: "Working plan reset to baseline" });
     } catch (error: any) {
       console.error("Error resetting working plan:", error);
@@ -7327,6 +7375,7 @@ export async function registerRoutes(
           isNewTask: 0,
         });
       }
+      logAuditFromReq(req, { entityType: "working_plan_task", action: "update", entityId: String(id), projectName, changesJson: { description: "Working plan task updated", startDate, endDate, name, taskNo } });
       res.json(result);
 
       try {
@@ -7398,6 +7447,7 @@ export async function registerRoutes(
         isNewTask: 1,
       });
 
+      logAuditFromReq(req, { entityType: "working_plan_task", action: "create", projectName, changesJson: { description: "Working plan task created", name, startDate, endDate } });
       res.json(created);
     } catch (error: any) {
       console.error("Error creating task:", error);
@@ -7443,6 +7493,7 @@ export async function registerRoutes(
         }
       }
 
+      logAuditFromReq(req, { entityType: "working_plan_task", action: "delete", entityId: taskId, projectName, changesJson: { description: "Working plan task deleted", isNewTask } });
       res.json({ success: true });
     } catch (error: any) {
       console.error("Error deleting task:", error);
@@ -7521,6 +7572,7 @@ export async function registerRoutes(
         lagDays: lag,
       });
 
+      logAuditFromReq(req, { entityType: "dependency", action: "create", entityId: String(created.id), projectName: decodedName, changesJson: { description: "Dependency created", predecessorTaskId: predId, successorTaskId: succId, dependencyType: depType, lagDays: lag } });
       res.json(created);
     } catch (error: any) {
       console.error("Error creating dependency:", error);
@@ -7533,6 +7585,7 @@ export async function registerRoutes(
     try {
       const { depId } = req.params;
       await storage.deleteDependency(parseInt(depId));
+      logAuditFromReq(req, { entityType: "dependency", action: "delete", entityId: depId, changesJson: { description: "Dependency deleted" } });
       res.json({ success: true });
     } catch (error: any) {
       console.error("Error deleting dependency:", error);
@@ -7585,6 +7638,7 @@ export async function registerRoutes(
         details: { summary, oldFinishDate, newFinishDate, criticalPathDelta },
       }).catch(() => {});
 
+      logAuditFromReq(req, { entityType: "change_notice", action: "create", entityId: String(created.id), projectName: decodedName, changesJson: { description: "Change notice created", summary, oldFinishDate, newFinishDate, criticalPathDelta } });
       res.json(created);
     } catch (error: any) {
       console.error("Error creating change notice:", error);
@@ -7608,6 +7662,7 @@ export async function registerRoutes(
         return res.status(404).json({ error: "not_found", message: "Change notice not found" });
       }
 
+      logAuditFromReq(req, { entityType: "change_notice", action: "update", entityId: noticeId, changesJson: { description: "Change notice updated", clientNotified, documentationUpdated, userNote } });
       res.json(updated);
     } catch (error: any) {
       console.error("Error updating change notice:", error);
@@ -8214,6 +8269,7 @@ export async function registerRoutes(
       if (!name) return res.status(400).json({ error: "Name is required" });
       const userId = (req.user as any)?.id;
       const scenario = await storage.createScenario({ name, description, createdBy: userId, isDefault: false });
+      logAuditFromReq(req, { entityType: "scenario", action: "create", entityId: String(scenario.id), changesJson: { description: "Scenario created", name } });
       res.json(scenario);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -8226,6 +8282,7 @@ export async function registerRoutes(
       const { name } = req.body;
       if (!name) return res.status(400).json({ error: "Name is required" });
       const dup = await storage.duplicateScenario(id, name);
+      logAuditFromReq(req, { entityType: "scenario", action: "duplicate", entityId: String(id), changesJson: { description: "Scenario duplicated", sourceId: id, newName: name } });
       res.json(dup);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -8236,6 +8293,7 @@ export async function registerRoutes(
     try {
       const id = parseInt(req.params.id);
       await storage.deleteScenario(id);
+      logAuditFromReq(req, { entityType: "scenario", action: "delete", entityId: String(id), changesJson: { description: "Scenario deleted" } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -8246,6 +8304,7 @@ export async function registerRoutes(
     try {
       const id = parseInt(req.params.id);
       await storage.clearDateOverrides(id);
+      logAuditFromReq(req, { entityType: "scenario", action: "reset", entityId: String(id), changesJson: { description: "Scenario date overrides cleared" } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -8273,6 +8332,7 @@ export async function registerRoutes(
       const override = await storage.createDateOverride({
         scenarioId: id, entityType, entityId, fieldName, originalDate, overrideDate, reason, createdBy: userId,
       });
+      logAuditFromReq(req, { entityType: "scenario_override", action: "create", entityId: String(override.id), changesJson: { description: "Date override created", scenarioId: id, entityType, entityId, fieldName, overrideDate, reason } });
       res.json(override);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -8283,6 +8343,7 @@ export async function registerRoutes(
     try {
       const id = parseInt(req.params.id);
       await storage.deleteDateOverride(id);
+      logAuditFromReq(req, { entityType: "scenario_override", action: "delete", entityId: String(id), changesJson: { description: "Date override deleted" } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -9253,6 +9314,7 @@ export async function registerRoutes(
         oldValue: null,
         newValue: null,
       });
+      logAuditFromReq(req, { entityType: "operational_task", action: "create", entityId: String(task.id), projectName: req.body.projectName, changesJson: { description: "Operational task created", title: req.body.title, projectName: req.body.projectName } });
       res.json(task);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -9341,6 +9403,7 @@ export async function registerRoutes(
           });
         }
       }
+      logAuditFromReq(req, { entityType: "operational_task", action: "update", entityId: String(id), changesJson: { description: "Operational task updated", changedFields: Object.keys(updates) } });
       res.json(updated);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -9362,6 +9425,7 @@ export async function registerRoutes(
         });
       }
       await storage.deleteOperationalTask(id);
+      logAuditFromReq(req, { entityType: "operational_task", action: "delete", entityId: String(id), changesJson: { description: "Operational task deleted", title: task?.title } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -9433,6 +9497,7 @@ export async function registerRoutes(
         }
         results.push(updated);
       }
+      logAuditFromReq(req, { entityType: "operational_task", action: "bulk_update", changesJson: { description: `${taskIds.length} task(s) bulk updated`, taskCount: taskIds.length, changedFields: Object.keys(updates) } });
       res.json(results);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -9453,6 +9518,7 @@ export async function registerRoutes(
   app.post("/api/task-comments", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const comment = await storage.createTaskComment(req.body);
+      logAuditFromReq(req, { entityType: "task_comment", action: "create", entityId: String(comment.id), changesJson: { description: "Task comment added", taskId: req.body.taskId } });
       res.json(comment);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -9462,6 +9528,7 @@ export async function registerRoutes(
   app.delete("/api/task-comments/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       await storage.deleteTaskComment(parseInt(req.params.id));
+      logAuditFromReq(req, { entityType: "task_comment", action: "delete", entityId: req.params.id, changesJson: { description: "Task comment deleted" } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -9486,6 +9553,7 @@ export async function registerRoutes(
   app.post("/api/task-checklists", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const checklist = await storage.createTaskChecklist(req.body);
+      logAuditFromReq(req, { entityType: "task_checklist", action: "create", entityId: String(checklist.id), changesJson: { description: "Task checklist created", taskId: req.body.taskId } });
       res.json(checklist);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -9495,6 +9563,7 @@ export async function registerRoutes(
   app.delete("/api/task-checklists/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       await storage.deleteTaskChecklist(parseInt(req.params.id));
+      logAuditFromReq(req, { entityType: "task_checklist", action: "delete", entityId: req.params.id, changesJson: { description: "Task checklist deleted" } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -9504,6 +9573,7 @@ export async function registerRoutes(
   app.post("/api/task-checklist-items", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const item = await storage.createChecklistItem(req.body);
+      logAuditFromReq(req, { entityType: "checklist_item", action: "create", entityId: String(item.id), changesJson: { description: "Checklist item created" } });
       res.json(item);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -9513,6 +9583,7 @@ export async function registerRoutes(
   app.patch("/api/task-checklist-items/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const updated = await storage.updateChecklistItem(parseInt(req.params.id), req.body);
+      logAuditFromReq(req, { entityType: "checklist_item", action: "update", entityId: req.params.id, changesJson: { description: "Checklist item updated" } });
       res.json(updated);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -9522,6 +9593,7 @@ export async function registerRoutes(
   app.delete("/api/task-checklist-items/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       await storage.deleteChecklistItem(parseInt(req.params.id));
+      logAuditFromReq(req, { entityType: "checklist_item", action: "delete", entityId: req.params.id, changesJson: { description: "Checklist item deleted" } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -9542,6 +9614,7 @@ export async function registerRoutes(
   app.post("/api/task-attachments", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const attachment = await storage.createTaskAttachment(req.body);
+      logAuditFromReq(req, { entityType: "task_attachment", action: "create", entityId: String(attachment.id), changesJson: { description: "Task attachment added" } });
       res.json(attachment);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -9551,6 +9624,7 @@ export async function registerRoutes(
   app.delete("/api/task-attachments/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       await storage.deleteTaskAttachment(parseInt(req.params.id));
+      logAuditFromReq(req, { entityType: "task_attachment", action: "delete", entityId: req.params.id, changesJson: { description: "Task attachment deleted" } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -10004,6 +10078,7 @@ export async function registerRoutes(
   app.post("/api/writeback-mappings", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const mapping = await storage.createWritebackMapping(req.body);
+      logAuditFromReq(req, { entityType: "writeback_mapping", action: "create", entityId: String(mapping.id), changesJson: { description: "Writeback mapping created" } });
       res.json(mapping);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -10013,6 +10088,7 @@ export async function registerRoutes(
   app.patch("/api/writeback-mappings/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const updated = await storage.updateWritebackMapping(parseInt(req.params.id), req.body);
+      logAuditFromReq(req, { entityType: "writeback_mapping", action: "update", entityId: req.params.id, changesJson: { description: "Writeback mapping updated" } });
       res.json(updated);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -10022,6 +10098,7 @@ export async function registerRoutes(
   app.delete("/api/writeback-mappings/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       await storage.deleteWritebackMapping(parseInt(req.params.id));
+      logAuditFromReq(req, { entityType: "writeback_mapping", action: "delete", entityId: req.params.id, changesJson: { description: "Writeback mapping deleted" } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -10162,6 +10239,7 @@ export async function registerRoutes(
         }
       }
 
+      logAuditFromReq(req, { entityType: "writeback", action: "execute", changesJson: { description: "Writeback executed", workbookPath, mappingCount: mappings.length, success: writeResult.success } });
       res.json({
         success: writeResult.success,
         error: writeResult.error,
@@ -10196,6 +10274,7 @@ export async function registerRoutes(
         await storage.updateWritebackAuditLog(auditId, { rolledBackAt: new Date() });
       }
 
+      logAuditFromReq(req, { entityType: "writeback", action: "rollback", entityId: String(auditId), changesJson: { description: "Writeback rolled back", cellAddress: auditEntry.cellAddress, previousValue: auditEntry.previousValue } });
       res.json({ success: result.success, error: result.error });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -10216,6 +10295,7 @@ export async function registerRoutes(
   app.put("/api/mytool/settings", requireAuth, requireAdmin, async (req, res) => {
     try {
       const updated = await storage.updateMytoolSettings(req.body);
+      logAuditFromReq(req, { entityType: "mytool_settings", action: "update", changesJson: { description: "MyTool settings updated" } });
       res.json(updated);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -10251,6 +10331,7 @@ export async function registerRoutes(
         req.body.projectName = null;
       }
       const task = await storage.createMytoolTask({ ...req.body, bucket, ownerUserId: userId });
+      logAuditFromReq(req, { entityType: "mytool_task", action: "create", entityId: String(task.id), changesJson: { description: "MyTool task created", title: req.body.title, bucket } });
       res.json(task);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -10318,6 +10399,7 @@ export async function registerRoutes(
         }
       }
 
+      logAuditFromReq(req, { entityType: "mytool_task", action: "update", entityId: req.params.id, changesJson: { description: "MyTool task updated", changedFields: Object.keys(req.body) } });
       res.json(task);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -10327,6 +10409,7 @@ export async function registerRoutes(
   app.delete("/api/mytool/tasks/:id", requireAuth, requireAdmin, async (req, res) => {
     try {
       await storage.deleteMytoolTask(parseInt(req.params.id));
+      logAuditFromReq(req, { entityType: "mytool_task", action: "delete", entityId: req.params.id, changesJson: { description: "MyTool task deleted" } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -10353,6 +10436,7 @@ export async function registerRoutes(
     try {
       const userId = (req.user as any).id;
       const block = await storage.createMytoolTimeblock({ ...req.body, ownerUserId: userId });
+      logAuditFromReq(req, { entityType: "mytool_timeblock", action: "create", entityId: String(block.id), changesJson: { description: "Timeblock created" } });
       res.json(block);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -10362,6 +10446,7 @@ export async function registerRoutes(
   app.patch("/api/mytool/timeblocks/:id", requireAuth, requireAdmin, async (req, res) => {
     try {
       const block = await storage.updateMytoolTimeblock(parseInt(req.params.id), req.body);
+      logAuditFromReq(req, { entityType: "mytool_timeblock", action: "update", entityId: req.params.id, changesJson: { description: "Timeblock updated" } });
       res.json(block);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -10371,6 +10456,7 @@ export async function registerRoutes(
   app.delete("/api/mytool/timeblocks/:id", requireAuth, requireAdmin, async (req, res) => {
     try {
       await storage.deleteMytoolTimeblock(parseInt(req.params.id));
+      logAuditFromReq(req, { entityType: "mytool_timeblock", action: "delete", entityId: req.params.id, changesJson: { description: "Timeblock deleted" } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -10397,6 +10483,7 @@ export async function registerRoutes(
     try {
       const userId = (req.user as any).id;
       const review = await storage.upsertMytoolDailyReview({ ...req.body, ownerUserId: userId });
+      logAuditFromReq(req, { entityType: "mytool_daily_review", action: "update", changesJson: { description: "Daily review updated", date: req.body.date } });
       res.json(review);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -10445,6 +10532,7 @@ export async function registerRoutes(
   app.post("/api/mytool/company-priorities", requireAuth, requirePriorityAdmin, async (req, res) => {
     try {
       const priority = await storage.createMytoolCompanyPriority(req.body);
+      logAuditFromReq(req, { entityType: "company_priority", action: "create", entityId: String(priority.id), changesJson: { description: "Company priority created", title: req.body.title } });
       res.json(priority);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -10454,6 +10542,7 @@ export async function registerRoutes(
   app.patch("/api/mytool/company-priorities/:id", requireAuth, requirePriorityAdmin, async (req, res) => {
     try {
       const priority = await storage.updateMytoolCompanyPriority(parseInt(req.params.id), req.body);
+      logAuditFromReq(req, { entityType: "company_priority", action: "update", entityId: req.params.id, changesJson: { description: "Company priority updated" } });
       res.json(priority);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -10463,6 +10552,7 @@ export async function registerRoutes(
   app.delete("/api/mytool/company-priorities/:id", requireAuth, requirePriorityAdmin, async (req, res) => {
     try {
       await storage.deleteMytoolCompanyPriority(parseInt(req.params.id));
+      logAuditFromReq(req, { entityType: "company_priority", action: "delete", entityId: req.params.id, changesJson: { description: "Company priority deleted" } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -10504,6 +10594,7 @@ export async function registerRoutes(
         taskId: taskId ? parseInt(taskId) : null,
         taskType: taskType || null,
       }).returning();
+      logAuditFromReq(req, { entityType: "priority_link", action: "create", entityId: String(link.id), changesJson: { description: "Priority link created", priorityId, linkType, projectName } });
       res.json(link);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -10514,6 +10605,7 @@ export async function registerRoutes(
     try {
       const { priorityLinks: plTable } = await import("@shared/schema");
       await db.delete(plTable).where(eq(plTable.id, parseInt(req.params.linkId)));
+      logAuditFromReq(req, { entityType: "priority_link", action: "delete", entityId: req.params.linkId, changesJson: { description: "Priority link deleted" } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -10593,6 +10685,7 @@ export async function registerRoutes(
     try {
       const userId = (req.user as any).id;
       const prefs = await storage.upsertMytoolUserPreferences({ ...req.body, ownerUserId: userId });
+      logAuditFromReq(req, { entityType: "mytool_preferences", action: "update", changesJson: { description: "User preferences updated" } });
       res.json(prefs);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -10626,6 +10719,7 @@ export async function registerRoutes(
     try {
       const userId = (req.user as any)?.id || null;
       const link = await storage.createEmailLink({ ...req.body, createdBy: userId });
+      logAuditFromReq(req, { entityType: "email_link", action: "create", entityId: String(link.id), changesJson: { description: "Email link created" } });
       res.json(link);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -10635,6 +10729,7 @@ export async function registerRoutes(
   app.delete("/api/mytool/email-links/:id", requireAuth, requireAdmin, async (req, res) => {
     try {
       await storage.deleteEmailLink(parseInt(req.params.id));
+      logAuditFromReq(req, { entityType: "email_link", action: "delete", entityId: req.params.id, changesJson: { description: "Email link deleted" } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -10655,6 +10750,7 @@ export async function registerRoutes(
     try {
       const userId = (req.user as any).id;
       const template = await storage.createMytoolDodTemplate({ ...req.body, createdBy: userId });
+      logAuditFromReq(req, { entityType: "dod_template", action: "create", entityId: String(template.id), changesJson: { description: "DoD template created", title: req.body.title } });
       res.json(template);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -10664,6 +10760,7 @@ export async function registerRoutes(
   app.delete("/api/mytool/dod-templates/:id", requireAuth, requireAdmin, async (req, res) => {
     try {
       await storage.deleteMytoolDodTemplate(parseInt(req.params.id));
+      logAuditFromReq(req, { entityType: "dod_template", action: "delete", entityId: req.params.id, changesJson: { description: "DoD template deleted" } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -10687,6 +10784,7 @@ export async function registerRoutes(
         correlationId,
         status: "open",
       });
+      logAuditFromReq(req, { entityType: "support_ticket", action: "create", entityId: correlationId, changesJson: { description: "Support ticket created", summary } });
       res.json(ticket);
     } catch (error: any) {
       console.error("Error creating support ticket:", error);
@@ -10817,6 +10915,7 @@ export async function registerRoutes(
         date, startTime, endTime, label,
         idempotencyKey: idempotencyKey || `tb-${Date.now()}`,
       });
+      logAuditFromReq(req, { entityType: "outlook_event", action: "create", entityId: eventId, changesJson: { description: "Outlook calendar event created", label, date } });
       res.json({ eventId });
     } catch (err: any) {
       console.error("[Outlook] Create event error:", err);
@@ -10830,6 +10929,7 @@ export async function registerRoutes(
       await outlook.updateOutlookEvent(req.params.eventId, calendarId || null, {
         date, startTime, endTime, label,
       });
+      logAuditFromReq(req, { entityType: "outlook_event", action: "update", entityId: req.params.eventId, changesJson: { description: "Outlook event updated", label } });
       res.json({ success: true });
     } catch (err: any) {
       console.error("[Outlook] Update event error:", err);
@@ -10841,6 +10941,7 @@ export async function registerRoutes(
     try {
       const { calendarId } = req.query;
       await outlook.deleteOutlookEvent(req.params.eventId, (calendarId as string) || null);
+      logAuditFromReq(req, { entityType: "outlook_event", action: "delete", entityId: req.params.eventId, changesJson: { description: "Outlook event deleted" } });
       res.json({ success: true });
     } catch (err: any) {
       console.error("[Outlook] Delete event error:", err);
@@ -10916,6 +11017,7 @@ export async function registerRoutes(
         createdBy: userId,
       });
 
+      logAuditFromReq(req, { entityType: "email_to_task", action: "create", changesJson: { description: "Email linked to task", subject, targetType, taskId } });
       res.json({ task: taskId ? { id: taskId } : null, emailLink });
     } catch (err: any) {
       console.error("[Outlook] Email-to-task error:", err);
@@ -10935,6 +11037,7 @@ export async function registerRoutes(
         approveUrl: approveUrl || "#",
         rejectUrl: rejectUrl || "#",
       });
+      logAuditFromReq(req, { entityType: "outlook_email", action: "send_approval", changesJson: { description: "Approval email sent", to, subject } });
       res.json({ success: true });
     } catch (err: any) {
       console.error("[Outlook] Send approval error:", err);
@@ -10962,6 +11065,7 @@ export async function registerRoutes(
         return res.status(400).json({ error: "to (array) and subject are required" });
       }
       await outlook.sendMail({ to, cc: cc || [], subject, body: body || "", bodyType: bodyType || "Text" });
+      logAuditFromReq(req, { entityType: "outlook_email", action: "send", changesJson: { description: "Email sent", to, subject } });
       res.json({ success: true });
     } catch (err: any) {
       console.error("[Outlook] Send mail error:", err);
@@ -10976,6 +11080,7 @@ export async function registerRoutes(
         return res.status(400).json({ error: "comment is required" });
       }
       await outlook.replyToMessage(req.params.id, comment, !!replyAll);
+      logAuditFromReq(req, { entityType: "outlook_email", action: "reply", entityId: req.params.id, changesJson: { description: "Email reply sent", replyAll: !!replyAll } });
       res.json({ success: true });
     } catch (err: any) {
       console.error("[Outlook] Reply error:", err);
@@ -10990,6 +11095,7 @@ export async function registerRoutes(
         return res.status(400).json({ error: "to (array) is required" });
       }
       await outlook.forwardMessage(req.params.id, comment || "", to);
+      logAuditFromReq(req, { entityType: "outlook_email", action: "forward", entityId: req.params.id, changesJson: { description: "Email forwarded", to } });
       res.json({ success: true });
     } catch (err: any) {
       console.error("[Outlook] Forward error:", err);
@@ -11028,6 +11134,7 @@ export async function registerRoutes(
         enabled: enabled ?? false,
         updatedBy: (req.user as any)?.id || null,
       });
+      logAuditFromReq(req, { entityType: "admin", action: "sp_settings_update", changesJson: { description: "SharePoint settings updated", siteId, driveId, enabled } });
       res.json(settings);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -11072,6 +11179,7 @@ export async function registerRoutes(
       }
       const user = req.user as any;
       const result = await importSingleFile(driveId, siteId, itemId, user?.email || user?.name || "admin");
+      logAuditFromReq(req, { entityType: "admin", action: "import_single", changesJson: { description: "Single file imported from SharePoint", itemId } });
       res.json(result);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -11083,6 +11191,7 @@ export async function registerRoutes(
     try {
       const user = req.user as any;
       const result = await runFullImport("manual", user?.email || user?.name || "admin");
+      logAuditFromReq(req, { entityType: "admin", action: "import_run", changesJson: { description: "Full import triggered manually" } });
       res.json(result);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -11094,6 +11203,7 @@ export async function registerRoutes(
     try {
       const user = req.user as any;
       const result = await retryFailedImports(user?.email || user?.name || "admin");
+      logAuditFromReq(req, { entityType: "admin", action: "import_retry", changesJson: { description: "Failed imports retried" } });
       res.json(result);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -11248,6 +11358,7 @@ export async function registerRoutes(
         value: value.trim(),
         enabled: true,
       }).returning();
+      logAuditFromReq(req, { entityType: "triage_rule", action: "create", entityId: String(rule.id), changesJson: { description: "Triage rule created", ruleType, value } });
       res.json(rule);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -11262,6 +11373,7 @@ export async function registerRoutes(
       if (req.body.value !== undefined) updates.value = req.body.value.trim();
       if (req.body.enabled !== undefined) updates.enabled = req.body.enabled;
       const [rule] = await db.update(triageRulesTable).set(updates).where(eq(triageRulesTable.id, ruleId)).returning();
+      logAuditFromReq(req, { entityType: "triage_rule", action: "update", entityId: String(ruleId), changesJson: { description: "Triage rule updated" } });
       res.json(rule);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -11273,6 +11385,7 @@ export async function registerRoutes(
       const ruleId = parseInt(req.params.id);
       const { triageRules: triageRulesTable } = await import("@shared/schema");
       await db.delete(triageRulesTable).where(eq(triageRulesTable.id, ruleId));
+      logAuditFromReq(req, { entityType: "triage_rule", action: "delete", entityId: String(ruleId), changesJson: { description: "Triage rule deleted" } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -11562,6 +11675,7 @@ function registerFeedbackRoutes(app: Express) {
         submittedBy: user.id,
         submittedByName: user.name || user.email || "Unknown",
       }).returning();
+      logAuditFromReq(req, { entityType: "feedback", action: "create", entityId: String(ticket.id), changesJson: { description: "Feedback ticket created", title, type: type || "bug" } });
       res.json(ticket);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -11578,6 +11692,7 @@ function registerFeedbackRoutes(app: Express) {
       if (priority) updates.priority = priority;
       const [updated] = await db.update(feedbackTickets).set(updates).where(eq(feedbackTickets.id, id)).returning();
       if (!updated) return res.status(404).json({ error: "Ticket not found" });
+      logAuditFromReq(req, { entityType: "feedback", action: "update", entityId: String(id), changesJson: { description: "Feedback ticket updated", status, priority } });
       res.json(updated);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -11588,6 +11703,7 @@ function registerFeedbackRoutes(app: Express) {
     try {
       const id = parseInt(req.params.id);
       await db.delete(feedbackTickets).where(eq(feedbackTickets.id, id));
+      logAuditFromReq(req, { entityType: "feedback", action: "delete", entityId: String(id), changesJson: { description: "Feedback ticket deleted" } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });

@@ -4,6 +4,7 @@ import { eq, sql, inArray } from "drizzle-orm";
 import { verifyToken } from "./jwt";
 import { projectInfo, operationalTasks, projectPlan, projectPlanOverrides, executionGateLog, mergeAuditLog, programExpense, programInflows, qcChecklist, qcItemInstance, PHASE_TO_ENG_STAGES } from "@shared/schema";
 import { generateEngStagesForProject } from "./eng-stage-routes";
+import { logAuditFromReq } from "./audit-logger";
 
 function jwtAuth(req: Request, _res: Response, next: NextFunction) {
   if ((req as any).user) return next();
@@ -440,6 +441,7 @@ export function registerLifecycleRoutes(app: Express) {
         .where(eq(operationalTasks.projectName, engineeringProjectName))
         .returning();
 
+      logAuditFromReq(req, { entityType: "lifecycle", entityId: String(targetProjectId), action: "update", projectName: target.projectName, changesJson: { description: "Engineering tasks linked", engineeringProjectName, linkedCount: updated.length } });
       res.json({ linked: updated.length, targetProject: target.projectName });
     } catch (err: any) {
       console.error("[lifecycle-board] POST link-engineering error:", err);
@@ -527,6 +529,7 @@ export function registerLifecycleRoutes(app: Express) {
         };
       });
 
+      logAuditFromReq(req, { entityType: "project_merge", entityId: String(targetProjectId), action: "create", projectName: result.target, changesJson: { description: "Projects merged", source: result.source, target: result.target, movedTasks: result.movedTasks } });
       res.json(result);
     } catch (err: any) {
       console.error("[lifecycle-board] POST merge error:", err);
@@ -572,6 +575,7 @@ export function registerLifecycleRoutes(app: Express) {
         }
 
         const [updated] = await db.select().from(projectInfo).where(eq(projectInfo.id, existing.id));
+        logAuditFromReq(req, { entityType: "lifecycle", entityId: String(existing.id), action: "update", projectName: cleanName, changesJson: { description: "Engineering project promoted (existing)", phase: targetPhase } });
         return res.json(updated);
       }
 
@@ -596,6 +600,7 @@ export function registerLifecycleRoutes(app: Express) {
         }
       }
 
+      logAuditFromReq(req, { entityType: "lifecycle", entityId: String(created.id), action: "create", projectName: cleanName, changesJson: { description: "Engineering project promoted (new)", phase: targetPhase } });
       res.json(created);
     } catch (err: any) {
       console.error("[lifecycle-board] POST promote-engineering error:", err);
@@ -634,6 +639,7 @@ export function registerLifecycleRoutes(app: Express) {
       }
 
       const [updated] = await db.update(projectInfo).set(updates).where(eq(projectInfo.id, id)).returning();
+      logAuditFromReq(req, { entityType: "lifecycle", entityId: String(id), action: "update", projectName: updated.projectName, changesJson: { description: "Project details updated", phase, escalationLevel, ragStatus } });
       res.json(updated);
     } catch (err: any) {
       console.error("[lifecycle-board] PATCH project error:", err);
@@ -677,6 +683,7 @@ export function registerLifecycleRoutes(app: Express) {
         }
       }
 
+      logAuditFromReq(req, { entityType: "project_lifecycle", entityId: String(id), action: "update", projectName: updated.projectName, changesJson: { description: "Phase changed", fromPhase: existing.phase, toPhase: phase.trim() } });
       res.json({ ...updated, engStagesResult });
     } catch (err: any) {
       console.error("[lifecycle-board] PATCH phase error:", err);
@@ -779,6 +786,7 @@ export function registerLifecycleRoutes(app: Express) {
       if (!effectiveSignedDate) responseEligibilityReasons.push('No signed date');
       if (!effectiveSignedDocumentLink?.trim()) responseEligibilityReasons.push('No signed document link');
 
+      logAuditFromReq(req, { entityType: "lifecycle", entityId: String(id), action: "update", projectName: updated.projectName, changesJson: { description: "Execution gate updated", previousStatus, newStatus: newGateStatus, executionEnabled: effectiveExecutionEnabled } });
       res.json({
         id: updated.id,
         projectName: updated.projectName,
@@ -905,6 +913,7 @@ export function registerLifecycleRoutes(app: Express) {
 
       console.log(`[lifecycle-board] Project ${projectId} (${project.projectName}) soft-deleted by ${((req as any).user as any)?.email || "unknown"}`);
 
+      logAuditFromReq(req, { entityType: "lifecycle", entityId: String(projectId), action: "delete", projectName: project.projectName, changesJson: { description: "Project soft-deleted" } });
       res.json({ success: true, projectName: project.projectName });
     } catch (err: any) {
       console.error("[lifecycle-board] DELETE project error:", err);

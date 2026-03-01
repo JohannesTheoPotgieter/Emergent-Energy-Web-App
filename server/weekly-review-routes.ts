@@ -3,6 +3,7 @@ import { db } from "./db";
 import { weeklyReviews } from "@shared/schema";
 import { eq, desc, type SQL } from "drizzle-orm";
 import { z } from "zod";
+import { logAuditFromReq } from "./audit-logger";
 
 function requireAuth(req: Request, res: Response, next: Function) {
   if (!req.isAuthenticated()) return res.status(401).json({ error: "Not authenticated" });
@@ -66,6 +67,7 @@ export function registerWeeklyReviewRoutes(app: Express) {
           snapshotMetrics: body.snapshotMetrics || null,
         })
         .returning();
+      logAuditFromReq(req, { entityType: "weekly_review", entityId: String(review.id), action: "create", projectName, changesJson: { description: "Weekly review created", weekStarting: body.weekStarting } });
       res.json(review);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -94,6 +96,7 @@ export function registerWeeklyReviewRoutes(app: Express) {
         .set(updates)
         .where(eq(weeklyReviews.id, id))
         .returning();
+      logAuditFromReq(req, { entityType: "weekly_review", entityId: String(id), action: "update", projectName: req.params.projectName, changesJson: { description: "Weekly review updated", status: body.status } });
       res.json(review);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
