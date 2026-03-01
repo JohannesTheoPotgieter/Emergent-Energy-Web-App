@@ -29,6 +29,8 @@ export default function LoginPage() {
   const [msEnabled, setMsEnabled] = useState(false);
   const [versionInfo, setVersionInfo] = useState({ version: "0.0.005", buildTime: "", buildNumber: "" });
   const [releaseNotes, setReleaseNotes] = useState<{ title: string; description: string }[]>([]);
+  const [easterEggClicks, setEasterEggClicks] = useState(0);
+  const [showEasterEgg, setShowEasterEgg] = useState(false);
 
   useEffect(() => {
     fetch("/api/version")
@@ -209,7 +211,7 @@ export default function LoginPage() {
             data-testid="button-version-info"
           >
             <Info className="w-3.5 h-3.5" />
-            v{versionInfo.version}{versionInfo.buildNumber ? ` (${versionInfo.buildNumber})` : ""} — What broke this time?
+            v{versionInfo.version}{versionInfo.buildNumber ? ` (${versionInfo.buildNumber})` : ""} — The one that actually works
           </button>
         </div>
       </div>
@@ -226,7 +228,7 @@ export default function LoginPage() {
                   Version {versionInfo.version} Release Notes
                 </h2>
                 <p className="text-xs text-gray-400 mt-0.5">
-                  {versionInfo.buildTime || "Latest"}{versionInfo.buildNumber ? ` · Build ${versionInfo.buildNumber}` : ""} — Another round of "improvements" nobody asked for
+                  {versionInfo.buildTime || "Latest"}{versionInfo.buildNumber ? ` · Build ${versionInfo.buildNumber}` : ""} — The official release. For real this time.
                 </p>
               </div>
               <button
@@ -240,28 +242,52 @@ export default function LoginPage() {
 
             <div className="overflow-y-auto flex-1 px-5 py-4 space-y-3">
               {releaseNotes.length > 0 ? (
-                releaseNotes.map((item, i) => (
-                  <div key={i} className="flex gap-3" data-testid={`version-item-${i}`}>
-                    <div className="flex-shrink-0 w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center mt-0.5">
-                      <Zap className="w-3.5 h-3.5 text-emerald-600" />
+                releaseNotes.map((item, i) => {
+                  const isEasterEgg = item.title.includes("Easter Egg");
+                  return (
+                    <div
+                      key={i}
+                      className={`flex gap-3 ${isEasterEgg ? "cursor-pointer hover:bg-amber-50 rounded-lg p-2 -m-2 transition-all" : ""}`}
+                      data-testid={`version-item-${i}`}
+                      onClick={isEasterEgg ? () => {
+                        const next = easterEggClicks + 1;
+                        setEasterEggClicks(next);
+                        if (next >= 7) setShowEasterEgg(true);
+                      } : undefined}
+                    >
+                      <div className={`flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center mt-0.5 ${isEasterEgg ? "bg-amber-50" : "bg-emerald-50"}`}>
+                        <Zap className={`w-3.5 h-3.5 ${isEasterEgg ? "text-amber-500" : "text-emerald-600"}`} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <h3 className="text-sm font-semibold text-gray-900">{item.title}</h3>
+                        {item.description && (
+                          <p className="text-xs text-gray-500 mt-1 leading-relaxed">{item.description}</p>
+                        )}
+                        {isEasterEgg && easterEggClicks > 0 && easterEggClicks < 7 && (
+                          <p className="text-[10px] text-amber-400 mt-1">{7 - easterEggClicks} more click{7 - easterEggClicks !== 1 ? "s" : ""}...</p>
+                        )}
+                      </div>
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <h3 className="text-sm font-semibold text-gray-900">{item.title}</h3>
-                      {item.description && (
-                        <p className="text-xs text-gray-500 mt-1 leading-relaxed">{item.description}</p>
-                      )}
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               ) : (
                 <p className="text-sm text-gray-400 text-center py-4">No release notes available yet.</p>
+              )}
+              {showEasterEgg && (
+                <div className="mt-4 p-4 bg-gradient-to-r from-amber-50 via-emerald-50 to-amber-50 rounded-xl border border-amber-200 text-center animate-pulse" data-testid="easter-egg-reveal">
+                  <p className="text-2xl mb-2">⚡🎉⚡</p>
+                  <p className="text-sm font-bold text-emerald-700">You found The First Electron!</p>
+                  <p className="text-xs text-gray-600 mt-1">You are now officially part of the Emergent Energy story.</p>
+                  <p className="text-xs text-gray-500 mt-1">V1.0 — Built by humans, powered by electrons, deployed with courage.</p>
+                  <p className="text-[10px] text-amber-500 mt-2 italic">Achievement Unlocked: Curious Clicker 🏆</p>
+                </div>
               )}
             </div>
 
             <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/50">
               <p className="text-[10px] text-gray-400 text-center italic">
-                Crafted with caffeine, questionable life choices, and an alarming amount of TypeScript.
-                If something looks wrong, clear your cache. If it still looks wrong, it's a feature.
+                V1.0 — Crafted with caffeine, questionable life choices, and an alarming amount of TypeScript.
+                Built to power the future of renewable energy. Here's to the electrons that got us here. ⚡
               </p>
             </div>
           </div>
