@@ -3952,6 +3952,52 @@ export const eeInfoSettings = pgTable("ee_info_settings", {
 
 export type EeInfoSettings = typeof eeInfoSettings.$inferSelect;
 
+export const eeInfoNodeDetails = pgTable("ee_info_node_details", {
+  id: serial("id").primaryKey(),
+  nodeId: text("node_id").notNull().unique().references(() => eeInfoNodes.id, { onDelete: "cascade" }),
+  purpose: text("purpose"),
+  inputs: text("inputs"),
+  steps: text("steps"),
+  outputs: text("outputs"),
+  raci: jsonb("raci").$type<{ role: string; responsible?: boolean; accountable?: boolean; consulted?: boolean; informed?: boolean }[]>(),
+  toolsDocs: jsonb("tools_docs").$type<{ name: string; url?: string; type?: string }[]>(),
+  risksFailureModes: text("risks_failure_modes"),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  updatedBy: text("updated_by"),
+});
+
+export const insertEeInfoNodeDetailsSchema = createInsertSchema(eeInfoNodeDetails).omit({ id: true });
+export type InsertEeInfoNodeDetails = z.infer<typeof insertEeInfoNodeDetailsSchema>;
+export type EeInfoNodeDetails = typeof eeInfoNodeDetails.$inferSelect;
+
+export const eeInfoNodeEditors = pgTable("ee_info_node_editors", {
+  id: serial("id").primaryKey(),
+  nodeId: text("node_id").notNull().references(() => eeInfoNodes.id, { onDelete: "cascade" }),
+  userId: integer("user_id").notNull(),
+  canEdit: boolean("can_edit").notNull().default(true),
+  canManageChildren: boolean("can_manage_children").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertEeInfoNodeEditorSchema = createInsertSchema(eeInfoNodeEditors).omit({ id: true, createdAt: true });
+export type InsertEeInfoNodeEditor = z.infer<typeof insertEeInfoNodeEditorSchema>;
+export type EeInfoNodeEditor = typeof eeInfoNodeEditors.$inferSelect;
+
+export const eeInfoNodeMetrics = pgTable("ee_info_node_metrics", {
+  id: serial("id").primaryKey(),
+  nodeId: text("node_id").notNull().references(() => eeInfoNodes.id, { onDelete: "cascade" }),
+  metricKey: text("metric_key").notNull(),
+  metricQueryType: text("metric_query_type").notNull().default("project_count"),
+  config: jsonb("config").$type<Record<string, any>>(),
+  displayFormat: text("display_format").notNull().default("number"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertEeInfoNodeMetricSchema = createInsertSchema(eeInfoNodeMetrics).omit({ id: true, createdAt: true });
+export type InsertEeInfoNodeMetric = z.infer<typeof insertEeInfoNodeMetricSchema>;
+export type EeInfoNodeMetric = typeof eeInfoNodeMetrics.$inferSelect;
+
 export const DEFAULT_ROLE_PERMISSIONS: InsertRolePermission[] = [
   { role: "COO_ADMIN", label: "COO", description: "Full executive access, settings, user management", sections: ["COCKPIT", "COLLABORATION", "PROJECTS", "MONEY", "PROJECT_DEVELOPMENT", "DELIVERY", "GOVERNANCE", "INFORMATION", "ADMIN"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
   { role: "CEO_ADMIN", label: "CEO", description: "Full executive access, strategic oversight", sections: ["COCKPIT", "COLLABORATION", "PROJECTS", "MONEY", "PROJECT_DEVELOPMENT", "DELIVERY", "GOVERNANCE", "INFORMATION", "ADMIN"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
