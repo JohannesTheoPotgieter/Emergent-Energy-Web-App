@@ -4199,13 +4199,21 @@ export const DEFAULT_WIDGET_ORDER = [
   "notifications",
 ] as const;
 
-export const WIDGET_DEFINITIONS: Record<string, { label: string; description: string }> = {
-  my_projects: { label: "My Projects", description: "Projects assigned to you with status and progress" },
-  company_priorities: { label: "Company Priorities", description: "Organisation-wide priority items" },
+export const WIDGET_DEFINITIONS: Record<string, { label: string; description: string; roles?: string[] }> = {
+  my_projects: { label: "My Projects", description: "Projects assigned to you with status and progress", roles: ["CEO_ADMIN", "COO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER", "PROJECT_MANAGER_SITE", "PROJECT_DEVELOPER"] },
+  company_priorities: { label: "Company Priorities", description: "Organisation-wide priority items", roles: ["CEO_ADMIN", "COO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER"] },
   action_banner: { label: "Attention Banner", description: "Alert bar for overdue tasks and pending approvals" },
   priority_queue: { label: "Priority Queue", description: "Your most urgent action items sorted by urgency" },
   stat_cards: { label: "Statistics Cards", description: "Quick summary of notifications, tasks, approvals" },
-  my_tasks: { label: "My Tasks", description: "List of tasks assigned to you" },
-  pending_approvals: { label: "Pending Approvals", description: "Approvals waiting for your action" },
+  my_tasks: { label: "My Tasks", description: "List of tasks assigned to you", roles: ["CEO_ADMIN", "COO_ADMIN", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER", "ENGINEERING_MANAGER", "ENGINEER", "PROJECT_MANAGER_SITE", "QUALITY_MANAGER"] },
+  pending_approvals: { label: "Pending Approvals", description: "Approvals waiting for your action", roles: ["CEO_ADMIN", "COO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER", "ENGINEERING_MANAGER", "QUALITY_MANAGER"] },
   notifications: { label: "Notifications", description: "Recent and action-required notifications" },
 };
+
+export function getWidgetsForRole(role: string): string[] {
+  return Object.keys(WIDGET_DEFINITIONS).filter(id => {
+    const def = WIDGET_DEFINITIONS[id];
+    if (!def.roles) return true;
+    return def.roles.includes(role);
+  });
+}
