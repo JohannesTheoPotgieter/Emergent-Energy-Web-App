@@ -721,7 +721,7 @@ export default function ProjectDetailPage() {
 
   const displayName = projectName.replace("_Tracker", "");
   const phase = projectInfo?.phase || null;
-  const executionPhase = projectInfo?.execution_phase || null;
+  const executionPhase = projectInfo?.execution_phase || phase || null;
   const pd = projectInfo?.pd || "—";
   const pm = projectInfo?.pm || "—";
   const sizeKwp = projectInfo?.size_kwp ? `${projectInfo.size_kwp.toFixed(0)} kWp` : "—";
@@ -765,18 +765,16 @@ export default function ProjectDetailPage() {
     : "red";
 
   const nextMilestone = useMemo(() => {
-    const now = new Date();
-    const futureRevMilestones = (revenueData as any[])
-      .filter((r: any) => {
-        const dateStr = r.plannedPaymentDate || r.paymentReceivedDate;
-        if (!dateStr) return false;
-        if (r.paymentReceivedDate) return false;
-        return new Date(dateStr) >= now;
-      })
+    const unpaid = (revenueData as any[])
+      .filter((r: any) => !r.paymentReceivedDate && r.plannedPaymentDate)
       .sort((a: any, b: any) => new Date(a.plannedPaymentDate).getTime() - new Date(b.plannedPaymentDate).getTime());
-    if (futureRevMilestones.length > 0) {
-      const m = futureRevMilestones[0];
-      return { name: m.milestoneName || "Revenue Milestone", date: m.plannedPaymentDate };
+    if (unpaid.length > 0) {
+      const m = unpaid[0];
+      return { name: m.milestoneName || "Revenue Milestone", date: m.plannedPaymentDate, allPaid: false };
+    }
+    const hasAny = (revenueData as any[]).length > 0;
+    if (hasAny) {
+      return { name: "All Milestones Paid", date: null, allPaid: true };
     }
     return null;
   }, [revenueData]);
@@ -959,8 +957,12 @@ export default function ProjectDetailPage() {
 
             <div className="flex flex-col gap-1" data-testid="awareness-milestone">
               <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Next Milestone</span>
-              <span className="text-xs font-medium truncate">
-                {nextMilestone ? `${nextMilestone.name} (${new Date(nextMilestone.date).toLocaleDateString("en-ZA", { day: "2-digit", month: "short" })})` : "—"}
+              <span className={`text-xs font-medium truncate ${nextMilestone?.allPaid ? "text-emerald-600" : ""}`}>
+                {nextMilestone
+                  ? nextMilestone.allPaid
+                    ? "All Paid"
+                    : `${nextMilestone.name} (${new Date(nextMilestone.date!).toLocaleDateString("en-ZA", { day: "2-digit", month: "short" })})`
+                  : "—"}
               </span>
             </div>
 
