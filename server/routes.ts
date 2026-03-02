@@ -11198,6 +11198,60 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/ms-teams/joined", requireAuth, async (req, res) => {
+    try {
+      const teams = await outlook.getJoinedTeams();
+      const result: any[] = [];
+      for (const team of teams) {
+        const channels = await outlook.getTeamChannels(team.id);
+        result.push({ ...team, channels });
+      }
+      res.json(result);
+    } catch (err: any) {
+      if (err.message?.includes("not connected") || err.message?.includes("not available")) {
+        return res.json([]);
+      }
+      console.error("[Teams Graph] Error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/ms-teams/chats", requireAuth, async (req, res) => {
+    try {
+      const chats = await outlook.getMyChats();
+      res.json(chats);
+    } catch (err: any) {
+      if (err.message?.includes("not connected") || err.message?.includes("not available")) {
+        return res.json([]);
+      }
+      console.error("[Teams Graph] Chats error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/sharepoint/discover-sites", requireAuth, async (req, res) => {
+    try {
+      const sites = await outlook.discoverSharePointSites();
+      res.json(sites);
+    } catch (err: any) {
+      if (err.message?.includes("not connected") || err.message?.includes("not available")) {
+        return res.json([]);
+      }
+      console.error("[SharePoint] Discover sites error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/sharepoint/site-drives/:siteId", requireAuth, async (req, res) => {
+    try {
+      const drives = await outlook.getSiteDrives(req.params.siteId);
+      res.json(drives);
+    } catch (err: any) {
+      console.error("[SharePoint] Site drives error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.post("/api/outlook/send", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { to, cc, subject, body, bodyType } = req.body;

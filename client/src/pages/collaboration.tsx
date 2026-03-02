@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, lazy, Suspense } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { usePermission } from "@/hooks/use-permissions";
 import { useLocation } from "wouter";
+const CreateTaskFromSourceDialog = lazy(() => import("@/components/CreateTaskFromSourceDialog"));
 import { format, startOfWeek, endOfWeek, addDays, addWeeks, subWeeks, isToday, isSameDay, parseISO } from "date-fns";
 import {
   Calendar, Mail, MessageSquare, FolderOpen, Bell,
@@ -87,7 +88,8 @@ function CalendarTab() {
     for (const day of days) {
       const key = format(day, "yyyy-MM-dd");
       map[key] = (events || []).filter((ev: any) => {
-        const evDate = ev.start?.dateTime ? format(parseISO(ev.start.dateTime), "yyyy-MM-dd") : null;
+        const startVal = typeof ev.start === "string" ? ev.start : ev.start?.dateTime;
+        const evDate = startVal ? format(parseISO(startVal), "yyyy-MM-dd") : null;
         return evDate === key;
       });
     }
@@ -172,14 +174,14 @@ function CalendarTab() {
                         data-testid={`calendar-event-${ev.id || i}`}
                       >
                         <div className="font-medium text-blue-900 truncate">{ev.subject || "No Subject"}</div>
-                        {ev.start?.dateTime && (
+                        {(typeof ev.start === "string" ? ev.start : ev.start?.dateTime) && (
                           <div className="text-blue-700 text-[10px]">
-                            {format(parseISO(ev.start.dateTime), "h:mm a")}
-                            {ev.end?.dateTime && ` – ${format(parseISO(ev.end.dateTime), "h:mm a")}`}
+                            {format(parseISO(typeof ev.start === "string" ? ev.start : ev.start?.dateTime), "h:mm a")}
+                            {(typeof ev.end === "string" ? ev.end : ev.end?.dateTime) && ` – ${format(parseISO(typeof ev.end === "string" ? ev.end : ev.end?.dateTime), "h:mm a")}`}
                           </div>
                         )}
-                        {ev.location?.displayName && (
-                          <div className="text-blue-600 text-[10px] truncate">{ev.location.displayName}</div>
+                        {(ev.location || ev.locationName) && (
+                          <div className="text-blue-600 text-[10px] truncate">{typeof ev.location === "string" ? ev.location : ev.location?.displayName || ev.locationName}</div>
                         )}
                       </div>
                     ))}
@@ -200,6 +202,8 @@ function EmailTab() {
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const pageSize = 25;
+  const [taskSource, setTaskSource] = useState<any>(null);
+  const [taskDialogOpen, setTaskDialogOpen] = useState(false);
 
   const { data: connectionStatus } = useQuery<{ configured: boolean; connected: boolean }>({
     queryKey: ["outlook-status"],
@@ -262,33 +266,67 @@ function EmailTab() {
   }
 
   if (selectedMessageId && selectedMessage) {
+    const senderName = selectedMessage.sender || selectedMessage.from?.emailAddress?.name || selectedMessage.from?.emailAddress?.address || "Unknown";
+    const senderEmail = selectedMessage.senderEmail || selectedMessage.from?.emailAddress?.address || "";
+    const receivedDate = selectedMessage.receivedAt || selectedMessage.receivedDateTime;
+    const toList = selectedMessage.to || selectedMessage.toRecipients || [];
+    const bodyContent = selectedMessage.body || selectedMessage.bodyContent;
+    const bodyType = selectedMessage.bodyType || selectedMessage.body?.contentType || "text";
     return (
       <div className="space-y-4" data-testid="email-detail">
-        <Button variant="ghost" size="sm" onClick={() => setSelectedMessageId(null)} data-testid="email-back">
-          <ArrowLeft className="h-4 w-4 mr-1" /> Back to Inbox
-        </Button>
+        <div className="flex items-center justify-between">
+          <Button variant="ghost" size="sm" onClick={() => setSelectedMessageId(null)} data-testid="email-back">
+            <ArrowLeft className="h-4 w-4 mr-1" /> Back to Inbox
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setTaskSource({
+                sourceType: "email",
+                outlookMessageId: selectedMessage.id,
+                subject: selectedMessage.subject || "(No Subject)",
+                sender: senderName,
+                receivedAt: receivedDate,
+                snippet: selectedMessage.snippet || selectedMessage.bodyPreview || "",
+                webLink: selectedMessage.webLink,
+              });
+              setTaskDialogOpen(true);
+            }}
+            data-testid="email-create-task"
+          >
+            <ClipboardCheck className="h-4 w-4 mr-1" /> Create Task
+          </Button>
+        </div>
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-lg">{selectedMessage.subject || "(No Subject)"}</CardTitle>
             <div className="text-sm text-muted-foreground space-y-1 mt-2">
-              <div><span className="font-medium">From:</span> {selectedMessage.from?.emailAddress?.name || selectedMessage.from?.emailAddress?.address || "Unknown"}</div>
-              <div><span className="font-medium">To:</span> {(selectedMessage.toRecipients || []).map((r: any) => r.emailAddress?.name || r.emailAddress?.address).join(", ")}</div>
-              {selectedMessage.receivedDateTime && (
-                <div><span className="font-medium">Date:</span> {format(parseISO(selectedMessage.receivedDateTime), "PPpp")}</div>
+              <div><span className="font-medium">From:</span> {senderName} {senderEmail && senderEmail !== senderName && <span className="text-xs">({senderEmail})</span>}</div>
+              <div><span className="font-medium">To:</span> {toList.map((r: any) => r.name || r.emailAddress?.name || r.email || r.emailAddress?.address).join(", ")}</div>
+              {receivedDate && (
+                <div><span className="font-medium">Date:</span> {format(parseISO(receivedDate), "PPpp")}</div>
               )}
             </div>
           </CardHeader>
           <CardContent>
-            {selectedMessage.body?.contentType === "html" ? (
+            {(bodyType === "html" || bodyType === "HTML") ? (
               <div
                 className="prose prose-sm max-w-none email-body"
-                dangerouslySetInnerHTML={{ __html: selectedMessage.body.content }}
+                dangerouslySetInnerHTML={{ __html: typeof bodyContent === "string" ? bodyContent : bodyContent?.content || "" }}
               />
             ) : (
-              <pre className="whitespace-pre-wrap text-sm">{selectedMessage.body?.content || ""}</pre>
+              <pre className="whitespace-pre-wrap text-sm">{typeof bodyContent === "string" ? bodyContent : bodyContent?.content || ""}</pre>
             )}
           </CardContent>
         </Card>
+        <Suspense fallback={null}>
+          <CreateTaskFromSourceDialog
+            open={taskDialogOpen}
+            onOpenChange={setTaskDialogOpen}
+            source={taskSource}
+          />
+        </Suspense>
       </div>
     );
   }
@@ -338,7 +376,7 @@ function EmailTab() {
             {messages.map((msg: any) => (
               <div
                 key={msg.id}
-                className={`flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-muted/50 transition-colors ${msg.isRead === false ? "bg-blue-50/50 font-medium" : ""}`}
+                className={`group flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-muted/50 transition-colors ${msg.isRead === false ? "bg-blue-50/50 font-medium" : ""}`}
                 onClick={() => setSelectedMessageId(msg.id)}
                 data-testid={`email-item-${msg.id}`}
               >
@@ -352,18 +390,40 @@ function EmailTab() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-sm truncate">
-                      {msg.sender?.emailAddress?.name || msg.sender?.emailAddress?.address || "Unknown"}
+                      {typeof msg.sender === "string" ? msg.sender : (msg.sender?.emailAddress?.name || msg.sender?.emailAddress?.address || msg.senderEmail || "Unknown")}
                     </span>
                     <span className="text-xs text-muted-foreground flex-shrink-0">
-                      {msg.receivedDateTime ? format(parseISO(msg.receivedDateTime), "MMM d, h:mm a") : ""}
+                      {(msg.receivedAt || msg.receivedDateTime) ? format(parseISO(msg.receivedAt || msg.receivedDateTime), "MMM d, h:mm a") : ""}
                     </span>
                   </div>
                   <div className="text-sm truncate">{msg.subject || "(No Subject)"}</div>
-                  {msg.bodyPreview && (
-                    <p className="text-xs text-muted-foreground truncate mt-0.5">{msg.bodyPreview}</p>
+                  {(msg.snippet || msg.bodyPreview) && (
+                    <p className="text-xs text-muted-foreground truncate mt-0.5">{msg.snippet || msg.bodyPreview}</p>
                   )}
                 </div>
                 {msg.hasAttachments && <Paperclip className="h-3 w-3 text-muted-foreground flex-shrink-0 mt-2" />}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 flex-shrink-0 opacity-0 group-hover:opacity-100"
+                  title="Create task from this email"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setTaskSource({
+                      sourceType: "email" as const,
+                      outlookMessageId: msg.id,
+                      subject: msg.subject || "(No Subject)",
+                      sender: typeof msg.sender === "string" ? msg.sender : msg.senderEmail || "Unknown",
+                      receivedAt: msg.receivedAt || msg.receivedDateTime,
+                      snippet: msg.snippet || msg.bodyPreview || "",
+                      webLink: msg.webLink,
+                    });
+                    setTaskDialogOpen(true);
+                  }}
+                  data-testid={`email-task-${msg.id}`}
+                >
+                  <ClipboardCheck className="h-3.5 w-3.5" />
+                </Button>
               </div>
             ))}
           </div>
@@ -378,6 +438,13 @@ function EmailTab() {
           </div>
         </>
       )}
+      <Suspense fallback={null}>
+        <CreateTaskFromSourceDialog
+          open={taskDialogOpen}
+          onOpenChange={setTaskDialogOpen}
+          source={taskSource}
+        />
+      </Suspense>
     </div>
   );
 }
@@ -386,8 +453,11 @@ function SharePointTab() {
   const [driveId, setDriveId] = useState<string | null>(null);
   const [folderId, setFolderId] = useState<string | null>(null);
   const [breadcrumbs, setBreadcrumbs] = useState<{ id: string | null; name: string }[]>([]);
+  const [setupMode, setSetupMode] = useState(false);
+  const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
+  const { toast } = useToast();
 
-  const { data: config, isLoading: loadingConfig } = useQuery<any>({
+  const { data: config, isLoading: loadingConfig, refetch: refetchConfig } = useQuery<any>({
     queryKey: ["sp-config"],
     queryFn: async () => {
       const res = await fetch("/api/sp-config", { headers: authHeaders(), credentials: "include" });
@@ -395,6 +465,28 @@ function SharePointTab() {
       return res.json();
     },
     staleTime: 120_000,
+  });
+
+  const { data: sites, isLoading: loadingSites } = useQuery<any[]>({
+    queryKey: ["sp-discover-sites"],
+    queryFn: async () => {
+      const res = await fetch("/api/sharepoint/discover-sites", { headers: authHeaders(), credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: setupMode || !config?.driveId,
+    staleTime: 300_000,
+  });
+
+  const { data: siteDrives } = useQuery<any[]>({
+    queryKey: ["sp-site-drives", selectedSiteId],
+    queryFn: async () => {
+      const res = await fetch(`/api/sharepoint/site-drives/${encodeURIComponent(selectedSiteId!)}`, { headers: authHeaders(), credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!selectedSiteId,
+    staleTime: 300_000,
   });
 
   const effectiveDriveId = driveId || config?.driveId;
@@ -414,6 +506,26 @@ function SharePointTab() {
     staleTime: 30_000,
   });
 
+  async function saveSPConfig(siteId: string, driveIdToSave: string) {
+    try {
+      const res = await fetch("/api/admin/sp-settings", {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ siteId, driveId: driveIdToSave, enabled: true }),
+      });
+      if (res.ok) {
+        toast({ title: "SharePoint configured successfully" });
+        setSetupMode(false);
+        refetchConfig();
+      } else {
+        toast({ title: "Failed to save settings", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Failed to save settings", variant: "destructive" });
+    }
+  }
+
   if (loadingConfig) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -422,15 +534,75 @@ function SharePointTab() {
     );
   }
 
-  if (!config?.driveId) {
+  if (!config?.driveId || setupMode) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 text-center" data-testid="sharepoint-not-configured">
-        <FolderOpen className="h-12 w-12 text-muted-foreground mb-4" />
-        <h3 className="text-lg font-semibold mb-2">SharePoint Not Configured</h3>
-        <p className="text-muted-foreground text-sm max-w-md">
-          SharePoint document library has not been configured yet.
-          Contact your administrator to set up SharePoint integration.
-        </p>
+      <div className="space-y-4" data-testid="sharepoint-setup">
+        <div className="flex flex-col items-center text-center py-6">
+          <FolderOpen className="h-10 w-10 text-muted-foreground mb-3" />
+          <h3 className="text-lg font-semibold mb-1">{setupMode ? "Change SharePoint Site" : "Connect SharePoint"}</h3>
+          <p className="text-muted-foreground text-sm max-w-md mb-4">
+            Select a SharePoint site and document library to browse files directly from the dashboard.
+          </p>
+        </div>
+
+        {loadingSites ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground mr-2" />
+            <span className="text-sm text-muted-foreground">Discovering SharePoint sites...</span>
+          </div>
+        ) : !sites || sites.length === 0 ? (
+          <div className="text-center py-8">
+            <p className="text-muted-foreground text-sm">No SharePoint sites found.</p>
+            <p className="text-xs text-muted-foreground mt-1">Sites.Read.All permission may be needed in Azure.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1">Available Sites</h4>
+            <div className="divide-y rounded-lg border">
+              {sites.map((site: any) => (
+                <div key={site.id}>
+                  <div
+                    className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-muted/50 transition-colors ${selectedSiteId === site.id ? "bg-blue-50 border-l-2 border-l-blue-500" : ""}`}
+                    onClick={() => setSelectedSiteId(selectedSiteId === site.id ? null : site.id)}
+                    data-testid={`sp-site-${site.id}`}
+                  >
+                    <HardDrive className="h-5 w-5 text-blue-500 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium truncate">{site.displayName}</div>
+                      <div className="text-xs text-muted-foreground truncate">{site.webUrl}</div>
+                    </div>
+                    <ChevronRightIcon className={`h-4 w-4 text-muted-foreground transition-transform ${selectedSiteId === site.id ? "rotate-90" : ""}`} />
+                  </div>
+                  {selectedSiteId === site.id && siteDrives && (
+                    <div className="bg-muted/20 pl-12 pr-4 pb-2 space-y-1">
+                      {siteDrives.map((drive: any) => (
+                        <div
+                          key={drive.id}
+                          className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-background cursor-pointer transition-colors"
+                          onClick={() => saveSPConfig(site.id, drive.id)}
+                          data-testid={`sp-drive-${drive.id}`}
+                        >
+                          <Folder className="h-4 w-4 text-amber-500" />
+                          <span className="text-sm">{drive.name}</span>
+                          <Badge variant="secondary" className="text-[10px] ml-auto">{drive.driveType}</Badge>
+                          <span className="text-xs text-blue-600 font-medium">Select</span>
+                        </div>
+                      ))}
+                      {siteDrives.length === 0 && (
+                        <p className="text-xs text-muted-foreground py-2">No document libraries found</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+            {setupMode && (
+              <Button variant="ghost" size="sm" onClick={() => setSetupMode(false)} data-testid="sp-cancel-setup">
+                Cancel
+              </Button>
+            )}
+          </div>
+        )}
       </div>
     );
   }
@@ -472,11 +644,14 @@ function SharePointTab() {
             <ArrowLeft className="h-4 w-4 mr-1" /> Back
           </Button>
         )}
-        <div className="flex items-center gap-1 text-sm text-muted-foreground">
+        <div className="flex items-center gap-1 text-sm text-muted-foreground flex-1">
           <HardDrive className="h-4 w-4" />
           <span>SharePoint Documents</span>
           {folderId && <ChevronRightIcon className="h-3 w-3" />}
         </div>
+        <Button variant="ghost" size="sm" onClick={() => setSetupMode(true)} data-testid="sp-change-site">
+          Change Site
+        </Button>
       </div>
 
       {loadingItems ? (
@@ -726,7 +901,7 @@ function TeamsChatTab() {
   const [, navigate] = useLocation();
   const { user } = useAuth();
 
-  const { data: groups, isLoading } = useQuery<any[]>({
+  const { data: groups, isLoading: loadingGroups } = useQuery<any[]>({
     queryKey: ["teams-chat-groups-collab"],
     queryFn: async () => {
       const res = await fetch("/api/teams/groups", { headers: authHeaders(), credentials: "include" });
@@ -734,6 +909,26 @@ function TeamsChatTab() {
       return res.json();
     },
     staleTime: 30_000,
+  });
+
+  const { data: msTeams, isLoading: loadingMsTeams } = useQuery<any[]>({
+    queryKey: ["ms-teams-joined"],
+    queryFn: async () => {
+      const res = await fetch("/api/ms-teams/joined", { headers: authHeaders(), credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    staleTime: 120_000,
+  });
+
+  const { data: msChats } = useQuery<any[]>({
+    queryKey: ["ms-teams-chats"],
+    queryFn: async () => {
+      const res = await fetch("/api/ms-teams/chats", { headers: authHeaders(), credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    staleTime: 120_000,
   });
 
   const myGroups = useMemo(() => {
@@ -746,10 +941,13 @@ function TeamsChatTab() {
     });
   }, [groups, user]);
 
+  const isLoading = loadingGroups || loadingMsTeams;
+  const hasContent = myGroups.length > 0 || (msTeams && msTeams.length > 0) || (msChats && msChats.length > 0);
+
   return (
     <div className="space-y-4" data-testid="teams-chat-tab">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">Your channels and group chats</p>
+        <p className="text-sm text-muted-foreground">Your MS Teams channels and dashboard chats</p>
         <Button variant="outline" size="sm" onClick={() => navigate("/teams/chats")} data-testid="teams-open-full">
           <ExternalLink className="h-4 w-4 mr-1" /> Open Full Chat
         </Button>
@@ -759,39 +957,117 @@ function TeamsChatTab() {
         <div className="flex items-center justify-center py-12">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
-      ) : !myGroups || myGroups.length === 0 ? (
+      ) : !hasContent ? (
         <div className="flex flex-col items-center justify-center py-12 text-center">
           <MessageSquare className="h-10 w-10 text-muted-foreground mb-3" />
           <p className="text-muted-foreground text-sm">No chat channels found</p>
+          <p className="text-xs text-muted-foreground mt-1">Teams permissions may need to be granted in Azure</p>
           <Button variant="outline" size="sm" className="mt-3" onClick={() => navigate("/teams/chats")} data-testid="teams-go-create">
             Go to Teams Chat
           </Button>
         </div>
       ) : (
-        <div className="divide-y rounded-lg border">
-          {myGroups.map((group: any) => (
-            <div
-              key={group.id}
-              className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-muted/50 transition-colors"
-              onClick={() => navigate("/teams/chats")}
-              data-testid={`teams-group-${group.id}`}
-            >
-              <div className={`flex-shrink-0 rounded-lg p-2 ${group.type === "department" ? "bg-blue-100 text-blue-600" : "bg-green-100 text-green-600"}`}>
-                {group.type === "department" ? <Users className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />}
+        <div className="space-y-4">
+          {msTeams && msTeams.length > 0 && (
+            <div>
+              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-1">Microsoft Teams</h4>
+              <div className="divide-y rounded-lg border">
+                {msTeams.map((team: any) => (
+                  <div key={team.id}>
+                    <div className="flex items-center gap-3 px-4 py-2.5 bg-muted/30">
+                      <div className="flex-shrink-0 rounded-lg p-1.5 bg-purple-100 text-purple-600">
+                        <Users className="h-4 w-4" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium truncate">{team.displayName}</div>
+                        {team.description && <div className="text-xs text-muted-foreground truncate">{team.description}</div>}
+                      </div>
+                      <Badge variant="secondary" className="text-[10px]">{(team.channels || []).length} channels</Badge>
+                    </div>
+                    {(team.channels || []).map((ch: any) => (
+                      <a
+                        key={ch.id}
+                        href={`https://teams.microsoft.com/l/channel/${encodeURIComponent(ch.id)}/${encodeURIComponent(ch.displayName)}?groupId=${team.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 px-4 py-2 pl-12 hover:bg-muted/50 transition-colors cursor-pointer"
+                        data-testid={`ms-channel-${ch.id}`}
+                      >
+                        <span className="text-muted-foreground">#</span>
+                        <span className="text-sm truncate">{ch.displayName}</span>
+                        <ExternalLink className="h-3 w-3 text-muted-foreground ml-auto flex-shrink-0" />
+                      </a>
+                    ))}
+                  </div>
+                ))}
               </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium truncate">{group.name}</div>
-                <div className="text-xs text-muted-foreground">
-                  {group.type === "department" ? "Department" : "Project"} channel
-                  {group.memberCount ? ` · ${group.memberCount} members` : ""}
-                </div>
-              </div>
-              {group.unreadCount > 0 && (
-                <Badge className="bg-blue-500 text-white text-xs">{group.unreadCount}</Badge>
-              )}
-              <ChevronRightIcon className="h-4 w-4 text-muted-foreground" />
             </div>
-          ))}
+          )}
+
+          {msChats && msChats.length > 0 && (
+            <div>
+              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-1">Recent Chats</h4>
+              <div className="divide-y rounded-lg border">
+                {msChats.slice(0, 10).map((chat: any) => {
+                  const chatMembers = (chat.members || []).filter((m: any) => m.displayName).map((m: any) => m.displayName);
+                  const chatTitle = chat.topic || chatMembers.join(", ") || "Chat";
+                  return (
+                    <a
+                      key={chat.id}
+                      href={`https://teams.microsoft.com/l/chat/${encodeURIComponent(chat.id)}/0`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/50 transition-colors cursor-pointer"
+                      data-testid={`ms-chat-${chat.id}`}
+                    >
+                      <div className="flex-shrink-0 rounded-lg p-1.5 bg-blue-100 text-blue-600">
+                        <MessageSquare className="h-4 w-4" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm truncate">{chatTitle}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {chat.chatType === "oneOnOne" ? "1:1 chat" : "Group chat"}
+                          {chat.lastUpdatedDateTime && ` · ${format(parseISO(chat.lastUpdatedDateTime), "MMM d")}`}
+                        </div>
+                      </div>
+                      <ExternalLink className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                    </a>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {myGroups.length > 0 && (
+            <div>
+              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-1">Dashboard Channels</h4>
+              <div className="divide-y rounded-lg border">
+                {myGroups.map((group: any) => (
+                  <div
+                    key={group.id}
+                    className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-muted/50 transition-colors"
+                    onClick={() => navigate("/teams/chats")}
+                    data-testid={`teams-group-${group.id}`}
+                  >
+                    <div className={`flex-shrink-0 rounded-lg p-2 ${group.type === "department" ? "bg-blue-100 text-blue-600" : "bg-green-100 text-green-600"}`}>
+                      {group.type === "department" ? <Users className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium truncate">{group.name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {group.type === "department" ? "Department" : "Project"} channel
+                        {group.memberCount ? ` · ${group.memberCount} members` : ""}
+                      </div>
+                    </div>
+                    {group.unreadCount > 0 && (
+                      <Badge className="bg-blue-500 text-white text-xs">{group.unreadCount}</Badge>
+                    )}
+                    <ChevronRightIcon className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
