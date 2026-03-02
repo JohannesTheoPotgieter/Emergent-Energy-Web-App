@@ -1,7 +1,7 @@
 # Emergent Energy Dashboard
 
 ## Overview
-The Emergent Energy Dashboard is a full-stack web application designed for comprehensive management of renewable energy projects. It facilitates end-to-end project lifecycle tracking, financial oversight (Cost of Sales, cashflow, revenue, expenditure), and engineering operations through a 5-stage checklist and task management system. The platform also includes quality management and fosters cross-department collaboration with integrated communication tools. It integrates seamlessly with Microsoft 365 services (Outlook, SharePoint, Teams) via Azure AD SSO. The vision is to provide a unified platform that enhances efficiency, reduces operational costs, and improves project delivery for renewable energy initiatives, positioning Emergent Energy as a leader in sustainable energy solutions.
+The Emergent Energy Dashboard is a full-stack web application designed for comprehensive management of renewable energy projects. It offers end-to-end project lifecycle tracking, financial oversight (Cost of Sales, cashflow, revenue, expenditure), and engineering operations through a 5-stage checklist and task management system. The platform also includes quality management, communication tools, and integrates with Microsoft 365 services via Azure AD SSO. Its purpose is to enhance efficiency, reduce operational costs, and improve project delivery for renewable energy initiatives.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
@@ -10,46 +10,46 @@ Preferred communication style: Simple, everyday language.
 
 ### Frontend
 -   **Frameworks & Libraries**: React 18 with TypeScript, TanStack React Query, React Context.
--   **UI/UX**: `shadcn/ui` (Radix UI-based) and Tailwind CSS v4 for mobile-first responsive design, with Recharts for data visualization.
+-   **UI/UX**: `shadcn/ui` and Tailwind CSS v4 for mobile-first responsive design, with Recharts for data visualization.
 -   **Forms**: React Hook Form with Zod validation.
--   **Core Features**: Includes financial tracking, project and quality management, a 5-step Smart Excel Import wizard, and a Subcontractor Dashboard. Features a UX Guidance System, Project Awareness Bar, Business Alert Engine, Weekly Review Wizard, and an Execution Cockpit for administration. Implements a Permission Gate System for role-based access. A TR Register tracks cross-project action items, and a PM Dashboard offers view-only project oversight.
--   **Portfolio Management**: Enhanced Gantt Chart with two-layer progress bars, commissioning markers, and slippage warnings. Plan management supports hierarchical milestones with auto-computed rollup values.
--   **Project Detail Page**: Section-based navigation with key pillars (Project Management, Engineering, Quality, Collaboration) and a compact navigation strip. Overview includes a 2x2 summary card grid for Expenditure Breakdown, Project Plan, Engineering, and Quality. Collaboration features include Chat, SharePoint Files, and project-scoped Approvals & Deliverables.
--   **Financials**: "Actual vs Costed" terminology is used, with financial year spanning September to August. Financial Integration Panel on project detail links to a dedicated Financial Linking page (`/project/:projectName/financial-linking`) for linking plan tasks to expenditure and revenue, with auto-alert setup and AI-style rule suggestions.
+-   **Key Features**: Financial tracking, project and quality management, a 5-step Smart Excel Import wizard, Subcontractor Dashboard, UX Guidance System, Project Awareness Bar, Business Alert Engine, Weekly Review Wizard, Execution Cockpit, Permission Gate System, TR Register, and PM Dashboard.
+-   **Portfolio Management**: Enhanced Gantt Chart with two-layer progress bars, commissioning markers, and slippage warnings. Supports hierarchical milestones.
+-   **Project Detail Page**: Section-based navigation with key pillars (Project Management, Engineering, Quality, Collaboration) and a compact navigation strip. Includes a 2x2 summary card grid for expenditure, plan, engineering, and quality. Collaboration features include Chat, SharePoint Files, and project-scoped Approvals & Deliverables.
+-   **Financials**: Uses "Actual vs Costed" terminology, financial year September to August. Financial Integration Panel links plan tasks to expenditure and revenue with auto-alert setup and AI-style rule suggestions.
 -   **Project Creation**: COO/CEO can create projects, which auto-generates engineering stage templates.
--   **Portfolio Management**: Projects are grouped under portfolios with client associations. A Portfolio Dashboard offers four view modes (Project Management, Finance, Quality, Engineering) with Recharts visualizations and "Costed vs Actual" financial terminology.
+-   **Portfolio Dashboard**: Offers four view modes (Project Management, Finance, Quality, Engineering) with Recharts visualizations and "Costed vs Actual" financial terminology.
 
 ### Backend
 -   **Frameworks & Libraries**: Express.js with TypeScript.
--   **Authentication & Authorization**: Passport.js with local strategy and Microsoft 365 SSO via `@azure/msal-node`. Utilizes PostgreSQL for sessions, role-based access control (RBAC), rate limiting, and granular permission middleware.
+-   **Authentication & Authorization**: Passport.js with local strategy and Microsoft 365 SSO via `@azure/msal-node`. Uses PostgreSQL for sessions, RBAC, rate limiting, and granular permission middleware.
 -   **File Handling**: Multer for uploads, `exceljs` for parsing.
--   **Data Storage**: PostgreSQL with Drizzle ORM, ensuring transactional safety.
--   **Logic**: Pure-function modules for computations, automated backfill for computed columns, and audit trails.
+-   **Data Storage**: PostgreSQL with Drizzle ORM for transactional safety.
+-   **Logic**: Pure-function modules, automated backfill for computed columns, and audit trails.
 -   **Automation**: Auto-archive for projects older than 90 days post-import.
 
 ### Database Architecture
 -   **Core Structure**: `project_info` as the central entity.
 -   **Primary Data Sources**: `normalized_cost_lines`, `normalized_revenue_lines`, `normalized_plan_tasks`.
--   **Derived Data**: Metrics for portfolio dashboards are computed live from underlying tables (`project_plan`, `program_expense`, `program_inflows`).
+-   **Derived Data**: Metrics for portfolio dashboards are computed live from underlying tables.
 
 ### Engineering Task Deliverables & Approval
 -   **Deliverables**: Tasks support file attachments with specified recipients and acknowledgment tracking.
--   **Approval Flow**: A workflow for task status changes to "NEEDS APPROVAL" with Approve/Request Changes/Reject actions.
+-   **Approval Flow**: Workflow for task status changes to "NEEDS APPROVAL" with Approve/Request Changes/Reject actions.
 
 ### Engineering Stage Management
--   **Module**: A 5-stage engineering checklist system (First Assessment, Cost Proposal, IFC Planning, Construction Support, Handover Pack) with CRUD operations for templates, project stage instantiation, and stage gate completion logic.
+-   **Module**: 5-stage engineering checklist system (First Assessment, Cost Proposal, IFC Planning, Construction Support, Handover Pack) with CRUD for templates, project stage instantiation, and stage gate completion.
 -   **SharePoint Integration**: Deliverable uploads include SharePoint sync folder path selection.
--   **Stage Gating**: Template-defined gate rules with COO override capability. Stages are auto-generated based on project lifecycle board movement.
+-   **Stage Gating**: Template-defined gate rules with COO override. Stages auto-generated based on project lifecycle board movement.
 
 ### Emergent Energy Info & Walkthroughs
--   **Knowledge Base**: Wiki-style system providing SOP-enriched nodes for various processes.
--   **Operating System Map**: Integrated into the `/ee-info` page with Lifecycle Overview, Department Drilldown, and Process Detail.
--   **Walkthroughs**: Interactive step-by-step guides covering application functionality.
--   **Home Screen**: Features role-based greetings, a personalized Action Hub with stat cards, tasks, approvals, notifications, and an interactive tutorial for onboarding. Context-aware screen tours are available on major pages. Role-specific widgets include Quick Actions, Portfolio Health, Financial Headline, Schedule Risk, Quality Overview, Engineering Queue, Data Health, and Alerts — all powered by foundation import data.
--   **Data Source Debug Panel**: Dev-only collapsible panel (`DataSourceDebug.tsx`) on major pages showing API endpoints, backing tables, import timestamps, and stale data warnings.
+-   **Knowledge Base**: Wiki-style system with SOP-enriched nodes.
+-   **Operating System Map**: Integrated into `/ee-info` page.
+-   **Walkthroughs**: Interactive step-by-step guides.
+-   **Home Screen**: Role-based greetings, personalized Action Hub, interactive tutorial, and context-aware screen tours. Role-specific widgets.
+-   **Data Source Debug Panel**: Dev-only panel showing API endpoints, backing tables, import timestamps, and stale data warnings.
 
 ### Gamification System
--   **Module**: Badge and leaderboard system tracking user activity, awarding points for positive actions, and applying penalties for negative behaviors.
+-   **Module**: Badge and leaderboard system tracking user activity and awarding points.
 -   **Levels**: 8 progression levels from Rookie to Titan.
 -   **Frontend**: Dedicated `/leaderboard` page displays rankings, badges, and activity breakdowns.
 
@@ -65,52 +65,50 @@ Preferred communication style: Simple, everyday language.
 
 ### Plan Change Tracker Confirmation
 -   **Module**: Notifies Program Manager, Program Finance Manager, and Construction Manager about plan task data edits for confirmation.
--   **Workflow**: Recipients can confirm, which auto-confirms related notifications.
 
 ### Excel Sync Acknowledgment System
--   **Module**: `server/excel-sync-notifications.ts` — fires `excel_sync_confirmation` notifications whenever ANY project data changes (project info, expenses, revenue, engineering, quality, PM On-The-Go actions).
+-   **Module**: Fires `excel_sync_confirmation` notifications for changes to project data, expenses, revenue, engineering, quality, and PM On-The-Go actions.
 -   **Recipients**: PROGRAM_MANAGER, PROGRAM_FINANCE_MANAGER, CONSTRUCTION_MANAGER roles.
--   **Dedup**: 2-minute throttle per project+changeType via `notification_throttle` table.
--   **Hooked into**: routes.ts (22 endpoints), engineering-routes.ts (5 endpoints), eng-stage-routes.ts (4 endpoints), quality-routes.ts (7 endpoints), pm-on-the-go-routes.ts (9 action endpoints).
+-   **Dedup**: 2-minute throttle per project+changeType.
 
 ### PM On-The-Go Mode
--   **Module**: Mobile-first project management interface exclusively for `PROJECT_MANAGER_SITE` role users.
--   **Tables**: `pm_site_visits`, `pm_on_the_go_actions`, `pm_compliance_tracking`, `pm_mode_preferences`.
--   **Routes**: `/api/pm-otg/*` in `server/pm-on-the-go-routes.ts` — mode preference, project snapshots, 9 action endpoints, compliance tracking.
--   **Frontend**: Toggle in header (`PmModeToggle.tsx`), home page (`pm-on-the-go-home.tsx`), project control page (`pm-on-the-go-project.tsx`).
--   **Compliance**: Daily site diary, weekly progress, weekly risk update enforcement for construction projects.
--   **Financial Boundaries**: PM can request POs and link invoices (status: pending) but cannot approve.
+-   **Module**: Mobile-first project management interface for `PROJECT_MANAGER_SITE` role users.
+-   **Compliance**: Enforces daily site diary, weekly progress, weekly risk updates for construction projects.
+-   **Financial Boundaries**: PM can request POs and link invoices (pending status) but cannot approve.
 
 ### Unified Work ("My Work") — Feature Flag: `unified_work_v1`
 -   **Concept**: Merges "My Tool" + "Collaboration Hub" into a unified personal execution cockpit.
--   **Feature Flag**: `unified_work_v1` in `appSettings` table (default OFF). Toggle via `PUT /api/settings`.
--   **Navigation**: When flag ON, sidebar shows "MY WORK" section (Home, Calendar, Tasks, Meetings) + "COLLABORATION" section. When OFF, shows original My Tool + Collaboration Hub.
--   **My Work Home** (`/my-work`): 3-column layout — tasks grouped by project, today timeline, action-required communications.
--   **Unified Calendar** (`/my-work/calendar`): Combines Outlook events (from `ms_objects`) + internal tasks in single view.
--   **Tasks** (`/my-work/tasks`): Unified task board aggregating personal tasks, operational/project tasks, TR register items, pending approvals (engineering + quality), and deliverables. Source filter tabs, subtask expand/collapse for operational tasks, and subtask creation dialog. Backend: `GET /api/my-work/all-tasks` in `ms-sync-routes.ts`.
--   **Meetings** (`/my-work/meetings`): Relocated from `/my-tool/meetings`, unchanged functionality.
--   **MS Object Sync**: `server/ms-sync-service.ts` periodically syncs calendar, email, and Teams data into `ms_objects` table. 15-minute interval.
--   **Project Tagging**: `server/project-linking-service.ts` — tag any MS object (email, event, chat) to a project via `project_links` table.
--   **Convert to Task**: Any MS object can be converted to `mytool_task` (personal) or `operational_task` (project-linked).
--   **Tables**: `ms_accounts` (identity mapping), `ms_objects` (synced MS data), `project_links` (tagging audit).
--   **Routes**: `server/ms-sync-routes.ts` — tag/untag/convert/sync APIs. `server/ms-account-service.ts` — SSO identity linking.
--   **Collaboration Update**: When flag ON, Collaboration Hub tabs show synced data from `ms_objects` with Tag/Convert actions.
+-   **Feature Flag**: `unified_work_v1` in `appSettings` table (default OFF).
+-   **Navigation**: When flag ON, sidebar shows "MY WORK" (Home, Calendar, Tasks, Meetings) + "COLLABORATION" section.
+-   **My Work Home**: 3-column layout — tasks grouped by project, today timeline, action-required communications.
+-   **Unified Calendar**: Combines Outlook events + internal tasks.
+-   **Tasks**: Unified task board aggregating personal tasks, operational/project tasks, TR register items, pending approvals, and deliverables.
+-   **MS Object Sync**: Periodically syncs calendar, email, and Teams data into `ms_objects` table.
+-   **Project Tagging**: Any MS object can be tagged to a project.
+-   **Convert to Task**: Any MS object can be converted to a personal or project-linked operational task.
 
 ### Roles & Permissions (Enhanced)
--   **Admin Page**: `admin-roles.tsx` — 11 permission categories with 85 granular entity permissions (View/Edit/Approve/Override/Delete).
+-   **Admin Page**: `admin-roles.tsx` for managing 11 permission categories with 85 granular entity permissions (View/Edit/Approve/Override/Delete).
 -   **Categories**: Cockpit, Project Management, Finance, Engineering, Quality & Governance, Project Detail Tabs, Project Development, Information, Collaboration, Data & Reports, Admin.
--   **UI Features**: Select All/Deselect All per category, Save All Changes with confirmation dialog, count badges per category.
--   **Backend**: `server/permission-middleware.ts` with `requirePermission(entity, action)` middleware + 60s cache.
--   **Defaults**: `ENTITY_PERMISSION_DEFAULTS` in `shared/schema.ts` for all 85 entities (includes `my_work`, `ms_sync`, `project_tagging`).
+-   **Backend**: `server/permission-middleware.ts` with `requirePermission(entity, action)` middleware.
 
 ### Email/Message to Task
--   **Module**: Enables creating project-linked operational tasks directly from Outlook emails or Teams messages via a dedicated endpoint.
+-   **Module**: Enables creating project-linked operational tasks directly from Outlook emails or Teams messages.
 -   **Notifications**: Assignee receives a notification upon task creation.
--   **UI**: `CreateTaskFromSourceDialog` component for task creation.
+
+### Smart Import — Deleted Project Re-creation Detection
+-   **Module**: Detects if an imported project name matches a previously hard-deleted project and issues a `previously_deleted` warning.
+-   **Frontend**: Shows a red confirmation card; user must confirm "Re-create & Import."
+-   **Bulk Commit**: Auto-passes `forceRecreate=true` to skip warning.
 
 ### Deploy Cache & Session Clearing
 -   **Build Versioning**: Frontend clears client-side cache/session on new deployments.
 -   **Server Sessions**: PostgreSQL sessions are cleared on each production deploy.
+
+### Global Audit Logging
+-   **Module**: Centralized `server/audit-logger.ts` for fire-and-forget audit logging.
+-   **Table**: `audit_events` stores actorRole, userId, userName, source, entityType, entityId, action, changesJson, projectName, ipAddress, requestPath, requestMethod, createdAt.
+-   **Coverage**: All write endpoints across various route files.
 
 ## External Dependencies
 
@@ -140,18 +138,5 @@ Preferred communication style: Simple, everyday language.
 
 ### Microsoft Integration
 -   **Outlook**: Connected via Replit Connector (OAuth) for calendar sync, email access, approval emails, and email-to-task linking.
--   **SharePoint**: Document library browsing with auto-discovery of sites/drives via Graph API. Setup wizard in Collaboration Hub.
--   **Teams**: MS Teams channel/chat integration via Graph API (`/me/joinedTeams`, `/me/chats`), plus internal dashboard chat channels. Message linking to projects, tagging, and hot thread tracking.
--   **Collaboration Hub**: Unified 5-tab interface (Calendar, Email, Teams Chat, SharePoint, Notifications) at `/collaboration`. Email tab includes "Create Task" action for email-to-task linking.
-
-### Global Audit Logging
--   **Module**: Centralized `server/audit-logger.ts` provides `logAuditFromReq()` utility for fire-and-forget audit logging.
--   **Table**: `audit_events` — stores actorRole, userId, userName, source, entityType, entityId, action, changesJson, projectName, ipAddress, requestPath, requestMethod, createdAt.
--   **Coverage**: All write endpoints (POST/PUT/PATCH/DELETE) across all route files: routes.ts, engineering-routes.ts, quality-routes.ts, pm-on-the-go-routes.ts, eng-stage-routes.ts, lifecycle-routes.ts, portfolio-routes.ts, weekly-review-routes.ts.
--   **Indexes**: entity_type+entity_id, project_name, created_at DESC, user_id.
-
-### Version & Release Notes
--   **Version**: `version.json` (major/minor/patch/lastUpdated) — currently V1.0.0.
--   **Release Notes**: `release-notes.json` with structured notes array displayed on login page.
--   **API**: `GET /api/version` serves version info + release notes.
--   **Easter Egg**: Login page release notes modal has interactive "First Electron" Easter egg (7 clicks to unlock).
+-   **SharePoint**: Document library browsing with auto-discovery of sites/drives via Graph API.
+-   **Teams**: MS Teams channel/chat integration via Graph API, plus internal dashboard chat channels.
