@@ -79,13 +79,13 @@ Preferred communication style: Simple, everyday language.
 ### Unified Work ("My Work") — Feature Flag: `unified_work_v1`
 -   **Concept**: Merges "My Tool" + "Collaboration Hub" into a unified personal execution cockpit.
 -   **Feature Flag**: `unified_work_v1` in `appSettings` table (currently ON).
--   **Navigation**: When flag ON, sidebar shows "MY WORK" (Home, Calendar, Tasks, Meetings) + "COLLABORATION" (Email only).
+-   **Navigation**: When flag ON, sidebar shows "MY WORK" (Home, Calendar, Tasks, Meetings) + "COLLABORATION" (Email, Teams Chat, SharePoint).
 -   **My Work Home** (`/my-work`): 3-column layout — tasks grouped by project, today timeline, action-required communications.
 -   **Unified Calendar** (`/my-work/calendar`): Combines Outlook events (blue) + synced MS events (purple) + internal tasks (emerald). Week/Day toggle.
 -   **Tasks** (`/my-work/tasks`): Unified task board aggregating personal tasks + operational/project tasks with filters.
 -   **Meetings** (`/my-work/meetings`): Reuses existing MyToolMeetingsPage at new route.
 -   **MS Object Sync**: `server/ms-sync-service.ts` periodically (15 min) syncs calendar, email, and Teams data into `ms_objects` table. `server/ms-account-service.ts` manages MS account identity mapping.
--   **Collaboration (Email-Only)**: When flag ON, `/collaboration?tab=email` shows synced Outlook emails with tag-to-project and convert-to-task actions. SharePoint/Teams/Notifications tabs removed from unified view.
+-   **Collaboration**: When flag ON, `/collaboration` shows 3-tab layout: Email, Teams Chat, SharePoint. Each tab supports tag-to-project and convert-to-task actions. Notifications tab removed from unified view.
 -   **Project Tagging**: Any MS object can be tagged to a project via `TagToProjectDialog`. Routes: `POST/DELETE /api/ms-objects/:id/tag-project`.
 -   **Convert to Task**: `ConvertToTaskDialog` lets user choose a project (or personal) before creating task. Backend accepts optional `projectId` in `POST /api/ms-objects/:id/convert-to-task`. Creates `operational_task` (project-linked) or `mytool_task` (personal).
 -   **Permission Entities**: `my_work`, `ms_sync`, `project_tagging` in `ENTITY_PERMISSION_DEFAULTS` + admin UI.

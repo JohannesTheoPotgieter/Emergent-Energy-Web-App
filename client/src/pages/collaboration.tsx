@@ -430,6 +430,8 @@ function SyncedEmailTab() {
 function SyncedTeamsTab() {
   const [tagDialogOpen, setTagDialogOpen] = useState(false);
   const [tagTarget, setTagTarget] = useState<any>(null);
+  const [convertDialogOpen, setConvertDialogOpen] = useState(false);
+  const [convertTarget, setConvertTarget] = useState<any>(null);
 
   const { data: items = [], isLoading } = useQuery<any[]>({
     queryKey: ["ms-objects-mine", "teams"],
@@ -494,7 +496,11 @@ function SyncedTeamsTab() {
                   {item.receivedOrStartDatetime ? format(parseISO(item.receivedOrStartDatetime), "MMM d, h:mm a") : ""}
                 </p>
               </div>
-              <MsObjectActions item={item} onTagClick={(i) => { setTagTarget(i); setTagDialogOpen(true); }} />
+              <MsObjectActions
+                item={item}
+                onTagClick={(i) => { setTagTarget(i); setTagDialogOpen(true); }}
+                onConvertClick={(i) => { setConvertTarget(i); setConvertDialogOpen(true); }}
+              />
             </div>
           ))}
         </div>
@@ -506,6 +512,14 @@ function SyncedTeamsTab() {
         msObjectId={tagTarget?.id || null}
         currentProjectId={tagTarget?.linkedProjectId}
       />
+
+      {convertTarget && (
+        <ConvertToTaskDialog
+          open={convertDialogOpen}
+          onOpenChange={setConvertDialogOpen}
+          item={convertTarget}
+        />
+      )}
     </div>
   );
 }
@@ -733,6 +747,8 @@ function SyncedNotificationsTab() {
 function SyncedSharePointTab() {
   const [tagDialogOpen, setTagDialogOpen] = useState(false);
   const [tagTarget, setTagTarget] = useState<any>(null);
+  const [convertDialogOpen, setConvertDialogOpen] = useState(false);
+  const [convertTarget, setConvertTarget] = useState<any>(null);
 
   const { data: items = [], isLoading } = useQuery<any[]>({
     queryKey: ["ms-objects-mine", "sharepoint_file"],
@@ -771,7 +787,11 @@ function SyncedSharePointTab() {
                       </Badge>
                     )}
                   </div>
-                  <MsObjectActions item={item} onTagClick={(i) => { setTagTarget(i); setTagDialogOpen(true); }} />
+                  <MsObjectActions
+                    item={item}
+                    onTagClick={(i) => { setTagTarget(i); setTagDialogOpen(true); }}
+                    onConvertClick={(i) => { setConvertTarget(i); setConvertDialogOpen(true); }}
+                  />
                 </div>
               ))}
             </div>
@@ -787,6 +807,14 @@ function SyncedSharePointTab() {
         msObjectId={tagTarget?.id || null}
         currentProjectId={tagTarget?.linkedProjectId}
       />
+
+      {convertTarget && (
+        <ConvertToTaskDialog
+          open={convertDialogOpen}
+          onOpenChange={setConvertDialogOpen}
+          item={convertTarget}
+        />
+      )}
     </div>
   );
 }
@@ -1880,14 +1908,41 @@ export default function CollaborationPage() {
     return (
       <div className="p-6 max-w-7xl mx-auto space-y-6" data-testid="collaboration-page">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight" data-testid="text-collaboration-title">Email</h1>
+          <h1 className="text-2xl font-bold tracking-tight" data-testid="text-collaboration-title">Collaboration</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Synced Outlook emails — tag to projects or convert to tasks
+            Microsoft 365 communications — tag to projects or convert to tasks
             {user?.displayName && <span> — signed in as <strong>{user.displayName}</strong></span>}
           </p>
         </div>
 
-        <SyncedEmailTab />
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="email" className="flex items-center gap-1.5" data-testid="tab-email">
+              <Mail className="h-4 w-4" />
+              <span className="hidden sm:inline">Email</span>
+            </TabsTrigger>
+            <TabsTrigger value="teams" className="flex items-center gap-1.5" data-testid="tab-teams">
+              <MessageSquare className="h-4 w-4" />
+              <span className="hidden sm:inline">Teams Chat</span>
+            </TabsTrigger>
+            <TabsTrigger value="sharepoint" className="flex items-center gap-1.5" data-testid="tab-sharepoint">
+              <FolderOpen className="h-4 w-4" />
+              <span className="hidden sm:inline">SharePoint</span>
+            </TabsTrigger>
+          </TabsList>
+
+          <div className="mt-6">
+            <TabsContent value="email">
+              <SyncedEmailTab />
+            </TabsContent>
+            <TabsContent value="teams">
+              <SyncedTeamsTab />
+            </TabsContent>
+            <TabsContent value="sharepoint">
+              <SyncedSharePointTab />
+            </TabsContent>
+          </div>
+        </Tabs>
       </div>
     );
   }
