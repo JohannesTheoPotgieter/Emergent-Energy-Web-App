@@ -1,0 +1,214 @@
+YOU ARE REPLIT AI WORKING INSIDE AN EXISTING PRODUCTION WEB APPLICATION.
+NON-NEGOTIABLE RULES:
+- Do NOT break existing functionality. Do NOT refactor unrelated modules.
+- Work incrementally. After each step, run tests/build and confirm no regressions.
+- Reuse existing patterns/components/services where possible.
+- If you are unsure about a dependency, search the repo first. Do not guess.
+- Keep changes modular, additive, and behind feature flags where appropriate.
+- This app is single Microsoft tenant, multiple users.
+- Tasks are SOURCE OF TRUTH in the app (NOT Microsoft).
+- Calendar is COMBINED view (Outlook events + app timeblocks/tasks).
+- Meetings module must KEEP its current logic; only move it into the new nav/section.
+- SharePoint remains SOURCE OF TRUTH for documents; users browse/access via the app.
+- Project linking is MANUAL TAGGING (no auto-linking).
+- Sync must be REAL-TIME using Microsoft Graph subscriptions/webhooks + delta catchup.
+
+PRIMARY GOAL
+Merge “My Tool” + “Collaboration Hub” into a unified experience:
+- Create “My Work” (Home) as the calm execution cockpit.
+- Keep Collaboration capabilities (Email/Teams/SharePoint/Notifications) under a single “Collaboration” section.
+- Use whichever MS 365 account is logged in (MS SSO) to scope Microsoft data to the user.
+- Never allow browsing other users’ mailboxes/calendars unless an item is manually tagged to a project and shared via app permissions.
+
+ASSUMPTIONS TO IMPLEMENT (unless repo already does differently)
+- Microsoft data should be stored as METADATA + DEEP LINKS only (no full email bodies/attachments persisted in DB).
+- Teams: sync action-required items (mentions/activity feed) and deep link to open full chat in Teams.
+- All Outlook calendar events for the user are synced read-only; app time blocks/tasks are editable.
+
+DELIVERABLES
+1) New IA / Navigation:
+   - Home: “My Work”
+   - Calendar
+   - Tasks (Backlog/List)
+   - Meetings (existing module relocated, unchanged logic)
+   - Collaboration (tabs: Email, Teams, SharePoint, Notifications)
+   - Settings
+   Ensure home is not busy: show only action-required comms.
+
+2) Microsoft Identity Mapping:
+   - One MS account maps to one internal user.
+   - On MS SSO login: map ms_user_id/email -> existing user record and role mapping.
+   - If no internal user exists for MS identity, follow existing onboarding pattern (or create a controlled “request access” screen).
+
+3) Data Model (additive migrations only):
+   Add table: ms_accounts
+   - id (pk)
+   - user_id (fk users)
+   - tenant_id
+   - ms_user_id
+   - email
+   - display_name
+   - refresh_token_encrypted (or your existing token vault pattern)
+   - connected_at
+   - status
+
+   Add table: ms_objects (unified reference store)
+   - id (pk)
+   - user_id (fk users)
+   - type ENUM('email','event','teams','sharepoint_file')
+   - ms_id (unique per type+tenant)
+   - subject_or_title
+   - preview (short text)
+   - web_link (deep link)
+   - received_or_start_datetime (datetime)
+   - last_synced_at
+   - action_required BOOLEAN default false
+   - linked_project_id (nullable fk projects)
+   - linked_task_id (nullable fk tasks)
+
+   Add table: project_links (audit manual tagging)
+   - id
+   - ms_object_id (fk ms_objects)
+   - project_id (fk projects)
+   - linked_by_user_id (fk users)
+   - linked_at
+   - note (nullable)
+
+   Add indexes for performance:
+   - ms_objects(user_id, type, received_or_start_datetime desc)
+   - ms_objects(linked_project_id)
+   - project_links(project_id)
+   - ms_accounts(user_id)
+
+4) Real-time Sync (Microsoft Graph):
+   - Implement Graph auth using existing Microsoft connection in Settings (repo already shows “Microsoft Connection: Connected johannes@…”).
+   - Implement webhook subscription endpoints for:
+     a) Outlook calendar events
+     b) Outlook mail changes
+     c) Teams activity/mentions (or the closest supported notifications feed)
+   - Use DELTA queries on webhook notify to fetch changes reliably.
+   - Implement a scheduled delta catch-up job every 10–30 minutes as fail-safe.
+   - Store updates into ms_objects (metadata only + deep links).
+   - Ensure webhook validation and secure token handling (use existing encryption/secrets patterns).
+   - Do NOT block request threads doing Graph sync; enqueue background jobs.
+
+5) Unified Calendar:
+   - Build combined calendar/timeline view.
+   - Sources:
+     - Outlook events from ms_objects where type='event'
+     - App time blocks/tasks from existing internal tables
+   - Editing rules:
+     - Outlook events read-only (open via deep link)
+     - App time blocks/tasks editable as current
+   - Ensure “Today” and “Week” views can render combined data.
+   - Remove/avoid duplicate calendar UI from Collaboration Hub (do not delete immediately; hide behind feature flag).
+
+6) Home “My Work” screen:
+   Layout:
+   - Left: Open Tasks grouped by project and “No Project”
+   - Center: Today timeline (combined calendar)
+   - Right: Risks/Alerts (role-based as currently implemented) + “Action Required” comms
+   “Action Required” comms definition (implement):
+   - ms_objects.action_required = true OR
+   - email flagged/important OR
+   - teams mention
+   Keep this configurable in code/constants.
+
+7) Collaboration section:
+   Tabs:
+   - Email: list view from ms_objects(type='email'), searchable; click opens deep link; “Convert to Task” + “Tag to Project”
+   - Teams: list mentions/activity from ms_objects(type='teams'); click opens deep link; “Convert to Task” + “Tag to Project”
+   - SharePoint: browse and open; upload files into mapped SharePoint folder; link file to project (store as ms_objects type='sharepoint_file')
+   - Notifications: list from ms_objects where action_required true and not resolved; include “Mark read” state in app (do not attempt to mark in Microsoft unless already supported)
+
+8) Manual Tagging to Project (core flow):
+   - On any ms_object (email/event/teams/file): user can “Tag to Project”
+   - This creates/updates:
+     - ms_objects.linked_project_id
+     - project_links audit row
+   - Visibility:
+     - By default users see only their own ms_objects.
+     - Items tagged to a project become visible to users who have access to that project in the app (use existing project permission model).
+     - COO can view all project-tagged items across projects.
+   Implement this carefully: avoid exposing raw mailbox data; only tagged items become shared.
+
+9) Convert to Task:
+   - From Email/Teams/Meeting action: create an internal task (existing task model)
+   - Store link: ms_objects.linked_task_id
+   - Include metadata in task description (subject, sender, deep link).
+   - Do NOT duplicate content; link out.
+
+10) Meetings Module Move:
+   - Keep all existing meeting ingestion + action extraction logic.
+   - Move it into the new nav “Meetings”.
+   - Ensure existing webhook setup and “Read.ai” workflow still works.
+   - If there are routes/components referenced, update routing only; do not change business logic.
+
+IMPLEMENTATION PLAN (DO THIS IN ORDER)
+Step 0: Repo audit
+- Identify existing Microsoft integration layer (Graph client, token storage, Settings “Microsoft Connection”).
+- Identify existing navigation system and route definitions for My Tool and Collaboration Hub.
+- Identify existing task model, project permissions model, and meetings module.
+
+Step 1: Feature flag
+- Add feature flag: unified_work_v1 (default off in prod).
+- Build new nav + screens behind this flag.
+
+Step 2: Migrations
+- Add ms_accounts, ms_objects, project_links tables + indexes.
+
+Step 3: Identity mapping
+- On auth callback / session creation: ensure ms_accounts record exists and maps to user_id.
+- Enforce single-tenant: validate tenant_id matches configured tenant.
+
+Step 4: Graph sync services
+- Implement subscriptions + webhook endpoints
+- Implement delta sync job workers
+- Store into ms_objects
+- Add periodic delta catchup
+
+Step 5: UI build
+- Build My Work
+- Build Calendar combined view
+- Build Collaboration tabs (Email/Teams/SharePoint/Notifications)
+- Move Meetings route
+
+Step 6: Permissions + sharing
+- Implement “own items only” default filtering
+- Implement “project tagged items visible to project members” using existing permission checks
+
+Step 7: QA + regression checks
+- Run existing test suite/build
+- Add targeted tests for:
+  - ms_objects visibility rules
+  - tagging audit creation
+  - convert to task linking
+  - calendar combined rendering
+  - feature flag gating
+- Manually verify screens from screenshots:
+  - Today view
+  - Week view
+  - Backlog list
+  - Meetings actions list
+  - Settings Microsoft connection state
+  - Collaboration hub tabs
+
+ACCEPTANCE CRITERIA (MUST PASS)
+- No existing functionality breaks with feature flag OFF.
+- With unified_work_v1 ON:
+  - Home shows tasks + timeline + action-required comms.
+  - Calendar shows combined Outlook events + internal time blocks/tasks.
+  - Meetings works exactly as before, accessible under “Meetings”.
+  - Collaboration tabs load user-scoped content and deep link out correctly.
+  - Tagging an item to a project makes it visible to project members (and COO), but NOT to unrelated users.
+  - Convert-to-task creates internal task and links back to the ms_object.
+  - SharePoint browsing respects existing folder structure and uploads to mapped path.
+
+ERROR HANDLING + LOGGING
+- If Graph subscription fails/expired: show non-blocking banner “Microsoft sync paused” + auto retry.
+- Log webhook events and delta sync metrics.
+- Protect against duplicates: unique constraint on (tenant_id, type, ms_id) or equivalent.
+
+NOW EXECUTE:
+- Start with Step 0 repo audit and list EXACT files/modules you will modify before making changes.
+- Then implement step-by-step, committing small changes and verifying build/tests each time.
