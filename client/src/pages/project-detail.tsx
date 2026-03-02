@@ -652,6 +652,27 @@ export default function ProjectDetailPage() {
     enabled: !!projectInfoId,
   });
 
+  const { data: pdTicketsData = [] } = useQuery<any[]>({
+    queryKey: ["pd-tickets-project", projectInfoId],
+    queryFn: async () => {
+      const res = await engFetch(`/api/pd/tickets`);
+      if (!res.ok) return [];
+      const all = await res.json();
+      return all
+        .filter((t: any) => t.ticket?.projectId === projectInfoId)
+        .map((t: any) => ({
+          id: t.ticket?.id,
+          status: t.ticket?.status,
+          requestType: t.ticket?.requestType,
+          dueDate: t.ticket?.dueDate,
+          projectSiteName: t.ticket?.projectSiteName,
+          priority: t.ticket?.priority,
+          taskCount: { total: t.taskTotal || 0, completed: t.taskCompleted || 0 },
+        }));
+    },
+    enabled: !!projectInfoId,
+  });
+
   const { data: projectPlanData = [] } = useQuery({
     queryKey: ["project-plan", projectName],
     queryFn: async () => {
@@ -1331,6 +1352,92 @@ export default function ProjectDetailPage() {
               </CardContent>
             </Card>
             )}
+
+            <Card className="relative overflow-hidden" data-testid="overview-pd-summary">
+              <div className="absolute top-0 left-0 right-0 h-1 bg-indigo-500" />
+              <CardContent className="p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-9 h-9 rounded-lg bg-indigo-100 flex items-center justify-center">
+                      <FileText className="h-4.5 w-4.5 text-indigo-600" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-sm">Project Development</h3>
+                      <p className="text-[10px] text-muted-foreground">PD tickets & tasks</p>
+                    </div>
+                  </div>
+                  <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-indigo-600" onClick={() => setLocation("/pd-tickets")} data-testid="button-goto-pd">
+                    View All <ArrowRight className="h-3 w-3" />
+                  </Button>
+                </div>
+
+                {(() => {
+                  const tickets = pdTicketsData || [];
+                  const active = tickets.filter((t: any) => t.status === "In Progress" || t.status === "Draft");
+                  const completed = tickets.filter((t: any) => t.status === "Completed");
+                  const overdue = tickets.filter((t: any) => {
+                    if (!t.dueDate || t.status === "Completed" || t.status === "Cancelled") return false;
+                    return t.dueDate < new Date().toISOString().split("T")[0];
+                  });
+                  const totalTasks = tickets.reduce((sum: number, t: any) => sum + (t.taskCount?.total || 0), 0);
+                  const completedTasks = tickets.reduce((sum: number, t: any) => sum + (t.taskCount?.completed || 0), 0);
+                  const progressPct = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
+
+                  return (
+                    <>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-muted-foreground">Task Progress</span>
+                          <span className="font-semibold">{totalTasks > 0 ? `${completedTasks}/${totalTasks} done` : "No tasks"}</span>
+                        </div>
+                        <div className="w-full h-3 bg-muted rounded-full overflow-hidden">
+                          <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${progressPct}%` }} />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2 text-center">
+                        <div>
+                          <p className="text-lg font-bold">{tickets.length}</p>
+                          <p className="text-[10px] text-muted-foreground">Tickets</p>
+                        </div>
+                        <div>
+                          <p className="text-lg font-bold text-emerald-600">{completed.length}</p>
+                          <p className="text-[10px] text-muted-foreground">Completed</p>
+                        </div>
+                        <div>
+                          <p className={`text-lg font-bold ${active.length > 0 ? "text-indigo-600" : ""}`}>{active.length}</p>
+                          <p className="text-[10px] text-muted-foreground">Active</p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1">
+                        {tickets.length === 0 ? (
+                          <p className="text-xs text-muted-foreground text-center py-3">No PD tickets for this project</p>
+                        ) : (
+                          tickets.slice(0, 5).map((t: any) => {
+                            const isOverdue = t.dueDate && t.status !== "Completed" && t.status !== "Cancelled" && t.dueDate < new Date().toISOString().split("T")[0];
+                            return (
+                              <div key={t.id} className={`flex items-center gap-2 text-[11px] py-1.5 px-2 rounded ${isOverdue ? "bg-red-50 border border-red-100" : "bg-gray-50"} hover:bg-gray-100 cursor-pointer`} onClick={() => setLocation(`/pd-tickets/${t.id}`)} data-testid={`row-pd-ticket-${t.id}`}>
+                                {isOverdue ? <AlertCircle className="h-3 w-3 text-red-500 shrink-0" /> : <Circle className="h-2.5 w-2.5 text-indigo-400 shrink-0" />}
+                                <span className="truncate flex-1 font-medium">{t.requestType || t.projectSiteName}</span>
+                                <Badge variant={t.status === "Completed" ? "default" : t.status === "In Progress" ? "secondary" : "outline"} className="text-[9px] px-1.5 py-0 shrink-0">{t.status}</Badge>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-1 border-t">
+                        <RagDot color={overdue.length > 0 ? "red" : active.length > 0 ? "amber" : "green"} />
+                        <span className={`text-xs font-medium ${overdue.length > 0 ? "text-red-600" : active.length > 0 ? "text-amber-600" : "text-emerald-600"}`}>
+                          {overdue.length > 0 ? `${overdue.length} overdue ticket${overdue.length !== 1 ? "s" : ""}` : active.length > 0 ? `${active.length} active ticket${active.length !== 1 ? "s" : ""}` : tickets.length === 0 ? "No tickets yet" : "All tickets complete"}
+                        </span>
+                      </div>
+                    </>
+                  );
+                })()}
+              </CardContent>
+            </Card>
           </div>
 
           <FinancialIntegrationPanel projectName={projectName} />
