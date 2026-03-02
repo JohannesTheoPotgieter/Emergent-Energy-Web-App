@@ -936,8 +936,8 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
           .set({ importedDependencyId: null })
           .where(inArray(workingPlanDependencyOverride.scenarioId, sIds));
       }
-      await tx.delete(projectPlanDependency).where(eq(projectPlanDependency.projectName, projectName));
-      await tx.delete(projectPlan).where(eq(projectPlan.projectName, projectName));
+      await safeLegacyWrite(() => tx.delete(projectPlanDependency).where(eq(projectPlanDependency.projectName, projectName)));
+      await safeLegacyWrite(() => tx.delete(projectPlan).where(eq(projectPlan.projectName, projectName)));
 
       const existingWorkItemsForImport = await tx
         .select({ id: workItems.id })
@@ -945,7 +945,12 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
         .where(and(
           eq(workItems.source, "SMART_IMPORT"),
           eq(workItems.workstream, "PM"),
-          projectId ? eq(workItems.projectId, projectId) : sql`${workItems.externalRef} LIKE ${projectName + '::PLAN::%'}`,
+          projectId
+            ? eq(workItems.projectId, projectId)
+            : or(
+                sql`${workItems.externalRef} LIKE ${projectName + '::PLAN::%'}`,
+                sql`${workItems.externalRef} LIKE 'NPT::%' AND ${workItems.projectId} IN (SELECT id FROM project_info WHERE project_name = ${projectName})`
+              ),
         ));
       if (existingWorkItemsForImport.length > 0) {
         const wiIds = existingWorkItemsForImport.map((w: { id: number }) => w.id);
