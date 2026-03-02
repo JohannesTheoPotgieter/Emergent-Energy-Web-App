@@ -66,10 +66,11 @@ import {
 } from "@shared/schema";
 
 const ALL_SECTIONS = [
-  "COCKPIT", "COLLABORATION", "PROJECTS", "MONEY", "PROJECT_DEVELOPMENT", "DELIVERY", "GOVERNANCE", "INFORMATION", "SETTINGS",
+  "MY_WORK", "COCKPIT", "COLLABORATION", "PROJECTS", "MONEY", "PROJECT_DEVELOPMENT", "DELIVERY", "GOVERNANCE", "INFORMATION", "SETTINGS",
 ] as const;
 
 const SECTION_META: Record<string, { label: string; icon: any; color: string }> = {
+  MY_WORK: { label: "My Work", icon: Briefcase, color: "bg-sky-50 border-sky-200 text-sky-700" },
   COCKPIT: { label: "EXCO", icon: LayoutDashboard, color: "bg-indigo-50 border-indigo-200 text-indigo-700" },
   COLLABORATION: { label: "Collaboration", icon: MessageSquare, color: "bg-pink-50 border-pink-200 text-pink-700" },
   PROJECTS: { label: "Project Management", icon: FolderKanban, color: "bg-blue-50 border-blue-200 text-blue-700" },
@@ -91,31 +92,31 @@ interface PermCat {
 
 const PERM_CATEGORIES: PermCat[] = [
   {
-    key: "exco",
-    label: "EXCO",
-    icon: LayoutDashboard,
-    color: "bg-indigo-500",
-    items: [
-      { entity: "home" as PermissionEntity, label: "Home / Action Hub", actions: ["view"] },
-      { entity: "my_tool" as PermissionEntity, label: "My Tool (Today, Week, Backlog, Settings)", actions: ["view", "edit"] },
-      { entity: "triage_inbox" as PermissionEntity, label: "Triage Inbox", actions: ["view", "edit"] },
-      { entity: "unclassified_tasks" as PermissionEntity, label: "Unclassified Tasks", actions: ["view", "edit", "delete"] },
-      { entity: "company_priorities" as PermissionEntity, label: "Company Priorities", actions: ["view", "edit", "delete"] },
-      { entity: "lifecycle" as PermissionEntity, label: "Company Lifecycle Board (Phases, Gates, Merge)", actions: ["view", "edit", "override"] },
-      { entity: "meetings" as PermissionEntity, label: "Meetings (Calendar, Read.ai)", actions: ["view", "edit"] },
-      { entity: "operational_tasks" as PermissionEntity, label: "Operational Tasks (Email-to-Task)", actions: ["view", "edit", "delete"] },
-      { entity: "dashboard_widgets" as PermissionEntity, label: "Home Dashboard Widgets", actions: ["view", "edit"] },
-    ],
-  },
-  {
     key: "my_work",
     label: "My Work",
     icon: Briefcase,
     color: "bg-sky-500",
     items: [
-      { entity: "my_work" as PermissionEntity, label: "My Work Home (Unified Dashboard)", actions: ["view", "edit"] },
-      { entity: "ms_sync" as PermissionEntity, label: "Microsoft 365 Sync (Calendar, Email, Teams)", actions: ["view", "edit"] },
-      { entity: "project_tagging" as PermissionEntity, label: "Project Tagging (Link MS Objects)", actions: ["view", "edit", "delete"] },
+      { entity: "home" as PermissionEntity, label: "Home", actions: ["view"] },
+      { entity: "my_work" as PermissionEntity, label: "Calendar", actions: ["view", "edit"] },
+      { entity: "my_tool" as PermissionEntity, label: "Tasks", actions: ["view", "edit"] },
+      { entity: "meetings" as PermissionEntity, label: "Meetings", actions: ["view", "edit"] },
+      { entity: "ms_sync" as PermissionEntity, label: "Microsoft 365 Sync", actions: ["view", "edit"] },
+      { entity: "project_tagging" as PermissionEntity, label: "Project Tagging", actions: ["view", "edit", "delete"] },
+    ],
+  },
+  {
+    key: "exco",
+    label: "EXCO",
+    icon: LayoutDashboard,
+    color: "bg-indigo-500",
+    items: [
+      { entity: "company_priorities" as PermissionEntity, label: "Company Priorities", actions: ["view", "edit", "delete"] },
+      { entity: "lifecycle" as PermissionEntity, label: "Company Lifecycle Board", actions: ["view", "edit", "override"] },
+      { entity: "dashboard_widgets" as PermissionEntity, label: "Dashboard Widgets", actions: ["view", "edit"] },
+      { entity: "triage_inbox" as PermissionEntity, label: "Triage Inbox", actions: ["view", "edit"] },
+      { entity: "unclassified_tasks" as PermissionEntity, label: "Unclassified Tasks", actions: ["view", "edit", "delete"] },
+      { entity: "operational_tasks" as PermissionEntity, label: "Operational Tasks", actions: ["view", "edit", "delete"] },
     ],
   },
   {
@@ -124,10 +125,10 @@ const PERM_CATEGORIES: PermCat[] = [
     icon: MessageSquare,
     color: "bg-pink-500",
     items: [
-      { entity: "collaboration_hub" as PermissionEntity, label: "Collaboration Hub", actions: ["view", "edit"] },
-      { entity: "teams_chat" as PermissionEntity, label: "Teams Chat (Channels, Messages, Files)", actions: ["view", "edit", "delete"] },
+      { entity: "collaboration_hub" as PermissionEntity, label: "Email", actions: ["view", "edit"] },
+      { entity: "teams_chat" as PermissionEntity, label: "Teams Chat", actions: ["view", "edit", "delete"] },
+      { entity: "sharepoint_files" as PermissionEntity, label: "SharePoint", actions: ["view", "edit", "delete"] },
       { entity: "notifications" as PermissionEntity, label: "Notifications", actions: ["view"] },
-      { entity: "sharepoint_files" as PermissionEntity, label: "SharePoint Files", actions: ["view", "edit", "delete"] },
       { entity: "project_chat" as PermissionEntity, label: "Project Chat", actions: ["view", "edit"] },
       { entity: "deliverables" as PermissionEntity, label: "Deliverables & Approvals", actions: ["view", "edit", "approve"] },
       { entity: "excel_sync_ack" as PermissionEntity, label: "Excel Sync Acknowledgments", actions: ["view", "approve"] },
@@ -141,18 +142,18 @@ const PERM_CATEGORIES: PermCat[] = [
     items: [
       { entity: "execution_board" as PermissionEntity, label: "Execution Board", actions: ["view", "edit"] },
       { entity: "projects" as PermissionEntity, label: "Project Summary", actions: ["view", "edit", "delete"] },
-      { entity: "project_normalized" as PermissionEntity, label: "Normalized Project View (drill-down)", actions: ["view"] },
       { entity: "pm_dashboard" as PermissionEntity, label: "PM Dashboard", actions: ["view"] },
+      { entity: "pm_on_the_go" as PermissionEntity, label: "On-The-Go", actions: ["view", "edit"] },
       { entity: "tr_register" as PermissionEntity, label: "TR Register", actions: ["view", "edit", "delete"] },
       { entity: "smart_import" as PermissionEntity, label: "Smart Import", actions: ["view", "edit"] },
-      { entity: "portfolios" as PermissionEntity, label: "Portfolios (List)", actions: ["view", "edit", "delete"] },
-      { entity: "portfolio_detail" as PermissionEntity, label: "Portfolio Detail (Gantt, Rollups, Key Dates, Rollout)", actions: ["view", "edit", "delete"] },
-      { entity: "create_project" as PermissionEntity, label: "Create Project", actions: ["edit"] },
-      { entity: "project_creation" as PermissionEntity, label: "Project Creation", actions: ["edit"] },
-      { entity: "approvals" as PermissionEntity, label: "Approvals (Eng Gates, Quality, Deliverables)", actions: ["view", "approve"] },
-      { entity: "pm_on_the_go" as PermissionEntity, label: "PM On-The-Go Mode", actions: ["view", "edit"] },
+      { entity: "portfolios" as PermissionEntity, label: "Portfolios", actions: ["view", "edit", "delete"] },
+      { entity: "portfolio_detail" as PermissionEntity, label: "Portfolio Detail", actions: ["view", "edit", "delete"] },
       { entity: "weekly_review_wizard" as PermissionEntity, label: "Weekly Reviews", actions: ["view", "edit"] },
       { entity: "weekly_reviews" as PermissionEntity, label: "Weekly Review Data", actions: ["view", "edit"] },
+      { entity: "create_project" as PermissionEntity, label: "Create Project", actions: ["edit"] },
+      { entity: "project_creation" as PermissionEntity, label: "Project Creation", actions: ["edit"] },
+      { entity: "approvals" as PermissionEntity, label: "Approvals", actions: ["view", "approve"] },
+      { entity: "project_normalized" as PermissionEntity, label: "Normalized View", actions: ["view"] },
     ],
   },
   {
@@ -161,17 +162,17 @@ const PERM_CATEGORIES: PermCat[] = [
     icon: DollarSign,
     color: "bg-emerald-500",
     items: [
-      { entity: "financials" as PermissionEntity, label: "Financials Overview", actions: ["view", "edit"] },
       { entity: "cashflow" as PermissionEntity, label: "Cashflow", actions: ["view", "edit"] },
       { entity: "cashflow_forecast" as PermissionEntity, label: "Cashflow Forecast", actions: ["view", "edit"] },
       { entity: "cos" as PermissionEntity, label: "COS Tracker", actions: ["view", "edit"] },
-      { entity: "cos_control" as PermissionEntity, label: "COS Control (Overrides, Invoices)", actions: ["view", "edit", "override"] },
-      { entity: "revenue" as PermissionEntity, label: "Revenue Tracker", actions: ["view", "edit"] },
-      { entity: "subcontractors" as PermissionEntity, label: "Procurement / Subcontractors", actions: ["view", "edit", "delete"] },
-      { entity: "procurement" as PermissionEntity, label: "Procurement Data", actions: ["view", "edit"] },
+      { entity: "cos_control" as PermissionEntity, label: "COS Control", actions: ["view", "edit", "override"] },
+      { entity: "subcontractors" as PermissionEntity, label: "Procurement", actions: ["view", "edit", "delete"] },
       { entity: "invoice_patterns" as PermissionEntity, label: "Invoice Patterns", actions: ["view", "edit"] },
-      { entity: "financial_integration" as PermissionEntity, label: "Financial Integration (Edit Requests, Rules, Sync)", actions: ["view", "edit", "approve"] },
-      { entity: "financial_linking" as PermissionEntity, label: "Financial Linking (Revenue/Expense to Plan)", actions: ["view", "edit"] },
+      { entity: "financials" as PermissionEntity, label: "Financials Overview", actions: ["view", "edit"] },
+      { entity: "revenue" as PermissionEntity, label: "Revenue Tracker", actions: ["view", "edit"] },
+      { entity: "procurement" as PermissionEntity, label: "Procurement Data", actions: ["view", "edit"] },
+      { entity: "financial_integration" as PermissionEntity, label: "Financial Integration", actions: ["view", "edit", "approve"] },
+      { entity: "financial_linking" as PermissionEntity, label: "Financial Linking", actions: ["view", "edit"] },
     ],
   },
   {
@@ -181,7 +182,7 @@ const PERM_CATEGORIES: PermCat[] = [
     color: "bg-violet-500",
     items: [
       { entity: "pd_dashboard" as PermissionEntity, label: "PD Dashboard", actions: ["view"] },
-      { entity: "pd_tickets" as PermissionEntity, label: "PD Tickets (List)", actions: ["view", "edit", "delete"] },
+      { entity: "pd_tickets" as PermissionEntity, label: "PD Tickets", actions: ["view", "edit", "delete"] },
       { entity: "pd_clients" as PermissionEntity, label: "Clients", actions: ["view", "edit", "delete"] },
     ],
   },
@@ -191,9 +192,9 @@ const PERM_CATEGORIES: PermCat[] = [
     icon: Wrench,
     color: "bg-orange-500",
     items: [
-      { entity: "engineering" as PermissionEntity, label: "Engineering Dashboard (Standup)", actions: ["view", "edit"] },
-      { entity: "eng_tasks" as PermissionEntity, label: "Task Board (My Tasks, Board, List, Projects)", actions: ["view", "edit", "delete"] },
-      { entity: "eng_stages" as PermissionEntity, label: "Engineering Stages (Checklists, Gates)", actions: ["view", "edit", "approve"] },
+      { entity: "engineering" as PermissionEntity, label: "Engineering Dashboard", actions: ["view", "edit"] },
+      { entity: "eng_tasks" as PermissionEntity, label: "Task Board", actions: ["view", "edit", "delete"] },
+      { entity: "eng_stages" as PermissionEntity, label: "Engineering Stages", actions: ["view", "edit", "approve"] },
       { entity: "eng_inbox" as PermissionEntity, label: "Pipeline Intake Inbox", actions: ["view", "edit", "approve"] },
       { entity: "eng_sync" as PermissionEntity, label: "SharePoint Sync", actions: ["view", "edit"] },
       { entity: "phase_templates" as PermissionEntity, label: "Phase Templates", actions: ["view", "edit"] },
@@ -201,11 +202,11 @@ const PERM_CATEGORIES: PermCat[] = [
   },
   {
     key: "quality",
-    label: "Quality & Governance",
+    label: "Governance",
     icon: ShieldCheck,
     color: "bg-purple-500",
     items: [
-      { entity: "quality" as PermissionEntity, label: "Quality Dashboard (Warnings, Overrides)", actions: ["view", "edit", "approve", "override"] },
+      { entity: "quality" as PermissionEntity, label: "Quality Dashboard", actions: ["view", "edit", "approve", "override"] },
       { entity: "governance" as PermissionEntity, label: "Governance", actions: ["view", "edit"] },
     ],
   },
@@ -215,9 +216,8 @@ const PERM_CATEGORIES: PermCat[] = [
     icon: FileText,
     color: "bg-cyan-500",
     items: [
-      { entity: "pd_overview" as PermissionEntity, label: "Overview (Tasks, Board, Calendar)", actions: ["view", "edit"] },
-      { entity: "pd_plan" as PermissionEntity, label: "Project Plan (Milestones, Structure, Gantt)", actions: ["view", "edit"] },
-      { entity: "pd_gantt" as PermissionEntity, label: "CPM / Dependencies", actions: ["view"] },
+      { entity: "pd_overview" as PermissionEntity, label: "Overview", actions: ["view", "edit"] },
+      { entity: "pd_plan" as PermissionEntity, label: "Project Plan", actions: ["view", "edit"] },
       { entity: "pd_key_dates" as PermissionEntity, label: "Key Dates", actions: ["view", "edit"] },
       { entity: "pd_finance" as PermissionEntity, label: "Finance Summary", actions: ["view", "edit"] },
       { entity: "pd_revenue" as PermissionEntity, label: "Revenue", actions: ["view", "edit"] },
@@ -226,11 +226,12 @@ const PERM_CATEGORIES: PermCat[] = [
       { entity: "pd_cashflow" as PermissionEntity, label: "Cashflow", actions: ["view", "edit"] },
       { entity: "pd_subcontractors" as PermissionEntity, label: "Subcontractors", actions: ["view", "edit"] },
       { entity: "pd_engineering" as PermissionEntity, label: "Engineering Section", actions: ["view", "edit"] },
-      { entity: "pd_eng_tasks" as PermissionEntity, label: "Engineering Tasks (Detail)", actions: ["view", "edit", "delete"] },
-      { entity: "pd_eng_stages" as PermissionEntity, label: "Engineering Stages (Detail)", actions: ["view", "edit", "approve"] },
+      { entity: "pd_eng_tasks" as PermissionEntity, label: "Engineering Tasks", actions: ["view", "edit", "delete"] },
+      { entity: "pd_eng_stages" as PermissionEntity, label: "Engineering Stages", actions: ["view", "edit", "approve"] },
       { entity: "pd_quality" as PermissionEntity, label: "Quality Tab", actions: ["view", "edit", "approve", "delete"] },
-      { entity: "pd_collaboration" as PermissionEntity, label: "Collaboration (Chat, SharePoint, Approvals)", actions: ["view", "edit"] },
+      { entity: "pd_collaboration" as PermissionEntity, label: "Collaboration", actions: ["view", "edit"] },
       { entity: "pd_history" as PermissionEntity, label: "History / Audit", actions: ["view"] },
+      { entity: "pd_gantt" as PermissionEntity, label: "CPM / Dependencies", actions: ["view"] },
     ],
   },
   {
@@ -239,25 +240,14 @@ const PERM_CATEGORIES: PermCat[] = [
     icon: BookOpen,
     color: "bg-cyan-600",
     items: [
-      { entity: "ee_info" as PermissionEntity, label: "Emergent Energy Info (SOPs, Walkthroughs)", actions: ["view", "edit"] },
-      { entity: "ee_info_lifecycle" as PermissionEntity, label: "OS Map — Lifecycle Overview", actions: ["view", "edit"] },
-      { entity: "ee_info_departments" as PermissionEntity, label: "OS Map — Department Drilldown", actions: ["view", "edit", "delete"] },
-      { entity: "ee_info_processes" as PermissionEntity, label: "OS Map — Processes & SOPs", actions: ["view", "edit", "delete"] },
-      { entity: "ee_info_templates" as PermissionEntity, label: "OS Map — Templates Library", actions: ["view", "edit", "delete"] },
       { entity: "feedback" as PermissionEntity, label: "Feedback & Support", actions: ["view", "edit"] },
+      { entity: "ee_info" as PermissionEntity, label: "Emergent Energy Info", actions: ["view", "edit"] },
       { entity: "leaderboard" as PermissionEntity, label: "Leaderboard", actions: ["view"] },
-      { entity: "gamification" as PermissionEntity, label: "Gamification (Badges, Points, Levels)", actions: ["view"] },
-    ],
-  },
-  {
-    key: "data_reports",
-    label: "Data & Reports",
-    icon: Database,
-    color: "bg-teal-500",
-    items: [
-      { entity: "data_import" as PermissionEntity, label: "Data Import (Smart Import, Excel)", actions: ["view", "edit"] },
-      { entity: "data_export" as PermissionEntity, label: "Data Export & Reports", actions: ["view"] },
-      { entity: "audit_trail" as PermissionEntity, label: "Audit Trail & Change History", actions: ["view"] },
+      { entity: "gamification" as PermissionEntity, label: "Gamification", actions: ["view"] },
+      { entity: "ee_info_lifecycle" as PermissionEntity, label: "OS Map — Lifecycle", actions: ["view", "edit"] },
+      { entity: "ee_info_departments" as PermissionEntity, label: "OS Map — Departments", actions: ["view", "edit", "delete"] },
+      { entity: "ee_info_processes" as PermissionEntity, label: "OS Map — Processes", actions: ["view", "edit", "delete"] },
+      { entity: "ee_info_templates" as PermissionEntity, label: "OS Map — Templates", actions: ["view", "edit", "delete"] },
     ],
   },
   {
@@ -266,10 +256,13 @@ const PERM_CATEGORIES: PermCat[] = [
     icon: Settings,
     color: "bg-slate-500",
     items: [
-      { entity: "admin" as PermissionEntity, label: "Settings (Import, Maintenance)", actions: ["view", "edit"] },
       { entity: "admin_roles" as PermissionEntity, label: "Roles & Permissions", actions: ["view", "edit"] },
       { entity: "activity_log" as PermissionEntity, label: "Change Audit", actions: ["view"] },
-      { entity: "ms_integration" as PermissionEntity, label: "Microsoft 365 Configuration", actions: ["view", "edit"] },
+      { entity: "ms_integration" as PermissionEntity, label: "Microsoft 365", actions: ["view", "edit"] },
+      { entity: "admin" as PermissionEntity, label: "Admin Settings", actions: ["view", "edit"] },
+      { entity: "data_import" as PermissionEntity, label: "Data Import", actions: ["view", "edit"] },
+      { entity: "data_export" as PermissionEntity, label: "Data Export & Reports", actions: ["view"] },
+      { entity: "audit_trail" as PermissionEntity, label: "Audit Trail", actions: ["view"] },
     ],
   },
 ];
@@ -389,7 +382,7 @@ function PermissionsTab({ toast, shared }: { toast: any; shared: ReturnType<type
   const [editingLabel, setEditingLabel] = useState(false);
   const [editLabelValue, setEditLabelValue] = useState("");
   const [deletingRole, setDeletingRole] = useState(false);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set(PERM_CATEGORIES.map(c => c.key)));
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [showSaveAllConfirm, setShowSaveAllConfirm] = useState(false);
   const [savingAll, setSavingAll] = useState(false);
 
@@ -616,66 +609,58 @@ function PermissionsTab({ toast, shared }: { toast: any; shared: ReturnType<type
                 </CardContent>
               </Card>
 
-              <div className="space-y-2" data-testid="permission-categories">
+              <div className="space-y-1" data-testid="permission-categories">
                 {PERM_CATEGORIES.map(cat => {
-                  const isExpanded = expanded.has(cat.key);
                   const Icon = cat.icon;
                   const activeCount = cat.items.filter(i => i.actions.some(a => getEntityPerm(selectedRole, i.entity, a))).length;
+                  const isCollapsed = expanded.has(cat.key);
                   return (
-                    <Card key={cat.key} className="overflow-hidden" data-testid={`category-${cat.key}`}>
-                      <button
-                        className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50/50 transition-colors text-left"
-                        onClick={() => setExpanded(prev => { const n = new Set(prev); n.has(cat.key) ? n.delete(cat.key) : n.add(cat.key); return n; })}
-                        data-testid={`btn-expand-category-${cat.key}`}
-                      >
-                        <div className={`h-7 w-7 rounded-md ${cat.color} flex items-center justify-center shrink-0`}>
-                          <Icon className="h-3.5 w-3.5 text-white" />
+                    <div key={cat.key} className="rounded-lg border border-gray-100 overflow-hidden" data-testid={`category-${cat.key}`}>
+                      <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50/80">
+                        <button
+                          className="flex items-center gap-2 flex-1 text-left"
+                          onClick={() => setExpanded(prev => { const n = new Set(prev); n.has(cat.key) ? n.delete(cat.key) : n.add(cat.key); return n; })}
+                          data-testid={`btn-expand-category-${cat.key}`}
+                        >
+                          <div className={`h-5 w-5 rounded ${cat.color} flex items-center justify-center shrink-0`}>
+                            <Icon className="h-3 w-3 text-white" />
+                          </div>
+                          <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">{cat.label}</span>
+                          <Badge variant="outline" className="text-[9px] px-1 py-0 h-4">{activeCount}/{cat.items.length}</Badge>
+                          {isCollapsed ? <ChevronRight className="h-3 w-3 text-gray-400" /> : <ChevronDown className="h-3 w-3 text-gray-400" />}
+                        </button>
+                        <div className="flex items-center gap-0.5 shrink-0">
+                          <button className="h-5 px-1.5 rounded border border-green-200 text-[9px] font-medium text-green-700 hover:bg-green-50" onClick={() => setCategoryPreset(cat, "all")} data-testid={`preset-full-${cat.key}`}>All</button>
+                          <button className="h-5 px-1.5 rounded border border-blue-200 text-[9px] font-medium text-blue-700 hover:bg-blue-50" onClick={() => setCategoryPreset(cat, "view")} data-testid={`preset-view-${cat.key}`}>View</button>
+                          <button className="h-5 px-1.5 rounded border border-red-200 text-[9px] font-medium text-red-700 hover:bg-red-50" onClick={() => setCategoryPreset(cat, "none")} data-testid={`preset-none-${cat.key}`}>None</button>
                         </div>
-                        <span className="text-sm font-semibold text-gray-800 flex-1">{cat.label}</span>
-                        <Badge variant="outline" className="text-[10px]">{activeCount}/{cat.items.length}</Badge>
-                        {isExpanded ? <ChevronDown className="h-4 w-4 text-gray-400" /> : <ChevronRight className="h-4 w-4 text-gray-400" />}
-                      </button>
-
-                      {isExpanded && (
-                        <div className="border-t border-gray-100">
-                          <div className="px-4 py-1.5 bg-gray-50/60 flex items-center justify-end gap-1.5">
-                            <Button variant="outline" size="sm" className="h-5 text-[10px] px-2 border-green-200 text-green-700 hover:bg-green-50" onClick={() => setCategoryPreset(cat, "all")} data-testid={`preset-full-${cat.key}`}>
-                              <Check className="h-2.5 w-2.5 mr-0.5" /> Select All
-                            </Button>
-                            <Button variant="outline" size="sm" className="h-5 text-[10px] px-2 border-blue-200 text-blue-700 hover:bg-blue-50" onClick={() => setCategoryPreset(cat, "view")} data-testid={`preset-view-${cat.key}`}>
-                              View Only
-                            </Button>
-                            <Button variant="outline" size="sm" className="h-5 text-[10px] px-2 border-red-200 text-red-700 hover:bg-red-50" onClick={() => setCategoryPreset(cat, "none")} data-testid={`preset-none-${cat.key}`}>
-                              <X className="h-2.5 w-2.5 mr-0.5" /> Deselect All
-                            </Button>
-                          </div>
-                          <div className="divide-y">
-                            {cat.items.map((item, idx) => (
-                              <div key={item.entity} className={`flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-0 px-4 py-2.5 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50/30"} hover:bg-blue-50/30 transition-colors`} data-testid={`entity-row-${selectedRole}-${item.entity}`}>
-                                <span className="text-sm text-gray-700 font-medium sm:w-[240px] shrink-0">{item.label}</span>
-                                <div className="flex items-center gap-1 flex-wrap">
-                                  {item.actions.map(action => {
-                                    const active = getEntityPerm(selectedRole, item.entity, action);
-                                    const style = ACTION_STYLE[action];
-                                    return (
-                                      <button
-                                        key={action}
-                                        className={`h-6 px-2.5 rounded-md border text-[10px] font-semibold transition-all inline-flex items-center gap-1 ${active ? `${style.bg} border-transparent text-white` : "bg-white border-gray-200 text-gray-300 hover:border-gray-300"}`}
-                                        onClick={() => toggleEntityPerm(selectedRole, item.entity, action)}
-                                        data-testid={`perm-${selectedRole}-${item.entity}-${action}`}
-                                      >
-                                        {active ? <Check className="h-2.5 w-2.5" /> : <X className="h-2.5 w-2.5" />}
-                                        {style.label}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
+                      </div>
+                      {!isCollapsed && (
+                        <div className="divide-y divide-gray-50">
+                          {cat.items.map((item, idx) => (
+                            <div key={item.entity} className={`flex items-center gap-2 px-3 py-1 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50/30"} hover:bg-blue-50/30 transition-colors`} data-testid={`entity-row-${selectedRole}-${item.entity}`}>
+                              <span className="text-[12px] text-gray-600 w-[180px] shrink-0 truncate" title={item.label}>{item.label}</span>
+                              <div className="flex items-center gap-0.5 flex-wrap">
+                                {item.actions.map(action => {
+                                  const active = getEntityPerm(selectedRole, item.entity, action);
+                                  const style = ACTION_STYLE[action];
+                                  return (
+                                    <button
+                                      key={action}
+                                      className={`h-5 px-2 rounded text-[9px] font-semibold transition-all inline-flex items-center gap-0.5 ${active ? `${style.bg} text-white` : "bg-gray-100 text-gray-300 hover:bg-gray-200"}`}
+                                      onClick={() => toggleEntityPerm(selectedRole, item.entity, action)}
+                                      data-testid={`perm-${selectedRole}-${item.entity}-${action}`}
+                                    >
+                                      {style.label}
+                                    </button>
+                                  );
+                                })}
                               </div>
-                            ))}
-                          </div>
+                            </div>
+                          ))}
                         </div>
                       )}
-                    </Card>
+                    </div>
                   );
                 })}
               </div>
