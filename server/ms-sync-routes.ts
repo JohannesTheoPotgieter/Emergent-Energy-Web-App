@@ -43,8 +43,21 @@ const tagSchema = z.object({
   note: z.string().optional(),
 });
 
+async function requireUnifiedWorkFlag(_req: Request, res: Response, next: NextFunction) {
+  try {
+    const { getFeatureFlag } = await import("./lib/feature-flags");
+    const enabled = await getFeatureFlag("unified_work_v1");
+    if (!enabled) {
+      return res.status(404).json({ error: "Unified Work feature is not enabled" });
+    }
+    next();
+  } catch {
+    next();
+  }
+}
+
 export function registerMsSyncRoutes(app: Express) {
-  app.post("/api/ms-objects/:id/tag-project", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/ms-objects/:id/tag-project", jwtAuth, requireAuth, requireUnifiedWorkFlag, async (req: Request, res: Response) => {
     try {
       const msObjectId = parseInt(String(req.params.id));
       if (isNaN(msObjectId)) return res.status(400).json({ error: "Invalid ms object id" });
@@ -63,7 +76,7 @@ export function registerMsSyncRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/ms-objects/:id/tag-project", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.delete("/api/ms-objects/:id/tag-project", jwtAuth, requireAuth, requireUnifiedWorkFlag, async (req: Request, res: Response) => {
     try {
       const msObjectId = parseInt(String(req.params.id));
       if (isNaN(msObjectId)) return res.status(400).json({ error: "Invalid ms object id" });
@@ -79,7 +92,7 @@ export function registerMsSyncRoutes(app: Express) {
     }
   });
 
-  app.get("/api/ms-objects/mine", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/ms-objects/mine", jwtAuth, requireAuth, requireUnifiedWorkFlag, async (req: Request, res: Response) => {
     try {
       const userId = (req as any).user?.id;
       if (!userId) return res.status(401).json({ error: "auth_required" });
@@ -115,7 +128,7 @@ export function registerMsSyncRoutes(app: Express) {
     }
   });
 
-  app.post("/api/ms-objects/:id/convert-to-task", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/ms-objects/:id/convert-to-task", jwtAuth, requireAuth, requireUnifiedWorkFlag, async (req: Request, res: Response) => {
     try {
       const msObjectId = parseInt(String(req.params.id));
       if (isNaN(msObjectId)) return res.status(400).json({ error: "Invalid ms object id" });

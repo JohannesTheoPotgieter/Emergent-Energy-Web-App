@@ -3,6 +3,25 @@ import { eq, and, desc, sql } from "drizzle-orm";
 import { msObjects, projectLinks, projectInfo, mytoolTasks, operationalTasks, users } from "@shared/schema";
 
 const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN", "admin"];
+const MANAGER_ROLES = [...ADMIN_ROLES, "PROGRAM_MANAGER", "ENGINEERING_MANAGER"];
+
+async function canAccessProject(userId: number, projectId: number): Promise<boolean> {
+  const [user] = await db.select({ role: users.role, name: users.name }).from(users).where(eq(users.id, userId));
+  if (!user) return false;
+  if (MANAGER_ROLES.includes(user.role)) return true;
+
+  const [project] = await db.select({
+    pm: projectInfo.pm,
+    pd: projectInfo.pd,
+    pmUserId: projectInfo.pmUserId,
+    pdUserId: projectInfo.pdUserId,
+  }).from(projectInfo).where(eq(projectInfo.id, projectId));
+  if (!project) return false;
+
+  if (project.pmUserId === userId || project.pdUserId === userId) return true;
+  if (project.pm === user.name || project.pd === user.name) return true;
+  return false;
+}
 
 export async function tagToProject(
   msObjectId: number,
@@ -19,6 +38,9 @@ export async function tagToProject(
       throw new Error("You can only tag your own items");
     }
   }
+
+  const hasAccess = await canAccessProject(userId, projectId);
+  if (!hasAccess) throw new Error("You don't have access to this project");
 
   const [project] = await db.select({ id: projectInfo.id }).from(projectInfo).where(eq(projectInfo.id, projectId));
   if (!project) throw new Error("Project not found");
@@ -138,6 +160,9 @@ export async function convertToTask(
       .from(projectInfo)
       .where(eq(projectInfo.id, targetProjectId));
     if (!targetProject) throw new Error("Target project not found");
+
+    const hasAccess = await canAccessProject(userId, targetProjectId);
+    if (!hasAccess) throw new Error("You don't have access to this project");
   }
 
   const effectiveProjectId = targetProjectId || obj.linkedProjectId;

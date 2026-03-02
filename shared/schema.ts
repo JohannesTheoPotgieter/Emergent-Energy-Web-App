@@ -4681,3 +4681,26 @@ export const projectLinks = pgTable("project_links", {
 export const insertProjectLinkSchema = createInsertSchema(projectLinks).omit({ id: true, linkedAt: true });
 export type InsertProjectLink = z.infer<typeof insertProjectLinkSchema>;
 export type ProjectLink = typeof projectLinks.$inferSelect;
+
+export const planEditNotifications = pgTable("plan_edit_notifications", {
+  id: serial("id").primaryKey(),
+  projectName: text("project_name").notNull(),
+  projectId: integer("project_id").references(() => projectInfo.id),
+  taskId: integer("task_id"),
+  taskName: text("task_name"),
+  editType: text("edit_type").notNull(),
+  fieldName: text("field_name"),
+  oldValue: text("old_value"),
+  newValue: text("new_value"),
+  editedByUserId: integer("edited_by_user_id").references(() => users.id),
+  editedByName: text("edited_by_name"),
+  resolvedByUserId: integer("resolved_by_user_id").references(() => users.id),
+  resolvedByName: text("resolved_by_name"),
+  resolvedAt: timestamp("resolved_at"),
+  resolution: text("resolution"),
+  status: text("status").notNull().default("pending"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const insertPlanEditNotificationSchema = createInsertSchema(planEditNotifications).omit({ id: true, createdAt: true });
+export type InsertPlanEditNotification = z.infer<typeof insertPlanEditNotificationSchema>;
+export type PlanEditNotification = typeof planEditNotifications.$inferSelect;
