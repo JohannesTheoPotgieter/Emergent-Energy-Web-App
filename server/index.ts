@@ -726,6 +726,15 @@ async function backfillPmUserIds() {
     console.error('[Migration] Phase 1 error:', err.message);
   }
 
+  try {
+    await db.execute(sql.raw(`
+      ALTER TABLE ms_accounts ADD COLUMN IF NOT EXISTS sso_access_token TEXT;
+      ALTER TABLE ms_accounts ADD COLUMN IF NOT EXISTS sso_token_expires_at TIMESTAMP;
+    `));
+  } catch (err: any) {
+    console.error('[Migration] ms_accounts SSO token columns error:', err.message);
+  }
+
   registerAdminRoutes(app);
   registerExcoRoutes(app);
   const { financialIntegrationRouter } = await import("./departments/financial-integration-routes");

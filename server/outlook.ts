@@ -408,9 +408,24 @@ export async function forwardMessage(messageId: string, comment: string, toRecip
   });
 }
 
-export async function getJoinedTeams(): Promise<any[]> {
+async function graphGetWithToken(url: string, token: string): Promise<any> {
+  const res = await fetch(`https://graph.microsoft.com/v1.0${url}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Graph API error (${res.status}): ${body}`);
+  }
+  return res.json();
+}
+
+export async function getJoinedTeams(ssoToken?: string | null): Promise<any[]> {
   try {
-    const data = await graphGet("/me/joinedTeams?$select=id,displayName,description");
+    const token = ssoToken || (await getAccessToken());
+    const data = await graphGetWithToken("/me/joinedTeams?$select=id,displayName,description", token);
     return (data.value || []).map((t: any) => ({
       id: t.id,
       displayName: t.displayName,
@@ -422,9 +437,10 @@ export async function getJoinedTeams(): Promise<any[]> {
   }
 }
 
-export async function getTeamChannels(teamId: string): Promise<any[]> {
+export async function getTeamChannels(teamId: string, ssoToken?: string | null): Promise<any[]> {
   try {
-    const data = await graphGet(`/teams/${teamId}/channels?$select=id,displayName,description,membershipType`);
+    const token = ssoToken || (await getAccessToken());
+    const data = await graphGetWithToken(`/teams/${teamId}/channels?$select=id,displayName,description,membershipType`, token);
     return (data.value || []).map((ch: any) => ({
       id: ch.id,
       displayName: ch.displayName,
@@ -437,9 +453,10 @@ export async function getTeamChannels(teamId: string): Promise<any[]> {
   }
 }
 
-export async function getMyChats(top: number = 30): Promise<any[]> {
+export async function getMyChats(top: number = 30, ssoToken?: string | null): Promise<any[]> {
   try {
-    const data = await graphGet(`/me/chats?$top=${top}&$expand=members&$select=id,topic,chatType,lastUpdatedDateTime`);
+    const token = ssoToken || (await getAccessToken());
+    const data = await graphGetWithToken(`/me/chats?$top=${top}&$expand=members&$select=id,topic,chatType,lastUpdatedDateTime`, token);
     return (data.value || []).map((chat: any) => ({
       id: chat.id,
       topic: chat.topic || null,

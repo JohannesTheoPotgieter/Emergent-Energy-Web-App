@@ -137,12 +137,18 @@ export async function syncUserTeams(userId: number): Promise<SyncResult> {
   const result: SyncResult = { type: "teams", synced: 0, errors: [] };
 
   try {
-    if (!isOutlookConfigured()) {
-      result.errors.push("Outlook connector not configured");
+    let ssoToken: string | null = null;
+    try {
+      const { getSsoTokenForUser } = await import("./ms-account-service");
+      ssoToken = await getSsoTokenForUser(userId);
+    } catch {}
+
+    if (!ssoToken && !isOutlookConfigured()) {
+      result.errors.push("No SSO token or Outlook connector configured for Teams sync");
       return result;
     }
 
-    const chats = await getMyChats(30);
+    const chats = await getMyChats(30, ssoToken);
 
     for (const chat of chats) {
       try {

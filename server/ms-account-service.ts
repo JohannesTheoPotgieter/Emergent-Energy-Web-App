@@ -7,12 +7,19 @@ const CONFIGURED_TENANT_ID = process.env.AZURE_TENANT_ID || "";
 export async function ensureMsAccount(
   userId: number,
   msProfile: { id: string; displayName: string; mail: string; userPrincipalName: string },
-  tenantId?: string
+  tenantId?: string,
+  ssoToken?: { accessToken: string; expiresOn: Date | null }
 ): Promise<{ id: number; isNew: boolean }> {
   const effectiveTenant = tenantId || CONFIGURED_TENANT_ID;
 
   if (CONFIGURED_TENANT_ID && effectiveTenant && effectiveTenant !== CONFIGURED_TENANT_ID) {
     throw new Error(`Tenant mismatch: expected ${CONFIGURED_TENANT_ID}, got ${effectiveTenant}`);
+  }
+
+  const tokenFields: Record<string, any> = {};
+  if (ssoToken?.accessToken) {
+    tokenFields.ssoAccessToken = ssoToken.accessToken;
+    tokenFields.ssoTokenExpiresAt = ssoToken.expiresOn || new Date(Date.now() + 3600_000);
   }
 
   const existing = await db
@@ -30,6 +37,7 @@ export async function ensureMsAccount(
         displayName: msProfile.displayName,
         tenantId: effectiveTenant,
         status: "active",
+        ...tokenFields,
       })
       .where(eq(msAccounts.id, existing[0].id));
 
@@ -45,6 +53,7 @@ export async function ensureMsAccount(
       email: msProfile.mail || msProfile.userPrincipalName,
       displayName: msProfile.displayName,
       status: "active",
+      ...tokenFields,
     })
     .returning({ id: msAccounts.id });
 
@@ -61,4 +70,13 @@ export async function getMsAccountForUser(
     .limit(1);
 
   return rows.length > 0 ? rows[0] : null;
+}
+
+export async function getSsoTokenForUser(userId: number): Promise<string | null> {
+  const account = await getMsAccountForUser(userId);
+  if (!account?.ssoAccessToken) return null;
+  if (account.ssoTokenExpiresAt && account.ssoTokenExpiresAt.getTime() < Date.now() + 60_000) {
+    return null;
+  }
+  return account.ssoAccessToken;
 }

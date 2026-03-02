@@ -919,7 +919,10 @@ export async function registerRoutes(
 
       try {
         const { ensureMsAccount } = await import("./ms-account-service");
-        await ensureMsAccount(dbUser.id, result.msProfile);
+        await ensureMsAccount(dbUser.id, result.msProfile, undefined, {
+          accessToken: result.accessToken,
+          expiresOn: result.expiresOn,
+        });
       } catch (msAcctErr: any) {
         console.error("[MS Auth] Failed to upsert ms_account:", msAcctErr.message);
       }
@@ -12063,16 +12066,30 @@ export async function registerRoutes(
 
   app.get("/api/ms-teams/joined", requireAuth, async (req, res) => {
     try {
-      const teams = await outlook.getJoinedTeams();
+      const userId = (req as any).user?.id || (req as any).user?.userId;
+      let ssoToken: string | null = null;
+      if (userId) {
+        try {
+          const { getSsoTokenForUser } = await import("./ms-account-service");
+          ssoToken = await getSsoTokenForUser(userId);
+        } catch {}
+      }
+      if (!ssoToken) {
+        return res.json({ data: [], ssoRequired: true, message: "Sign in with Microsoft to access Teams data" });
+      }
+      const teams = await outlook.getJoinedTeams(ssoToken);
       const result: any[] = [];
       for (const team of teams) {
-        const channels = await outlook.getTeamChannels(team.id);
+        const channels = await outlook.getTeamChannels(team.id, ssoToken);
         result.push({ ...team, channels });
       }
       res.json(result);
     } catch (err: any) {
       if (err.message?.includes("not connected") || err.message?.includes("not available")) {
         return res.json([]);
+      }
+      if (err.message?.includes("403")) {
+        return res.json({ data: [], ssoRequired: true, message: "Teams session expired — please sign in with Microsoft again" });
       }
       console.error("[Teams Graph] Error:", err);
       res.status(500).json({ error: err.message });
@@ -12081,11 +12098,25 @@ export async function registerRoutes(
 
   app.get("/api/ms-teams/chats", requireAuth, async (req, res) => {
     try {
-      const chats = await outlook.getMyChats();
+      const userId = (req as any).user?.id || (req as any).user?.userId;
+      let ssoToken: string | null = null;
+      if (userId) {
+        try {
+          const { getSsoTokenForUser } = await import("./ms-account-service");
+          ssoToken = await getSsoTokenForUser(userId);
+        } catch {}
+      }
+      if (!ssoToken) {
+        return res.json({ data: [], ssoRequired: true, message: "Sign in with Microsoft to access Teams chats" });
+      }
+      const chats = await outlook.getMyChats(30, ssoToken);
       res.json(chats);
     } catch (err: any) {
       if (err.message?.includes("not connected") || err.message?.includes("not available")) {
         return res.json([]);
+      }
+      if (err.message?.includes("403")) {
+        return res.json({ data: [], ssoRequired: true, message: "Teams session expired — please sign in with Microsoft again" });
       }
       console.error("[Teams Graph] Chats error:", err);
       res.status(500).json({ error: err.message });
