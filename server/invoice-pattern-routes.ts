@@ -119,7 +119,13 @@ router.delete("/api/invoice-patterns/:id", requireAuth, async (req: Request, res
   try {
     const id = parseInt(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
-    await db.delete(invoicePatternRules).where(eq(invoicePatternRules.id, id));
+    await db.transaction(async (tx) => {
+      await tx.update(normalizedCostLines)
+        .set({ patternRuleId: null, patternClassifiedAt: null, patternInferredType: null })
+        .where(eq(normalizedCostLines.patternRuleId, id));
+      await tx.delete(invoicePatternMatches).where(eq(invoicePatternMatches.matchedRuleId, id));
+      await tx.delete(invoicePatternRules).where(eq(invoicePatternRules.id, id));
+    });
     res.json({ ok: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
