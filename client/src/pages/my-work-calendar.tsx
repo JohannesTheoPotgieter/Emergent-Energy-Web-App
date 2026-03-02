@@ -221,8 +221,8 @@ export default function MyWorkCalendarPage() {
   const isLoading = outlookLoading || msLoading || tasksLoading;
 
   return (
-    <div className="space-y-6" data-testid="my-work-calendar">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4 h-full flex flex-col" data-testid="my-work-calendar">
+      <div className="flex items-center justify-between shrink-0">
         <div>
           <h1 className="text-2xl font-bold text-foreground" data-testid="text-calendar-title">
             Calendar
@@ -233,8 +233,8 @@ export default function MyWorkCalendarPage() {
         </div>
       </div>
 
-      <Card>
-        <CardHeader className="pb-3">
+      <Card className="flex-1 flex flex-col min-h-0">
+        <CardHeader className="pb-3 shrink-0">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Button
@@ -309,13 +309,13 @@ export default function MyWorkCalendarPage() {
             )}
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex-1 flex flex-col min-h-0">
           {isLoading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
           ) : (
-            <div className={viewMode === "week" ? "grid grid-cols-7 gap-2" : ""}>
+            <div className={viewMode === "week" ? "grid grid-cols-7 gap-2 flex-1" : "flex-1"}>
               {days.map((day) => {
                 const key = format(day, "yyyy-MM-dd");
                 const dayOutlookEvents = outlookByDay[key] || [];
@@ -327,7 +327,7 @@ export default function MyWorkCalendarPage() {
                 return (
                   <div
                     key={key}
-                    className={`${viewMode === "week" ? "min-h-[220px]" : "min-h-[350px]"} rounded-lg border p-2 ${today ? "border-blue-500 bg-blue-50/50" : "border-border"}`}
+                    className={`${viewMode === "week" ? "min-h-[400px]" : "min-h-[500px]"} rounded-lg border p-2 ${today ? "border-blue-500 bg-blue-50/50" : "border-border"}`}
                     data-testid={`calendar-day-${key}`}
                   >
                     <div className={`text-xs font-medium mb-2 ${today ? "text-blue-600" : "text-muted-foreground"}`}>
@@ -337,7 +337,7 @@ export default function MyWorkCalendarPage() {
                     {!hasContent ? (
                       <p className="text-xs text-muted-foreground/50 italic">No events</p>
                     ) : (
-                      <ScrollArea className={viewMode === "week" ? "max-h-[190px]" : "max-h-[320px]"}>
+                      <ScrollArea className={viewMode === "week" ? "max-h-[370px]" : "max-h-[470px]"}>
                         <div className="space-y-1">
                           {dayOutlookEvents
                             .sort((a, b) => getStartStr(a).localeCompare(getStartStr(b)))
