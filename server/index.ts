@@ -17,6 +17,7 @@ import path from "path";
 import { startScheduler } from "./importPipeline";
 import { startMilestoneChecker } from "./milestone-notifications";
 import { registerAdminRoutes } from "./departments/admin-routes";
+import { registerExcoRoutes } from "./departments/exco-routes";
 
 const app = express();
 const httpServer = createServer(app);
@@ -535,6 +536,7 @@ async function backfillPmUserIds() {
   `)).catch(err => console.error('[Portfolio] Table creation error:', err));
 
   registerAdminRoutes(app);
+  registerExcoRoutes(app);
   const { financialIntegrationRouter } = await import("./departments/financial-integration-routes");
   app.use(financialIntegrationRouter);
 
