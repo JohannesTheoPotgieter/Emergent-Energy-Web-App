@@ -53,6 +53,7 @@ import {
   Handshake,
   Compass,
   Smartphone,
+  Mail,
 } from "lucide-react";
 import { UX_REDESIGN_ENABLED } from "@shared/schema";
 import { useProgramData } from "@/hooks/use-program-data";
@@ -268,7 +269,17 @@ function getUnifiedWorkNavGroups(): NavGroup[] {
         items: group.items.filter(i => i.path !== "/my-tool"),
       });
     } else if (group.section === "COLLABORATION") {
-      result.push(group);
+      result.push({
+        heading: "COLLABORATION",
+        section: "COLLABORATION",
+        items: [
+          { label: "Email", icon: Mail, path: "/collaboration?tab=email" },
+          { label: "Teams", icon: MessageSquare, path: "/collaboration?tab=teams" },
+          { label: "SharePoint", icon: FolderOpen, path: "/collaboration?tab=sharepoint" },
+          { label: "Teams Chat", icon: MessageSquare, path: "/teams/chats" },
+          { label: "Notifications", icon: Bell, path: "/notifications" },
+        ],
+      });
     } else {
       result.push(group);
     }
@@ -432,12 +443,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           if (visibleItems.length === 0) return null;
 
           const isCollapsed = collapsedSections[group.heading] && sidebarShowLabels;
-          const hasActiveItem = visibleItems.some(item => 
-            location === item.path || 
-            (item.path === "/my-tool" && location.startsWith("/my-tool")) || 
-            (item.path !== "/" && item.path !== "/engineering" && location.startsWith(item.path)) ||
-            (item.children && item.children.some(c => location === c.path || location.startsWith(c.path)))
-          );
+          const currentSearchStr = typeof window !== "undefined" ? window.location.search : "";
+          const hasActiveItem = visibleItems.some(item => {
+            const ip = item.path.split("?")[0];
+            const iq = item.path.includes("?") ? item.path.split("?")[1] : null;
+            if (iq) return location === ip && currentSearchStr === `?${iq}`;
+            return location === item.path || 
+              (item.path === "/my-tool" && location.startsWith("/my-tool")) || 
+              (item.path !== "/" && item.path !== "/engineering" && location.startsWith(item.path)) ||
+              (item.children && item.children.some(c => location === c.path || location.startsWith(c.path)));
+          });
 
           return (
           <div key={group.heading} className="pt-3">
@@ -460,7 +475,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               <div className="h-px bg-sidebar-border mx-2 mb-1" />
             )}
             {!isCollapsed && visibleItems.map((item) => {
-              const isActive = location === item.path || (item.path === "/my-tool" && location.startsWith("/my-tool")) || (item.path !== "/" && item.path !== "/engineering" && location.startsWith(item.path));
+              const itemPathname = item.path.split("?")[0];
+              const itemQuery = item.path.includes("?") ? item.path.split("?")[1] : null;
+              const currentSearch = typeof window !== "undefined" ? window.location.search : "";
+              const isActive = itemQuery
+                ? location === itemPathname && currentSearch === `?${itemQuery}`
+                : location === item.path || (item.path === "/my-tool" && location.startsWith("/my-tool")) || (item.path !== "/" && item.path !== "/engineering" && location.startsWith(item.path));
               const hasChildren = item.children && item.children.length > 0;
               const childActive = hasChildren && item.children!.some(c => location === c.path || location.startsWith(c.path));
               const isParentExpanded = expandedParents[item.path] ?? childActive ?? false;
@@ -485,6 +505,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                       </>
                     )}
                   </button>
+                ) : itemQuery ? (
+                  <a href={item.path} className={cn(
+                    "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-150 group text-[13px] select-none cursor-pointer",
+                    isActive
+                      ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium shadow-md"
+                      : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:scale-[0.98] nav-item-glow"
+                  )}>
+                    <item.icon className={cn("w-4 h-4 shrink-0", item.className)} />
+                    {sidebarShowLabels && <span>{item.label}</span>}
+                  </a>
                 ) : (
                   <Link href={item.path} className={cn(
                     "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-150 group text-[13px] select-none",
