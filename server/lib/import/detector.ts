@@ -31,9 +31,16 @@ export interface DetectionResult {
   } | null;
 }
 
+function isExcludedSheet(sheetName: string): boolean {
+  const norm = sheetName.toLowerCase().trim();
+  const suffixPattern = /[\s\-_]+old$/;
+  const bracketPattern = /\(old\)/;
+  return suffixPattern.test(norm) || bracketPattern.test(norm) || norm.includes("backup") || norm.includes("archive") || norm.includes("copy of");
+}
+
 function fuzzySheetMatch(sheetName: string, candidates: string[]): boolean {
   const norm = sheetName.toLowerCase().trim();
-  if (norm.includes("old") || norm.includes("backup") || norm.includes("archive") || norm.includes("copy of")) return false;
+  if (isExcludedSheet(sheetName)) return false;
   for (const candidate of candidates) {
     const normCandidate = candidate.toLowerCase().trim();
     if (norm === normCandidate) return true;
@@ -434,6 +441,7 @@ export function detectSections(workbook: ExcelJS.Workbook): DetectionResult {
 
     for (const ws of workbook.worksheets) {
       if (claimedSheets.has(ws.name)) continue;
+      if (isExcludedSheet(ws.name)) continue;
 
       const nameMatched = fuzzySheetMatch(ws.name, anchor.sheetNames);
 
@@ -497,6 +505,11 @@ export function detectSections(workbook: ExcelJS.Workbook): DetectionResult {
   // Pass 2: Any unclaimed sheets — try to match by content only
   for (const ws of workbook.worksheets) {
     if (claimedSheets.has(ws.name)) continue;
+
+    if (isExcludedSheet(ws.name)) {
+      unmatched.push({ sheetName: ws.name, reason: "Excluded (old/backup/archive)" });
+      continue;
+    }
 
     const data = worksheetToArray(ws);
     if (data.length === 0) {
