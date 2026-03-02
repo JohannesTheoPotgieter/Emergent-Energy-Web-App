@@ -136,17 +136,14 @@ function getLegacyNavGroups(): NavGroup[] {
       ],
     },
     {
-      heading: "ADMIN",
-      section: "ADMIN",
+      heading: "SETTINGS",
+      section: "SETTINGS",
       items: [
         { label: "Settings", icon: Settings, path: "/admin/settings" },
         { label: "Roles & Permissions", icon: ShieldAlert, path: "/admin/roles" },
-        { label: "Phase Templates", icon: Layers, path: "/admin/phase-templates" },
         { label: "New Project", icon: FolderPlus, path: "/project-create" },
         { label: "Smart Import", icon: FileSpreadsheet, path: "/smart-import" },
-        { label: "Weekly Reviews", icon: CalendarCheck, path: "/weekly-reviews" },
         { label: "Change Audit", icon: Activity, path: "/admin/activity-log" },
-        { label: "Approvals", icon: ShieldCheck, path: "/admin/approvals" },
       ],
     },
   ];
@@ -183,6 +180,7 @@ function getRedesignedNavGroups(): NavGroup[] {
         { label: "TR Register", icon: ClipboardList, path: "/tr-register" },
         { label: "Smart Import", icon: FileSpreadsheet, path: "/smart-import" },
         { label: "Portfolios", icon: FolderOpen, path: "/portfolios" },
+        { label: "Weekly Reviews", icon: CalendarCheck, path: "/weekly-reviews" },
       ],
     },
     {
@@ -228,17 +226,14 @@ function getRedesignedNavGroups(): NavGroup[] {
       ],
     },
     {
-      heading: "ADMIN",
-      section: "ADMIN",
+      heading: "SETTINGS",
+      section: "SETTINGS",
       items: [
         {
           label: "Settings", icon: Cog, path: "/admin/settings",
           children: [
             { label: "Roles & Permissions", icon: ShieldAlert, path: "/admin/roles" },
-            { label: "Phase Templates", icon: ClipboardCheck, path: "/admin/phase-templates" },
-            { label: "Weekly Reviews", icon: CalendarCheck, path: "/weekly-reviews" },
             { label: "Change Audit", icon: Activity, path: "/admin/activity-log" },
-            { label: "Approvals", icon: ShieldCheck, path: "/admin/approvals" },
             { label: "Microsoft 365", icon: Plug, path: "/admin/ms-integration" },
           ],
         },
