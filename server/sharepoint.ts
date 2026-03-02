@@ -18,7 +18,7 @@ export async function getAccessToken(): Promise<string> {
     {
       headers: {
         Accept: "application/json",
-        X_REPLIT_TOKEN: xReplitToken,
+        "X-Replit-Token": xReplitToken,
       },
     },
   );

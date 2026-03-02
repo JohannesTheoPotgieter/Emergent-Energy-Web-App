@@ -403,6 +403,83 @@ export async function forwardMessage(messageId: string, comment: string, toRecip
   });
 }
 
+export async function getJoinedTeams(): Promise<any[]> {
+  try {
+    const data = await graphGet("/me/joinedTeams?$select=id,displayName,description");
+    return (data.value || []).map((t: any) => ({
+      id: t.id,
+      displayName: t.displayName,
+      description: t.description || null,
+    }));
+  } catch (err: any) {
+    console.warn("[Teams] Failed to fetch joined teams:", err.message);
+    return [];
+  }
+}
+
+export async function getTeamChannels(teamId: string): Promise<any[]> {
+  try {
+    const data = await graphGet(`/teams/${teamId}/channels?$select=id,displayName,description,membershipType`);
+    return (data.value || []).map((ch: any) => ({
+      id: ch.id,
+      displayName: ch.displayName,
+      description: ch.description || null,
+      membershipType: ch.membershipType || "standard",
+    }));
+  } catch (err: any) {
+    console.warn("[Teams] Failed to fetch channels for team", teamId, err.message);
+    return [];
+  }
+}
+
+export async function getMyChats(top: number = 30): Promise<any[]> {
+  try {
+    const data = await graphGet(`/me/chats?$top=${top}&$expand=members&$select=id,topic,chatType,lastUpdatedDateTime`);
+    return (data.value || []).map((chat: any) => ({
+      id: chat.id,
+      topic: chat.topic || null,
+      chatType: chat.chatType,
+      lastUpdatedDateTime: chat.lastUpdatedDateTime,
+      members: (chat.members || []).map((m: any) => ({
+        displayName: m.displayName,
+        email: m.email,
+      })),
+    }));
+  } catch (err: any) {
+    console.warn("[Teams] Failed to fetch chats:", err.message);
+    return [];
+  }
+}
+
+export async function discoverSharePointSites(): Promise<any[]> {
+  try {
+    const data = await graphGet("/sites?search=*&$select=id,displayName,webUrl&$top=30");
+    return (data.value || []).map((site: any) => ({
+      id: site.id,
+      displayName: site.displayName,
+      webUrl: site.webUrl,
+    }));
+  } catch (err: any) {
+    console.warn("[SharePoint] Failed to discover sites:", err.message);
+    return [];
+  }
+}
+
+export async function getSiteDrives(siteId: string): Promise<any[]> {
+  try {
+    const data = await graphGet(`/sites/${siteId}/drives?$select=id,name,driveType,webUrl`);
+    return (data.value || []).map((d: any) => ({
+      id: d.id,
+      name: d.name,
+      driveType: d.driveType,
+      webUrl: d.webUrl,
+    }));
+  } catch (err: any) {
+    console.warn("[SharePoint] Failed to get drives for site", siteId, err.message);
+    return [];
+  }
+}
+
 export async function sendApprovalEmail(options: {
   to: string;
   subject: string;

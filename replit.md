@@ -124,9 +124,10 @@ Preferred communication style: Simple, everyday language.
 -   **Read.ai**: For meeting data ingestion via webhooks.
 
 ### Microsoft Integration
--   **Outlook**: Connected via Replit Connector (OAuth) for calendar sync, email access, and approval emails.
--   **SharePoint**: Document library browsing and file management via Graph API.
--   **Teams**: Message linking to projects, tagging, and hot thread tracking.
+-   **Outlook**: Connected via Replit Connector (OAuth) for calendar sync, email access, approval emails, and email-to-task linking.
+-   **SharePoint**: Document library browsing with auto-discovery of sites/drives via Graph API. Setup wizard in Collaboration Hub.
+-   **Teams**: MS Teams channel/chat integration via Graph API (`/me/joinedTeams`, `/me/chats`), plus internal dashboard chat channels. Message linking to projects, tagging, and hot thread tracking.
+-   **Collaboration Hub**: Unified 5-tab interface (Calendar, Email, Teams Chat, SharePoint, Notifications) at `/collaboration`. Email tab includes "Create Task" action for email-to-task linking.
 
 ### Global Audit Logging
 -   **Module**: Centralized `server/audit-logger.ts` provides `logAuditFromReq()` utility for fire-and-forget audit logging.
