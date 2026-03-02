@@ -99,7 +99,7 @@ const SelectContent = React.forwardRef<
   const [search, setSearch] = React.useState("")
   const inputRef = React.useRef<HTMLInputElement>(null)
   const itemTotal = countItems(children)
-  const showSearch = itemTotal >= 5
+  const showSearch = itemTotal >= 3
 
   React.useEffect(() => {
     if (showSearch && inputRef.current) {
