@@ -54,6 +54,7 @@ import FeedbackPage from "@/pages/feedback";
 import EeInfoPage from "@/pages/ee-info";
 import PMDashboard from "@/pages/pm-dashboard";
 import NotificationCenterPage from "@/pages/notification-center";
+import ExcelUpdatesPage from "@/pages/excel-updates";
 import PortfoliosPage from "@/pages/portfolios";
 import PortfolioDetailPage from "@/pages/portfolio-detail";
 import PdDashboardPage from "@/pages/pd-dashboard";
@@ -290,6 +291,7 @@ function ProtectedPages() {
         <Route path="/ee-info" component={EeInfoPage} />
         <Route path="/pm-dashboard" component={PMDashboard} />
         <Route path="/notifications" component={NotificationCenterPage} />
+        <Route path="/excel-updates" component={ExcelUpdatesPage} />
         <Route path="/portfolios" component={PortfoliosPage} />
         <Route path="/portfolios/:id" component={PortfolioDetailPage} />
         <Route path="/pd" component={PdDashboardPage} />
