@@ -1100,7 +1100,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
         for (let idx = 0; idx < planValues.length; idx++) {
           const pv = planValues[idx] as any;
           const wbsCode = pv.taskNo || null;
-          const externalRef = `${projectName}::PLAN::${wbsCode || idx}`;
+          const externalRef = `${projectName}::PLAN::${idx}::${wbsCode || ''}`;
           const normTaskId = normTaskIdByName.get(pv.taskName) || null;
 
           const [insertedWi] = await tx.insert(workItems).values({
