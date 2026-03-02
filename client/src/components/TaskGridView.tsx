@@ -25,7 +25,7 @@ import {
   ChevronDown, ChevronRight, Columns, ListFilter,
   AlertTriangle, TrendingUp, TrendingDown, Minus,
   CheckCircle2, Clock, Circle, Ban, Loader2,
-  Milestone, FolderPlus, Ungroup, X, ArrowUpDown, GripVertical, Hash, RefreshCw,
+  Milestone, FolderPlus, Ungroup, X, ArrowUpDown, GripVertical, Hash, RefreshCw, Target,
 } from "lucide-react";
 import UserAssignmentPicker from "@/components/UserAssignmentPicker";
 import {
@@ -473,7 +473,10 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
     const behind = tasks.filter(t => t.planStatus === "behind" && !t.isParent).length;
     const ahead = tasks.filter(t => t.planStatus === "ahead" && !t.isParent).length;
     const avgPct = leafTasks.length > 0 ? Math.round(leafTasks.reduce((s, t) => s + (t.percentComplete || 0), 0) / leafTasks.length) : 0;
-    return { total, done, inProgress, behind, ahead, avgPct };
+    const expLeafs = leafTasks.filter(t => t.computedExpectedPct !== null && t.computedExpectedPct !== undefined);
+    const avgExpectedPct = expLeafs.length > 0 ? Math.round(expLeafs.reduce((s, t) => s + (t.computedExpectedPct ?? 0), 0) / expLeafs.length) : null;
+    const overallDelta = avgExpectedPct !== null ? avgPct - avgExpectedPct : null;
+    return { total, done, inProgress, behind, ahead, avgPct, avgExpectedPct, overallDelta };
   }, [tasks]);
 
   const handleDragStart = useCallback((e: React.DragEvent, task: any) => {
@@ -898,7 +901,7 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
   return (
     <div data-testid="task-grid-view" className="space-y-3">
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
         <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg border bg-white card-hover animate-float-in stagger-1">
           <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-slate-100">
             <Clock className="h-4 w-4 text-slate-600" />
@@ -922,12 +925,38 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
             <Loader2 className="h-4 w-4 text-blue-600" />
           </div>
           <div>
-            <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Avg %</p>
-            <p className="text-lg font-bold text-blue-700 leading-none animate-number-pop">{kpis.avgPct}%</p>
+            <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Actual %</p>
+            <div className="flex items-center gap-1.5">
+              <p className="text-lg font-bold text-blue-700 leading-none animate-number-pop">{kpis.avgPct}%</p>
+              {kpis.overallDelta !== null && kpis.overallDelta !== 0 && (
+                <span className={`text-[10px] font-semibold px-1 py-0.5 rounded ${kpis.overallDelta > 0 ? "text-emerald-700 bg-emerald-50" : "text-red-700 bg-red-50"}`}>
+                  {kpis.overallDelta > 0 ? "+" : ""}{kpis.overallDelta}%
+                </span>
+              )}
+            </div>
           </div>
         </div>
+        {kpis.avgExpectedPct !== null && (
+          <div className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border card-hover animate-float-in stagger-4 ${
+            kpis.overallDelta !== null && kpis.overallDelta < 0 ? "border-amber-200 bg-amber-50/30" : "bg-white"
+          }`}>
+            <div className={`flex items-center justify-center w-8 h-8 rounded-lg ${
+              kpis.overallDelta !== null && kpis.overallDelta < 0 ? "bg-amber-100" : "bg-violet-50"
+            }`}>
+              <Target className={`h-4 w-4 ${
+                kpis.overallDelta !== null && kpis.overallDelta < 0 ? "text-amber-600" : "text-violet-600"
+              }`} />
+            </div>
+            <div>
+              <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Expected %</p>
+              <p className={`text-lg font-bold leading-none animate-number-pop ${
+                kpis.overallDelta !== null && kpis.overallDelta < 0 ? "text-amber-700" : "text-violet-700"
+              }`}>{kpis.avgExpectedPct}%</p>
+            </div>
+          </div>
+        )}
         {kpis.behind > 0 && (
-          <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-red-200 bg-red-50/50 card-hover animate-float-in stagger-4">
+          <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-red-200 bg-red-50/50 card-hover animate-float-in stagger-5">
             <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-red-100">
               <AlertTriangle className="h-4 w-4 text-red-600" />
             </div>
@@ -938,7 +967,7 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
           </div>
         )}
         {kpis.ahead > 0 && (
-          <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-emerald-200 bg-emerald-50/50 card-hover animate-float-in stagger-5">
+          <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-emerald-200 bg-emerald-50/50 card-hover animate-float-in stagger-6">
             <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-100">
               <TrendingUp className="h-4 w-4 text-emerald-600" />
             </div>
