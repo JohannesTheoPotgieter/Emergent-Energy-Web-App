@@ -338,15 +338,19 @@ function extractPlanTasks(
       }
     }
 
-    const nameLower = (t.taskName || "").toLowerCase();
-    for (const kw of milestoneKeywords) {
-      if (nameLower.includes(kw)) {
-        isMilestone = true;
-        break;
+    const isSubtask = parentTaskNo !== null || indentLevel > 0;
+
+    if (!isSubtask) {
+      const nameLower = (t.taskName || "").toLowerCase();
+      for (const kw of milestoneKeywords) {
+        if (nameLower.includes(kw)) {
+          isMilestone = true;
+          break;
+        }
       }
     }
 
-    if (t.startDate && t.endDate && t.startDate === t.endDate && !isMilestone) {
+    if (!isSubtask && t.startDate && t.endDate && t.startDate === t.endDate && !isMilestone) {
       isMilestone = true;
     }
 
