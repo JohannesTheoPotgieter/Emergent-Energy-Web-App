@@ -10483,23 +10483,26 @@ export async function registerRoutes(
       const userId = (req.user as any).id;
       const userName = (req.user as any).username;
 
-      const [myToolTasksResult, opTasksOwned, opTasksAssigned] = await Promise.all([
+      const displayName = (req.user as any).name || userName;
+      const [myToolTasksResult, opTasksForUser] = await Promise.all([
         db.select().from(mytoolTasks).where(eq(mytoolTasks.ownerUserId, userId)),
-        db.select().from(operationalTasks).where(eq(operationalTasks.ownerUserId, userId)),
         db.select().from(operationalTasks).where(
-          sql`${operationalTasks.assignees}::text[] @> ARRAY[${userName}]::text[]`
+          or(
+            eq(operationalTasks.ownerUserId, userId),
+            sql`${operationalTasks.assignees}::text[] @> ARRAY[${userName}]::text[]`,
+            sql`${operationalTasks.assignees}::text[] @> ARRAY[${displayName}]::text[]`
+          )
         ),
       ]);
 
       const seenOpIds = new Set<number>();
-      const allOpTasks = [...opTasksOwned];
-      for (const t of opTasksAssigned) {
+      const allOpTasks: typeof opTasksForUser = [];
+      for (const t of opTasksForUser) {
         if (!seenOpIds.has(t.id)) {
           seenOpIds.add(t.id);
           allOpTasks.push(t);
         }
       }
-      for (const t of opTasksOwned) seenOpIds.add(t.id);
 
       const combined = [
         ...myToolTasksResult.map((t) => ({
