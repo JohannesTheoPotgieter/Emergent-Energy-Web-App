@@ -735,6 +735,13 @@ async function backfillPmUserIds() {
     console.error('[Migration] ms_accounts SSO token columns error:', err.message);
   }
 
+  try {
+    const { backfillWorkItems } = await import("./work-items-backfill");
+    await backfillWorkItems();
+  } catch (err: any) {
+    console.error("[Backfill] work_items backfill failed:", err.message);
+  }
+
   registerAdminRoutes(app);
   registerExcoRoutes(app);
   const { financialIntegrationRouter } = await import("./departments/financial-integration-routes");
