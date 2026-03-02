@@ -1,5 +1,6 @@
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
+import { safeLegacyWrite } from "./legacy-table-guard";
 import { eq, sql, inArray } from "drizzle-orm";
 import { verifyToken } from "./jwt";
 import { projectInfo, operationalTasks, projectPlan, projectPlanOverrides, executionGateLog, mergeAuditLog, programExpense, programInflows, qcChecklist, qcItemInstance, PHASE_TO_ENG_STAGES } from "@shared/schema";
@@ -966,7 +967,7 @@ export function registerLifecycleRoutes(app: Express) {
         await tx.execute(sql`DELETE FROM project_portfolio_assignments WHERE project_id = ${pId}`);
         await tx.execute(sql`DELETE FROM teams_chat_groups WHERE project_id = ${pId}`);
         await tx.execute(sql`DELETE FROM intake_requests WHERE project_id = ${pId}`);
-        await tx.execute(sql`DELETE FROM normalized_plan_tasks WHERE project_id = ${pId} OR project_name = ${pN}`);
+        await safeLegacyWrite(() => tx.execute(sql`DELETE FROM normalized_plan_tasks WHERE project_id = ${pId} OR project_name = ${pN}`));
         await tx.execute(sql`DELETE FROM normalized_revenue_lines WHERE project_id = ${pId} OR project_name = ${pN}`);
         await tx.execute(sql`DELETE FROM normalized_cost_lines WHERE project_id = ${pId} OR project_name = ${pN}`);
         await tx.execute(sql`DELETE FROM normalized_execution_phases WHERE project_id = ${pId} OR project_name = ${pN}`);

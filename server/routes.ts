@@ -8,6 +8,7 @@ import { storage } from "./storage";
 import { parseTrackerFile, applyFontColors } from "./excelParser";
 import { insertBudgetSchema, programExpense, programInflows, projectInfo, projectPlan, normalizedCostLines, normalizedRevenueLines, normalizedPlanTasks, normalizedExecutionPhases, smartImportRuns, cosStatusOverrides, revenueTrackingOverrides, users, notifications, notificationThrottle, operationalTasks, mytoolTasks, engineeringTasks, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications } from "@shared/schema";
 import { db } from "./db";
+import { safeLegacyQuery, safeLegacyWrite } from "./legacy-table-guard";
 import { eq, and, or, sql, isNull, asc, desc, inArray } from "drizzle-orm";
 import { runSmartImportPreview } from "./lib/import/index";
 import { z } from "zod";
@@ -992,7 +993,7 @@ export async function registerRoutes(
         storage.getAllOperationalTasks(),
         db.select().from(normalizedCostLines),
         db.select().from(normalizedRevenueLines),
-        db.select().from(normalizedPlanTasks),
+        safeLegacyQuery(() => db.select().from(normalizedPlanTasks), []),
       ]);
 
       const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
@@ -1755,7 +1756,7 @@ export async function registerRoutes(
         db.selectDistinct({ projectName: smartImportRuns.projectName }).from(smartImportRuns).where(eq(smartImportRuns.status, 'COMMITTED')),
         db.select().from(normalizedCostLines),
         db.select().from(normalizedRevenueLines),
-        db.select().from(normalizedPlanTasks),
+        safeLegacyQuery(() => db.select().from(normalizedPlanTasks), []),
         storage.getAllProjectPlanOverrides(),
         db.execute(sql`SELECT project_name, MAX(COALESCE(committed_at, uploaded_at)) as last_import FROM smart_import_runs WHERE status = 'COMMITTED' GROUP BY project_name`),
       ]);
@@ -4401,7 +4402,7 @@ export async function registerRoutes(
               .where(eq(projectInfo.projectName, resolvedProjectName));
             const pId = existingProject?.id || null;
 
-            await db.delete(normalizedPlanTasks).where(eq(normalizedPlanTasks.projectName, resolvedProjectName));
+            await safeLegacyWrite(() => db.delete(normalizedPlanTasks).where(eq(normalizedPlanTasks.projectName, resolvedProjectName)));
             await db.delete(normalizedRevenueLines).where(eq(normalizedRevenueLines.projectName, resolvedProjectName));
             await db.delete(normalizedCostLines).where(eq(normalizedCostLines.projectName, resolvedProjectName));
             await db.delete(normalizedExecutionPhases).where(eq(normalizedExecutionPhases.projectName, resolvedProjectName));
@@ -4419,7 +4420,7 @@ export async function registerRoutes(
             const importRunId = dummyRun[0].id;
 
             if (norm.planTasks.length > 0) {
-              await db.insert(normalizedPlanTasks).values(norm.planTasks.map((t: any) => ({
+              await safeLegacyWrite(() => db.insert(normalizedPlanTasks).values(norm.planTasks.map((t: any) => ({
                 projectId: pId, projectName: resolvedProjectName,
                 taskName: t.taskName, taskNo: t.taskNo || null, phase: t.phase,
                 startDate: t.startDate, endDate: t.endDate, durationDays: t.durationDays,
@@ -4428,7 +4429,7 @@ export async function registerRoutes(
                 owner: t.owner, status: t.status, pctComplete: t.pctComplete,
                 comment: t.comment, sourceSheet: t.sourceSheet, sourceRow: t.sourceRow,
                 importRunId,
-              })));
+              }))));
             }
             if (norm.revenueLines.length > 0) {
               await db.insert(normalizedRevenueLines).values(norm.revenueLines.map((r: any) => ({
@@ -11128,34 +11129,34 @@ export async function registerRoutes(
       const displayName = (req.user as any).name || userName;
 
       const [myToolTasksResult, opTasksForUser, planTasksForUser, engTasksForUser, qcItemsForUser] = await Promise.all([
-        db.select().from(mytoolTasks).where(eq(mytoolTasks.ownerUserId, userId)),
-        db.select().from(operationalTasks).where(
+        safeLegacyQuery(() => db.select().from(mytoolTasks).where(eq(mytoolTasks.ownerUserId, userId)), []),
+        safeLegacyQuery(() => db.select().from(operationalTasks).where(
           or(
             eq(operationalTasks.ownerUserId, userId),
             sql`${operationalTasks.assignees}::text[] @> ARRAY[${userName}]::text[]`,
             sql`${operationalTasks.assignees}::text[] @> ARRAY[${displayName}]::text[]`
           )
-        ),
-        db.execute(sql`
+        ), []),
+        safeLegacyQuery(() => db.execute(sql`
           SELECT * FROM normalized_plan_tasks
           WHERE assignee_user_id = ${userId}
              OR lower(owner) = lower(${userName})
              OR lower(owner) = lower(${displayName})
-        `),
-        db.select().from(engineeringTasks).where(
+        `), { rows: [] } as any),
+        safeLegacyQuery(() => db.select().from(engineeringTasks).where(
           and(
             eq(engineeringTasks.assigneeUserId, userId),
             isNull(engineeringTasks.softDeletedAt)
           )
-        ),
-        db.execute(sql`
+        ), []),
+        safeLegacyQuery(() => db.execute(sql`
           SELECT qi.*, qc.project_name, qc.project_id, qti.item_name
           FROM qc_item_instance qi
           JOIN qc_checklist qc ON qi.checklist_id = qc.id
           JOIN qc_template_item qti ON qi.template_item_id = qti.id
           WHERE qi.assignee_user_id = ${userId}
             AND qi.is_applicable = true
-        `),
+        `), { rows: [] } as any),
       ]);
 
       const seenOpIds = new Set<number>();
@@ -11303,7 +11304,11 @@ export async function registerRoutes(
           })
           .where(eq(operationalTasks.id, taskId));
       } else if (taskType === "plan") {
-        const [task] = await db.select().from(normalizedPlanTasks).where(eq(normalizedPlanTasks.id, taskId));
+        const taskResult = await safeLegacyQuery(
+          () => db.select().from(normalizedPlanTasks).where(eq(normalizedPlanTasks.id, taskId)),
+          []
+        );
+        const [task] = taskResult;
         if (!task) return res.status(404).json({ error: "Plan task not found" });
 
         const isAssigned = task.assigneeUserId === userId
@@ -11312,13 +11317,13 @@ export async function registerRoutes(
           return res.status(403).json({ error: "You can only schedule tasks assigned to you" });
         }
 
-        await db.update(normalizedPlanTasks)
+        await safeLegacyWrite(() => db.update(normalizedPlanTasks)
           .set({
             scheduledDate: scheduledDate || null,
             scheduledStartTime: scheduledStartTime || null,
             scheduledEndTime: scheduledEndTime || null,
           })
-          .where(eq(normalizedPlanTasks.id, taskId));
+          .where(eq(normalizedPlanTasks.id, taskId)));
       } else if (taskType === "engineering") {
         const [task] = await db.select().from(engineeringTasks).where(eq(engineeringTasks.id, taskId));
         if (!task) return res.status(404).json({ error: "Engineering task not found" });

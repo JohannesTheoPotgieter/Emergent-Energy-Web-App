@@ -736,7 +736,8 @@ async function backfillPmUserIds() {
   }
 
   try {
-    const { backfillWorkItems } = await import("./work-items-backfill");
+    const { restoreArchivedLegacyTables, backfillWorkItems } = await import("./work-items-backfill");
+    await restoreArchivedLegacyTables();
     await backfillWorkItems();
   } catch (err: any) {
     console.error("[Backfill] work_items backfill failed:", err.message);
