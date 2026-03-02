@@ -8,6 +8,7 @@ import { z } from "zod";
 import { OVERRIDE_CATEGORIES, users, projectInfo } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { recordOverride } from "../lib/audit/diff-engine";
+import { sendExcelSyncNotification } from "../excel-sync-notifications";
 
 const router = Router();
 
@@ -1042,6 +1043,13 @@ router.post("/api/projects-summary/:projectName/edit", requireAuth, requireAdmin
       }
     }
     const result = await storage.upsertProjectEditableFields(data as any);
+    sendExcelSyncNotification({
+      projectName,
+      changedByUserId: (req as any).user?.id,
+      changeType: "project_summary_edit",
+      changeDescription: "Project summary fields updated",
+      details: parsed,
+    });
     res.json(result);
   } catch (error) {
     console.error("Project edit error:", error);
@@ -1064,6 +1072,13 @@ router.patch("/api/projects-summary/:projectName/latest-update", requireAuth, as
       latestUpdateBy: latestUpdate ? roleName : null,
     };
     const result = await storage.upsertProjectEditableFields(data as any);
+    sendExcelSyncNotification({
+      projectName,
+      changedByUserId: (req as any).user?.id,
+      changeType: "latest_update",
+      changeDescription: "Project latest update changed",
+      details: { latestUpdate },
+    });
     res.json(result);
   } catch (error) {
     console.error("Latest update error:", error);
@@ -1079,6 +1094,14 @@ router.patch("/api/projects-summary/:projectInfoId/escalation", requireAuth, req
     });
     const { escalationLevel } = schema.parse(req.body);
     const result = await storage.updateProjectInfoById(id, { escalationLevel });
+    const pName = result?.projectName || "Unknown";
+    sendExcelSyncNotification({
+      projectName: pName,
+      changedByUserId: (req as any).user?.id,
+      changeType: "escalation_change",
+      changeDescription: "Escalation level changed to " + (escalationLevel || "None"),
+      details: { escalationLevel },
+    });
     res.json(result);
   } catch (error) {
     console.error("Escalation update error:", error);
@@ -1848,6 +1871,14 @@ router.patch("/api/project-info/:id/assign-pm", requireAuth, async (req, res) =>
       await db.update(projectInfo).set({ pmUserId }).where(eq(projectInfo.id, id));
     }
 
+    const pName = updated?.projectName || "Unknown";
+    sendExcelSyncNotification({
+      projectName: pName,
+      changedByUserId: (req as any).user?.id,
+      changeType: "pm_assignment",
+      changeDescription: "Project Manager assigned: " + pm,
+      details: { pm, pmUserId },
+    });
     res.json(updated);
   } catch (error) {
     console.error("PM assignment error:", error);
@@ -1878,6 +1909,13 @@ router.patch("/api/project-info/:id", requireAuth, requireAdmin, async (req, res
     const parsed = editSchema.parse(req.body);
     const updated = await storage.updateProjectInfoById(id, parsed as any);
     if (!updated) return res.status(404).json({ error: "Project not found" });
+    sendExcelSyncNotification({
+      projectName: updated?.projectName || "Unknown",
+      changedByUserId: (req as any).user?.id,
+      changeType: "project_info_edit",
+      changeDescription: "Project information updated",
+      details: parsed,
+    });
     res.json(updated);
   } catch (error) {
     console.error("Project info update error:", error);
@@ -1938,6 +1976,14 @@ router.post("/api/project-plan/overrides", requireAuth, requireAdmin, async (req
       console.warn("[audit] Project plan override audit failed:", auditErr.message);
     }
 
+    const pName = overrides[0]?.projectName || "Unknown";
+    sendExcelSyncNotification({
+      projectName: pName,
+      changedByUserId: (req as any).user?.id || 0,
+      changeType: "plan_override",
+      changeDescription: overrides.length + " plan task override(s) applied. Reason: " + overrideComment,
+      details: { count: overrides.length, category: overrideCategory, fields: overrides.map((o: any) => o.fieldName).filter((v: any, i: any, a: any) => a.indexOf(v) === i) },
+    });
     res.json({ message: "Project plan overrides saved", count: saved.length, overrides: saved });
   } catch (error) {
     res.status(500).json({ error: "Failed to save project plan overrides", message: error instanceof Error ? error.message : "Failed to save project plan overrides" });
@@ -1980,6 +2026,13 @@ router.post("/api/key-date-mappings", requireAuth, requireAdmin, async (req: Req
 router.patch("/api/key-date-mappings/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
     const updated = await storage.updateKeyDateMapping(parseInt(req.params.id), req.body);
+    sendExcelSyncNotification({
+      projectName: updated?.projectName || req.body?.projectName || "Unknown",
+      changedByUserId: (req as any).user?.id,
+      changeType: "key_date_mapping",
+      changeDescription: "Key date mapping updated",
+      details: req.body,
+    });
     res.json(updated);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
