@@ -351,7 +351,31 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
     const avgPct = leafTasks.length > 0 ? Math.round(leafTasks.reduce((s, t) => s + (t.percentComplete || 0), 0) / leafTasks.length) : 0;
     const expLeafs = leafTasks.filter(t => t.computedExpectedPct !== null && t.computedExpectedPct !== undefined);
     const avgExpectedPct = expLeafs.length > 0 ? Math.round(expLeafs.reduce((s, t) => s + (t.computedExpectedPct ?? 0), 0) / expLeafs.length) : null;
-    return { total, done, avgPct, avgExpectedPct };
+
+    let totalProjectDays: number | null = null;
+    let elapsedDays: number | null = null;
+    let earliestStart: Date | null = null;
+    let latestEnd: Date | null = null;
+    for (const t of tasks) {
+      const s = t.startDate || t.actualStartDate;
+      const e = t.dueDate || t.actualEndDate;
+      if (s) {
+        const sd = new Date(s);
+        if (!isNaN(sd.getTime()) && (!earliestStart || sd < earliestStart)) earliestStart = sd;
+      }
+      if (e) {
+        const ed = new Date(e);
+        if (!isNaN(ed.getTime()) && (!latestEnd || ed > latestEnd)) latestEnd = ed;
+      }
+    }
+    if (earliestStart && latestEnd) {
+      totalProjectDays = Math.round((latestEnd.getTime() - earliestStart.getTime()) / (1000 * 60 * 60 * 24));
+      const now = new Date();
+      const clamped = now > latestEnd ? latestEnd : now;
+      elapsedDays = Math.max(0, Math.round((clamped.getTime() - earliestStart.getTime()) / (1000 * 60 * 60 * 24)));
+    }
+
+    return { total, done, avgPct, avgExpectedPct, totalProjectDays, elapsedDays };
   }, [tasks]);
 
   const ganttRange = useMemo(() => {
@@ -652,6 +676,15 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
           <span className="text-xs text-muted-foreground">Done</span>
           <span className="text-sm font-bold tabular-nums text-emerald-700" data-testid="kpi-done">{kpis.done}</span>
         </div>
+        {kpis.totalProjectDays !== null && kpis.elapsedDays !== null && (
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-violet-50 border border-violet-200">
+            <Calendar className="h-3.5 w-3.5 text-violet-500" />
+            <span className="text-xs text-muted-foreground">Day</span>
+            <span className="text-sm font-bold tabular-nums text-violet-700" data-testid="kpi-elapsed-days">{kpis.elapsedDays}</span>
+            <span className="text-xs text-muted-foreground">of</span>
+            <span className="text-sm font-bold tabular-nums text-violet-700" data-testid="kpi-total-days">{kpis.totalProjectDays}</span>
+          </div>
+        )}
         <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-blue-50 border border-blue-200">
           <Target className="h-3.5 w-3.5 text-blue-600" />
           <span className="text-xs text-muted-foreground">Actual %</span>
