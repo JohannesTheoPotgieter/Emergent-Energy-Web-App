@@ -692,6 +692,35 @@ async function backfillPmUserIds() {
       );
     `));
 
+    await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS migration_backups (
+        id SERIAL PRIMARY KEY,
+        backup_id TEXT NOT NULL,
+        backup_type TEXT NOT NULL DEFAULT 'manual',
+        description TEXT,
+        created_by_user_id INTEGER REFERENCES users(id),
+        created_by_name TEXT,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+    `));
+
+    await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS migration_cleanup_log (
+        id SERIAL PRIMARY KEY,
+        action TEXT NOT NULL,
+        table_name TEXT NOT NULL,
+        original_name TEXT NOT NULL,
+        archived_name TEXT,
+        row_count INTEGER,
+        performed_by_user_id INTEGER REFERENCES users(id),
+        performed_by_name TEXT,
+        backup_id TEXT,
+        reversible BOOLEAN NOT NULL DEFAULT TRUE,
+        performed_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        metadata TEXT
+      );
+    `));
+
     console.log('[Migration] Phase 1 canonical tables created successfully');
   } catch (err: any) {
     console.error('[Migration] Phase 1 error:', err.message);
@@ -701,6 +730,8 @@ async function backfillPmUserIds() {
   registerExcoRoutes(app);
   const { financialIntegrationRouter } = await import("./departments/financial-integration-routes");
   app.use(financialIntegrationRouter);
+  const { registerMigrationFinalizeRoutes } = await import("./migration-finalize-routes");
+  registerMigrationFinalizeRoutes(app);
 
   await registerRoutes(httpServer, app);
 

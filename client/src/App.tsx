@@ -73,6 +73,7 @@ import PMOnTheGoProject from "@/pages/pm-on-the-go-project";
 import MyWorkHomePage from "@/pages/my-work-home";
 import MyWorkTasksPage from "@/pages/my-work-tasks";
 import MyWorkCalendarPage from "@/pages/my-work-calendar";
+import DatabaseMigrationPage from "@/pages/database-migration";
 import { useAuth } from "@/hooks/use-auth";
 import { useProgramData } from "@/hooks/use-program-data";
 import { TrackerTable } from "@/components/dashboard/TrackerTable";
@@ -310,6 +311,7 @@ function ProtectedPages() {
         <Route path="/my-work/tasks" component={MyWorkTasksPage} />
         <Route path="/my-work/meetings" component={MyToolMeetingsPage} />
         <Route path="/admin/eng-templates">{() => <Redirect to="/admin/phase-templates" />}</Route>
+        <Route path="/admin/database-migration" component={DatabaseMigrationPage} />
 
         <Route component={NotFound} />
       </Switch>

@@ -4853,3 +4853,30 @@ export const planEditNotifications = pgTable("plan_edit_notifications", {
 export const insertPlanEditNotificationSchema = createInsertSchema(planEditNotifications).omit({ id: true, createdAt: true });
 export type InsertPlanEditNotification = z.infer<typeof insertPlanEditNotificationSchema>;
 export type PlanEditNotification = typeof planEditNotifications.$inferSelect;
+
+export const migrationBackups = pgTable("migration_backups", {
+  id: serial("id").primaryKey(),
+  backupId: text("backup_id").notNull(),
+  backupType: text("backup_type").notNull().default("manual"),
+  description: text("description"),
+  createdByUserId: integer("created_by_user_id").references(() => users.id),
+  createdByName: text("created_by_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export type MigrationBackup = typeof migrationBackups.$inferSelect;
+
+export const migrationCleanupLog = pgTable("migration_cleanup_log", {
+  id: serial("id").primaryKey(),
+  action: text("action").notNull(),
+  tableName: text("table_name").notNull(),
+  originalName: text("original_name").notNull(),
+  archivedName: text("archived_name"),
+  rowCount: integer("row_count"),
+  performedByUserId: integer("performed_by_user_id").references(() => users.id),
+  performedByName: text("performed_by_name"),
+  backupId: text("backup_id"),
+  reversible: boolean("reversible").notNull().default(true),
+  performedAt: timestamp("performed_at").notNull().defaultNow(),
+  metadata: text("metadata"),
+})
+export type MigrationCleanupLog = typeof migrationCleanupLog.$inferSelect;

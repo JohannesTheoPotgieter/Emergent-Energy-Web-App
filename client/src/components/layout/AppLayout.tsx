@@ -235,6 +235,7 @@ function getRedesignedNavGroups(): NavGroup[] {
             { label: "Roles & Permissions", icon: ShieldAlert, path: "/admin/roles" },
             { label: "Change Audit", icon: Activity, path: "/admin/activity-log" },
             { label: "Microsoft 365", icon: Plug, path: "/admin/ms-integration" },
+            { label: "Database Migration", icon: Database, path: "/admin/database-migration" },
           ],
         },
       ],

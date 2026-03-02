@@ -46,6 +46,7 @@ Preferred communication style: Simple, everyday language.
 -   **Primary Data Sources**: `normalized_cost_lines`, `normalized_revenue_lines`, `normalized_plan_tasks`.
 -   **Derived Data**: Metrics for portfolio dashboards are computed live from underlying tables.
 -   **Canonical Work Items**: `work_items` table and supporting tables (`work_item_assignments`, `work_item_dependencies`, etc.) consolidate task-like entities.
+-   **Migration Finalize (Phase 5)**: Admin-only UI at `/admin/database-migration` for legacy table cleanup. Features: verification suite, backup registration (`migration_backups` table), reference scanning, archive-with-confirmation (tables renamed to `*_legacy_archive`), 7-day cooldown before permanent drop, restore capability, full activity log (`migration_cleanup_log` table). Key files: `server/migration-finalize-routes.ts`, `client/src/pages/database-migration.tsx`.
 
 ## External Dependencies
 
