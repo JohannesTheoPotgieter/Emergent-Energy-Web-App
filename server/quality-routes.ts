@@ -11,12 +11,13 @@ import {
   qcChecklist, qcItemInstance, qcItemEvidence, qcRiskAnswer,
   qcPlanLink, qcWarning, qcWarningEvent,
   qcPostmortem, qcPostmortemMetricValue, qcPostmortemSummary,
-  qcAccessChallenge, calendarHoliday, projectPlan,
+  qcAccessChallenge, calendarHoliday,
   notifications, notificationThrottle,
 } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
 import { sendExcelSyncNotification } from "./excel-sync-notifications";
 import { logAuditFromReq } from "./audit-logger";
+import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 
 const qmApprovalUploadsDir = path.join(process.cwd(), "uploads", "qm-approvals");
 if (!fs.existsSync(qmApprovalUploadsDir)) fs.mkdirSync(qmApprovalUploadsDir, { recursive: true });
@@ -770,8 +771,8 @@ export function registerQualityRoutes(app: Express) {
       if (allPlanLinks.length) {
         const allItems = await db.select().from(qcItemInstance);
         const projectsWithLinks = [...new Set(allPlanLinks.map((l: any) => l.projectName))];
-        const allPlanTasks = await db.select().from(projectPlan)
-          .where(inArray(projectPlan.projectName, projectsWithLinks));
+        const allWiTasks = await getAllPMWorkItemsAsProjectPlan();
+        const allPlanTasks = allWiTasks.filter((t: any) => projectsWithLinks.includes(t.projectName));
         const templateItemIds = [...new Set(allItems.map((i: any) => i.templateItemId))];
         const templateItems = templateItemIds.length
           ? await db.select().from(qcTemplateItem).where(inArray(qcTemplateItem.id, templateItemIds))
@@ -973,8 +974,9 @@ export function registerQualityRoutes(app: Express) {
       const allItems = await db.select().from(qcItemInstance);
 
       const projectsWithLinks = [...new Set(allPlanLinks.map((l: any) => l.projectName))];
+      const allWiTasksQ = await getAllPMWorkItemsAsProjectPlan();
       const allPlanTasks = projectsWithLinks.length
-        ? await db.select().from(projectPlan).where(inArray(projectPlan.projectName, projectsWithLinks))
+        ? allWiTasksQ.filter((t: any) => projectsWithLinks.includes(t.projectName))
         : [];
 
       for (const link of allPlanLinks) {
@@ -1415,8 +1417,8 @@ export async function recalculateWarnings(projectName: string): Promise<number> 
   }
 
   if (planLinks.length) {
-    const planTasks = await db.select().from(projectPlan)
-      .where(eq(projectPlan.projectName, projectName));
+    const allWiTasksForProject = await getAllPMWorkItemsAsProjectPlan();
+    const planTasks = allWiTasksForProject.filter((t: any) => t.projectName === projectName);
 
     for (const link of planLinks) {
       const task = planTasks.find(t => t.id === link.planItemId);

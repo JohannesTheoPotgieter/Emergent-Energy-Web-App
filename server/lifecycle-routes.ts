@@ -3,7 +3,8 @@ import { db } from "./db";
 import { safeLegacyWrite } from "./legacy-table-guard";
 import { eq, sql, inArray } from "drizzle-orm";
 import { verifyToken } from "./jwt";
-import { projectInfo, operationalTasks, projectPlan, projectPlanOverrides, executionGateLog, mergeAuditLog, programExpense, programInflows, qcChecklist, qcItemInstance, PHASE_TO_ENG_STAGES } from "@shared/schema";
+import { projectInfo, operationalTasks, projectPlanOverrides, executionGateLog, mergeAuditLog, programExpense, programInflows, qcChecklist, qcItemInstance, PHASE_TO_ENG_STAGES } from "@shared/schema";
+import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { generateEngStagesForProject } from "./eng-stage-routes";
 import { logAuditFromReq } from "./audit-logger";
 
@@ -158,16 +159,16 @@ export function registerLifecycleRoutes(app: Express) {
         assignees: operationalTasks.assignees,
       }).from(operationalTasks);
 
-      const rawPlanTasks = await db.select({
-        projectName: projectPlan.projectName,
-        actualPctComplete: projectPlan.actualPctComplete,
-        expectedPctComplete: projectPlan.expectedPctComplete,
-        durationDays: projectPlan.durationDays,
-        taskNo: projectPlan.taskNo,
-        rowNumber: projectPlan.rowNumber,
-        actualStart: projectPlan.actualStart,
-        actualEnd: projectPlan.actualEnd,
-      }).from(projectPlan);
+      const rawPlanTasks = (await getAllPMWorkItemsAsProjectPlan()).map((wi: any) => ({
+        projectName: wi.projectName,
+        actualPctComplete: wi.actualPctComplete,
+        expectedPctComplete: wi.expectedPctComplete,
+        durationDays: wi.durationDays,
+        taskNo: wi.taskNo,
+        rowNumber: wi.rowNumber,
+        actualStart: wi.actualStart,
+        actualEnd: wi.actualEnd,
+      }));
 
       const allPlanOverrides = await db.select().from(projectPlanOverrides);
       const deletedKeys = new Set<string>();
@@ -226,9 +227,9 @@ export function registerLifecycleRoutes(app: Express) {
       for (const i of inflowNames) {
         if (i.projectName) trackerProjectNames.add(normalizeName(i.projectName));
       }
-      const planNames = await db.selectDistinct({ projectName: projectPlan.projectName }).from(projectPlan);
-      for (const p of planNames) {
-        if (p.projectName) trackerProjectNames.add(normalizeName(p.projectName));
+      const planProjectNames = [...new Set(rawPlanTasks.map((t: any) => t.projectName).filter(Boolean))];
+      for (const pn of planProjectNames) {
+        trackerProjectNames.add(normalizeName(pn));
       }
 
       const DONE_STATUSES = ["DONE", "QC APPROVED", "COMPLETED"];

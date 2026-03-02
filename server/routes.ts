@@ -10483,7 +10483,8 @@ export async function registerRoutes(
         const existingOverrides = await storage.getTaskOverridesByScenario(scenario.id);
         const existing = existingOverrides.find((o: any) => o.importedTaskId === actualTaskId);
 
-        const [basePlanTask] = await db.select().from(projectPlan).where(eq(projectPlan.id, actualTaskId));
+        const basePlanTaskResult = await safeLegacyQuery(() => db.select().from(projectPlan).where(eq(projectPlan.id, actualTaskId)), []);
+        const basePlanTask = basePlanTaskResult[0];
         const taskName = updates.title || basePlanTask?.highLevelProgramme || "Unknown task";
 
         const overrideData: any = {};
