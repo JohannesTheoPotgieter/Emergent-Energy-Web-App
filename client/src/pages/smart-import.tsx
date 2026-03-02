@@ -2528,41 +2528,52 @@ function BulkCommitPanel({ onBack, onSwitchToWizard }: {
     setCommitting(true);
     setProgress(0);
 
-    const progressInterval = setInterval(() => {
-      setProgress(prev => Math.min(prev + 2, 95));
-    }, 500);
+    const results: BulkCommitResult[] = [];
+    let committed = 0;
+    let failed = 0;
+    const total = committableRuns.length;
+    const BATCH_SIZE = 3;
 
-    try {
-      const res = await fetch("/api/smart-import/bulk-commit", {
-        method: "POST",
-        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({
-          runIds: committableRuns.map(r => r.id),
-          acknowledgeManualEdits: true,
-          forceCommit: true,
-        }),
-      });
-      clearInterval(progressInterval);
-      setProgress(100);
+    for (let i = 0; i < committableRuns.length; i += BATCH_SIZE) {
+      const batch = committableRuns.slice(i, i + BATCH_SIZE);
+      const batchResults = await Promise.allSettled(
+        batch.map(async (run) => {
+          try {
+            const res = await fetch(`/api/smart-import/${run.id}/commit`, {
+              method: "POST",
+              headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+              body: JSON.stringify({ acknowledgeManualEdits: true, forceCommit: true }),
+            });
+            if (res.ok) {
+              const data = await res.json();
+              return { runId: run.id, projectName: run.projectName, status: "committed" as const, counts: data.counts };
+            } else {
+              const err = await res.json().catch(() => ({ error: "Commit failed" }));
+              return { runId: run.id, projectName: run.projectName, status: "failed" as const, error: err.error || "Commit failed" };
+            }
+          } catch {
+            return { runId: run.id, projectName: run.projectName, status: "failed" as const, error: "Network error" };
+          }
+        })
+      );
 
-      if (res.ok) {
-        const data = await res.json();
-        setCommitDone(true);
-        setCommitResults(data.results || []);
-        toast({
-          title: "Bulk Commit Complete",
-          description: `${data.committed} committed, ${data.skipped || 0} skipped, ${data.failed || 0} failed`,
-        });
-      } else {
-        const err = await res.json().catch(() => ({ error: "Bulk commit failed" }));
-        toast({ title: "Error", description: err.error || "Bulk commit failed", variant: "destructive" });
+      for (const result of batchResults) {
+        const val = result.status === "fulfilled" ? result.value : { runId: 0, projectName: "Unknown", status: "failed" as const, error: "Unexpected error" };
+        results.push(val);
+        if (val.status === "committed") committed++;
+        else failed++;
       }
-    } catch {
-      clearInterval(progressInterval);
-      toast({ title: "Error", description: "Network error during bulk commit", variant: "destructive" });
-    } finally {
-      setCommitting(false);
+      setProgress(Math.round(((i + batch.length) / total) * 100));
     }
+
+    setProgress(100);
+    setCommitDone(true);
+    setCommitResults(results);
+    toast({
+      title: "Bulk Commit Complete",
+      description: `${committed} committed, ${failed} failed out of ${total}`,
+    });
+    setCommitting(false);
   };
 
   if (loading) {
@@ -2768,7 +2779,7 @@ function BulkCommitPanel({ onBack, onSwitchToWizard }: {
           {committing ? (
             <>
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Committing {committableRuns.length} files...
+              Committing... {progress}% ({Math.round(committableRuns.length * progress / 100)}/{committableRuns.length})
             </>
           ) : (
             <>
