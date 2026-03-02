@@ -101,6 +101,15 @@ Preferred communication style: Simple, everyday language.
 -   **Module**: Enables creating project-linked operational tasks directly from Outlook emails or Teams messages.
 -   **Notifications**: Assignee receives a notification upon task creation.
 
+### Smart Import — Hierarchical Plan Task Support (Mondi Tracker)
+-   **Hierarchy Detection**: Task numbers like 1, 1.1, 1.2 are parsed with `normalizeTaskNo()`. Whole numbers (1, 2, 3) with subtasks beneath them are auto-detected as milestones. Subtasks derive `parentTaskNo` and `indentLevel` from their WBS numbering.
+-   **Milestone Detection**: Via task number hierarchy (parent of subtasks), keyword matching (milestone, commissioning, handover, etc.), and same-day start/end dates.
+-   **Schema Fields**: `normalized_plan_tasks` includes `is_milestone`, `parent_task_no`, `indent_level`, `expected_pct_complete`.
+-   **Commit**: New fields stored in both `normalized_plan_tasks` and legacy `project_plan` (expectedPctComplete).
+-   **Synonyms**: Expanded plan synonyms for better Mondi tracker column detection (WBS, task name variants, baseline start/end, target %, etc.).
+-   **Frontend**: PLAN canonical fields include actual_start, actual_end, actual_duration, predecessor, comment. Preview shows hierarchy with indent, milestone markers (◆), and counts. Commit preview shows task numbers, hierarchy indentation, and milestone/subtask badge counts.
+-   **Section Anchors**: Plan sheet detection expanded with more sheet name patterns (construction programme, master programme, project tracker) and anchor phrases (% complete, wbs, task no, etc.).
+
 ### Smart Import — Deleted Project Re-creation Detection
 -   **Module**: Detects if an imported project name matches a previously hard-deleted project and issues a `previously_deleted` warning.
 -   **Frontend**: Shows a red confirmation card; user must confirm "Re-create & Import."

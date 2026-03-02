@@ -29,7 +29,8 @@ const STEP_LABELS = ["Upload", "Sections", "Mapping", "Issues", "Commit"];
 const CANONICAL_FIELDS: Record<string, string[]> = {
   PLAN: [
     "task_name", "task_no", "start_date", "end_date", "duration",
-    "pct_complete", "expected_pct", "owner", "phase",
+    "actual_start", "actual_end", "actual_duration",
+    "pct_complete", "expected_pct", "owner", "predecessor", "phase", "comment",
   ],
   REVENUE: [
     "milestone_name", "milestone_no", "percent", "amount_ex_vat", "vat",
@@ -763,7 +764,7 @@ function SectionDetectionStep({
 const FIELD_LABELS: Record<string, string> = {
   task_name: "Task Name", task_no: "Task #", start_date: "Start Date", end_date: "End Date",
   duration: "Duration", actual_start: "Actual Start", actual_end: "Actual End", actual_duration: "Actual Duration",
-  pct_complete: "% Complete", expected_pct: "Expected %", owner: "Owner", phase: "Phase", comment: "Comment",
+  pct_complete: "% Complete", expected_pct: "Expected %", owner: "Owner", predecessor: "Predecessor", phase: "Phase", comment: "Comment",
   milestone_name: "Milestone", milestone_no: "Milestone #", percent: "Percent", amount_ex_vat: "Amount (ex VAT)",
   vat: "VAT", invoice_number: "Invoice #", invoice_date: "Invoice Date", planned_payment_date: "Planned Payment",
   payment_received_date: "Payment Received", in_bank_date: "In Bank Date", requirements: "Requirements", documents: "Documents",
@@ -1049,16 +1050,26 @@ function ColumnMappingStep({
                               </tr>
                             </thead>
                             <tbody>
-                              {previewData.slice(0, 8).map((row: any, idx: number) => (
-                                <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50/50">
+                              {previewData.slice(0, 8).map((row: any, idx: number) => {
+                                const isMs = row.isMilestone === true;
+                                const indent = row.indentLevel || 0;
+                                return (
+                                <tr key={idx} className={`border-b border-slate-100 ${isMs ? "bg-amber-50/60 font-semibold" : "hover:bg-slate-50/50"}`}>
                                   <td className="px-2 py-1 text-slate-400">{row.sourceRow || idx + 1}</td>
-                                  {Object.entries(row).filter(([k]) => !["sourceSheet", "sourceRow"].includes(k)).slice(0, 8).map(([key, val]) => (
+                                  {Object.entries(row).filter(([k]) => !["sourceSheet", "sourceRow", "isMilestone", "parentTaskNo", "indentLevel"].includes(k)).slice(0, 8).map(([key, val]) => (
                                     <td key={key} className="px-2 py-1 max-w-[120px] truncate" title={String(val ?? "")}>
-                                      {val != null ? String(val) : <span className="text-slate-300">—</span>}
+                                      {key === "taskName" && indent > 0 ? (
+                                        <span style={{ paddingLeft: `${indent * 12}px` }}>{isMs ? "◆ " : ""}{val != null ? String(val) : <span className="text-slate-300">—</span>}</span>
+                                      ) : key === "taskName" && isMs ? (
+                                        <span className="text-amber-800">◆ {val != null ? String(val) : "—"}</span>
+                                      ) : (
+                                        val != null ? String(val) : <span className="text-slate-300">—</span>
+                                      )}
                                     </td>
                                   ))}
                                 </tr>
-                              ))}
+                                );
+                              })}
                             </tbody>
                           </table>
                           {previewData.length > 8 && (
@@ -2172,7 +2183,19 @@ function PreviewCommitStep({
             onClick={() => toggleTable("plan")}
             data-testid="toggle-plan-preview"
           >
-            <CardTitle className="text-sm">Plan Tasks Preview</CardTitle>
+            <div className="flex items-center gap-3">
+              <CardTitle className="text-sm">Plan Tasks Preview</CardTitle>
+              {(() => {
+                const milestones = planRows.filter((r: any) => r.isMilestone);
+                const subtasks = planRows.filter((r: any) => r.parentTaskNo);
+                return (
+                  <div className="flex items-center gap-2 text-[10px]">
+                    <Badge className="bg-amber-50 text-amber-700 border-amber-200 px-1.5 py-0">{milestones.length} milestones</Badge>
+                    <Badge className="bg-blue-50 text-blue-700 border-blue-200 px-1.5 py-0">{subtasks.length} subtasks</Badge>
+                  </div>
+                );
+              })()}
+            </div>
             {expandedTables["plan"] ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
           </CardHeader>
           {expandedTables["plan"] && (
@@ -2181,23 +2204,40 @@ function PreviewCommitStep({
                 <table className="w-full text-xs" data-testid="table-plan-preview">
                   <thead>
                     <tr className="bg-slate-50 border-b">
+                      <th className="text-left px-3 py-1.5 text-[10px] font-semibold text-slate-500 uppercase">No.</th>
                       <th className="text-left px-3 py-1.5 text-[10px] font-semibold text-slate-500 uppercase">Task Name</th>
                       <th className="text-left px-3 py-1.5 text-[10px] font-semibold text-slate-500 uppercase">Start Date</th>
                       <th className="text-left px-3 py-1.5 text-[10px] font-semibold text-slate-500 uppercase">End Date</th>
+                      <th className="text-left px-3 py-1.5 text-[10px] font-semibold text-slate-500 uppercase">% Complete</th>
                       <th className="text-left px-3 py-1.5 text-[10px] font-semibold text-slate-500 uppercase">Status</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {planRows.slice(0, 10).map((row: any, idx: number) => (
-                      <tr key={idx} className="border-b border-slate-100">
-                        <td className="px-3 py-1.5">{row.taskName || row.task_name || "—"}</td>
+                    {planRows.slice(0, 15).map((row: any, idx: number) => {
+                      const isMs = row.isMilestone === true;
+                      const indent = row.indentLevel || 0;
+                      return (
+                      <tr key={idx} className={`border-b border-slate-100 ${isMs ? "bg-amber-50/60 font-semibold" : ""}`}>
+                        <td className="px-3 py-1.5 text-slate-500 font-mono text-[10px]">{row.taskNo || "—"}</td>
+                        <td className="px-3 py-1.5">
+                          <span style={{ paddingLeft: `${indent * 16}px` }} className={isMs ? "text-amber-800" : ""}>
+                            {isMs ? "◆ " : indent > 0 ? "└ " : ""}{row.taskName || row.task_name || "—"}
+                          </span>
+                        </td>
                         <td className="px-3 py-1.5">{row.startDate || row.start_date || "—"}</td>
                         <td className="px-3 py-1.5">{row.endDate || row.end_date || "—"}</td>
+                        <td className="px-3 py-1.5">{row.pctComplete != null ? `${Math.round(row.pctComplete * 100)}%` : "—"}</td>
                         <td className="px-3 py-1.5">{row.status || "—"}</td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
+                {planRows.length > 15 && (
+                  <div className="text-center py-1.5 text-[10px] text-slate-400 bg-slate-50">
+                    ... and {planRows.length - 15} more tasks
+                  </div>
+                )}
               </div>
             </CardContent>
           )}

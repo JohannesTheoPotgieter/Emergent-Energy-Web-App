@@ -17,7 +17,11 @@ export interface NormalizationResult {
     owner: string | null;
     status: string | null;
     pctComplete: number | null;
+    expectedPctComplete: number | null;
     comment: string | null;
+    isMilestone: boolean;
+    parentTaskNo: string | null;
+    indentLevel: number;
     sourceSheet: string;
     sourceRow: number;
   }>;
@@ -160,6 +164,41 @@ function deriveCostStatus(
   return "PLANNED";
 }
 
+function normalizeTaskNo(raw: string): string {
+  const trimmed = raw.trim();
+  if (/^\d+(\.\d+)*$/.test(trimmed)) {
+    const parts = trimmed.split(".");
+    return parts.map(p => {
+      const n = parseInt(p, 10);
+      return isNaN(n) ? p : String(n);
+    }).join(".");
+  }
+  const numVal = parseFloat(trimmed);
+  if (!isNaN(numVal) && isFinite(numVal)) {
+    return parseFloat(numVal.toFixed(10)).toString();
+  }
+  return trimmed;
+}
+
+function deriveParentTaskNo(taskNo: string): string | null {
+  if (!taskNo) return null;
+  if (taskNo.includes(".")) {
+    const parts = taskNo.split(".");
+    parts.pop();
+    const parent = parts.join(".");
+    return parent || null;
+  }
+  return null;
+}
+
+function deriveIndentLevel(taskNo: string): number {
+  if (!taskNo) return 0;
+  if (taskNo.includes(".")) {
+    return taskNo.split(".").length - 1;
+  }
+  return 0;
+}
+
 function extractPlanTasks(
   data: any[][],
   mapping: MappingResult,
@@ -167,7 +206,24 @@ function extractPlanTasks(
   startRow: number,
   endRow: number
 ): { tasks: NormalizationResult["planTasks"]; phases: NormalizationResult["executionPhases"] } {
-  const tasks: NormalizationResult["planTasks"] = [];
+  const rawTasks: Array<{
+    taskName: string;
+    taskNo: string | null;
+    phase: string | null;
+    startDate: string | null;
+    endDate: string | null;
+    durationDays: number | null;
+    actualStartDate: string | null;
+    actualEndDate: string | null;
+    actualDurationDays: number | null;
+    owner: string | null;
+    status: string | null;
+    pctComplete: number | null;
+    expectedPctComplete: number | null;
+    comment: string | null;
+    sourceSheet: string;
+    sourceRow: number;
+  }> = [];
   const phases: NormalizationResult["executionPhases"] = [];
 
   const taskNameCol = getColIndex(mapping, "task_name");
@@ -200,10 +256,7 @@ function extractPlanTasks(
     if (taskName && taskName.toLowerCase().includes("end of sheet")) continue;
 
     if (taskNo) {
-      const numVal = parseFloat(taskNo);
-      if (!isNaN(numVal)) {
-        taskNo = parseFloat(numVal.toFixed(10)).toString();
-      }
+      taskNo = normalizeTaskNo(taskNo);
     }
 
     if (phaseCol >= 0) {
@@ -238,7 +291,7 @@ function extractPlanTasks(
       else statusStr = "Not Started";
     }
 
-    tasks.push({
+    rawTasks.push({
       taskName: taskName || taskNo || "",
       taskNo: taskNo || null,
       phase: currentPhase,
@@ -257,6 +310,57 @@ function extractPlanTasks(
       sourceRow: i + 1,
     });
   }
+
+  const allTaskNos = new Set<string>();
+  const childPrefixes = new Set<string>();
+  for (const t of rawTasks) {
+    if (t.taskNo) {
+      allTaskNos.add(t.taskNo);
+      const parent = deriveParentTaskNo(t.taskNo);
+      if (parent) childPrefixes.add(parent);
+    }
+  }
+
+  const milestoneKeywords = ["milestone", "commissioning", "practical completion", "site establishment", "handover", "energisation", "cod"];
+
+  const tasks: NormalizationResult["planTasks"] = rawTasks.map(t => {
+    const taskNo = t.taskNo;
+    let isMilestone = false;
+    let parentTaskNo: string | null = null;
+    let indentLevel = 0;
+
+    if (taskNo) {
+      parentTaskNo = deriveParentTaskNo(taskNo);
+      indentLevel = deriveIndentLevel(taskNo);
+
+      if (!taskNo.includes(".") && /^\d+$/.test(taskNo) && childPrefixes.has(taskNo)) {
+        isMilestone = true;
+      }
+    }
+
+    const nameLower = (t.taskName || "").toLowerCase();
+    for (const kw of milestoneKeywords) {
+      if (nameLower.includes(kw)) {
+        isMilestone = true;
+        break;
+      }
+    }
+
+    if (t.startDate && t.endDate && t.startDate === t.endDate && !isMilestone) {
+      isMilestone = true;
+    }
+
+    if (parentTaskNo && !allTaskNos.has(parentTaskNo)) {
+      parentTaskNo = null;
+    }
+
+    return {
+      ...t,
+      isMilestone,
+      parentTaskNo,
+      indentLevel,
+    };
+  });
 
   return { tasks, phases };
 }
