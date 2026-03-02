@@ -25,6 +25,7 @@ import {
   projectInfo,
   changeSets,
   projectPlan,
+  projectPlanOverrides,
   programExpense,
   programInflows,
   workingPlanScenario,
@@ -987,6 +988,63 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
           }));
           for (let i = 0; i < legacyPlanBatch.length; i += 100) {
             await tx.insert(projectPlan).values(legacyPlanBatch.slice(i, i + 100));
+          }
+
+          const hierarchyOverrides: any[] = [];
+          const taskNoToRow = new Map<string, number>();
+          for (const t of legacyPlanBatch) {
+            if (t.taskNo) taskNoToRow.set(t.taskNo, t.rowNumber);
+          }
+
+          for (const pv of planValues) {
+            const rowNumber = pv.sourceRow || 0;
+            if (!rowNumber) continue;
+            const pName = pv.projectName;
+
+            if (pv.isMilestone) {
+              hierarchyOverrides.push({
+                projectName: pName, rowNumber,
+                fieldName: "isMilestone", overrideValue: "true", createdBy: userId,
+              });
+            }
+
+            if (pv.indentLevel != null && pv.indentLevel > 0) {
+              hierarchyOverrides.push({
+                projectName: pName, rowNumber,
+                fieldName: "indentLevel", overrideValue: String(pv.indentLevel), createdBy: userId,
+              });
+            }
+
+            if (pv.parentTaskNo && taskNoToRow.has(pv.parentTaskNo)) {
+              const parentRow = taskNoToRow.get(pv.parentTaskNo)!;
+              hierarchyOverrides.push({
+                projectName: pName, rowNumber,
+                fieldName: "parentRowNumber", overrideValue: String(parentRow), createdBy: userId,
+              });
+            }
+          }
+
+          if (hierarchyOverrides.length > 0) {
+            const now = new Date();
+            for (const ov of hierarchyOverrides) {
+              const existing = await tx.select({ id: projectPlanOverrides.id })
+                .from(projectPlanOverrides)
+                .where(and(
+                  eq(projectPlanOverrides.projectName, ov.projectName),
+                  eq(projectPlanOverrides.rowNumber, ov.rowNumber),
+                  eq(projectPlanOverrides.fieldName, ov.fieldName),
+                ))
+                .limit(1);
+              if (existing.length > 0) {
+                await tx.update(projectPlanOverrides)
+                  .set({ overrideValue: ov.overrideValue, updatedAt: now })
+                  .where(eq(projectPlanOverrides.id, existing[0].id));
+              } else {
+                await tx.insert(projectPlanOverrides).values({
+                  ...ov, createdAt: now, updatedAt: now,
+                });
+              }
+            }
           }
         }
         counts.planTasks = planValues.length;

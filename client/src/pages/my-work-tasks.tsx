@@ -14,6 +14,9 @@ import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
 import {
   Plus,
   Loader2,
@@ -41,6 +44,8 @@ import {
   AlertCircle,
   Wrench,
   Users,
+  ExternalLink,
+  User,
 } from "lucide-react";
 import UserAssignmentPicker from "@/components/UserAssignmentPicker";
 
@@ -159,6 +164,8 @@ export default function MyWorkTasksPage() {
   const [groomMode, setGroomMode] = useState(false);
   const [drawerTask, setDrawerTask] = useState<TaskItem | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [unifiedDetailTask, setUnifiedDetailTask] = useState<UnifiedTask | null>(null);
+  const [unifiedDetailOpen, setUnifiedDetailOpen] = useState(false);
   const [expandedTasks, setExpandedTasks] = useState<Set<number>>(new Set());
   const [subtaskDialog, setSubtaskDialog] = useState<{ parentId: number; projectName: string } | null>(null);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
@@ -467,33 +474,37 @@ export default function MyWorkTasksPage() {
   }, [updateTaskMutation]);
 
   const handleOpenDrawer = useCallback((task: UnifiedTask) => {
-    if (task._source !== "personal") return;
-    setDrawerTask({
-      id: task.id,
-      title: task.title,
-      status: task.status,
-      priority: task.priority,
-      plannedForDate: task.plannedForDate || null,
-      dueAt: task.dueAt || null,
-      sortOrder: task.sortOrder || 0,
-      projectName: task.projectName || null,
-      department: task.department || null,
-      tag: task.tag || null,
-      blockedReason: task.blockedReason || null,
-      nextStep: task.nextStep || null,
-      definitionOfDone: task.definitionOfDone || null,
-      pinnedToday: task.pinnedToday || false,
-      pinnedWeek: task.pinnedWeek || false,
-      isRecurring: task.isRecurring || false,
-      recurrenceFrequency: task.recurrenceFrequency || null,
-      notes: task.notes || null,
-      completionNote: task.completionNote || null,
-      createdAt: task.createdAt || null,
-      bucket: task.bucket || null,
-      sourceEmailId: task.sourceEmailId || null,
-      sourceEmailSubject: task.sourceEmailSubject || null,
-    });
-    setDrawerOpen(true);
+    if (task._source === "personal") {
+      setDrawerTask({
+        id: task.id,
+        title: task.title,
+        status: task.status,
+        priority: task.priority,
+        plannedForDate: task.plannedForDate || null,
+        dueAt: task.dueAt || null,
+        sortOrder: task.sortOrder || 0,
+        projectName: task.projectName || null,
+        department: task.department || null,
+        tag: task.tag || null,
+        blockedReason: task.blockedReason || null,
+        nextStep: task.nextStep || null,
+        definitionOfDone: task.definitionOfDone || null,
+        pinnedToday: task.pinnedToday || false,
+        pinnedWeek: task.pinnedWeek || false,
+        isRecurring: task.isRecurring || false,
+        recurrenceFrequency: task.recurrenceFrequency || null,
+        notes: task.notes || null,
+        completionNote: task.completionNote || null,
+        createdAt: task.createdAt || null,
+        bucket: task.bucket || null,
+        sourceEmailId: task.sourceEmailId || null,
+        sourceEmailSubject: task.sourceEmailSubject || null,
+      });
+      setDrawerOpen(true);
+    } else {
+      setUnifiedDetailTask(task);
+      setUnifiedDetailOpen(true);
+    }
   }, []);
 
   const allProjects = useMemo(() => {
@@ -823,6 +834,15 @@ export default function MyWorkTasksPage() {
         />
       )}
 
+      {unifiedDetailOpen && unifiedDetailTask && (
+        <UnifiedTaskDetailSheet
+          task={unifiedDetailTask}
+          open={unifiedDetailOpen}
+          onOpenChange={setUnifiedDetailOpen}
+          onInvalidate={invalidateAll}
+        />
+      )}
+
       <Dialog open={!!subtaskDialog} onOpenChange={(open) => { if (!open) setSubtaskDialog(null); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -876,6 +896,299 @@ export default function MyWorkTasksPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+function UnifiedTaskDetailSheet({
+  task,
+  open,
+  onOpenChange,
+  onInvalidate,
+}: {
+  task: UnifiedTask;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onInvalidate: () => void;
+}) {
+  const { toast } = useToast();
+
+  const sourceLabel = task._sourceLabel;
+  const sourceColor = task._sourceColor;
+
+  const statusLabel = task.status === "done" ? "Done" :
+    task.status === "in_progress" ? "In Progress" :
+    task.status === "blocked" ? "Blocked" :
+    task.status === "waiting" ? "Waiting" :
+    task.status === "cancelled" ? "Cancelled" :
+    task.status === "inbox" ? "Inbox" :
+    task.status === "planned" ? "Planned" :
+    task.status;
+
+  const priorityLabel = task.priority === "critical" ? "P1 — Critical" :
+    task.priority === "high" ? "P2 — High" :
+    task.priority === "low" ? "P4 — Low" : "P3 — Normal";
+
+  const priorityColor = task.priority === "critical" ? "text-red-600" :
+    task.priority === "high" ? "text-orange-600" :
+    task.priority === "low" ? "text-slate-400" : "text-blue-600";
+
+  const statusColor = task.status === "done" ? "bg-green-100 text-green-700" :
+    task.status === "in_progress" ? "bg-blue-100 text-blue-700" :
+    task.status === "blocked" ? "bg-red-100 text-red-700" :
+    task.status === "waiting" ? "bg-amber-100 text-amber-700" :
+    task.status === "cancelled" ? "bg-slate-100 text-slate-500" :
+    "bg-slate-100 text-slate-600";
+
+  const updateStatusMutation = useMutation({
+    mutationFn: async (newStatus: string) => {
+      if (task._source === "operational") {
+        const res = await fetch(`/api/operational-tasks/${task._rawId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+          credentials: "include",
+          body: JSON.stringify({ status: newStatus }),
+        });
+        if (!res.ok) throw new Error("Failed to update");
+      } else if (task._source === "approvals" && task._key.startsWith("approval-qc-")) {
+        const qmStatus = newStatus === "done" ? "pass" :
+          newStatus === "blocked" ? "fail" :
+          newStatus === "in_progress" ? "in_progress" : "review";
+        const res = await fetch(`/api/quality/project/${encodeURIComponent(task.projectName || "unknown")}/item/${task._rawId}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+          credentials: "include",
+          body: JSON.stringify({ qmStatus }),
+        });
+        if (!res.ok) throw new Error("Failed to update QC status");
+      } else if (task._source === "engineering_task") {
+        const engStatus = newStatus === "done" ? "DONE" :
+          newStatus === "in_progress" ? "IN PROGRESS" :
+          newStatus === "blocked" ? "BLOCKED" : "TO DO";
+        const res = await fetch(`/api/task-checklist-items/${task._rawId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+          credentials: "include",
+          body: JSON.stringify({ status: engStatus }),
+        });
+        if (!res.ok) throw new Error("Failed to update");
+      }
+    },
+    onSuccess: () => {
+      onInvalidate();
+      toast({ title: "Status updated" });
+    },
+    onError: () => {
+      toast({ title: "Failed to update status", variant: "destructive" });
+    },
+  });
+
+  const canChangeStatus = ["operational", "approvals", "engineering_task", "quality_task"].includes(task._source);
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="sm:max-w-lg overflow-y-auto" data-testid="unified-task-detail-sheet">
+        <SheetHeader className="pb-3">
+          <div className="flex items-center gap-2 mb-1">
+            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${sourceColor}`}>
+              {sourceLabel}
+            </span>
+            <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${statusColor}`}>
+              {statusLabel}
+            </span>
+          </div>
+          <SheetTitle className="text-left text-base leading-snug" data-testid="text-unified-task-title">
+            {task.title}
+          </SheetTitle>
+        </SheetHeader>
+
+        <div className="space-y-5 pt-2">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs text-muted-foreground">Priority</Label>
+              <p className={`text-sm font-medium mt-0.5 ${priorityColor}`} data-testid="text-unified-priority">{priorityLabel}</p>
+            </div>
+            {task.projectName && (
+              <div>
+                <Label className="text-xs text-muted-foreground">Project</Label>
+                <p className="text-sm font-medium mt-0.5" data-testid="text-unified-project">
+                  {task.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
+                </p>
+              </div>
+            )}
+            {task.dueAt && (
+              <div>
+                <Label className="text-xs text-muted-foreground">Due Date</Label>
+                <p className="text-sm mt-0.5" data-testid="text-unified-due">
+                  {(() => { try { return format(new Date(task.dueAt), "dd MMM yyyy"); } catch { return task.dueAt; } })()}
+                </p>
+              </div>
+            )}
+            {task.createdAt && (
+              <div>
+                <Label className="text-xs text-muted-foreground">Created</Label>
+                <p className="text-sm mt-0.5 text-muted-foreground">
+                  {(() => { try { return format(new Date(task.createdAt), "dd MMM yyyy"); } catch { return ""; } })()}
+                </p>
+              </div>
+            )}
+            {task.percentComplete !== undefined && task.percentComplete > 0 && (
+              <div>
+                <Label className="text-xs text-muted-foreground">Progress</Label>
+                <div className="flex items-center gap-2 mt-1">
+                  <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                    <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${task.percentComplete}%` }} />
+                  </div>
+                  <span className="text-xs font-medium">{task.percentComplete}%</span>
+                </div>
+              </div>
+            )}
+            {task.ragStatus && (
+              <div>
+                <Label className="text-xs text-muted-foreground">RAG Status</Label>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <span className={`w-3 h-3 rounded-full ${
+                    task.ragStatus === "Red" ? "bg-red-500" : task.ragStatus === "Amber" ? "bg-amber-500" : "bg-green-500"
+                  }`} />
+                  <span className="text-sm">{task.ragStatus}</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <Separator />
+
+          <div>
+            <Label className="text-xs text-muted-foreground mb-2 block">Assigned To</Label>
+            <div onClick={e => e.stopPropagation()}>
+              <UserAssignmentPicker
+                taskId={task._rawId}
+                taskSource={task._source === "approvals" ? "operational" : task._source}
+                resolvedUsers={task.resolvedAssignees || task.resolvedOwners || null}
+                textNames={task.assignees || task.owners || null}
+                mode={["operational", "tr_register"].includes(task._source) ? "multi" : "single"}
+                size="sm"
+                invalidateKeys={["/api/my-work/all-tasks", "/api/mytool/tasks"]}
+              />
+            </div>
+          </div>
+
+          {task.notes && (
+            <>
+              <Separator />
+              <div>
+                <Label className="text-xs text-muted-foreground mb-1 block">Notes</Label>
+                <p className="text-sm text-foreground whitespace-pre-wrap bg-muted/30 rounded-lg p-3" data-testid="text-unified-notes">
+                  {task.notes}
+                </p>
+              </div>
+            </>
+          )}
+
+          {task.description && (
+            <>
+              <Separator />
+              <div>
+                <Label className="text-xs text-muted-foreground mb-1 block">Description</Label>
+                <p className="text-sm text-foreground whitespace-pre-wrap bg-muted/30 rounded-lg p-3">
+                  {task.description}
+                </p>
+              </div>
+            </>
+          )}
+
+          {canChangeStatus && (
+            <>
+              <Separator />
+              <div>
+                <Label className="text-xs text-muted-foreground mb-2 block">Change Status</Label>
+                <div className="flex flex-wrap gap-2">
+                  {task._source === "approvals" && task._key.startsWith("approval-qc-") ? (
+                    <>
+                      <Button
+                        size="sm"
+                        variant={task.status === "in_progress" ? "default" : "outline"}
+                        onClick={() => updateStatusMutation.mutate("in_progress")}
+                        disabled={updateStatusMutation.isPending}
+                        data-testid="btn-status-in-progress"
+                      >
+                        <Clock className="h-3.5 w-3.5 mr-1" /> In Progress
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-green-600 hover:bg-green-50"
+                        onClick={() => updateStatusMutation.mutate("done")}
+                        disabled={updateStatusMutation.isPending}
+                        data-testid="btn-status-pass"
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Pass
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-red-600 hover:bg-red-50"
+                        onClick={() => updateStatusMutation.mutate("blocked")}
+                        disabled={updateStatusMutation.isPending}
+                        data-testid="btn-status-fail"
+                      >
+                        <AlertCircle className="h-3.5 w-3.5 mr-1" /> Fail
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button
+                        size="sm"
+                        variant={task.status === "in_progress" ? "default" : "outline"}
+                        onClick={() => updateStatusMutation.mutate("In Progress")}
+                        disabled={updateStatusMutation.isPending}
+                        data-testid="btn-status-in-progress"
+                      >
+                        <Clock className="h-3.5 w-3.5 mr-1" /> In Progress
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-green-600 hover:bg-green-50"
+                        onClick={() => updateStatusMutation.mutate("Done")}
+                        disabled={updateStatusMutation.isPending}
+                        data-testid="btn-status-done"
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Done
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-red-600 hover:bg-red-50"
+                        onClick={() => updateStatusMutation.mutate("Blocked")}
+                        disabled={updateStatusMutation.isPending}
+                        data-testid="btn-status-blocked"
+                      >
+                        <AlertCircle className="h-3.5 w-3.5 mr-1" /> Blocked
+                      </Button>
+                    </>
+                  )}
+                  {updateStatusMutation.isPending && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                </div>
+              </div>
+            </>
+          )}
+
+          {task.deliverableType && (
+            <div>
+              <Label className="text-xs text-muted-foreground">Deliverable Type</Label>
+              <p className="text-sm mt-0.5">{task.deliverableType}</p>
+            </div>
+          )}
+
+          {task.trId && (
+            <div>
+              <Label className="text-xs text-muted-foreground">TR ID</Label>
+              <p className="text-sm font-mono mt-0.5">{task.trId}</p>
+            </div>
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -938,7 +1251,7 @@ function TaskRow({
         className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border transition-all hover:shadow-sm cursor-pointer group ${
           task.status === "done" ? "opacity-60 bg-muted/30 border-border/30" : "bg-background border-border/50 hover:border-border"
         }`}
-        onClick={task._source === "personal" ? onOpenDrawer : undefined}
+        onClick={onOpenDrawer}
       >
         {task._source === "operational" && (task.subtaskCount || 0) > 0 && (
           <button
