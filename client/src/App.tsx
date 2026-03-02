@@ -63,7 +63,6 @@ import PdTicketDetailPage from "@/pages/pd-ticket-detail";
 import MsIntegrationSettingsPage from "@/pages/ms-integration-settings";
 import MsCallbackPage from "@/pages/ms-callback";
 import TeamsChatsPage from "@/pages/teams-chats";
-import AdminMsMappingPage from "@/pages/admin-ms-mapping";
 import CollaborationPage from "@/pages/collaboration";
 import FinancialLinkingPage from "@/pages/financial-linking";
 import PMOnTheGoHome from "@/pages/pm-on-the-go-home";
@@ -293,7 +292,7 @@ function ProtectedPages() {
         <Route path="/settings/integrations" component={MsIntegrationSettingsPage} />
         <Route path="/admin/ms-integration" component={MsIntegrationSettingsPage} />
         <Route path="/teams/chats" component={TeamsChatsPage} />
-        <Route path="/admin/ms-mapping" component={AdminMsMappingPage} />
+        <Route path="/admin/ms-mapping" component={MsIntegrationSettingsPage} />
         <Route path="/collaboration" component={CollaborationPage} />
         <Route path="/pm/on-the-go" component={PMOnTheGoHome} />
         <Route path="/pm/on-the-go/project/:projectId" component={PMOnTheGoProject} />

@@ -224,7 +224,6 @@ function getRedesignedNavGroups(): NavGroup[] {
         { label: "Feedback & Support", icon: MessageSquareText, path: "/feedback" },
         { label: "Emergent Energy Info", icon: BookOpen, path: "/ee-info" },
         { label: "Leaderboard", icon: Trophy, path: "/leaderboard" },
-        { label: "Integration Status", icon: Plug, path: "/settings/integrations" },
       ],
     },
     {
@@ -239,8 +238,7 @@ function getRedesignedNavGroups(): NavGroup[] {
             { label: "Weekly Reviews", icon: CalendarCheck, path: "/weekly-reviews" },
             { label: "Change Audit", icon: Activity, path: "/admin/activity-log" },
             { label: "Approvals", icon: ShieldCheck, path: "/admin/approvals" },
-            { label: "Microsoft Integration", icon: Cog, path: "/admin/ms-integration" },
-            { label: "MS Account Mapping", icon: Users, path: "/admin/ms-mapping" },
+            { label: "Microsoft 365", icon: Plug, path: "/admin/ms-integration" },
           ],
         },
       ],
