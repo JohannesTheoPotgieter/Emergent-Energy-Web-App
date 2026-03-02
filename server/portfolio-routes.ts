@@ -5,9 +5,10 @@ import { verifyToken } from "./jwt";
 import {
   portfolios, portfolioRolloutPlans, portfolioRolloutPhases,
   projectPortfolioAssignments, projectInfo, users,
-  qcChecklist, qcItemInstance, programExpense, programInflows, projectPlan,
+  qcChecklist, qcItemInstance, programExpense, programInflows,
 } from "@shared/schema";
 import { logAuditFromReq } from "./audit-logger";
+import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 
 function computeProjectCompletion(plans: any[]): { actualPct: number; expectedPct: number; delta: number } {
   const todayStr = new Date().toISOString().split("T")[0];
@@ -335,7 +336,8 @@ export function registerPortfolioRoutes(app: Express) {
 
       const rawExpenses = await db.select().from(programExpense).where(inArray(programExpense.projectName, projectNames));
       const rawInflows = await db.select().from(programInflows).where(inArray(programInflows.projectName, projectNames));
-      const allPlans = await db.select().from(projectPlan).where(inArray(projectPlan.projectName, projectNames));
+      const allWorkItems = await getAllPMWorkItemsAsProjectPlan();
+      const allPlans = allWorkItems.filter((wi: any) => projectNames.includes(wi.projectName));
 
       const plansByProject = new Map<string, any[]>();
       for (const p of allPlans) {
@@ -593,7 +595,7 @@ export function registerPortfolioRoutes(app: Express) {
 
       const allExpenses = await db.select().from(programExpense);
       const allInflows = await db.select().from(programInflows);
-      const allPlanTasks = await db.select().from(projectPlan);
+      const allPlanTasks = await getAllPMWorkItemsAsProjectPlan();
 
       const expenseByProject = new Map<string, any[]>();
       const inflowByProject = new Map<string, any[]>();
@@ -761,9 +763,8 @@ export function registerPortfolioRoutes(app: Express) {
       const projects = await db.select().from(projectInfo).where(inArray(projectInfo.id, projectIds));
       const projectNames = projects.map(p => p.projectName);
 
-      const plans = projectNames.length > 0
-        ? await db.select().from(projectPlan).where(inArray(projectPlan.projectName, projectNames))
-        : [];
+      const allWiPlans = await getAllPMWorkItemsAsProjectPlan();
+      const plans = allWiPlans.filter((wi: any) => projectNames.includes(wi.projectName));
 
       const plansByProject = new Map<string, any[]>();
       for (const p of plans) {
@@ -782,9 +783,9 @@ export function registerPortfolioRoutes(app: Express) {
         let constructionStartDate: string | null = null;
 
         for (const task of projPlans) {
-          const title = (task.title || "").toLowerCase();
-          const taskStart = task.actualStart || task.baselineStart;
-          const taskEnd = task.actualEnd || task.baselineEnd;
+          const title = (task.title || task.highLevelProgramme || "").toLowerCase();
+          const taskStart = task.actualStart;
+          const taskEnd = task.actualEnd;
 
           if (title.includes("site establishment") && taskStart) {
             if (!startDate || taskStart < startDate) startDate = taskStart;
@@ -844,12 +845,11 @@ export function registerPortfolioRoutes(app: Express) {
       const projects = await db.select().from(projectInfo).where(inArray(projectInfo.id, projectIds));
       const projectNames = projects.map(p => p.projectName);
 
-      const plans = projectNames.length > 0
-        ? await db.select().from(projectPlan).where(inArray(projectPlan.projectName, projectNames))
-        : [];
+      const allWiForKeyDates = await getAllPMWorkItemsAsProjectPlan();
+      const plansForKeyDates = allWiForKeyDates.filter((wi: any) => projectNames.includes(wi.projectName));
 
       const plansByProject = new Map<string, any[]>();
-      for (const p of plans) {
+      for (const p of plansForKeyDates) {
         if (!plansByProject.has(p.projectName)) plansByProject.set(p.projectName, []);
         plansByProject.get(p.projectName)!.push(p);
       }

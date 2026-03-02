@@ -2,50 +2,50 @@ import { db } from "./db";
 import { sql } from "drizzle-orm";
 import { setFeatureFlag } from "./lib/feature-flags";
 
-const LEGACY_TABLES = [
-  "normalized_plan_tasks", "operational_tasks", "engineering_tasks",
-  "intake_tasks", "mytool_tasks", "project_eng_tasks",
-  "working_plan_task_override", "tasks", "qc_item_instance",
-];
+async function tableExists(name: string): Promise<boolean> {
+  const result = await db.execute(sql.raw(
+    `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '${name}') as ex`
+  ));
+  return (result as any).rows?.[0]?.ex === true;
+}
 
-export async function restoreArchivedLegacyTables(): Promise<void> {
+async function resolveTable(name: string): Promise<string | null> {
+  if (await tableExists(name)) return name;
+  const archived = name + "_legacy_archive";
+  if (await tableExists(archived)) return archived;
+  return null;
+}
+
+async function backfillFromTable(
+  sourceTable: string,
+  refPrefix: string,
+  insertSql: string,
+): Promise<number> {
+  const countResult = await db.execute(sql.raw(`
+    SELECT COUNT(*) as cnt FROM "${sourceTable}" src
+    WHERE NOT EXISTS (
+      SELECT 1 FROM work_items wi WHERE wi.external_ref = CONCAT('${refPrefix}', src.id::text)
+    )
+  `));
+  const missing = Number((countResult as any).rows?.[0]?.cnt ?? 0);
+  if (missing === 0) return 0;
+
+  await db.execute(sql.raw(insertSql));
+  return missing;
+}
+
+async function migrateTable(name: string, fn: () => Promise<void>): Promise<void> {
   try {
-    for (const table of LEGACY_TABLES) {
-      const archiveName = table + "_legacy_archive";
-      const archiveExists = (await db.execute(sql.raw(
-        `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '${archiveName}') as ex`
-      )) as any).rows?.[0]?.ex;
-      if (!archiveExists) continue;
-
-      const origExists = (await db.execute(sql.raw(
-        `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '${table}') as ex`
-      )) as any).rows?.[0]?.ex;
-      if (origExists) continue;
-
-      await db.execute(sql.raw(`ALTER TABLE "${archiveName}" RENAME TO "${table}"`));
-      console.log(`[Startup] Restored archived table: ${archiveName} → ${table}`);
-    }
-  } catch (err) {
-    console.error("[Startup] Error restoring archived legacy tables:", err);
+    await fn();
+  } catch (err: any) {
+    console.error(`[Backfill] Error migrating ${name}:`, err.message);
   }
 }
 
 export async function backfillWorkItems(): Promise<void> {
   try {
-    const hasNpt = await db.execute(sql.raw(`
-      SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'normalized_plan_tasks') as exists
-    `));
-    if (!(hasNpt as any).rows?.[0]?.exists) {
-      console.log("[Backfill] normalized_plan_tasks does not exist, skipping backfill but enabling feature flag");
-      await setFeatureFlag("canonical_work_items_v1", true);
-      return;
-    }
-
-    const hasWi = await db.execute(sql.raw(`
-      SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'work_items') as exists
-    `));
-    if (!(hasWi as any).rows?.[0]?.exists) {
-      console.log("[Backfill] work_items does not exist, skipping backfill");
+    if (!(await tableExists("work_items"))) {
+      console.log("[Backfill] work_items table does not exist, skipping");
       return;
     }
 
@@ -55,104 +55,340 @@ export async function backfillWorkItems(): Promise<void> {
         AND external_ref LIKE '%::PLAN::%'
     `));
 
-    const countResult = await db.execute(sql.raw(`
-      SELECT COUNT(*) as cnt FROM normalized_plan_tasks npt
-      WHERE NOT EXISTS (
-        SELECT 1 FROM work_items wi
-        WHERE wi.external_ref = CONCAT('NPT::', npt.id::text)
-      )
-    `));
-    const missing = Number((countResult as any).rows?.[0]?.cnt ?? 0);
-
-    if (missing === 0) {
-      const totalWi = await db.execute(sql.raw(`SELECT COUNT(*) as cnt FROM work_items WHERE workstream = 'PM' AND source = 'SMART_IMPORT'`));
-      console.log(`[Backfill] work_items already synced (${(totalWi as any).rows?.[0]?.cnt ?? 0} PM items), skipping`);
-      await setFeatureFlag("canonical_work_items_v1", true, "system-backfill");
-      console.log("[Backfill] canonical_work_items_v1 feature flag enabled");
-      return;
-    }
-
-    console.log(`[Backfill] Backfilling ${missing} normalized_plan_tasks → work_items...`);
-
-    await db.execute(sql.raw(`
-      INSERT INTO work_items (
-        project_id, workstream, type, source, title, description, status, priority,
-        start_date, end_date, duration, percent_complete, wbs_code, outline_number,
-        owner_user_id, is_shared, external_ref, legacy_table, legacy_id, created_by
-      )
-      SELECT
-        npt.project_id,
-        'PM',
-        CASE WHEN npt.is_milestone = true THEN 'milestone' ELSE 'task' END,
-        'SMART_IMPORT',
-        npt.task_name,
-        npt.comment,
-        COALESCE(npt.status, 'Not Started'),
-        NULL,
-        COALESCE(npt.start_date, npt.actual_start_date),
-        COALESCE(npt.end_date, npt.actual_end_date),
-        COALESCE(npt.duration_days, npt.actual_duration_days),
-        COALESCE(npt.pct_complete, 0),
-        npt.task_no,
-        npt.task_no,
-        npt.assignee_user_id,
-        false,
-        CONCAT('NPT::', npt.id::text),
-        'normalized_plan_tasks',
-        npt.id,
-        npt.assignee_user_id
-      FROM normalized_plan_tasks npt
-      WHERE NOT EXISTS (
-        SELECT 1 FROM work_items wi
-        WHERE wi.external_ref = CONCAT('NPT::', npt.id::text)
-      )
-    `));
-
-    const inserted = await db.execute(sql.raw(`SELECT COUNT(*) as cnt FROM work_items WHERE workstream = 'PM' AND source = 'SMART_IMPORT'`));
-    console.log(`[Backfill] Inserted work_items, total PM items: ${(inserted as any).rows?.[0]?.cnt ?? 0}`);
-
-    await db.execute(sql.raw(`
-      UPDATE work_items child
-      SET parent_id = parent.id
-      FROM work_items parent
-      WHERE child.workstream = 'PM'
-        AND child.source = 'SMART_IMPORT'
-        AND child.parent_id IS NULL
-        AND child.wbs_code IS NOT NULL
-        AND child.wbs_code LIKE '%.%'
-        AND parent.workstream = 'PM'
-        AND parent.source = 'SMART_IMPORT'
-        AND parent.project_id = child.project_id
-        AND parent.wbs_code = SUBSTRING(child.wbs_code FROM '^(.+)\\.[^.]+$')
-        AND parent.deleted_at IS NULL
-        AND child.deleted_at IS NULL
-    `));
-
-    const parentCount = await db.execute(sql.raw(`
-      SELECT COUNT(*) as cnt FROM work_items
-      WHERE workstream = 'PM' AND source = 'SMART_IMPORT' AND parent_id IS NOT NULL
-    `));
-    console.log(`[Backfill] Set parent_id for ${(parentCount as any).rows?.[0]?.cnt ?? 0} child work_items`);
-
-    await db.execute(sql.raw(`
-      INSERT INTO work_item_assignments (work_item_id, user_id, role)
-      SELECT wi.id, wi.owner_user_id, 'OWNER'
-      FROM work_items wi
-      WHERE wi.workstream = 'PM'
-        AND wi.source = 'SMART_IMPORT'
-        AND wi.owner_user_id IS NOT NULL
-        AND wi.deleted_at IS NULL
-        AND NOT EXISTS (
-          SELECT 1 FROM work_item_assignments wia
-          WHERE wia.work_item_id = wi.id AND wia.user_id = wi.owner_user_id
+    await migrateTable("normalized_plan_tasks", async () => {
+      const nptTable = await resolveTable("normalized_plan_tasks");
+      if (!nptTable) {
+        console.log("[Backfill] normalized_plan_tasks not found, skipping");
+        return;
+      }
+      const count = await backfillFromTable(nptTable, "NPT::", `
+        INSERT INTO work_items (
+          project_id, workstream, type, source, title, description, status, priority,
+          start_date, end_date, duration, percent_complete, wbs_code, outline_number,
+          owner_user_id, is_shared, external_ref, legacy_table, legacy_id, created_by
         )
-    `));
+        SELECT
+          npt.project_id, 'PM',
+          CASE WHEN npt.is_milestone = true THEN 'milestone' ELSE 'task' END,
+          'SMART_IMPORT', npt.task_name, npt.comment,
+          COALESCE(npt.status, 'Not Started'), NULL,
+          COALESCE(npt.start_date, npt.actual_start_date),
+          COALESCE(npt.end_date, npt.actual_end_date),
+          COALESCE(npt.duration_days, npt.actual_duration_days),
+          COALESCE(npt.pct_complete, 0),
+          npt.task_no, npt.task_no, npt.assignee_user_id, false,
+          CONCAT('NPT::', npt.id::text), 'normalized_plan_tasks', npt.id, npt.assignee_user_id
+        FROM "${nptTable}" npt
+        WHERE NOT EXISTS (
+          SELECT 1 FROM work_items wi WHERE wi.external_ref = CONCAT('NPT::', npt.id::text)
+        )
+      `);
+      if (count > 0) console.log(`[Backfill] Migrated ${count} normalized_plan_tasks → work_items`);
 
-    console.log("[Backfill] work_items backfill complete");
+      await db.execute(sql.raw(`
+        UPDATE work_items child
+        SET parent_id = parent.id
+        FROM work_items parent
+        WHERE child.workstream = 'PM' AND child.source = 'SMART_IMPORT'
+          AND child.parent_id IS NULL AND child.wbs_code IS NOT NULL AND child.wbs_code LIKE '%.%'
+          AND parent.workstream = 'PM' AND parent.source = 'SMART_IMPORT'
+          AND parent.project_id = child.project_id
+          AND parent.wbs_code = SUBSTRING(child.wbs_code FROM '^(.+)\\.[^.]+$')
+          AND parent.deleted_at IS NULL AND child.deleted_at IS NULL
+      `));
+
+      await db.execute(sql.raw(`
+        INSERT INTO work_item_assignments (work_item_id, user_id, role)
+        SELECT wi.id, wi.owner_user_id, 'OWNER'
+        FROM work_items wi
+        WHERE wi.legacy_table = 'normalized_plan_tasks' AND wi.owner_user_id IS NOT NULL AND wi.deleted_at IS NULL
+          AND NOT EXISTS (SELECT 1 FROM work_item_assignments wia WHERE wia.work_item_id = wi.id AND wia.user_id = wi.owner_user_id)
+      `));
+    });
+
+    await migrateTable("operational_tasks", async () => {
+      const otTable = await resolveTable("operational_tasks");
+      if (!otTable) return;
+      const count = await backfillFromTable(otTable, "OT::", `
+        INSERT INTO work_items (
+          project_id, workstream, type, source, title, description, status, priority,
+          start_date, end_date, duration, percent_complete,
+          owner_user_id, is_shared, external_ref, legacy_table, legacy_id, created_by
+        )
+        SELECT
+          ot.project_id, 'PM', 'task', 'UI', ot.title, ot.description,
+          COALESCE(ot.status, 'TO DO'), ot.priority,
+          ot.start_date, ot.due_date, NULL, 0,
+          ot.owner_user_id, false,
+          CONCAT('OT::', ot.id::text), 'operational_tasks', ot.id, ot.requester_user_id
+        FROM "${otTable}" ot
+        WHERE NOT EXISTS (
+          SELECT 1 FROM work_items wi WHERE wi.external_ref = CONCAT('OT::', ot.id::text)
+        )
+      `);
+      if (count > 0) {
+        console.log(`[Backfill] Migrated ${count} operational_tasks → work_items`);
+        await db.execute(sql.raw(`
+          INSERT INTO work_item_assignments (work_item_id, user_id, role)
+          SELECT wi.id, wi.owner_user_id, 'OWNER'
+          FROM work_items wi
+          WHERE wi.legacy_table = 'operational_tasks' AND wi.owner_user_id IS NOT NULL AND wi.deleted_at IS NULL
+            AND NOT EXISTS (SELECT 1 FROM work_item_assignments wia WHERE wia.work_item_id = wi.id AND wia.user_id = wi.owner_user_id)
+        `));
+      }
+    });
+
+    await migrateTable("engineering_tasks", async () => {
+      const etTable = await resolveTable("engineering_tasks");
+      if (!etTable) return;
+      const count = await backfillFromTable(etTable, "ET::", `
+        INSERT INTO work_items (
+          project_id, workstream, type, source, title, description, status, priority,
+          start_date, end_date, duration, percent_complete,
+          owner_user_id, is_shared, external_ref, legacy_table, legacy_id, created_by
+        )
+        SELECT
+          et.project_id, 'ENG', 'task', 'UI', et.title, et.description,
+          COALESCE(et.status, 'NOT_STARTED'), NULL,
+          NULL, NULL, NULL,
+          CASE WHEN et.status = 'DONE' THEN 1 ELSE 0 END,
+          et.assignee_user_id, false,
+          CONCAT('ET::', et.id::text), 'engineering_tasks', et.id, et.assignee_user_id
+        FROM "${etTable}" et
+        WHERE et.soft_deleted_at IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM work_items wi WHERE wi.external_ref = CONCAT('ET::', et.id::text)
+          )
+      `);
+      if (count > 0) {
+        console.log(`[Backfill] Migrated ${count} engineering_tasks → work_items`);
+        await db.execute(sql.raw(`
+          INSERT INTO work_item_assignments (work_item_id, user_id, role)
+          SELECT wi.id, wi.owner_user_id, 'OWNER'
+          FROM work_items wi
+          WHERE wi.legacy_table = 'engineering_tasks' AND wi.owner_user_id IS NOT NULL AND wi.deleted_at IS NULL
+            AND NOT EXISTS (SELECT 1 FROM work_item_assignments wia WHERE wia.work_item_id = wi.id AND wia.user_id = wi.owner_user_id)
+        `));
+      }
+    });
+
+    await migrateTable("mytool_tasks", async () => {
+      const mtTable = await resolveTable("mytool_tasks");
+      if (!mtTable) return;
+      const count = await backfillFromTable(mtTable, "MT::", `
+        INSERT INTO work_items (
+          project_id, workstream, type, source, title, description, status, priority,
+          start_date, end_date, duration, percent_complete,
+          owner_user_id, is_shared, external_ref, legacy_table, legacy_id, created_by
+        )
+        SELECT
+          NULL, 'PERSONAL', 'task', 'UI', mt.title, mt.notes,
+          COALESCE(mt.status, 'inbox'), mt.priority,
+          mt.start_date, mt.planned_for_date, NULL,
+          CASE WHEN mt.status = 'done' THEN 1 ELSE 0 END,
+          mt.owner_user_id, false,
+          CONCAT('MT::', mt.id::text), 'mytool_tasks', mt.id, mt.owner_user_id
+        FROM "${mtTable}" mt
+        WHERE NOT EXISTS (
+          SELECT 1 FROM work_items wi WHERE wi.external_ref = CONCAT('MT::', mt.id::text)
+        )
+      `);
+      if (count > 0) console.log(`[Backfill] Migrated ${count} mytool_tasks → work_items`);
+    });
+
+    await migrateTable("tasks", async () => {
+      const tasksTable = await resolveTable("tasks");
+      if (!tasksTable) return;
+      const count = await backfillFromTable(tasksTable, "TASK::", `
+        INSERT INTO work_items (
+          project_id, workstream, type, source, title, description, status, priority,
+          start_date, end_date, duration, percent_complete,
+          owner_user_id, is_shared, external_ref, legacy_table, legacy_id, created_by
+        )
+        SELECT
+          t.project_id, 'PM', 'task', 'UI', t.task_name, NULL,
+          COALESCE(t.status, 'Not Started'), NULL,
+          t.start_date, t.end_date, NULL,
+          COALESCE(t.progress::real / 100.0, 0),
+          NULL, false,
+          CONCAT('TASK::', t.id::text), 'tasks', t.id, NULL
+        FROM "${tasksTable}" t
+        WHERE NOT EXISTS (
+          SELECT 1 FROM work_items wi WHERE wi.external_ref = CONCAT('TASK::', t.id::text)
+        )
+      `);
+      if (count > 0) console.log(`[Backfill] Migrated ${count} tasks → work_items`);
+    });
+
+    await migrateTable("intake_tasks", async () => {
+      const itTable = await resolveTable("intake_tasks");
+      if (!itTable) return;
+      const count = await backfillFromTable(itTable, "IT::", `
+        INSERT INTO work_items (
+          project_id, workstream, type, source, title, description, status, priority,
+          start_date, end_date, duration, percent_complete,
+          owner_user_id, is_shared, external_ref, legacy_table, legacy_id, created_by
+        )
+        SELECT
+          NULL, 'PD', 'task', 'UI', it.title, it.description,
+          COALESCE(it.status, 'NOT_STARTED'), NULL,
+          NULL, it.due_date, NULL,
+          CASE WHEN it.status = 'DONE' THEN 1 ELSE 0 END,
+          NULL, false,
+          CONCAT('IT::', it.id::text), 'intake_tasks', it.id, NULL
+        FROM "${itTable}" it
+        WHERE NOT EXISTS (
+          SELECT 1 FROM work_items wi WHERE wi.external_ref = CONCAT('IT::', it.id::text)
+        )
+      `);
+      if (count > 0) console.log(`[Backfill] Migrated ${count} intake_tasks → work_items`);
+    });
+
+    await migrateTable("project_eng_tasks", async () => {
+      const petTable = await resolveTable("project_eng_tasks");
+      if (!petTable) return;
+      const count = await backfillFromTable(petTable, "PET::", `
+        INSERT INTO work_items (
+          project_id, workstream, type, source, title, description, status, priority,
+          start_date, end_date, duration, percent_complete,
+          owner_user_id, is_shared, external_ref, legacy_table, legacy_id, created_by
+        )
+        SELECT
+          pes.project_id, 'ENG', 'task', 'SYSTEM',
+          COALESCE(ett.title, 'Engineering Task #' || pet.id::text),
+          pet.notes,
+          COALESCE(pet.status, 'pending'), NULL,
+          NULL, pet.due_date, NULL,
+          CASE WHEN pet.status = 'complete' THEN 1 ELSE 0 END,
+          pet.owner_user_id, false,
+          CONCAT('PET::', pet.id::text), 'project_eng_tasks', pet.id, pet.completed_by
+        FROM "${petTable}" pet
+        JOIN project_eng_stages pes ON pet.project_eng_stage_id = pes.id
+        LEFT JOIN eng_task_templates ett ON pet.task_template_id = ett.id
+        WHERE NOT EXISTS (
+          SELECT 1 FROM work_items wi WHERE wi.external_ref = CONCAT('PET::', pet.id::text)
+        )
+      `);
+      if (count > 0) {
+        console.log(`[Backfill] Migrated ${count} project_eng_tasks → work_items`);
+        await db.execute(sql.raw(`
+          INSERT INTO work_item_assignments (work_item_id, user_id, role)
+          SELECT wi.id, wi.owner_user_id, 'OWNER'
+          FROM work_items wi
+          WHERE wi.legacy_table = 'project_eng_tasks' AND wi.owner_user_id IS NOT NULL AND wi.deleted_at IS NULL
+            AND NOT EXISTS (SELECT 1 FROM work_item_assignments wia WHERE wia.work_item_id = wi.id AND wia.user_id = wi.owner_user_id)
+        `));
+      }
+    });
+
+    await migrateTable("qc_item_instance", async () => {
+      const qciTable = await resolveTable("qc_item_instance");
+      if (!qciTable) return;
+      const count = await backfillFromTable(qciTable, "QCI::", `
+        INSERT INTO work_items (
+          project_id, workstream, type, source, title, description, status, priority,
+          start_date, end_date, duration, percent_complete,
+          owner_user_id, is_shared, external_ref, legacy_table, legacy_id, created_by
+        )
+        SELECT
+          qc.project_id, 'QUALITY', 'task', 'SYSTEM',
+          COALESCE(qti.item_name, 'QC Item #' || qi.id::text),
+          qi.notes,
+          COALESCE(qi.status, 'not_checked'), NULL,
+          NULL, NULL, NULL,
+          CASE WHEN qi.status = 'pass' THEN 1 ELSE 0 END,
+          qi.assignee_user_id, false,
+          CONCAT('QCI::', qi.id::text), 'qc_item_instance', qi.id, NULL
+        FROM "${qciTable}" qi
+        JOIN qc_checklist qc ON qi.checklist_id = qc.id
+        LEFT JOIN qc_template_item qti ON qi.template_item_id = qti.id
+        WHERE NOT EXISTS (
+          SELECT 1 FROM work_items wi WHERE wi.external_ref = CONCAT('QCI::', qi.id::text)
+        )
+      `);
+      if (count > 0) {
+        console.log(`[Backfill] Migrated ${count} qc_item_instance → work_items`);
+        await db.execute(sql.raw(`
+          INSERT INTO work_item_assignments (work_item_id, user_id, role)
+          SELECT wi.id, wi.owner_user_id, 'OWNER'
+          FROM work_items wi
+          WHERE wi.legacy_table = 'qc_item_instance' AND wi.owner_user_id IS NOT NULL AND wi.deleted_at IS NULL
+            AND NOT EXISTS (SELECT 1 FROM work_item_assignments wia WHERE wia.work_item_id = wi.id AND wia.user_id = wi.owner_user_id)
+        `));
+      }
+    });
+
+    await migrateTable("project_plan", async () => {
+      const ppTable = await resolveTable("project_plan");
+      if (!ppTable) return;
+      const ppCountResult = await db.execute(sql.raw(`
+        SELECT COUNT(*) as cnt FROM "${ppTable}" pp
+        JOIN project_info pi ON pi.project_name = pp.project_name
+        WHERE NOT EXISTS (
+          SELECT 1 FROM work_items wi WHERE wi.external_ref = CONCAT('PP::', pp.id::text)
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM work_items wi
+          WHERE wi.project_id = pi.id AND wi.workstream = 'PM' AND wi.source = 'SMART_IMPORT' AND wi.deleted_at IS NULL
+        )
+      `));
+      const ppMissing = Number((ppCountResult as any).rows?.[0]?.cnt ?? 0);
+      if (ppMissing > 0) {
+        await db.execute(sql.raw(`
+          INSERT INTO work_items (
+            project_id, workstream, type, source, title, description, status, priority,
+            start_date, end_date, duration, percent_complete, wbs_code, outline_number,
+            owner_user_id, is_shared, external_ref, legacy_table, legacy_id, created_by
+          )
+          SELECT
+            pi.id, 'PM', 'task', 'SMART_IMPORT',
+            COALESCE(pp.high_level_programme, 'Task ' || COALESCE(pp.task_no, pp.row_number::text)),
+            NULL,
+            CASE
+              WHEN COALESCE(pp.actual_pct_complete, 0) >= 1 THEN 'Done'
+              WHEN COALESCE(pp.actual_pct_complete, 0) > 0 THEN 'In Progress'
+              ELSE 'Not Started'
+            END,
+            NULL,
+            pp.actual_start, pp.actual_end, pp.duration_days,
+            COALESCE(pp.actual_pct_complete, 0),
+            pp.task_no, pp.task_no,
+            NULL, false,
+            CONCAT('PP::', pp.id::text), 'project_plan', pp.id, NULL
+          FROM "${ppTable}" pp
+          JOIN project_info pi ON pi.project_name = pp.project_name
+          WHERE NOT EXISTS (
+            SELECT 1 FROM work_items wi WHERE wi.external_ref = CONCAT('PP::', pp.id::text)
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM work_items wi
+            WHERE wi.project_id = pi.id AND wi.workstream = 'PM' AND wi.source = 'SMART_IMPORT' AND wi.deleted_at IS NULL
+          )
+        `));
+        console.log(`[Backfill] Migrated ${ppMissing} project_plan → work_items (projects without NPT data)`);
+
+        await db.execute(sql.raw(`
+          UPDATE work_items child
+          SET parent_id = parent.id
+          FROM work_items parent
+          WHERE child.legacy_table = 'project_plan' AND child.parent_id IS NULL
+            AND child.wbs_code IS NOT NULL AND child.wbs_code LIKE '%.%'
+            AND parent.legacy_table = 'project_plan'
+            AND parent.project_id = child.project_id
+            AND parent.wbs_code = SUBSTRING(child.wbs_code FROM '^(.+)\\.[^.]+$')
+            AND parent.deleted_at IS NULL AND child.deleted_at IS NULL
+        `));
+      }
+    });
+
+    const totalWi = await db.execute(sql.raw(`SELECT COUNT(*) as cnt FROM work_items`));
+    console.log(`[Backfill] Total work_items: ${(totalWi as any).rows?.[0]?.cnt ?? 0}`);
 
     await setFeatureFlag("canonical_work_items_v1", true, "system-backfill");
     console.log("[Backfill] canonical_work_items_v1 feature flag enabled");
+    console.log("[Backfill] All legacy table migration complete");
   } catch (err: any) {
     console.error("[Backfill] work_items backfill error:", err.message);
+    await setFeatureFlag("canonical_work_items_v1", true, "system-backfill");
   }
 }

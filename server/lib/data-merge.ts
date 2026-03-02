@@ -1,6 +1,7 @@
 import { db } from "../db";
-import { normalizedCostLines, normalizedRevenueLines, normalizedPlanTasks } from "@shared/schema";
+import { normalizedCostLines, normalizedRevenueLines } from "@shared/schema";
 import type { NormalizedCostLine, NormalizedRevenueLine, NormalizedPlanTask } from "@shared/schema";
+import { safeLegacyQuery } from "../legacy-table-guard";
 
 export function createNameResolver(projectInfoNames: string[]) {
   const piNames = new Set(projectInfoNames);
@@ -32,10 +33,11 @@ export function createNameResolver(projectInfoNames: string[]) {
 }
 
 export async function fetchAllNormalized() {
+  const { normalizedPlanTasks } = await import("@shared/schema");
   const [costLines, revenueLines, planTasks] = await Promise.all([
     db.select().from(normalizedCostLines),
     db.select().from(normalizedRevenueLines),
-    db.select().from(normalizedPlanTasks),
+    safeLegacyQuery(() => db.select().from(normalizedPlanTasks), []),
   ]);
   return { costLines, revenueLines, planTasks };
 }

@@ -823,19 +823,18 @@ export class DatabaseStorage implements IStorage {
 
   // Project Plan (new)
   async getAllProjectPlans(): Promise<ProjectPlan[]> {
-    return this.dbInstance.select().from(projectPlan).orderBy(desc(projectPlan.createdAt));
+    return safeLegacyQuery(() => this.dbInstance.select().from(projectPlan).orderBy(desc(projectPlan.createdAt)), []);
   }
 
   async getProjectPlansByProject(projectName: string): Promise<ProjectPlan[]> {
-    return this.dbInstance.select().from(projectPlan).where(eq(projectPlan.projectName, projectName));
+    return safeLegacyQuery(() => this.dbInstance.select().from(projectPlan).where(eq(projectPlan.projectName, projectName)), []);
   }
 
   async createManyProjectPlans(planList: InsertProjectPlan[]): Promise<ProjectPlan[]> {
     if (planList.length === 0) return [];
-    // Explicitly provide timestamp for SQLite compatibility
     const now = new Date();
     const withTimestamps = planList.map(p => ({ ...p, createdAt: now }));
-    return this.dbInstance.insert(projectPlan).values(withTimestamps).returning();
+    return safeLegacyQuery(() => this.dbInstance.insert(projectPlan).values(withTimestamps).returning(), []);
   }
 
   async deleteProjectPlansByProject(projectName: string): Promise<void> {
@@ -852,8 +851,8 @@ export class DatabaseStorage implements IStorage {
         .set({ importedDependencyId: null })
         .where(inArray(workingPlanDependencyOverride.scenarioId, sIds));
     }
-    await this.dbInstance.delete(projectPlanDependency).where(eq(projectPlanDependency.projectName, projectName));
-    await this.dbInstance.delete(projectPlan).where(eq(projectPlan.projectName, projectName));
+    await safeLegacyWrite(() => this.dbInstance.delete(projectPlanDependency).where(eq(projectPlanDependency.projectName, projectName)));
+    await safeLegacyWrite(() => this.dbInstance.delete(projectPlan).where(eq(projectPlan.projectName, projectName)));
   }
 
   // Cashflow Points (new)

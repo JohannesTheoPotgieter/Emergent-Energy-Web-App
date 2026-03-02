@@ -16,7 +16,7 @@ export async function getWorkItemsAsNormalizedPlanTasks(projectName: string): Pr
     .where(
       and(
         eq(workItems.workstream, "PM"),
-        eq(workItems.legacyTable, "normalized_plan_tasks"),
+        sql`${workItems.source} = 'SMART_IMPORT'`,
         isNull(workItems.deletedAt),
         sql`EXISTS (
           SELECT 1 FROM project_info pi
@@ -258,6 +258,55 @@ export async function getWorkItemsAsMytoolTasks(userId: number): Promise<any[]> 
     createdAt: wi.createdAt,
     updatedAt: wi.updatedAt,
     completedAt: null,
+  }));
+}
+
+export async function getAllPMWorkItemsAsProjectPlan(): Promise<any[]> {
+  const items = await db
+    .select({
+      id: workItems.id,
+      projectId: workItems.projectId,
+      title: workItems.title,
+      wbsCode: workItems.wbsCode,
+      startDate: workItems.startDate,
+      endDate: workItems.endDate,
+      duration: workItems.duration,
+      percentComplete: workItems.percentComplete,
+      type: workItems.type,
+      status: workItems.status,
+    })
+    .from(workItems)
+    .where(
+      and(
+        eq(workItems.workstream, "PM"),
+        sql`${workItems.source} = 'SMART_IMPORT'`,
+        isNull(workItems.deletedAt),
+      )
+    );
+
+  const projectIds = [...new Set(items.filter(i => i.projectId).map(i => i.projectId!))];
+  let projectNameMap = new Map<number, string>();
+  if (projectIds.length > 0) {
+    const projects = await db.execute(sql`SELECT id, project_name FROM project_info WHERE id = ANY(ARRAY[${sql.join(projectIds.map(id => sql`${id}`), sql`, `)}])`);
+    for (const row of (projects as any).rows || []) {
+      projectNameMap.set(row.id, row.project_name);
+    }
+  }
+
+  return items.map(wi => ({
+    id: wi.id,
+    projectId: wi.projectId,
+    projectName: wi.projectId ? (projectNameMap.get(wi.projectId) || "") : "",
+    highLevelProgramme: wi.title,
+    title: wi.title,
+    taskNo: wi.wbsCode,
+    rowNumber: null,
+    actualStart: wi.startDate,
+    actualEnd: wi.endDate,
+    actualPctComplete: wi.percentComplete,
+    expectedPctComplete: null,
+    durationDays: wi.duration,
+    isMilestone: wi.type === "milestone",
   }));
 }
 
