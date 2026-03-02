@@ -2034,6 +2034,7 @@ function PreviewCommitStep({
   const [commitResult, setCommitResult] = useState<any>(null);
   const [expandedTables, setExpandedTables] = useState<Record<string, boolean>>({});
   const [manualEditsWarning, setManualEditsWarning] = useState<{ message: string; count: number } | null>(null);
+  const [previouslyDeletedWarning, setPreviouslyDeletedWarning] = useState<{ message: string; deletedBy: string; deletedAt: string } | null>(null);
   const [, navigate] = useLocation();
   const { toast } = useToast();
 
@@ -2063,11 +2064,14 @@ function PreviewCommitStep({
         setCommitted(true);
         setCommitResult(data);
         setManualEditsWarning(null);
+        setPreviouslyDeletedWarning(null);
         toast({ title: "Import Committed!", description: "Data has been imported successfully" });
       } else {
         const err = await res.json().catch(() => ({ error: "Commit failed" }));
         if (err.error === "manual_edits_warning") {
           setManualEditsWarning({ message: err.message, count: err.manualEditCount });
+        } else if (err.error === "previously_deleted") {
+          setPreviouslyDeletedWarning({ message: err.message, deletedBy: err.deletedBy, deletedAt: err.deletedAt });
         } else {
           toast({ title: "Error", description: err.message || err.error || "Commit failed", variant: "destructive" });
         }
@@ -2081,6 +2085,7 @@ function PreviewCommitStep({
 
   const handleCommit = () => doCommit({});
   const handleCommitForce = () => doCommit({ acknowledgeManualEdits: true });
+  const handleCommitRecreate = () => doCommit({ forceRecreate: true });
 
   const toggleTable = (key: string) => {
     setExpandedTables((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -2272,6 +2277,40 @@ function PreviewCommitStep({
               </div>
             </CardContent>
           )}
+        </Card>
+      )}
+
+      {previouslyDeletedWarning && (
+        <Card className="border-red-300 bg-red-50" data-testid="previously-deleted-warning">
+          <CardContent className="p-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-red-600 mt-0.5 shrink-0" />
+              <div className="flex-1 space-y-2">
+                <p className="text-sm font-medium text-red-800">{previouslyDeletedWarning.message}</p>
+                <p className="text-xs text-red-600">This project was previously deleted from the system. Proceeding will create a brand new project with this name and import all the data from this file.</p>
+                <div className="flex gap-2 mt-3">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setPreviouslyDeletedWarning(null)}
+                    data-testid="btn-cancel-recreate"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="bg-red-600 hover:bg-red-700 text-white"
+                    onClick={handleCommitRecreate}
+                    disabled={committing}
+                    data-testid="btn-confirm-recreate"
+                  >
+                    {committing ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : null}
+                    Re-create & Import
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </CardContent>
         </Card>
       )}
 

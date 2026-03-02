@@ -31,6 +31,7 @@ import {
   workingPlanTaskOverride,
   workingPlanDependencyOverride,
   projectPlanDependency,
+  auditEvents,
 } from "@shared/schema";
 import { recordImportChange, recordSystemEvent } from "./lib/audit/diff-engine";
 import { eq, desc, and, or, sql, inArray, isNull } from "drizzle-orm";
@@ -835,6 +836,28 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
         projectId = existingProj[0].id;
         await db.update(smartImportRuns).set({ projectId }).where(eq(smartImportRuns.id, runId));
       } else {
+        const forceRecreate = req.body?.forceRecreate === true;
+        if (!forceRecreate) {
+          const deletedAudit = await db.select({ id: auditEvents.id, createdAt: auditEvents.createdAt, userName: auditEvents.userName })
+            .from(auditEvents)
+            .where(and(
+              eq(auditEvents.action, "hard_delete"),
+              eq(auditEvents.projectName, projectName + " [DELETED]"),
+            ))
+            .orderBy(desc(auditEvents.createdAt))
+            .limit(1);
+          if (deletedAudit.length > 0) {
+            const deletedAt = deletedAudit[0].createdAt;
+            const deletedBy = deletedAudit[0].userName || "unknown";
+            return res.status(409).json({
+              error: "previously_deleted",
+              message: `"${projectName}" was previously deleted by ${deletedBy} on ${new Date(deletedAt).toLocaleDateString()}. Importing will re-create this project from scratch.`,
+              deletedAt,
+              deletedBy,
+              hint: "Set forceRecreate=true to confirm re-creation.",
+            });
+          }
+        }
         const detectedInfo = summary.detection?.projectInfo;
         const [newProject] = await db.insert(projectInfo).values({
           projectName,
@@ -1709,7 +1732,7 @@ router.post("/api/smart-import/bulk-commit", requireAuth, async (req: Request, r
         const commitRes = await fetch(`http://localhost:${process.env.PORT || 5000}/api/smart-import/${run.id}/commit`, {
           method: "POST",
           headers: commitHeaders,
-          body: JSON.stringify({ acknowledgeManualEdits: true, forceCommit: true, acknowledgeEqualDate: true }),
+          body: JSON.stringify({ acknowledgeManualEdits: true, forceCommit: true, acknowledgeEqualDate: true, forceRecreate: true }),
         });
 
         if (commitRes.ok) {
