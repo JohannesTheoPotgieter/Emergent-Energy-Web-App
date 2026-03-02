@@ -2200,6 +2200,128 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/financial-headline", requireAuth, async (_req, res) => {
+    try {
+      const today = new Date();
+      const fyStartMonth = 9;
+      let fyStartYear = today.getFullYear();
+      if (today.getMonth() + 1 < fyStartMonth) fyStartYear--;
+      const fyStart = `${fyStartYear}-09-01`;
+      const fyEnd = `${fyStartYear + 1}-08-31`;
+      const fyLabel = `FY${String(fyStartYear).slice(2)}/${String(fyStartYear + 1).slice(2)}`;
+      const todayStr = today.toISOString().split('T')[0];
+
+      const dateInFY = (dateStr: string | null | undefined): boolean => {
+        if (!dateStr || !/^\d{4}-\d{2}-\d{2}/.test(dateStr)) return false;
+        const d = dateStr.substring(0, 10);
+        return d >= fyStart && d <= fyEnd;
+      };
+
+      const { programExpense, programInflows, normalizedCostLines, normalizedRevenueLines, projectInfo } = await import("@shared/schema");
+
+      const EXCLUDED_PHASES = ["Compliance Handover", "Commercial Close Out", "Closed", "Gone"];
+      const activeProjectsResult = await db.select({
+        projectName: projectInfo.projectName,
+        phase: projectInfo.executionPhase,
+      })
+        .from(projectInfo)
+        .where(sql`${projectInfo.isActive} IS NOT FALSE`);
+      const activeNames = new Set(
+        activeProjectsResult
+          .filter(p => !EXCLUDED_PHASES.includes(p.phase || ""))
+          .map(p => p.projectName.toLowerCase().trim())
+      );
+
+      const allExpenses = await db.select().from(programExpense);
+      const allInflows = await db.select().from(programInflows);
+      const allNormCosts = await db.select().from(normalizedCostLines);
+      const allNormRev = await db.select().from(normalizedRevenueLines);
+
+      let totalRevenue = 0;
+      let totalExpenses = 0;
+      let revenueOutstanding = 0;
+      let expensesDue = 0;
+
+      const projectsWithInflows = new Set<string>();
+      const projectsWithExpenses = new Set<string>();
+
+      for (const inf of allInflows) {
+        if (!activeNames.has(inf.projectName.toLowerCase().trim())) continue;
+        const dateField = inf.invoiceRaisedDate || inf.paymentReceivedDate || inf.plannedPaymentDate;
+        if (!dateInFY(dateField)) continue;
+        projectsWithInflows.add(inf.projectName.toLowerCase().trim());
+        if (inf.milestoneAmount) totalRevenue += parseFloat(inf.milestoneAmount);
+
+        if (inf.milestoneAmount) {
+          const hasPayment = inf.paymentReceivedDate && /^\d{4}-\d{2}-\d{2}/.test(inf.paymentReceivedDate) && inf.paymentReceivedDate <= todayStr;
+          const noInvoice = !inf.milestoneInvoiceNumber || inf.milestoneInvoiceNumber.trim() === '';
+          if (hasPayment && noInvoice) revenueOutstanding += parseFloat(inf.milestoneAmount);
+        }
+      }
+
+      for (const rev of allNormRev) {
+        if (!activeNames.has(rev.projectName.toLowerCase().trim())) continue;
+        if (projectsWithInflows.has(rev.projectName.toLowerCase().trim())) continue;
+        const dateField = rev.invoiceDate || rev.paidDate || rev.expectedPaymentDate;
+        if (!dateInFY(dateField)) continue;
+        if (rev.amountExVat) totalRevenue += parseFloat(rev.amountExVat);
+
+        if (rev.amountExVat) {
+          const hasPayment = rev.paidDate && /^\d{4}-\d{2}-\d{2}/.test(rev.paidDate) && rev.paidDate <= todayStr;
+          const noInvoice = !rev.invoiceNumber || rev.invoiceNumber.trim() === '';
+          if (hasPayment && noInvoice) revenueOutstanding += parseFloat(rev.amountExVat);
+        }
+      }
+
+      for (const exp of allExpenses) {
+        if (!activeNames.has(exp.projectName.toLowerCase().trim())) continue;
+        if (exp.rowType === 'category' || exp.rowType === 'subtotal' || exp.rowType === 'blank') continue;
+        const dateField = exp.expenseInvoicedDate || exp.expensePaymentDate || exp.forecastPaymentDate;
+        if (!dateInFY(dateField)) continue;
+        projectsWithExpenses.add(exp.projectName.toLowerCase().trim());
+        if (exp.expenseActualTotal) totalExpenses += parseFloat(exp.expenseActualTotal);
+
+        if (exp.expenseActualTotal) {
+          const hasPastPaymentDate = exp.expensePaymentDate && /^\d{4}-\d{2}-\d{2}/.test(exp.expensePaymentDate) && exp.expensePaymentDate < todayStr;
+          const noInvoice = !exp.expenseInvoiceNumber || exp.expenseInvoiceNumber.trim() === '';
+          if (hasPastPaymentDate && noInvoice) expensesDue += parseFloat(exp.expenseActualTotal);
+        }
+      }
+
+      for (const cost of allNormCosts) {
+        if (!activeNames.has(cost.projectName.toLowerCase().trim())) continue;
+        if (projectsWithExpenses.has(cost.projectName.toLowerCase().trim())) continue;
+        const dateField = cost.invoiceDate || cost.paidDate;
+        if (!dateInFY(dateField)) continue;
+        if (cost.amountExVat) totalExpenses += parseFloat(cost.amountExVat);
+
+        if (cost.amountExVat) {
+          const hasPastPaymentDate = cost.paidDate && /^\d{4}-\d{2}-\d{2}/.test(cost.paidDate) && cost.paidDate < todayStr;
+          const noInvoice = !cost.invoiceNumber || cost.invoiceNumber.trim() === '';
+          if (hasPastPaymentDate && noInvoice) expensesDue += parseFloat(cost.amountExVat);
+        }
+      }
+
+      const grossProfit = totalRevenue - totalExpenses;
+      const gpMargin = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
+
+      res.json({
+        fyLabel,
+        fyStart,
+        fyEnd,
+        totalRevenue,
+        totalExpenses,
+        grossProfit,
+        gpMargin,
+        revenueOutstanding,
+        expensesDue,
+      });
+    } catch (err: any) {
+      console.error("[Financial Headline] Error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   const docUploadDir = path.join(process.cwd(), 'uploads', 'financial-close');
   if (!fs.existsSync(docUploadDir)) {
     fs.mkdirSync(docUploadDir, { recursive: true });

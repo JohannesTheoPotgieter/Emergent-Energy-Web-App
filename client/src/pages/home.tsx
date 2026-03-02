@@ -1045,14 +1045,18 @@ function PortfolioHealthWidget({ projects }: { projects: ProjectSummary[] }) {
   );
 }
 
-function FinancialHeadlineWidget({ projects }: { projects: ProjectSummary[] }) {
-  const activeProjects = projects.filter(p => p.is_active !== false && !EXCLUDED_PHASES.includes(p.phase || ""));
-  const totalRevenue = activeProjects.reduce((s, p) => s + (p.actual_revenue ?? 0), 0);
-  const totalExpenses = activeProjects.reduce((s, p) => s + (p.actual_expenses ?? 0), 0);
-  const grossProfit = totalRevenue - totalExpenses;
-  const gpPercent = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
-  const revenueOutstanding = activeProjects.reduce((s, p) => s + (p.revenue_outstanding ?? 0), 0);
-  const expensesDue = activeProjects.reduce((s, p) => s + (p.expenses_due ?? 0), 0);
+function FinancialHeadlineWidget({ projects: _projects }: { projects: ProjectSummary[] }) {
+  const { data: fyData, isLoading } = useQuery<{
+    fyLabel: string;
+    totalRevenue: number;
+    totalExpenses: number;
+    grossProfit: number;
+    gpMargin: number;
+    revenueOutstanding: number;
+    expensesDue: number;
+  }>({
+    queryKey: ["/api/financial-headline"],
+  });
 
   const fmt = (v: number) => {
     if (Math.abs(v) >= 1_000_000) return `R${(v / 1_000_000).toFixed(1)}M`;
@@ -1060,41 +1064,56 @@ function FinancialHeadlineWidget({ projects }: { projects: ProjectSummary[] }) {
     return `R${v.toFixed(0)}`;
   };
 
+  const totalRevenue = fyData?.totalRevenue ?? 0;
+  const totalExpenses = fyData?.totalExpenses ?? 0;
+  const grossProfit = fyData?.grossProfit ?? 0;
+  const gpPercent = fyData?.gpMargin ?? 0;
+  const revenueOutstanding = fyData?.revenueOutstanding ?? 0;
+  const expensesDue = fyData?.expensesDue ?? 0;
+  const fyLabel = fyData?.fyLabel ?? "FY";
+
   return (
     <Card className="shadow-sm" data-testid="financial-headline">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
           <DollarSign className="h-4 w-4 text-emerald-500" />
           Financial Headline
+          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 normal-case tracking-normal">{fyLabel}</span>
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          <div className="text-center p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/30">
-            <div className="text-lg font-bold text-emerald-700 dark:text-emerald-400" data-testid="fin-revenue">{fmt(totalRevenue)}</div>
-            <div className="text-[10px] text-muted-foreground uppercase">Total Revenue</div>
+        {isLoading ? (
+          <div className="flex items-center justify-center py-4">
+            <div className="h-5 w-5 border-2 border-emerald-300 border-t-emerald-600 rounded-full animate-spin" />
           </div>
-          <div className="text-center p-2 rounded-lg bg-blue-50 dark:bg-blue-950/30">
-            <div className="text-lg font-bold text-blue-700 dark:text-blue-400" data-testid="fin-expenses">{fmt(totalExpenses)}</div>
-            <div className="text-[10px] text-muted-foreground uppercase">Total Expenses</div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            <div className="text-center p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/30">
+              <div className="text-lg font-bold text-emerald-700 dark:text-emerald-400" data-testid="fin-revenue">{fmt(totalRevenue)}</div>
+              <div className="text-[10px] text-muted-foreground uppercase">Total Revenue</div>
+            </div>
+            <div className="text-center p-2 rounded-lg bg-blue-50 dark:bg-blue-950/30">
+              <div className="text-lg font-bold text-blue-700 dark:text-blue-400" data-testid="fin-expenses">{fmt(totalExpenses)}</div>
+              <div className="text-[10px] text-muted-foreground uppercase">Total Expenses</div>
+            </div>
+            <div className="text-center p-2 rounded-lg bg-purple-50 dark:bg-purple-950/30">
+              <div className={`text-lg font-bold ${grossProfit >= 0 ? "text-purple-700 dark:text-purple-400" : "text-red-600"}`} data-testid="fin-gp">{fmt(grossProfit)}</div>
+              <div className="text-[10px] text-muted-foreground uppercase">Gross Profit</div>
+            </div>
+            <div className="text-center p-2 rounded-lg bg-amber-50 dark:bg-amber-950/30">
+              <div className={`text-lg font-bold ${gpPercent >= 15 ? "text-amber-700 dark:text-amber-400" : "text-red-600"}`} data-testid="fin-gp-pct">{gpPercent.toFixed(1)}%</div>
+              <div className="text-[10px] text-muted-foreground uppercase">GP Margin</div>
+            </div>
+            <div className="text-center p-2 rounded-lg bg-orange-50 dark:bg-orange-950/30">
+              <div className="text-lg font-bold text-orange-700 dark:text-orange-400" data-testid="fin-outstanding">{fmt(revenueOutstanding)}</div>
+              <div className="text-[10px] text-muted-foreground uppercase">Rev Outstanding</div>
+            </div>
+            <div className="text-center p-2 rounded-lg bg-red-50 dark:bg-red-950/30">
+              <div className="text-lg font-bold text-red-700 dark:text-red-400" data-testid="fin-due">{fmt(expensesDue)}</div>
+              <div className="text-[10px] text-muted-foreground uppercase">Expenses Due</div>
+            </div>
           </div>
-          <div className="text-center p-2 rounded-lg bg-purple-50 dark:bg-purple-950/30">
-            <div className={`text-lg font-bold ${grossProfit >= 0 ? "text-purple-700 dark:text-purple-400" : "text-red-600"}`} data-testid="fin-gp">{fmt(grossProfit)}</div>
-            <div className="text-[10px] text-muted-foreground uppercase">Gross Profit</div>
-          </div>
-          <div className="text-center p-2 rounded-lg bg-amber-50 dark:bg-amber-950/30">
-            <div className={`text-lg font-bold ${gpPercent >= 15 ? "text-amber-700 dark:text-amber-400" : "text-red-600"}`} data-testid="fin-gp-pct">{gpPercent.toFixed(1)}%</div>
-            <div className="text-[10px] text-muted-foreground uppercase">GP Margin</div>
-          </div>
-          <div className="text-center p-2 rounded-lg bg-orange-50 dark:bg-orange-950/30">
-            <div className="text-lg font-bold text-orange-700 dark:text-orange-400" data-testid="fin-outstanding">{fmt(revenueOutstanding)}</div>
-            <div className="text-[10px] text-muted-foreground uppercase">Rev Outstanding</div>
-          </div>
-          <div className="text-center p-2 rounded-lg bg-red-50 dark:bg-red-950/30">
-            <div className="text-lg font-bold text-red-700 dark:text-red-400" data-testid="fin-due">{fmt(expensesDue)}</div>
-            <div className="text-[10px] text-muted-foreground uppercase">Expenses Due</div>
-          </div>
-        </div>
+        )}
       </CardContent>
     </Card>
   );
