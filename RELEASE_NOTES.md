@@ -1,5 +1,45 @@
 # Emergent Energy Dashboard — Release Notes
 
+## Version 1.4.0 (02 March 2026)
+
+**Canonical Data Migration & Excel Tracker Sync** — All dashboards now read from a single source of truth, eliminating inconsistencies between screens. A new Excel Updates page gives managers full visibility into changes that need syncing back to Excel trackers.
+
+---
+
+### Data Consistency — Canonical Work Items
+
+- **Single Source of Truth**: All plan task reads now come from the unified `work_items` table instead of multiple legacy tables (`normalized_plan_tasks`, `project_plan`). This resolves the issue where portfolio progress showed different percentages than individual project plan tabs.
+- **Startup Backfill**: On every server start, all `normalized_plan_tasks` are automatically synced into `work_items` with correct parent/child relationships and user assignments (idempotent, safe to re-run).
+- **Rollup Consistency**: The planning-tasks endpoint now applies the same weighted-average rollup logic (hierarchy, expected %, delta, plan status) whether reading from legacy or canonical data.
+- **Migrated Endpoints**:
+  - Portfolio Summary — progress calculations
+  - Planning Tasks — full rollup pipeline with hierarchy
+  - My Work — personal task aggregation
+  - PM On-The-Go — schedule and progress queries
+  - Gamification — task completion counts and behind-schedule metrics
+  - Milestone Notifications — commissioning date and schedule alerts
+
+### Excel Updates Page (New)
+
+- **Dedicated Screen**: New "Excel Updates" page under Project Management in the sidebar, providing a clear view of all changes that need to be captured in Excel trackers.
+- **Pending / Confirmed Tabs**: Quickly see which updates are still waiting for confirmation and which have been marked as done.
+- **Project Filter**: Narrow down by project name to focus on specific projects.
+- **One-Click Confirm**: Mark updates as confirmed directly from the page.
+- **Targeted Notifications**: Excel sync notifications are sent only to Programme Manager, Programme Finance Manager, and Construction Manager roles.
+
+### Comprehensive Excel Sync Coverage
+
+- **Project Data Edits**: Summary fields, latest updates, escalation levels, PM assignments, project info changes, and plan task overrides now all trigger Excel sync notifications.
+- **Financial Edits**: Cashflow planning overrides, revenue tracking overrides, expenditure overrides, expense line additions, task-to-expense conversions, and COS/revenue finance overrides are all covered.
+- **Full Coverage**: Combined with existing engineering, quality, and PM On-The-Go notifications, every manual frontend change on a project now generates an Excel update notification.
+
+### Database Migration Improvements
+
+- **Auto-Drop Foreign Keys**: The archive process now automatically drops foreign key constraints pointing to legacy tables before archiving, eliminating the "active references" blocker.
+- **Backup Registration Fix**: Fixed an error when registering migration backups where undefined user properties caused a crash.
+
+---
+
 ## Version 1.0.0 (28 February 2026)
 
 **First production release** of the Emergent Energy Dashboard — a comprehensive project management, engineering operations, and cross-department collaboration platform for renewable energy projects.
