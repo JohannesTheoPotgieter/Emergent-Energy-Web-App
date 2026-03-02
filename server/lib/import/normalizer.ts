@@ -229,6 +229,7 @@ function extractPlanTasks(
     }
 
     const pctRaw = pctCompleteCol >= 0 ? parseStatus(row[pctCompleteCol]) : null;
+    const expectedPctRaw = expectedPctCol >= 0 ? parseStatus(row[expectedPctCol]) : null;
 
     let statusStr: string | null = null;
     if (pctRaw !== null) {
@@ -250,6 +251,7 @@ function extractPlanTasks(
       owner: ownerCol >= 0 ? cellStr(row, ownerCol) : null,
       status: statusStr,
       pctComplete: pctRaw,
+      expectedPctComplete: expectedPctRaw,
       comment: commentCol >= 0 ? cellStr(row, commentCol) : null,
       sourceSheet: sheetName,
       sourceRow: i + 1,
