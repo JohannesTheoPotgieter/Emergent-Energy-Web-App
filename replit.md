@@ -87,7 +87,7 @@ Preferred communication style: Simple, everyday language.
 -   **Navigation**: When flag ON, sidebar shows "MY WORK" section (Home, Calendar, Tasks, Meetings) + "COLLABORATION" section. When OFF, shows original My Tool + Collaboration Hub.
 -   **My Work Home** (`/my-work`): 3-column layout — tasks grouped by project, today timeline, action-required communications.
 -   **Unified Calendar** (`/my-work/calendar`): Combines Outlook events (from `ms_objects`) + internal tasks in single view.
--   **Tasks** (`/my-work/tasks`): Combined backlog of `mytool_tasks` + `operational_tasks` with filtering.
+-   **Tasks** (`/my-work/tasks`): Unified task board aggregating personal tasks, operational/project tasks, TR register items, pending approvals (engineering + quality), and deliverables. Source filter tabs, subtask expand/collapse for operational tasks, and subtask creation dialog. Backend: `GET /api/my-work/all-tasks` in `ms-sync-routes.ts`.
 -   **Meetings** (`/my-work/meetings`): Relocated from `/my-tool/meetings`, unchanged functionality.
 -   **MS Object Sync**: `server/ms-sync-service.ts` periodically syncs calendar, email, and Teams data into `ms_objects` table. 15-minute interval.
 -   **Project Tagging**: `server/project-linking-service.ts` — tag any MS object (email, event, chat) to a project via `project_links` table.
