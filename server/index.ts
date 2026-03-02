@@ -11,7 +11,8 @@ import connectPgSimple from "connect-pg-simple";
 import MemoryStore from "memorystore";
 import pg from "pg";
 import { dbMode, dbConfig, initializeDatabase, db } from "./db";
-import { sql } from "drizzle-orm";
+import { sql, eq } from "drizzle-orm";
+import { appSettings } from "@shared/schema";
 import { runBackfill } from "./lib/backfill";
 import path from "path";
 import { startScheduler } from "./importPipeline";
@@ -468,6 +469,20 @@ async function backfillPmUserIds() {
 
   const { runDataSeedMigration } = await import("./seed-data-migration");
   await runDataSeedMigration().catch(err => console.error('[DataSeed] Migration error:', err));
+
+  try {
+    const { setFeatureFlag, getFeatureFlag } = await import("./lib/feature-flags");
+    const existing = await getFeatureFlag("unified_work_v1");
+    if (!existing) {
+      const [row] = await db.select().from(appSettings).where(eq(appSettings.key, "unified_work_v1")).limit(1);
+      if (!row) {
+        await setFeatureFlag("unified_work_v1", true, "system");
+        console.log("[Seed] Feature flag unified_work_v1 seeded (ON)");
+      }
+    }
+  } catch (err: any) {
+    console.error("[Seed] Feature flag seed error:", err.message);
+  }
 
   const { registerEeInfoRoutes, bootImportCheck } = await import("./ee-info-routes");
   registerEeInfoRoutes(app);
