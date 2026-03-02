@@ -246,7 +246,47 @@ function getRedesignedNavGroups(): NavGroup[] {
   ];
 }
 
-function getNavGroups(): NavGroup[] {
+function getUnifiedWorkNavGroups(): NavGroup[] {
+  const base = getRedesignedNavGroups();
+  const result: NavGroup[] = [];
+
+  result.push({
+    heading: "MY WORK",
+    section: "MY_WORK",
+    items: [
+      { label: "Home", icon: Home, path: "/my-work" },
+      { label: "Calendar", icon: CalendarCheck, path: "/my-work/calendar" },
+      { label: "Tasks", icon: ListChecks, path: "/my-work/tasks" },
+      { label: "Meetings", icon: MessageSquareText, path: "/my-work/meetings" },
+    ],
+  });
+
+  result.push({
+    heading: "COLLABORATION",
+    section: "COLLABORATION",
+    items: [
+      { label: "Collaboration Hub", icon: Handshake, path: "/collaboration" },
+    ],
+  });
+
+  for (const group of base) {
+    if (group.section === "COCKPIT") {
+      result.push({
+        ...group,
+        items: group.items.filter(i => i.path !== "/my-tool"),
+      });
+    } else if (group.section === "COLLABORATION") {
+      continue;
+    } else {
+      result.push(group);
+    }
+  }
+
+  return result;
+}
+
+function getNavGroups(unifiedWorkEnabled: boolean): NavGroup[] {
+  if (unifiedWorkEnabled && UX_REDESIGN_ENABLED) return getUnifiedWorkNavGroups();
   return UX_REDESIGN_ENABLED ? getRedesignedNavGroups() : getLegacyNavGroups();
 }
 
@@ -275,6 +315,21 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       return res.json();
     },
     staleTime: Infinity,
+  });
+
+  const { data: unifiedWorkFlag } = useQuery<boolean>({
+    queryKey: ["feature-flag-unified-work"],
+    queryFn: async () => {
+      try {
+        const res = await fetch("/api/settings?key=unified_work_v1", { credentials: "include" });
+        if (!res.ok) return false;
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) return data[0].value === true || data[0].value === "true" || data[0].value === "1";
+        if (data && typeof data === "object" && "value" in data) return data.value === true || data.value === "true" || data.value === "1";
+        return false;
+      } catch { return false; }
+    },
+    staleTime: 60_000,
   });
 
   const [screenTourActive, setScreenTourActive] = useState(false);
@@ -321,13 +376,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   });
 
   const allowedSections: string[] = permissions?.sections || [];
-  const navGroups = getNavGroups();
+  const navGroups = getNavGroups(!!unifiedWorkFlag);
   const allItems = navGroups.flatMap(g => g.items);
   const currentPageLabel = location === "/" 
     ? "Home" 
-    : location.startsWith("/my-tool") 
-      ? "My Tool" 
-      : allItems.find(i => i.path === location)?.label || "Dashboard";
+    : location.startsWith("/my-work")
+      ? "My Work"
+      : location.startsWith("/my-tool") 
+        ? "My Tool" 
+        : allItems.find(i => i.path === location)?.label || "Dashboard";
 
   const sidebarShowLabels = mobileOpen || !desktopCollapsed;
 
@@ -367,7 +424,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
 
         {navGroups.filter(group => {
-          if (group.section === "FEEDBACK" || group.section === "INFORMATION") return true;
+          if (group.section === "FEEDBACK" || group.section === "INFORMATION" || group.section === "MY_WORK") return true;
           if (allowedSections.length === 0 && !activeRole) return group.section === "PROJECTS";
           return allowedSections.includes(group.section);
         }).map((group) => {

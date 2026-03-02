@@ -3269,6 +3269,30 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
+  {
+    entity: 'my_work',
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
+    approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+  },
+  {
+    entity: 'ms_sync',
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+  },
+  {
+    entity: 'project_tagging',
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'ENGINEERING_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER'],
+    approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+  },
 ];
 
 export function checkPermission(role: string, entity: PermissionEntity, action: PermissionAction): boolean {
@@ -4555,3 +4579,59 @@ export const pmModePreferences = pgTable("pm_mode_preferences", {
 export const insertPmModePreferenceSchema = createInsertSchema(pmModePreferences).omit({ id: true, updatedAt: true });
 export type InsertPmModePreference = z.infer<typeof insertPmModePreferenceSchema>;
 export type PmModePreference = typeof pmModePreferences.$inferSelect;
+
+export const msObjectTypeEnum = pgEnum('ms_object_type', ['email', 'event', 'teams', 'sharepoint_file']);
+export const msAccountStatusEnum = pgEnum('ms_account_status', ['active', 'disconnected', 'expired']);
+
+export const msAccounts = pgTable("ms_accounts", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  tenantId: text("tenant_id").notNull(),
+  msUserId: text("ms_user_id").notNull(),
+  email: text("email").notNull(),
+  displayName: text("display_name"),
+  refreshTokenEncrypted: text("refresh_token_encrypted"),
+  connectedAt: timestamp("connected_at").defaultNow(),
+  status: msAccountStatusEnum("status").default("active"),
+});
+
+export const insertMsAccountSchema = createInsertSchema(msAccounts).omit({ id: true, connectedAt: true });
+export type InsertMsAccount = z.infer<typeof insertMsAccountSchema>;
+export type MsAccount = typeof msAccounts.$inferSelect;
+
+export const msObjects = pgTable("ms_objects", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  type: msObjectTypeEnum("type").notNull(),
+  msId: text("ms_id").notNull(),
+  subjectOrTitle: text("subject_or_title"),
+  preview: text("preview"),
+  webLink: text("web_link"),
+  senderOrOrganizer: text("sender_or_organizer"),
+  receivedOrStartDatetime: timestamp("received_or_start_datetime"),
+  endDatetime: timestamp("end_datetime"),
+  lastSyncedAt: timestamp("last_synced_at").defaultNow(),
+  actionRequired: boolean("action_required").default(false),
+  isRead: boolean("is_read").default(true),
+  importance: text("importance"),
+  linkedProjectId: integer("linked_project_id"),
+  linkedTaskId: integer("linked_task_id"),
+  metadata: jsonb("metadata"),
+});
+
+export const insertMsObjectSchema = createInsertSchema(msObjects).omit({ id: true, lastSyncedAt: true });
+export type InsertMsObject = z.infer<typeof insertMsObjectSchema>;
+export type MsObject = typeof msObjects.$inferSelect;
+
+export const projectLinks = pgTable("project_links", {
+  id: serial("id").primaryKey(),
+  msObjectId: integer("ms_object_id").notNull(),
+  projectId: integer("project_id").notNull(),
+  linkedByUserId: integer("linked_by_user_id").notNull(),
+  linkedAt: timestamp("linked_at").defaultNow(),
+  note: text("note"),
+});
+
+export const insertProjectLinkSchema = createInsertSchema(projectLinks).omit({ id: true, linkedAt: true });
+export type InsertProjectLink = z.infer<typeof insertProjectLinkSchema>;
+export type ProjectLink = typeof projectLinks.$inferSelect;

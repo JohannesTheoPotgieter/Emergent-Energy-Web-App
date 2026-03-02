@@ -233,6 +233,9 @@ const PERM_CATEGORIES: PermCat[] = [
       { entity: "project_chat" as PermissionEntity, label: "Project Chat", actions: ["view", "edit"] },
       { entity: "deliverables" as PermissionEntity, label: "Deliverables & Approvals", actions: ["view", "edit", "approve"] },
       { entity: "excel_sync_ack" as PermissionEntity, label: "Excel Sync Acknowledgments", actions: ["view", "approve"] },
+      { entity: "my_work" as PermissionEntity, label: "My Work (Unified Dashboard)", actions: ["view", "edit"] },
+      { entity: "ms_sync" as PermissionEntity, label: "Microsoft 365 Sync", actions: ["view", "edit"] },
+      { entity: "project_tagging" as PermissionEntity, label: "Project Tagging (Link MS Objects)", actions: ["view", "edit", "delete"] },
     ],
   },
   {

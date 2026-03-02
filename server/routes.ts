@@ -636,6 +636,32 @@ export async function registerRoutes(
     return info;
   }
 
+  // ==================== FEATURE FLAGS ====================
+
+  app.get("/api/settings", requireAuth, async (req, res) => {
+    try {
+      const key = req.query.key as string;
+      if (!key) return res.status(400).json({ error: "key parameter required" });
+      const { getFeatureFlag } = await import("./lib/feature-flags");
+      const value = await getFeatureFlag(key);
+      res.json({ key, value });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to get setting" });
+    }
+  });
+
+  app.put("/api/settings", requireAdmin, async (req, res) => {
+    try {
+      const { key, value } = req.body;
+      if (!key) return res.status(400).json({ error: "key is required" });
+      const { setFeatureFlag } = await import("./lib/feature-flags");
+      await setFeatureFlag(key, !!value, (req as any).user?.name || "admin");
+      res.json({ success: true, key, value: !!value });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to update setting" });
+    }
+  });
+
   // ==================== HEALTH CHECK ====================
   
   app.get("/api/version", async (_req, res) => {
@@ -885,6 +911,14 @@ export async function registerRoutes(
       }
 
       const dbUser = matchedUser[0];
+
+      try {
+        const { ensureMsAccount } = await import("./ms-account-service");
+        await ensureMsAccount(dbUser.id, result.msProfile);
+      } catch (msAcctErr: any) {
+        console.error("[MS Auth] Failed to upsert ms_account:", msAcctErr.message);
+      }
+
       const sessionUser = { id: dbUser.id, email: dbUser.email, name: dbUser.name, role: dbUser.role };
 
       req.logIn(sessionUser, (err) => {
