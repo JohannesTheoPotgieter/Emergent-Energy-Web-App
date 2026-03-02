@@ -6573,6 +6573,15 @@ export async function registerRoutes(
         console.warn("[audit] Font color toggle audit failed:", auditErr.message);
       }
 
+      const friendlyField = field === 'paymentDateFontColor' ? 'payment date confirmation' : 'invoice date confirmation';
+      sendExcelSyncNotification({
+        projectName,
+        changedByUserId: req.user?.id || 0,
+        changeType: "expenditure_font_color_change",
+        changeDescription: `${friendlyField} colour changed to ${color} for expense row ${rowNumber}.`,
+        details: { rowNumber, field, color, confirmedField, confirmed: isBlack },
+      }).catch(() => {});
+
       logAuditFromReq(req, { entityType: "expenditure_font_color", action: "toggle", projectName, changesJson: { description: `Font color toggled to ${color}`, rowNumber, field, color } });
       res.json({ success: true });
     } catch (error) {
