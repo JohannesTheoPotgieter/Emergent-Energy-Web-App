@@ -801,15 +801,13 @@ router.patch("/api/counterparties/:id", requireAuth, async (req: Request, res: R
       .returning();
     if (!updated) return res.status(404).json({ error: "Counterparty not found" });
 
-    if (req.body.nameAliases !== undefined || req.body.nameCanonical !== undefined) {
-      await syncPatternsForCounterparty(
-        id,
-        updated.nameCanonical,
-        (updated.nameAliases as string[]) || [],
-        updated.typeDefault,
-        userId
-      );
-    }
+    await syncPatternsForCounterparty(
+      id,
+      updated.nameCanonical,
+      (updated.nameAliases as string[]) || [],
+      updated.typeDefault,
+      userId
+    );
 
     res.json(updated);
   } catch (err: any) {
