@@ -1,6 +1,14 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { verifyToken } from "./jwt";
 import { z } from "zod";
+import { db } from "./db";
+import { eq, and, desc, asc, sql, inArray } from "drizzle-orm";
+import {
+  mytoolTasks, operationalTasks, trItems, deliverables,
+  projectEngApprovals, projectEngStages, engStageTemplates,
+  qcItemInstance, qcChecklist, qcTemplateItem,
+  projectInfo, users,
+} from "@shared/schema";
 import {
   tagToProject,
   untagFromProject,
@@ -152,6 +160,124 @@ export function registerMsSyncRoutes(app: Express) {
       res.json({ success: true, results });
     } catch (err: any) {
       res.status(500).json({ error: "Sync failed: " + err.message });
+    }
+  });
+
+  app.get("/api/my-work/all-tasks", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+    try {
+      const currentUser = (req as any).user;
+      const userId = currentUser?.id;
+      const userName = currentUser?.name || "";
+      const userRole = currentUser?.role || "";
+      if (!userId) return res.status(401).json({ error: "auth_required" });
+
+      const ADMIN_ROLES = ["admin", "COO_ADMIN", "CEO_ADMIN"];
+      const isAdmin = ADMIN_ROLES.includes(userRole);
+
+      const [personalTasks, opTasks, trRegisterItems, approvalData, deliverableItems] = await Promise.all([
+        db.select().from(mytoolTasks).where(eq(mytoolTasks.ownerUserId, userId)).orderBy(desc(mytoolTasks.createdAt)),
+
+        db.select().from(operationalTasks).where(
+          sql`(${operationalTasks.ownerUserId} = ${userId} OR ${userName} = ANY(${operationalTasks.assignees}))`
+        ).orderBy(asc(operationalTasks.sortOrder)),
+
+        db.select().from(trItems).where(sql`${userName} = ANY(${trItems.owners})`).orderBy(desc(trItems.createdAt)),
+
+        (async () => {
+          const engApprovals = await db.select({
+            id: projectEngApprovals.id,
+            status: projectEngApprovals.status,
+            approverRole: projectEngApprovals.approverRole,
+            createdAt: projectEngApprovals.createdAt,
+            stageName: engStageTemplates.name,
+            projectName: projectInfo.projectName,
+            approverUserId: projectEngApprovals.approverUserId,
+          })
+            .from(projectEngApprovals)
+            .innerJoin(projectEngStages, eq(projectEngApprovals.projectEngStageId, projectEngStages.id))
+            .innerJoin(engStageTemplates, eq(projectEngStages.stageTemplateId, engStageTemplates.id))
+            .innerJoin(projectInfo, eq(projectEngStages.projectId, projectInfo.id))
+            .where(eq(projectEngApprovals.status, "pending"));
+
+          const APPROVAL_ROLE_TO_USER_ROLES: Record<string, string[]> = {
+            QA_REVIEW: ["QUALITY_MANAGER"],
+            TECHNICAL_SIGNOFF: ["ENGINEERING_MANAGER", "COO_ADMIN", "CEO_ADMIN"],
+            "Engineering Manager": ["ENGINEERING_MANAGER"],
+            "Quality Manager": ["QUALITY_MANAGER"],
+            "COO": ["COO_ADMIN"],
+          };
+          let filtered = engApprovals;
+          if (!isAdmin) {
+            filtered = engApprovals.filter(a => {
+              if (a.approverUserId && a.approverUserId === userId) return true;
+              if (a.approverRole) {
+                const allowedRoles = APPROVAL_ROLE_TO_USER_ROLES[a.approverRole];
+                if (allowedRoles && allowedRoles.includes(userRole)) return true;
+              }
+              return false;
+            });
+          }
+
+          const qcItems = await db.select({
+            id: qcItemInstance.id,
+            itemName: qcTemplateItem.itemName,
+            projectName: qcChecklist.projectName,
+            lastUpdatedAt: qcItemInstance.lastUpdatedAt,
+          })
+            .from(qcItemInstance)
+            .innerJoin(qcChecklist, eq(qcItemInstance.checklistId, qcChecklist.id))
+            .innerJoin(qcTemplateItem, eq(qcItemInstance.templateItemId, qcTemplateItem.id))
+            .where(and(eq(qcItemInstance.qmStatus, "review"), eq(qcItemInstance.approved, false)));
+
+          let filteredQc = (userRole === "QUALITY_MANAGER" || userRole === "quality_manager" || isAdmin) ? qcItems : [];
+
+          return { engApprovals: filtered, qcItems: filteredQc };
+        })(),
+
+        db.select().from(deliverables).where(
+          sql`(${deliverables.ownerUserId} = ${userId} OR ${deliverables.reviewerUserId} = ${userId})`
+        ).orderBy(desc(deliverables.updatedAt)),
+      ]);
+
+      const subtaskParentIds = opTasks.filter(t => t.parentTaskId === null || t.parentTaskId === undefined).map(t => t.id);
+      let subtaskCounts: Record<number, number> = {};
+      if (subtaskParentIds.length > 0) {
+        const counts = await db.select({
+          parentTaskId: operationalTasks.parentTaskId,
+          count: sql<number>`count(*)`,
+        }).from(operationalTasks).where(inArray(operationalTasks.parentTaskId, subtaskParentIds)).groupBy(operationalTasks.parentTaskId);
+        for (const c of counts) {
+          if (c.parentTaskId) subtaskCounts[c.parentTaskId] = Number(c.count);
+        }
+      }
+
+      res.json({
+        personal: personalTasks,
+        operational: opTasks.map(t => ({ ...t, subtaskCount: subtaskCounts[t.id] || 0 })),
+        trRegister: trRegisterItems,
+        approvals: {
+          engineering: approvalData.engApprovals.map(a => ({
+            id: a.id,
+            title: `${a.stageName} — ${a.approverRole}`,
+            projectName: a.projectName,
+            status: a.status,
+            createdAt: a.createdAt,
+            type: "engineering" as const,
+          })),
+          quality: approvalData.qcItems.map(q => ({
+            id: q.id,
+            title: q.itemName,
+            projectName: q.projectName,
+            status: "review",
+            createdAt: q.lastUpdatedAt,
+            type: "quality" as const,
+          })),
+        },
+        deliverables: deliverableItems,
+      });
+    } catch (err: any) {
+      console.error("[MyWork AllTasks] Error:", err);
+      res.status(500).json({ error: err.message });
     }
   });
 
