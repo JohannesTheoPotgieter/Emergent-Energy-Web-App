@@ -100,10 +100,12 @@ function CounterpartiesSection() {
       if (!res.ok) throw new Error("Failed to create");
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/counterparties"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/invoice-patterns"] });
       cancelEdit();
-      toast({ title: editingId ? "Counterparty updated" : "Counterparty added" });
+      const rulesMsg = data?.autoCreatedRules ? ` — ${data.autoCreatedRules} pattern rule${data.autoCreatedRules === 1 ? '' : 's'} auto-created from aliases` : '';
+      toast({ title: editingId ? "Counterparty updated" : "Counterparty added", description: editingId ? "Patterns synced with updated aliases" : rulesMsg || undefined });
     },
     onError: (err: any) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
