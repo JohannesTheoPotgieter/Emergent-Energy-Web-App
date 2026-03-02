@@ -193,18 +193,114 @@ export default function MyWorkCalendarPage() {
     staleTime: 30_000,
   });
 
-  const { data: calendarTasks = [], isLoading: tasksLoading } = useQuery<CalendarTask[]>({
-    queryKey: ["/api/calendar/my-tasks"],
+  const { data: allTaskData, isLoading: tasksLoading } = useQuery<any>({
+    queryKey: ["/api/my-work/all-tasks"],
     queryFn: async () => {
-      const res = await fetch("/api/calendar/my-tasks", {
+      const res = await fetch("/api/my-work/all-tasks", {
         headers: authHeaders(),
         credentials: "include",
       });
-      if (!res.ok) return [];
+      if (!res.ok) return null;
       return res.json();
     },
     staleTime: 30_000,
   });
+
+  const calendarTasks: CalendarTask[] = useMemo(() => {
+    if (!allTaskData) return [];
+    const tasks: CalendarTask[] = [];
+
+    for (const t of (allTaskData.personal || [])) {
+      tasks.push({
+        id: t.id,
+        taskType: "mytool",
+        title: t.title || "",
+        status: t.status || "inbox",
+        priority: t.priority || "normal",
+        projectName: t.projectName || null,
+        plannedForDate: t.plannedForDate || null,
+        dueDate: t.dueAt ? (typeof t.dueAt === "string" ? t.dueAt.split("T")[0] : null) : null,
+        startDate: t.startDate || null,
+        scheduledDate: t.scheduledDate || null,
+        scheduledStartTime: t.scheduledStartTime || null,
+        scheduledEndTime: t.scheduledEndTime || null,
+      });
+    }
+
+    for (const t of (allTaskData.operational || [])) {
+      tasks.push({
+        id: t.id,
+        taskType: "operational",
+        title: t.title || "",
+        status: t.status || "TO DO",
+        priority: t.priority || "normal",
+        projectName: t.projectName || null,
+        plannedForDate: null,
+        dueDate: t.dueDate || null,
+        startDate: t.startDate || null,
+        scheduledDate: t.scheduledDate || null,
+        scheduledStartTime: t.scheduledStartTime || null,
+        scheduledEndTime: t.scheduledEndTime || null,
+      });
+    }
+
+    for (const t of (allTaskData.planTasks || [])) {
+      tasks.push({
+        id: t.id,
+        taskType: "plan",
+        title: t.title || "",
+        status: t.status || "active",
+        priority: "Medium",
+        projectName: t.projectName || null,
+        plannedForDate: t.startDate || null,
+        dueDate: t.endDate || null,
+        startDate: t.startDate || null,
+        scheduledDate: t.scheduledDate || null,
+        scheduledStartTime: t.scheduledStartTime || null,
+        scheduledEndTime: t.scheduledEndTime || null,
+        pctComplete: t.pctComplete,
+        phase: t.phase,
+        owner: t.owner,
+      });
+    }
+
+    for (const t of (allTaskData.engineeringTasks || [])) {
+      tasks.push({
+        id: t.id,
+        taskType: "engineering",
+        title: t.title || "",
+        status: t.status || "open",
+        priority: "Medium",
+        projectName: t.projectName || null,
+        plannedForDate: null,
+        dueDate: null,
+        startDate: null,
+        scheduledDate: t.scheduledDate || null,
+        scheduledStartTime: t.scheduledStartTime || null,
+        scheduledEndTime: t.scheduledEndTime || null,
+        lifecyclePhase: t.lifecyclePhase,
+      });
+    }
+
+    for (const t of (allTaskData.qualityTasks || [])) {
+      tasks.push({
+        id: t.id,
+        taskType: "quality",
+        title: t.title || "",
+        status: t.status || "not_started",
+        priority: "Medium",
+        projectName: t.projectName || null,
+        plannedForDate: t.startDate || null,
+        dueDate: t.endDate || null,
+        startDate: t.startDate || null,
+        scheduledDate: t.scheduledDate || null,
+        scheduledStartTime: t.scheduledStartTime || null,
+        scheduledEndTime: t.scheduledEndTime || null,
+      });
+    }
+
+    return tasks;
+  }, [allTaskData]);
 
   const scheduleMutation = useMutation({
     mutationFn: async (payload: {
@@ -224,7 +320,7 @@ export default function MyWorkCalendarPage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar/my-tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/my-work/all-tasks"] });
     },
     onError: (err: Error) => {
       toast({

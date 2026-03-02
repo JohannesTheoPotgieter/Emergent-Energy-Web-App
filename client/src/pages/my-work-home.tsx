@@ -98,10 +98,6 @@ function StatusIcon({ status }: { status: string }) {
 export default function MyWorkHomePage() {
   const { user } = useAuth();
 
-  const { data: rawPersonalTasks = [], isLoading: personalTasksLoading } = useQuery<any[]>({
-    queryKey: [`/api/mytool/tasks?date=${today}`],
-  });
-
   const { data: calendarEvents = [], isLoading: calLoading } = useQuery<CalendarEvent[]>({
     queryKey: ["outlook-events-mywork", today],
     queryFn: async () => {
@@ -266,24 +262,24 @@ export default function MyWorkHomePage() {
     const items: TaskItem[] = [];
     const seen = new Set<string>();
 
-    for (const t of rawPersonalTasks) {
-      const key = `personal-${t.id}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      items.push({
-        id: t.id,
-        title: t.title || "",
-        status: t.status || "inbox",
-        priority: t.priority || "normal",
-        plannedForDate: t.plannedForDate || t.planned_for_date || null,
-        dueAt: t.dueAt || t.due_at || null,
-        sortOrder: t.sortOrder || t.sort_order || 0,
-        projectName: t.projectName || t.project_name || null,
-        department: t.department || null,
-      });
-    }
-
     if (allTaskData) {
+      for (const t of (allTaskData.personal || [])) {
+        const key = `personal-${t.id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        items.push({
+          id: t.id,
+          title: t.title || "",
+          status: t.status || "inbox",
+          priority: t.priority || "normal",
+          plannedForDate: t.plannedForDate || t.planned_for_date || null,
+          dueAt: t.dueAt || t.due_at || null,
+          sortOrder: t.sortOrder || t.sort_order || 0,
+          projectName: t.projectName || t.project_name || null,
+          department: t.department || null,
+        });
+      }
+
       for (const t of (allTaskData.operational || [])) {
         const key = `op-${t.id}`;
         if (seen.has(key)) continue;
@@ -355,9 +351,9 @@ export default function MyWorkHomePage() {
     }
 
     return items;
-  }, [rawPersonalTasks, allTaskData]);
+  }, [allTaskData]);
 
-  const tasksLoading = personalTasksLoading && allTasksLoading;
+  const tasksLoading = allTasksLoading;
 
   const openTasks = useMemo(() =>
     tasks.filter(t => !DONE_STATUSES.includes(t.status)),
