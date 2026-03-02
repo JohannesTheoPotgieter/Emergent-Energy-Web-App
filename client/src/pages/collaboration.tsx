@@ -279,6 +279,43 @@ export function ConvertToTaskDialog({ open, onOpenChange, item }: { open: boolea
   );
 }
 
+function useMsSync() {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+
+  const syncMutation = useMutation({
+    mutationFn: async (type?: string) => {
+      const res = await fetch("/api/ms-sync/trigger", {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ type }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Sync failed" }));
+        throw new Error(err.error || "Sync failed");
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ["ms-objects-mine"] });
+      qc.invalidateQueries({ queryKey: ["ms-sync-status"] });
+      const total = (data.results || []).reduce((s: number, r: any) => s + (r.synced || 0), 0);
+      const errors = (data.results || []).flatMap((r: any) => r.errors || []);
+      if (errors.length > 0) {
+        toast({ title: `Synced ${total} items`, description: errors[0], variant: "destructive" });
+      } else if (total > 0) {
+        toast({ title: `Synced ${total} items from Microsoft 365` });
+      }
+    },
+    onError: (err: Error) => {
+      toast({ title: "Sync failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  return syncMutation;
+}
+
 export function MsObjectActions({ item, onTagClick, onConvertClick }: { item: any; onTagClick: (item: any) => void; onConvertClick?: (item: any) => void }) {
   return (
     <div className="flex items-center gap-1 flex-shrink-0">
@@ -320,8 +357,10 @@ function SyncedEmailTab() {
   const [tagTarget, setTagTarget] = useState<any>(null);
   const [convertDialogOpen, setConvertDialogOpen] = useState(false);
   const [convertTarget, setConvertTarget] = useState<any>(null);
+  const [autoSyncDone, setAutoSyncDone] = useState(false);
+  const syncMutation = useMsSync();
 
-  const { data: items = [], isLoading } = useQuery<any[]>({
+  const { data: items = [], isLoading, isFetched } = useQuery<any[]>({
     queryKey: ["ms-objects-mine", "email"],
     queryFn: async () => {
       const res = await fetch("/api/ms-objects/mine?type=email", { headers: authHeaders(), credentials: "include" });
@@ -330,6 +369,13 @@ function SyncedEmailTab() {
     },
     staleTime: 30_000,
   });
+
+  useEffect(() => {
+    if (isFetched && items.length === 0 && !autoSyncDone && !syncMutation.isPending) {
+      setAutoSyncDone(true);
+      syncMutation.mutate("email");
+    }
+  }, [isFetched, items.length, autoSyncDone]);
 
   const filtered = useMemo(() => {
     if (!searchQuery) return items;
@@ -353,20 +399,41 @@ function SyncedEmailTab() {
             data-testid="synced-email-search"
           />
         </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => syncMutation.mutate("email")}
+          disabled={syncMutation.isPending}
+          data-testid="sync-email-button"
+        >
+          <RefreshCw className={`h-4 w-4 mr-1 ${syncMutation.isPending ? "animate-spin" : ""}`} />
+          {syncMutation.isPending ? "Syncing..." : "Sync Now"}
+        </Button>
         <Badge variant="outline" className="text-xs" data-testid="synced-email-count">
           {filtered.length} emails
         </Badge>
       </div>
 
-      {isLoading ? (
+      {isLoading || syncMutation.isPending ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          <span className="ml-2 text-sm text-muted-foreground">{syncMutation.isPending ? "Syncing emails from Microsoft 365..." : "Loading..."}</span>
         </div>
       ) : filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 text-center">
           <Inbox className="h-10 w-10 text-muted-foreground mb-3" />
           <p className="text-muted-foreground text-sm">No synced emails found</p>
-          <p className="text-xs text-muted-foreground mt-1">Emails sync automatically from your Microsoft account</p>
+          <p className="text-xs text-muted-foreground mt-1">Click "Sync Now" to pull your latest emails from Microsoft 365</p>
+          <Button
+            variant="default"
+            size="sm"
+            className="mt-3"
+            onClick={() => syncMutation.mutate("email")}
+            disabled={syncMutation.isPending}
+            data-testid="sync-email-empty-button"
+          >
+            <RefreshCw className="h-4 w-4 mr-1" /> Sync Emails
+          </Button>
         </div>
       ) : (
         <div className="divide-y rounded-lg border">
@@ -437,8 +504,10 @@ function SyncedTeamsTab() {
   const [tagTarget, setTagTarget] = useState<any>(null);
   const [convertDialogOpen, setConvertDialogOpen] = useState(false);
   const [convertTarget, setConvertTarget] = useState<any>(null);
+  const [autoSyncDone, setAutoSyncDone] = useState(false);
+  const syncMutation = useMsSync();
 
-  const { data: items = [], isLoading } = useQuery<any[]>({
+  const { data: items = [], isLoading, isFetched } = useQuery<any[]>({
     queryKey: ["ms-objects-mine", "teams"],
     queryFn: async () => {
       const res = await fetch("/api/ms-objects/mine?type=teams", { headers: authHeaders(), credentials: "include" });
@@ -448,24 +517,54 @@ function SyncedTeamsTab() {
     staleTime: 30_000,
   });
 
+  useEffect(() => {
+    if (isFetched && items.length === 0 && !autoSyncDone && !syncMutation.isPending) {
+      setAutoSyncDone(true);
+      syncMutation.mutate("teams");
+    }
+  }, [isFetched, items.length, autoSyncDone]);
+
   return (
     <div className="space-y-4" data-testid="synced-teams-tab">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">Teams mentions and activity synced from Microsoft</p>
-        <Badge variant="outline" className="text-xs" data-testid="synced-teams-count">
-          {items.length} items
-        </Badge>
+        <p className="text-sm text-muted-foreground">Teams chats and activity synced from Microsoft</p>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => syncMutation.mutate("teams")}
+            disabled={syncMutation.isPending}
+            data-testid="sync-teams-button"
+          >
+            <RefreshCw className={`h-4 w-4 mr-1 ${syncMutation.isPending ? "animate-spin" : ""}`} />
+            {syncMutation.isPending ? "Syncing..." : "Sync Now"}
+          </Button>
+          <Badge variant="outline" className="text-xs" data-testid="synced-teams-count">
+            {items.length} items
+          </Badge>
+        </div>
       </div>
 
-      {isLoading ? (
+      {isLoading || syncMutation.isPending ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          <span className="ml-2 text-sm text-muted-foreground">{syncMutation.isPending ? "Syncing Teams from Microsoft 365..." : "Loading..."}</span>
         </div>
       ) : items.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 text-center">
           <MessageSquare className="h-10 w-10 text-muted-foreground mb-3" />
           <p className="text-muted-foreground text-sm">No Teams activity synced</p>
-          <p className="text-xs text-muted-foreground mt-1">Mentions and activity sync automatically</p>
+          <p className="text-xs text-muted-foreground mt-1">Click "Sync Now" to pull your Teams chats from Microsoft 365</p>
+          <Button
+            variant="default"
+            size="sm"
+            className="mt-3"
+            onClick={() => syncMutation.mutate("teams")}
+            disabled={syncMutation.isPending}
+            data-testid="sync-teams-empty-button"
+          >
+            <RefreshCw className="h-4 w-4 mr-1" /> Sync Teams
+          </Button>
         </div>
       ) : (
         <div className="divide-y rounded-lg border">
@@ -1912,16 +2011,22 @@ export default function CollaborationPage() {
   if (unifiedFlag) {
     return (
       <div className="p-6 max-w-7xl mx-auto space-y-6" data-testid="collaboration-page">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight" data-testid="text-collaboration-title">Collaboration</h1>
-          <p className="text-muted-foreground text-sm mt-1">
-            Microsoft 365 communications — tag to projects or convert to tasks
-            {user?.displayName && <span> — signed in as <strong>{user.displayName}</strong></span>}
-          </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight" data-testid="text-collaboration-title">Collaboration</h1>
+            <p className="text-muted-foreground text-sm mt-1">
+              Microsoft 365 communications — tag to projects or convert to tasks
+              {user?.displayName && <span> — signed in as <strong>{user.displayName}</strong></span>}
+            </p>
+          </div>
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-5">
+            <TabsTrigger value="calendar" className="flex items-center gap-1.5" data-testid="tab-calendar">
+              <Calendar className="h-4 w-4" />
+              <span className="hidden sm:inline">Calendar</span>
+            </TabsTrigger>
             <TabsTrigger value="email" className="flex items-center gap-1.5" data-testid="tab-email">
               <Mail className="h-4 w-4" />
               <span className="hidden sm:inline">Email</span>
@@ -1934,9 +2039,21 @@ export default function CollaborationPage() {
               <FolderOpen className="h-4 w-4" />
               <span className="hidden sm:inline">SharePoint</span>
             </TabsTrigger>
+            <TabsTrigger value="notifications" className="relative flex items-center gap-1.5" data-testid="tab-notifications">
+              <Bell className="h-4 w-4" />
+              <span className="hidden sm:inline">Notifications</span>
+              {(unreadCount?.count || 0) > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] rounded-full h-4 w-4 flex items-center justify-center">
+                  {unreadCount!.count > 99 ? "99+" : unreadCount!.count}
+                </span>
+              )}
+            </TabsTrigger>
           </TabsList>
 
           <div className="mt-6">
+            <TabsContent value="calendar">
+              <CalendarTab />
+            </TabsContent>
             <TabsContent value="email">
               <SyncedEmailTab />
             </TabsContent>
@@ -1945,6 +2062,9 @@ export default function CollaborationPage() {
             </TabsContent>
             <TabsContent value="sharepoint">
               <SyncedSharePointTab />
+            </TabsContent>
+            <TabsContent value="notifications">
+              <SyncedNotificationsTab />
             </TabsContent>
           </div>
         </Tabs>

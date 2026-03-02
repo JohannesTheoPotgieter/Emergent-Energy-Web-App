@@ -226,8 +226,43 @@ export async function getSyncStatus(userId: number): Promise<{
   }
 }
 
+async function ensureAllUsersHaveMsAccounts(): Promise<void> {
+  try {
+    if (!isOutlookConfigured()) return;
+
+    const allUsers = await db.execute(sql`SELECT id, username, email, name FROM users`);
+    const rows = (allUsers as any).rows || allUsers || [];
+    const existingAccounts = await db.select({ userId: msAccounts.userId }).from(msAccounts);
+    const existingUserIds = new Set(existingAccounts.map(a => a.userId));
+
+    let created = 0;
+    for (const user of rows) {
+      if (!existingUserIds.has(user.id)) {
+        try {
+          await db.insert(msAccounts).values({
+            userId: user.id,
+            tenantId: process.env.AZURE_TENANT_ID || "",
+            msUserId: `local-${user.id}`,
+            email: user.email || user.username || "",
+            displayName: user.name || user.username || `User ${user.id}`,
+            status: "active",
+          }).onConflictDoNothing();
+          created++;
+        } catch { }
+      }
+    }
+    if (created > 0) {
+      console.log(`[MS Sync] Auto-created ${created} ms_account entries for existing users`);
+    }
+  } catch (err: any) {
+    console.warn("[MS Sync] Could not auto-create ms_accounts:", err.message);
+  }
+}
+
 export function startPeriodicSync(): void {
   if (globalSyncTimer) return;
+
+  ensureAllUsersHaveMsAccounts();
 
   globalSyncTimer = setInterval(async () => {
     try {
