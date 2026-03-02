@@ -7,6 +7,7 @@ import {
   meetingActionItems,
   mytoolTasks,
   mytoolCompanyPriorities,
+  operationalTasks,
   projectInfo,
   users,
 } from "@shared/schema";
@@ -285,28 +286,52 @@ export function registerMeetingRoutes(app: Express) {
         return res.status(400).json({ error: "Could not resolve a valid user. Please log in again." });
       }
 
-      const [task] = await db
-        .insert(mytoolTasks)
-        .values({
-          ownerUserId,
-          title: overrides.title || actionItem.text,
-          status: "inbox",
-          priority: overrides.priority || "normal",
-          plannedForDate: overrides.plannedForDate || null,
-          dueAt: actionItem.dueDate ? new Date(actionItem.dueDate) : null,
-          notes: `From meeting: ${meeting?.title || "Unknown"}\nOwner: ${actionItem.owner || "Unassigned"}${overrides.notes ? "\n" + overrides.notes : ""}`,
-          bucket: overrides.bucket || "company_ops",
-          projectName: overrides.projectName || null,
-          department: overrides.department || null,
-        })
-        .returning();
+      const projectName = overrides.projectName || null;
+      let task: any;
+      let convertedToType = "mytool_task";
+
+      if (projectName) {
+        const [opTask] = await db
+          .insert(operationalTasks)
+          .values({
+            projectName,
+            title: overrides.title || actionItem.text,
+            status: "TO DO",
+            priority: overrides.priority === "critical" ? "Critical" : overrides.priority === "high" ? "High" : overrides.priority === "low" ? "Low" : "Med",
+            ownerUserId,
+            startDate: null,
+            dueDate: actionItem.dueDate || null,
+            description: `From meeting: ${meeting?.title || "Unknown"}\nOwner: ${actionItem.owner || "Unassigned"}${overrides.notes ? "\n" + overrides.notes : ""}`,
+            createdBy: userId,
+          })
+          .returning();
+        task = opTask;
+        convertedToType = "operational_task";
+      } else {
+        const [personalTask] = await db
+          .insert(mytoolTasks)
+          .values({
+            ownerUserId,
+            title: overrides.title || actionItem.text,
+            status: "inbox",
+            priority: overrides.priority || "normal",
+            plannedForDate: overrides.plannedForDate || null,
+            dueAt: actionItem.dueDate ? new Date(actionItem.dueDate) : null,
+            notes: `From meeting: ${meeting?.title || "Unknown"}\nOwner: ${actionItem.owner || "Unassigned"}${overrides.notes ? "\n" + overrides.notes : ""}`,
+            bucket: overrides.bucket || "company_ops",
+            projectName: null,
+            department: overrides.department || null,
+          })
+          .returning();
+        task = personalTask;
+      }
 
       await db
         .update(meetingActionItems)
-        .set({ status: "converted", convertedToType: "mytool_task", convertedToId: task.id })
+        .set({ status: "converted", convertedToType, convertedToId: task.id })
         .where(eq(meetingActionItems.id, actionItemId));
 
-      res.json({ task, actionItem: { id: actionItemId, status: "converted", convertedToType: "mytool_task", convertedToId: task.id } });
+      res.json({ task, actionItem: { id: actionItemId, status: "converted", convertedToType, convertedToId: task.id } });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
