@@ -4659,6 +4659,8 @@ export const msAccounts = pgTable("ms_accounts", {
   email: text("email").notNull(),
   displayName: text("display_name"),
   refreshTokenEncrypted: text("refresh_token_encrypted"),
+  ssoAccessToken: text("sso_access_token"),
+  ssoTokenExpiresAt: timestamp("sso_token_expires_at"),
   connectedAt: timestamp("connected_at").defaultNow(),
   status: msAccountStatusEnum("status").default("active"),
 });
