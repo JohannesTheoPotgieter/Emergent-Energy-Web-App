@@ -2,13 +2,42 @@ import { db } from "./db";
 import { sql } from "drizzle-orm";
 import { setFeatureFlag } from "./lib/feature-flags";
 
+const LEGACY_TABLES = [
+  "normalized_plan_tasks", "operational_tasks", "engineering_tasks",
+  "intake_tasks", "mytool_tasks", "project_eng_tasks",
+  "working_plan_task_override", "tasks", "qc_item_instance",
+];
+
+export async function restoreArchivedLegacyTables(): Promise<void> {
+  try {
+    for (const table of LEGACY_TABLES) {
+      const archiveName = table + "_legacy_archive";
+      const archiveExists = (await db.execute(sql.raw(
+        `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '${archiveName}') as ex`
+      )) as any).rows?.[0]?.ex;
+      if (!archiveExists) continue;
+
+      const origExists = (await db.execute(sql.raw(
+        `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '${table}') as ex`
+      )) as any).rows?.[0]?.ex;
+      if (origExists) continue;
+
+      await db.execute(sql.raw(`ALTER TABLE "${archiveName}" RENAME TO "${table}"`));
+      console.log(`[Startup] Restored archived table: ${archiveName} → ${table}`);
+    }
+  } catch (err) {
+    console.error("[Startup] Error restoring archived legacy tables:", err);
+  }
+}
+
 export async function backfillWorkItems(): Promise<void> {
   try {
     const hasNpt = await db.execute(sql.raw(`
       SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'normalized_plan_tasks') as exists
     `));
     if (!(hasNpt as any).rows?.[0]?.exists) {
-      console.log("[Backfill] normalized_plan_tasks does not exist, skipping work_items backfill");
+      console.log("[Backfill] normalized_plan_tasks does not exist, skipping backfill but enabling feature flag");
+      await setFeatureFlag("canonical_work_items_v1", true);
       return;
     }
 

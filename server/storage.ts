@@ -1,4 +1,5 @@
 import { db, getDbMode } from "./db";
+import { safeLegacyQuery, safeLegacyWrite } from "./legacy-table-guard";
 import { eq, desc, and, or, gte, lte, isNotNull, isNull, sql, inArray, count, not, ilike } from "drizzle-orm";
 import {
   users, projects, expenses, revenues, tasks, budgets, uploadMetadata, refreshLogs,
@@ -619,15 +620,14 @@ export class DatabaseStorage implements IStorage {
 
   // Tasks (legacy)
   async getAllTasks(): Promise<Task[]> {
-    return this.dbInstance.select().from(tasks).orderBy(desc(tasks.createdAt));
+    return safeLegacyQuery(() => this.dbInstance.select().from(tasks).orderBy(desc(tasks.createdAt)), []);
   }
 
   async getTasksByProject(projectId: number): Promise<Task[]> {
-    return this.dbInstance.select().from(tasks).where(eq(tasks.projectId, projectId)).orderBy(desc(tasks.createdAt));
+    return safeLegacyQuery(() => this.dbInstance.select().from(tasks).where(eq(tasks.projectId, projectId)).orderBy(desc(tasks.createdAt)), []);
   }
 
   async createTask(task: InsertTask): Promise<Task> {
-    // Explicitly provide timestamp for SQLite compatibility
     const [created] = await this.dbInstance.insert(tasks).values({
       ...task,
       createdAt: new Date(),
@@ -637,7 +637,6 @@ export class DatabaseStorage implements IStorage {
 
   async createManyTasks(taskList: InsertTask[]): Promise<Task[]> {
     if (taskList.length === 0) return [];
-    // Explicitly provide timestamp for SQLite compatibility
     const now = new Date();
     const withTimestamps = taskList.map(t => ({ ...t, createdAt: now }));
     return this.dbInstance.insert(tasks).values(withTimestamps).returning();
@@ -1805,16 +1804,16 @@ export class DatabaseStorage implements IStorage {
 
   // Operational Tasks
   async getAllOperationalTasks(): Promise<OperationalTask[]> {
-    return this.dbInstance.select().from(operationalTasks);
+    return safeLegacyQuery(() => this.dbInstance.select().from(operationalTasks), []);
   }
 
   async getOperationalTasksByProject(projectName: string): Promise<OperationalTask[]> {
-    return this.dbInstance.select().from(operationalTasks).where(eq(operationalTasks.projectName, projectName)).orderBy(operationalTasks.sortOrder);
+    return safeLegacyQuery(() => this.dbInstance.select().from(operationalTasks).where(eq(operationalTasks.projectName, projectName)).orderBy(operationalTasks.sortOrder), []);
   }
 
   async getOperationalTask(id: number): Promise<OperationalTask | undefined> {
-    const [task] = await this.dbInstance.select().from(operationalTasks).where(eq(operationalTasks.id, id));
-    return task;
+    const results = await safeLegacyQuery(() => this.dbInstance.select().from(operationalTasks).where(eq(operationalTasks.id, id)), []);
+    return results[0];
   }
 
   async createOperationalTask(data: InsertOperationalTask): Promise<OperationalTask> {
@@ -1829,7 +1828,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteOperationalTask(id: number): Promise<void> {
-    await this.dbInstance.delete(operationalTasks).where(eq(operationalTasks.id, id));
+    await safeLegacyWrite(() => this.dbInstance.delete(operationalTasks).where(eq(operationalTasks.id, id)));
   }
 
   // Task Comments

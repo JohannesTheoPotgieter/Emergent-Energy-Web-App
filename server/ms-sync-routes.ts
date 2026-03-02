@@ -2,6 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { verifyToken } from "./jwt";
 import { z } from "zod";
 import { db } from "./db";
+import { safeLegacyWrite } from "./legacy-table-guard";
 import { eq, and, or, desc, asc, sql, inArray, isNull } from "drizzle-orm";
 import {
   mytoolTasks, operationalTasks, trItems, deliverables,
@@ -267,9 +268,9 @@ export function registerMsSyncRoutes(app: Express) {
           if (!isPrivileged) {
             return res.status(403).json({ error: "Only managers can reassign plan tasks" });
           }
-          await db.execute(sql`UPDATE normalized_plan_tasks SET assignee_user_id = ${assignUserId || null} WHERE id = ${taskId}`);
+          await safeLegacyWrite(() => db.execute(sql`UPDATE normalized_plan_tasks SET assignee_user_id = ${assignUserId || null} WHERE id = ${taskId}`));
           if (targetUser) {
-            await db.execute(sql`UPDATE normalized_plan_tasks SET owner = ${targetUser.name} WHERE id = ${taskId}`);
+            await safeLegacyWrite(() => db.execute(sql`UPDATE normalized_plan_tasks SET owner = ${targetUser.name} WHERE id = ${taskId}`));
           }
           break;
         }

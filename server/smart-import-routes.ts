@@ -7,6 +7,7 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import { db } from "./db";
+import { safeLegacyQuery, safeLegacyWrite } from "./legacy-table-guard";
 import { verifyToken } from "./jwt";
 import { runSmartImportPreview } from "./lib/import/index";
 import {
@@ -898,9 +899,12 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
     await db.transaction(async (tx: any) => {
       const existingTaskOwners = new Map<string, string>();
       {
-        const existingTasks = projectId
-          ? await tx.select({ taskName: normalizedPlanTasks.taskName, owner: normalizedPlanTasks.owner }).from(normalizedPlanTasks).where(eq(normalizedPlanTasks.projectId, projectId))
-          : await tx.select({ taskName: normalizedPlanTasks.taskName, owner: normalizedPlanTasks.owner }).from(normalizedPlanTasks).where(eq(normalizedPlanTasks.projectName, projectName));
+        const existingTasks = await safeLegacyQuery(
+          () => projectId
+            ? tx.select({ taskName: normalizedPlanTasks.taskName, owner: normalizedPlanTasks.owner }).from(normalizedPlanTasks).where(eq(normalizedPlanTasks.projectId, projectId))
+            : tx.select({ taskName: normalizedPlanTasks.taskName, owner: normalizedPlanTasks.owner }).from(normalizedPlanTasks).where(eq(normalizedPlanTasks.projectName, projectName)),
+          [] as { taskName: string; owner: string | null }[]
+        );
         for (const t of existingTasks) {
           if (t.owner && t.owner.trim()) {
             existingTaskOwners.set(t.taskName, t.owner);
@@ -909,12 +913,12 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
       }
 
       if (projectId) {
-        await tx.delete(normalizedPlanTasks).where(eq(normalizedPlanTasks.projectId, projectId));
+        await safeLegacyWrite(() => tx.delete(normalizedPlanTasks).where(eq(normalizedPlanTasks.projectId, projectId)));
         await tx.delete(normalizedRevenueLines).where(eq(normalizedRevenueLines.projectId, projectId));
         await tx.delete(normalizedCostLines).where(eq(normalizedCostLines.projectId, projectId));
         await tx.delete(normalizedExecutionPhases).where(eq(normalizedExecutionPhases.projectId, projectId));
       } else {
-        await tx.delete(normalizedPlanTasks).where(eq(normalizedPlanTasks.projectName, projectName));
+        await safeLegacyWrite(() => tx.delete(normalizedPlanTasks).where(eq(normalizedPlanTasks.projectName, projectName)));
         await tx.delete(normalizedRevenueLines).where(eq(normalizedRevenueLines.projectName, projectName));
         await tx.delete(normalizedCostLines).where(eq(normalizedCostLines.projectName, projectName));
         await tx.delete(normalizedExecutionPhases).where(eq(normalizedExecutionPhases.projectName, projectName));
@@ -996,7 +1000,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
             };
           });
         if (planValues.length > 0) {
-          await tx.insert(normalizedPlanTasks).values(planValues);
+          await safeLegacyWrite(() => tx.insert(normalizedPlanTasks).values(planValues));
 
           const legacyPlanBatch = planValues.map((t: any, idx: number) => ({
             projectName,
@@ -1072,10 +1076,13 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
         }
         counts.planTasks = planValues.length;
 
-        const insertedNormTasks = await tx
-          .select({ id: normalizedPlanTasks.id, taskName: normalizedPlanTasks.taskName, taskNo: normalizedPlanTasks.taskNo })
-          .from(normalizedPlanTasks)
-          .where(eq(normalizedPlanTasks.importRunId, runId));
+        const insertedNormTasks = await safeLegacyQuery(
+          () => tx
+            .select({ id: normalizedPlanTasks.id, taskName: normalizedPlanTasks.taskName, taskNo: normalizedPlanTasks.taskNo })
+            .from(normalizedPlanTasks)
+            .where(eq(normalizedPlanTasks.importRunId, runId)),
+          [] as { id: number; taskName: string; taskNo: string | null }[]
+        );
         const normTaskIdByRow = new Map<number, number>();
         const normTaskIdByName = new Map<string, number>();
         for (const nt of insertedNormTasks) {
@@ -1576,7 +1583,7 @@ router.post("/api/smart-import/:runId/rollback", requireAuth, async (req: Reques
     }
 
     await db.transaction(async (tx: any) => {
-      await tx.delete(normalizedPlanTasks).where(eq(normalizedPlanTasks.importRunId, runId));
+      await safeLegacyWrite(() => tx.delete(normalizedPlanTasks).where(eq(normalizedPlanTasks.importRunId, runId)));
       await tx.delete(normalizedRevenueLines).where(eq(normalizedRevenueLines.importRunId, runId));
       await tx.delete(normalizedCostLines).where(eq(normalizedCostLines.importRunId, runId));
       await tx.delete(normalizedExecutionPhases).where(eq(normalizedExecutionPhases.importRunId, runId));
@@ -1676,10 +1683,10 @@ router.get("/api/smart-import/normalized/:projectName/plan", requireAuth, async 
 
     if (!latestRun) return res.json([]);
 
-    const records = await db
-      .select()
-      .from(normalizedPlanTasks)
-      .where(eq(normalizedPlanTasks.importRunId, latestRun.id));
+    const records = await safeLegacyQuery(
+      () => db.select().from(normalizedPlanTasks).where(eq(normalizedPlanTasks.importRunId, latestRun.id)),
+      []
+    );
 
     res.json(records);
   } catch (err: any) {
