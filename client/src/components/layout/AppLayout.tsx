@@ -680,8 +680,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <div className="flex-1 overflow-auto p-3 sm:p-4 md:p-6 scroll-smooth overscroll-contain -webkit-overflow-scrolling-touch flex flex-col">
-          <div className="max-w-[1600px] w-full mx-auto animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-4 flex-1 flex flex-col">
+        <div className="flex-1 overflow-x-hidden overflow-y-auto p-3 sm:p-4 md:p-6 scroll-smooth overscroll-contain -webkit-overflow-scrolling-touch flex flex-col">
+          <div className="w-full max-w-[1920px] mx-auto animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-4 flex-1 flex flex-col min-w-0">
             <DatabaseStatusBanner />
             {showValidationReport && lastUploadResult && (
               <UploadValidationReport 

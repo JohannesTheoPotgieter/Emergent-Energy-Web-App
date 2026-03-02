@@ -298,7 +298,7 @@ export default function AdminRolesPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-[1200px] mx-auto" data-testid="admin-roles-page">
+    <div className="space-y-6 w-full max-w-[1600px] mx-auto" data-testid="admin-roles-page">
       <header>
         <h1 className="text-2xl font-bold tracking-tight text-gray-900 flex items-center gap-3" data-testid="text-page-title">
           <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-green-600 to-emerald-700 flex items-center justify-center">
