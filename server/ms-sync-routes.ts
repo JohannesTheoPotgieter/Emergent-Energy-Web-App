@@ -8,6 +8,7 @@ import {
   projectEngApprovals, projectEngStages, engStageTemplates,
   qcItemInstance, qcChecklist, qcTemplateItem,
   projectInfo, users, normalizedPlanTasks, engineeringTasks,
+  msAccounts,
 } from "@shared/schema";
 import {
   tagToProject,
@@ -161,6 +162,22 @@ export function registerMsSyncRoutes(app: Express) {
       const userId = (req as any).user?.id;
       if (!userId) return res.status(401).json({ error: "auth_required" });
 
+      const user = (req as any).user;
+      const existingAccount = await db.select().from(msAccounts).where(eq(msAccounts.userId, userId)).limit(1);
+      if (existingAccount.length === 0) {
+        await db.insert(msAccounts).values({
+          userId,
+          tenantId: process.env.AZURE_TENANT_ID || "",
+          msUserId: user.msUserId || `local-${userId}`,
+          email: user.email || user.username || "",
+          displayName: user.displayName || user.name || user.username || `User ${userId}`,
+          status: "active",
+        }).onConflictDoNothing();
+        console.log(`[MS Sync] Auto-created ms_account for user ${userId}`);
+      } else if (existingAccount[0].status !== "active") {
+        await db.update(msAccounts).set({ status: "active" }).where(eq(msAccounts.userId, userId));
+      }
+
       const { type } = req.body;
       let results;
       if (type === "calendar") {
@@ -174,6 +191,7 @@ export function registerMsSyncRoutes(app: Express) {
       }
       res.json({ success: true, results });
     } catch (err: any) {
+      console.error("[MS Sync] Trigger error:", err.message);
       res.status(500).json({ error: "Sync failed: " + err.message });
     }
   });

@@ -1,16 +1,43 @@
-import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useMemo, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/hooks/use-toast";
 import { format, parseISO } from "date-fns";
 import {
   Mail, Loader2, Search, Inbox, AlertTriangle,
-  CheckCheck, Link2,
+  CheckCheck, Link2, RefreshCw,
 } from "lucide-react";
 import {
   authHeaders, TagToProjectDialog, ConvertToTaskDialog, MsObjectActions,
 } from "./collaboration";
+
+function useEmailSync() {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  return useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/ms-sync/trigger", {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ type: "email" }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Sync failed");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ["ms-objects-mine"] });
+      const total = (data.results || []).reduce((s: number, r: any) => s + (r.synced || 0), 0);
+      if (total > 0) toast({ title: `Synced ${total} emails from Microsoft 365` });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Sync failed", description: err.message, variant: "destructive" });
+    },
+  });
+}
 
 export default function CollabEmailPage() {
   const { user } = useAuth();
@@ -19,8 +46,10 @@ export default function CollabEmailPage() {
   const [tagTarget, setTagTarget] = useState<any>(null);
   const [convertDialogOpen, setConvertDialogOpen] = useState(false);
   const [convertTarget, setConvertTarget] = useState<any>(null);
+  const [autoSyncDone, setAutoSyncDone] = useState(false);
+  const syncMutation = useEmailSync();
 
-  const { data: items = [], isLoading } = useQuery<any[]>({
+  const { data: items = [], isLoading, isFetched } = useQuery<any[]>({
     queryKey: ["ms-objects-mine", "email"],
     queryFn: async () => {
       const res = await fetch("/api/ms-objects/mine?type=email", { headers: authHeaders(), credentials: "include" });
@@ -29,6 +58,13 @@ export default function CollabEmailPage() {
     },
     staleTime: 30_000,
   });
+
+  useEffect(() => {
+    if (isFetched && items.length === 0 && !autoSyncDone && !syncMutation.isPending) {
+      setAutoSyncDone(true);
+      syncMutation.mutate();
+    }
+  }, [isFetched, items.length, autoSyncDone]);
 
   const filtered = useMemo(() => {
     if (!searchQuery) return items;
@@ -41,15 +77,27 @@ export default function CollabEmailPage() {
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6" data-testid="collab-email-page">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2" data-testid="text-email-title">
-          <Mail className="h-6 w-6 text-blue-600" />
-          Outlook Email
-        </h1>
-        <p className="text-muted-foreground text-sm mt-1">
-          Synced emails — tag to projects or convert to tasks
-          {user?.displayName && <span> — {user.displayName}</span>}
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2" data-testid="text-email-title">
+            <Mail className="h-6 w-6 text-blue-600" />
+            Outlook Email
+          </h1>
+          <p className="text-muted-foreground text-sm mt-1">
+            Synced emails — tag to projects or convert to tasks
+            {user?.displayName && <span> — {user.displayName}</span>}
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => syncMutation.mutate()}
+          disabled={syncMutation.isPending}
+          data-testid="sync-email-button"
+        >
+          <RefreshCw className={`h-4 w-4 mr-1 ${syncMutation.isPending ? "animate-spin" : ""}`} />
+          {syncMutation.isPending ? "Syncing..." : "Sync Now"}
+        </Button>
       </div>
 
       <div className="flex items-center gap-3">
@@ -68,15 +116,26 @@ export default function CollabEmailPage() {
         </Badge>
       </div>
 
-      {isLoading ? (
+      {isLoading || syncMutation.isPending ? (
         <div className="flex items-center justify-center py-16">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          <span className="ml-2 text-sm text-muted-foreground">{syncMutation.isPending ? "Syncing emails from Microsoft 365..." : "Loading..."}</span>
         </div>
       ) : filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <Inbox className="h-12 w-12 text-muted-foreground mb-3" />
           <p className="text-muted-foreground text-sm">No synced emails found</p>
-          <p className="text-xs text-muted-foreground mt-1">Emails sync automatically from your Microsoft account</p>
+          <p className="text-xs text-muted-foreground mt-1">Click "Sync Now" to pull your latest emails from Microsoft 365</p>
+          <Button
+            variant="default"
+            size="sm"
+            className="mt-3"
+            onClick={() => syncMutation.mutate()}
+            disabled={syncMutation.isPending}
+            data-testid="sync-email-empty-button"
+          >
+            <RefreshCw className="h-4 w-4 mr-1" /> Sync Emails
+          </Button>
         </div>
       ) : (
         <div className="divide-y rounded-lg border bg-card">

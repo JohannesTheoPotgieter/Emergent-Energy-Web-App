@@ -1,16 +1,43 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
 import { format, parseISO } from "date-fns";
 import {
   MessageSquare, Loader2, AlertTriangle,
-  Link2, Users, ChevronRight as ChevronRightIcon,
+  Link2, Users, ChevronRight as ChevronRightIcon, RefreshCw,
 } from "lucide-react";
 import {
   authHeaders, TagToProjectDialog, ConvertToTaskDialog, MsObjectActions,
 } from "./collaboration";
+
+function useTeamsSync() {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  return useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/ms-sync/trigger", {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ type: "teams" }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Sync failed");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ["ms-objects-mine"] });
+      const total = (data.results || []).reduce((s: number, r: any) => s + (r.synced || 0), 0);
+      if (total > 0) toast({ title: `Synced ${total} Teams chats from Microsoft 365` });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Sync failed", description: err.message, variant: "destructive" });
+    },
+  });
+}
 
 export default function CollabTeamsPage() {
   const { user } = useAuth();
@@ -19,8 +46,10 @@ export default function CollabTeamsPage() {
   const [tagTarget, setTagTarget] = useState<any>(null);
   const [convertDialogOpen, setConvertDialogOpen] = useState(false);
   const [convertTarget, setConvertTarget] = useState<any>(null);
+  const [autoSyncDone, setAutoSyncDone] = useState(false);
+  const syncMutation = useTeamsSync();
 
-  const { data: items = [], isLoading } = useQuery<any[]>({
+  const { data: items = [], isLoading, isFetched } = useQuery<any[]>({
     queryKey: ["ms-objects-mine", "teams"],
     queryFn: async () => {
       const res = await fetch("/api/ms-objects/mine?type=teams", { headers: authHeaders(), credentials: "include" });
@@ -29,6 +58,13 @@ export default function CollabTeamsPage() {
     },
     staleTime: 30_000,
   });
+
+  useEffect(() => {
+    if (isFetched && items.length === 0 && !autoSyncDone && !syncMutation.isPending) {
+      setAutoSyncDone(true);
+      syncMutation.mutate();
+    }
+  }, [isFetched, items.length, autoSyncDone]);
 
   const { data: myGroups = [] } = useQuery<any[]>({
     queryKey: ["chat-groups-mine"],
@@ -42,20 +78,33 @@ export default function CollabTeamsPage() {
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6" data-testid="collab-teams-page">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2" data-testid="text-teams-title">
-          <MessageSquare className="h-6 w-6 text-purple-600" />
-          Teams Chat
-        </h1>
-        <p className="text-muted-foreground text-sm mt-1">
-          Teams mentions, activity, and dashboard channels
-          {user?.displayName && <span> — {user.displayName}</span>}
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2" data-testid="text-teams-title">
+            <MessageSquare className="h-6 w-6 text-purple-600" />
+            Teams Chat
+          </h1>
+          <p className="text-muted-foreground text-sm mt-1">
+            Teams mentions, activity, and dashboard channels
+            {user?.displayName && <span> — {user.displayName}</span>}
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => syncMutation.mutate()}
+          disabled={syncMutation.isPending}
+          data-testid="sync-teams-button"
+        >
+          <RefreshCw className={`h-4 w-4 mr-1 ${syncMutation.isPending ? "animate-spin" : ""}`} />
+          {syncMutation.isPending ? "Syncing..." : "Sync Now"}
+        </Button>
       </div>
 
-      {isLoading ? (
+      {isLoading || syncMutation.isPending ? (
         <div className="flex items-center justify-center py-16">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          <span className="ml-2 text-sm text-muted-foreground">{syncMutation.isPending ? "Syncing Teams from Microsoft 365..." : "Loading..."}</span>
         </div>
       ) : (
         <div className="space-y-6">
@@ -113,7 +162,17 @@ export default function CollabTeamsPage() {
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <MessageSquare className="h-12 w-12 text-muted-foreground mb-3" />
               <p className="text-muted-foreground text-sm">No Teams activity found</p>
-              <p className="text-xs text-muted-foreground mt-1">Mentions and activity sync automatically</p>
+              <p className="text-xs text-muted-foreground mt-1">Click "Sync Now" to pull your Teams chats from Microsoft 365</p>
+              <Button
+                variant="default"
+                size="sm"
+                className="mt-3"
+                onClick={() => syncMutation.mutate()}
+                disabled={syncMutation.isPending}
+                data-testid="sync-teams-empty-button"
+              >
+                <RefreshCw className="h-4 w-4 mr-1" /> Sync Teams
+              </Button>
             </div>
           )}
 
