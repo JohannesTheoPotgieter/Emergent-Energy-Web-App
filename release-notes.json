@@ -1,36 +1,28 @@
 {
   "notes": [
     {
-      "title": "V1.2 — Roles, Patterns & Reliability",
-      "description": "Version 1.2 overhauls the Roles & Permissions admin page, fixes authentication across key pages, and ensures counterparty updates always keep invoice patterns in sync. A tighter, more reliable platform across the board."
+      "title": "V1.3 — The One Where the Gantt Chart Got a Wardrobe Change",
+      "description": "Milestone groups now dress alike on the Gantt chart, the DAYS column learned to skip weekends and public holidays (like the rest of us wish we could), and Smart Import finally stops picking the wrong sheet. A visual and accuracy upgrade across the board."
     },
     {
-      "title": "Redesigned Roles & Permissions",
-      "description": "The admin Roles & Permissions page now mirrors the sidebar navigation structure exactly. All 10 sections are visible at once in a compact flat layout — no more expanding and collapsing. Inline preset buttons (All, View, None) let you set permissions for an entire category in one click."
+      "title": "Colour-Coded Milestone Groups",
+      "description": "Each milestone and its child tasks now share the same colour on the Gantt chart — blue, violet, teal, amber, and more. No more guessing which tasks belong together. Late tasks still show red (sorry), and completed ones stay green (well done)."
     },
     {
-      "title": "Invoice Pattern Auto-Sync",
-      "description": "Counterparty updates now always sync invoice patterns. Adding, changing, or removing aliases automatically creates or removes the corresponding pattern rules. The subcontractor dashboard stays accurate without manual pattern management."
+      "title": "Working Days, Not Calendar Days",
+      "description": "The DAYS column and the 'Day X of Y' counter now count only working days — weekends and South African public holidays are excluded. Because nobody's pouring concrete on Heritage Day."
     },
     {
-      "title": "Financial Integration Card",
-      "description": "The Financial Integration Panel on the project detail page is now a single clickable card showing sync percentage, warning badges, and a link arrow. Click it to navigate directly to the financial linking page — no expand/collapse needed."
+      "title": "Gantt Default View: Month",
+      "description": "The Gantt chart now opens in month view instead of week view. Less scrolling, more big-picture thinking. You can still zoom into weeks if you enjoy the detail."
     },
     {
-      "title": "Procurement Classification Fix",
-      "description": "The classify endpoint now writes both counterparty ID and name to matched expenditure lines. If only an ID exists, the name is resolved automatically from the counterparties table, keeping the subcontractor dashboard grouping accurate."
+      "title": "Smarter Sheet Detection for Smart Import",
+      "description": "Smart Import was occasionally picking 'Sheet1' over a sheet literally named 'Project Plan.' That's been fixed. Named sheets now get a proper priority boost, and the system searches deeper into the sheet to find headers. Mondi tracker, you're welcome."
     },
     {
-      "title": "Authentication Fix Across 8 Pages",
-      "description": "Fixed an authentication bug affecting the Invoice Pattern Dictionary, Smart Import, Subcontractor Dashboard, Execution Board, Lifecycle Board, Normalized View, Meetings, and PM Dashboard. All pages now correctly authenticate API requests."
-    },
-    {
-      "title": "Smart Import Hierarchy Support",
-      "description": "Smart Import now detects WBS-style task hierarchies (1, 1.1, 1.2) from project trackers. Parent tasks are auto-detected as milestones. The preview shows indentation, milestone markers, and subtask counts before committing."
-    },
-    {
-      "title": "Deleted Project Re-creation Detection",
-      "description": "Smart Import detects when an imported project name matches a previously deleted project and shows a confirmation prompt. Bulk commits auto-pass the re-creation flag to skip the warning."
+      "title": "KPI Bar Explained",
+      "description": "The Actual % shows how much work is done. The Expected % shows how much should be done based on time elapsed. The gap between them tells you if you're ahead or behind. Green good, red bad. That's it. That's the feature."
     }
   ]
 }
