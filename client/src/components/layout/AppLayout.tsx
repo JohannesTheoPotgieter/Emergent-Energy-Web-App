@@ -337,7 +337,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     <>
       <div className="h-14 md:h-16 flex items-center px-4 border-b border-sidebar-border bg-sidebar/50 backdrop-blur-sm">
         <Link href="/" className="flex items-center gap-3 min-w-0">
-          <img src="/emergent-logo.png" className={`${sidebarShowLabels ? 'h-7' : 'h-6'} object-contain brightness-0 invert shrink-0`} alt="Emergent Energy" />
+          <img src="/emergent-logo.png" className={`${sidebarShowLabels ? 'h-7' : 'h-6'} object-contain shrink-0`} alt="Emergent Energy" />
         </Link>
         <button
           onClick={() => setMobileOpen(false)}
