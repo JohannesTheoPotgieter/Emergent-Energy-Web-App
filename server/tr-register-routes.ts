@@ -219,7 +219,25 @@ export function registerTrRegisterRoutes(app: Express) {
         ? await query.where(and(...conditions)).orderBy(desc(trItems.createdAt))
         : await query.orderBy(desc(trItems.createdAt));
 
-      res.json(items);
+      const { buildUserMap } = await import("./user-resolver");
+      const userMap = await buildUserMap();
+      const enriched = items.map((item: any) => {
+        const ownerUserIds: number[] = [];
+        for (const ownerName of (item.owners || [])) {
+          const matched = [...userMap.values()].find(
+            u => u.name.toLowerCase() === ownerName.toLowerCase()
+              || u.username.toLowerCase() === ownerName.toLowerCase()
+              || u.name.split(" ")[0].toLowerCase() === ownerName.toLowerCase()
+          );
+          if (matched) ownerUserIds.push(matched.id);
+        }
+        return {
+          ...item,
+          ownerUserIds,
+          resolvedOwners: ownerUserIds.map(id => userMap.get(id)).filter(Boolean),
+        };
+      });
+      res.json(enriched);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

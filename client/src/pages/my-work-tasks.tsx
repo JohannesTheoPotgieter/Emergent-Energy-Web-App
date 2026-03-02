@@ -42,6 +42,7 @@ import {
   Wrench,
   Users,
 } from "lucide-react";
+import UserAssignmentPicker from "@/components/UserAssignmentPicker";
 
 type SortField = "priority" | "dueDate" | "createdAt" | "status";
 type SortDirection = "asc" | "desc";
@@ -73,6 +74,13 @@ function normalizePriority(priority: string): TaskPriority {
   return "normal";
 }
 
+interface ResolvedUser {
+  id: number;
+  name: string;
+  username: string;
+  role: string;
+}
+
 interface UnifiedTask {
   _key: string;
   _source: SourceFilter;
@@ -91,6 +99,7 @@ interface UnifiedTask {
   parentTaskId?: number | null;
   percentComplete?: number;
   assignees?: string[] | null;
+  resolvedAssignees?: ResolvedUser[] | null;
   description?: string | null;
   nextStep?: string | null;
   definitionOfDone?: string | null;
@@ -111,6 +120,7 @@ interface UnifiedTask {
   deliverableStatus?: string | null;
   ragStatus?: string | null;
   owners?: string[] | null;
+  resolvedOwners?: ResolvedUser[] | null;
   trId?: string | null;
 }
 
@@ -240,6 +250,7 @@ export default function MyWorkTasksPage() {
         parentTaskId: t.parentTaskId || t.parent_task_id || null,
         percentComplete: t.percentComplete || t.percent_complete || 0,
         assignees: t.assignees || null,
+        resolvedAssignees: t.resolvedAssignees || null,
         description: t.description || null,
       });
     }
@@ -296,6 +307,7 @@ export default function MyWorkTasksPage() {
         notes: t.outcomeComments || t.supportingInfo || null,
         ragStatus: t.ragStatus || null,
         owners: t.owners || null,
+        resolvedOwners: t.resolvedOwners || null,
         trId: t.trId || null,
         department: t.department || null,
       });
@@ -337,6 +349,8 @@ export default function MyWorkTasksPage() {
         createdAt: null,
         notes: t.phase ? `Phase: ${t.phase}` : null,
         percentComplete: t.pctComplete ? Math.round(t.pctComplete * 100) : 0,
+        assignees: t.owner ? [t.owner] : null,
+        resolvedAssignees: t.resolvedAssignee ? [t.resolvedAssignee] : null,
       });
     }
 
@@ -355,6 +369,8 @@ export default function MyWorkTasksPage() {
         dueAt: null,
         createdAt: null,
         notes: t.lifecyclePhase ? `Phase: ${t.lifecyclePhase}` : null,
+        assignees: t.assigneeName ? [t.assigneeName] : null,
+        resolvedAssignees: t.resolvedAssignee ? [t.resolvedAssignee] : null,
       });
     }
 
@@ -373,6 +389,7 @@ export default function MyWorkTasksPage() {
         dueAt: t.endDate || null,
         createdAt: null,
         notes: null,
+        resolvedAssignees: t.resolvedAssignee ? [t.resolvedAssignee] : null,
       });
     }
 
@@ -964,6 +981,18 @@ function TaskRow({
         <span className={`shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border ${task._sourceColor}`} data-testid={`badge-source-${task._key}`}>
           {task._sourceLabel}
         </span>
+
+        <div className="hidden sm:block shrink-0" onClick={e => e.stopPropagation()}>
+          <UserAssignmentPicker
+            taskId={task._rawId}
+            taskSource={task._source === "approvals" ? "operational" : task._source}
+            resolvedUsers={task.resolvedAssignees || task.resolvedOwners || null}
+            textNames={task.assignees || task.owners || null}
+            mode={["operational", "tr_register"].includes(task._source) ? "multi" : "single"}
+            size="xs"
+            invalidateKeys={["/api/my-work/all-tasks", "/api/mytool/tasks"]}
+          />
+        </div>
 
         {task.projectName && (
           <span className="hidden md:inline shrink-0 text-[10px] text-muted-foreground bg-muted/50 px-2 py-0.5 rounded truncate max-w-[120px]" title={task.projectName} data-testid={`badge-project-${task._key}`}>

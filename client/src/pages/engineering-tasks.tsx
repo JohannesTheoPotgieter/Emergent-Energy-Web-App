@@ -68,6 +68,7 @@ import { useToast } from "@/hooks/use-toast";
 import { usePermission } from "@/hooks/use-permissions";
 import { PROJECT_PHASE_LABELS, type ProjectPhase } from "@shared/schema";
 import { ActionBar } from "@/components/guidance/ActionBar";
+import UserAssignmentPicker from "@/components/UserAssignmentPicker";
 import { InlineTip } from "@/components/guidance/InlineTip";
 import { MicroWalkthrough, ReplayWalkthrough } from "@/components/guidance/MicroWalkthrough";
 import type { NextAction, BlockerInfo } from "@/hooks/use-guidance";
@@ -994,24 +995,15 @@ function TaskDetailDrawer({
 
             <div className="space-y-1">
               <Label className="text-[10px] text-muted-foreground uppercase tracking-wider">Assignee</Label>
-              <Select
-                value={task.assignees?.[0] || "none"}
-                onValueChange={(v) => {
-                  const newAssignees = v === "none" ? [] : [v];
-                  const matchedUser = v !== "none" ? teamMembers.find(m => m.name === v) : null;
-                  updateMutation.mutate({ assignees: newAssignees, ownerUserId: matchedUser?.id || null });
-                }}
-              >
-                <SelectTrigger className="h-8 text-xs" data-testid="select-drawer-assignee">
-                  <SelectValue placeholder="Select assignee" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Unassigned</SelectItem>
-                  {teamMembers.map(m => (
-                    <SelectItem key={m.id} value={m.name}>{m.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <UserAssignmentPicker
+                taskId={task.id}
+                taskSource="operational"
+                resolvedUsers={task.resolvedAssignees || null}
+                textNames={task.assignees || null}
+                mode="multi"
+                size="sm"
+                invalidateKeys={[`/api/eng/tasks?projectName=${task.projectName}`, "/api/eng/tasks", "/api/my-work/all-tasks"]}
+              />
               {task.assignees && task.assignees.length > 1 && (
                 <div className="flex flex-wrap gap-1 mt-1">
                   {task.assignees.slice(1).map((a, i) => (

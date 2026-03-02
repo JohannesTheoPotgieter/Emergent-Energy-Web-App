@@ -50,6 +50,7 @@ import {
   Flag,
   AlertCircle,
 } from "lucide-react";
+import UserAssignmentPicker from "@/components/UserAssignmentPicker";
 
 interface TaskDetailDrawerProps {
   taskId: number | null;
@@ -396,18 +397,14 @@ function TaskDetailContent({
           <label className="text-xs text-muted-foreground flex items-center gap-1 mb-1">
             <User className="h-3 w-3" /> Assignees
           </label>
-          <Input
-            data-testid="input-assignees"
-            className="h-8 text-xs"
-            placeholder="Comma-separated names"
-            defaultValue={(task.assignees ?? []).join(", ")}
-            onBlur={(e) => {
-              const val = e.target.value
-                .split(",")
-                .map((s) => s.trim())
-                .filter(Boolean);
-              updateTask({ assignees: val });
-            }}
+          <UserAssignmentPicker
+            taskId={task.id}
+            taskSource="operational"
+            resolvedUsers={task.resolvedAssignees || null}
+            textNames={task.assignees || null}
+            mode="multi"
+            size="sm"
+            invalidateKeys={[`/api/operational-tasks/task/${task.id}`, "/api/my-work/all-tasks"]}
           />
         </div>
 
