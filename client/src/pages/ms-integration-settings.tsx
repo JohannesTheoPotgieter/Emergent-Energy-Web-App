@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,6 +11,13 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import {
   Loader2,
   Save,
@@ -37,6 +45,9 @@ import {
   RefreshCw,
   Calendar,
   Send,
+  Users,
+  Pencil,
+  Search,
 } from "lucide-react";
 
 function authFetch(url: string, opts?: RequestInit) {
@@ -237,6 +248,38 @@ export default function MsIntegrationSettingsPage() {
     saveConfigMutation.mutate({ key: "teams_config", value: teamsConfig });
   };
 
+  const [userSearch, setUserSearch] = useState("");
+  const [editingUser, setEditingUser] = useState<any>(null);
+  const [editMsId, setEditMsId] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+
+  const { data: userMappings = [], isLoading: usersLoading } = useQuery<any[]>({
+    queryKey: ["/api/admin/users/microsoft-mapping"],
+    enabled: isAdmin,
+  });
+
+  const updateMappingMutation = useMutation({
+    mutationFn: ({ userId, microsoftId, email }: { userId: number; microsoftId: string; email: string }) =>
+      apiRequest("PATCH", `/api/admin/users/${userId}/microsoft-id`, { microsoftId, email }),
+    onSuccess: () => {
+      toast({ title: "Microsoft mapping updated" });
+      setEditingUser(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users/microsoft-mapping"] });
+    },
+    onError: (err: any) =>
+      toast({ title: "Update failed", description: err.message, variant: "destructive" }),
+  });
+
+  const filteredUsers = userMappings.filter((u: any) => {
+    if (!userSearch.trim()) return true;
+    const q = userSearch.toLowerCase();
+    return u.name?.toLowerCase().includes(q) || u.username?.toLowerCase().includes(q) ||
+      (u.email || "").toLowerCase().includes(q) || u.role?.toLowerCase().includes(q);
+  });
+
+  const linkedCount = userMappings.filter((u: any) => u.microsoftId).length;
+  const unlinkedCount = userMappings.filter((u: any) => !u.microsoftId).length;
+
   if (isLoading && isAdmin) {
     return (
       <div className="flex items-center justify-center py-20" data-testid="loading-spinner">
@@ -401,7 +444,7 @@ export default function MsIntegrationSettingsPage() {
       </header>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-5 h-10">
+        <TabsList className="grid w-full grid-cols-6 h-10">
           <TabsTrigger value="overview" className="text-xs gap-1" data-testid="tab-overview">
             <Activity className="h-3.5 w-3.5" /> Overview
           </TabsTrigger>
@@ -413,6 +456,9 @@ export default function MsIntegrationSettingsPage() {
           </TabsTrigger>
           <TabsTrigger value="teams" className="text-xs gap-1" data-testid="tab-teams">
             <MessageSquare className="h-3.5 w-3.5" /> Teams
+          </TabsTrigger>
+          <TabsTrigger value="users" className="text-xs gap-1" data-testid="tab-users">
+            <Users className="h-3.5 w-3.5" /> Users
           </TabsTrigger>
           <TabsTrigger value="permissions" className="text-xs gap-1" data-testid="tab-permissions">
             <Shield className="h-3.5 w-3.5" /> Permissions
