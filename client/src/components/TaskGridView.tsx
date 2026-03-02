@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -144,6 +144,57 @@ const pctColor = (pct: number) => {
   if (pct > 0) return "bg-amber-400";
   return "bg-slate-200";
 };
+
+function InlinePctEditor({ pct, onCommit }: { pct: number; onCommit: (v: number) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [localVal, setLocalVal] = useState(String(pct));
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { setLocalVal(String(pct)); }, [pct]);
+
+  const commit = () => {
+    const parsed = Math.min(100, Math.max(0, parseInt(localVal) || 0));
+    setEditing(false);
+    onCommit(parsed);
+  };
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-1 w-full" onClick={(e) => e.stopPropagation()}>
+        <input
+          ref={inputRef}
+          data-testid="inline-pct-input"
+          className="w-12 h-5 text-[11px] tabular-nums text-center border border-primary/40 rounded bg-background outline-none focus:ring-1 focus:ring-primary/30"
+          type="number"
+          min={0}
+          max={100}
+          value={localVal}
+          onChange={(e) => setLocalVal(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") setEditing(false); }}
+          autoFocus
+        />
+        <span className="text-[10px] text-muted-foreground">%</span>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="flex items-center gap-2 w-full cursor-pointer group"
+      onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+      title="Click to edit % complete"
+      data-testid="inline-pct-display"
+    >
+      <div className="flex-1 h-[6px] rounded-full bg-slate-100 overflow-hidden min-w-[40px]">
+        <div className={`h-full rounded-full transition-all ${pctColor(pct)}`} style={{ width: `${Math.min(pct, 100)}%` }} />
+      </div>
+      <span className={`text-[11px] tabular-nums font-semibold min-w-[28px] text-right group-hover:text-primary group-hover:underline ${pct >= 100 ? "text-emerald-600" : pct > 0 ? "text-slate-700" : "text-slate-400"}`}>
+        {pct}%
+      </span>
+    </div>
+  );
+}
 
 export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewProps) {
   const { isAdmin } = useAuth();
@@ -707,14 +758,14 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
       case "percentComplete": {
         const pct = task.percentComplete || 0;
         return (
-          <div className="flex items-center gap-2 w-full">
-            <div className="flex-1 h-[6px] rounded-full bg-slate-100 overflow-hidden min-w-[40px]">
-              <div className={`h-full rounded-full transition-all ${pctColor(pct)}`} style={{ width: `${Math.min(pct, 100)}%` }} />
-            </div>
-            <span className={`text-[11px] tabular-nums font-semibold min-w-[28px] text-right ${pct >= 100 ? "text-emerald-600" : pct > 0 ? "text-slate-700" : "text-slate-400"}`}>
-              {pct}%
-            </span>
-          </div>
+          <InlinePctEditor
+            pct={pct}
+            onCommit={(newPct) => {
+              if (newPct !== pct) {
+                updateMutation.mutate({ id: task.id, updates: { percentComplete: newPct } });
+              }
+            }}
+          />
         );
       }
 
