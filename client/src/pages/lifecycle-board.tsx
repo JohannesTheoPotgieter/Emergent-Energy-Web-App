@@ -504,7 +504,7 @@ export default function LifecycleBoardPage() {
         credentials: "include",
       });
       if (res.ok) {
-        toast({ title: "Project Archived", description: `${cleanProjectName(deleteTarget.projectName)} has been removed from the board` });
+        toast({ title: "Project Deleted", description: `${cleanProjectName(deleteTarget.projectName)} and all related data have been permanently removed` });
         setDeleteConfirmOpen(false);
         setDeleteTarget(null);
         setProjectDialogOpen(false);
@@ -1710,8 +1710,9 @@ export default function LifecycleBoardPage() {
               <Trash2 className="w-5 h-5" />
               Delete Project
             </DialogTitle>
-            <DialogDescription>
-              Are you sure you want to remove <strong>{deleteTarget ? cleanProjectName(deleteTarget.projectName) : ""}</strong> from the lifecycle board? The project data will be archived and no longer visible.
+            <DialogDescription className="space-y-2">
+              <span>Are you sure you want to permanently delete <strong>{deleteTarget ? cleanProjectName(deleteTarget.projectName) : ""}</strong>?</span>
+              <span className="block text-red-600 font-medium">This will permanently remove ALL project data including financial records, engineering tasks, quality checklists, plan tasks, deliverables, and all related data. This action cannot be undone.</span>
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2">
@@ -1725,7 +1726,7 @@ export default function LifecycleBoardPage() {
               data-testid="btn-confirm-delete"
             >
               {deleting ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Trash2 className="w-4 h-4 mr-1" />}
-              Delete Project
+              Permanently Delete
             </Button>
           </DialogFooter>
         </DialogContent>
