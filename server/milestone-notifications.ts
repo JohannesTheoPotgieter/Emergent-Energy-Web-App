@@ -41,10 +41,11 @@ export async function checkMilestoneNotifications() {
     const commissioningRows = await db.execute(sql`
       SELECT DISTINCT pi.project_name, pi.pm_user_id, pi.pm,
         COALESCE(
-          (SELECT MAX(t.actual_end_date) FROM normalized_plan_tasks t 
-           WHERE t.project_name = pi.project_name 
-           AND LOWER(t.task_name) LIKE '%commissioning%'
-           AND t.actual_end_date IS NOT NULL AND t.actual_end_date != ''),
+          (SELECT MAX(wi.end_date) FROM work_items wi 
+           WHERE wi.project_id = pi.id 
+           AND wi.workstream = 'PM' AND wi.deleted_at IS NULL
+           AND LOWER(wi.title) LIKE '%commissioning%'
+           AND wi.end_date IS NOT NULL AND wi.end_date != ''),
           pi.commissioning_date
         ) as comm_date
       FROM project_info pi
@@ -82,20 +83,22 @@ export async function checkMilestoneNotifications() {
     const behindScheduleRows = await db.execute(sql`
       SELECT pi.project_name, pi.pm_user_id,
         COALESCE(
-          (SELECT SUM(t.pct_complete * t.duration_days) / NULLIF(SUM(t.duration_days), 0)
-           FROM normalized_plan_tasks t WHERE t.project_name = pi.project_name
-           AND t.duration_days > 0 AND t.pct_complete IS NOT NULL), 0
+          (SELECT SUM(wi.percent_complete * wi.duration) / NULLIF(SUM(wi.duration), 0)
+           FROM work_items wi WHERE wi.project_id = pi.id
+           AND wi.workstream = 'PM' AND wi.deleted_at IS NULL
+           AND wi.duration > 0 AND wi.percent_complete IS NOT NULL), 0
         ) * 100 as act_pct,
         COALESCE(
           (SELECT SUM(
-            CASE WHEN t.actual_start_date IS NOT NULL AND t.actual_start_date != '' AND t.actual_end_date IS NOT NULL AND t.actual_end_date != ''
+            CASE WHEN wi.start_date IS NOT NULL AND wi.start_date != '' AND wi.end_date IS NOT NULL AND wi.end_date != ''
             THEN LEAST(1.0, GREATEST(0.0,
-              (EXTRACT(EPOCH FROM CURRENT_DATE) - EXTRACT(EPOCH FROM NULLIF(t.actual_start_date,'')::date))
-              / NULLIF(EXTRACT(EPOCH FROM NULLIF(t.actual_end_date,'')::date) - EXTRACT(EPOCH FROM NULLIF(t.actual_start_date,'')::date), 0)
-            )) * t.duration_days ELSE 0 END
-          ) / NULLIF(SUM(t.duration_days), 0)
-           FROM normalized_plan_tasks t WHERE t.project_name = pi.project_name
-           AND t.duration_days > 0), 0
+              (EXTRACT(EPOCH FROM CURRENT_DATE) - EXTRACT(EPOCH FROM NULLIF(wi.start_date,'')::date))
+              / NULLIF(EXTRACT(EPOCH FROM NULLIF(wi.end_date,'')::date) - EXTRACT(EPOCH FROM NULLIF(wi.start_date,'')::date), 0)
+            )) * wi.duration ELSE 0 END
+          ) / NULLIF(SUM(wi.duration), 0)
+           FROM work_items wi WHERE wi.project_id = pi.id
+           AND wi.workstream = 'PM' AND wi.deleted_at IS NULL
+           AND wi.duration > 0), 0
         ) * 100 as exp_pct
       FROM project_info pi
       WHERE pi.archived_status = 'ACTIVE'

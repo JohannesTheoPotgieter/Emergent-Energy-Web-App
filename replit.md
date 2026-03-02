@@ -43,9 +43,9 @@ Preferred communication style: Simple, everyday language.
 
 ### Database Architecture
 -   **Core Structure**: `project_info` as the central entity, linked to `clients`.
--   **Primary Data Sources**: `normalized_cost_lines`, `normalized_revenue_lines`, `normalized_plan_tasks`.
--   **Derived Data**: Metrics for portfolio dashboards are computed live from underlying tables.
--   **Canonical Work Items**: `work_items` table and supporting tables (`work_item_assignments`, `work_item_dependencies`, etc.) consolidate task-like entities.
+-   **Primary Data Sources**: `normalized_cost_lines`, `normalized_revenue_lines`, `work_items` (canonical). Legacy `normalized_plan_tasks` retained for write-path compatibility.
+-   **Derived Data**: Metrics for portfolio dashboards are computed live from `work_items` table.
+-   **Canonical Work Items**: `work_items` table is the single source of truth for all plan task reads. Feature flag `canonical_work_items_v1` is ON. All dashboards (portfolio summary, planning-tasks, My Work, PM On-The-Go, gamification, milestone notifications) read from `work_items`. Backfill runs on startup via `server/work-items-backfill.ts` (idempotent, uses `NPT::<id>` external_ref format). Supporting tables: `work_item_assignments`, `work_item_dependencies`.
 -   **Migration Finalize (Phase 5)**: Admin-only UI at `/admin/database-migration` for legacy table cleanup. Features: verification suite, backup registration (`migration_backups` table), reference scanning, archive-with-confirmation (tables renamed to `*_legacy_archive`), 7-day cooldown before permanent drop, restore capability, full activity log (`migration_cleanup_log` table). Key files: `server/migration-finalize-routes.ts`, `client/src/pages/database-migration.tsx`.
 
 ## External Dependencies

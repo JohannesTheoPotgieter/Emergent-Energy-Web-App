@@ -676,7 +676,7 @@ router.post("/api/home/notes", requireAuth, requireAdmin, async (req, res) => {
 
 router.get("/api/projects-summary", async (req, res) => {
   try {
-    const [allProjectInfo, allExpenses, rawInflows, allPlans, allEditableFields, allTaskLinks, allOpTasks, uploadMetaRows, allPlanOverrides] = await Promise.all([
+    const [allProjectInfo, allExpenses, rawInflows, allPlans, allEditableFields, allTaskLinks, allOpTasks, uploadMetaRows, allPlanOverrides, workItemsResult] = await Promise.all([
       storage.getAllProjectInfo(),
       storage.getAllProgramExpenses(),
       storage.getAllProgramInflows(),
@@ -686,7 +686,16 @@ router.get("/api/projects-summary", async (req, res) => {
       storage.getAllOperationalTasks(),
       db.execute(sql`SELECT DISTINCT file_name FROM upload_metadata`),
       storage.getAllProjectPlanOverrides(),
+      db.execute(sql`SELECT wi.project_id, pi.project_name, wi.percent_complete, wi.duration, wi.wbs_code, wi.start_date, wi.end_date, wi.title, wi.type FROM work_items wi JOIN project_info pi ON wi.project_id = pi.id WHERE wi.workstream = 'PM' AND wi.source = 'SMART_IMPORT' AND wi.deleted_at IS NULL`),
     ]);
+
+    const workItemsByProject = new Map<string, any[]>();
+    for (const row of workItemsResult.rows) {
+      const r = row as any;
+      const pName = r.project_name as string;
+      if (!workItemsByProject.has(pName)) workItemsByProject.set(pName, []);
+      workItemsByProject.get(pName)!.push(r);
+    }
     const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
 
     const milestoneKeys = new Set<string>();
@@ -763,11 +772,38 @@ router.get("/api/projects-summary", async (req, res) => {
       const projectPlans = plansByProject.get(projectName) || [];
       const editable = editableMap.get(projectName);
 
-      const pdFromPlan = findMaxEndDate(projectPlans, ['bd handover', 'project charter handover']);
-      const csFromPlan = findMinStartDate(projectPlans, ['site establishment']);
-      const commFromPlan = findMaxEndDate(projectPlans, ['commissioning']);
-      const omFromPlan = findMaxEndDate(projectPlans, ['handover to matriarch']);
-      const chFromPlan = findMaxEndDate(projectPlans, ['handover to client']);
+      const projectWorkItems = workItemsByProject.get(projectName) || [];
+
+      function findMaxEndDateWI(items: any[], patterns: string[]): string | null {
+        let maxDate: string | null = null;
+        for (const wi of items) {
+          const desc = (wi.title || '').toLowerCase();
+          const matches = patterns.some(p => desc.includes(p.toLowerCase()));
+          if (matches && wi.end_date && /^\d{4}-\d{2}-\d{2}/.test(wi.end_date)) {
+            const dateStr = wi.end_date.substring(0, 10);
+            if (!maxDate || dateStr > maxDate) maxDate = dateStr;
+          }
+        }
+        return maxDate;
+      }
+      function findMinStartDateWI(items: any[], patterns: string[]): string | null {
+        let minDate: string | null = null;
+        for (const wi of items) {
+          const desc = (wi.title || '').toLowerCase();
+          const matches = patterns.some(p => desc.includes(p.toLowerCase()));
+          if (matches && wi.start_date && /^\d{4}-\d{2}-\d{2}/.test(wi.start_date)) {
+            const dateStr = wi.start_date.substring(0, 10);
+            if (!minDate || dateStr < minDate) minDate = dateStr;
+          }
+        }
+        return minDate;
+      }
+
+      const pdFromPlan = (projectWorkItems.length > 0 ? findMaxEndDateWI(projectWorkItems, ['bd handover', 'project charter handover']) : null) || findMaxEndDate(projectPlans, ['bd handover', 'project charter handover']);
+      const csFromPlan = (projectWorkItems.length > 0 ? findMinStartDateWI(projectWorkItems, ['site establishment']) : null) || findMinStartDate(projectPlans, ['site establishment']);
+      const commFromPlan = (projectWorkItems.length > 0 ? findMaxEndDateWI(projectWorkItems, ['commissioning']) : null) || findMaxEndDate(projectPlans, ['commissioning']);
+      const omFromPlan = (projectWorkItems.length > 0 ? findMaxEndDateWI(projectWorkItems, ['handover to matriarch']) : null) || findMaxEndDate(projectPlans, ['handover to matriarch']);
+      const chFromPlan = (projectWorkItems.length > 0 ? findMaxEndDateWI(projectWorkItems, ['handover to client']) : null) || findMaxEndDate(projectPlans, ['handover to client']);
 
       const pdHandoverDate = pdFromPlan || info?.pdHandoverDate || null;
       const constructionStartDate = csFromPlan || info?.constructionStartDate || null;
@@ -802,41 +838,23 @@ router.get("/api/projects-summary", async (req, res) => {
 
       const gpPercent = actualRevenue > 0 ? 1 - (actualExpenses / actualRevenue) : null;
 
-      const summaryRow = projectPlans.find(p => {
-        const tn = (p.taskNo || '').toString().toLowerCase().trim();
-        return tn === 'no.' || tn === 'no' || tn === '#';
-      });
       let projectPctComplete: number | null = null;
       let expectedPctComplete: number | null = null;
-      if (summaryRow) {
-        projectPctComplete = summaryRow.actualPctComplete ?? null;
-        expectedPctComplete = summaryRow.expectedPctComplete ?? null;
-      }
-      if (projectPctComplete === null) {
+
+      if (projectWorkItems.length > 0) {
         let totalWeight = 0;
         let weightedSum = 0;
-        for (const p of projectPlans) {
-          if (p.rowNumber && milestoneKeys.has(`${projectName}::${p.rowNumber}`)) continue;
-          const dur = p.durationDays && p.durationDays > 0 ? p.durationDays : 1;
-          weightedSum += (p.actualPctComplete ?? 0) * dur;
-          totalWeight += dur;
-        }
-        projectPctComplete = totalWeight > 0 ? weightedSum / totalWeight : null;
-      }
-      if (expectedPctComplete === null) {
-        const todayDate = today;
         let totalExpWeight = 0;
         let weightedExpSum = 0;
-        for (const task of projectPlans) {
-          if (task.rowNumber && milestoneKeys.has(`${projectName}::${task.rowNumber}`)) continue;
-          const dur = task.durationDays && task.durationDays > 0 ? task.durationDays : 1;
+        const todayDate = today;
+        for (const wi of projectWorkItems) {
+          if (wi.type === 'milestone') continue;
+          const dur = wi.duration && Number(wi.duration) > 0 ? Number(wi.duration) : 1;
+          weightedSum += (wi.percent_complete !== null && wi.percent_complete !== undefined ? Number(wi.percent_complete) : 0) * dur;
+          totalWeight += dur;
           totalExpWeight += dur;
-          if (task.expectedPctComplete !== null && task.expectedPctComplete !== undefined) {
-            weightedExpSum += task.expectedPctComplete * dur;
-            continue;
-          }
-          const tStart = task.actualStart?.substring(0, 10);
-          const tEnd = task.actualEnd?.substring(0, 10);
+          const tStart = wi.start_date ? String(wi.start_date).substring(0, 10) : null;
+          const tEnd = wi.end_date ? String(wi.end_date).substring(0, 10) : null;
           if (!tStart || !tEnd || !/^\d{4}-\d{2}-\d{2}/.test(tStart) || !/^\d{4}-\d{2}-\d{2}/.test(tEnd)) {
             continue;
           }
@@ -854,7 +872,61 @@ router.get("/api/projects-summary", async (req, res) => {
           }
           weightedExpSum += exp * dur;
         }
+        projectPctComplete = totalWeight > 0 ? weightedSum / totalWeight : null;
         expectedPctComplete = totalExpWeight > 0 ? weightedExpSum / totalExpWeight : null;
+      } else {
+        const summaryRow = projectPlans.find(p => {
+          const tn = (p.taskNo || '').toString().toLowerCase().trim();
+          return tn === 'no.' || tn === 'no' || tn === '#';
+        });
+        if (summaryRow) {
+          projectPctComplete = summaryRow.actualPctComplete ?? null;
+          expectedPctComplete = summaryRow.expectedPctComplete ?? null;
+        }
+        if (projectPctComplete === null) {
+          let totalWeight = 0;
+          let weightedSum = 0;
+          for (const p of projectPlans) {
+            if (p.rowNumber && milestoneKeys.has(`${projectName}::${p.rowNumber}`)) continue;
+            const dur = p.durationDays && p.durationDays > 0 ? p.durationDays : 1;
+            weightedSum += (p.actualPctComplete ?? 0) * dur;
+            totalWeight += dur;
+          }
+          projectPctComplete = totalWeight > 0 ? weightedSum / totalWeight : null;
+        }
+        if (expectedPctComplete === null) {
+          const todayDate = today;
+          let totalExpWeight = 0;
+          let weightedExpSum = 0;
+          for (const task of projectPlans) {
+            if (task.rowNumber && milestoneKeys.has(`${projectName}::${task.rowNumber}`)) continue;
+            const dur = task.durationDays && task.durationDays > 0 ? task.durationDays : 1;
+            totalExpWeight += dur;
+            if (task.expectedPctComplete !== null && task.expectedPctComplete !== undefined) {
+              weightedExpSum += task.expectedPctComplete * dur;
+              continue;
+            }
+            const tStart = task.actualStart?.substring(0, 10);
+            const tEnd = task.actualEnd?.substring(0, 10);
+            if (!tStart || !tEnd || !/^\d{4}-\d{2}-\d{2}/.test(tStart) || !/^\d{4}-\d{2}-\d{2}/.test(tEnd)) {
+              continue;
+            }
+            let exp = 0;
+            if (todayDate >= tEnd) {
+              exp = 1.0;
+            } else if (todayDate <= tStart) {
+              exp = 0.0;
+            } else {
+              const totalWd = saWorkingDays(tStart, tEnd);
+              const elapsedWd = saWorkingDays(tStart, todayDate);
+              if (totalWd && totalWd > 0 && elapsedWd !== null) {
+                exp = Math.min(elapsedWd / totalWd, 1.0);
+              }
+            }
+            weightedExpSum += exp * dur;
+          }
+          expectedPctComplete = totalExpWeight > 0 ? weightedExpSum / totalExpWeight : null;
+        }
       }
       const deltaVsExpected = (projectPctComplete !== null && expectedPctComplete !== null)
         ? projectPctComplete - expectedPctComplete : null;

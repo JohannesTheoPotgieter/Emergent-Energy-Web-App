@@ -297,9 +297,10 @@ export function registerPmOnTheGoRoutes(app: Express) {
                AND a.status = 'pending'), 0
             ) AS vo_pending,
             COALESCE(
-              (SELECT AVG(npt.pct_complete) * 100 FROM normalized_plan_tasks npt
-               WHERE npt.project_name = pi.project_name
-               AND npt.pct_complete IS NOT NULL), 0
+              (SELECT AVG(wi.percent_complete) * 100 FROM work_items wi
+               WHERE wi.project_id = pi.id
+               AND wi.workstream = 'PM' AND wi.source = 'SMART_IMPORT' AND wi.deleted_at IS NULL
+               AND wi.percent_complete IS NOT NULL), 0
             ) AS schedule_pct,
             COALESCE(
               (SELECT COUNT(*) FROM pm_on_the_go_actions a
@@ -386,20 +387,21 @@ export function registerPmOnTheGoRoutes(app: Express) {
 
         const scheduleResult = await db.execute(sql`
           SELECT
-            COALESCE(AVG(npt.pct_complete) * 100, 0) AS actual_pct,
+            COALESCE(AVG(wi.percent_complete) * 100, 0) AS actual_pct,
             COALESCE(
               AVG(
-                CASE WHEN npt.actual_start IS NOT NULL AND npt.actual_end IS NOT NULL
-                  AND npt.actual_start != '' AND npt.actual_end != ''
+                CASE WHEN wi.start_date IS NOT NULL AND wi.end_date IS NOT NULL
+                  AND wi.start_date != '' AND wi.end_date != ''
                 THEN LEAST(1.0, GREATEST(0.0,
-                  (EXTRACT(EPOCH FROM CURRENT_DATE) - EXTRACT(EPOCH FROM npt.actual_start::date))
-                  / NULLIF(EXTRACT(EPOCH FROM npt.actual_end::date) - EXTRACT(EPOCH FROM npt.actual_start::date), 0)
+                  (EXTRACT(EPOCH FROM CURRENT_DATE) - EXTRACT(EPOCH FROM wi.start_date::date))
+                  / NULLIF(EXTRACT(EPOCH FROM wi.end_date::date) - EXTRACT(EPOCH FROM wi.start_date::date), 0)
                 )) ELSE NULL END
               ) * 100, 0
             ) AS expected_pct
-          FROM normalized_plan_tasks npt
-          WHERE npt.project_name = ${p.projectName}
-            AND npt.duration_days > 0
+          FROM work_items wi
+          WHERE wi.project_id = ${projectId}
+            AND wi.workstream = 'PM' AND wi.source = 'SMART_IMPORT' AND wi.deleted_at IS NULL
+            AND wi.duration > 0
         `);
         const sched = (scheduleResult.rows as any[])[0] || {};
         const actualPct = Math.round(parseFloat(sched.actual_pct) || 0);

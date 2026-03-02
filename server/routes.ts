@@ -10062,61 +10062,31 @@ export async function registerRoutes(
       const projectName = decodeURIComponent(req.params.projectName);
 
       const useCanonical = await isWorkItemsEnabled();
+
+      let baselineTasks: any[] = [];
+      let operationalTasks: any[] = [];
+
       if (useCanonical) {
         const canonicalTasks = await getWorkItemsAsNormalizedPlanTasks(projectName);
         if (canonicalTasks.length > 0) {
-          return res.json(canonicalTasks);
-        }
-      }
+          const allOps = await storage.getOperationalTasksByProject(projectName);
+          operationalTasks = allOps.filter((t: any) => t.externalSource !== "clickup");
 
-      const trackerName = projectName.endsWith("_Tracker") ? projectName : projectName + "_Tracker";
+          baselineTasks = canonicalTasks.map((ct: any, idx: number) => {
+            const rawPct = ct.pctComplete != null ? Number(ct.pctComplete) : 0;
+            const pctComplete = rawPct > 1 ? Math.round(rawPct) : Math.round(rawPct * 100);
+            let status = "Not Started";
+            if (pctComplete >= 100) status = "Done";
+            else if (pctComplete > 0) status = "In Progress";
 
-      const [allOperationalTasks, planTasksDirect, planTasksTracker, planOverridesDirect, planOverridesTracker] = await Promise.all([
-        storage.getOperationalTasksByProject(projectName),
-        storage.getProjectPlansByProject(projectName),
-        projectName !== trackerName ? storage.getProjectPlansByProject(trackerName) : Promise.resolve([]),
-        storage.getProjectPlanOverridesByProject(projectName),
-        projectName !== trackerName ? storage.getProjectPlanOverridesByProject(trackerName) : Promise.resolve([]),
-      ]);
-
-      const operationalTasks = allOperationalTasks.filter((t: any) => t.externalSource !== "clickup");
-
-      const rawPlanTasks = planTasksDirect.length > 0 ? planTasksDirect : planTasksTracker;
-      const planOverrides = planTasksDirect.length > 0 ? planOverridesDirect : planOverridesTracker;
-
-      const planTasks = applyProjectPlanOverrides(rawPlanTasks, planOverrides);
-
-      const linkedImportedIds = new Set(
-        operationalTasks
-          .filter((t: any) => t.importedTaskId != null)
-          .map((t: any) => t.importedTaskId)
-      );
-
-      const SECTION_HEADER_TITLES = ["high level programme", "programme", "high level program"];
-      const baselineTasks = planTasks
-        .filter((pt: any) => !linkedImportedIds.has(pt.id))
-        .filter((pt: any) => {
-          if (pt.isVirtual) return true;
-          const title = (pt.highLevelProgramme || "").trim().toLowerCase();
-          return title && !SECTION_HEADER_TITLES.includes(title);
-        })
-        .map((pt: any) => {
-          const pctComplete = pt.actualPctComplete != null ? Math.round(pt.actualPctComplete * 100) : 0;
-          let status = "Not Started";
-          if (pctComplete >= 100) status = "Done";
-          else if (pctComplete > 0) status = "In Progress";
-
-          let computedExpPct: number = pt.expectedPctComplete != null ? Math.round(pt.expectedPctComplete * 100) : 0;
-          if (pt.expectedPctComplete == null && !pt.isVirtual) {
-            const tStart = (pt.actualStart || "").substring(0, 10);
-            const tEnd = (pt.actualEnd || "").substring(0, 10);
+            let computedExpPct = 0;
+            const tStart = (ct.startDate || ct.actualStartDate || "").substring(0, 10);
+            const tEnd = (ct.endDate || ct.actualEndDate || "").substring(0, 10);
             if (tStart && tEnd && /^\d{4}-\d{2}-\d{2}/.test(tStart) && /^\d{4}-\d{2}-\d{2}/.test(tEnd)) {
               const todayStr = new Date().toISOString().split("T")[0];
-              if (todayStr >= tEnd) {
-                computedExpPct = 100;
-              } else if (todayStr <= tStart) {
-                computedExpPct = 0;
-              } else {
+              if (todayStr >= tEnd) computedExpPct = 100;
+              else if (todayStr <= tStart) computedExpPct = 0;
+              else {
                 const totalWd = saWorkingDays(tStart, tEnd);
                 const elapsedWd = saWorkingDays(tStart, todayStr);
                 if (totalWd && totalWd > 0 && elapsedWd !== null) {
@@ -10124,48 +10094,147 @@ export async function registerRoutes(
                 }
               }
             }
-          }
 
-          const isVirtualMilestone = pt.isVirtual === true;
+            return {
+              id: -(ct.id || (idx + 1)),
+              projectName,
+              planProjectName: projectName,
+              importedTaskId: ct.id,
+              taskNumber: ct.taskNo || String(idx + 1),
+              parentTaskId: null as number | null,
+              title: ct.taskName || `Task ${ct.taskNo || idx + 1}`,
+              description: ct.comment || null,
+              status,
+              priority: "Normal",
+              startDate: tStart || null,
+              dueDate: tEnd || null,
+              durationDays: ct.durationDays || ct.actualDurationDays || null,
+              percentComplete: pctComplete,
+              expectedPercentComplete: computedExpPct,
+              storedActualPct: pctComplete,
+              assignees: null,
+              tags: null,
+              blockerReason: null,
+              plannedHours: null,
+              actualHours: null,
+              actualStartDate: tStart || null,
+              actualEndDate: tEnd || null,
+              actualDurationDays: ct.durationDays || ct.actualDurationDays || null,
+              comment: ct.comment || null,
+              sortOrder: idx,
+              isBaseline: true,
+              isVirtualMilestone: false,
+              isMilestone: ct.isMilestone === true,
+              rowNumber: idx + 1,
+              parentRowNumber: null,
+              indentLevel: ct.indentLevel ?? null,
+              createdBy: null,
+              createdAt: null,
+              updatedAt: null,
+            };
+          });
+        }
+      }
 
-          return {
-            id: isVirtualMilestone ? pt.rowNumber : -pt.id,
-            projectName: projectName,
-            planProjectName: isVirtualMilestone ? projectName : pt.projectName,
-            importedTaskId: isVirtualMilestone ? null : pt.id,
-            taskNumber: pt.taskNo || String(pt.rowNumber || ""),
-            parentTaskId: null as number | null,
-            title: pt.highLevelProgramme || `Task ${pt.taskNo || pt.rowNumber}`,
-            description: null,
-            status: isVirtualMilestone ? "Not Started" : status,
-            priority: "Normal",
-            startDate: pt.actualStart || null,
-            dueDate: pt.actualEnd || null,
-            durationDays: pt.durationDays || null,
-            percentComplete: isVirtualMilestone ? 0 : pctComplete,
-            expectedPercentComplete: isVirtualMilestone ? 0 : computedExpPct,
-            storedActualPct: pt.actualPctComplete != null ? Math.round(pt.actualPctComplete * 100) : null,
-            assignees: null,
-            tags: null,
-            blockerReason: null,
-            plannedHours: null,
-            actualHours: null,
-            actualStartDate: pt.actualStart || null,
-            actualEndDate: pt.actualEnd || null,
-            actualDurationDays: pt.durationDays || null,
-            comment: null as string | null,
-            sortOrder: pt.sortOrder ?? pt.rowNumber ?? 0,
-            isBaseline: !isVirtualMilestone,
-            isVirtualMilestone,
-            isMilestone: pt.isMilestone === true,
-            rowNumber: pt.rowNumber,
-            parentRowNumber: pt.parentRowNumber || null,
-            indentLevel: pt.indentLevel ?? null,
-            createdBy: null,
-            createdAt: pt.createdAt || null,
-            updatedAt: pt.createdAt || null,
-          };
-        });
+      if (baselineTasks.length === 0) {
+        const trackerName = projectName.endsWith("_Tracker") ? projectName : projectName + "_Tracker";
+
+        const [allOperationalTasks, planTasksDirect, planTasksTracker, planOverridesDirect, planOverridesTracker] = await Promise.all([
+          storage.getOperationalTasksByProject(projectName),
+          storage.getProjectPlansByProject(projectName),
+          projectName !== trackerName ? storage.getProjectPlansByProject(trackerName) : Promise.resolve([]),
+          storage.getProjectPlanOverridesByProject(projectName),
+          projectName !== trackerName ? storage.getProjectPlanOverridesByProject(trackerName) : Promise.resolve([]),
+        ]);
+
+        operationalTasks = allOperationalTasks.filter((t: any) => t.externalSource !== "clickup");
+
+        const rawPlanTasks = planTasksDirect.length > 0 ? planTasksDirect : planTasksTracker;
+        const planOverrides = planTasksDirect.length > 0 ? planOverridesDirect : planOverridesTracker;
+
+        const planTasks = applyProjectPlanOverrides(rawPlanTasks, planOverrides);
+
+        const linkedImportedIds = new Set(
+          operationalTasks
+            .filter((t: any) => t.importedTaskId != null)
+            .map((t: any) => t.importedTaskId)
+        );
+
+        const SECTION_HEADER_TITLES = ["high level programme", "programme", "high level program"];
+        baselineTasks = planTasks
+          .filter((pt: any) => !linkedImportedIds.has(pt.id))
+          .filter((pt: any) => {
+            if (pt.isVirtual) return true;
+            const title = (pt.highLevelProgramme || "").trim().toLowerCase();
+            return title && !SECTION_HEADER_TITLES.includes(title);
+          })
+          .map((pt: any) => {
+            const pctComplete = pt.actualPctComplete != null ? Math.round(pt.actualPctComplete * 100) : 0;
+            let status = "Not Started";
+            if (pctComplete >= 100) status = "Done";
+            else if (pctComplete > 0) status = "In Progress";
+
+            let computedExpPct: number = pt.expectedPctComplete != null ? Math.round(pt.expectedPctComplete * 100) : 0;
+            if (pt.expectedPctComplete == null && !pt.isVirtual) {
+              const tStart = (pt.actualStart || "").substring(0, 10);
+              const tEnd = (pt.actualEnd || "").substring(0, 10);
+              if (tStart && tEnd && /^\d{4}-\d{2}-\d{2}/.test(tStart) && /^\d{4}-\d{2}-\d{2}/.test(tEnd)) {
+                const todayStr = new Date().toISOString().split("T")[0];
+                if (todayStr >= tEnd) {
+                  computedExpPct = 100;
+                } else if (todayStr <= tStart) {
+                  computedExpPct = 0;
+                } else {
+                  const totalWd = saWorkingDays(tStart, tEnd);
+                  const elapsedWd = saWorkingDays(tStart, todayStr);
+                  if (totalWd && totalWd > 0 && elapsedWd !== null) {
+                    computedExpPct = Math.round(Math.min(elapsedWd / totalWd, 1.0) * 100);
+                  }
+                }
+              }
+            }
+
+            const isVirtualMilestone = pt.isVirtual === true;
+
+            return {
+              id: isVirtualMilestone ? pt.rowNumber : -pt.id,
+              projectName: projectName,
+              planProjectName: isVirtualMilestone ? projectName : pt.projectName,
+              importedTaskId: isVirtualMilestone ? null : pt.id,
+              taskNumber: pt.taskNo || String(pt.rowNumber || ""),
+              parentTaskId: null as number | null,
+              title: pt.highLevelProgramme || `Task ${pt.taskNo || pt.rowNumber}`,
+              description: null,
+              status: isVirtualMilestone ? "Not Started" : status,
+              priority: "Normal",
+              startDate: pt.actualStart || null,
+              dueDate: pt.actualEnd || null,
+              durationDays: pt.durationDays || null,
+              percentComplete: isVirtualMilestone ? 0 : pctComplete,
+              expectedPercentComplete: isVirtualMilestone ? 0 : computedExpPct,
+              storedActualPct: pt.actualPctComplete != null ? Math.round(pt.actualPctComplete * 100) : null,
+              assignees: null,
+              tags: null,
+              blockerReason: null,
+              plannedHours: null,
+              actualHours: null,
+              actualStartDate: pt.actualStart || null,
+              actualEndDate: pt.actualEnd || null,
+              actualDurationDays: pt.durationDays || null,
+              comment: null as string | null,
+              sortOrder: pt.sortOrder ?? pt.rowNumber ?? 0,
+              isBaseline: !isVirtualMilestone,
+              isVirtualMilestone,
+              isMilestone: pt.isMilestone === true,
+              rowNumber: pt.rowNumber,
+              parentRowNumber: pt.parentRowNumber || null,
+              indentLevel: pt.indentLevel ?? null,
+              createdBy: null,
+              createdAt: pt.createdAt || null,
+              updatedAt: pt.createdAt || null,
+            };
+          });
+      }
 
       const allTasks: any[] = [...baselineTasks, ...operationalTasks];
 
