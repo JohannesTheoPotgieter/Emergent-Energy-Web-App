@@ -432,7 +432,7 @@ router.post("/api/procurement-analysis/classify", requireAuth, async (req: Reque
     let autoApplied = 0;
     let unresolved = 0;
     const matchRecords: any[] = [];
-    const lineUpdates: { id: number; ruleId: number; inferredType: string }[] = [];
+    const lineUpdates: { id: number; ruleId: number; inferredType: string; counterpartyId: number | null; counterpartyName: string | null }[] = [];
 
     for (const line of untaggedLines) {
       const raw = line.invoiceNumber;
@@ -462,6 +462,8 @@ router.post("/api/procurement-analysis/classify", requireAuth, async (req: Reque
           id: line.id,
           ruleId: result.matchedRuleId,
           inferredType: result.inferredType,
+          counterpartyId: result.inferredCounterpartyId,
+          counterpartyName: result.inferredCounterpartyName,
         });
 
         matchRecords.push({
@@ -496,12 +498,20 @@ router.post("/api/procurement-analysis/classify", requireAuth, async (req: Reque
       }
 
       for (const upd of lineUpdates) {
+        let cpName = upd.counterpartyName;
+        let cpId = upd.counterpartyId;
+        if (cpId && !cpName) {
+          const [cp] = await tx.select().from(counterparties).where(eq(counterparties.id, cpId));
+          if (cp) cpName = cp.nameCanonical;
+        }
         await tx
           .update(normalizedCostLines)
           .set({
             patternRuleId: upd.ruleId,
             patternClassifiedAt: new Date(),
             patternInferredType: upd.inferredType,
+            counterpartyId: cpId ?? null,
+            counterpartyName: cpName ?? null,
           })
           .where(eq(normalizedCostLines.id, upd.id));
       }
