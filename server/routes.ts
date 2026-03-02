@@ -6,7 +6,7 @@ import fs from "fs";
 import path from "path";
 import { storage } from "./storage";
 import { parseTrackerFile, applyFontColors } from "./excelParser";
-import { insertBudgetSchema, programExpense, programInflows, projectInfo, projectPlan, normalizedCostLines, normalizedRevenueLines, normalizedPlanTasks, normalizedExecutionPhases, smartImportRuns, cosStatusOverrides, revenueTrackingOverrides, users, notifications, notificationThrottle, operationalTasks, mytoolTasks, engineeringTasks, qcItemInstance, qcChecklist, qcTemplateItem } from "@shared/schema";
+import { insertBudgetSchema, programExpense, programInflows, projectInfo, projectPlan, normalizedCostLines, normalizedRevenueLines, normalizedPlanTasks, normalizedExecutionPhases, smartImportRuns, cosStatusOverrides, revenueTrackingOverrides, users, notifications, notificationThrottle, operationalTasks, mytoolTasks, engineeringTasks, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, or, sql, isNull, asc, desc, inArray } from "drizzle-orm";
 import { runSmartImportPreview } from "./lib/import/index";
@@ -9832,7 +9832,7 @@ export async function registerRoutes(
 
   // ==================== ENRICHED PLANNING TASKS (with rollups + expected %) ====================
 
-  app.get("/api/planning-tasks/:projectName", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  app.get("/api/planning-tasks/:projectName", requireAuth, async (req: Request, res: Response) => {
     try {
       const projectName = decodeURIComponent(req.params.projectName);
       const trackerName = projectName.endsWith("_Tracker") ? projectName : projectName + "_Tracker";
@@ -10136,6 +10136,325 @@ export async function registerRoutes(
       res.json(result);
     } catch (err: any) {
       console.error("Planning tasks error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ==================== PLAN TASK EDITING (with COO notifications) ====================
+
+  const canEditProjectTasks = async (req: Request, projectName: string): Promise<boolean> => {
+    const user = req.user as any;
+    if (!user) return false;
+    const role = user.role || "";
+    if (["admin", "COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER"].includes(role)) return true;
+    const info = await storage.getProjectInfo(projectName);
+    if (!info) return false;
+    if (info.pm === user.name || info.pd === user.name) return true;
+    if (info.pmUserId === user.id || info.pdUserId === user.id) return true;
+    return false;
+  };
+
+  app.patch("/api/planning-tasks/:taskId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const taskId = parseInt(req.params.taskId);
+      const user = req.user as any;
+      const { projectName, ...updates } = req.body;
+      if (!projectName) return res.status(400).json({ error: "projectName is required" });
+
+      const canEdit = await canEditProjectTasks(req, projectName);
+      if (!canEdit) return res.status(403).json({ error: "You don't have permission to edit this project's tasks" });
+
+      const isBaselineTask = taskId < 0;
+      const actualTaskId = Math.abs(taskId);
+
+      if (isBaselineTask) {
+        const scenario = await storage.getOrCreateActiveScenario(projectName);
+        const existingOverrides = await storage.getTaskOverridesByScenario(scenario.id);
+        const existing = existingOverrides.find((o: any) => o.importedTaskId === actualTaskId);
+
+        const [basePlanTask] = await db.select().from(projectPlan).where(eq(projectPlan.id, actualTaskId));
+        const taskName = updates.title || basePlanTask?.highLevelProgramme || "Unknown task";
+
+        const overrideData: any = {};
+        const notifFields: { field: string; old: string | null; new_: string | null }[] = [];
+
+        if (updates.title != null) {
+          overrideData.overrideName = updates.title;
+          notifFields.push({ field: "title", old: basePlanTask?.highLevelProgramme || null, new_: updates.title });
+        }
+        if (updates.startDate != null) {
+          overrideData.overrideStartDate = updates.startDate;
+          notifFields.push({ field: "startDate", old: basePlanTask?.actualStart || null, new_: updates.startDate });
+        }
+        if (updates.dueDate != null || updates.endDate != null) {
+          const endVal = updates.dueDate || updates.endDate;
+          overrideData.overrideEndDate = endVal;
+          notifFields.push({ field: "endDate", old: basePlanTask?.actualEnd || null, new_: endVal });
+        }
+        if (updates.status != null) {
+          notifFields.push({ field: "status", old: null, new_: updates.status });
+        }
+        if (updates.percentComplete != null) {
+          notifFields.push({ field: "percentComplete", old: basePlanTask?.actualPctComplete != null ? String(Math.round(basePlanTask.actualPctComplete * 100)) : null, new_: String(updates.percentComplete) });
+        }
+        if (updates.comment != null) {
+          overrideData.overrideComment = updates.comment;
+        }
+
+        if (existing) {
+          await storage.updateTaskOverride(existing.id, overrideData);
+        } else {
+          await storage.createTaskOverride({
+            scenarioId: scenario.id,
+            importedTaskId: actualTaskId,
+            overrideStartDate: overrideData.overrideStartDate || null,
+            overrideEndDate: overrideData.overrideEndDate || null,
+            overrideName: overrideData.overrideName || null,
+            overrideTaskNo: null,
+            overrideComment: overrideData.overrideComment || null,
+            deletedFlag: 0,
+            isNewTask: 0,
+          });
+        }
+
+        if (updates.status != null || updates.percentComplete != null) {
+          const pctVal = updates.percentComplete != null ? updates.percentComplete / 100 : undefined;
+          const statusVal = updates.status;
+          const updateFields: any = {};
+          if (pctVal !== undefined) updateFields.actualPctComplete = pctVal;
+          if (statusVal === "Done" && pctVal === undefined) updateFields.actualPctComplete = 1.0;
+
+          if (Object.keys(updateFields).length > 0) {
+            await db.update(projectPlan).set(updateFields).where(eq(projectPlan.id, actualTaskId));
+          }
+        }
+
+        const isAdmin = ["admin", "COO_ADMIN", "CEO_ADMIN"].includes(user.role || "");
+        if (!isAdmin && notifFields.length > 0) {
+          const projectInfoRow = await storage.getProjectInfo(projectName);
+          for (const nf of notifFields) {
+            await db.insert(planEditNotifications).values({
+              projectName,
+              projectId: projectInfoRow?.id || null,
+              taskId: actualTaskId,
+              taskName,
+              editType: "task_update",
+              fieldName: nf.field,
+              oldValue: nf.old,
+              newValue: nf.new_,
+              editedByUserId: user.id,
+              editedByName: user.name || user.username,
+              status: "pending",
+            });
+          }
+        }
+
+        logAuditFromReq(req, {
+          entityType: "plan_task",
+          action: "update",
+          entityId: String(actualTaskId),
+          projectName,
+          changesJson: { taskName, ...updates },
+        });
+
+        res.json({ success: true, taskId });
+      } else {
+        const updateFields: any = {};
+        if (updates.title != null) updateFields.title = updates.title;
+        if (updates.status != null) updateFields.status = updates.status;
+        if (updates.priority != null) updateFields.priority = updates.priority;
+        if (updates.startDate != null) updateFields.startDate = updates.startDate;
+        if (updates.dueDate != null) updateFields.dueDate = updates.dueDate;
+        if (updates.percentComplete != null) updateFields.percentComplete = updates.percentComplete;
+        if (updates.comment != null) updateFields.comment = updates.comment;
+        if (updates.assignees != null) updateFields.assignees = updates.assignees;
+
+        if (Object.keys(updateFields).length > 0) {
+          await db.update(operationalTasks).set(updateFields).where(eq(operationalTasks.id, taskId));
+        }
+        res.json({ success: true, taskId });
+      }
+    } catch (err: any) {
+      console.error("Plan task update error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/planning-tasks", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = req.user as any;
+      const { projectName, title, startDate, dueDate, status, priority, isMilestone, parentTaskId } = req.body;
+      if (!projectName || !title) return res.status(400).json({ error: "projectName and title are required" });
+
+      const canEdit = await canEditProjectTasks(req, projectName);
+      if (!canEdit) return res.status(403).json({ error: "You don't have permission to create tasks" });
+
+      const [task] = await db.insert(operationalTasks).values({
+        projectName,
+        title,
+        status: status || "Not Started",
+        priority: priority || "Normal",
+        startDate: startDate || null,
+        dueDate: dueDate || null,
+        isMilestone: isMilestone || false,
+        parentTaskId: parentTaskId || null,
+        percentComplete: 0,
+        createdBy: user.id,
+      }).returning();
+
+      const isAdmin = ["admin", "COO_ADMIN", "CEO_ADMIN"].includes(user.role || "");
+      if (!isAdmin) {
+        const projectInfoRow = await storage.getProjectInfo(projectName);
+        await db.insert(planEditNotifications).values({
+          projectName,
+          projectId: projectInfoRow?.id || null,
+          taskId: task.id,
+          taskName: title,
+          editType: "task_created",
+          fieldName: null,
+          oldValue: null,
+          newValue: title,
+          editedByUserId: user.id,
+          editedByName: user.name || user.username,
+          status: "pending",
+        });
+      }
+
+      logAuditFromReq(req, {
+        entityType: "plan_task",
+        action: "create",
+        entityId: String(task.id),
+        projectName,
+        changesJson: { title, status, priority },
+      });
+
+      res.json(task);
+    } catch (err: any) {
+      console.error("Plan task create error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/planning-tasks/:taskId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const taskId = parseInt(req.params.taskId);
+      const user = req.user as any;
+      const { projectName } = req.body;
+      if (!projectName) return res.status(400).json({ error: "projectName is required" });
+
+      const canEdit = await canEditProjectTasks(req, projectName);
+      if (!canEdit) return res.status(403).json({ error: "You don't have permission to delete tasks" });
+
+      const isBaselineTask = taskId < 0;
+      const actualTaskId = Math.abs(taskId);
+
+      if (isBaselineTask) {
+        const scenario = await storage.getOrCreateActiveScenario(projectName);
+        const existingOverrides = await storage.getTaskOverridesByScenario(scenario.id);
+        const existing = existingOverrides.find((o: any) => o.importedTaskId === actualTaskId);
+
+        if (existing) {
+          await storage.softDeleteTaskOverride(existing.id);
+        } else {
+          await storage.createTaskOverride({
+            scenarioId: scenario.id,
+            importedTaskId: actualTaskId,
+            overrideStartDate: null,
+            overrideEndDate: null,
+            overrideName: null,
+            overrideTaskNo: null,
+            overrideComment: null,
+            deletedFlag: 1,
+            isNewTask: 0,
+          });
+        }
+      } else {
+        await db.delete(operationalTasks).where(eq(operationalTasks.id, taskId));
+      }
+
+      logAuditFromReq(req, {
+        entityType: "plan_task",
+        action: "delete",
+        entityId: String(taskId),
+        projectName,
+        changesJson: { deleted: true },
+      });
+
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("Plan task delete error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ==================== PLAN EDIT NOTIFICATIONS (COO VIEW) ====================
+
+  app.get("/api/plan-edit-notifications", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = req.user as any;
+      const isCOO = ["admin", "COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER"].includes(user.role || "");
+      if (!isCOO) return res.status(403).json({ error: "Only COO/CEO/Program Manager can view notifications" });
+
+      const status = (req.query.status as string) || "pending";
+      const projectName = req.query.projectName as string | undefined;
+
+      let query = db.select().from(planEditNotifications);
+      const conditions: any[] = [];
+      if (status && status !== "all") conditions.push(eq(planEditNotifications.status, status));
+      if (projectName) conditions.push(eq(planEditNotifications.projectName, projectName));
+
+      const items = conditions.length > 0
+        ? await query.where(and(...conditions)).orderBy(desc(planEditNotifications.createdAt))
+        : await query.orderBy(desc(planEditNotifications.createdAt));
+
+      res.json(items);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/plan-edit-notifications/:id/resolve", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = req.user as any;
+      const isCOO = ["admin", "COO_ADMIN", "CEO_ADMIN"].includes(user.role || "");
+      if (!isCOO) return res.status(403).json({ error: "Only COO/CEO can resolve notifications" });
+
+      const id = parseInt(req.params.id);
+      const { resolution } = req.body;
+
+      await db.update(planEditNotifications).set({
+        status: "resolved",
+        resolvedByUserId: user.id,
+        resolvedByName: user.name || user.username,
+        resolvedAt: new Date(),
+        resolution: resolution || "acknowledged",
+      }).where(eq(planEditNotifications.id, id));
+
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/plan-edit-notifications/bulk-resolve", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = req.user as any;
+      const isCOO = ["admin", "COO_ADMIN", "CEO_ADMIN"].includes(user.role || "");
+      if (!isCOO) return res.status(403).json({ error: "Only COO/CEO can resolve notifications" });
+
+      const { ids, resolution } = req.body;
+      if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: "ids array required" });
+
+      await db.update(planEditNotifications).set({
+        status: "resolved",
+        resolvedByUserId: user.id,
+        resolvedByName: user.name || user.username,
+        resolvedAt: new Date(),
+        resolution: resolution || "bulk_acknowledged",
+      }).where(inArray(planEditNotifications.id, ids));
+
+      res.json({ success: true, resolved: ids.length });
+    } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
   });

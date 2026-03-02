@@ -186,17 +186,23 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, updates }: { id: number; updates: Record<string, unknown> }) => {
-      await apiRequest("PATCH", `/api/operational-tasks/${id}`, updates);
+      const isBaseline = id < 0;
+      if (isBaseline) {
+        await apiRequest("PATCH", `/api/planning-tasks/${id}`, { projectName, ...updates });
+      } else {
+        await apiRequest("PATCH", `/api/planning-tasks/${id}`, { projectName, ...updates });
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["planning-tasks", projectName] });
       qc.invalidateQueries({ queryKey: ["operational-tasks", projectName] });
+      qc.invalidateQueries({ queryKey: ["working-plan", projectName] });
     },
   });
 
   const createMutation = useMutation({
     mutationFn: async (title: string) => {
-      await apiRequest("POST", "/api/operational-tasks", { projectName, title, status: "Not Started" });
+      await apiRequest("POST", "/api/planning-tasks", { projectName, title, status: "Not Started" });
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["planning-tasks", projectName] });
