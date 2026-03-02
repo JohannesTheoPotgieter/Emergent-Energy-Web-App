@@ -95,7 +95,9 @@ interface ProjectSummary {
   project_pct_complete: number | null;
   expected_pct_complete: number | null;
   delta_vs_expected: number | null;
+  total_contract_revenue: number | null;
   actual_revenue: number | null;
+  total_expenses: number | null;
   actual_expenses: number | null;
   gp_percent: number | null;
   revenue_outstanding: number | null;
@@ -1731,22 +1733,28 @@ export default function ProjectsSummary() {
     },
     {
       key: "actual_revenue",
-      header: "Revenue",
+      header: "Revenue (In Bank)",
       align: "right",
       render: (p) => {
-        const val = p.actual_revenue;
-        if (val == null || val === 0) return <span className="text-slate-400 text-[10px]">—</span>;
-        return <span className="font-mono text-slate-700 text-[10px]">R{val.toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>;
+        const received = p.actual_revenue;
+        const total = p.total_contract_revenue;
+        if ((received == null || received === 0) && (total == null || total === 0)) return <span className="text-slate-400 text-[10px]">—</span>;
+        const fmt = (v: number) => "R" + v.toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+        if (received == null || received === 0) return <span className="font-mono text-[10px]"><span className="text-slate-400">R0</span><span className="text-slate-300"> / {fmt(total || 0)}</span></span>;
+        return <span className="font-mono text-emerald-600 text-[10px]" data-testid="text-actual-revenue">{fmt(received)}<span className="text-slate-300"> / {fmt(total || 0)}</span></span>;
       },
     },
     {
       key: "actual_expenses",
-      header: "Expenses",
+      header: "Expenses (Paid)",
       align: "right",
       render: (p) => {
-        const val = p.actual_expenses;
-        if (val == null || val === 0) return <span className="text-slate-400 text-[10px]">—</span>;
-        return <span className="font-mono text-slate-700 text-[10px]">R{val.toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>;
+        const paid = p.actual_expenses;
+        const total = p.total_expenses;
+        if ((paid == null || paid === 0) && (total == null || total === 0)) return <span className="text-slate-400 text-[10px]">—</span>;
+        const fmt = (v: number) => "R" + v.toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+        if (paid == null || paid === 0) return <span className="font-mono text-[10px]"><span className="text-slate-400">R0</span><span className="text-slate-300"> / {fmt(total || 0)}</span></span>;
+        return <span className="font-mono text-slate-700 text-[10px]" data-testid="text-actual-expenses">{fmt(paid)}<span className="text-slate-300"> / {fmt(total || 0)}</span></span>;
       },
     },
     {

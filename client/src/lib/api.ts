@@ -383,7 +383,9 @@ export interface ProjectSummary {
   project_pct_complete: number | null;
   expected_pct_complete: number | null;
   delta_vs_expected: number | null;
+  total_contract_revenue: number;
   actual_revenue: number;
+  total_expenses: number;
   actual_expenses: number;
   gp_percent: number | null;
   revenue_outstanding: number;

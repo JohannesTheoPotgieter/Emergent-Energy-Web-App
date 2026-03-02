@@ -9,6 +9,7 @@ import { OVERRIDE_CATEGORIES, users, projectInfo } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { recordOverride } from "../lib/audit/diff-engine";
 import { sendExcelSyncNotification } from "../excel-sync-notifications";
+import { classifyExpenseState } from "../lib/calculations/stateClassifier";
 
 const router = Router();
 
@@ -827,17 +828,36 @@ router.get("/api/projects-summary", async (req, res) => {
       const workingWeeks = commWorkDays ? commWorkDays / 5 : null;
       const kwPerWeek = (sizeKwp && workingWeeks && workingWeeks > 0) ? sizeKwp / workingWeeks : null;
 
+      let totalContractRevenue = 0;
       let actualRevenue = 0;
       for (const inflow of projectInflows) {
-        if (inflow.milestoneAmount) actualRevenue += parseFloat(inflow.milestoneAmount);
+        if (inflow.milestoneAmount) {
+          const amt = parseFloat(inflow.milestoneAmount);
+          totalContractRevenue += amt;
+          const manualInBank = inflow.inBank === 1 || inflow.inBank === '1' || inflow.inBank === true;
+          const hasInvoice = !!(inflow.milestoneInvoiceNumber && String(inflow.milestoneInvoiceNumber).trim());
+          const hasPaymentReceived = !!(inflow.paymentReceivedDate && String(inflow.paymentReceivedDate).trim() && inflow.paymentReceivedDate !== '-');
+          const isInBank = manualInBank || (hasPaymentReceived && hasInvoice);
+          if (isInBank) {
+            actualRevenue += amt;
+          }
+        }
       }
 
+      let totalExpenses = 0;
       let actualExpenses = 0;
       for (const expense of projectExpenses) {
-        if (expense.expenseActualTotal) actualExpenses += parseFloat(expense.expenseActualTotal);
+        if (expense.expenseActualTotal) {
+          const amt = parseFloat(expense.expenseActualTotal);
+          totalExpenses += amt;
+          const state = (expense as any).computedState || classifyExpenseState(expense as any);
+          if (state === 'Paid') {
+            actualExpenses += amt;
+          }
+        }
       }
 
-      const gpPercent = actualRevenue > 0 ? 1 - (actualExpenses / actualRevenue) : null;
+      const gpPercent = totalContractRevenue > 0 ? 1 - (totalExpenses / totalContractRevenue) : null;
 
       let projectPctComplete: number | null = null;
       let expectedPctComplete: number | null = null;
@@ -989,7 +1009,9 @@ router.get("/api/projects-summary", async (req, res) => {
         project_pct_complete: projectPctComplete,
         expected_pct_complete: expectedPctComplete,
         delta_vs_expected: deltaVsExpected,
+        total_contract_revenue: totalContractRevenue,
         actual_revenue: actualRevenue,
+        total_expenses: totalExpenses,
         actual_expenses: actualExpenses,
         gp_percent: gpPercent,
         revenue_outstanding: revenueOutstanding,
