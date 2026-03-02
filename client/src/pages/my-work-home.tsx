@@ -98,23 +98,9 @@ function StatusIcon({ status }: { status: string }) {
 export default function MyWorkHomePage() {
   const { user } = useAuth();
 
-  const { data: rawTasks = [], isLoading: tasksLoading } = useQuery<any[]>({
+  const { data: rawPersonalTasks = [], isLoading: personalTasksLoading } = useQuery<any[]>({
     queryKey: [`/api/mytool/tasks?date=${today}`],
   });
-
-  const tasks: TaskItem[] = useMemo(() =>
-    rawTasks.map((t: any) => ({
-      id: t.id,
-      title: t.title || "",
-      status: t.status || "inbox",
-      priority: t.priority || "normal",
-      plannedForDate: t.plannedForDate || t.planned_for_date || null,
-      dueAt: t.dueAt || t.due_at || null,
-      sortOrder: t.sortOrder || t.sort_order || 0,
-      projectName: t.projectName || t.project_name || null,
-      department: t.department || null,
-    })),
-  [rawTasks]);
 
   const { data: calendarEvents = [], isLoading: calLoading } = useQuery<CalendarEvent[]>({
     queryKey: ["outlook-events-mywork", today],
@@ -141,7 +127,7 @@ export default function MyWorkHomePage() {
     },
   });
 
-  const { data: allTaskData } = useQuery<any>({
+  const { data: allTaskData, isLoading: allTasksLoading } = useQuery<any>({
     queryKey: ["/api/my-work/all-tasks"],
     queryFn: async () => {
       const res = await fetch("/api/my-work/all-tasks", {
@@ -274,8 +260,107 @@ export default function MyWorkHomePage() {
     queryKey: ["/api/mytool/escalated-priorities"],
   });
 
+  const DONE_STATUSES = ["done", "cancelled", "completed", "closed", "COMPLETE", "DONE", "CANCELLED"];
+
+  const tasks: TaskItem[] = useMemo(() => {
+    const items: TaskItem[] = [];
+    const seen = new Set<string>();
+
+    for (const t of rawPersonalTasks) {
+      const key = `personal-${t.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      items.push({
+        id: t.id,
+        title: t.title || "",
+        status: t.status || "inbox",
+        priority: t.priority || "normal",
+        plannedForDate: t.plannedForDate || t.planned_for_date || null,
+        dueAt: t.dueAt || t.due_at || null,
+        sortOrder: t.sortOrder || t.sort_order || 0,
+        projectName: t.projectName || t.project_name || null,
+        department: t.department || null,
+      });
+    }
+
+    if (allTaskData) {
+      for (const t of (allTaskData.operational || [])) {
+        const key = `op-${t.id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        items.push({
+          id: t.id,
+          title: t.title || "",
+          status: (t.status || "TO DO").toLowerCase().replace(/\s+/g, "_"),
+          priority: (t.priority || "normal").toLowerCase(),
+          plannedForDate: null,
+          dueAt: t.dueDate || t.due_date || null,
+          sortOrder: t.sortOrder || 0,
+          projectName: t.projectName || t.project_name || null,
+          department: null,
+        });
+      }
+
+      for (const t of (allTaskData.planTasks || [])) {
+        const key = `plan-${t.id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const pct = t.pctComplete != null ? Number(t.pctComplete) : 0;
+        items.push({
+          id: t.id,
+          title: t.title || "",
+          status: pct >= 100 ? "done" : pct > 0 ? "in_progress" : "inbox",
+          priority: "normal",
+          plannedForDate: null,
+          dueAt: t.endDate || null,
+          sortOrder: 0,
+          projectName: t.projectName || null,
+          department: null,
+        });
+      }
+
+      for (const t of (allTaskData.engineeringTasks || [])) {
+        const key = `eng-${t.id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        items.push({
+          id: t.id,
+          title: t.title || "",
+          status: (t.status || "open").toLowerCase().replace(/\s+/g, "_"),
+          priority: "normal",
+          plannedForDate: null,
+          dueAt: null,
+          sortOrder: 0,
+          projectName: t.projectName || null,
+          department: null,
+        });
+      }
+
+      for (const t of (allTaskData.qualityTasks || [])) {
+        const key = `qc-${t.id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        items.push({
+          id: t.id,
+          title: t.title || "",
+          status: (t.status || "not_started").toLowerCase().replace(/\s+/g, "_"),
+          priority: "normal",
+          plannedForDate: null,
+          dueAt: t.endDate || null,
+          sortOrder: 0,
+          projectName: t.projectName || null,
+          department: null,
+        });
+      }
+    }
+
+    return items;
+  }, [rawPersonalTasks, allTaskData]);
+
+  const tasksLoading = personalTasksLoading && allTasksLoading;
+
   const openTasks = useMemo(() =>
-    tasks.filter(t => t.status !== "done" && t.status !== "cancelled"),
+    tasks.filter(t => !DONE_STATUSES.includes(t.status)),
   [tasks]);
 
   const groupedTasks = useMemo(() => {
@@ -285,13 +370,18 @@ export default function MyWorkHomePage() {
       if (!groups[key]) groups[key] = [];
       groups[key].push(t);
     });
-    Object.values(groups).forEach(arr =>
+    const sortedGroups: Record<string, TaskItem[]> = {};
+    const noProject = groups["No Project"];
+    const projectKeys = Object.keys(groups).filter(k => k !== "No Project").sort();
+    if (noProject) sortedGroups["No Project"] = noProject;
+    for (const k of projectKeys) sortedGroups[k] = groups[k];
+    Object.values(sortedGroups).forEach(arr =>
       arr.sort((a, b) => {
         const po: Record<string, number> = { critical: 0, high: 1, normal: 2, low: 3 };
         return (po[a.priority] ?? 2) - (po[b.priority] ?? 2);
       })
     );
-    return groups;
+    return sortedGroups;
   }, [openTasks]);
 
   const sortedEvents = useMemo(() =>
