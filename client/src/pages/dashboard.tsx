@@ -479,8 +479,8 @@ export default function Dashboard() {
     const scored = projectsSummary
       .filter((p: any) => p.is_active !== false)
       .map((p: any) => {
-        const rev = p.actual_revenue || 0;
-        const exp = p.actual_expenses || 0;
+        const rev = p.total_contract_revenue || p.actual_revenue || 0;
+        const exp = p.total_expenses || p.actual_expenses || 0;
         const gpPct = rev > 0 ? (rev - exp) / rev : 0;
         const moneyRisk =
           (p.revenue_outstanding > 0 ? Math.min(p.revenue_outstanding / 500000, 3) : 0) +
