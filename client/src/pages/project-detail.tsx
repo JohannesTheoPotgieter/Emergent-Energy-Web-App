@@ -478,8 +478,8 @@ const OLD_TAB_TO_SECTION: Record<string, { section: string; subTab: string }> = 
   "calendar": { section: "project-management", subTab: "calendar" },
   "eng-tasks": { section: "engineering", subTab: "eng-tasks" },
   "eng-stages": { section: "engineering", subTab: "eng-stages" },
-  "project-plan": { section: "project-management", subTab: "gantt" },
-  "gantt": { section: "project-management", subTab: "gantt" },
+  "project-plan": { section: "project-management", subTab: "plan" },
+  "gantt": { section: "project-management", subTab: "plan" },
   "key-dates": { section: "project-management", subTab: "key-dates" },
   "revenue-tracking": { section: "project-management", subTab: "revenue-tracking" },
   "expenditure": { section: "project-management", subTab: "expenditure" },
@@ -491,7 +491,7 @@ const OLD_TAB_TO_SECTION: Record<string, { section: string; subTab: string }> = 
   "overview": { section: "overview", subTab: "" },
   "engineering": { section: "engineering", subTab: "eng-tasks" },
   "money": { section: "project-management", subTab: "revenue-tracking" },
-  "plan": { section: "project-management", subTab: "gantt" },
+  "plan": { section: "project-management", subTab: "plan" },
   "chat": { section: "collaboration", subTab: "chat" },
   "sharepoint": { section: "collaboration", subTab: "sharepoint" },
   "approvals": { section: "collaboration", subTab: "approvals" },
@@ -1156,7 +1156,7 @@ export default function ProjectDetailPage() {
                       <p className="text-[10px] text-muted-foreground">Task progress & milestones</p>
                     </div>
                   </div>
-                  <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-sky-600" onClick={() => navigateToSection("project-management", "gantt")} data-testid="button-goto-plan">
+                  <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-sky-600" onClick={() => navigateToSection("project-management", "plan")} data-testid="button-goto-plan">
                     View Plan <ArrowRight className="h-3 w-3" />
                   </Button>
                 </div>
@@ -1211,7 +1211,7 @@ export default function ProjectDetailPage() {
                         .slice(0, 5);
                       if (upcoming.length === 0) return <p className="text-xs text-emerald-600 text-center py-3">All tasks are on track</p>;
                       return upcoming.map((t: any, i: number) => (
-                        <div key={i} className="flex items-center gap-2 text-[11px] py-1.5 px-2 rounded bg-gray-50 hover:bg-gray-100 cursor-pointer" onClick={() => navigateToSection("project-management", "gantt")} data-testid={`row-plan-upcoming-${t.id || i}`}>
+                        <div key={i} className="flex items-center gap-2 text-[11px] py-1.5 px-2 rounded bg-gray-50 hover:bg-gray-100 cursor-pointer" onClick={() => navigateToSection("project-management", "plan")} data-testid={`row-plan-upcoming-${t.id || i}`}>
                           <Circle className="h-2.5 w-2.5 text-sky-400 shrink-0" />
                           <span className="truncate flex-1 font-medium">{t.highLevelProgramme || t.taskName || t.task_name || "Unnamed task"}</span>
                           <span className="text-muted-foreground shrink-0">{t.actualEnd || t.endDate || ""}</span>
@@ -1223,7 +1223,7 @@ export default function ProjectDetailPage() {
                       const endDate = t.actualEnd || t.endDate || "";
                       const daysLate = endDate ? Math.floor((new Date().getTime() - new Date(endDate).getTime()) / (1000 * 60 * 60 * 24)) : 0;
                       return (
-                        <div key={i} className="flex items-center gap-2 text-[11px] py-1.5 px-2 rounded bg-red-50 border border-red-100 hover:bg-red-100 cursor-pointer" onClick={() => navigateToSection("project-management", "gantt")} data-testid={`row-plan-overdue-${t.id || i}`}>
+                        <div key={i} className="flex items-center gap-2 text-[11px] py-1.5 px-2 rounded bg-red-50 border border-red-100 hover:bg-red-100 cursor-pointer" onClick={() => navigateToSection("project-management", "plan")} data-testid={`row-plan-overdue-${t.id || i}`}>
                           <AlertCircle className="h-3 w-3 text-red-500 shrink-0" />
                           <span className="truncate flex-1 font-medium">{t.highLevelProgramme || t.taskName || t.task_name || "Unnamed task"}</span>
                           <Badge variant="destructive" className="text-[9px] px-1 py-0 shrink-0">{daysLate}d late</Badge>
@@ -1465,11 +1465,6 @@ export default function ProjectDetailPage() {
               <Button size="sm" variant={activeSubTab === "calendar" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("calendar")} data-testid="subtab-calendar">
                 <CalendarDays className="h-3 w-3 mr-1" /> Calendar
               </Button>
-              {canViewTab.plan && canViewSubTab.gantt && (
-              <Button size="sm" variant={activeSubTab === "gantt" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("gantt")} data-testid="subtab-gantt">
-                <FileText className="h-3 w-3 mr-1" /> CPM / Dependencies
-              </Button>
-              )}
             </>
             )}
             <div className="w-px h-5 bg-border self-center mx-1" />
@@ -1509,7 +1504,6 @@ export default function ProjectDetailPage() {
           {activeSubTab === "task-grid" && canViewTab.overview && <UnifiedPlanTab projectName={projectName} onTaskClick={handleTaskClick} />}
           {activeSubTab === "board" && canViewTab.overview && <BoardView projectName={projectName} onTaskClick={handleTaskClick} />}
           {activeSubTab === "calendar" && canViewTab.overview && <CalendarView projectName={projectName} onTaskClick={handleTaskClick} />}
-          {activeSubTab === "gantt" && canViewTab.plan && canViewSubTab.gantt && <ProjectPlanTab projectName={projectName} />}
           {activeSubTab === "revenue-tracking" && canViewTab.finance && canViewSubTab.revenue && <RevenueTrackingTab projectName={projectName} highlightId={highlightType === 'revenue' ? highlightId : null} />}
           {activeSubTab === "expenditure" && canViewTab.finance && canViewSubTab.expenditure && <ExpenditureEditableTab projectName={projectName} highlightId={highlightType === 'expense' ? highlightId : null} />}
           {activeSubTab === "monthly-realisation" && canViewTab.finance && canViewSubTab.cosTracker && <MonthlyRealisationTab projectName={projectName} />}
