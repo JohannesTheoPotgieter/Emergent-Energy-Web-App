@@ -92,11 +92,36 @@ export default function TaskDetailDrawer({
 }: TaskDetailDrawerProps) {
   const queryClient = useQueryClient();
 
-  const detailQueryKey = ["operational-task-detail", taskId];
+  const isBaselineTask = taskId !== null && taskId < 0;
+
+  const detailQueryKey = isBaselineTask
+    ? ["baseline-task-detail", taskId, projectName]
+    : ["operational-task-detail", taskId];
 
   const { data, isLoading } = useQuery<TaskDetailResponse | null>({
     queryKey: detailQueryKey,
     queryFn: async () => {
+      if (isBaselineTask) {
+        const res = await apiRequest("GET", `/api/planning-tasks/${encodeURIComponent(projectName)}`);
+        const allTasks: any[] = await res.json();
+        const match = allTasks.find((t: any) => t.id === taskId);
+        if (!match) return null;
+        const task: any = {
+          id: match.id,
+          title: match.title || match.name || "",
+          status: match.status || "Not Started",
+          priority: match.priority || "Normal",
+          startDate: match.startDate || match.actualStart || null,
+          dueDate: match.dueDate || match.actualEnd || null,
+          percentComplete: match.percentComplete || 0,
+          description: match.comment || match.description || null,
+          isBaseline: true,
+          importedTaskId: match.importedTaskId || Math.abs(taskId!),
+          projectName,
+          assignees: match.assignees || (match.owner ? [match.owner] : []),
+        };
+        return { task, comments: [], checklists: [], attachments: [], activity: [] } as TaskDetailResponse;
+      }
       const res = await apiRequest("GET", `/api/operational-tasks/task/${taskId}`);
       return res.json();
     },
@@ -108,11 +133,21 @@ export default function TaskDetailDrawer({
     queryClient.invalidateQueries({
       queryKey: ["operational-tasks", projectName],
     });
+    queryClient.invalidateQueries({
+      queryKey: ["planning-tasks", projectName],
+    });
+    queryClient.invalidateQueries({
+      queryKey: ["working-plan", projectName],
+    });
   };
 
   const updateTaskMutation = useMutation({
     mutationFn: async (updates: Record<string, unknown>) => {
-      await apiRequest("PATCH", `/api/operational-tasks/${taskId}`, updates);
+      if (isBaselineTask) {
+        await apiRequest("PATCH", `/api/planning-tasks/${taskId}`, { projectName, ...updates });
+      } else {
+        await apiRequest("PATCH", `/api/operational-tasks/${taskId}`, updates);
+      }
     },
     onSuccess: invalidateAll,
   });
@@ -438,17 +473,39 @@ function TaskDetailContent({
 
         <div className="col-span-2">
           <label className="text-xs text-muted-foreground flex items-center gap-1 mb-1">
-            <CheckCircle className="h-3 w-3" /> % Complete:{" "}
-            {task.percentComplete}%
+            <CheckCircle className="h-3 w-3" /> % Complete
           </label>
-          <Slider
-            data-testid="slider-percent-complete"
-            min={0}
-            max={100}
-            step={1}
-            value={[task.percentComplete]}
-            onValueCommit={(v) => updateTask({ percentComplete: v[0] })}
-          />
+          <div className="flex items-center gap-3">
+            <Slider
+              data-testid="slider-percent-complete"
+              className="flex-1"
+              min={0}
+              max={100}
+              step={5}
+              value={[task.percentComplete ?? 0]}
+              onValueCommit={(v) => updateTask({ percentComplete: v[0] })}
+            />
+            <Input
+              data-testid="input-percent-complete"
+              className="h-8 w-[72px] text-xs text-center tabular-nums"
+              type="number"
+              min={0}
+              max={100}
+              defaultValue={task.percentComplete ?? 0}
+              onBlur={(e) => {
+                const val = Math.min(100, Math.max(0, parseInt(e.target.value) || 0));
+                if (val !== (task.percentComplete ?? 0)) {
+                  updateTask({ percentComplete: val });
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  (e.target as HTMLInputElement).blur();
+                }
+              }}
+            />
+            <span className="text-xs text-muted-foreground">%</span>
+          </div>
         </div>
 
         <div className="col-span-2">
