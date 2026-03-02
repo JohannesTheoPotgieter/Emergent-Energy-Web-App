@@ -5,6 +5,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Textarea } from "@/components/ui/textarea";
+import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
@@ -36,6 +41,10 @@ import {
   LayoutGrid,
   Send,
   Edit3,
+  MessageSquare,
+  Activity,
+  ArrowLeft,
+  X,
 } from "lucide-react";
 import { PROJECT_PHASE_LABELS, type ProjectPhase } from "@shared/schema";
 
@@ -484,6 +493,252 @@ interface FullTask {
   description: string | null;
 }
 
+interface TaskComment {
+  id: number;
+  body: string;
+  authorName: string;
+  createdAt: string;
+}
+
+interface TaskActivity {
+  id: number;
+  field: string;
+  oldValue: string | null;
+  newValue: string | null;
+  changedBy: string;
+  createdAt: string;
+}
+
+function StandupTaskDrawer({
+  task,
+  onClose,
+  onUpdate,
+}: {
+  task: FullTask;
+  onClose: () => void;
+  onUpdate: (id: number, updates: Record<string, any>) => void;
+}) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [commentText, setCommentText] = useState("");
+  const [activeTab, setActiveTab] = useState<"updates" | "activity">("updates");
+
+  const { data: comments = [] } = useQuery<TaskComment[]>({
+    queryKey: ["standup-task-comments", task.id],
+    queryFn: () => engFetch(`/api/eng/tasks/${task.id}/comments`),
+  });
+
+  const { data: activity = [] } = useQuery<TaskActivity[]>({
+    queryKey: ["standup-task-activity", task.id],
+    queryFn: () => engFetch(`/api/eng/tasks/${task.id}/activity`),
+  });
+
+  const { data: teamMembers = [] } = useQuery<{ id: number; name: string }[]>({
+    queryKey: ["team-members"],
+    queryFn: () => engFetch("/api/eng/team-members"),
+  });
+
+  const addComment = async () => {
+    if (!commentText.trim()) return;
+    try {
+      await engPost(`/api/eng/tasks/${task.id}/comments`, { body: commentText.trim() });
+      setCommentText("");
+      queryClient.invalidateQueries({ queryKey: ["standup-task-comments", task.id] });
+      toast({ title: "Comment posted" });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    }
+  };
+
+  const handleFieldUpdate = (updates: Record<string, any>) => {
+    onUpdate(task.id, updates);
+    queryClient.invalidateQueries({ queryKey: ["standup-task-activity", task.id] });
+  };
+
+  const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && task.status !== "COMPLETE";
+
+  return (
+    <div className="flex flex-col h-full" data-testid="standup-task-drawer">
+      <div className="flex items-center gap-3 pb-4 border-b">
+        <Button variant="ghost" size="sm" onClick={onClose} className="h-8 w-8 p-0 shrink-0" data-testid="btn-drawer-back">
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <div className="flex-1 min-w-0">
+          <h3 className="font-semibold text-sm truncate" data-testid="text-drawer-title">{task.title}</h3>
+          <p className="text-[10px] text-muted-foreground truncate">{displayProject(task.projectName)}</p>
+        </div>
+        {isOverdue && (
+          <Badge className="bg-red-100 text-red-700 text-[9px] shrink-0">Overdue</Badge>
+        )}
+      </div>
+
+      <ScrollArea className="flex-1 -mx-6 px-6">
+        <div className="space-y-4 py-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Status</label>
+              <Select value={task.status} onValueChange={(val) => handleFieldUpdate({ status: val })}>
+                <SelectTrigger className="h-8 text-xs mt-1" data-testid="drawer-status-select">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TASK_STATUSES.map(s => (
+                    <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Priority</label>
+              <Select value={task.priority} onValueChange={(val) => handleFieldUpdate({ priority: val })}>
+                <SelectTrigger className="h-8 text-xs mt-1" data-testid="drawer-priority-select">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TASK_PRIORITIES.map(p => (
+                    <SelectItem key={p} value={p} className="text-xs">{p}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Due Date</label>
+              <Input
+                type="date"
+                value={task.dueDate || ""}
+                onChange={(e) => handleFieldUpdate({ dueDate: e.target.value || null })}
+                className="h-8 text-xs mt-1"
+                data-testid="drawer-due-date"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Assignee</label>
+              <Select
+                value={task.assignees?.[0] || ""}
+                onValueChange={(val) => handleFieldUpdate({ assignees: [val] })}
+              >
+                <SelectTrigger className="h-8 text-xs mt-1" data-testid="drawer-assignee-select">
+                  <SelectValue placeholder="Unassigned" />
+                </SelectTrigger>
+                <SelectContent>
+                  {teamMembers.map((m: any) => (
+                    <SelectItem key={m.id || m.name} value={m.name} className="text-xs">{m.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {(task.holdReason || task.blockerReason) && (
+            <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-lg p-2.5">
+              <p className="text-[10px] font-medium text-red-700 uppercase tracking-wider mb-1">
+                {task.holdReason ? "Hold Reason" : "Blocker"}
+              </p>
+              <p className="text-xs text-red-600">{task.holdReason || task.blockerReason}</p>
+              {task.blockedType && (
+                <Badge className="mt-1 text-[8px] bg-orange-100 text-orange-700">{task.blockedType}</Badge>
+              )}
+            </div>
+          )}
+
+          {task.description && (
+            <div>
+              <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Description</label>
+              <p className="text-xs text-foreground mt-1 whitespace-pre-wrap">{task.description}</p>
+            </div>
+          )}
+
+          <Separator />
+
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "updates" | "activity")}>
+            <TabsList className="h-7 w-full">
+              <TabsTrigger value="updates" className="text-[10px] flex-1 gap-1 h-6">
+                <MessageSquare className="h-3 w-3" />
+                Updates ({comments.length})
+              </TabsTrigger>
+              <TabsTrigger value="activity" className="text-[10px] flex-1 gap-1 h-6">
+                <Activity className="h-3 w-3" />
+                Activity ({activity.length})
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="updates" className="mt-3 space-y-3">
+              <div className="flex gap-2">
+                <Textarea
+                  placeholder="Add a standup note..."
+                  value={commentText}
+                  onChange={(e) => setCommentText(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addComment(); } }}
+                  className="text-xs min-h-[60px] resize-none"
+                  data-testid="drawer-comment-input"
+                />
+              </div>
+              <Button
+                size="sm"
+                className="h-7 text-[10px] gap-1"
+                onClick={addComment}
+                disabled={!commentText.trim()}
+                data-testid="drawer-comment-send"
+              >
+                <Send className="h-3 w-3" /> Post
+              </Button>
+
+              {comments.length === 0 ? (
+                <p className="text-[10px] text-muted-foreground text-center py-4">No updates yet</p>
+              ) : (
+                <div className="space-y-2">
+                  {[...comments].reverse().map((c: TaskComment) => (
+                    <div key={c.id} className="bg-muted/40 rounded-lg p-2.5" data-testid={`drawer-comment-${c.id}`}>
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <div className={`w-4 h-4 rounded-full ${getAvatarColor(c.authorName)} flex items-center justify-center`}>
+                          <span className="text-[6px] font-bold text-white">{getInitials(c.authorName)}</span>
+                        </div>
+                        <span className="text-[10px] font-medium">{c.authorName}</span>
+                        <span className="text-[9px] text-muted-foreground ml-auto">
+                          {new Date(c.createdAt).toLocaleDateString("en-ZA", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                      </div>
+                      <p className="text-xs whitespace-pre-wrap">{c.body}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="activity" className="mt-3">
+              {activity.length === 0 ? (
+                <p className="text-[10px] text-muted-foreground text-center py-4">No activity recorded</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {[...activity].reverse().slice(0, 20).map((a: TaskActivity) => (
+                    <div key={a.id} className="flex items-start gap-2 text-[10px]" data-testid={`drawer-activity-${a.id}`}>
+                      <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground mt-1.5 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <span className="font-medium">{a.changedBy}</span>
+                        <span className="text-muted-foreground"> changed </span>
+                        <span className="font-medium">{a.field}</span>
+                        {a.oldValue && <span className="text-muted-foreground"> from {a.oldValue}</span>}
+                        <span className="text-muted-foreground"> to </span>
+                        <span className="font-medium">{a.newValue}</span>
+                      </div>
+                      <span className="text-[9px] text-muted-foreground shrink-0">
+                        {new Date(a.createdAt).toLocaleDateString("en-ZA", { day: "2-digit", month: "short" })}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
+        </div>
+      </ScrollArea>
+    </div>
+  );
+}
+
 const PRIORITY_ORDER: Record<string, number> = { "Urgent": 0, "High": 1, "Med": 2, "Low": 3 };
 
 function sortByPriorityThenDue(a: FullTask, b: FullTask) {
@@ -513,7 +768,7 @@ function groupByAssignee(tasks: FullTask[]): Map<string, FullTask[]> {
   return sorted;
 }
 
-function InlineTaskRow({ task, onUpdate }: { task: FullTask; onUpdate: (id: number, updates: Record<string, any>) => void }) {
+function InlineTaskRow({ task, onUpdate, onOpenTask }: { task: FullTask; onUpdate: (id: number, updates: Record<string, any>) => void; onOpenTask?: (task: FullTask) => void }) {
   const [, setLocation] = useLocation();
   const [quickNote, setQuickNote] = useState("");
   const [showNote, setShowNote] = useState(false);
@@ -629,7 +884,7 @@ function InlineTaskRow({ task, onUpdate }: { task: FullTask; onUpdate: (id: numb
             variant="ghost"
             size="sm"
             className="h-6 w-6 p-0 opacity-60 hover:opacity-100"
-            onClick={(e) => { e.stopPropagation(); setLocation(`/engineering/tasks?taskId=${task.id}`); }}
+            onClick={(e) => { e.stopPropagation(); if (onOpenTask) onOpenTask(task); else setLocation(`/engineering/tasks?taskId=${task.id}`); }}
             data-testid={`open-detail-${task.id}`}
           >
             <ExternalLink className="h-3 w-3" />
@@ -653,7 +908,7 @@ function InlineTaskRow({ task, onUpdate }: { task: FullTask; onUpdate: (id: numb
             variant="ghost"
             size="sm"
             className="h-6 w-6 p-0"
-            onClick={(e) => { e.stopPropagation(); setLocation(`/engineering/tasks?taskId=${task.id}`); }}
+            onClick={(e) => { e.stopPropagation(); if (onOpenTask) onOpenTask(task); else setLocation(`/engineering/tasks?taskId=${task.id}`); }}
             data-testid={`open-detail-mobile-${task.id}`}
           >
             <ExternalLink className="h-3 w-3" />
@@ -689,7 +944,7 @@ function InlineTaskRow({ task, onUpdate }: { task: FullTask; onUpdate: (id: numb
   );
 }
 
-function AssigneeGroup({ name, tasks, onUpdate, defaultOpen }: { name: string; tasks: FullTask[]; onUpdate: (id: number, updates: Record<string, any>) => void; defaultOpen: boolean }) {
+function AssigneeGroup({ name, tasks, onUpdate, defaultOpen, onOpenTask }: { name: string; tasks: FullTask[]; onUpdate: (id: number, updates: Record<string, any>) => void; defaultOpen: boolean; onOpenTask?: (task: FullTask) => void }) {
   const [open, setOpen] = useState(defaultOpen);
   const overdueCount = tasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && t.status !== "COMPLETE").length;
 
@@ -715,7 +970,7 @@ function AssigneeGroup({ name, tasks, onUpdate, defaultOpen }: { name: string; t
       {open && (
         <div>
           {tasks.sort(sortByPriorityThenDue).map(t => (
-            <InlineTaskRow key={t.id} task={t} onUpdate={onUpdate} />
+            <InlineTaskRow key={t.id} task={t} onUpdate={onUpdate} onOpenTask={onOpenTask} />
           ))}
         </div>
       )}
@@ -724,7 +979,7 @@ function AssigneeGroup({ name, tasks, onUpdate, defaultOpen }: { name: string; t
 }
 
 function StandupBucket({
-  title, icon, tasks, color, defaultOpen, testId, onUpdate,
+  title, icon, tasks, color, defaultOpen, testId, onUpdate, onOpenTask,
 }: {
   title: string;
   icon: React.ReactNode;
@@ -733,6 +988,7 @@ function StandupBucket({
   defaultOpen: boolean;
   testId: string;
   onUpdate: (id: number, updates: Record<string, any>) => void;
+  onOpenTask?: (task: FullTask) => void;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const grouped = groupByAssignee(tasks);
@@ -768,6 +1024,7 @@ function StandupBucket({
               name={name}
               tasks={assigneeTasks}
               onUpdate={onUpdate}
+              onOpenTask={onOpenTask}
               defaultOpen={grouped.size <= 5}
             />
           ))}
@@ -781,6 +1038,7 @@ function StandupModeView() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const blockersRef = useRef<HTMLDivElement>(null);
+  const [selectedTask, setSelectedTask] = useState<FullTask | null>(null);
 
   const { data: allTasks = [], isLoading } = useQuery<FullTask[]>({
     queryKey: ["eng-standup-all-tasks"],
@@ -792,9 +1050,15 @@ function StandupModeView() {
   const updateMutation = useMutation({
     mutationFn: ({ id, updates }: { id: number; updates: Record<string, any> }) =>
       engPatch(`/api/eng/tasks/${id}`, updates),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["eng-standup-all-tasks"] });
       queryClient.invalidateQueries({ queryKey: ["eng-standup"] });
+      if (selectedTask && selectedTask.id === variables.id) {
+        const updatedTask = allTasks.find(t => t.id === variables.id);
+        if (updatedTask) {
+          setSelectedTask({ ...updatedTask, ...variables.updates });
+        }
+      }
     },
     onError: (err: Error) => {
       toast({ title: "Update failed", description: err.message, variant: "destructive" });
@@ -804,6 +1068,10 @@ function StandupModeView() {
   const handleUpdate = useCallback((id: number, updates: Record<string, any>) => {
     updateMutation.mutate({ id, updates });
   }, [updateMutation]);
+
+  const handleOpenTask = useCallback((task: FullTask) => {
+    setSelectedTask(task);
+  }, []);
 
   if (isLoading) {
     return (
@@ -846,6 +1114,8 @@ function StandupModeView() {
     blockersRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
+  const currentTask = selectedTask ? allTasks.find(t => t.id === selectedTask.id) || selectedTask : null;
+
   return (
     <div className="space-y-4">
       {blockerCount > 0 && (
@@ -871,6 +1141,7 @@ function StandupModeView() {
           defaultOpen={true}
           testId="standup-bucket-overdue"
           onUpdate={handleUpdate}
+          onOpenTask={handleOpenTask}
         />
       </div>
 
@@ -882,6 +1153,7 @@ function StandupModeView() {
         defaultOpen={true}
         testId="standup-bucket-due-soon"
         onUpdate={handleUpdate}
+        onOpenTask={handleOpenTask}
       />
 
       <StandupBucket
@@ -892,6 +1164,7 @@ function StandupModeView() {
         defaultOpen={true}
         testId="standup-bucket-hold"
         onUpdate={handleUpdate}
+        onOpenTask={handleOpenTask}
       />
 
       <StandupBucket
@@ -902,6 +1175,7 @@ function StandupModeView() {
         defaultOpen={false}
         testId="standup-bucket-in-progress"
         onUpdate={handleUpdate}
+        onOpenTask={handleOpenTask}
       />
 
       <StandupBucket
@@ -912,7 +1186,20 @@ function StandupModeView() {
         defaultOpen={false}
         testId="standup-bucket-everything-else"
         onUpdate={handleUpdate}
+        onOpenTask={handleOpenTask}
       />
+
+      <Sheet open={!!selectedTask} onOpenChange={(open) => { if (!open) setSelectedTask(null); }}>
+        <SheetContent side="right" className="w-full sm:max-w-lg p-6" data-testid="standup-sheet-drawer">
+          {currentTask && (
+            <StandupTaskDrawer
+              task={currentTask}
+              onClose={() => setSelectedTask(null)}
+              onUpdate={handleUpdate}
+            />
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
