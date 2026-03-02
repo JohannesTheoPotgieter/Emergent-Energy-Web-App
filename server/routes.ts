@@ -6,7 +6,7 @@ import fs from "fs";
 import path from "path";
 import { storage } from "./storage";
 import { parseTrackerFile, applyFontColors } from "./excelParser";
-import { insertBudgetSchema, programExpense, programInflows, projectInfo, projectPlan, normalizedCostLines, normalizedRevenueLines, normalizedPlanTasks, normalizedExecutionPhases, smartImportRuns, cosStatusOverrides, revenueTrackingOverrides, users, notifications, notificationThrottle, operationalTasks, mytoolTasks, engineeringTasks, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems } from "@shared/schema";
+import { insertBudgetSchema, programExpense, programInflows, projectInfo, projectPlan, normalizedCostLines, normalizedRevenueLines, normalizedPlanTasks, normalizedExecutionPhases, smartImportRuns, cosStatusOverrides, revenueTrackingOverrides, users, notifications, notificationThrottle, operationalTasks, mytoolTasks, engineeringTasks, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems, workItemAssignments, clients } from "@shared/schema";
 import { db } from "./db";
 import { safeLegacyQuery, safeLegacyWrite } from "./legacy-table-guard";
 import { eq, and, or, sql, isNull, asc, desc, inArray } from "drizzle-orm";
@@ -983,6 +983,7 @@ export async function registerRoutes(
 
   app.get("/api/overview", requireAuth, async (req, res) => {
     try {
+      const useCanonicalOv = await isWorkItemsEnabled();
       const [allProjectInfo, allExpenses, rawInflows, allPlans, latestRefresh, allTaskLinks, allOpTasks, allNormCostsOv, allNormRevOv, allNormPlansOv] = await Promise.all([
         storage.getAllProjectInfo(),
         storage.getAllProgramExpenses(),
@@ -993,7 +994,44 @@ export async function registerRoutes(
         storage.getAllOperationalTasks(),
         db.select().from(normalizedCostLines),
         db.select().from(normalizedRevenueLines),
-        safeLegacyQuery(() => db.select().from(normalizedPlanTasks), []),
+        useCanonicalOv
+          ? (async () => {
+              const [wiRows, piRows] = await Promise.all([
+                db.select().from(workItems).where(isNull(workItems.deletedAt)),
+                db.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo),
+              ]);
+              const piNameMap = new Map(piRows.map(p => [p.id, p.projectName]));
+              return wiRows.map(wi => ({
+                id: wi.id,
+                projectId: wi.projectId,
+                projectName: (wi.projectId ? piNameMap.get(wi.projectId) : null) || "",
+                taskName: wi.title,
+                taskNo: wi.wbsCode,
+                phase: wi.type,
+                startDate: wi.startDate,
+                endDate: wi.endDate,
+                durationDays: wi.duration,
+                actualStartDate: wi.startDate,
+                actualEndDate: wi.endDate,
+                actualDurationDays: wi.duration,
+                owner: null,
+                assigneeUserId: wi.ownerUserId,
+                status: wi.status,
+                pctComplete: wi.percentComplete,
+                expectedPctComplete: null,
+                comment: wi.description,
+                isMilestone: wi.type === "milestone",
+                parentTaskNo: null,
+                indentLevel: 0,
+                sourceSheet: null,
+                sourceRow: null,
+                importRunId: 0,
+                scheduledDate: null,
+                scheduledStartTime: null,
+                scheduledEndTime: null,
+              }));
+            })()
+          : safeLegacyQuery(() => db.select().from(normalizedPlanTasks), []),
       ]);
 
       const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
@@ -1744,7 +1782,8 @@ export async function registerRoutes(
 
   app.get("/api/projects-summary", requireAuth, async (req, res) => {
     try {
-      const [allProjectInfo, allExpenses, rawInflows, rawPlans, allEditableFields, allTaskLinks, allOpTasks, uploadMetaRows, committedSmartImports, allNormCosts, allNormRevenue, allNormPlans, allPlanOverrides, lastImportRows] = await Promise.all([
+      const useCanonicalPs = await isWorkItemsEnabled();
+      const [allProjectInfo, allExpenses, rawInflows, rawPlans, allEditableFields, allTaskLinks, allOpTasks, uploadMetaRows, committedSmartImports, allNormCosts, allNormRevenue, allNormPlans, allPlanOverrides, lastImportRows, allClientsData] = await Promise.all([
         storage.getAllProjectInfo(),
         storage.getAllProgramExpenses(),
         storage.getAllProgramInflows(),
@@ -1756,12 +1795,52 @@ export async function registerRoutes(
         db.selectDistinct({ projectName: smartImportRuns.projectName }).from(smartImportRuns).where(eq(smartImportRuns.status, 'COMMITTED')),
         db.select().from(normalizedCostLines),
         db.select().from(normalizedRevenueLines),
-        safeLegacyQuery(() => db.select().from(normalizedPlanTasks), []),
+        useCanonicalPs
+          ? (async () => {
+              const [wiRows, piRows] = await Promise.all([
+                db.select().from(workItems).where(isNull(workItems.deletedAt)),
+                db.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo),
+              ]);
+              const piNameMap = new Map(piRows.map(p => [p.id, p.projectName]));
+              return wiRows.map(wi => ({
+                id: wi.id,
+                projectId: wi.projectId,
+                projectName: (wi.projectId ? piNameMap.get(wi.projectId) : null) || "",
+                taskName: wi.title,
+                taskNo: wi.wbsCode,
+                phase: wi.type,
+                startDate: wi.startDate,
+                endDate: wi.endDate,
+                durationDays: wi.duration,
+                actualStartDate: wi.startDate,
+                actualEndDate: wi.endDate,
+                actualDurationDays: wi.duration,
+                owner: null,
+                assigneeUserId: wi.ownerUserId,
+                status: wi.status,
+                pctComplete: wi.percentComplete,
+                expectedPctComplete: null,
+                comment: wi.description,
+                isMilestone: wi.type === "milestone",
+                parentTaskNo: null,
+                indentLevel: 0,
+                sourceSheet: null,
+                sourceRow: null,
+                importRunId: 0,
+                scheduledDate: null,
+                scheduledStartTime: null,
+                scheduledEndTime: null,
+              }));
+            })()
+          : safeLegacyQuery(() => db.select().from(normalizedPlanTasks), []),
         storage.getAllProjectPlanOverrides(),
         db.execute(sql`SELECT project_name, MAX(COALESCE(committed_at, uploaded_at)) as last_import FROM smart_import_runs WHERE status = 'COMMITTED' GROUP BY project_name`),
+        db.select().from(clients),
       ]);
       const allPlans = applyProjectPlanOverrides(rawPlans, allPlanOverrides);
       const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
+
+      const clientMap = new Map(allClientsData.map(c => [c.id, c.name]));
 
       const importedProjectNames = new Set<string>();
       for (const row of uploadMetaRows.rows) {
@@ -2019,32 +2098,65 @@ export async function registerRoutes(
         const workingWeeks = commWorkDays ? commWorkDays / 5 : null;
         const kwPerWeek = (sizeKwp && workingWeeks && workingWeeks > 0) ? sizeKwp / workingWeeks : null;
 
-        // Actual Revenue = SUM(MilstoneAmount) from ProgramInflows, fallback to normalized
+        let totalContractRevenue = 0;
         let actualRevenue = 0;
         if (projectInflows.length > 0) {
           for (const inflow of projectInflows) {
-            if (inflow.milestoneAmount) actualRevenue += parseFloat(inflow.milestoneAmount);
+            if (inflow.milestoneAmount) {
+              const amt = parseFloat(inflow.milestoneAmount);
+              totalContractRevenue += amt;
+              const manualInBank = (inflow as any).inBank === 1 || (inflow as any).inBank === '1' || (inflow as any).inBank === true;
+              const hasInvoice = !!(inflow.milestoneInvoiceNumber && String(inflow.milestoneInvoiceNumber).trim());
+              const hasPaymentReceived = !!(inflow.paymentReceivedDate && String(inflow.paymentReceivedDate).trim() && inflow.paymentReceivedDate !== '-');
+              const isInBank = manualInBank || (hasPaymentReceived && hasInvoice);
+              if (isInBank) {
+                actualRevenue += amt;
+              }
+            }
           }
         } else if (normRev.length > 0) {
           for (const rev of normRev) {
-            if (rev.amountExVat) actualRevenue += parseFloat(rev.amountExVat);
+            if (rev.amountExVat) {
+              const amt = parseFloat(rev.amountExVat);
+              totalContractRevenue += amt;
+              const manualInBank = (rev as any).inBank === 1 || (rev as any).inBank === '1' || (rev as any).inBank === true;
+              const hasInvoice = !!(rev.invoiceNumber && String(rev.invoiceNumber).trim());
+              const hasPaymentReceived = !!(rev.paidDate && String(rev.paidDate).trim() && rev.paidDate !== '-');
+              const isInBank = manualInBank || (hasPaymentReceived && hasInvoice);
+              if (isInBank) {
+                actualRevenue += amt;
+              }
+            }
           }
         }
 
-        // Actual Expenses = SUM(ExpenseActualTotal) from ProgramExpense, fallback to normalized
+        let totalExpenses = 0;
         let actualExpenses = 0;
         if (projectExpenses.length > 0) {
           for (const expense of projectExpenses) {
-            if (expense.expenseActualTotal) actualExpenses += parseFloat(expense.expenseActualTotal);
+            if (expense.expenseActualTotal) {
+              const amt = parseFloat(expense.expenseActualTotal);
+              totalExpenses += amt;
+              const state = (expense as any).computedState || classifyExpenseState(expense as any);
+              if (state === 'Paid') {
+                actualExpenses += amt;
+              }
+            }
           }
         } else if (normCosts.length > 0) {
           for (const cost of normCosts) {
-            if (cost.amountExVat) actualExpenses += parseFloat(cost.amountExVat);
+            if (cost.amountExVat) {
+              const amt = parseFloat(cost.amountExVat);
+              totalExpenses += amt;
+              const state = classifyExpenseState(cost as any);
+              if (state === 'Paid') {
+                actualExpenses += amt;
+              }
+            }
           }
         }
 
-        // GP % = 1 - (ActualExpenses / ActualRevenue); if revenue = 0 then null
-        const gpPercent = actualRevenue > 0 ? 1 - (actualExpenses / actualRevenue) : null;
+        const gpPercent = totalContractRevenue > 0 ? 1 - (totalExpenses / totalContractRevenue) : null;
 
         // Project % Complete and Expected % — prefer summary row (No./#) from Excel
         const summaryRow = (planLikeRows as any[]).find((p: any) => {
@@ -2151,6 +2263,8 @@ export async function registerRoutes(
         return {
           project_info_id: info?.id || null,
           project_name: projectName,
+          client_id: info?.clientId || null,
+          client_name: info?.clientId ? (clientMap.get(info.clientId) || null) : null,
           size_kwp: sizeKwp,
           pd: info?.pd || null,
           pm: info?.pm || null,
@@ -2183,7 +2297,9 @@ export async function registerRoutes(
           project_pct_complete: projectPctComplete,
           expected_pct_complete: expectedPctComplete,
           delta_vs_expected: deltaVsExpected,
+          total_contract_revenue: totalContractRevenue,
           actual_revenue: actualRevenue,
+          total_expenses: totalExpenses,
           actual_expenses: actualExpenses,
           gp_percent: gpPercent,
           revenue_outstanding: revenueOutstanding,
@@ -4795,6 +4911,7 @@ export async function registerRoutes(
         omHandoverDate: z.string().nullable().optional(),
         clientHandoverDate: z.string().nullable().optional(),
         pdHandoverDate: z.string().nullable().optional(),
+        clientId: z.number().nullable().optional(),
       });
 
       const parsed = editSchema.parse(req.body);
@@ -4817,6 +4934,41 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Validation failed", details: error.errors });
       }
       res.status(500).json({ error: "Failed to update project info" });
+    }
+  });
+
+  // ==================== CLIENTS ROUTES ====================
+
+  app.get("/api/clients", requireAuth, async (req, res) => {
+    try {
+      const allClients = await db.select().from(clients).orderBy(asc(clients.name));
+      res.json(allClients);
+    } catch (error) {
+      console.error("Clients fetch error:", error);
+      res.status(500).json({ error: "Failed to fetch clients" });
+    }
+  });
+
+  app.post("/api/clients", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const schema = z.object({
+        name: z.string().min(1),
+        clientId: z.string().optional(),
+      });
+      const parsed = schema.parse(req.body);
+      const maxIdResult = await db.execute(sql`SELECT COALESCE(MAX(CAST(SUBSTRING(client_id FROM 5) AS INTEGER)), 0) as max_num FROM clients WHERE client_id LIKE 'EE-C%'`);
+      const nextNum = ((maxIdResult.rows[0] as any)?.max_num || 0) + 1;
+      const generatedClientId = parsed.clientId || `EE-C${String(nextNum).padStart(4, '0')}`;
+      const [created] = await db.insert(clients).values({
+        name: parsed.name,
+        clientId: generatedClientId,
+        createdBy: req.user?.id,
+        updatedBy: req.user?.id,
+      }).returning();
+      res.json(created);
+    } catch (error) {
+      console.error("Client create error:", error);
+      res.status(500).json({ error: "Failed to create client" });
     }
   });
 
@@ -10575,7 +10727,7 @@ export async function registerRoutes(
           if (statusVal === "Done" && pctVal === undefined) updateFields.actualPctComplete = 1.0;
 
           if (Object.keys(updateFields).length > 0) {
-            await db.update(projectPlan).set(updateFields).where(eq(projectPlan.id, actualTaskId));
+            await safeLegacyWrite(() => db.update(projectPlan).set(updateFields).where(eq(projectPlan.id, actualTaskId)));
           }
         }
 
@@ -11176,12 +11328,18 @@ export async function registerRoutes(
             sql`${operationalTasks.assignees}::text[] @> ARRAY[${displayName}]::text[]`
           )
         ), []),
-        safeLegacyQuery(() => db.execute(sql`
-          SELECT * FROM normalized_plan_tasks
-          WHERE assignee_user_id = ${userId}
-             OR lower(owner) = lower(${userName})
-             OR lower(owner) = lower(${displayName})
-        `), { rows: [] } as any),
+        db.execute(sql`
+          SELECT wi.id, wi.title as task_name, wi.wbs_code as task_no, wi.start_date, wi.end_date,
+                 wi.percent_complete as pct_complete, wi.duration as duration_days,
+                 wi.owner_user_id as assignee_user_id, wi.status, wi.type as phase,
+                 wi.scheduled_date, wi.scheduled_start_time, wi.scheduled_end_time,
+                 pi.project_name
+          FROM work_items wi
+          LEFT JOIN project_info pi ON wi.project_id = pi.id
+          WHERE wi.workstream = 'PM' AND wi.deleted_at IS NULL
+            AND (wi.owner_user_id = ${userId}
+              OR EXISTS (SELECT 1 FROM work_item_assignments wia WHERE wia.work_item_id = wi.id AND wia.user_id = ${userId}))
+        `),
         safeLegacyQuery(() => db.select().from(engineeringTasks).where(
           and(
             eq(engineeringTasks.assigneeUserId, userId),
@@ -11343,26 +11501,28 @@ export async function registerRoutes(
           })
           .where(eq(operationalTasks.id, taskId));
       } else if (taskType === "plan") {
-        const taskResult = await safeLegacyQuery(
-          () => db.select().from(normalizedPlanTasks).where(eq(normalizedPlanTasks.id, taskId)),
-          []
-        );
+        const taskResult = await db.select().from(workItems).where(eq(workItems.id, taskId));
         const [task] = taskResult;
         if (!task) return res.status(404).json({ error: "Plan task not found" });
 
-        const isAssigned = task.assigneeUserId === userId
-          || (task.owner && task.owner.toLowerCase() === userName.toLowerCase());
+        const isAssigned = task.ownerUserId === userId;
         if (!isAssigned) {
-          return res.status(403).json({ error: "You can only schedule tasks assigned to you" });
+          const assignmentCheck = await db.select().from(workItemAssignments).where(
+            and(eq(workItemAssignments.workItemId, taskId), eq(workItemAssignments.userId, userId))
+          );
+          if (assignmentCheck.length === 0) {
+            return res.status(403).json({ error: "You can only schedule tasks assigned to you" });
+          }
         }
 
-        await safeLegacyWrite(() => db.update(normalizedPlanTasks)
+        await db.update(workItems)
           .set({
             scheduledDate: scheduledDate || null,
             scheduledStartTime: scheduledStartTime || null,
             scheduledEndTime: scheduledEndTime || null,
+            updatedAt: new Date(),
           })
-          .where(eq(normalizedPlanTasks.id, taskId)));
+          .where(eq(workItems.id, taskId));
       } else if (taskType === "engineering") {
         const [task] = await db.select().from(engineeringTasks).where(eq(engineeringTasks.id, taskId));
         if (!task) return res.status(404).json({ error: "Engineering task not found" });

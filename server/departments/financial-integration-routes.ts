@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from "express";
 import { requireAuth, requireAdmin } from "./shared-middleware";
 import { storage } from "../storage";
 import { db } from "../db";
+import { safeLegacyQuery } from "../legacy-table-guard";
 import { financialEditRequests, financialIntegrationRules, notifications, users, projectPlan, programInflows, programExpense, expenseTaskLinks, milestoneTaskLinks } from "@shared/schema";
 import { eq, and, inArray, desc, sql } from "drizzle-orm";
 
@@ -31,8 +32,8 @@ function requireFinancialApprover(req: Request, res: Response, next: NextFunctio
 async function detectCriticalPathImpact(projectName: string, taskIds: number[]): Promise<boolean> {
   if (taskIds.length === 0) return false;
   try {
-    const tasks = await db.select().from(projectPlan)
-      .where(and(eq(projectPlan.projectName, projectName)));
+    const tasks = await safeLegacyQuery(() => db.select().from(projectPlan)
+      .where(and(eq(projectPlan.projectName, projectName))), []);
     const relevantTasks = tasks.filter(t => taskIds.includes(t.rowNumber));
     for (const task of relevantTasks) {
       if ((task as any).isCriticalPath || (task as any).is_critical_path) return true;
@@ -372,7 +373,7 @@ router.get("/api/financial-integration/warnings/:projectName", requireAuth, asyn
 
     const expenses = await storage.getProgramExpensesByProject(projectName);
     const inflows = await storage.getProgramInflowsByProject(projectName);
-    const planTasks = await db.select().from(projectPlan).where(eq(projectPlan.projectName, projectName));
+    const planTasks = await safeLegacyQuery(() => db.select().from(projectPlan).where(eq(projectPlan.projectName, projectName)), []);
     const expLinks = await db.select().from(expenseTaskLinks).where(eq(expenseTaskLinks.projectName, projectName));
     const revLinks = await db.select().from(milestoneTaskLinks).where(eq(milestoneTaskLinks.projectName, projectName));
 
@@ -513,7 +514,7 @@ router.get("/api/financial-integration/sync-status/:projectName", requireAuth, a
 
     const expenses = await storage.getProgramExpensesByProject(projectName);
     const inflows = await storage.getProgramInflowsByProject(projectName);
-    const planTasks = await db.select().from(projectPlan).where(eq(projectPlan.projectName, projectName));
+    const planTasks = await safeLegacyQuery(() => db.select().from(projectPlan).where(eq(projectPlan.projectName, projectName)), []);
     const expLinks = await db.select().from(expenseTaskLinks).where(eq(expenseTaskLinks.projectName, projectName));
     const revLinks = await db.select().from(milestoneTaskLinks).where(eq(milestoneTaskLinks.projectName, projectName));
 

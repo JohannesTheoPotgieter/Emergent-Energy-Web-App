@@ -1926,6 +1926,7 @@ router.patch("/api/project-info/:id", requireAuth, requireAdmin, async (req, res
       omHandoverDate: z.string().nullable().optional(),
       clientHandoverDate: z.string().nullable().optional(),
       pdHandoverDate: z.string().nullable().optional(),
+      clientId: z.number().nullable().optional(),
     });
 
     const parsed = editSchema.parse(req.body);

@@ -1,9 +1,9 @@
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { safeLegacyWrite } from "./legacy-table-guard";
+import { safeLegacyQuery, safeLegacyWrite } from "./legacy-table-guard";
 import { eq, sql, inArray } from "drizzle-orm";
 import { verifyToken } from "./jwt";
-import { projectInfo, operationalTasks, projectPlanOverrides, executionGateLog, mergeAuditLog, programExpense, programInflows, qcChecklist, qcItemInstance, PHASE_TO_ENG_STAGES } from "@shared/schema";
+import { projectInfo, operationalTasks, projectPlanOverrides, executionGateLog, mergeAuditLog, programExpense, programInflows, qcChecklist, qcItemInstance, projectPlan, PHASE_TO_ENG_STAGES } from "@shared/schema";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { generateEngStagesForProject } from "./eng-stage-routes";
 import { logAuditFromReq } from "./audit-logger";
@@ -478,10 +478,10 @@ export function registerLifecycleRoutes(app: Express) {
           .where(eq(operationalTasks.projectName, sourceClean))
           .returning();
 
-        const movedPlan = await tx.update(projectPlan)
+        const movedPlan = await safeLegacyWrite(() => tx.update(projectPlan)
           .set({ projectName: target.projectName })
           .where(eq(projectPlan.projectName, source.projectName))
-          .returning();
+          .returning()) || [];
 
         const fillFields: Record<string, any> = {};
         const conflicts: { field: string; primaryValue: any; secondaryValue: any }[] = [];
@@ -826,7 +826,7 @@ export function registerLifecycleRoutes(app: Express) {
       const secondaryClean = secondary.projectName.replace(/_Tracker$/i, "").replace(/_/g, " ");
 
       const allTasks = await db.select({ projectName: operationalTasks.projectName }).from(operationalTasks);
-      const allPlans = await db.select({ projectName: projectPlan.projectName }).from(projectPlan);
+      const allPlans = await safeLegacyQuery(() => db.select({ projectName: projectPlan.projectName }).from(projectPlan), []);
 
       const primaryNorm = normalizeName(primary.projectName);
       const secondaryNorm = normalizeName(secondary.projectName);
@@ -984,7 +984,7 @@ export function registerLifecycleRoutes(app: Express) {
         await tx.execute(sql`DELETE FROM project_revenue_summary WHERE project_name = ${pN}`);
         await tx.execute(sql`DELETE FROM finance_revenue_monthly WHERE project_name = ${pN}`);
         await tx.execute(sql`DELETE FROM finance_cos_monthly WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM project_plan WHERE project_name = ${pN}`);
+        await safeLegacyWrite(() => tx.execute(sql`DELETE FROM project_plan WHERE project_name = ${pN}`));
         await tx.execute(sql`DELETE FROM project_notes WHERE project_name = ${pN}`);
         await tx.execute(sql`DELETE FROM cashflow_points WHERE project_name = ${pN}`);
         await tx.execute(sql`DELETE FROM project_plan_overrides WHERE project_name = ${pN}`);
