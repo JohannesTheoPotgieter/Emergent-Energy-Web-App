@@ -1,7 +1,7 @@
 import { db } from "../db";
-import { normalizedCostLines, normalizedRevenueLines } from "@shared/schema";
+import { normalizedCostLines, normalizedRevenueLines, workItems, projectInfo, type WorkItem } from "@shared/schema";
 import type { NormalizedCostLine, NormalizedRevenueLine, NormalizedPlanTask } from "@shared/schema";
-import { safeLegacyQuery } from "../legacy-table-guard";
+import { isNull, eq } from "drizzle-orm";
 
 export function createNameResolver(projectInfoNames: string[]) {
   const piNames = new Set(projectInfoNames);
@@ -33,12 +33,42 @@ export function createNameResolver(projectInfoNames: string[]) {
 }
 
 export async function fetchAllNormalized() {
-  const { normalizedPlanTasks } = await import("@shared/schema");
-  const [costLines, revenueLines, planTasks] = await Promise.all([
+  const [costLines, revenueLines, wiRows, piRows] = await Promise.all([
     db.select().from(normalizedCostLines),
     db.select().from(normalizedRevenueLines),
-    safeLegacyQuery(() => db.select().from(normalizedPlanTasks), []),
+    db.select().from(workItems).where(isNull(workItems.deletedAt)),
+    db.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo),
   ]);
+  const piNameMap = new Map(piRows.map(p => [p.id, p.projectName]));
+  const planTasks: NormalizedPlanTask[] = wiRows.map((wi: WorkItem) => ({
+    id: wi.id,
+    projectId: wi.projectId,
+    projectName: (wi.projectId ? piNameMap.get(wi.projectId) : null) || "",
+    taskName: wi.title,
+    taskNo: wi.wbsCode,
+    phase: wi.type,
+    startDate: wi.startDate,
+    endDate: wi.endDate,
+    durationDays: wi.duration,
+    actualStartDate: wi.startDate,
+    actualEndDate: wi.endDate,
+    actualDurationDays: wi.duration,
+    owner: null,
+    assigneeUserId: wi.ownerUserId,
+    status: wi.status,
+    pctComplete: wi.percentComplete,
+    expectedPctComplete: null,
+    comment: wi.description,
+    isMilestone: wi.type === "milestone",
+    parentTaskNo: null,
+    indentLevel: 0,
+    sourceSheet: null,
+    sourceRow: null,
+    importRunId: 0,
+    scheduledDate: null,
+    scheduledStartTime: null,
+    scheduledEndTime: null,
+  }));
   return { costLines, revenueLines, planTasks };
 }
 
