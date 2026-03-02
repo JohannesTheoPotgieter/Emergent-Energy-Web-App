@@ -147,7 +147,8 @@ export function registerEngineeringRoutes(app: Express) {
       .where(eq(projectTeamMembers.projectName, req.params.projectName));
       res.json(members);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -158,7 +159,8 @@ export function registerEngineeringRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "project_team", entityId: String(member.id), action: "create", projectName, changesJson: { description: "Team member added", userId, roleOnProject } });
       res.json(member);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -168,7 +170,8 @@ export function registerEngineeringRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "project_team", entityId: req.params.id, action: "delete", changesJson: { description: "Team member removed" } });
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -182,7 +185,8 @@ export function registerEngineeringRoutes(app: Express) {
       }).from(users);
       res.json(allUsers);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -238,7 +242,8 @@ export function registerEngineeringRoutes(app: Express) {
 
       res.json({ message: `Backfill complete: ${updated} tasks updated, ${assigneesFixed} assignee names normalized` });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -278,7 +283,8 @@ export function registerEngineeringRoutes(app: Express) {
       }));
       res.json(enriched);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -328,7 +334,8 @@ export function registerEngineeringRoutes(app: Express) {
 
       res.json(task);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -407,7 +414,8 @@ export function registerEngineeringRoutes(app: Express) {
 
       res.json(updated);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -463,7 +471,8 @@ export function registerEngineeringRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error("[Eng] Send for approval error:", err);
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -516,7 +525,8 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(deliverable);
     } catch (err: any) {
       console.error("[Eng] Send deliverable error:", err);
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -555,7 +565,8 @@ export function registerEngineeringRoutes(app: Express) {
         recipientName: recipientMap[d.recipientUserId] || `User #${d.recipientUserId}`,
       })));
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -597,7 +608,8 @@ export function registerEngineeringRoutes(app: Express) {
 
       res.json(updated);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -613,7 +625,8 @@ export function registerEngineeringRoutes(app: Express) {
       res.setHeader("Content-Disposition", `attachment; filename="${deliverable.originalName}"`);
       res.sendFile(filePath);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -640,7 +653,8 @@ export function registerEngineeringRoutes(app: Express) {
 
       res.json({ success: true, message: `Task "${existing.title}" deleted` });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -686,7 +700,8 @@ export function registerEngineeringRoutes(app: Express) {
 
       res.json({ updated: updatedTasks.length, tasks: updatedTasks });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -709,7 +724,8 @@ export function registerEngineeringRoutes(app: Express) {
 
       res.json(updated);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -724,7 +740,8 @@ export function registerEngineeringRoutes(app: Express) {
       .where(eq(taskWatchers.taskId, parseInt(req.params.id)));
       res.json(watchers);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -736,7 +753,8 @@ export function registerEngineeringRoutes(app: Express) {
       }).returning();
       res.json(watcher);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -748,7 +766,8 @@ export function registerEngineeringRoutes(app: Express) {
       );
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -761,7 +780,8 @@ export function registerEngineeringRoutes(app: Express) {
       if (!task) return res.status(404).json({ error: "Task not found" });
       res.json(task);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -781,7 +801,8 @@ export function registerEngineeringRoutes(app: Express) {
       .orderBy(asc(taskComments.createdAt));
       res.json(comments);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -807,7 +828,8 @@ export function registerEngineeringRoutes(app: Express) {
 
       res.json(comment);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -830,7 +852,8 @@ export function registerEngineeringRoutes(app: Express) {
       .orderBy(desc(taskActivityLog.createdAt));
       res.json(activity);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -841,7 +864,8 @@ export function registerEngineeringRoutes(app: Express) {
         .orderBy(asc(operationalTasks.sortOrder));
       res.json(subtasks);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -874,7 +898,8 @@ export function registerEngineeringRoutes(app: Express) {
 
       res.json(subtask);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -893,7 +918,8 @@ export function registerEngineeringRoutes(app: Express) {
         : await db.select().from(deliverables).orderBy(desc(deliverables.updatedAt));
       res.json(result);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -917,7 +943,8 @@ export function registerEngineeringRoutes(app: Express) {
 
       res.json({ ...del, versions, files, events });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -947,7 +974,8 @@ export function registerEngineeringRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "deliverable", entityId: String(del.id), action: "create", projectName: data.projectName, changesJson: { description: "Deliverable created", title: del.title } });
       res.json(del);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -992,7 +1020,8 @@ export function registerEngineeringRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "deliverable", entityId: String(id), action: "update", projectName: updated.projectName, changesJson: { description: "Deliverable updated", status: updates.status, title: updated.title } });
       res.json(updated);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1023,7 +1052,8 @@ export function registerEngineeringRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "deliverable", entityId: String(id), action: "update", projectName: updated?.projectName, changesJson: { description: "Feedback provided", feedbackText } });
       res.json(updated);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1062,7 +1092,8 @@ export function registerEngineeringRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "deliverable", entityId: String(id), action: "update", projectName: updated.projectName, changesJson: { description: "Deliverable revised", newVersion, changeReason } });
       res.json({ deliverable: updated, version });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1076,7 +1107,8 @@ export function registerEngineeringRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "deliverable", entityId: req.params.id, action: "update", changesJson: { description: "File attached to deliverable", fileName: file.fileName } });
       res.json(file);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1089,7 +1121,8 @@ export function registerEngineeringRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "deliverable", entityId: req.params.fileId, action: "approve", changesJson: { description: "Deliverable file approved" } });
       res.json(file);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1122,7 +1155,8 @@ export function registerEngineeringRoutes(app: Express) {
 
       res.json({ items: result, total: countResult?.total || 0 });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1135,7 +1169,8 @@ export function registerEngineeringRoutes(app: Express) {
         .orderBy(notifications.eventType);
       res.json(result.map(r => r.eventType).filter(Boolean));
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1147,7 +1182,8 @@ export function registerEngineeringRoutes(app: Express) {
         .where(and(eq(notifications.recipientUserId, userId), eq(notifications.isRead, false)));
       res.json({ count: result?.count || 0 });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1164,7 +1200,8 @@ export function registerEngineeringRoutes(app: Express) {
       }
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1178,7 +1215,8 @@ export function registerEngineeringRoutes(app: Express) {
         ));
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1218,7 +1256,8 @@ export function registerEngineeringRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "notification", entityId: String(notifId), action: "update", changesJson: { description: "Notification confirmed", eventType: notif.eventType, relatedCount: relatedNotifs.length } });
       res.json({ success: true, confirmedBy: confirmer?.name || "Unknown", confirmedAt: new Date() });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1234,7 +1273,8 @@ export function registerEngineeringRoutes(app: Express) {
         .orderBy(desc(spFilePointers.uploadedAt));
       res.json(result);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1254,7 +1294,8 @@ export function registerEngineeringRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "file_pointer", entityId: String(pointer.id), action: "create", changesJson: { description: "File pointer created", fileName, entityType } });
       res.json(pointer);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1264,7 +1305,8 @@ export function registerEngineeringRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "file_pointer", entityId: req.params.id, action: "delete", changesJson: { description: "File pointer deleted" } });
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1357,7 +1399,8 @@ export function registerEngineeringRoutes(app: Express) {
 
       res.json({ scanned: allTasks.length + allDeliverables.length, warningsCreated: newWarnings.length, warnings: newWarnings });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1375,7 +1418,8 @@ export function registerEngineeringRoutes(app: Express) {
         : await db.select().from(qcWarning).orderBy(desc(qcWarning.createdAt));
       res.json(result);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1397,7 +1441,8 @@ export function registerEngineeringRoutes(app: Express) {
 
       res.json(updated);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1413,7 +1458,8 @@ export function registerEngineeringRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "qc_warning", entityId: String(id), action: "update", changesJson: { description: "Warning acknowledged", reason: req.body.reason } });
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1606,7 +1652,8 @@ export function registerEngineeringRoutes(app: Express) {
         statusPipeline,
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1697,7 +1744,8 @@ export function registerEngineeringRoutes(app: Express) {
         phaseLabels: PROJECT_PHASE_LABELS,
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1752,7 +1800,8 @@ export function registerEngineeringRoutes(app: Express) {
 
       res.json(workload);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1797,7 +1846,8 @@ export function registerEngineeringRoutes(app: Express) {
 
       res.json(result);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1816,7 +1866,8 @@ export function registerEngineeringRoutes(app: Express) {
       }
       res.json(pipeline);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1832,7 +1883,8 @@ export function registerEngineeringRoutes(app: Express) {
         .orderBy(desc(operationalTasks.createdAt));
       res.json(orphans);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1846,7 +1898,8 @@ export function registerEngineeringRoutes(app: Express) {
         .orderBy(asc(qcWarning.createdAt));
       res.json(highWarnings);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1859,7 +1912,8 @@ export function registerEngineeringRoutes(app: Express) {
       }).from(users).orderBy(asc(users.name));
       res.json(allUsers);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -1882,7 +1936,6 @@ export function registerEngineeringRoutes(app: Express) {
       const searchFilter = searchTerm ? `%${searchTerm}%` : null;
 
       const unionParts: string[] = [];
-      const unionParams: any[] = [];
 
       if (!catFilter || catFilter === "task_changes") {
         unionParts.push(`
@@ -2004,18 +2057,19 @@ export function registerEngineeringRoutes(app: Express) {
 
       const unionQuery = unionParts.join(" UNION ALL ");
 
-      let whereClause = "";
-      if (searchFilter) {
-        whereClause = ` WHERE lower(summary) LIKE $1 OR lower(detail) LIKE $1 OR lower(actor_name) LIKE $1 OR lower(project_name) LIKE $1`;
-        unionParams.push(searchFilter);
-      }
+      let countResult;
+      let dataResult;
 
-      const countQuery = `SELECT category, count(*)::int AS cnt FROM (${unionQuery}) unified ${whereClause} GROUP BY category`;
-      const countResult = await db.execute(sql.raw(
-        searchFilter
-          ? countQuery.replace(/\$1/g, `'${searchFilter.replace(/'/g, "''")}'`)
-          : countQuery
-      ));
+      if (searchFilter) {
+        const countSql = sql`SELECT category, count(*)::int AS cnt FROM (${sql.raw(unionQuery)}) unified WHERE lower(summary) LIKE ${searchFilter} OR lower(detail) LIKE ${searchFilter} OR lower(actor_name) LIKE ${searchFilter} OR lower(project_name) LIKE ${searchFilter} GROUP BY category`;
+        countResult = await db.execute(countSql);
+
+        const dataSql = sql`SELECT * FROM (${sql.raw(unionQuery)}) unified WHERE lower(summary) LIKE ${searchFilter} OR lower(detail) LIKE ${searchFilter} OR lower(actor_name) LIKE ${searchFilter} OR lower(project_name) LIKE ${searchFilter} ORDER BY timestamp DESC NULLS LAST LIMIT ${pageLimit} OFFSET ${pageOffset}`;
+        dataResult = await db.execute(dataSql);
+      } else {
+        countResult = await db.execute(sql.raw(`SELECT category, count(*)::int AS cnt FROM (${unionQuery}) unified GROUP BY category`));
+        dataResult = await db.execute(sql.raw(`SELECT * FROM (${unionQuery}) unified ORDER BY timestamp DESC NULLS LAST LIMIT ${pageLimit} OFFSET ${pageOffset}`));
+      }
 
       const categoryCounts: Record<string, number> = {};
       let total = 0;
@@ -2023,13 +2077,6 @@ export function registerEngineeringRoutes(app: Express) {
         categoryCounts[row.category] = row.cnt;
         total += row.cnt;
       }
-
-      const dataQuery = `SELECT * FROM (${unionQuery}) unified ${whereClause} ORDER BY timestamp DESC NULLS LAST LIMIT ${pageLimit} OFFSET ${pageOffset}`;
-      const dataResult = await db.execute(sql.raw(
-        searchFilter
-          ? dataQuery.replace(/\$1/g, `'${searchFilter.replace(/'/g, "''")}'`)
-          : dataQuery
-      ));
 
       const entries = (dataResult.rows as any[]).map((r: any) => ({
         id: r.id,
@@ -2044,7 +2091,8 @@ export function registerEngineeringRoutes(app: Express) {
 
       res.json({ entries, total, categoryCounts });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2121,7 +2169,8 @@ export function registerEngineeringRoutes(app: Express) {
         },
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2162,7 +2211,8 @@ export function registerEngineeringRoutes(app: Express) {
         topActors,
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2184,7 +2234,8 @@ export function registerEngineeringRoutes(app: Express) {
       .orderBy(desc(projectPhaseHistory.changedAt));
       res.json(history);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2329,7 +2380,8 @@ export function registerEngineeringRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error("[Phase] Error:", err.message);
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2358,7 +2410,8 @@ export function registerEngineeringRoutes(app: Express) {
       res.json({ history, phaseLabels: PROJECT_PHASE_LABELS });
     } catch (err: any) {
       console.error("[Phase] History error:", err.message);
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2393,7 +2446,8 @@ export function registerEngineeringRoutes(app: Express) {
         tasks: uniqueTasks,
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2461,7 +2515,8 @@ export function registerEngineeringRoutes(app: Express) {
 
       res.json({ tasksCreated: created.length, tasks: created });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2711,7 +2766,8 @@ export function registerEngineeringRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error("Home action hub error:", err);
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2735,8 +2791,8 @@ export function registerEngineeringRoutes(app: Express) {
         hiddenWidgets: config.hiddenWidgets,
       });
     } catch (err: any) {
-      console.error("Widget config GET error:", err);
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Widget config GET error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -2773,8 +2829,8 @@ export function registerEngineeringRoutes(app: Express) {
 
       return res.json({ success: true });
     } catch (err: any) {
-      console.error("Widget config PUT error:", err);
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering] Widget config PUT error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 }

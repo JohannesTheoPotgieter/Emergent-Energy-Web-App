@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { AlertCircle, CheckCircle, ChevronDown, ChevronRight, FileText, Shield, AlertTriangle, Clock, User, Lock, Link2, X, Plus, Trash2, Send, Loader2, CheckCircle2, Upload, FolderOpen, Paperclip, ExternalLink, ArrowLeft } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { usePermission } from "@/hooks/use-permissions";
+import { useToast } from "@/hooks/use-toast";
 
 function qFetch(url: string, options?: RequestInit) {
   const token = localStorage.getItem('auth_token');
@@ -66,6 +67,7 @@ interface QualityTabProps {
 export function QualityTab({ projectName }: QualityTabProps) {
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const { toast } = useToast();
   const [expandedPhases, setExpandedPhases] = useState<Record<number, boolean>>({});
   const [editingItem, setEditingItem] = useState<number | null>(null);
   const [itemEdits, setItemEdits] = useState<Record<string, any>>({});
@@ -167,6 +169,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
       queryClient.invalidateQueries({ queryKey: ["quality-warnings-all"] });
       queryClient.invalidateQueries({ queryKey: ["quality-checklists"] });
     },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
   const approveItemMutation = useMutation({
@@ -184,6 +187,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
       queryClient.invalidateQueries({ queryKey: ["quality-warnings-all"] });
       queryClient.invalidateQueries({ queryKey: ["quality-checklists"] });
     },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
   const updateRiskMutation = useMutation({
@@ -201,6 +205,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
       queryClient.invalidateQueries({ queryKey: ["quality-warnings-all"] });
       queryClient.invalidateQueries({ queryKey: ["quality-checklists"] });
     },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
   const createItemMutation = useMutation({
@@ -220,6 +225,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
       setNewItemName("");
       setShowAddItem(null);
     },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
   const deleteItemMutation = useMutation({
@@ -240,6 +246,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
       queryClient.invalidateQueries({ queryKey: ["quality-checklists"] });
       setDeleteConfirmId(null);
     },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
   const addPlanLinkMutation = useMutation({
@@ -264,6 +271,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
       setLinkingPhaseId(null);
       setLinkingItemId(null);
     },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
   const removePlanLinkMutation = useMutation({
@@ -278,6 +286,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
       queryClient.invalidateQueries({ queryKey: ["quality-warnings-all"] });
       queryClient.invalidateQueries({ queryKey: ["quality-checklists"] });
     },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
   const deleteEvidenceMutation = useMutation({
@@ -289,6 +298,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["quality-checklist", projectName] });
     },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
   const currentSpFolderId = spFolderStack[spFolderStack.length - 1]?.id || null;

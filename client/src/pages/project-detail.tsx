@@ -260,6 +260,7 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
   const [showAddForm, setShowAddForm] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+  const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
   const { allowed: canEdit } = usePermission('pd_eng_tasks', 'edit');
   const { allowed: canDelete } = usePermission('pd_eng_tasks', 'delete');
 
@@ -353,7 +354,7 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
         <h3 className="text-sm font-semibold">Engineering Tasks</h3>
         <div className="flex gap-2">
           {tasks.length === 0 && isAdmin && (
-            <Button size="sm" variant="outline" onClick={() => generateMutation.mutate()} disabled={generateMutation.isPending} className="h-7 text-xs gap-1" data-testid="button-generate-eng-tasks">
+            <Button size="sm" variant="outline" onClick={() => setShowGenerateConfirm(true)} disabled={generateMutation.isPending} className="h-7 text-xs gap-1" data-testid="button-generate-eng-tasks">
               {generateMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <PlusCircle className="h-3 w-3" />}
               Generate from Template
             </Button>
@@ -384,6 +385,31 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
           </div>
         </Card>
       )}
+
+      <Dialog open={showGenerateConfirm} onOpenChange={setShowGenerateConfirm}>
+        <DialogContent className="max-w-sm" data-testid="dialog-generate-confirm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <PlusCircle className="h-5 w-5" />
+              Generate Engineering Tasks
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground py-2">
+            This will create engineering tasks from the project template. Are you sure you want to proceed?
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowGenerateConfirm(false)} data-testid="button-cancel-generate">Cancel</Button>
+            <Button
+              onClick={() => { setShowGenerateConfirm(false); generateMutation.mutate(); }}
+              disabled={generateMutation.isPending}
+              data-testid="button-confirm-generate"
+            >
+              {generateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+              Generate Tasks
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {tasks.length === 0 && !showAddForm ? (
         <div className="text-center py-12 space-y-2">

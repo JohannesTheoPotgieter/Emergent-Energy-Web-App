@@ -152,7 +152,8 @@ export function registerEngStageRoutes(app: Express) {
 
       res.json({ templates: result });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[EngStages] Templates list error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -167,7 +168,8 @@ export function registerEngStageRoutes(app: Express) {
 
       res.json({ template, tasks, deliverables });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[EngStages] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -182,7 +184,8 @@ export function registerEngStageRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "eng_stage_template", entityId: String(id), action: "update", changesJson: { description: "Stage template updated", isActive } });
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[EngStages] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -205,7 +208,8 @@ export function registerEngStageRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "eng_stage_item", entityId: String(task.id), action: "create", changesJson: { description: "Task template created", title } });
       res.json(task);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[EngStages] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -226,7 +230,8 @@ export function registerEngStageRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "eng_stage_item", entityId: String(taskId), action: "update", changesJson: { description: "Task template updated", title } });
       res.json(updated);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[EngStages] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -240,7 +245,8 @@ export function registerEngStageRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "eng_stage_item", entityId: String(taskId), action: "delete", changesJson: { description: "Task template deleted", title: deleted.title } });
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[EngStages] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -262,7 +268,8 @@ export function registerEngStageRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "eng_stage_item", entityId: String(deliverable.id), action: "create", changesJson: { description: "Deliverable template created", name } });
       res.json(deliverable);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[EngStages] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -283,7 +290,8 @@ export function registerEngStageRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "eng_stage_item", entityId: String(delId), action: "update", changesJson: { description: "Deliverable template updated", name } });
       res.json(updated);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[EngStages] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -297,7 +305,8 @@ export function registerEngStageRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "eng_stage_item", entityId: String(delId), action: "delete", changesJson: { description: "Deliverable template deleted", name: deleted.name } });
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[EngStages] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -320,17 +329,38 @@ export function registerEngStageRoutes(app: Express) {
         stageNames = [tmpl.name];
       }
 
+      const existingStages = await db.select({ id: projectEngStages.id, stageTemplateId: projectEngStages.stageTemplateId })
+        .from(projectEngStages).where(eq(projectEngStages.projectId, projectId));
+
+      if (!stageTemplateId && existingStages.length > 0) {
+        const activeTemplates = await db.select({ id: engStageTemplates.id })
+          .from(engStageTemplates).where(eq(engStageTemplates.isActive, true));
+        const existingTemplateIds = new Set(existingStages.map(s => s.stageTemplateId));
+        const remaining = activeTemplates.filter(t => !existingTemplateIds.has(t.id));
+        if (remaining.length === 0) {
+          return res.status(409).json({ error: "Engineering stages have already been generated for this project" });
+        }
+      }
+
+      if (stageTemplateId) {
+        const alreadyExists = existingStages.some(s => s.stageTemplateId === stageTemplateId);
+        if (alreadyExists) {
+          return res.status(409).json({ error: "This engineering stage has already been generated for this project" });
+        }
+      }
+
       const result = await generateEngStagesForProject(projectId, user.id, stageNames);
 
       if (result.stagesCreated === 0) {
-        return res.status(400).json({ error: "All stages already generated or no active templates" });
+        return res.status(409).json({ error: "All stages already generated or no active templates" });
       }
 
       logAuditFromReq(req, { entityType: "eng_project_stage", entityId: String(projectId), action: "create", projectName: project.projectName, changesJson: { description: "Engineering stages generated", stagesCreated: result.stagesCreated, stageDetails: result.stageDetails } });
       res.json({ success: true, ...result });
     } catch (err: any) {
       console.error("[EngStages] Generate error:", err.message);
-      res.status(500).json({ error: err.message });
+      console.error("[EngStages] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -405,7 +435,8 @@ export function registerEngStageRoutes(app: Express) {
 
       res.json({ stages: result });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[EngStages] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -480,7 +511,8 @@ export function registerEngStageRoutes(app: Express) {
         approvals,
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[EngStages] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -571,7 +603,8 @@ export function registerEngStageRoutes(app: Express) {
 
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[EngStages] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -604,7 +637,8 @@ export function registerEngStageRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "eng_stage_item", entityId: String(deliverable.id), action: "create", changesJson: { description: "Task deliverable uploaded", fileName: file.originalname } });
       res.json({ deliverable });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[EngStages] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -638,7 +672,8 @@ export function registerEngStageRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "eng_stage_item", entityId: String(id), action: status === "approved" ? "approve" : "reject", changesJson: { description: `Deliverable ${status}`, fileName: deliverable.fileName } });
       res.json({ success: true, status });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[EngStages] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -670,7 +705,8 @@ export function registerEngStageRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "eng_stage_item", entityId: String(deliverable.id), action: "create", changesJson: { description: "Stage deliverable uploaded", fileName: file.originalname } });
       res.json({ deliverable });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[EngStages] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -687,7 +723,8 @@ export function registerEngStageRoutes(app: Express) {
       res.setHeader("Content-Type", deliverable.mimeType || "application/octet-stream");
       fs.createReadStream(filePath).pipe(res);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[EngStages] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -704,7 +741,8 @@ export function registerEngStageRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "eng_stage_item", entityId: String(id), action: "delete", changesJson: { description: "Deliverable deleted", fileName: deliverable.fileName } });
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[EngStages] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -716,6 +754,14 @@ export function registerEngStageRoutes(app: Express) {
 
       const [approval] = await db.select().from(projectEngApprovals).where(eq(projectEngApprovals.id, id));
       if (!approval) return res.status(404).json({ error: "Approval not found" });
+
+      const [parentStage] = await db.select({ createdBy: projectEngStages.createdBy })
+        .from(projectEngStages)
+        .where(eq(projectEngStages.id, approval.projectEngStageId));
+
+      if (parentStage && parentStage.createdBy === user.id) {
+        return res.status(403).json({ error: "You cannot approve your own stage gate" });
+      }
 
       if (approval.approverRole === "QA_REVIEW" && user.role !== QA_ROLE && !isCoo(user.role)) {
         return res.status(403).json({ error: "Only Quality Manager can perform QA review" });
@@ -753,7 +799,8 @@ export function registerEngStageRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "eng_stage_gate", entityId: String(id), action: status === "approved" ? "approve" : "reject", projectName: proj?.projectName, changesJson: { description: `Stage gate ${status}`, stageName: stage?.templateName, approverRole: approval.approverRole } });
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[EngStages] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -848,7 +895,8 @@ export function registerEngStageRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "eng_stage_gate", entityId: String(stageId), action: "approve", changesJson: { description: "Stage completed", stageName: stage.templateName } });
       res.json({ success: true, missing: [] });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[EngStages] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -888,7 +936,8 @@ export function registerEngStageRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "eng_stage_gate", entityId: String(stageId), action: "override", changesJson: { description: "Stage override completed", reason } });
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[EngStages] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -923,7 +972,8 @@ export function registerEngStageRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "eng_stage_item", entityId: String(stageId), action: "update", changesJson: { description: "Stage status updated", status } });
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[EngStages] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 }
