@@ -336,8 +336,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const sidebarContent = (
     <>
       <div className="h-14 md:h-16 flex items-center px-4 border-b border-sidebar-border bg-sidebar/50 backdrop-blur-sm">
-        <Link href="/" className="flex items-center gap-3 min-w-0">
-          <img src="/emergent-logo.png" className={`${sidebarShowLabels ? 'h-7' : 'h-6'} object-contain shrink-0`} alt="Emergent Energy" />
+        <Link href="/" className="flex items-center gap-2.5 min-w-0">
+          <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-emerald-400 to-green-600 flex items-center justify-center shrink-0 shadow-md shadow-emerald-900/30">
+            <img src="/emergent-leaf.png" className="h-5 w-5 object-contain" alt="Emergent Energy" />
+          </div>
+          {sidebarShowLabels && (
+            <div className="flex flex-col leading-tight min-w-0">
+              <span className="text-sm font-bold text-sidebar-foreground tracking-tight">Emergent</span>
+              <span className="text-[10px] font-medium text-emerald-400/80 uppercase tracking-widest">Energy</span>
+            </div>
+          )}
         </Link>
         <button
           onClick={() => setMobileOpen(false)}
