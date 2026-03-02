@@ -550,6 +550,153 @@ async function backfillPmUserIds() {
     );
   `)).catch(err => console.error('[Portfolio] Table creation error:', err));
 
+  // Phase 1: Canonical work_items schema migration (additive only)
+  try {
+    await db.execute(sql.raw(`ALTER TABLE project_info ADD COLUMN IF NOT EXISTS client_id INTEGER REFERENCES clients(id)`));
+    await db.execute(sql.raw(`CREATE INDEX IF NOT EXISTS idx_project_info_client_id ON project_info(client_id)`));
+
+    await db.execute(sql.raw(`
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'work_item_workstream') THEN
+          CREATE TYPE work_item_workstream AS ENUM ('PD', 'ENG', 'QUALITY', 'PM', 'FINANCE', 'PERSONAL', 'GOVERNANCE');
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'work_item_source') THEN
+          CREATE TYPE work_item_source AS ENUM ('SMART_IMPORT', 'UI', 'INTEGRATION', 'SYSTEM');
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'work_item_assignment_role') THEN
+          CREATE TYPE work_item_assignment_role AS ENUM ('OWNER', 'ASSIGNEE', 'REVIEWER');
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'work_item_dep_type') THEN
+          CREATE TYPE work_item_dep_type AS ENUM ('FS', 'SS', 'FF', 'SF');
+        END IF;
+      END $$;
+    `));
+
+    await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS work_items (
+        id SERIAL PRIMARY KEY,
+        client_id INTEGER REFERENCES clients(id),
+        project_id INTEGER REFERENCES project_info(id),
+        workstream work_item_workstream NOT NULL,
+        type TEXT,
+        source work_item_source NOT NULL DEFAULT 'UI',
+        title TEXT NOT NULL,
+        description TEXT,
+        status TEXT NOT NULL DEFAULT 'Not Started',
+        priority TEXT,
+        start_date TEXT,
+        end_date TEXT,
+        duration INTEGER,
+        percent_complete REAL DEFAULT 0,
+        wbs_code TEXT,
+        outline_number TEXT,
+        parent_id INTEGER,
+        owner_user_id INTEGER REFERENCES users(id),
+        is_shared BOOLEAN NOT NULL DEFAULT FALSE,
+        external_ref TEXT UNIQUE,
+        legacy_table TEXT,
+        legacy_id INTEGER,
+        created_by INTEGER REFERENCES users(id),
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        deleted_at TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_work_items_project_id ON work_items(project_id);
+      CREATE INDEX IF NOT EXISTS idx_work_items_workstream ON work_items(workstream);
+      CREATE INDEX IF NOT EXISTS idx_work_items_owner ON work_items(owner_user_id);
+      CREATE INDEX IF NOT EXISTS idx_work_items_external_ref ON work_items(external_ref);
+    `));
+
+    await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS work_item_assignments (
+        id SERIAL PRIMARY KEY,
+        work_item_id INTEGER NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        role work_item_assignment_role NOT NULL DEFAULT 'ASSIGNEE',
+        allocation_pct REAL,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_work_item_assignments_work_item ON work_item_assignments(work_item_id);
+      CREATE INDEX IF NOT EXISTS idx_work_item_assignments_user ON work_item_assignments(user_id);
+    `));
+
+    await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS work_item_dependencies (
+        id SERIAL PRIMARY KEY,
+        predecessor_id INTEGER NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
+        successor_id INTEGER NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
+        dep_type work_item_dep_type NOT NULL DEFAULT 'FS',
+        lag_days INTEGER DEFAULT 0
+      );
+    `));
+
+    await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS work_item_comments (
+        id SERIAL PRIMARY KEY,
+        work_item_id INTEGER NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        content TEXT NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+    `));
+
+    await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS work_item_attachments (
+        id SERIAL PRIMARY KEY,
+        work_item_id INTEGER NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
+        file_name TEXT NOT NULL,
+        file_url TEXT NOT NULL,
+        uploaded_by INTEGER REFERENCES users(id),
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+    `));
+
+    await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS work_item_status_history (
+        id SERIAL PRIMARY KEY,
+        work_item_id INTEGER NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
+        old_status TEXT,
+        new_status TEXT NOT NULL,
+        changed_by INTEGER REFERENCES users(id),
+        changed_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        reason TEXT
+      );
+    `));
+
+    await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS project_client_history (
+        id SERIAL PRIMARY KEY,
+        project_id INTEGER NOT NULL REFERENCES project_info(id),
+        old_client_id INTEGER REFERENCES clients(id),
+        new_client_id INTEGER REFERENCES clients(id),
+        moved_by_user_id INTEGER NOT NULL REFERENCES users(id),
+        moved_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        reason TEXT
+      );
+    `));
+
+    await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS import_field_mappings (
+        id SERIAL PRIMARY KEY,
+        import_profile TEXT NOT NULL,
+        sheet_name TEXT,
+        excel_column_header TEXT NOT NULL,
+        target_table TEXT NOT NULL,
+        target_field TEXT NOT NULL,
+        transform TEXT,
+        required BOOLEAN NOT NULL DEFAULT FALSE,
+        default_value TEXT,
+        active BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+    `));
+
+    console.log('[Migration] Phase 1 canonical tables created successfully');
+  } catch (err: any) {
+    console.error('[Migration] Phase 1 error:', err.message);
+  }
+
   registerAdminRoutes(app);
   registerExcoRoutes(app);
   const { financialIntegrationRouter } = await import("./departments/financial-integration-routes");

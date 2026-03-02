@@ -26,6 +26,7 @@ import { requirePermission } from "./permission-middleware";
 import { createNameResolver, fetchAllNormalized, mergeExpensesOnly, mergeInflowsOnly, mergePlansOnly } from "./lib/data-merge";
 import { sendExcelSyncNotification } from "./excel-sync-notifications";
 import { logAuditFromReq } from "./audit-logger";
+import { isWorkItemsEnabled, getWorkItemsAsNormalizedPlanTasks, getWorkItemsAsOperationalTasks, getWorkItemsAsMytoolTasks } from "./work-items-adapter";
 
 function isCosRealisedCheck(exp: any): boolean {
   const hasInvoice = !!(exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim());
@@ -9632,6 +9633,15 @@ export async function registerRoutes(
   app.get("/api/operational-tasks/:projectName", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const projectName = req.params.projectName;
+
+      const useCanonical = await isWorkItemsEnabled();
+      if (useCanonical) {
+        const canonicalTasks = await getWorkItemsAsOperationalTasks(projectName);
+        if (canonicalTasks.length > 0) {
+          return res.json(canonicalTasks);
+        }
+      }
+
       const trackerName = projectName.endsWith("_Tracker") ? projectName : projectName + "_Tracker";
       const [operationalTasks, planTasksDirect, planTasksTracker] = await Promise.all([
         storage.getOperationalTasksByProject(projectName),
@@ -10047,6 +10057,15 @@ export async function registerRoutes(
   app.get("/api/planning-tasks/:projectName", requireAuth, async (req: Request, res: Response) => {
     try {
       const projectName = decodeURIComponent(req.params.projectName);
+
+      const useCanonical = await isWorkItemsEnabled();
+      if (useCanonical) {
+        const canonicalTasks = await getWorkItemsAsNormalizedPlanTasks(projectName);
+        if (canonicalTasks.length > 0) {
+          return res.json(canonicalTasks);
+        }
+      }
+
       const trackerName = projectName.endsWith("_Tracker") ? projectName : projectName + "_Tracker";
 
       const [allOperationalTasks, planTasksDirect, planTasksTracker, planOverridesDirect, planOverridesTracker] = await Promise.all([
@@ -11282,6 +11301,15 @@ export async function registerRoutes(
   app.get("/api/mytool/tasks", requireAuth, requireAdmin, async (req, res) => {
     try {
       const userId = (req.user as any).id;
+
+      const useCanonical = await isWorkItemsEnabled();
+      if (useCanonical) {
+        const canonicalTasks = await getWorkItemsAsMytoolTasks(userId);
+        if (canonicalTasks.length > 0) {
+          return res.json(canonicalTasks);
+        }
+      }
+
       const { date } = req.query;
       let tasks;
       if (date && typeof date === 'string') {

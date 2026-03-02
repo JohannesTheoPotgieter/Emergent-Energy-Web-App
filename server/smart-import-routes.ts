@@ -33,6 +33,9 @@ import {
   workingPlanDependencyOverride,
   projectPlanDependency,
   auditEvents,
+  workItems,
+  workItemAssignments,
+  workItemDependencies,
 } from "@shared/schema";
 import { recordImportChange, recordSystemEvent } from "./lib/audit/diff-engine";
 import { eq, desc, and, or, sql, inArray, isNull } from "drizzle-orm";
@@ -931,6 +934,26 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
       }
       await tx.delete(projectPlanDependency).where(eq(projectPlanDependency.projectName, projectName));
       await tx.delete(projectPlan).where(eq(projectPlan.projectName, projectName));
+
+      const existingWorkItemsForImport = await tx
+        .select({ id: workItems.id })
+        .from(workItems)
+        .where(and(
+          eq(workItems.source, "SMART_IMPORT"),
+          eq(workItems.workstream, "PM"),
+          projectId ? eq(workItems.projectId, projectId) : sql`${workItems.externalRef} LIKE ${projectName + '::PLAN::%'}`,
+        ));
+      if (existingWorkItemsForImport.length > 0) {
+        const wiIds = existingWorkItemsForImport.map((w: { id: number }) => w.id);
+        await tx.delete(workItemDependencies).where(
+          or(
+            inArray(workItemDependencies.predecessorId, wiIds),
+            inArray(workItemDependencies.successorId, wiIds),
+          )
+        );
+        await tx.delete(workItemAssignments).where(inArray(workItemAssignments.workItemId, wiIds));
+        await tx.delete(workItems).where(inArray(workItems.id, wiIds));
+      }
       await tx.delete(programExpense).where(
         and(
           eq(programExpense.projectName, projectName),
@@ -1048,6 +1071,87 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
           }
         }
         counts.planTasks = planValues.length;
+
+        const insertedNormTasks = await tx
+          .select({ id: normalizedPlanTasks.id, taskName: normalizedPlanTasks.taskName, taskNo: normalizedPlanTasks.taskNo })
+          .from(normalizedPlanTasks)
+          .where(eq(normalizedPlanTasks.importRunId, runId));
+        const normTaskIdByRow = new Map<number, number>();
+        const normTaskIdByName = new Map<string, number>();
+        for (const nt of insertedNormTasks) {
+          normTaskIdByName.set(nt.taskName, nt.id);
+        }
+
+        const workItemExternalRefToId = new Map<string, number>();
+        const workItemByTaskNo = new Map<string, number>();
+
+        for (let idx = 0; idx < planValues.length; idx++) {
+          const pv = planValues[idx] as any;
+          const wbsCode = pv.taskNo || null;
+          const externalRef = `${projectName}::PLAN::${wbsCode || idx}`;
+          const normTaskId = normTaskIdByName.get(pv.taskName) || null;
+
+          const [insertedWi] = await tx.insert(workItems).values({
+            clientId: null,
+            projectId: projectId || null,
+            workstream: "PM" as any,
+            type: pv.isMilestone ? "milestone" : "task",
+            source: "SMART_IMPORT" as any,
+            title: pv.taskName,
+            description: pv.comment || null,
+            status: pv.status || "Not Started",
+            priority: null,
+            startDate: pv.startDate || pv.actualStartDate || null,
+            endDate: pv.endDate || pv.actualEndDate || null,
+            duration: pv.durationDays || pv.actualDurationDays || null,
+            percentComplete: pv.pctComplete != null ? Number(pv.pctComplete) : 0,
+            wbsCode: wbsCode,
+            outlineNumber: wbsCode,
+            parentId: null,
+            ownerUserId: null,
+            isShared: false,
+            externalRef,
+            legacyTable: "normalized_plan_tasks",
+            legacyId: normTaskId,
+            createdBy: userId,
+          }).returning();
+
+          workItemExternalRefToId.set(externalRef, insertedWi.id);
+          if (wbsCode) {
+            workItemByTaskNo.set(wbsCode, insertedWi.id);
+          }
+          normTaskIdByRow.set(idx, insertedWi.id);
+        }
+
+        for (let idx = 0; idx < planValues.length; idx++) {
+          const pv = planValues[idx] as any;
+          if (pv.parentTaskNo && workItemByTaskNo.has(pv.parentTaskNo)) {
+            const parentWorkItemId = workItemByTaskNo.get(pv.parentTaskNo)!;
+            const childWorkItemId = normTaskIdByRow.get(idx);
+            if (childWorkItemId) {
+              await tx.update(workItems)
+                .set({ parentId: parentWorkItemId })
+                .where(eq(workItems.id, childWorkItemId));
+            }
+          }
+        }
+
+        if (userId) {
+          for (let idx = 0; idx < planValues.length; idx++) {
+            const pv = planValues[idx] as any;
+            if (pv.owner && pv.owner.trim()) {
+              const wiId = normTaskIdByRow.get(idx);
+              if (wiId && pv.assigneeUserId) {
+                await tx.insert(workItemAssignments).values({
+                  workItemId: wiId,
+                  userId: pv.assigneeUserId,
+                  role: "OWNER" as any,
+                  allocationPct: null,
+                });
+              }
+            }
+          }
+        }
       }
 
       if (norm.revenueLines && norm.revenueLines.length > 0) {
@@ -1476,6 +1580,27 @@ router.post("/api/smart-import/:runId/rollback", requireAuth, async (req: Reques
       await tx.delete(normalizedRevenueLines).where(eq(normalizedRevenueLines.importRunId, runId));
       await tx.delete(normalizedCostLines).where(eq(normalizedCostLines.importRunId, runId));
       await tx.delete(normalizedExecutionPhases).where(eq(normalizedExecutionPhases.importRunId, runId));
+
+      const projectName = run.projectName;
+      const rollbackWis = await tx
+        .select({ id: workItems.id })
+        .from(workItems)
+        .where(and(
+          eq(workItems.source, "SMART_IMPORT"),
+          eq(workItems.workstream, "PM"),
+          run.projectId ? eq(workItems.projectId, run.projectId) : sql`${workItems.externalRef} LIKE ${projectName + '::PLAN::%'}`,
+        ));
+      if (rollbackWis.length > 0) {
+        const wiIds = rollbackWis.map((w: any) => w.id);
+        await tx.delete(workItemDependencies).where(
+          or(
+            inArray(workItemDependencies.predecessorId, wiIds),
+            inArray(workItemDependencies.successorId, wiIds),
+          )
+        );
+        await tx.delete(workItemAssignments).where(inArray(workItemAssignments.workItemId, wiIds));
+        await tx.delete(workItems).where(inArray(workItems.id, wiIds));
+      }
 
       await tx
         .update(smartImportRuns)
