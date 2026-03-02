@@ -1810,7 +1810,11 @@ export const qcItemInstance = pgTable("qc_item_instance", {
   workingDays: integer("working_days"),
   allowedWorkingDays: integer("allowed_working_days"),
   qmStatus: text("qm_status").notNull().default("not_started"),
+  assigneeUserId: integer("assignee_user_id").references(() => users.id),
   lastUpdatedAt: timestamp("last_updated_at").notNull().defaultNow(),
+  scheduledDate: text("scheduled_date"),
+  scheduledStartTime: text("scheduled_start_time"),
+  scheduledEndTime: text("scheduled_end_time"),
 });
 export const insertQcItemInstanceSchema = createInsertSchema(qcItemInstance).omit({ id: true, lastUpdatedAt: true });
 export type InsertQcItemInstance = z.infer<typeof insertQcItemInstanceSchema>;
@@ -2344,9 +2348,14 @@ export const engineeringTasks = pgTable("engineering_tasks", {
   qcApprovedByRole: text("qc_approved_by_role"),
   opsApprovedAt: timestamp("ops_approved_at"),
   opsApprovedByRole: text("ops_approved_by_role"),
+  assigneeUserId: integer("assignee_user_id").references(() => users.id),
+  assigneeName: text("assignee_name"),
   softDeletedAt: timestamp("soft_deleted_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  scheduledDate: text("scheduled_date"),
+  scheduledStartTime: text("scheduled_start_time"),
+  scheduledEndTime: text("scheduled_end_time"),
 });
 export const insertEngineeringTaskSchema = createInsertSchema(engineeringTasks).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertEngineeringTask = z.infer<typeof insertEngineeringTaskSchema>;
@@ -3483,12 +3492,16 @@ export const normalizedPlanTasks = pgTable("normalized_plan_tasks", {
   actualEndDate: text("actual_end_date"),
   actualDurationDays: integer("actual_duration_days"),
   owner: text("owner"),
+  assigneeUserId: integer("assignee_user_id").references(() => users.id),
   status: text("status"),
   pctComplete: real("pct_complete"),
   comment: text("comment"),
   sourceSheet: text("source_sheet"),
   sourceRow: integer("source_row"),
   importRunId: integer("import_run_id").notNull().references(() => smartImportRuns.id),
+  scheduledDate: text("scheduled_date"),
+  scheduledStartTime: text("scheduled_start_time"),
+  scheduledEndTime: text("scheduled_end_time"),
 });
 export const insertNormalizedPlanTaskSchema = createInsertSchema(normalizedPlanTasks).omit({ id: true });
 export type InsertNormalizedPlanTask = z.infer<typeof insertNormalizedPlanTaskSchema>;

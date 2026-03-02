@@ -45,7 +45,7 @@ import {
 
 type SortField = "priority" | "dueDate" | "createdAt" | "status";
 type SortDirection = "asc" | "desc";
-type SourceFilter = "all" | "personal" | "operational" | "approvals" | "tr_register" | "deliverables";
+type SourceFilter = "all" | "personal" | "operational" | "plan" | "engineering_task" | "quality_task" | "approvals" | "tr_register" | "deliverables";
 
 const priorityOrder: Record<string, number> = { critical: 0, high: 1, urgent: 0, High: 1, Med: 2, Low: 3, normal: 2, low: 3 };
 const statusOrder: Record<string, number> = { in_progress: 0, "IN PROGRESS": 0, planned: 1, inbox: 2, "TO DO": 2, blocked: 3, BLOCKED: 3, waiting: 4, "ON HOLD": 4, done: 5, DONE: 5, COMPLETE: 5, cancelled: 6 };
@@ -118,6 +118,9 @@ const SOURCE_CONFIG: Record<SourceFilter, { label: string; icon: any; color: str
   all: { label: "All", icon: ListTodo, color: "text-foreground", bgColor: "bg-muted" },
   personal: { label: "Personal", icon: ClipboardList, color: "text-blue-600", bgColor: "bg-blue-50 border-blue-200" },
   operational: { label: "Project Tasks", icon: Building2, color: "text-emerald-600", bgColor: "bg-emerald-50 border-emerald-200" },
+  plan: { label: "Project Plan", icon: Calendar, color: "text-violet-600", bgColor: "bg-violet-50 border-violet-200" },
+  engineering_task: { label: "Engineering", icon: Wrench, color: "text-cyan-600", bgColor: "bg-cyan-50 border-cyan-200" },
+  quality_task: { label: "Quality", icon: ShieldCheck, color: "text-rose-600", bgColor: "bg-rose-50 border-rose-200" },
   approvals: { label: "Approvals", icon: ShieldCheck, color: "text-amber-600", bgColor: "bg-amber-50 border-amber-200" },
   tr_register: { label: "TR Register", icon: BookOpen, color: "text-purple-600", bgColor: "bg-purple-50 border-purple-200" },
   deliverables: { label: "Deliverables", icon: FileCheck, color: "text-rose-600", bgColor: "bg-rose-50 border-rose-200" },
@@ -315,6 +318,61 @@ export default function MyWorkTasksPage() {
         notes: null,
         deliverableType: d.deliverableType || d.deliverable_type || null,
         deliverableStatus: d.status || null,
+      });
+    }
+
+    for (const t of (allTaskData.planTasks || [])) {
+      result.push({
+        _key: `plan-${t.id}`,
+        _source: "plan",
+        _sourceLabel: "Project Plan",
+        _sourceColor: "bg-violet-50 border-violet-200 text-violet-700",
+        _rawId: t.id,
+        id: t.id,
+        title: t.title || "",
+        status: normalizeStatus(t.status),
+        priority: "normal",
+        projectName: t.projectName || null,
+        dueAt: t.endDate || null,
+        createdAt: null,
+        notes: t.phase ? `Phase: ${t.phase}` : null,
+        percentComplete: t.pctComplete ? Math.round(t.pctComplete * 100) : 0,
+      });
+    }
+
+    for (const t of (allTaskData.engineeringTasks || [])) {
+      result.push({
+        _key: `eng-${t.id}`,
+        _source: "engineering_task",
+        _sourceLabel: "Engineering",
+        _sourceColor: "bg-cyan-50 border-cyan-200 text-cyan-700",
+        _rawId: t.id,
+        id: t.id,
+        title: t.title || "",
+        status: normalizeStatus(t.status),
+        priority: "normal",
+        projectName: t.projectName || null,
+        dueAt: null,
+        createdAt: null,
+        notes: t.lifecyclePhase ? `Phase: ${t.lifecyclePhase}` : null,
+      });
+    }
+
+    for (const t of (allTaskData.qualityTasks || [])) {
+      result.push({
+        _key: `qc-${t.id}`,
+        _source: "quality_task",
+        _sourceLabel: "Quality",
+        _sourceColor: "bg-rose-50 border-rose-200 text-rose-700",
+        _rawId: t.id,
+        id: t.id,
+        title: t.title || "",
+        status: normalizeStatus(t.status),
+        priority: "normal",
+        projectName: t.projectName || null,
+        dueAt: t.endDate || null,
+        createdAt: null,
+        notes: null,
       });
     }
 

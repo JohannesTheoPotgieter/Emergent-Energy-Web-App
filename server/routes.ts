@@ -6,7 +6,7 @@ import fs from "fs";
 import path from "path";
 import { storage } from "./storage";
 import { parseTrackerFile, applyFontColors } from "./excelParser";
-import { insertBudgetSchema, programExpense, programInflows, projectInfo, projectPlan, normalizedCostLines, normalizedRevenueLines, normalizedPlanTasks, normalizedExecutionPhases, smartImportRuns, cosStatusOverrides, revenueTrackingOverrides, users, notifications, notificationThrottle, operationalTasks, mytoolTasks } from "@shared/schema";
+import { insertBudgetSchema, programExpense, programInflows, projectInfo, projectPlan, normalizedCostLines, normalizedRevenueLines, normalizedPlanTasks, normalizedExecutionPhases, smartImportRuns, cosStatusOverrides, revenueTrackingOverrides, users, notifications, notificationThrottle, operationalTasks, mytoolTasks, engineeringTasks, qcItemInstance, qcChecklist, qcTemplateItem } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, or, sql, isNull, asc, desc, inArray } from "drizzle-orm";
 import { runSmartImportPreview } from "./lib/import/index";
@@ -10482,9 +10482,9 @@ export async function registerRoutes(
     try {
       const userId = (req.user as any).id;
       const userName = (req.user as any).username;
-
       const displayName = (req.user as any).name || userName;
-      const [myToolTasksResult, opTasksForUser] = await Promise.all([
+
+      const [myToolTasksResult, opTasksForUser, planTasksForUser, engTasksForUser, qcItemsForUser] = await Promise.all([
         db.select().from(mytoolTasks).where(eq(mytoolTasks.ownerUserId, userId)),
         db.select().from(operationalTasks).where(
           or(
@@ -10493,6 +10493,26 @@ export async function registerRoutes(
             sql`${operationalTasks.assignees}::text[] @> ARRAY[${displayName}]::text[]`
           )
         ),
+        db.execute(sql`
+          SELECT * FROM normalized_plan_tasks
+          WHERE assignee_user_id = ${userId}
+             OR lower(owner) = lower(${userName})
+             OR lower(owner) = lower(${displayName})
+        `),
+        db.select().from(engineeringTasks).where(
+          and(
+            eq(engineeringTasks.assigneeUserId, userId),
+            isNull(engineeringTasks.softDeletedAt)
+          )
+        ),
+        db.execute(sql`
+          SELECT qi.*, qc.project_name, qc.project_id, qti.item_name
+          FROM qc_item_instance qi
+          JOIN qc_checklist qc ON qi.checklist_id = qc.id
+          JOIN qc_template_item qti ON qi.template_item_id = qti.id
+          WHERE qi.assignee_user_id = ${userId}
+            AND qi.is_applicable = true
+        `),
       ]);
 
       const seenOpIds = new Set<number>();
@@ -10532,6 +10552,52 @@ export async function registerRoutes(
           scheduledDate: t.scheduledDate,
           scheduledStartTime: t.scheduledStartTime,
           scheduledEndTime: t.scheduledEndTime,
+        })),
+        ...(planTasksForUser as any[]).map((t: any) => ({
+          id: t.id,
+          taskType: "plan" as const,
+          title: t.task_name,
+          status: t.status || "active",
+          priority: "Medium",
+          projectName: t.project_name,
+          plannedForDate: t.start_date,
+          dueDate: t.end_date,
+          startDate: t.start_date,
+          scheduledDate: t.scheduled_date,
+          scheduledStartTime: t.scheduled_start_time,
+          scheduledEndTime: t.scheduled_end_time,
+          pctComplete: t.pct_complete,
+          phase: t.phase,
+          owner: t.owner,
+        })),
+        ...engTasksForUser.map((t) => ({
+          id: t.id,
+          taskType: "engineering" as const,
+          title: t.title,
+          status: t.status,
+          priority: "Medium",
+          projectName: t.projectName,
+          plannedForDate: null,
+          dueDate: null,
+          startDate: null,
+          scheduledDate: t.scheduledDate,
+          scheduledStartTime: t.scheduledStartTime,
+          scheduledEndTime: t.scheduledEndTime,
+          lifecyclePhase: t.lifecyclePhaseTag,
+        })),
+        ...(qcItemsForUser as any[]).map((t: any) => ({
+          id: t.id,
+          taskType: "quality" as const,
+          title: t.item_name,
+          status: t.qm_status || "not_started",
+          priority: "Medium",
+          projectName: t.project_name,
+          plannedForDate: t.start_date,
+          dueDate: t.end_date,
+          startDate: t.start_date,
+          scheduledDate: t.scheduled_date,
+          scheduledStartTime: t.scheduled_start_time,
+          scheduledEndTime: t.scheduled_end_time,
         })),
       ];
 
@@ -10593,8 +10659,57 @@ export async function registerRoutes(
             updatedAt: new Date(),
           })
           .where(eq(operationalTasks.id, taskId));
+      } else if (taskType === "plan") {
+        const [task] = await db.select().from(normalizedPlanTasks).where(eq(normalizedPlanTasks.id, taskId));
+        if (!task) return res.status(404).json({ error: "Plan task not found" });
+
+        const isAssigned = task.assigneeUserId === userId
+          || (task.owner && task.owner.toLowerCase() === userName.toLowerCase());
+        if (!isAssigned) {
+          return res.status(403).json({ error: "You can only schedule tasks assigned to you" });
+        }
+
+        await db.update(normalizedPlanTasks)
+          .set({
+            scheduledDate: scheduledDate || null,
+            scheduledStartTime: scheduledStartTime || null,
+            scheduledEndTime: scheduledEndTime || null,
+          })
+          .where(eq(normalizedPlanTasks.id, taskId));
+      } else if (taskType === "engineering") {
+        const [task] = await db.select().from(engineeringTasks).where(eq(engineeringTasks.id, taskId));
+        if (!task) return res.status(404).json({ error: "Engineering task not found" });
+
+        if (task.assigneeUserId !== userId) {
+          return res.status(403).json({ error: "You can only schedule tasks assigned to you" });
+        }
+
+        await db.update(engineeringTasks)
+          .set({
+            scheduledDate: scheduledDate || null,
+            scheduledStartTime: scheduledStartTime || null,
+            scheduledEndTime: scheduledEndTime || null,
+            updatedAt: new Date(),
+          })
+          .where(eq(engineeringTasks.id, taskId));
+      } else if (taskType === "quality") {
+        const [task] = await db.select().from(qcItemInstance).where(eq(qcItemInstance.id, taskId));
+        if (!task) return res.status(404).json({ error: "Quality task not found" });
+
+        if (task.assigneeUserId !== userId) {
+          return res.status(403).json({ error: "You can only schedule tasks assigned to you" });
+        }
+
+        await db.update(qcItemInstance)
+          .set({
+            scheduledDate: scheduledDate || null,
+            scheduledStartTime: scheduledStartTime || null,
+            scheduledEndTime: scheduledEndTime || null,
+            lastUpdatedAt: new Date(),
+          })
+          .where(eq(qcItemInstance.id, taskId));
       } else {
-        return res.status(400).json({ error: "taskType must be 'mytool' or 'operational'" });
+        return res.status(400).json({ error: "taskType must be 'mytool', 'operational', 'plan', 'engineering', or 'quality'" });
       }
 
       logAuditFromReq(req, {
