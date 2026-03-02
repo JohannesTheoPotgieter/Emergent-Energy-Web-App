@@ -160,7 +160,7 @@ function getRedesignedNavGroups(): NavGroup[] {
       items: [
         { label: "My Tool", icon: Briefcase, path: "/my-tool" },
         { label: "Company Priorities", icon: Flag, path: "/company-priorities" },
-        { label: "Company Lifecycle Dashboard", icon: Layers, path: "/lifecycle-board" },
+        { label: "Company Lifecycle Board", icon: Layers, path: "/lifecycle-board" },
       ],
     },
     {
