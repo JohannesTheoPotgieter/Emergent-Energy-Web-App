@@ -984,8 +984,10 @@ function QuickActionsWidget({ role }: { role: string }) {
   );
 }
 
+const EXCLUDED_PHASES = ["Compliance Handover", "Commercial Close Out", "Closed"];
+
 function PortfolioHealthWidget({ projects }: { projects: ProjectSummary[] }) {
-  const activeProjects = projects.filter(p => p.is_active !== false);
+  const activeProjects = projects.filter(p => p.is_active !== false && !EXCLUDED_PHASES.includes(p.phase || ""));
   const totalProjects = activeProjects.length;
   const onTrack = activeProjects.filter(p => {
     const delta = (p.delta_vs_expected ?? 0);
@@ -1044,7 +1046,7 @@ function PortfolioHealthWidget({ projects }: { projects: ProjectSummary[] }) {
 }
 
 function FinancialHeadlineWidget({ projects }: { projects: ProjectSummary[] }) {
-  const activeProjects = projects.filter(p => p.is_active !== false);
+  const activeProjects = projects.filter(p => p.is_active !== false && !EXCLUDED_PHASES.includes(p.phase || ""));
   const totalRevenue = activeProjects.reduce((s, p) => s + (p.actual_revenue ?? 0), 0);
   const totalExpenses = activeProjects.reduce((s, p) => s + (p.actual_expenses ?? 0), 0);
   const grossProfit = totalRevenue - totalExpenses;
