@@ -448,7 +448,7 @@ export function detectSections(workbook: ExcelJS.Workbook): DetectionResult {
       const data = worksheetToArray(ws);
       if (data.length === 0) continue;
 
-      const headerResult = findHeaderRow(data, sectionKey, nameMatched ? 50 : 30);
+      const headerResult = findHeaderRow(data, sectionKey, nameMatched ? 100 : 30);
 
       if (headerResult) {
         const dataStartRow = headerResult.rowIndex + 1;
@@ -457,13 +457,24 @@ export function detectSections(workbook: ExcelJS.Workbook): DetectionResult {
 
         console.log(`[Detector] ${sectionKey}: sheet "${ws.name}" nameMatch=${nameMatched}, headerRow=${headerResult.rowIndex}, headers=${headerResult.headers.length}, confidence=${confidence.toFixed(2)}`);
 
-        const effectiveConfidence = nameMatched ? confidence + 0.2 : confidence;
+        const effectiveConfidence = nameMatched ? confidence + 0.5 : confidence;
 
-        if (!bestCandidate || effectiveConfidence > (bestCandidate.nameMatched ? bestCandidate.confidence + 0.2 : bestCandidate.confidence)) {
+        if (!bestCandidate || effectiveConfidence > (bestCandidate.nameMatched ? bestCandidate.confidence + 0.5 : bestCandidate.confidence)) {
           bestCandidate = { ws, headerResult, confidence, dataStartRow, dataEndRow, nameMatched };
         }
       } else if (nameMatched) {
-        console.log(`[Detector] ${sectionKey}: sheet "${ws.name}" nameMatch=true but no header row found (data rows: ${data.length})`);
+        console.log(`[Detector] ${sectionKey}: sheet "${ws.name}" nameMatch=true but no header row found (data rows: ${data.length}), trying relaxed scan`);
+        const relaxedResult = findHeaderRow(data, sectionKey, 200);
+        if (relaxedResult) {
+          const dataStartRow = relaxedResult.rowIndex + 1;
+          const dataEndRow = findDataEndRow(data, dataStartRow, data[0]?.length || 0);
+          const confidence = computeConfidence(sectionKey, relaxedResult.headers, true);
+          console.log(`[Detector] ${sectionKey}: sheet "${ws.name}" relaxed scan found headerRow=${relaxedResult.rowIndex}, confidence=${confidence.toFixed(2)}`);
+          const effectiveConfidence = confidence + 0.5;
+          if (!bestCandidate || effectiveConfidence > (bestCandidate.nameMatched ? bestCandidate.confidence + 0.5 : bestCandidate.confidence)) {
+            bestCandidate = { ws, headerResult: relaxedResult, confidence, dataStartRow, dataEndRow, nameMatched: true };
+          }
+        }
       }
     }
 
