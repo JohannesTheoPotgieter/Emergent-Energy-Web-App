@@ -281,8 +281,12 @@ export function registerMsSyncRoutes(app: Express) {
           break;
         }
         case "quality_task": {
-          if (!isPrivileged) {
-            return res.status(403).json({ error: "Only managers can reassign quality tasks" });
+          const [qcTask] = await db.execute(sql`SELECT assignee_user_id FROM qc_item_instance WHERE id = ${taskId}`).then((r: any) => Array.isArray(r) ? r : (r.rows || []));
+          if (!qcTask) return res.status(404).json({ error: "QC task not found" });
+          const isOwnQcTask = qcTask.assignee_user_id === currentUserId;
+          const isQualityManager = ["QUALITY_MANAGER", "quality_manager"].includes(currentRole);
+          if (!isPrivileged && !isOwnQcTask && !isQualityManager) {
+            return res.status(403).json({ error: "Only managers or the current assignee can reassign quality tasks" });
           }
           await db.execute(sql`UPDATE qc_item_instance SET assignee_user_id = ${assignUserId || null} WHERE id = ${taskId}`);
           break;
