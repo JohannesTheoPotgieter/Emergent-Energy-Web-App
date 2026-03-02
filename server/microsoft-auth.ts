@@ -11,6 +11,10 @@ const SCOPES = [
   "Calendars.ReadWrite",
   "Sites.Read.All",
   "Files.ReadWrite.All",
+  "Chat.Read",
+  "Team.ReadBasic.All",
+  "Channel.ReadBasic.All",
+  "ChannelMessage.Read.All",
   "offline_access",
 ];
 
