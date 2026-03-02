@@ -78,6 +78,7 @@ export const projectInfo = pgTable("project_info", {
   executionPhase: text("execution_phase"),
   excelTrackerLink: text("excel_tracker_link"),
   canonicalProjectId: integer("canonical_project_id"),
+  clientId: integer("client_id").references(() => clients.id),
   archivedStatus: text("archived_status").notNull().default("ACTIVE"),
   pmUserId: integer("pm_user_id"),
   pdUserId: integer("pd_user_id"),
@@ -3256,6 +3257,14 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
   },
   {
+    entity: 'work_items',
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE', 'ENGINEER'],
+    approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
+    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+  },
+  {
     entity: 'sharepoint_files',
     view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -4694,6 +4703,133 @@ export const projectLinks = pgTable("project_links", {
 export const insertProjectLinkSchema = createInsertSchema(projectLinks).omit({ id: true, linkedAt: true });
 export type InsertProjectLink = z.infer<typeof insertProjectLinkSchema>;
 export type ProjectLink = typeof projectLinks.$inferSelect;
+
+export const workItemWorkstreamEnum = pgEnum('work_item_workstream', ['PD', 'ENG', 'QUALITY', 'PM', 'FINANCE', 'PERSONAL', 'GOVERNANCE']);
+export const workItemSourceEnum = pgEnum('work_item_source', ['SMART_IMPORT', 'UI', 'INTEGRATION', 'SYSTEM']);
+export const workItemAssignmentRoleEnum = pgEnum('work_item_assignment_role', ['OWNER', 'ASSIGNEE', 'REVIEWER']);
+export const workItemDepTypeEnum = pgEnum('work_item_dep_type', ['FS', 'SS', 'FF', 'SF']);
+
+export const workItems = pgTable("work_items", {
+  id: serial("id").primaryKey(),
+  clientId: integer("client_id").references(() => clients.id),
+  projectId: integer("project_id").references(() => projectInfo.id),
+  workstream: workItemWorkstreamEnum("workstream").notNull(),
+  type: text("type"),
+  source: workItemSourceEnum("source").notNull().default("UI"),
+  title: text("title").notNull(),
+  description: text("description"),
+  status: text("status").notNull().default("Not Started"),
+  priority: text("priority"),
+  startDate: text("start_date"),
+  endDate: text("end_date"),
+  duration: integer("duration"),
+  percentComplete: real("percent_complete").default(0),
+  wbsCode: text("wbs_code"),
+  outlineNumber: text("outline_number"),
+  parentId: integer("parent_id"),
+  ownerUserId: integer("owner_user_id").references(() => users.id),
+  isShared: boolean("is_shared").notNull().default(false),
+  externalRef: text("external_ref").unique(),
+  legacyTable: text("legacy_table"),
+  legacyId: integer("legacy_id"),
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at"),
+});
+export const insertWorkItemSchema = createInsertSchema(workItems).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertWorkItem = z.infer<typeof insertWorkItemSchema>;
+export type WorkItem = typeof workItems.$inferSelect;
+
+export const workItemAssignments = pgTable("work_item_assignments", {
+  id: serial("id").primaryKey(),
+  workItemId: integer("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
+  userId: integer("user_id").notNull().references(() => users.id),
+  role: workItemAssignmentRoleEnum("role").notNull().default("ASSIGNEE"),
+  allocationPct: real("allocation_pct"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const insertWorkItemAssignmentSchema = createInsertSchema(workItemAssignments).omit({ id: true, createdAt: true });
+export type InsertWorkItemAssignment = z.infer<typeof insertWorkItemAssignmentSchema>;
+export type WorkItemAssignment = typeof workItemAssignments.$inferSelect;
+
+export const workItemDependencies = pgTable("work_item_dependencies", {
+  id: serial("id").primaryKey(),
+  predecessorId: integer("predecessor_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
+  successorId: integer("successor_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
+  depType: workItemDepTypeEnum("dep_type").notNull().default("FS"),
+  lagDays: integer("lag_days").default(0),
+});
+export const insertWorkItemDependencySchema = createInsertSchema(workItemDependencies).omit({ id: true });
+export type InsertWorkItemDependency = z.infer<typeof insertWorkItemDependencySchema>;
+export type WorkItemDependency = typeof workItemDependencies.$inferSelect;
+
+export const workItemComments = pgTable("work_item_comments", {
+  id: serial("id").primaryKey(),
+  workItemId: integer("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
+  userId: integer("user_id").notNull().references(() => users.id),
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const insertWorkItemCommentSchema = createInsertSchema(workItemComments).omit({ id: true, createdAt: true });
+export type InsertWorkItemComment = z.infer<typeof insertWorkItemCommentSchema>;
+export type WorkItemComment = typeof workItemComments.$inferSelect;
+
+export const workItemAttachments = pgTable("work_item_attachments", {
+  id: serial("id").primaryKey(),
+  workItemId: integer("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
+  fileName: text("file_name").notNull(),
+  fileUrl: text("file_url").notNull(),
+  uploadedBy: integer("uploaded_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const insertWorkItemAttachmentSchema = createInsertSchema(workItemAttachments).omit({ id: true, createdAt: true });
+export type InsertWorkItemAttachment = z.infer<typeof insertWorkItemAttachmentSchema>;
+export type WorkItemAttachment = typeof workItemAttachments.$inferSelect;
+
+export const workItemStatusHistory = pgTable("work_item_status_history", {
+  id: serial("id").primaryKey(),
+  workItemId: integer("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
+  oldStatus: text("old_status"),
+  newStatus: text("new_status").notNull(),
+  changedBy: integer("changed_by").references(() => users.id),
+  changedAt: timestamp("changed_at").notNull().defaultNow(),
+  reason: text("reason"),
+});
+export const insertWorkItemStatusHistorySchema = createInsertSchema(workItemStatusHistory).omit({ id: true, changedAt: true });
+export type InsertWorkItemStatusHistory = z.infer<typeof insertWorkItemStatusHistorySchema>;
+export type WorkItemStatusHistory = typeof workItemStatusHistory.$inferSelect;
+
+export const projectClientHistory = pgTable("project_client_history", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  oldClientId: integer("old_client_id").references(() => clients.id),
+  newClientId: integer("new_client_id").references(() => clients.id),
+  movedByUserId: integer("moved_by_user_id").notNull().references(() => users.id),
+  movedAt: timestamp("moved_at").notNull().defaultNow(),
+  reason: text("reason"),
+});
+export const insertProjectClientHistorySchema = createInsertSchema(projectClientHistory).omit({ id: true, movedAt: true });
+export type InsertProjectClientHistory = z.infer<typeof insertProjectClientHistorySchema>;
+export type ProjectClientHistory = typeof projectClientHistory.$inferSelect;
+
+export const importFieldMappings = pgTable("import_field_mappings", {
+  id: serial("id").primaryKey(),
+  importProfile: text("import_profile").notNull(),
+  sheetName: text("sheet_name"),
+  excelColumnHeader: text("excel_column_header").notNull(),
+  targetTable: text("target_table").notNull(),
+  targetField: text("target_field").notNull(),
+  transform: text("transform"),
+  required: boolean("required").notNull().default(false),
+  defaultValue: text("default_value"),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertImportFieldMappingSchema = createInsertSchema(importFieldMappings).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertImportFieldMapping = z.infer<typeof insertImportFieldMappingSchema>;
+export type ImportFieldMapping = typeof importFieldMappings.$inferSelect;
 
 export const planEditNotifications = pgTable("plan_edit_notifications", {
   id: serial("id").primaryKey(),

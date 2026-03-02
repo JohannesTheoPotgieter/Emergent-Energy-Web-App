@@ -999,6 +999,16 @@ router.post("/api/admin/ms-integration/browse-drive", requireAuth, requireAdmin,
   }
 });
 
+router.get("/api/admin/migration-verify", requireAuth, requireAdmin, async (_req: Request, res: Response) => {
+  try {
+    const { runMigrationVerification } = await import("../migration-verify");
+    const report = await runMigrationVerification();
+    res.json(report);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export function registerAdminRoutes(app: Express) {
   app.use(router);
 }

@@ -23,6 +23,7 @@ import { applyTemplate } from "./template-routes";
 import { requirePermission } from "./permission-middleware";
 import { sendExcelSyncNotification } from "./excel-sync-notifications";
 import { logAuditFromReq } from "./audit-logger";
+import { isWorkItemsEnabled, getWorkItemsAsEngineeringTasks } from "./work-items-adapter";
 
 const approvalUploadsDir = path.join(process.cwd(), "uploads", "approvals");
 if (!fs.existsSync(approvalUploadsDir)) fs.mkdirSync(approvalUploadsDir, { recursive: true });
@@ -245,6 +246,15 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.get("/api/eng/tasks", requireAuth, async (req, res) => {
     try {
+      const useCanonical = await isWorkItemsEnabled();
+      if (useCanonical) {
+        const ownerUid = req.query.ownerUserId ? parseInt(req.query.ownerUserId as string) : undefined;
+        const canonicalTasks = await getWorkItemsAsEngineeringTasks(ownerUid);
+        if (canonicalTasks.length > 0) {
+          return res.json(canonicalTasks);
+        }
+      }
+
       const { projectName, status, workstream, phase, ownerUserId } = req.query;
       let query = db.select().from(operationalTasks);
       const conditions: any[] = [];
