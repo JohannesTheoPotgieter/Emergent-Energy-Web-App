@@ -93,6 +93,30 @@ const formatKeyDate = (d: string | null): string => {
   }
 };
 
+const MILESTONE_GROUP_COLORS = [
+  { bg: "bg-blue-200", border: "border-blue-300", fill: "bg-blue-500", light: "bg-blue-50/40" },
+  { bg: "bg-violet-200", border: "border-violet-300", fill: "bg-violet-500", light: "bg-violet-50/40" },
+  { bg: "bg-teal-200", border: "border-teal-300", fill: "bg-teal-500", light: "bg-teal-50/40" },
+  { bg: "bg-amber-200", border: "border-amber-300", fill: "bg-amber-500", light: "bg-amber-50/40" },
+  { bg: "bg-rose-200", border: "border-rose-300", fill: "bg-rose-500", light: "bg-rose-50/40" },
+  { bg: "bg-cyan-200", border: "border-cyan-300", fill: "bg-cyan-500", light: "bg-cyan-50/40" },
+  { bg: "bg-orange-200", border: "border-orange-300", fill: "bg-orange-500", light: "bg-orange-50/40" },
+  { bg: "bg-indigo-200", border: "border-indigo-300", fill: "bg-indigo-500", light: "bg-indigo-50/40" },
+  { bg: "bg-lime-200", border: "border-lime-300", fill: "bg-lime-500", light: "bg-lime-50/40" },
+  { bg: "bg-pink-200", border: "border-pink-300", fill: "bg-pink-500", light: "bg-pink-50/40" },
+];
+
+const getRootParentId = (task: any, taskMap: Map<number, any>): number => {
+  let current = task;
+  const seen = new Set<number>();
+  while (current?.parentTaskId && taskMap.has(current.parentTaskId)) {
+    if (seen.has(current.id)) return current.id;
+    seen.add(current.id);
+    current = taskMap.get(current.parentTaskId);
+  }
+  return current?.id ?? task.id;
+};
+
 const getTaskDepth = (task: any, taskMap: Map<number, any>): number => {
   let depth = 0;
   let current = task;
@@ -407,6 +431,27 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
       { weekStartsOn: 1 }
     );
   }, [ganttRange]);
+
+  const milestoneColorMap = useMemo(() => {
+    const colorMap = new Map<number, typeof MILESTONE_GROUP_COLORS[0]>();
+    const rootIds: number[] = [];
+    for (const t of tasks) {
+      const isMil = t.isVirtualMilestone || t.isMilestone;
+      const hasCh = t.isParent || t.childCount > 0;
+      if ((isMil || hasCh) && !t.parentTaskId) {
+        rootIds.push(t.id);
+      }
+    }
+    rootIds.forEach((id, idx) => {
+      colorMap.set(id, MILESTONE_GROUP_COLORS[idx % MILESTONE_GROUP_COLORS.length]);
+    });
+    return colorMap;
+  }, [tasks]);
+
+  const getGroupColor = useCallback((task: any): typeof MILESTONE_GROUP_COLORS[0] | null => {
+    const rootId = getRootParentId(task, taskMap);
+    return milestoneColorMap.get(rootId) || null;
+  }, [taskMap, milestoneColorMap]);
 
   const dayWidth = zoomLevel === "week" ? 28 : 8;
   const totalDays = differenceInDays(ganttRange.end, ganttRange.start);
@@ -1075,24 +1120,25 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                 const isMilestone = task.isVirtualMilestone || task.isMilestone;
                 const expPct = task.computedExpectedPct ?? task.expectedPercentComplete ?? null;
                 const isLate = expPct !== null && pct < expPct && pct < 100;
+                const groupColor = getGroupColor(task);
+                const defaultColor = { bg: "bg-slate-200", border: "border-slate-300", fill: "bg-slate-400", light: "" };
+                const gc = groupColor || defaultColor;
 
                 return (
                   <div
                     key={task.id}
-                    className={`relative border-b ${isMilestone ? "bg-amber-50/40" : ""}`}
+                    className={`relative border-b ${isMilestone && groupColor ? groupColor.light : isMilestone ? "bg-amber-50/40" : ""}`}
                     style={{ height: ROW_HEIGHT }}
                     data-testid={`gantt-row-${task.id}`}
                   >
                     {bar && (
                       <div
-                        className={`absolute top-1 rounded-sm overflow-hidden ${
+                        className={`absolute top-1 rounded-sm overflow-hidden border ${
                           isLate
-                            ? "bg-red-200 border border-red-300"
+                            ? "bg-red-200 border-red-300"
                             : pct >= 100
-                              ? "bg-emerald-200 border border-emerald-300"
-                              : isMilestone
-                                ? "bg-amber-200 border border-amber-300"
-                                : "bg-blue-200 border border-blue-300"
+                              ? "bg-emerald-200 border-emerald-300"
+                              : `${gc.bg} ${gc.border}`
                         }`}
                         style={{
                           left: bar.left,
@@ -1108,9 +1154,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                               ? "bg-red-500"
                               : pct >= 100
                                 ? "bg-emerald-500"
-                                : isMilestone
-                                  ? "bg-amber-500"
-                                  : "bg-blue-500"
+                                : gc.fill
                           }`}
                           style={{ width: `${Math.min(pct, 100)}%` }}
                         />
@@ -1128,7 +1172,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                         className="absolute top-2"
                         style={{ left: todayOffset }}
                       >
-                        <div className="w-3 h-3 bg-amber-500 rotate-45" />
+                        <div className={`w-3 h-3 rotate-45 ${gc.fill}`} />
                       </div>
                     )}
                   </div>
