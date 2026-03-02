@@ -63,7 +63,7 @@ export default function ExecutionBoard() {
   const loadData = useCallback(async () => {
     try {
       setError(null);
-      const token = localStorage.getItem("company_role_token");
+      const token = localStorage.getItem("auth_token");
       const headers: Record<string, string> = {};
       if (token) headers["Authorization"] = `Bearer ${token}`;
       const res = await fetch("/api/lifecycle-board/projects", { headers });
