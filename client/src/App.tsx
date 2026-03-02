@@ -64,6 +64,9 @@ import MsIntegrationSettingsPage from "@/pages/ms-integration-settings";
 import MsCallbackPage from "@/pages/ms-callback";
 import TeamsChatsPage from "@/pages/teams-chats";
 import CollaborationPage from "@/pages/collaboration";
+import CollabEmailPage from "@/pages/collab-email";
+import CollabTeamsPage from "@/pages/collab-teams";
+import CollabSharePointPage from "@/pages/collab-sharepoint";
 import FinancialLinkingPage from "@/pages/financial-linking";
 import PMOnTheGoHome from "@/pages/pm-on-the-go-home";
 import PMOnTheGoProject from "@/pages/pm-on-the-go-project";
@@ -77,8 +80,8 @@ import { format } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 
-const EPM_ALLOWED_PATHS = ["/", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/projects", "/feedback", "/settings/integrations", "/collaboration", "/notifications", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/meetings"];
-const PM_ALLOWED_PATHS = ["/", "/pm-dashboard", "/pm/on-the-go", "/projects", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/cashflow", "/cos", "/feedback", "/settings/integrations", "/collaboration", "/notifications", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/meetings"];
+const EPM_ALLOWED_PATHS = ["/", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/projects", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/collaboration/sharepoint", "/notifications", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/meetings"];
+const PM_ALLOWED_PATHS = ["/", "/pm-dashboard", "/pm/on-the-go", "/projects", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/cashflow", "/cos", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/collaboration/sharepoint", "/notifications", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/meetings"];
 
 function RoleGuard({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -105,7 +108,7 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
   }
 
   if (user?.role === "quality_manager") {
-    const qmAllowed = ["/", "/quality", "/projects", "/feedback", "/settings/integrations", "/collaboration", "/notifications", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/meetings"];
+    const qmAllowed = ["/", "/quality", "/projects", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/collaboration/sharepoint", "/notifications", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/meetings"];
     const allowed = qmAllowed.some(p => 
       p === location || (p === "/projects" && location.startsWith("/project/"))
     );
@@ -297,6 +300,9 @@ function ProtectedPages() {
         <Route path="/teams/chats" component={TeamsChatsPage} />
         <Route path="/admin/ms-mapping" component={MsIntegrationSettingsPage} />
         <Route path="/collaboration" component={CollaborationPage} />
+        <Route path="/collaboration/email" component={CollabEmailPage} />
+        <Route path="/collaboration/teams" component={CollabTeamsPage} />
+        <Route path="/collaboration/sharepoint" component={CollabSharePointPage} />
         <Route path="/pm/on-the-go" component={PMOnTheGoHome} />
         <Route path="/pm/on-the-go/project/:projectId" component={PMOnTheGoProject} />
         <Route path="/my-work" component={MyWorkHomePage} />
