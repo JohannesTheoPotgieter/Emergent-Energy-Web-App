@@ -37,7 +37,7 @@ Preferred communication style: Simple, everyday language.
 -   **Plan Change Tracker/Excel Sync Acknowledgment**: Notifies relevant managers about plan task data edits and project data changes, with notification deduplication.
 -   **Global Audit Logging**: Centralized `server/audit-logger.ts` for fire-and-forget audit logging of all write endpoints.
 -   **Roles & Permissions**: Enhanced admin page for managing granular entity permissions across 11 categories.
--   **Smart Import Enhancements**: Supports hierarchical plan task detection (e.g., WBS), milestone detection, and expanded plan synonyms. Detects re-creation of previously deleted projects.
+-   **Smart Import Enhancements**: Supports hierarchical plan task detection (e.g., WBS), milestone detection, and expanded plan synonyms. Detects re-creation of previously deleted projects. Bulk commit deletes of `project_plan`/`projectPlanDependency` guarded with `safeLegacyWrite`. Work_items cleanup catches both `::PLAN::` and `NPT::` external_ref formats. Bulk commit panel includes "Resolve All Warnings" button (calls `/allow-all` per run).
 -   **MS Object Sync**: Periodically syncs calendar, email, and Teams data from Microsoft Graph API into a local `ms_objects` table, with manual sync triggers. Teams sync uses per-user SSO token (stored in `ms_accounts.sso_access_token`) with Chat/Teams scopes; calendar/email sync uses the Replit Outlook connector token.
 -   **Email/Message to Task**: Enables creating project-linked operational tasks directly from Outlook emails or Teams messages.
 

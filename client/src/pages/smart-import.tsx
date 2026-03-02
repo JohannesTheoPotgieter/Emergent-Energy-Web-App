@@ -2496,6 +2496,33 @@ function BulkCommitPanel({ onBack, onSwitchToWizard }: {
     }
   };
 
+  const [resolvingAllWarnings, setResolvingAllWarnings] = useState(false);
+  const runsWithWarnings = pendingRuns.filter(r => r.warningCount > 0);
+
+  const handleResolveAllWarnings = async () => {
+    if (runsWithWarnings.length === 0) return;
+    setResolvingAllWarnings(true);
+    try {
+      let totalResolved = 0;
+      for (const run of runsWithWarnings) {
+        const res = await fetch(`/api/smart-import/${run.id}/allow-all`, {
+          method: "POST",
+          headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          totalResolved += data.allowed;
+        }
+      }
+      toast({ title: "Warnings Resolved", description: `${totalResolved} warning(s) resolved across ${runsWithWarnings.length} files` });
+      await loadPendingRuns();
+    } catch {
+      toast({ title: "Error", description: "Failed to resolve warnings", variant: "destructive" });
+    } finally {
+      setResolvingAllWarnings(false);
+    }
+  };
+
   const handleBulkCommit = async () => {
     if (committableRuns.length === 0) return;
     setCommitting(true);
@@ -2782,6 +2809,35 @@ function BulkCommitPanel({ onBack, onSwitchToWizard }: {
                   </p>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {runsWithWarnings.length > 0 && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3" data-testid="warnings-resolve-notice">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-blue-800">
+                {runsWithWarnings.length} file{runsWithWarnings.length > 1 ? "s have" : " has"} unresolved warnings
+              </p>
+              <p className="text-xs text-blue-600 mt-0.5">
+                Non-blocker warnings can be resolved in bulk before committing.
+              </p>
+              <div className="mt-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs border-blue-300 text-blue-700 hover:bg-blue-100 bg-white"
+                  disabled={resolvingAllWarnings}
+                  onClick={handleResolveAllWarnings}
+                  data-testid="btn-resolve-all-warnings-bulk"
+                >
+                  {resolvingAllWarnings ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <CheckCircle2 className="w-3 h-3 mr-1" />}
+                  Resolve All Warnings ({runsWithWarnings.length} files)
+                </Button>
+              </div>
             </div>
           </div>
         </div>
