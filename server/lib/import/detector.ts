@@ -33,6 +33,7 @@ export interface DetectionResult {
 
 function fuzzySheetMatch(sheetName: string, candidates: string[]): boolean {
   const norm = sheetName.toLowerCase().trim();
+  if (norm.includes("old") || norm.includes("backup") || norm.includes("archive") || norm.includes("copy of")) return false;
   for (const candidate of candidates) {
     const normCandidate = candidate.toLowerCase().trim();
     if (norm === normCandidate) return true;
