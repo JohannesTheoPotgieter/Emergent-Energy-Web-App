@@ -30,6 +30,7 @@ import BoardView from "@/components/BoardView";
 import CalendarView from "@/components/CalendarView";
 import TaskGridView from "@/components/TaskGridView";
 import KeyDatesPanel from "@/components/KeyDatesPanel";
+import UnifiedPlanTab from "@/components/tabs/UnifiedPlanTab";
 import { QualityTab } from "@/components/tabs/QualityTab";
 import { ProjectHistoryTab } from "@/components/tabs/ProjectHistoryTab";
 import { FinancialIntegrationPanel } from "@/components/FinancialIntegrationPanel";
@@ -1349,7 +1350,7 @@ export default function ProjectDetailPage() {
             {canViewTab.overview && (
             <>
               <Button size="sm" variant={activeSubTab === "task-grid" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("task-grid")} data-testid="subtab-task-grid">
-                <ListTodo className="h-3 w-3 mr-1" /> Tasks
+                <ListTodo className="h-3 w-3 mr-1" /> Project Plan
               </Button>
               <Button size="sm" variant={activeSubTab === "board" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("board")} data-testid="subtab-board">
                 <Columns className="h-3 w-3 mr-1" /> Board
@@ -1357,18 +1358,12 @@ export default function ProjectDetailPage() {
               <Button size="sm" variant={activeSubTab === "calendar" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("calendar")} data-testid="subtab-calendar">
                 <CalendarDays className="h-3 w-3 mr-1" /> Calendar
               </Button>
+              {canViewTab.plan && canViewSubTab.gantt && (
+              <Button size="sm" variant={activeSubTab === "gantt" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("gantt")} data-testid="subtab-gantt">
+                <FileText className="h-3 w-3 mr-1" /> CPM / Dependencies
+              </Button>
+              )}
             </>
-            )}
-            <div className="w-px h-5 bg-border self-center mx-1" />
-            {canViewTab.plan && canViewSubTab.gantt && (
-            <Button size="sm" variant={activeSubTab === "gantt" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("gantt")} data-testid="subtab-gantt">
-              <FileText className="h-3 w-3 mr-1" /> Gantt
-            </Button>
-            )}
-            {canViewTab.plan && canViewSubTab.keyDates && (
-            <Button size="sm" variant={activeSubTab === "key-dates" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("key-dates")} data-testid="subtab-key-dates">
-              <Calendar className="h-3 w-3 mr-1" /> Key Dates
-            </Button>
             )}
             <div className="w-px h-5 bg-border self-center mx-1" />
             {canViewTab.finance && canViewSubTab.revenue && (
@@ -1404,11 +1399,10 @@ export default function ProjectDetailPage() {
             )}
           </div>
 
-          {activeSubTab === "task-grid" && canViewTab.overview && <TaskGridView projectName={projectName} onTaskClick={handleTaskClick} />}
+          {activeSubTab === "task-grid" && canViewTab.overview && <UnifiedPlanTab projectName={projectName} onTaskClick={handleTaskClick} />}
           {activeSubTab === "board" && canViewTab.overview && <BoardView projectName={projectName} onTaskClick={handleTaskClick} />}
           {activeSubTab === "calendar" && canViewTab.overview && <CalendarView projectName={projectName} onTaskClick={handleTaskClick} />}
           {activeSubTab === "gantt" && canViewTab.plan && canViewSubTab.gantt && <ProjectPlanTab projectName={projectName} />}
-          {activeSubTab === "key-dates" && canViewTab.plan && canViewSubTab.keyDates && <KeyDatesPanel projectName={projectName} />}
           {activeSubTab === "revenue-tracking" && canViewTab.finance && canViewSubTab.revenue && <RevenueTrackingTab projectName={projectName} highlightId={highlightType === 'revenue' ? highlightId : null} />}
           {activeSubTab === "expenditure" && canViewTab.finance && canViewSubTab.expenditure && <ExpenditureEditableTab projectName={projectName} highlightId={highlightType === 'expense' ? highlightId : null} />}
           {activeSubTab === "monthly-realisation" && canViewTab.finance && canViewSubTab.cosTracker && <MonthlyRealisationTab projectName={projectName} />}
