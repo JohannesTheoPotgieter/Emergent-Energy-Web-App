@@ -8,6 +8,7 @@ import { insertBudgetSchema, OVERRIDE_CATEGORIES, cosStatusOverrides, financialE
 import { eq, inArray } from "drizzle-orm";
 import { classifyExpenseState } from "../lib/calculations/stateClassifier";
 import { recordOverride } from "../lib/audit/diff-engine";
+import { sendExcelSyncNotification } from "../excel-sync-notifications";
 
 const FINANCIAL_APPROVER_ROLES = ["COO_ADMIN", "CEO_ADMIN", "admin", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER"];
 
@@ -1600,6 +1601,14 @@ router.post("/api/cashflow/planning-overrides", requireAuth, requireAdmin, async
       console.warn("[audit] Planning override audit failed (non-blocking):", auditErr.message);
     }
 
+    sendExcelSyncNotification({
+      projectName: req.body?.projectName || "Unknown",
+      changedByUserId: (req as any).user?.id,
+      changeType: "cashflow_override",
+      changeDescription: "Cashflow planning override applied",
+      details: req.body,
+    });
+
     res.json({ message: "Planning overrides saved", count: saved.length, overrides: saved });
   } catch (error) {
     res.status(500).json({
@@ -1691,6 +1700,14 @@ router.post("/api/revenue-tracking/overrides", requireAuth, requireAdminOrFinanc
     } catch (auditErr: any) {
       console.warn("[audit] Revenue override audit failed:", auditErr.message);
     }
+
+    sendExcelSyncNotification({
+      projectName: overrides[0]?.projectName || "Unknown",
+      changedByUserId: (req as any).user?.id,
+      changeType: "revenue_override",
+      changeDescription: "Revenue tracking override applied",
+      details: req.body,
+    });
 
     res.json({ message: "Revenue tracking overrides saved", count: saved.length, overrides: saved });
   } catch (error) {
@@ -2033,12 +2050,20 @@ router.post("/api/revenue-tab/:projectName/date-override", requireAuth, requireA
     if (link) {
       const updated = await storage.upsertMilestoneTaskLink(projectName, milestoneRowNumber, link.taskId);
       await storage.updateMilestoneDateOverride(projectName, milestoneRowNumber, dateOverride, reason || null);
-      res.json({ success: true });
     } else {
       await storage.upsertMilestoneTaskLink(projectName, milestoneRowNumber, 0);
       await storage.updateMilestoneDateOverride(projectName, milestoneRowNumber, dateOverride, reason || null);
-      res.json({ success: true });
     }
+
+    sendExcelSyncNotification({
+      projectName: decodeURIComponent(req.params.projectName),
+      changedByUserId: (req as any).user?.id,
+      changeType: "revenue_date_override",
+      changeDescription: "Revenue date override applied",
+      details: req.body,
+    });
+
+    res.json({ success: true });
   } catch (error) {
     console.error("Date override error:", error);
     res.status(500).json({ error: "Failed to save date override" });
@@ -2188,6 +2213,14 @@ router.post("/api/expenditure/overrides", requireAuth, requireAdminOrFinancialEd
       console.warn("[audit] Expenditure override audit failed:", auditErr.message);
     }
 
+    sendExcelSyncNotification({
+      projectName: projectNames[0] || "Unknown",
+      changedByUserId: (req as any).user?.id,
+      changeType: "expenditure_override",
+      changeDescription: "Expenditure override applied",
+      details: req.body,
+    });
+
     res.json({ message: "Expenditure overrides saved and applied", count: saved.length, overrides: saved });
   } catch (error) {
     console.error("Failed to save expenditure overrides:", error);
@@ -2246,6 +2279,15 @@ router.post("/api/expense-task-links/:projectName/:expenseId/date-override", req
   try {
     const { dateOverride, reason } = req.body;
     await storage.updateExpenseTaskLinkDateOverride(req.params.projectName, parseInt(req.params.expenseId), dateOverride, reason);
+
+    sendExcelSyncNotification({
+      projectName: decodeURIComponent(req.params.projectName),
+      changedByUserId: (req as any).user?.id,
+      changeType: "expense_date_override",
+      changeDescription: "Expense task link date override applied",
+      details: req.body,
+    });
+
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: "Failed to save date override" });
@@ -2275,6 +2317,15 @@ router.post("/api/expenses/add-line", requireAuth, requireAdmin, async (req, res
       expensePaymentDate: expensePaymentDate || null,
       lineStatus: 'Planned',
     });
+
+    sendExcelSyncNotification({
+      projectName: projectName || "Unknown",
+      changedByUserId: (req as any).user?.id,
+      changeType: "expense_line_added",
+      changeDescription: "Manual expense line added",
+      details: req.body,
+    });
+
     res.json(newExpense);
   } catch (error) {
     console.error("Add expense line error:", error);
@@ -2335,6 +2386,15 @@ router.post("/api/expenses/insert-task-as-line", requireAuth, requireAdmin, asyn
       lineStatus: 'Planned',
     });
     await storage.upsertExpenseTaskLink(projectName, newExpense.id, taskId, (req.user as any)?.id);
+
+    sendExcelSyncNotification({
+      projectName: projectName || "Unknown",
+      changedByUserId: (req as any).user?.id,
+      changeType: "task_to_expense_line",
+      changeDescription: "Plan task inserted as expense line",
+      details: req.body,
+    });
+
     res.json(newExpense);
   } catch (error) {
     console.error("Insert task as line error:", error);
@@ -2497,6 +2557,14 @@ router.post("/api/finance/revenue/overrides", requireAuth, requireAdmin, require
       }
     } catch (auditErr: any) { console.warn("[audit] Finance revenue override audit failed:", auditErr.message); }
 
+    sendExcelSyncNotification({
+      projectName: overrides[0]?.projectName || "Unknown",
+      changedByUserId: (req as any).user?.id,
+      changeType: "finance_revenue_override",
+      changeDescription: "Finance revenue override applied",
+      details: req.body,
+    });
+
     res.json({ message: "Finance revenue overrides saved", count: saved.length, overrides: saved });
   } catch (error) {
     res.status(500).json({ error: "Failed to save finance revenue overrides", message: error instanceof Error ? error.message : "Failed to save finance revenue overrides" });
@@ -2558,6 +2626,14 @@ router.post("/api/finance/cos/overrides", requireAuth, requireAdmin, requirePerm
         });
       }
     } catch (auditErr: any) { console.warn("[audit] Finance COS override audit failed:", auditErr.message); }
+
+    sendExcelSyncNotification({
+      projectName: overrides[0]?.projectName || "Unknown",
+      changedByUserId: (req as any).user?.id,
+      changeType: "finance_cos_override",
+      changeDescription: "Finance COS override applied",
+      details: req.body,
+    });
 
     res.json({ message: "Finance COS overrides saved", count: saved.length, overrides: saved });
   } catch (error) {
