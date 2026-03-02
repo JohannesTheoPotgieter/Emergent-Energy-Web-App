@@ -1,44 +1,36 @@
 {
   "notes": [
     {
-      "title": "V1.1 — Smarter, Faster, Financially Aware",
-      "description": "Version 1.1 brings financial year filtering, unified work management, inline task editing, and smarter Microsoft 365 integration. The dashboard now thinks in financial years, tasks are editable where you find them, and your Microsoft account links itself."
+      "title": "V1.2 — Roles, Patterns & Reliability",
+      "description": "Version 1.2 overhauls the Roles & Permissions admin page, fixes authentication across key pages, and ensures counterparty updates always keep invoice patterns in sync. A tighter, more reliable platform across the board."
     },
     {
-      "title": "Financial Year Filtering",
-      "description": "The Financial Headline on the home screen now shows numbers for the current financial year (Sep-Aug) only. Revenue, expenses, GP, margins, outstanding, and due amounts are all scoped to FY25/26 with a clear badge indicator."
+      "title": "Redesigned Roles & Permissions",
+      "description": "The admin Roles & Permissions page now mirrors the sidebar navigation structure exactly. All 10 sections are visible at once in a compact flat layout — no more expanding and collapsing. Inline preset buttons (All, View, None) let you set permissions for an entire category in one click."
     },
     {
-      "title": "Unified Work (My Work)",
-      "description": "My Tool and Collaboration Hub are merged into a single 'My Work' cockpit. Home, Calendar, Tasks, and Meetings in one place. Microsoft 365 data syncs every 15 minutes — emails, calendar events, and Teams activity all flow into the dashboard."
+      "title": "Invoice Pattern Auto-Sync",
+      "description": "Counterparty updates now always sync invoice patterns. Adding, changing, or removing aliases automatically creates or removes the corresponding pattern rules. The subcontractor dashboard stays accurate without manual pattern management."
     },
     {
-      "title": "Inline % Complete Editing",
-      "description": "Click any task's percentage in the project plan grid to edit it directly — no need to open the task detail. The detail drawer also now has both a slider and number input for precise control. Works for both baseline and operational tasks."
+      "title": "Financial Integration Card",
+      "description": "The Financial Integration Panel on the project detail page is now a single clickable card showing sync percentage, warning badges, and a link arrow. Click it to navigate directly to the financial linking page — no expand/collapse needed."
     },
     {
-      "title": "Overall Actual vs Expected % Tracking",
-      "description": "The project plan summary cards now show both 'Actual %' and 'Expected %' with a delta badge. When the project is behind schedule, the Expected % card highlights in amber. Both recalculate automatically when you update task percentages or dates."
+      "title": "Procurement Classification Fix",
+      "description": "The classify endpoint now writes both counterparty ID and name to matched expenditure lines. If only an ID exists, the name is resolved automatically from the counterparties table, keeping the subcontractor dashboard grouping accurate."
     },
     {
-      "title": "Auto-Link Microsoft Accounts",
-      "description": "Set a user's email address in the Microsoft mapping page and their account links automatically on first Microsoft sign-in. No more hunting for Azure AD Object IDs. The status shows 'Awaiting Login' until they sign in, then flips to 'Linked'."
+      "title": "Authentication Fix Across 8 Pages",
+      "description": "Fixed an authentication bug affecting the Invoice Pattern Dictionary, Smart Import, Subcontractor Dashboard, Execution Board, Lifecycle Board, Normalized View, Meetings, and PM Dashboard. All pages now correctly authenticate API requests."
     },
     {
-      "title": "Project Tagging & Email-to-Task",
-      "description": "Tag any Outlook email, Teams message, or SharePoint file to a project. Convert emails and messages into operational or personal tasks with one click. Everything stays linked and traceable."
+      "title": "Smart Import Hierarchy Support",
+      "description": "Smart Import now detects WBS-style task hierarchies (1, 1.1, 1.2) from project trackers. Parent tasks are auto-detected as milestones. The preview shows indentation, milestone markers, and subtask counts before committing."
     },
     {
-      "title": "Unified Calendar",
-      "description": "One calendar view combining Outlook events with all five task types — personal, operational, project plan, engineering, and quality. Color-coded and drag-and-drop ready."
-    },
-    {
-      "title": "Plan Task Inline Editing & COO Notifications",
-      "description": "Edit plan task fields directly in the grid — status, priority, dates, assignees, and percentage. Non-admin edits trigger a notification to the COO for review and confirmation."
-    },
-    {
-      "title": "Enhanced Permission Controls",
-      "description": "New permission entities for My Work, MS Sync, and Project Tagging added to the admin roles page. Fine-grained control over who can access unified work features and Microsoft integrations."
+      "title": "Deleted Project Re-creation Detection",
+      "description": "Smart Import detects when an imported project name matches a previously deleted project and shows a confirmation prompt. Bulk commits auto-pass the re-creation flag to skip the warning."
     }
   ]
 }
