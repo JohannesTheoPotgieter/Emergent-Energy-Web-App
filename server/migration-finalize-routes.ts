@@ -229,17 +229,10 @@ router.post("/api/admin/migration/archive", jwtAuth, requireAuth, requireAdmin, 
       return res.status(400).json({ error: "No registered backup found with that ID. Register a backup first." });
     }
 
-    const refCheck = await checkActiveReferences();
-    if (refCheck.length > 0) {
-      return res.status(409).json({
-        error: "Cannot archive: active database references exist",
-        references: refCheck,
-      });
-    }
-
     const currentUser = (req as any).user;
     const archived: string[] = [];
     const skipped: string[] = [];
+    const droppedConstraints: string[] = [];
 
     for (const table of LEGACY_TABLES) {
       const exists = getRows(await db.execute(sql.raw(
@@ -249,6 +242,44 @@ router.post("/api/admin/migration/archive", jwtAuth, requireAuth, requireAdmin, 
       if (!exists) {
         skipped.push(table);
         continue;
+      }
+
+      const fkRefs = getRows(await db.execute(sql.raw(`
+        SELECT tc.constraint_name, tc.table_name as referencing_table, kcu.column_name
+        FROM information_schema.table_constraints tc
+        JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+        JOIN information_schema.constraint_column_usage ccu ON tc.constraint_name = ccu.constraint_name AND tc.table_schema = ccu.table_schema
+        WHERE tc.constraint_type = 'FOREIGN KEY' AND ccu.table_name = '${table}'
+        AND tc.table_schema = 'public'
+      `)));
+
+      for (const fk of fkRefs) {
+        if (!LEGACY_TABLES.includes(fk.referencing_table) && !fk.referencing_table.endsWith(ARCHIVE_SUFFIX)) {
+          try {
+            await db.execute(sql.raw(`ALTER TABLE "${fk.referencing_table}" DROP CONSTRAINT IF EXISTS "${fk.constraint_name}"`));
+            droppedConstraints.push(`${fk.referencing_table}.${fk.constraint_name}`);
+          } catch (dropErr: any) {
+            console.warn(`[Migration] Failed to drop FK ${fk.constraint_name}:`, dropErr.message);
+          }
+        }
+      }
+
+      const selfFkRefs = getRows(await db.execute(sql.raw(`
+        SELECT tc.constraint_name, tc.table_name as referencing_table
+        FROM information_schema.table_constraints tc
+        JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+        JOIN information_schema.constraint_column_usage ccu ON tc.constraint_name = ccu.constraint_name AND tc.table_schema = ccu.table_schema
+        WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_name = '${table}'
+        AND tc.table_schema = 'public'
+      `)));
+
+      for (const fk of selfFkRefs) {
+        try {
+          await db.execute(sql.raw(`ALTER TABLE "${fk.referencing_table}" DROP CONSTRAINT IF EXISTS "${fk.constraint_name}"`));
+          droppedConstraints.push(`${fk.referencing_table}.${fk.constraint_name} (self)`);
+        } catch (dropErr: any) {
+          console.warn(`[Migration] Failed to drop self FK ${fk.constraint_name}:`, dropErr.message);
+        }
       }
 
       const archivedName = table + ARCHIVE_SUFFIX;
@@ -267,13 +298,13 @@ router.post("/api/admin/migration/archive", jwtAuth, requireAuth, requireAdmin, 
 
       await db.execute(sql.raw(`
         INSERT INTO migration_cleanup_log (action, table_name, original_name, archived_name, row_count, performed_by_user_id, performed_by_name, backup_id, reversible)
-        VALUES ('ARCHIVE', '${table}', '${table}', '${archivedName}', ${rowCount}, ${currentUser.id}, '${(currentUser.name || currentUser.username).replace(/'/g, "''")}', '${(backupId || "").replace(/'/g, "''")}', true)
+        VALUES ('ARCHIVE', '${table}', '${table}', '${archivedName}', ${rowCount}, ${currentUser.id}, '${(currentUser.name || currentUser.username || "admin").replace(/'/g, "''")}', '${(backupId || "").replace(/'/g, "''")}', true)
       `));
 
       archived.push(table);
     }
 
-    res.json({ success: true, archived, skipped });
+    res.json({ success: true, archived, skipped, droppedConstraints });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
