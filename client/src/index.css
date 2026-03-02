@@ -194,6 +194,16 @@
   }
 }
 
+thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+thead th {
+  background-color: hsl(var(--muted));
+}
+
 .data-table-row {
   @apply hover:bg-muted/50 transition-colors duration-150;
 }
