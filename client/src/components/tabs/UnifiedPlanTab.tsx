@@ -607,7 +607,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                         ${selectedIds.has(task.id) ? "bg-blue-50" : ""}
                       `}
                       style={{ height: ROW_HEIGHT }}
-                      onClick={() => onTaskClick?.(Math.abs(task.id))}
+                      onClick={() => onTaskClick?.(task.id)}
                       data-testid={`plan-row-${task.id}`}
                     >
                       <td className="px-1 text-center border-r" onClick={(e) => e.stopPropagation()}>
