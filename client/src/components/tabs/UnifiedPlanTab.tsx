@@ -33,6 +33,72 @@ import {
   eachWeekOfInterval, startOfWeek, endOfWeek, isSameDay,
 } from "date-fns";
 
+const getSAPublicHolidays = (year: number): Set<string> => {
+  const holidays = new Set<string>();
+  const add = (m: number, d: number) => holidays.add(`${year}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`);
+  add(1, 1);
+  add(3, 21);
+  add(4, 27);
+  add(5, 1);
+  add(6, 16);
+  add(8, 9);
+  add(9, 24);
+  add(12, 16);
+  add(12, 25);
+  add(12, 26);
+
+  const easterSunday = (y: number): Date => {
+    const a = y % 19, b = Math.floor(y / 100), c = y % 100;
+    const d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25);
+    const g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30;
+    const i = Math.floor(c / 4), k = c % 4;
+    const l = (32 + 2 * e + 2 * i - h - k) % 7;
+    const m = Math.floor((a + 11 * h + 22 * l) / 451);
+    const month = Math.floor((h + l - 7 * m + 114) / 31);
+    const day = ((h + l - 7 * m + 114) % 31) + 1;
+    return new Date(y, month - 1, day);
+  };
+  const easter = easterSunday(year);
+  const goodFriday = new Date(easter); goodFriday.setDate(easter.getDate() - 2);
+  const familyDay = new Date(easter); familyDay.setDate(easter.getDate() + 1);
+  const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  holidays.add(fmt(goodFriday));
+  holidays.add(fmt(familyDay));
+
+  const substituteIfSunday = (m: number, d: number) => {
+    const dt = new Date(year, m - 1, d);
+    if (dt.getDay() === 0) add(m, d + 1);
+  };
+  substituteIfSunday(1, 1); substituteIfSunday(3, 21); substituteIfSunday(4, 27);
+  substituteIfSunday(5, 1); substituteIfSunday(6, 16); substituteIfSunday(8, 9);
+  substituteIfSunday(9, 24); substituteIfSunday(12, 16); substituteIfSunday(12, 25); substituteIfSunday(12, 26);
+
+  return holidays;
+};
+
+const _holidayCache = new Map<number, Set<string>>();
+const getHolidaysForYear = (y: number) => {
+  if (!_holidayCache.has(y)) _holidayCache.set(y, getSAPublicHolidays(y));
+  return _holidayCache.get(y)!;
+};
+
+const countWorkingDays = (startDate: Date, endDate: Date): number => {
+  if (startDate >= endDate) return 0;
+  let count = 0;
+  const cur = new Date(startDate);
+  while (cur < endDate) {
+    const dow = cur.getDay();
+    if (dow !== 0 && dow !== 6) {
+      const key = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-${String(cur.getDate()).padStart(2, "0")}`;
+      if (!getHolidaysForYear(cur.getFullYear()).has(key)) {
+        count++;
+      }
+    }
+    cur.setDate(cur.getDate() + 1);
+  }
+  return Math.max(count, 1);
+};
+
 interface UnifiedPlanTabProps {
   projectName: string;
   onTaskClick?: (taskId: number) => void;
@@ -393,10 +459,10 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
       }
     }
     if (earliestStart && latestEnd) {
-      totalProjectDays = Math.round((latestEnd.getTime() - earliestStart.getTime()) / (1000 * 60 * 60 * 24));
+      totalProjectDays = countWorkingDays(earliestStart, latestEnd);
       const now = new Date();
       const clamped = now > latestEnd ? latestEnd : now;
-      elapsedDays = Math.max(0, Math.round((clamped.getTime() - earliestStart.getTime()) / (1000 * 60 * 60 * 24)));
+      elapsedDays = countWorkingDays(earliestStart, clamped);
     }
 
     return { total, done, avgPct, avgExpectedPct, totalProjectDays, elapsedDays };
@@ -992,7 +1058,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                             const sd = new Date(s);
                             const ed = new Date(e);
                             if (!isNaN(sd.getTime()) && !isNaN(ed.getTime())) {
-                              return Math.max(1, Math.round((ed.getTime() - sd.getTime()) / (1000 * 60 * 60 * 24)));
+                              return countWorkingDays(sd, ed);
                             }
                           }
                           return task.plannedDurationDays || task.durationDays || "—";
