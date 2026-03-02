@@ -81,7 +81,12 @@ export async function syncUserEmail(userId: number): Promise<SyncResult> {
     }
 
     const messages = await listMessages({ top: 50, folder: "inbox" });
-    const flagged = await listFlaggedMessages(20);
+    let flagged: any[] = [];
+    try {
+      flagged = await listFlaggedMessages(20);
+    } catch (err: any) {
+      console.log(`[MS Sync] Flagged messages fetch failed (non-fatal): ${err.message}`);
+    }
 
     const flaggedIds = new Set(flagged.map((f: any) => f.id));
 
