@@ -985,7 +985,18 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                         {formatDateCompact(task.dueDate || task.actualEndDate)}
                       </td>
                       <td className="px-1 text-center border-r text-[10px] tabular-nums" data-testid={`days-${task.id}`}>
-                        {task.plannedDurationDays || task.durationDays || "—"}
+                        {(() => {
+                          const s = task.startDate || task.actualStartDate;
+                          const e = task.dueDate || task.actualEndDate;
+                          if (s && e) {
+                            const sd = new Date(s);
+                            const ed = new Date(e);
+                            if (!isNaN(sd.getTime()) && !isNaN(ed.getTime())) {
+                              return Math.max(1, Math.round((ed.getTime() - sd.getTime()) / (1000 * 60 * 60 * 24)));
+                            }
+                          }
+                          return task.plannedDurationDays || task.durationDays || "—";
+                        })()}
                       </td>
                       <td className="px-1 border-r" onClick={(e) => e.stopPropagation()} data-testid={`pct-done-${task.id}`}>
                         <InlinePctEditor
