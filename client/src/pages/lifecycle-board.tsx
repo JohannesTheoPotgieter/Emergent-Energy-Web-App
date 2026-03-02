@@ -786,7 +786,7 @@ export default function LifecycleBoardPage() {
     <div className="space-y-4" data-testid="lifecycle-board-page">
       <div className="flex items-start justify-between flex-wrap gap-2">
         <div>
-          <h1 className="text-2xl font-bold" data-testid="text-lifecycle-title">Company Life Cycle</h1>
+          <h1 className="text-2xl font-bold" data-testid="text-lifecycle-title">Company Lifecycle Board</h1>
           <p className="text-muted-foreground text-sm">
             Drag projects between columns to change phase
             <span className="ml-2 text-xs">
@@ -849,13 +849,13 @@ export default function LifecycleBoardPage() {
                 onDragLeave={handleDragLeave}
                 onDrop={(e) => handleDrop(e, group.key)}
               >
-                <div className={`${group.headerBg} text-white rounded-t-lg px-2 py-2 flex items-center justify-between gap-1`}>
-                  <span className="font-semibold text-[11px] leading-tight truncate">{group.label}</span>
-                  <Badge variant="secondary" className="bg-white/20 text-white text-[10px] px-1 py-0 shrink-0" data-testid={`badge-count-${group.key}`}>
+                <div className={`${group.headerBg} text-white rounded-t-lg px-3 py-2.5 flex items-center justify-between gap-1`}>
+                  <span className="font-semibold text-xs leading-tight truncate">{group.label}</span>
+                  <Badge variant="secondary" className="bg-white/25 text-white text-[10px] px-1.5 py-0 shrink-0 font-bold" data-testid={`badge-count-${group.key}`}>
                     {items.length}
                   </Badge>
                 </div>
-                <div className="p-1 space-y-1 flex-1 max-h-[calc(100vh-240px)] overflow-y-auto">
+                <div className="p-1.5 space-y-1.5 flex-1 max-h-[calc(100vh-240px)] overflow-y-auto">
                   {items.length === 0 && (
                     <p className="text-[10px] text-muted-foreground text-center py-3">
                       {isOver ? "Drop here" : "No projects"}
@@ -868,33 +868,43 @@ export default function LifecycleBoardPage() {
                     return (
                       <Card
                         key={p.id ?? p.projectName}
-                        className={`shadow-sm hover:shadow-md transition-all ${isGone ? "opacity-60 cursor-not-allowed" : "cursor-grab active:cursor-grabbing"} ${draggedProject?.projectName === p.projectName ? "opacity-40" : ""}`}
+                        className={`shadow-sm hover:shadow-md transition-all border-l-[3px] ${
+                          p.projectPctComplete != null && p.projectPctComplete >= 0.9 ? "border-l-emerald-500" :
+                          p.projectPctComplete != null && p.projectPctComplete >= 0.5 ? "border-l-blue-500" :
+                          p.projectPctComplete != null && p.projectPctComplete >= 0.2 ? "border-l-amber-500" :
+                          "border-l-slate-300"
+                        } ${isGone ? "opacity-60 cursor-not-allowed" : "cursor-grab active:cursor-grabbing"} ${draggedProject?.projectName === p.projectName ? "opacity-40" : ""}`}
                         draggable={!isGone}
                         onDragStart={(e) => !isGone && handleDragStart(e, p)}
                         onDragEnd={handleDragEnd}
                         onClick={() => openProjectDialog(p)}
                         data-testid={`card-project-${p.id}`}
                       >
-                        <CardContent className="p-2 space-y-1">
-                          <div className="flex items-start justify-between gap-0.5">
-                            <div className="flex items-center gap-0.5 min-w-0">
-                              <GripVertical className="w-2.5 h-2.5 text-muted-foreground shrink-0" />
-                              <div className="font-medium text-[11px] leading-tight truncate" data-testid={`text-project-name-${p.id}`}>
+                        <CardContent className="p-2.5 space-y-1.5">
+                          <div className="flex items-start justify-between gap-1">
+                            <div className="flex items-start gap-1 min-w-0 flex-1">
+                              <GripVertical className="w-3 h-3 text-muted-foreground/50 shrink-0 mt-0.5" />
+                              <div className="font-semibold text-xs leading-snug" data-testid={`text-project-name-${p.id}`} title={cleanProjectName(p.projectName)}>
                                 {cleanProjectName(p.projectName)}
                               </div>
                             </div>
                             {sourceBadge(p.source)}
                           </div>
-                          <div className="flex flex-wrap items-center gap-1">
+                          <div className="flex flex-wrap items-center gap-1.5 pl-4">
                             {p.sizeKwp && parseFloat(p.sizeKwp) > 0 && (
-                              <span className="text-[10px] text-muted-foreground flex items-center gap-0.5" data-testid={`text-size-${p.id}`}>
-                                <Zap className="w-2.5 h-2.5" />
+                              <span className="text-[10px] text-muted-foreground font-medium flex items-center gap-0.5" data-testid={`text-size-${p.id}`}>
+                                <Zap className="w-3 h-3 text-amber-500" />
                                 {parseFloat(p.sizeKwp).toFixed(0)} kWp
+                              </span>
+                            )}
+                            {formatZAR(p.contractValue) && (
+                              <span className="text-[10px] text-muted-foreground font-medium" data-testid={`text-value-${p.id}`}>
+                                {formatZAR(p.contractValue)}
                               </span>
                             )}
                             {p.executionEnabled && (
                               <Badge className="bg-green-100 text-green-700 text-[9px] px-1 py-0 border-green-300" data-testid={`badge-execution-${p.id}`}>
-                                <ShieldCheck className="w-2.5 h-2.5 mr-0.5" />Execution
+                                <ShieldCheck className="w-2.5 h-2.5 mr-0.5" />Exec
                               </Badge>
                             )}
                             {!p.executionEnabled && p.executionGateStatus === "ELIGIBLE" && (
@@ -903,14 +913,9 @@ export default function LifecycleBoardPage() {
                               </Badge>
                             )}
                           </div>
-                          {formatZAR(p.contractValue) && (
-                            <div className="text-[10px] text-muted-foreground truncate" data-testid={`text-value-${p.id}`}>
-                              {formatZAR(p.contractValue)}
-                            </div>
-                          )}
                           {p.pm && (
-                            <div className="text-[10px] text-muted-foreground flex items-center gap-0.5 truncate" data-testid={`text-pm-${p.id}`}>
-                              <User className="w-2.5 h-2.5 shrink-0" />
+                            <div className="text-[11px] text-muted-foreground flex items-center gap-1 pl-4" data-testid={`text-pm-${p.id}`}>
+                              <User className="w-3 h-3 shrink-0 text-slate-400" />
                               <span className="truncate">{p.pm}</span>
                             </div>
                           )}
@@ -922,15 +927,15 @@ export default function LifecycleBoardPage() {
                             const hasAnyBar = (showPM && p.projectPctComplete != null) || (showEng && p.engTotal > 0) || (showQM && p.qmTotal > 0);
                             if (!hasAnyBar) return null;
                             return (
-                              <div className="space-y-0.5 mt-0.5">
+                              <div className="space-y-1 mt-1 pl-4">
                                 {showEng && pctBar("Eng", p.engDone, p.engTotal, "bg-purple-500")}
                                 {showQM && pctBar("QM", p.qmApproved, p.qmTotal, "bg-teal-500")}
                                 {showPM && p.projectPctComplete != null && (
                                   <div className="flex items-center gap-1.5 text-[10px]" data-testid={`pct-complete-${p.id}`}>
-                                    <span className="text-muted-foreground w-[28px] shrink-0">PM</span>
-                                    <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden min-w-[40px]">
+                                    <span className="text-muted-foreground w-[28px] shrink-0 font-medium">PM</span>
+                                    <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden min-w-[40px]">
                                       <div
-                                        className={`h-full rounded-full ${
+                                        className={`h-full rounded-full transition-all ${
                                           p.projectPctComplete >= 0.9 ? "bg-emerald-500" :
                                           p.projectPctComplete >= 0.5 ? "bg-blue-500" :
                                           p.projectPctComplete >= 0.2 ? "bg-amber-500" : "bg-slate-400"
@@ -938,12 +943,12 @@ export default function LifecycleBoardPage() {
                                         style={{ width: `${Math.min(Math.round(p.projectPctComplete * 100), 100)}%` }}
                                       />
                                     </div>
-                                    <span className="text-muted-foreground w-[28px] text-right">{Math.round(p.projectPctComplete * 100)}%</span>
+                                    <span className="text-muted-foreground w-[30px] text-right font-medium">{Math.round(p.projectPctComplete * 100)}%</span>
                                   </div>
                                 )}
                                 {p.engOverdue > 0 && (
-                                  <div className="flex items-center gap-1 text-[9px] text-red-600">
-                                    <AlertCircle className="w-2.5 h-2.5" />
+                                  <div className="flex items-center gap-1 text-[10px] text-red-600 font-medium">
+                                    <AlertCircle className="w-3 h-3" />
                                     {p.engOverdue} overdue
                                   </div>
                                 )}
