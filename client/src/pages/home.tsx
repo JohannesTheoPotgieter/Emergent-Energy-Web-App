@@ -1612,11 +1612,6 @@ export default function Home() {
 
   const { data: allProjects = [], isLoading: projectsLoading } = useQuery<ProjectSummary[]>({
     queryKey: ["/api/projects-summary"],
-    queryFn: async () => {
-      const res = await fetch("/api/projects-summary", { credentials: "include" });
-      if (!res.ok) return [];
-      return res.json();
-    },
     staleTime: 120000,
   });
 
