@@ -484,6 +484,12 @@ async function backfillPmUserIds() {
   const { registerPdRoutes } = await import("./pd-routes");
   registerPdRoutes(app);
 
+  const { registerMsSyncRoutes } = await import("./ms-sync-routes");
+  registerMsSyncRoutes(app);
+
+  const { startPeriodicSync } = await import("./ms-sync-service");
+  startPeriodicSync();
+
   await db.execute(sql.raw(`
     CREATE TABLE IF NOT EXISTS portfolios (
       id SERIAL PRIMARY KEY,

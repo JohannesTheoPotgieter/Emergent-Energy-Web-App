@@ -67,6 +67,9 @@ import CollaborationPage from "@/pages/collaboration";
 import FinancialLinkingPage from "@/pages/financial-linking";
 import PMOnTheGoHome from "@/pages/pm-on-the-go-home";
 import PMOnTheGoProject from "@/pages/pm-on-the-go-project";
+import MyWorkHomePage from "@/pages/my-work-home";
+import MyWorkTasksPage from "@/pages/my-work-tasks";
+import MyWorkCalendarPage from "@/pages/my-work-calendar";
 import { useAuth } from "@/hooks/use-auth";
 import { useProgramData } from "@/hooks/use-program-data";
 import { TrackerTable } from "@/components/dashboard/TrackerTable";
@@ -74,8 +77,8 @@ import { format } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 
-const EPM_ALLOWED_PATHS = ["/", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/projects", "/feedback", "/settings/integrations", "/collaboration", "/notifications", "/teams/chats"];
-const PM_ALLOWED_PATHS = ["/", "/pm-dashboard", "/pm/on-the-go", "/projects", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/cashflow", "/cos", "/feedback", "/settings/integrations", "/collaboration", "/notifications", "/teams/chats"];
+const EPM_ALLOWED_PATHS = ["/", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/projects", "/feedback", "/settings/integrations", "/collaboration", "/notifications", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/meetings"];
+const PM_ALLOWED_PATHS = ["/", "/pm-dashboard", "/pm/on-the-go", "/projects", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/cashflow", "/cos", "/feedback", "/settings/integrations", "/collaboration", "/notifications", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/meetings"];
 
 function RoleGuard({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -102,7 +105,7 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
   }
 
   if (user?.role === "quality_manager") {
-    const qmAllowed = ["/", "/quality", "/projects", "/feedback", "/settings/integrations", "/collaboration", "/notifications", "/teams/chats"];
+    const qmAllowed = ["/", "/quality", "/projects", "/feedback", "/settings/integrations", "/collaboration", "/notifications", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/meetings"];
     const allowed = qmAllowed.some(p => 
       p === location || (p === "/projects" && location.startsWith("/project/"))
     );
@@ -296,6 +299,10 @@ function ProtectedPages() {
         <Route path="/collaboration" component={CollaborationPage} />
         <Route path="/pm/on-the-go" component={PMOnTheGoHome} />
         <Route path="/pm/on-the-go/project/:projectId" component={PMOnTheGoProject} />
+        <Route path="/my-work" component={MyWorkHomePage} />
+        <Route path="/my-work/calendar" component={MyWorkCalendarPage} />
+        <Route path="/my-work/tasks" component={MyWorkTasksPage} />
+        <Route path="/my-work/meetings" component={MyToolMeetingsPage} />
         <Route path="/admin/eng-templates">{() => <Redirect to="/admin/phase-templates" />}</Route>
 
         <Route component={NotFound} />
