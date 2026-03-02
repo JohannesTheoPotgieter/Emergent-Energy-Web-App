@@ -179,6 +179,7 @@ function getRedesignedNavGroups(): NavGroup[] {
         { label: "On-The-Go", icon: Smartphone, path: "/pm/on-the-go" },
         { label: "TR Register", icon: ClipboardList, path: "/tr-register" },
         { label: "Smart Import", icon: FileSpreadsheet, path: "/smart-import" },
+        { label: "Excel Updates", icon: ClipboardCheck, path: "/excel-updates" },
         { label: "Portfolios", icon: FolderOpen, path: "/portfolios" },
         { label: "Weekly Reviews", icon: CalendarCheck, path: "/weekly-reviews" },
       ],
