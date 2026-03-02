@@ -1,28 +1,28 @@
 {
   "notes": [
     {
-      "title": "V1.3 — The One Where the Gantt Chart Got a Wardrobe Change",
-      "description": "Milestone groups now dress alike on the Gantt chart, the DAYS column learned to skip weekends and public holidays (like the rest of us wish we could), and Smart Import finally stops picking the wrong sheet. A visual and accuracy upgrade across the board."
+      "title": "V1.4 — The One Where We Stopped Fighting With Our Own Database",
+      "description": "Bulk import no longer trips over its own shoelaces. Legacy table ghosts can't crash the party anymore, warnings can be squashed in one click, and every dashboard now reads from the same single source of truth. Cleaner, faster, calmer."
     },
     {
-      "title": "Colour-Coded Milestone Groups",
-      "description": "Each milestone and its child tasks now share the same colour on the Gantt chart — blue, violet, teal, amber, and more. No more guessing which tasks belong together. Late tasks still show red (sorry), and completed ones stay green (well done)."
+      "title": "Smart Import: No More Duplicate Key Tantrums",
+      "description": "Bulk commit used to crash mid-flight if legacy tables were missing — like trying to sit in a chair someone already moved. Now those deletes are properly guarded, and old work items get cleaned up regardless of whether they were filed under 'NPT::' or '::PLAN::'. Import away without fear."
     },
     {
-      "title": "Working Days, Not Calendar Days",
-      "description": "The DAYS column and the 'Day X of Y' counter now count only working days — weekends and South African public holidays are excluded. Because nobody's pouring concrete on Heritage Day."
+      "title": "Resolve All Warnings Button",
+      "description": "Tired of clicking through 47 warnings one by one before you can commit? Same. The new 'Resolve All Warnings' button in the bulk commit panel clears every non-blocker warning across all your pending files in one satisfying click. You're welcome."
     },
     {
-      "title": "Gantt Default View: Month",
-      "description": "The Gantt chart now opens in month view instead of week view. Less scrolling, more big-picture thinking. You can still zoom into weeks if you enjoy the detail."
+      "title": "One Table To Rule Them All",
+      "description": "Every dashboard — Portfolio, My Work, PM On-The-Go, Planning, Gamification, Milestones, Quality — now reads from the canonical work_items table. No more 'but the numbers are different on that other screen' conversations. One table, one truth, zero arguments."
     },
     {
-      "title": "Smarter Sheet Detection for Smart Import",
-      "description": "Smart Import was occasionally picking 'Sheet1' over a sheet literally named 'Project Plan.' That's been fixed. Named sheets now get a proper priority boost, and the system searches deeper into the sheet to find headers. Mondi tracker, you're welcome."
+      "title": "Legacy Table Graceful Degradation",
+      "description": "If a legacy table has been archived or doesn't exist, the app no longer panics and throws errors at your face. It quietly moves on, like a mature adult. All project_plan and normalized_plan_tasks operations are wrapped in safety guards so the new database structure just works."
     },
     {
-      "title": "KPI Bar Explained",
-      "description": "The Actual % shows how much work is done. The Expected % shows how much should be done based on time elapsed. The gap between them tells you if you're ahead or behind. Green good, red bad. That's it. That's the feature."
+      "title": "Backfill: Harder, Better, Faster, Stronger",
+      "description": "The work_items backfill now handles each legacy source table independently. If one table is missing, the others still migrate just fine. Think of it as a relay team where one runner tripping doesn't disqualify the whole squad."
     }
   ]
 }
