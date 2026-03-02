@@ -80,6 +80,7 @@ export const projectInfo = pgTable("project_info", {
   canonicalProjectId: integer("canonical_project_id"),
   archivedStatus: text("archived_status").notNull().default("ACTIVE"),
   pmUserId: integer("pm_user_id"),
+  pdUserId: integer("pd_user_id"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
@@ -1106,6 +1107,7 @@ export const operationalTasks = pgTable("operational_tasks", {
   expectedPercentComplete: integer("expected_percent_complete"),
   comment: text("comment"),
   assignees: text("assignees").array(),
+  assigneeUserIds: integer("assignee_user_ids").array(),
   watchers: text("watchers").array(),
   tags: text("tags").array(),
   blockerReason: text("blocker_reason"),
@@ -3910,6 +3912,7 @@ export const trItems = pgTable("tr_items", {
   actionDescription: text("action_description").notNull(),
   ragStatus: trRagStatusEnum("rag_status").notNull().default("Green"),
   owners: text("owners").array().notNull().default([]),
+  ownerUserIds: integer("owner_user_ids").array(),
   support: text("support").array().notNull().default([]),
   dateRaised: timestamp("date_raised"),
   dueDate: timestamp("due_date"),

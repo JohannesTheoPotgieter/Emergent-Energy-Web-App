@@ -27,6 +27,7 @@ import {
   CheckCircle2, Clock, Circle, Ban, Loader2,
   Milestone, FolderPlus, Ungroup, X, ArrowUpDown, GripVertical, Hash, RefreshCw,
 } from "lucide-react";
+import UserAssignmentPicker from "@/components/UserAssignmentPicker";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -631,16 +632,16 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
       }
 
       case "assignees":
-        return isAdmin ? (
-          <Input
-            data-testid={`input-assignees-${task.id}`}
-            className="h-7 text-[11px] border-0 shadow-none bg-transparent text-slate-600 placeholder:text-slate-300"
-            defaultValue={task.assignees?.join(", ") || ""}
-            placeholder="Unassigned"
-            onBlur={e => handleInlineUpdate(task.id, "assignees", e.target.value.split(",").map((s: string) => s.trim()).filter(Boolean))}
+        return (
+          <UserAssignmentPicker
+            taskId={task.id > 0 ? task.id : -task.id}
+            taskSource={task.id > 0 ? "operational" : "plan"}
+            resolvedUsers={task.resolvedAssignees || null}
+            textNames={task.assignees || null}
+            mode="multi"
+            size="xs"
+            invalidateKeys={[`/api/operational-tasks/${projectName}`, "/api/my-work/all-tasks"]}
           />
-        ) : (
-          <span className="text-[11px] text-slate-600">{task.assignees?.join(", ") || "—"}</span>
         );
 
       case "plannedStart":

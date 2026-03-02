@@ -259,7 +259,14 @@ export function registerEngineeringRoutes(app: Express) {
         ? await query.where(and(...conditions)).orderBy(asc(operationalTasks.sortOrder))
         : await query.orderBy(asc(operationalTasks.sortOrder));
 
-      res.json(tasks);
+      const { buildUserMap } = await import("./user-resolver");
+      const userMap = await buildUserMap();
+      const enriched = tasks.map((t: any) => ({
+        ...t,
+        resolvedAssignees: (t.assigneeUserIds || []).map((uid: number) => userMap.get(uid)).filter(Boolean),
+        resolvedOwner: t.ownerUserId ? userMap.get(t.ownerUserId) || null : null,
+      }));
+      res.json(enriched);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -271,11 +278,17 @@ export function registerEngineeringRoutes(app: Express) {
       if (!TASK_STATUSES.includes(data.status)) {
         data.status = "TO DO";
       }
-      if (!data.ownerUserId && data.assignees?.length > 0) {
-        const assigneeName = data.assignees[0];
-        const [matchedUser] = await db.select({ id: users.id }).from(users)
-          .where(sql`LOWER(${users.name}) = LOWER(${assigneeName})`).limit(1);
-        if (matchedUser) data.ownerUserId = matchedUser.id;
+      if (data.assignees?.length > 0) {
+        const { resolveNameToUserId } = await import("./user-resolver");
+        const resolvedIds: number[] = [];
+        for (const name of data.assignees) {
+          const uid = await resolveNameToUserId(name);
+          if (uid) resolvedIds.push(uid);
+        }
+        data.assigneeUserIds = resolvedIds.length > 0 ? resolvedIds : null;
+        if (!data.ownerUserId && resolvedIds.length > 0) {
+          data.ownerUserId = resolvedIds[0];
+        }
       }
       const [task] = await db.insert(operationalTasks).values({
         ...data,

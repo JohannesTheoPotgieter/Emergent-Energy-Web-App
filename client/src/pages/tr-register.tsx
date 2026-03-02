@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, DragEvent } from "react";
+import UserAssignmentPicker from "@/components/UserAssignmentPicker";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -577,7 +578,18 @@ export default function TrRegisterPage() {
                           {item.ragStatus}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-xs" data-testid={`text-owners-${item.id}`}>{(item.owners || []).join(", ")}</TableCell>
+                      <TableCell className="text-xs" data-testid={`text-owners-${item.id}`}>
+                        <UserAssignmentPicker
+                          taskId={item.id}
+                          taskSource="tr_register"
+                          resolvedUsers={item.resolvedOwners || null}
+                          textNames={item.owners || null}
+                          mode="multi"
+                          size="xs"
+                          invalidateKeys={["/api/tr-register"]}
+                          showUnassignedLabel={false}
+                        />
+                      </TableCell>
                       <TableCell className="text-xs" data-testid={`text-support-${item.id}`}>{(item.support || []).join(", ")}</TableCell>
                       <TableCell className="text-xs" data-testid={`text-raised-${item.id}`}>{formatDate(item.dateRaised)}</TableCell>
                       <TableCell className={`text-xs ${isOverdue(item) ? "text-red-600 font-semibold" : ""}`} data-testid={`text-due-${item.id}`}>

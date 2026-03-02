@@ -17,6 +17,7 @@ import {
   convertToTask,
 } from "./project-linking-service";
 import { syncAllForUser, syncUserCalendar, syncUserEmail, syncUserTeams, getSyncStatus } from "./ms-sync-service";
+import { getAllUsers, resolveNameToUserId, buildUserMap, type ResolvedUser } from "./user-resolver";
 
 function jwtAuth(req: Request, _res: Response, next: NextFunction) {
   if ((req as any).user) return next();
@@ -164,6 +165,126 @@ export function registerMsSyncRoutes(app: Express) {
     }
   });
 
+  app.get("/api/users/assignable", jwtAuth, requireAuth, async (_req: Request, res: Response) => {
+    try {
+      const allUsers = await getAllUsers();
+      res.json(allUsers);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/tasks/reassign", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { taskId, taskSource, userId: assignUserId } = req.body;
+      if (!taskId || !taskSource) return res.status(400).json({ error: "taskId and taskSource required" });
+
+      const currentUser = (req as any).user;
+      const currentUserId = currentUser?.id;
+      const currentRole = currentUser?.role || "";
+      const ADMIN_ROLES = ["admin", "COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER", "ENGINEERING_MANAGER"];
+      const isPrivileged = ADMIN_ROLES.includes(currentRole);
+
+      const userMap = await buildUserMap();
+      const targetUser = assignUserId ? userMap.get(assignUserId) : null;
+
+      const resolveIdsFromNames = (names: string[]): number[] => {
+        const ids: number[] = [];
+        for (const name of names) {
+          const matched = [...userMap.values()].find(
+            u => u.name.toLowerCase() === name.toLowerCase()
+              || u.username.toLowerCase() === name.toLowerCase()
+              || u.name.split(" ")[0].toLowerCase() === name.toLowerCase()
+          );
+          if (matched) ids.push(matched.id);
+        }
+        return ids;
+      };
+
+      switch (taskSource) {
+        case "personal": {
+          const [task] = await db.select().from(mytoolTasks).where(eq(mytoolTasks.id, taskId));
+          if (!task) return res.status(404).json({ error: "Task not found" });
+          if (!isPrivileged && task.ownerUserId !== currentUserId) {
+            return res.status(403).json({ error: "You can only reassign your own personal tasks" });
+          }
+          if (assignUserId) {
+            await db.execute(sql`UPDATE mytool_tasks SET owner_user_id = ${assignUserId} WHERE id = ${taskId}`);
+          }
+          break;
+        }
+        case "operational": {
+          const [task] = await db.select().from(operationalTasks).where(eq(operationalTasks.id, taskId));
+          if (!task) return res.status(404).json({ error: "Task not found" });
+          if (!isPrivileged && task.ownerUserId !== currentUserId && !(task.assigneeUserIds || []).includes(currentUserId)) {
+            return res.status(403).json({ error: "You don't have permission to reassign this task" });
+          }
+          if (assignUserId && targetUser) {
+            const currentAssignees = task.assignees || [];
+            const currentIds = (task.assigneeUserIds && task.assigneeUserIds.length > 0) ? task.assigneeUserIds : resolveIdsFromNames(currentAssignees);
+            if (!currentIds.includes(assignUserId)) {
+              const newAssignees = [...currentAssignees, targetUser.name];
+              const newIds = [...currentIds, assignUserId];
+              await db.execute(sql`UPDATE operational_tasks SET assignees = ${newAssignees}, assignee_user_ids = ${newIds} WHERE id = ${taskId}`);
+            }
+          } else {
+            await db.execute(sql`UPDATE operational_tasks SET assignees = '{}', assignee_user_ids = '{}' WHERE id = ${taskId}`);
+          }
+          break;
+        }
+        case "plan": {
+          if (!isPrivileged) {
+            return res.status(403).json({ error: "Only managers can reassign plan tasks" });
+          }
+          await db.execute(sql`UPDATE normalized_plan_tasks SET assignee_user_id = ${assignUserId || null} WHERE id = ${taskId}`);
+          if (targetUser) {
+            await db.execute(sql`UPDATE normalized_plan_tasks SET owner = ${targetUser.name} WHERE id = ${taskId}`);
+          }
+          break;
+        }
+        case "engineering_task": {
+          if (!isPrivileged) {
+            return res.status(403).json({ error: "Only managers can reassign engineering tasks" });
+          }
+          await db.execute(sql`UPDATE engineering_tasks SET assignee_user_id = ${assignUserId || null}, assignee_name = ${targetUser?.name || null} WHERE id = ${taskId}`);
+          break;
+        }
+        case "quality_task": {
+          if (!isPrivileged) {
+            return res.status(403).json({ error: "Only managers can reassign quality tasks" });
+          }
+          await db.execute(sql`UPDATE qc_item_instance SET assignee_user_id = ${assignUserId || null} WHERE id = ${taskId}`);
+          break;
+        }
+        case "tr_register": {
+          if (!isPrivileged) {
+            return res.status(403).json({ error: "Only managers can reassign TR register items" });
+          }
+          if (assignUserId && targetUser) {
+            const [item] = await db.select().from(trItems).where(eq(trItems.id, taskId));
+            if (!item) return res.status(404).json({ error: "TR item not found" });
+            const currentOwners = item.owners || [];
+            const currentIds = (item.ownerUserIds && item.ownerUserIds.length > 0) ? item.ownerUserIds : resolveIdsFromNames(currentOwners);
+            if (!currentIds.includes(assignUserId)) {
+              const newOwners = [...currentOwners, targetUser.name];
+              const newIds = [...currentIds, assignUserId];
+              await db.execute(sql`UPDATE tr_items SET owners = ${newOwners}, owner_user_ids = ${newIds} WHERE id = ${taskId}`);
+            }
+          } else {
+            await db.execute(sql`UPDATE tr_items SET owners = '{}', owner_user_ids = '{}' WHERE id = ${taskId}`);
+          }
+          break;
+        }
+        default:
+          return res.status(400).json({ error: `Unknown task source: ${taskSource}` });
+      }
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("[Reassign] Error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get("/api/my-work/all-tasks", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
       const currentUser = (req as any).user;
@@ -176,6 +297,7 @@ export function registerMsSyncRoutes(app: Express) {
       const isAdmin = ADMIN_ROLES.includes(userRole);
 
       const username = currentUser?.username || "";
+      const userMap = await buildUserMap();
 
       const [personalTasks, opTasks, trRegisterItems, approvalData, deliverableItems, planTasks, engTasks, qualityTasks] = await Promise.all([
         db.select().from(mytoolTasks).where(eq(mytoolTasks.ownerUserId, userId)).orderBy(desc(mytoolTasks.createdAt)),
@@ -277,10 +399,31 @@ export function registerMsSyncRoutes(app: Express) {
         }
       }
 
+      const resolveUserIds = (ids: number[] | null): ResolvedUser[] => {
+        if (!ids || ids.length === 0) return [];
+        return ids.map(id => userMap.get(id)).filter(Boolean) as ResolvedUser[];
+      };
+
+      const resolveUserId = (id: number | null | undefined): ResolvedUser | null => {
+        if (!id) return null;
+        return userMap.get(id) || null;
+      };
+
       res.json({
-        personal: personalTasks,
-        operational: opTasks.map(t => ({ ...t, subtaskCount: subtaskCounts[t.id] || 0 })),
-        trRegister: trRegisterItems,
+        personal: personalTasks.map(t => ({
+          ...t,
+          resolvedOwner: resolveUserId(t.ownerUserId),
+        })),
+        operational: opTasks.map(t => ({
+          ...t,
+          subtaskCount: subtaskCounts[t.id] || 0,
+          resolvedAssignees: resolveUserIds(t.assigneeUserIds),
+          resolvedOwner: resolveUserId(t.ownerUserId),
+        })),
+        trRegister: trRegisterItems.map(t => ({
+          ...t,
+          resolvedOwners: resolveUserIds(t.ownerUserIds),
+        })),
         approvals: {
           engineering: approvalData.engApprovals.map(a => ({
             id: a.id,
@@ -310,6 +453,8 @@ export function registerMsSyncRoutes(app: Express) {
           startDate: t.start_date,
           endDate: t.end_date,
           pctComplete: t.pct_complete,
+          assigneeUserId: t.assignee_user_id,
+          resolvedAssignee: resolveUserId(t.assignee_user_id),
           _source: "plan",
         })),
         engineeringTasks: engTasks.map(t => ({
@@ -318,6 +463,9 @@ export function registerMsSyncRoutes(app: Express) {
           status: t.status,
           projectName: t.projectName,
           lifecyclePhase: t.lifecyclePhaseTag,
+          assigneeUserId: t.assigneeUserId,
+          assigneeName: t.assigneeName,
+          resolvedAssignee: resolveUserId(t.assigneeUserId),
           _source: "engineering_task",
         })),
         qualityTasks: (qualityTasks as any[]).map((t: any) => ({
@@ -327,8 +475,11 @@ export function registerMsSyncRoutes(app: Express) {
           projectName: t.project_name,
           startDate: t.start_date,
           endDate: t.end_date,
+          assigneeUserId: t.assignee_user_id,
+          resolvedAssignee: resolveUserId(t.assignee_user_id),
           _source: "quality_task",
         })),
+        userMap: Object.fromEntries(userMap),
       });
     } catch (err: any) {
       console.error("[MyWork AllTasks] Error:", err);
