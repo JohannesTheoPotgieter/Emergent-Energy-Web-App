@@ -962,7 +962,9 @@ router.post("/api/admin/ms-integration/test-sharepoint", requireAuth, requireAdm
       headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
     });
     if (!drivesRes.ok) {
-      return res.json({ success: true, siteId: siteData.id, siteName: siteData.displayName, drives: [] });
+      const errBody = await drivesRes.text().catch(() => "");
+      console.error(`[SharePoint] Drives fetch failed: ${drivesRes.status} ${errBody}`);
+      return res.json({ success: true, siteId: siteData.id, siteName: siteData.displayName, drives: [], drivesError: `Could not list drives: ${drivesRes.status}. Check that the app has Sites.Read.All permission in Azure AD.` });
     }
     const drivesData = await drivesRes.json();
     const drives = (drivesData.value || []).map((d: any) => ({

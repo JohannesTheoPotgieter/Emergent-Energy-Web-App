@@ -215,7 +215,13 @@ export default function MsIntegrationSettingsPage() {
     onSuccess: (result) => {
       setTestResult(result);
       if (result.success) {
-        toast({ title: "Site found", description: `${result.siteName} — ${result.drives?.length || 0} document libraries found` });
+        const driveCount = result.drives?.length || 0;
+        const desc = driveCount > 0
+          ? `${result.siteName} — ${driveCount} document libraries found`
+          : result.drivesError
+            ? `${result.siteName} — ${result.drivesError}`
+            : `${result.siteName} — 0 document libraries found. The app may need Sites.Read.All permission in Azure AD.`;
+        toast({ title: "Site found", description: desc, variant: driveCount > 0 ? "default" : undefined });
       } else {
         toast({ title: "Connection failed", description: result.error, variant: "destructive" });
       }

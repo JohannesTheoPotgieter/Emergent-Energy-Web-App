@@ -381,7 +381,7 @@ export function registerMsSyncRoutes(app: Express) {
           WHERE assignee_user_id = ${userId}
              OR lower(owner) = lower(${username})
              OR lower(owner) = lower(${userName})
-        `),
+        `).then((r: any) => Array.isArray(r) ? r : (r.rows || [])),
 
         db.select().from(engineeringTasks).where(
           and(
@@ -397,7 +397,7 @@ export function registerMsSyncRoutes(app: Express) {
           JOIN qc_template_item qti ON qi.template_item_id = qti.id
           WHERE qi.assignee_user_id = ${userId}
             AND qi.is_applicable = true
-        `),
+        `).then((r: any) => Array.isArray(r) ? r : (r.rows || [])),
       ]);
 
       const subtaskParentIds = opTasks.filter(t => t.parentTaskId === null || t.parentTaskId === undefined).map(t => t.id);
