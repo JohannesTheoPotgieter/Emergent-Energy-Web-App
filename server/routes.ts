@@ -6424,6 +6424,14 @@ export async function registerRoutes(
         console.warn("[audit] Manual expense add audit failed:", auditErr.message);
       }
 
+      sendExcelSyncNotification({
+        projectName,
+        changedByUserId: req.user?.id || 0,
+        changeType: "manual_expense_added",
+        changeDescription: `Manual expense line added: ${expenseLineItem || expenseCategory}.`,
+        details: { expenseCategory, expenseLineItem },
+      }).catch(() => {});
+
       logAuditFromReq(req, { entityType: "expense_line", action: "create", projectName, changesJson: { description: "Manual expense line added", expenseCategory, expenseLineItem } });
       res.json(newExpense);
     } catch (error) {
@@ -6464,6 +6472,14 @@ export async function registerRoutes(
       } catch (auditErr: any) {
         console.warn("[audit] Manual category add audit failed:", auditErr.message);
       }
+
+      sendExcelSyncNotification({
+        projectName,
+        changedByUserId: req.user?.id || 0,
+        changeType: "manual_category_added",
+        changeDescription: `Manual expense category added: ${categoryName}.`,
+        details: { categoryName },
+      }).catch(() => {});
 
       logAuditFromReq(req, { entityType: "expense_category", action: "create", projectName, changesJson: { description: "Manual expense category added", categoryName } });
       res.json(newCategory);
@@ -6521,6 +6537,14 @@ export async function registerRoutes(
       } catch (auditErr: any) {
         console.warn("[audit] Insert task as expense audit failed:", auditErr.message);
       }
+
+      sendExcelSyncNotification({
+        projectName,
+        changedByUserId: req.user?.id || 0,
+        changeType: "task_inserted_as_expense",
+        changeDescription: `Task "${taskTitle}" inserted as expense line in ${expenseCategory}.`,
+        details: { taskId, taskTitle, expenseCategory },
+      }).catch(() => {});
 
       logAuditFromReq(req, { entityType: "expense_line", action: "create", projectName, changesJson: { description: "Task inserted as expense line", taskId, taskTitle, expenseCategory } });
       res.json(newExpense);
@@ -6738,6 +6762,14 @@ export async function registerRoutes(
         });
       }
 
+      sendExcelSyncNotification({
+        projectName,
+        changedByUserId: req.user?.id || 0,
+        changeType: "cos_status_override",
+        changeDescription: `COS status overridden from ${originalStatus || 'unknown'} to ${overrideStatus} for expense ${expenseId}.`,
+        details: { expenseId, originalStatus, overrideStatus, reason },
+      }).catch(() => {});
+
       logAuditFromReq(req, { entityType: "cos_override", action: "update", entityId: String(expenseId), projectName, changesJson: { description: "COS status overridden", overrideStatus, originalStatus, reason } });
       res.json({ success: true });
     } catch (error) {
@@ -6801,6 +6833,17 @@ export async function registerRoutes(
         }
       } catch (auditErr: any) { console.warn("[audit] Finance revenue override audit failed:", auditErr.message); }
 
+      const revProjectNames = [...new Set(overrides.map((o: any) => o.projectName))];
+      for (const pn of revProjectNames) {
+        sendExcelSyncNotification({
+          projectName: pn,
+          changedByUserId: req.user?.id || 0,
+          changeType: "finance_revenue_override",
+          changeDescription: "Finance revenue overrides were updated.",
+          details: { count: overrides.filter((o: any) => o.projectName === pn).length },
+        }).catch(() => {});
+      }
+
       logAuditFromReq(req, { entityType: "finance_revenue_override", action: "create", changesJson: { description: `${overrides.length} finance revenue override(s) saved`, count: overrides.length, projectNames: [...new Set(overrides.map((o: any) => o.projectName))] } });
       res.json({ message: "Finance revenue overrides saved", count: saved.length, overrides: saved });
     } catch (error) {
@@ -6815,6 +6858,15 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Project name required", message: "Project name is required" });
       }
       await storage.deleteFinanceRevenueOverridesByProject(projectName);
+
+      sendExcelSyncNotification({
+        projectName,
+        changedByUserId: req.user?.id || 0,
+        changeType: "finance_revenue_override_delete",
+        changeDescription: "All finance revenue overrides deleted for project.",
+        details: { projectName },
+      }).catch(() => {});
+
       logAuditFromReq(req, { entityType: "finance_revenue_override", action: "delete", projectName, changesJson: { description: "All finance revenue overrides deleted for project", projectName } });
       res.json({ message: `Finance revenue overrides deleted for project: ${projectName}` });
     } catch (error) {
@@ -6860,6 +6912,17 @@ export async function registerRoutes(
         }
       } catch (auditErr: any) { console.warn("[audit] Finance COS override audit failed:", auditErr.message); }
 
+      const cosProjectNames = [...new Set(overrides.map((o: any) => o.projectName))];
+      for (const pn of cosProjectNames) {
+        sendExcelSyncNotification({
+          projectName: pn,
+          changedByUserId: req.user?.id || 0,
+          changeType: "finance_cos_override",
+          changeDescription: "Finance COS overrides were updated.",
+          details: { count: overrides.filter((o: any) => o.projectName === pn).length },
+        }).catch(() => {});
+      }
+
       logAuditFromReq(req, { entityType: "finance_cos_override", action: "create", changesJson: { description: `${overrides.length} finance COS override(s) saved`, count: overrides.length, projectNames: [...new Set(overrides.map((o: any) => o.projectName))] } });
       res.json({ message: "Finance COS overrides saved", count: saved.length, overrides: saved });
     } catch (error) {
@@ -6874,6 +6937,15 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Project name required", message: "Project name is required" });
       }
       await storage.deleteFinanceCosOverridesByProject(projectName);
+
+      sendExcelSyncNotification({
+        projectName,
+        changedByUserId: req.user?.id || 0,
+        changeType: "finance_cos_override_delete",
+        changeDescription: "All finance COS overrides deleted for project.",
+        details: { projectName },
+      }).catch(() => {});
+
       logAuditFromReq(req, { entityType: "finance_cos_override", action: "delete", projectName, changesJson: { description: "All finance COS overrides deleted for project", projectName } });
       res.json({ message: `Finance COS overrides deleted for project: ${projectName}` });
     } catch (error) {
