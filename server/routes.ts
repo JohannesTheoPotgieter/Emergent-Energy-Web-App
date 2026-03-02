@@ -5334,6 +5334,55 @@ export async function registerRoutes(
         return res.json({ message: "Milestone deleted and children ungrouped" });
       }
 
+      if (operation === "setTaskNumber") {
+        const { rowNumber, taskNumber } = data || {};
+        if (rowNumber === undefined || taskNumber === undefined) {
+          return res.status(400).json({ error: "rowNumber and taskNumber required" });
+        }
+        await storage.upsertManyProjectPlanOverrides([{
+          projectName, rowNumber, fieldName: "taskNo",
+          overrideValue: String(taskNumber), createdBy: userId,
+        }]);
+        notifyStructureChange(`Task number manually set to "${taskNumber}".`);
+        return res.json({ message: "Task number updated" });
+      }
+
+      if (operation === "bulkReorder") {
+        const { items } = data || {};
+        if (!Array.isArray(items) || items.length === 0) {
+          return res.status(400).json({ error: "items[] with {rowNumber, sortOrder, parentRowNumber?} required" });
+        }
+        const existingOverrides = await storage.getProjectPlanOverridesByProject(projectName);
+        const indentMap = new Map<number, number>();
+        for (const o of existingOverrides) {
+          if (o.fieldName === "indentLevel") {
+            indentMap.set(o.rowNumber, parseInt(o.overrideValue || "0") || 0);
+          }
+        }
+        const overridesToSave: any[] = [];
+        for (const item of items) {
+          overridesToSave.push({
+            projectName, rowNumber: item.rowNumber,
+            fieldName: "sortOrder", overrideValue: String(item.sortOrder), createdBy: userId,
+          });
+          if (item.parentRowNumber !== undefined) {
+            const parentIndent = item.parentRowNumber !== null ? (indentMap.get(item.parentRowNumber) ?? 0) : -1;
+            const newIndent = parentIndent + 1;
+            overridesToSave.push({
+              projectName, rowNumber: item.rowNumber,
+              fieldName: "parentRowNumber", overrideValue: item.parentRowNumber !== null ? String(item.parentRowNumber) : "", createdBy: userId,
+            });
+            overridesToSave.push({
+              projectName, rowNumber: item.rowNumber,
+              fieldName: "indentLevel", overrideValue: String(Math.max(0, newIndent)), createdBy: userId,
+            });
+          }
+        }
+        await storage.upsertManyProjectPlanOverrides(overridesToSave);
+        notifyStructureChange(`${items.length} task(s) reordered.`);
+        return res.json({ message: `Reordered ${items.length} tasks` });
+      }
+
       if (operation === "renumber") {
         const plansDirect2 = await storage.getProjectPlansByProject(rawProjectName);
         const pName2 = plansDirect2.length > 0 ? rawProjectName : trackerName;
