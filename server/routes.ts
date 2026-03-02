@@ -207,12 +207,16 @@ function applyPlanningOverrides(
 
 // Apply project plan overrides to tasks/milestones
 const NUMERIC_PLAN_FIELDS = new Set(["actualPctComplete", "expectedPctComplete", "durationDays", "parentRowNumber", "indentLevel", "sortOrder"]);
+const BOOLEAN_PLAN_FIELDS = new Set(["isMilestone"]);
 
 function coercePlanOverride(fieldName: string, value: any): any {
   if (value === null || value === undefined || value === "") return null;
   if (NUMERIC_PLAN_FIELDS.has(fieldName)) {
     const num = Number(value);
     return isNaN(num) ? null : num;
+  }
+  if (BOOLEAN_PLAN_FIELDS.has(fieldName)) {
+    return value === true || value === "true";
   }
   return value;
 }
@@ -5405,9 +5409,29 @@ export async function registerRoutes(
           .map((pt: any) => ({
             rowNumber: pt.rowNumber,
             parentRowNumber: pt.parentRowNumber || null,
+            taskNo: pt.taskNo || null,
             sortOrder: pt.sortOrder ?? pt.rowNumber ?? 0,
             isVirtual: pt.isVirtual === true,
           }));
+
+        const hasAnyParentOverrides = tasks2.some(t => t.parentRowNumber != null);
+
+        if (!hasAnyParentOverrides) {
+          const taskNoSet = new Set(tasks2.map(t => t.taskNo).filter(Boolean));
+          const taskNoToRow = new Map<string, number>();
+          for (const t of tasks2) {
+            if (t.taskNo) taskNoToRow.set(t.taskNo, t.rowNumber);
+          }
+          for (const t of tasks2) {
+            if (!t.taskNo || !t.taskNo.includes(".")) continue;
+            const parts = t.taskNo.split(".");
+            parts.pop();
+            const parentNo = parts.join(".");
+            if (parentNo && taskNoSet.has(parentNo) && taskNoToRow.has(parentNo)) {
+              t.parentRowNumber = taskNoToRow.get(parentNo)!;
+            }
+          }
+        }
 
         const childMap = new Map<number | null, any[]>();
         for (const t of tasks2) {
@@ -10111,7 +10135,7 @@ export async function registerRoutes(
             sortOrder: pt.sortOrder ?? pt.rowNumber ?? 0,
             isBaseline: !isVirtualMilestone,
             isVirtualMilestone,
-            isMilestone: pt.isMilestone === true || pt.indentLevel === 0,
+            isMilestone: pt.isMilestone === true,
             rowNumber: pt.rowNumber,
             parentRowNumber: pt.parentRowNumber || null,
             indentLevel: pt.indentLevel ?? null,
@@ -10189,6 +10213,13 @@ export async function registerRoutes(
         if (t.parentTaskId) {
           if (!childrenMap.has(t.parentTaskId)) childrenMap.set(t.parentTaskId, []);
           childrenMap.get(t.parentTaskId)!.push(t.id);
+        }
+      }
+
+      for (const [parentId] of childrenMap) {
+        const parentTask = taskMap.get(parentId);
+        if (parentTask && !parentTask.isMilestone) {
+          parentTask.isMilestone = true;
         }
       }
 
