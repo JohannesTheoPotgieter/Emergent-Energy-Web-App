@@ -7952,6 +7952,14 @@ export async function registerRoutes(
         await storage.resetScenario(scenario.id);
       }
 
+      sendExcelSyncNotification({
+        projectName: decodedName,
+        changedByUserId: req.user?.id || 0,
+        changeType: "working_plan_reset",
+        changeDescription: "Working plan reset to baseline.",
+        details: { projectName: decodedName },
+      }).catch(() => {});
+
       logAuditFromReq(req, { entityType: "working_plan", action: "reset", projectName, changesJson: { description: "Working plan reset to baseline" } });
       res.json({ success: true, message: "Working plan reset to baseline" });
     } catch (error: any) {
@@ -7999,6 +8007,14 @@ export async function registerRoutes(
           isNewTask: 0,
         });
       }
+      sendExcelSyncNotification({
+        projectName,
+        changedByUserId: req.user?.id || 0,
+        changeType: "working_plan_task_update",
+        changeDescription: `Working plan task #${id} updated.`,
+        details: { taskId: id, startDate, endDate, name, taskNo },
+      }).catch(() => {});
+
       logAuditFromReq(req, { entityType: "working_plan_task", action: "update", entityId: String(id), projectName, changesJson: { description: "Working plan task updated", startDate, endDate, name, taskNo } });
       res.json(result);
 
@@ -8071,6 +8087,14 @@ export async function registerRoutes(
         isNewTask: 1,
       });
 
+      sendExcelSyncNotification({
+        projectName,
+        changedByUserId: req.user?.id || 0,
+        changeType: "working_plan_task_created",
+        changeDescription: `New working plan task added: "${name}".`,
+        details: { name, startDate, endDate, taskNo },
+      }).catch(() => {});
+
       logAuditFromReq(req, { entityType: "working_plan_task", action: "create", projectName, changesJson: { description: "Working plan task created", name, startDate, endDate } });
       res.json(created);
     } catch (error: any) {
@@ -8116,6 +8140,14 @@ export async function registerRoutes(
           });
         }
       }
+
+      sendExcelSyncNotification({
+        projectName,
+        changedByUserId: req.user?.id || 0,
+        changeType: "working_plan_task_deleted",
+        changeDescription: `Working plan task #${taskId} deleted.`,
+        details: { taskId, isNewTask },
+      }).catch(() => {});
 
       logAuditFromReq(req, { entityType: "working_plan_task", action: "delete", entityId: taskId, projectName, changesJson: { description: "Working plan task deleted", isNewTask } });
       res.json({ success: true });
@@ -10832,6 +10864,14 @@ export async function registerRoutes(
           }
         }
 
+        sendExcelSyncNotification({
+          projectName,
+          changedByUserId: user.id || 0,
+          changeType: "plan_task_updated",
+          changeDescription: `Plan task "${taskName}" updated.`,
+          details: { taskId: actualTaskId, ...updates },
+        }).catch(() => {});
+
         logAuditFromReq(req, {
           entityType: "plan_task",
           action: "update",
@@ -10903,6 +10943,14 @@ export async function registerRoutes(
         });
       }
 
+      sendExcelSyncNotification({
+        projectName,
+        changedByUserId: user.id || 0,
+        changeType: "plan_task_created",
+        changeDescription: `New plan task added: "${title}".`,
+        details: { taskId: task.id, title, startDate, dueDate, status, priority },
+      }).catch(() => {});
+
       logAuditFromReq(req, {
         entityType: "plan_task",
         action: "create",
@@ -10954,6 +11002,14 @@ export async function registerRoutes(
       } else {
         await db.delete(operationalTasks).where(eq(operationalTasks.id, taskId));
       }
+
+      sendExcelSyncNotification({
+        projectName,
+        changedByUserId: user.id || 0,
+        changeType: "plan_task_deleted",
+        changeDescription: `Plan task #${taskId} deleted.`,
+        details: { taskId, isBaselineTask },
+      }).catch(() => {});
 
       logAuditFromReq(req, {
         entityType: "plan_task",
