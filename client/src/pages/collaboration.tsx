@@ -1761,7 +1761,9 @@ function TeamsChatTab() {
 export default function CollaborationPage() {
   const { user } = useAuth();
   const { allowed, loading: permLoading } = usePermission("pd_collaboration", "view");
-  const [activeTab, setActiveTab] = useState("email");
+  const urlTab = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("tab") : null;
+  const validTabs = ["calendar", "email", "teams", "sharepoint", "notifications"];
+  const [activeTab, setActiveTab] = useState(urlTab && validTabs.includes(urlTab) ? urlTab : "email");
   const unifiedFlag = useUnifiedWorkFlag();
 
   const { data: unreadCount } = useQuery<{ count: number }>({
