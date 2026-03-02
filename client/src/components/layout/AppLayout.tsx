@@ -274,8 +274,6 @@ function getUnifiedWorkNavGroups(): NavGroup[] {
         section: "COLLABORATION",
         items: [
           { label: "Email", icon: Mail, path: "/collaboration?tab=email" },
-          { label: "SharePoint", icon: FolderOpen, path: "/collaboration?tab=sharepoint" },
-          { label: "Teams Chat", icon: MessageSquare, path: "/teams/chats" },
         ],
       });
     } else {

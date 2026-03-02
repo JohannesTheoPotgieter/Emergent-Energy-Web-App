@@ -78,14 +78,18 @@ Preferred communication style: Simple, everyday language.
 
 ### Unified Work ("My Work") — Feature Flag: `unified_work_v1`
 -   **Concept**: Merges "My Tool" + "Collaboration Hub" into a unified personal execution cockpit.
--   **Feature Flag**: `unified_work_v1` in `appSettings` table (default OFF).
--   **Navigation**: When flag ON, sidebar shows "MY WORK" (Home, Calendar, Tasks, Meetings) + "COLLABORATION" section.
--   **My Work Home**: 3-column layout — tasks grouped by project, today timeline, action-required communications.
--   **Unified Calendar**: Combines Outlook events + internal tasks.
--   **Tasks**: Unified task board aggregating personal tasks, operational/project tasks, TR register items, pending approvals, and deliverables.
--   **MS Object Sync**: Periodically syncs calendar, email, and Teams data into `ms_objects` table.
--   **Project Tagging**: Any MS object can be tagged to a project.
--   **Convert to Task**: Any MS object can be converted to a personal or project-linked operational task.
+-   **Feature Flag**: `unified_work_v1` in `appSettings` table (currently ON).
+-   **Navigation**: When flag ON, sidebar shows "MY WORK" (Home, Calendar, Tasks, Meetings) + "COLLABORATION" (Email only).
+-   **My Work Home** (`/my-work`): 3-column layout — tasks grouped by project, today timeline, action-required communications.
+-   **Unified Calendar** (`/my-work/calendar`): Combines Outlook events (blue) + synced MS events (purple) + internal tasks (emerald). Week/Day toggle.
+-   **Tasks** (`/my-work/tasks`): Unified task board aggregating personal tasks + operational/project tasks with filters.
+-   **Meetings** (`/my-work/meetings`): Reuses existing MyToolMeetingsPage at new route.
+-   **MS Object Sync**: `server/ms-sync-service.ts` periodically (15 min) syncs calendar, email, and Teams data into `ms_objects` table. `server/ms-account-service.ts` manages MS account identity mapping.
+-   **Collaboration (Email-Only)**: When flag ON, `/collaboration?tab=email` shows synced Outlook emails with tag-to-project and convert-to-task actions. SharePoint/Teams/Notifications tabs removed from unified view.
+-   **Project Tagging**: Any MS object can be tagged to a project via `TagToProjectDialog`. Routes: `POST/DELETE /api/ms-objects/:id/tag-project`.
+-   **Convert to Task**: `ConvertToTaskDialog` lets user choose a project (or personal) before creating task. Backend accepts optional `projectId` in `POST /api/ms-objects/:id/convert-to-task`. Creates `operational_task` (project-linked) or `mytool_task` (personal).
+-   **Permission Entities**: `my_work`, `ms_sync`, `project_tagging` in `ENTITY_PERMISSION_DEFAULTS` + admin UI.
+-   **Key Files**: `server/ms-sync-service.ts`, `server/ms-sync-routes.ts`, `server/ms-account-service.ts`, `server/project-linking-service.ts`, `client/src/pages/my-work-home.tsx`, `client/src/pages/my-work-calendar.tsx`, `client/src/pages/my-work-tasks.tsx`, `client/src/pages/collaboration.tsx`.
 
 ### Roles & Permissions (Enhanced)
 -   **Admin Page**: `admin-roles.tsx` for managing 11 permission categories with 85 granular entity permissions (View/Edit/Approve/Override/Delete).

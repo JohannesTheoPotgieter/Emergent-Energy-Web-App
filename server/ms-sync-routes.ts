@@ -122,7 +122,8 @@ export function registerMsSyncRoutes(app: Express) {
       const userId = (req as any).user?.id;
       if (!userId) return res.status(401).json({ error: "auth_required" });
 
-      const result = await convertToTask(msObjectId, userId);
+      const { projectId } = req.body || {};
+      const result = await convertToTask(msObjectId, userId, projectId ? parseInt(String(projectId)) : undefined);
       res.json(result);
     } catch (err: any) {
       const status = err.message?.includes("not found") ? 404 : err.message?.includes("only") ? 403 : 500;

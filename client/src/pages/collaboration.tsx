@@ -1,4 +1,4 @@
-import { useState, useMemo, lazy, Suspense } from "react";
+import { useState, useMemo, useEffect, lazy, Suspense } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -175,16 +175,34 @@ function TagToProjectDialog({
   );
 }
 
-function useMsObjectActions() {
+function ConvertToTaskDialog({ open, onOpenChange, item }: { open: boolean; onOpenChange: (open: boolean) => void; item: any }) {
   const { toast } = useToast();
   const qc = useQueryClient();
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(item?.linkedProjectId || null);
+
+  useEffect(() => {
+    if (open) {
+      setSelectedProjectId(item?.linkedProjectId || null);
+    }
+  }, [open, item?.id]);
+
+  const { data: projects = [] } = useQuery<any[]>({
+    queryKey: ["projects-summary-for-convert"],
+    queryFn: async () => {
+      const res = await fetch("/api/projects-summary", { headers: authHeaders(), credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: open,
+  });
 
   const convertMutation = useMutation({
-    mutationFn: async (msObjectId: number) => {
-      const res = await fetch(`/api/ms-objects/${msObjectId}/convert-to-task`, {
+    mutationFn: async () => {
+      const res = await fetch(`/api/ms-objects/${item.id}/convert-to-task`, {
         method: "POST",
-        headers: authHeaders(),
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
         credentials: "include",
+        body: JSON.stringify({ projectId: selectedProjectId }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -192,21 +210,71 @@ function useMsObjectActions() {
       }
       return res.json();
     },
-    onSuccess: () => {
-      toast({ title: "Task created from item" });
+    onSuccess: (data) => {
+      toast({ title: data.type === "operational" ? "Project task created" : "Personal task created" });
       qc.invalidateQueries({ queryKey: ["ms-objects-mine"] });
+      onOpenChange(false);
     },
     onError: (err: any) => {
       toast({ title: "Convert failed", description: err.message, variant: "destructive" });
     },
   });
 
-  return { convertMutation };
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md" data-testid="convert-to-task-dialog">
+        <DialogHeader>
+          <DialogTitle>Convert Email to Task</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div>
+            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Email Subject</label>
+            <p className="text-sm font-medium mt-1">{item?.subjectOrTitle || "(No Subject)"}</p>
+            {item?.preview && <p className="text-xs text-muted-foreground mt-1 truncate">{item.preview}</p>}
+          </div>
+          <Separator />
+          <div>
+            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2 block">Link to Project (optional)</label>
+            <p className="text-xs text-muted-foreground mb-2">Choose a project to create a project task, or leave empty for a personal task.</p>
+            <div className="max-h-48 overflow-y-auto border rounded-lg divide-y">
+              <button
+                className={`w-full text-left px-3 py-2 text-sm hover:bg-muted/50 transition-colors ${selectedProjectId === null ? "bg-primary/10 font-medium" : ""}`}
+                onClick={() => setSelectedProjectId(null)}
+                data-testid="convert-no-project"
+              >
+                No project (personal task)
+              </button>
+              {projects.map((p: any) => (
+                <button
+                  key={p.project_info_id}
+                  className={`w-full text-left px-3 py-2 text-sm hover:bg-muted/50 transition-colors ${selectedProjectId === p.project_info_id ? "bg-primary/10 font-medium" : ""}`}
+                  onClick={() => setSelectedProjectId(p.project_info_id)}
+                  data-testid={`convert-project-${p.project_info_id}`}
+                >
+                  {p.project_name}
+                  {p.phase && <span className="text-xs text-muted-foreground ml-2">({p.phase})</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} data-testid="convert-cancel">Cancel</Button>
+          <Button
+            onClick={() => convertMutation.mutate()}
+            disabled={convertMutation.isPending}
+            data-testid="convert-confirm"
+          >
+            {convertMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <ClipboardCheck className="h-4 w-4 mr-1" />}
+            {selectedProjectId ? "Create Project Task" : "Create Personal Task"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
-function MsObjectActions({ item, onTagClick }: { item: any; onTagClick: (item: any) => void }) {
-  const { convertMutation } = useMsObjectActions();
-
+function MsObjectActions({ item, onTagClick, onConvertClick }: { item: any; onTagClick: (item: any) => void; onConvertClick?: (item: any) => void }) {
   return (
     <div className="flex items-center gap-1 flex-shrink-0">
       {item.webLink && (
@@ -231,8 +299,8 @@ function MsObjectActions({ item, onTagClick }: { item: any; onTagClick: (item: a
         size="icon"
         className="h-7 w-7"
         title="Convert to task"
-        onClick={(e) => { e.stopPropagation(); convertMutation.mutate(item.id); }}
-        disabled={convertMutation.isPending || !!item.linkedTaskId}
+        onClick={(e) => { e.stopPropagation(); if (onConvertClick) onConvertClick(item); }}
+        disabled={!!item.linkedTaskId}
         data-testid={`ms-convert-${item.id}`}
       >
         <ClipboardCheck className={`h-3.5 w-3.5 ${item.linkedTaskId ? "text-green-500" : ""}`} />
@@ -245,6 +313,8 @@ function SyncedEmailTab() {
   const [searchQuery, setSearchQuery] = useState("");
   const [tagDialogOpen, setTagDialogOpen] = useState(false);
   const [tagTarget, setTagTarget] = useState<any>(null);
+  const [convertDialogOpen, setConvertDialogOpen] = useState(false);
+  const [convertTarget, setConvertTarget] = useState<any>(null);
 
   const { data: items = [], isLoading } = useQuery<any[]>({
     queryKey: ["ms-objects-mine", "email"],
@@ -329,7 +399,11 @@ function SyncedEmailTab() {
                   {item.receivedOrStartDatetime ? format(parseISO(item.receivedOrStartDatetime), "MMM d, h:mm a") : ""}
                 </p>
               </div>
-              <MsObjectActions item={item} onTagClick={(i) => { setTagTarget(i); setTagDialogOpen(true); }} />
+              <MsObjectActions
+                item={item}
+                onTagClick={(i) => { setTagTarget(i); setTagDialogOpen(true); }}
+                onConvertClick={(i) => { setConvertTarget(i); setConvertDialogOpen(true); }}
+              />
             </div>
           ))}
         </div>
@@ -341,6 +415,14 @@ function SyncedEmailTab() {
         msObjectId={tagTarget?.id || null}
         currentProjectId={tagTarget?.linkedProjectId}
       />
+
+      {convertTarget && (
+        <ConvertToTaskDialog
+          open={convertDialogOpen}
+          onOpenChange={setConvertDialogOpen}
+          item={convertTarget}
+        />
+      )}
     </div>
   );
 }
@@ -1798,53 +1880,14 @@ export default function CollaborationPage() {
     return (
       <div className="p-6 max-w-7xl mx-auto space-y-6" data-testid="collaboration-page">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight" data-testid="text-collaboration-title">Collaboration Hub</h1>
+          <h1 className="text-2xl font-bold tracking-tight" data-testid="text-collaboration-title">Email</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Synced Microsoft 365 communications with project tagging
+            Synced Outlook emails — tag to projects or convert to tasks
             {user?.displayName && <span> — signed in as <strong>{user.displayName}</strong></span>}
           </p>
         </div>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="email" className="flex items-center gap-1.5" data-testid="tab-email">
-              <Mail className="h-4 w-4" />
-              <span className="hidden sm:inline">Email</span>
-            </TabsTrigger>
-            <TabsTrigger value="teams" className="flex items-center gap-1.5" data-testid="tab-teams">
-              <MessageSquare className="h-4 w-4" />
-              <span className="hidden sm:inline">Teams</span>
-            </TabsTrigger>
-            <TabsTrigger value="sharepoint" className="flex items-center gap-1.5" data-testid="tab-sharepoint">
-              <FolderOpen className="h-4 w-4" />
-              <span className="hidden sm:inline">SharePoint</span>
-            </TabsTrigger>
-            <TabsTrigger value="notifications" className="relative flex items-center gap-1.5" data-testid="tab-notifications">
-              <Bell className="h-4 w-4" />
-              <span className="hidden sm:inline">Notifications</span>
-              {(unreadCount?.count || 0) > 0 && (
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] rounded-full h-4 w-4 flex items-center justify-center">
-                  {unreadCount!.count > 99 ? "99+" : unreadCount!.count}
-                </span>
-              )}
-            </TabsTrigger>
-          </TabsList>
-
-          <div className="mt-6">
-            <TabsContent value="email">
-              <SyncedEmailTab />
-            </TabsContent>
-            <TabsContent value="teams">
-              <SyncedTeamsTab />
-            </TabsContent>
-            <TabsContent value="sharepoint">
-              <SyncedSharePointTab />
-            </TabsContent>
-            <TabsContent value="notifications">
-              <SyncedNotificationsTab />
-            </TabsContent>
-          </div>
-        </Tabs>
+        <SyncedEmailTab />
       </div>
     );
   }

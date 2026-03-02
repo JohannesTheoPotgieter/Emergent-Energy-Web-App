@@ -112,7 +112,8 @@ export async function getUserMsObjects(
 
 export async function convertToTask(
   msObjectId: number,
-  userId: number
+  userId: number,
+  targetProjectId?: number
 ): Promise<{ task: any; type: "mytool" | "operational" }> {
   const [obj] = await db.select().from(msObjects).where(eq(msObjects.id, msObjectId));
   if (!obj) throw new Error("MS object not found");
@@ -131,16 +132,33 @@ export async function convertToTask(
     obj.senderOrOrganizer ? `\nFrom: ${obj.senderOrOrganizer}` : "",
   ].join("").trim();
 
-  if (obj.linkedProjectId) {
+  if (targetProjectId) {
+    const [targetProject] = await db
+      .select({ id: projectInfo.id })
+      .from(projectInfo)
+      .where(eq(projectInfo.id, targetProjectId));
+    if (!targetProject) throw new Error("Target project not found");
+  }
+
+  const effectiveProjectId = targetProjectId || obj.linkedProjectId;
+
+  if (effectiveProjectId) {
+    if (targetProjectId && !obj.linkedProjectId) {
+      await db
+        .update(msObjects)
+        .set({ linkedProjectId: targetProjectId })
+        .where(eq(msObjects.id, msObjectId));
+    }
+
     const [project] = await db
       .select({ projectName: projectInfo.projectName })
       .from(projectInfo)
-      .where(eq(projectInfo.id, obj.linkedProjectId));
+      .where(eq(projectInfo.id, effectiveProjectId));
 
     const [task] = await db
       .insert(operationalTasks)
       .values({
-        projectId: obj.linkedProjectId,
+        projectId: effectiveProjectId,
         projectName: project?.projectName || "Unknown",
         title,
         description,
