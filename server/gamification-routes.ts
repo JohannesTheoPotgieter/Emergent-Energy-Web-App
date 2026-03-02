@@ -195,8 +195,7 @@ async function computeUserActivities(): Promise<UserActivityCounts[]> {
 
     const hasAnyActivity = (tasksCompleted + approvalsGiven + weeklyReviews +
       importsCompleted + projectUpdates + qualityApprovals +
-      engStagesCompleted + engTasksOwned + opsTasksAssigned +
-      deliverablesUploaded) > 0;
+      engStagesCompleted + deliverablesUploaded) > 0;
 
     results.push({
       userId: uid,
