@@ -51,7 +51,7 @@ interface OutlookEvent {
 
 interface CalendarTask {
   id: number;
-  taskType: "mytool" | "operational";
+  taskType: "mytool" | "operational" | "plan" | "engineering" | "quality";
   title: string;
   status: string;
   priority: string;
@@ -62,7 +62,27 @@ interface CalendarTask {
   scheduledDate: string | null;
   scheduledStartTime: string | null;
   scheduledEndTime: string | null;
+  pctComplete?: number | null;
+  phase?: string | null;
+  owner?: string | null;
+  lifecyclePhase?: string | null;
 }
+
+const TASK_TYPE_COLORS: Record<string, { bg: string; border: string; text: string; subText: string; hoverBg: string; bgLight: string; hoverLight: string; legendBg: string; legendBorder: string }> = {
+  mytool: { bg: "bg-emerald-100", border: "border-emerald-300", text: "text-emerald-900", subText: "text-emerald-700", hoverBg: "hover:bg-emerald-200", bgLight: "bg-emerald-50", hoverLight: "hover:bg-emerald-100", legendBg: "bg-emerald-100", legendBorder: "border-emerald-200" },
+  operational: { bg: "bg-amber-100", border: "border-amber-300", text: "text-amber-900", subText: "text-amber-700", hoverBg: "hover:bg-amber-200", bgLight: "bg-amber-50", hoverLight: "hover:bg-amber-100", legendBg: "bg-amber-100", legendBorder: "border-amber-200" },
+  plan: { bg: "bg-violet-100", border: "border-violet-300", text: "text-violet-900", subText: "text-violet-700", hoverBg: "hover:bg-violet-200", bgLight: "bg-violet-50", hoverLight: "hover:bg-violet-100", legendBg: "bg-violet-100", legendBorder: "border-violet-200" },
+  engineering: { bg: "bg-cyan-100", border: "border-cyan-300", text: "text-cyan-900", subText: "text-cyan-700", hoverBg: "hover:bg-cyan-200", bgLight: "bg-cyan-50", hoverLight: "hover:bg-cyan-100", legendBg: "bg-cyan-100", legendBorder: "border-cyan-200" },
+  quality: { bg: "bg-rose-100", border: "border-rose-300", text: "text-rose-900", subText: "text-rose-700", hoverBg: "hover:bg-rose-200", bgLight: "bg-rose-50", hoverLight: "hover:bg-rose-100", legendBg: "bg-rose-100", legendBorder: "border-rose-200" },
+};
+
+const TASK_TYPE_LABELS: Record<string, string> = {
+  mytool: "Personal",
+  operational: "Operational",
+  plan: "Project Plan",
+  engineering: "Engineering",
+  quality: "Quality",
+};
 
 function getStartStr(ev: OutlookEvent): string {
   return typeof ev.start === "string" ? ev.start : ev.start?.dateTime || "";
@@ -383,19 +403,17 @@ export default function MyWorkCalendarPage() {
               </Button>
             </div>
           </div>
-          <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
+          <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground flex-wrap">
             <div className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-sm bg-blue-100 border border-blue-200" />
               Outlook Events
             </div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-sm bg-emerald-100 border border-emerald-200" />
-              Scheduled Tasks
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-sm bg-amber-100 border border-amber-200" />
-              Operational Tasks
-            </div>
+            {Object.entries(TASK_TYPE_LABELS).map(([type, label]) => (
+              <div key={type} className="flex items-center gap-1.5">
+                <span className={`w-2.5 h-2.5 rounded-sm ${TASK_TYPE_COLORS[type].legendBg} border ${TASK_TYPE_COLORS[type].legendBorder}`} />
+                {label}
+              </div>
+            ))}
           </div>
         </CardHeader>
         <CardContent className="flex-1 flex min-h-0 gap-3">
@@ -462,12 +480,12 @@ function DraggableTaskCard({
   task: CalendarTask;
   onDragStart: (task: CalendarTask) => void;
 }) {
-  const isOp = task.taskType === "operational";
-  const borderColor = isOp ? "border-amber-200" : "border-emerald-200";
-  const bgColor = isOp ? "bg-amber-50" : "bg-emerald-50";
-  const hoverColor = isOp ? "hover:bg-amber-100" : "hover:bg-emerald-100";
-  const textColor = isOp ? "text-amber-900" : "text-emerald-900";
-  const subTextColor = isOp ? "text-amber-700" : "text-emerald-700";
+  const colors = TASK_TYPE_COLORS[task.taskType] || TASK_TYPE_COLORS.mytool;
+  const borderColor = colors.border.replace("border-", "border-").replace("-300", "-200");
+  const bgColor = colors.bgLight;
+  const hoverColor = colors.hoverLight;
+  const textColor = colors.text;
+  const subTextColor = colors.subText;
 
   return (
     <div
@@ -490,11 +508,16 @@ function DraggableTaskCard({
           {task.title}
         </span>
       </div>
-      {task.projectName && (
-        <div className={`${subTextColor} text-[10px] truncate ml-5`}>
-          {task.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
-        </div>
-      )}
+      <div className="flex items-center gap-1 ml-5">
+        <span className={`${subTextColor} text-[9px] font-medium uppercase`}>
+          {TASK_TYPE_LABELS[task.taskType]}
+        </span>
+        {task.projectName && (
+          <span className={`${subTextColor} text-[10px] truncate`}>
+            · {task.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
+          </span>
+        )}
+      </div>
       {(task.dueDate || task.plannedForDate) && (
         <div className={`${subTextColor} text-[10px] ml-5`}>
           Due: {task.dueDate || task.plannedForDate}
@@ -651,12 +674,12 @@ function TimeGridView({
 
                   if (topOffset < 0) return null;
 
-                  const isOp = task.taskType === "operational";
-                  const bg = isOp ? "bg-amber-100" : "bg-emerald-100";
-                  const border = isOp ? "border-amber-300" : "border-emerald-300";
-                  const textColor = isOp ? "text-amber-900" : "text-emerald-900";
-                  const subColor = isOp ? "text-amber-700" : "text-emerald-700";
-                  const hoverBg = isOp ? "hover:bg-amber-200" : "hover:bg-emerald-200";
+                  const tc = TASK_TYPE_COLORS[task.taskType] || TASK_TYPE_COLORS.mytool;
+                  const bg = tc.bg;
+                  const border = tc.border;
+                  const textColor = tc.text;
+                  const subColor = tc.subText;
+                  const hoverBg = tc.hoverBg;
 
                   return (
                     <div

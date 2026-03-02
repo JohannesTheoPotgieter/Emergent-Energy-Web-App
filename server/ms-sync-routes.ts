@@ -2,12 +2,12 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { verifyToken } from "./jwt";
 import { z } from "zod";
 import { db } from "./db";
-import { eq, and, desc, asc, sql, inArray } from "drizzle-orm";
+import { eq, and, or, desc, asc, sql, inArray, isNull } from "drizzle-orm";
 import {
   mytoolTasks, operationalTasks, trItems, deliverables,
   projectEngApprovals, projectEngStages, engStageTemplates,
   qcItemInstance, qcChecklist, qcTemplateItem,
-  projectInfo, users,
+  projectInfo, users, normalizedPlanTasks, engineeringTasks,
 } from "@shared/schema";
 import {
   tagToProject,
@@ -175,7 +175,9 @@ export function registerMsSyncRoutes(app: Express) {
       const ADMIN_ROLES = ["admin", "COO_ADMIN", "CEO_ADMIN"];
       const isAdmin = ADMIN_ROLES.includes(userRole);
 
-      const [personalTasks, opTasks, trRegisterItems, approvalData, deliverableItems] = await Promise.all([
+      const username = currentUser?.username || "";
+
+      const [personalTasks, opTasks, trRegisterItems, approvalData, deliverableItems, planTasks, engTasks, qualityTasks] = await Promise.all([
         db.select().from(mytoolTasks).where(eq(mytoolTasks.ownerUserId, userId)).orderBy(desc(mytoolTasks.createdAt)),
 
         db.select().from(operationalTasks).where(
@@ -238,6 +240,29 @@ export function registerMsSyncRoutes(app: Express) {
         db.select().from(deliverables).where(
           sql`(${deliverables.ownerUserId} = ${userId} OR ${deliverables.reviewerUserId} = ${userId})`
         ).orderBy(desc(deliverables.updatedAt)),
+
+        db.execute(sql`
+          SELECT * FROM normalized_plan_tasks
+          WHERE assignee_user_id = ${userId}
+             OR lower(owner) = lower(${username})
+             OR lower(owner) = lower(${userName})
+        `),
+
+        db.select().from(engineeringTasks).where(
+          and(
+            eq(engineeringTasks.assigneeUserId, userId),
+            isNull(engineeringTasks.softDeletedAt)
+          )
+        ),
+
+        db.execute(sql`
+          SELECT qi.*, qc.project_name, qc.project_id, qti.item_name
+          FROM qc_item_instance qi
+          JOIN qc_checklist qc ON qi.checklist_id = qc.id
+          JOIN qc_template_item qti ON qi.template_item_id = qti.id
+          WHERE qi.assignee_user_id = ${userId}
+            AND qi.is_applicable = true
+        `),
       ]);
 
       const subtaskParentIds = opTasks.filter(t => t.parentTaskId === null || t.parentTaskId === undefined).map(t => t.id);
@@ -275,6 +300,35 @@ export function registerMsSyncRoutes(app: Express) {
           })),
         },
         deliverables: deliverableItems,
+        planTasks: (planTasks as any[]).map((t: any) => ({
+          id: t.id,
+          title: t.task_name,
+          status: t.status || "active",
+          projectName: t.project_name,
+          owner: t.owner,
+          phase: t.phase,
+          startDate: t.start_date,
+          endDate: t.end_date,
+          pctComplete: t.pct_complete,
+          _source: "plan",
+        })),
+        engineeringTasks: engTasks.map(t => ({
+          id: t.id,
+          title: t.title,
+          status: t.status,
+          projectName: t.projectName,
+          lifecyclePhase: t.lifecyclePhaseTag,
+          _source: "engineering_task",
+        })),
+        qualityTasks: (qualityTasks as any[]).map((t: any) => ({
+          id: t.id,
+          title: t.item_name,
+          status: t.qm_status || "not_started",
+          projectName: t.project_name,
+          startDate: t.start_date,
+          endDate: t.end_date,
+          _source: "quality_task",
+        })),
       });
     } catch (err: any) {
       console.error("[MyWork AllTasks] Error:", err);
