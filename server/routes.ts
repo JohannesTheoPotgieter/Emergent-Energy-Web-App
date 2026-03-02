@@ -10116,75 +10116,7 @@ export async function registerRoutes(
           };
         });
 
-      const SECTION_HEADERS = [
-        { key: "pd", label: "Project Development", rowNumber: -9001, sortOrder: -4000 },
-        { key: "eng", label: "Engineering", rowNumber: -9002, sortOrder: -3000 },
-        { key: "quality", label: "Quality", rowNumber: -9003, sortOrder: -2000 },
-        { key: "pm", label: "Project Management (Plan)", rowNumber: -9004, sortOrder: -1000 },
-      ];
-
-      const sectionVirtuals = SECTION_HEADERS.map(s => ({
-        id: s.rowNumber,
-        projectName,
-        planProjectName: projectName,
-        importedTaskId: null,
-        taskNumber: "",
-        parentTaskId: null as number | null,
-        title: s.label,
-        description: null,
-        status: "Not Started",
-        priority: "Normal",
-        startDate: null,
-        dueDate: null,
-        durationDays: null,
-        percentComplete: 0,
-        expectedPercentComplete: 0,
-        storedActualPct: null,
-        assignees: null,
-        tags: null,
-        blockerReason: null,
-        plannedHours: null,
-        actualHours: null,
-        actualStartDate: null,
-        actualEndDate: null,
-        actualDurationDays: null,
-        comment: null as string | null,
-        sortOrder: s.sortOrder,
-        isBaseline: false,
-        isVirtualMilestone: true,
-        isMilestone: true,
-        rowNumber: s.rowNumber,
-        parentRowNumber: null,
-        indentLevel: 0,
-        createdBy: null,
-        createdAt: null,
-        updatedAt: null,
-        sectionKey: s.key,
-      }));
-
-      const categorizePdTask = (task: any): number => {
-        const title = (task.title || "").toLowerCase();
-        if (title.startsWith("[pd]")) return SECTION_HEADERS[0].rowNumber;
-        if (title.includes("engineering") || title.includes("[eng]")) return SECTION_HEADERS[1].rowNumber;
-        if (title.includes("quality") || title.includes("[qa]") || title.includes("[qc]")) return SECTION_HEADERS[2].rowNumber;
-        return SECTION_HEADERS[0].rowNumber;
-      };
-
-      for (const ot of operationalTasks) {
-        if (!ot.parentTaskId && !ot.parentRowNumber) {
-          ot.parentRowNumber = categorizePdTask(ot);
-        }
-      }
-
-      const allTasks: any[] = [...sectionVirtuals, ...baselineTasks, ...operationalTasks];
-
-      for (const bt of baselineTasks) {
-        if (!bt.parentRowNumber && !bt.isVirtualMilestone) {
-          bt.parentRowNumber = SECTION_HEADERS[3].rowNumber;
-        } else if (bt.isVirtualMilestone && !bt.parentRowNumber) {
-          bt.parentRowNumber = SECTION_HEADERS[3].rowNumber;
-        }
-      }
+      const allTasks: any[] = [...baselineTasks, ...operationalTasks];
 
       const rowNumberToId = new Map<number, number>();
       const taskNumToId = new Map<string, number>();
