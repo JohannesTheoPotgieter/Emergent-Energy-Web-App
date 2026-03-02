@@ -229,7 +229,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
   const [milestoneDialogOpen, setMilestoneDialogOpen] = useState(false);
   const [milestoneTitle, setMilestoneTitle] = useState("");
   const [showKeyDates, setShowKeyDates] = useState(true);
-  const [zoomLevel, setZoomLevel] = useState<ZoomLevel>("week");
+  const [zoomLevel, setZoomLevel] = useState<ZoomLevel>("month");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [dragTaskId, setDragTaskId] = useState<number | null>(null);
   const [dropTarget, setDropTarget] = useState<{ taskId: number; position: "above" | "below" | "child" } | null>(null);
