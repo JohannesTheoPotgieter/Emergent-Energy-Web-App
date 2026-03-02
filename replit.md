@@ -81,7 +81,7 @@ Preferred communication style: Simple, everyday language.
 -   **Feature Flag**: `unified_work_v1` in `appSettings` table (currently ON).
 -   **Navigation**: When flag ON, sidebar shows "MY WORK" (Home, Calendar, Tasks, Meetings) + "COLLABORATION" (Email, Teams Chat, SharePoint).
 -   **My Work Home** (`/my-work`): 3-column layout — tasks grouped by project, today timeline, action-required communications.
--   **Unified Calendar** (`/my-work/calendar`): Combines Outlook events (blue) + synced MS events (purple) + internal tasks (emerald). Week/Day toggle.
+-   **Unified Calendar** (`/my-work/calendar`): Combines Outlook events (blue) + scheduled tasks (emerald/amber) in a time-grid layout (7AM-7PM). Week/Day toggle. Drag-and-drop scheduling: unscheduled tasks sidebar lets users drag tasks into time slots. Scheduled tasks can be dragged between slots to reschedule (duration preserved). Double-booking allowed. Tasks have `scheduled_date`, `scheduled_start_time`, `scheduled_end_time` columns. API: `GET /api/calendar/my-tasks` (combined mytool + operational tasks), `PATCH /api/calendar/schedule-task` (with ownership checks).
 -   **Tasks** (`/my-work/tasks`): Unified task board aggregating personal tasks + operational/project tasks with filters.
 -   **Meetings** (`/my-work/meetings`): Reuses existing MyToolMeetingsPage at new route.
 -   **MS Object Sync**: `server/ms-sync-service.ts` periodically (15 min) syncs calendar, email, and Teams data into `ms_objects` table. `server/ms-account-service.ts` manages MS account identity mapping.

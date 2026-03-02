@@ -1,10 +1,10 @@
-import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useState, useMemo, useCallback } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/hooks/use-toast";
 import {
   format,
   startOfWeek,
@@ -16,7 +16,6 @@ import {
   parseISO,
 } from "date-fns";
 import {
-  Calendar,
   ChevronLeft,
   ChevronRight,
   Clock,
@@ -25,7 +24,9 @@ import {
   Circle,
   CheckCircle2,
   AlertTriangle,
-  Target,
+  GripVertical,
+  ListTodo,
+  X,
 } from "lucide-react";
 
 function authHeaders() {
@@ -48,24 +49,19 @@ interface OutlookEvent {
   isCancelled?: boolean;
 }
 
-interface MsObjectEvent {
+interface CalendarTask {
   id: number;
-  type: string;
-  subject_or_title: string;
-  preview: string | null;
-  web_link: string | null;
-  received_or_start_datetime: string | null;
-  action_required: boolean;
-}
-
-interface TaskItem {
-  id: number;
+  taskType: "mytool" | "operational";
   title: string;
   status: string;
   priority: string;
-  plannedForDate: string | null;
-  dueAt: string | null;
   projectName: string | null;
+  plannedForDate: string | null;
+  dueDate: string | null;
+  startDate: string | null;
+  scheduledDate: string | null;
+  scheduledStartTime: string | null;
+  scheduledEndTime: string | null;
 }
 
 function getStartStr(ev: OutlookEvent): string {
@@ -84,10 +80,14 @@ function getLocationStr(ev: OutlookEvent): string {
 function StatusIcon({ status }: { status: string }) {
   switch (status) {
     case "done":
+    case "DONE":
+    case "Complete":
       return <CheckCircle2 className="h-3 w-3 text-emerald-500" />;
     case "in_progress":
+    case "IN PROGRESS":
       return <Clock className="h-3 w-3 text-blue-500" />;
     case "blocked":
+    case "BLOCKED":
       return <AlertTriangle className="h-3 w-3 text-red-500" />;
     default:
       return <Circle className="h-3 w-3 text-muted-foreground" />;
@@ -96,14 +96,52 @@ function StatusIcon({ status }: { status: string }) {
 
 const PRIORITY_COLORS: Record<string, string> = {
   critical: "bg-red-500",
+  Critical: "bg-red-500",
   high: "bg-orange-500",
+  High: "bg-orange-500",
   normal: "bg-blue-500",
+  Med: "bg-blue-500",
   low: "bg-gray-400",
+  Low: "bg-gray-400",
 };
+
+const HOURS = Array.from({ length: 13 }, (_, i) => i + 7);
+
+function hourLabel(h: number): string {
+  if (h === 0) return "12 AM";
+  if (h < 12) return `${h} AM`;
+  if (h === 12) return "12 PM";
+  return `${h - 12} PM`;
+}
+
+function timeToMinutes(t: string): number {
+  const [h, m] = t.split(":").map(Number);
+  return h * 60 + (m || 0);
+}
+
+function minutesToTime(m: number): string {
+  const h = Math.floor(m / 60);
+  const min = m % 60;
+  return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+}
+
+function formatTimeDisplay(t: string): string {
+  const mins = timeToMinutes(t);
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  const ampm = h >= 12 ? "PM" : "AM";
+  const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  return `${h12}:${String(m).padStart(2, "0")} ${ampm}`;
+}
 
 export default function MyWorkCalendarPage() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<"week" | "day">("week");
+  const [showUnscheduled, setShowUnscheduled] = useState(true);
+  const [draggedTask, setDraggedTask] = useState<CalendarTask | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ dayKey: string; hour: number } | null>(null);
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
   const weekEnd = endOfWeek(currentDate, { weekStartsOn: 1 });
@@ -135,12 +173,12 @@ export default function MyWorkCalendarPage() {
     staleTime: 30_000,
   });
 
-  const { data: msObjectEvents = [], isLoading: msLoading } = useQuery<MsObjectEvent[]>({
-    queryKey: ["/api/ms-objects/mine", "event", startStr, endStr],
+  const { data: calendarTasks = [], isLoading: tasksLoading } = useQuery<CalendarTask[]>({
+    queryKey: ["/api/calendar/my-tasks"],
     queryFn: async () => {
-      const res = await fetch(`/api/ms-objects/mine?type=event`, {
-        credentials: "include",
+      const res = await fetch("/api/calendar/my-tasks", {
         headers: authHeaders(),
+        credentials: "include",
       });
       if (!res.ok) return [];
       return res.json();
@@ -148,25 +186,55 @@ export default function MyWorkCalendarPage() {
     staleTime: 30_000,
   });
 
-  const { data: rawTasks = [], isLoading: tasksLoading } = useQuery<any[]>({
-    queryKey: ["/api/mytool/tasks"],
+  const scheduleMutation = useMutation({
+    mutationFn: async (payload: {
+      taskType: string;
+      taskId: number;
+      scheduledDate: string | null;
+      scheduledStartTime: string | null;
+      scheduledEndTime: string | null;
+    }) => {
+      const res = await fetch("/api/calendar/schedule-task", {
+        method: "PATCH",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error("Failed to schedule task");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/my-tasks"] });
+    },
+    onError: (err: Error) => {
+      toast({
+        title: "Scheduling failed",
+        description: err.message || "Could not schedule the task. Please try again.",
+        variant: "destructive",
+      });
+    },
   });
-
-  const tasks: TaskItem[] = useMemo(() =>
-    rawTasks.map((t: any) => ({
-      id: t.id,
-      title: t.title || "",
-      status: t.status || "inbox",
-      priority: t.priority || "normal",
-      plannedForDate: t.plannedForDate || t.planned_for_date || null,
-      dueAt: t.dueAt || t.due_at || null,
-      projectName: t.projectName || t.project_name || null,
-    })),
-  [rawTasks]);
 
   const days = viewMode === "week"
     ? Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
     : [currentDate];
+
+  const scheduledTasksByDay = useMemo(() => {
+    const map: Record<string, CalendarTask[]> = {};
+    for (const day of days) {
+      const key = format(day, "yyyy-MM-dd");
+      map[key] = calendarTasks.filter((t) => t.scheduledDate === key && t.scheduledStartTime);
+    }
+    return map;
+  }, [calendarTasks, days]);
+
+  const completedStatuses = new Set(["done", "DONE", "Complete", "Completed", "COMPLETED"]);
+
+  const unscheduledTasks = useMemo(() => {
+    return calendarTasks.filter(
+      (t) => !t.scheduledDate && !completedStatuses.has(t.status)
+    );
+  }, [calendarTasks]);
 
   const outlookByDay = useMemo(() => {
     const map: Record<string, OutlookEvent[]> = {};
@@ -175,50 +243,64 @@ export default function MyWorkCalendarPage() {
       map[key] = outlookEvents.filter((ev) => {
         const s = getStartStr(ev);
         if (!s) return false;
-        try {
-          return format(parseISO(s), "yyyy-MM-dd") === key;
-        } catch {
-          return false;
-        }
+        try { return format(parseISO(s), "yyyy-MM-dd") === key; } catch { return false; }
       });
     }
     return map;
   }, [outlookEvents, days]);
 
-  const msEventsByDay = useMemo(() => {
-    const map: Record<string, MsObjectEvent[]> = {};
-    for (const day of days) {
-      const key = format(day, "yyyy-MM-dd");
-      map[key] = msObjectEvents.filter((ev) => {
-        if (!ev.received_or_start_datetime) return false;
-        try {
-          return format(parseISO(ev.received_or_start_datetime), "yyyy-MM-dd") === key;
-        } catch {
-          return false;
-        }
-      });
-    }
-    return map;
-  }, [msObjectEvents, days]);
+  const handleDragStart = useCallback((task: CalendarTask) => {
+    setDraggedTask(task);
+  }, []);
 
-  const tasksByDay = useMemo(() => {
-    const map: Record<string, TaskItem[]> = {};
-    for (const day of days) {
-      const key = format(day, "yyyy-MM-dd");
-      map[key] = tasks.filter((t) => {
-        const d = t.plannedForDate || t.dueAt;
-        if (!d) return false;
-        try {
-          return format(parseISO(d), "yyyy-MM-dd") === key;
-        } catch {
-          return false;
-        }
-      });
-    }
-    return map;
-  }, [tasks, days]);
+  const handleDragOver = useCallback((e: React.DragEvent, dayKey: string, hour: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDropTarget({ dayKey, hour });
+  }, []);
 
-  const isLoading = outlookLoading || msLoading || tasksLoading;
+  const handleDragLeave = useCallback(() => {
+    setDropTarget(null);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent, dayKey: string, hour: number) => {
+    e.preventDefault();
+    setDropTarget(null);
+
+    if (!draggedTask) return;
+
+    let durationMins = 60;
+    if (draggedTask.scheduledStartTime && draggedTask.scheduledEndTime) {
+      durationMins = timeToMinutes(draggedTask.scheduledEndTime) - timeToMinutes(draggedTask.scheduledStartTime);
+      if (durationMins <= 0) durationMins = 60;
+    }
+
+    const startMins = hour * 60;
+    const startTime = minutesToTime(startMins);
+    const endTime = minutesToTime(startMins + durationMins);
+
+    scheduleMutation.mutate({
+      taskType: draggedTask.taskType,
+      taskId: draggedTask.id,
+      scheduledDate: dayKey,
+      scheduledStartTime: startTime,
+      scheduledEndTime: endTime,
+    });
+
+    setDraggedTask(null);
+  }, [draggedTask, scheduleMutation]);
+
+  const handleUnschedule = useCallback((task: CalendarTask) => {
+    scheduleMutation.mutate({
+      taskType: task.taskType,
+      taskId: task.id,
+      scheduledDate: null,
+      scheduledStartTime: null,
+      scheduledEndTime: null,
+    });
+  }, [scheduleMutation]);
+
+  const isLoading = outlookLoading || tasksLoading;
 
   return (
     <div className="space-y-4 h-full flex flex-col" data-testid="my-work-calendar">
@@ -290,6 +372,15 @@ export default function MyWorkCalendarPage() {
               >
                 Week
               </Button>
+              <Button
+                variant={showUnscheduled ? "default" : "outline"}
+                size="sm"
+                onClick={() => setShowUnscheduled(!showUnscheduled)}
+                data-testid="calendar-toggle-unscheduled"
+              >
+                <ListTodo className="h-4 w-4 mr-1" />
+                Tasks ({unscheduledTasks.length})
+              </Button>
             </div>
           </div>
           <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
@@ -299,153 +390,327 @@ export default function MyWorkCalendarPage() {
             </div>
             <div className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-sm bg-emerald-100 border border-emerald-200" />
-              Tasks
+              Scheduled Tasks
             </div>
-            {msObjectEvents.length > 0 && (
-              <div className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-sm bg-purple-100 border border-purple-200" />
-                Synced Events
-              </div>
-            )}
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-sm bg-amber-100 border border-amber-200" />
+              Operational Tasks
+            </div>
           </div>
         </CardHeader>
-        <CardContent className="flex-1 flex flex-col min-h-0">
+        <CardContent className="flex-1 flex min-h-0 gap-3">
           {isLoading ? (
-            <div className="flex items-center justify-center py-12">
+            <div className="flex items-center justify-center py-12 flex-1">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
           ) : (
-            <div className={viewMode === "week" ? "grid grid-cols-7 gap-2 flex-1" : "flex-1"}>
-              {days.map((day) => {
-                const key = format(day, "yyyy-MM-dd");
-                const dayOutlookEvents = outlookByDay[key] || [];
-                const dayMsEvents = msEventsByDay[key] || [];
-                const dayTasks = tasksByDay[key] || [];
-                const today = isToday(day);
-                const hasContent = dayOutlookEvents.length > 0 || dayMsEvents.length > 0 || dayTasks.length > 0;
+            <>
+              <div className="flex-1 min-h-0 overflow-auto">
+                <TimeGridView
+                  days={days}
+                  viewMode={viewMode}
+                  outlookByDay={outlookByDay}
+                  scheduledTasksByDay={scheduledTasksByDay}
+                  dropTarget={dropTarget}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  onUnschedule={handleUnschedule}
+                  onDragStartScheduled={handleDragStart}
+                />
+              </div>
 
-                return (
-                  <div
-                    key={key}
-                    className={`${viewMode === "week" ? "min-h-[400px]" : "min-h-[500px]"} rounded-lg border p-2 ${today ? "border-blue-500 bg-blue-50/50" : "border-border"}`}
-                    data-testid={`calendar-day-${key}`}
-                  >
-                    <div className={`text-xs font-medium mb-2 ${today ? "text-blue-600" : "text-muted-foreground"}`}>
-                      {format(day, viewMode === "week" ? "EEE d" : "EEEE, MMM d")}
-                    </div>
-
-                    {!hasContent ? (
-                      <p className="text-xs text-muted-foreground/50 italic">No events</p>
-                    ) : (
-                      <ScrollArea className={viewMode === "week" ? "max-h-[370px]" : "max-h-[470px]"}>
-                        <div className="space-y-1">
-                          {dayOutlookEvents
-                            .sort((a, b) => getStartStr(a).localeCompare(getStartStr(b)))
-                            .map((ev, i) => {
-                              const start = getStartStr(ev);
-                              const end = getEndStr(ev);
-                              let timeLabel = "";
-                              try {
-                                if (ev.isAllDay) {
-                                  timeLabel = "All day";
-                                } else if (start) {
-                                  timeLabel = format(parseISO(start), "h:mm a");
-                                  if (end) timeLabel += ` – ${format(parseISO(end), "h:mm a")}`;
-                                }
-                              } catch {}
-
-                              return (
-                                <div
-                                  key={`outlook-${ev.id || i}`}
-                                  className="rounded bg-blue-100 border border-blue-200 px-2 py-1 text-xs cursor-pointer hover:bg-blue-200 transition-colors group"
-                                  title={ev.subject}
-                                  onClick={() => {
-                                    if (ev.webLink) window.open(ev.webLink, "_blank", "noopener,noreferrer");
-                                  }}
-                                  data-testid={`calendar-outlook-event-${ev.id || i}`}
-                                >
-                                  <div className="flex items-center gap-1">
-                                    <span className="font-medium text-blue-900 truncate flex-1">
-                                      {ev.subject || "No Subject"}
-                                    </span>
-                                    {ev.webLink && (
-                                      <ExternalLink className="h-3 w-3 text-blue-600 opacity-0 group-hover:opacity-100 shrink-0" />
-                                    )}
-                                  </div>
-                                  {timeLabel && (
-                                    <div className="text-blue-700 text-[10px]">{timeLabel}</div>
-                                  )}
-                                  {getLocationStr(ev) && (
-                                    <div className="text-blue-600 text-[10px] truncate">{getLocationStr(ev)}</div>
-                                  )}
-                                </div>
-                              );
-                            })}
-
-                          {dayMsEvents.map((ev) => (
-                            <div
-                              key={`ms-${ev.id}`}
-                              className="rounded bg-purple-100 border border-purple-200 px-2 py-1 text-xs cursor-pointer hover:bg-purple-200 transition-colors group"
-                              title={ev.subject_or_title}
-                              onClick={() => {
-                                if (ev.web_link) window.open(ev.web_link, "_blank", "noopener,noreferrer");
-                              }}
-                              data-testid={`calendar-ms-event-${ev.id}`}
-                            >
-                              <div className="flex items-center gap-1">
-                                <span className="font-medium text-purple-900 truncate flex-1">
-                                  {ev.subject_or_title || "No Title"}
-                                </span>
-                                {ev.web_link && (
-                                  <ExternalLink className="h-3 w-3 text-purple-600 opacity-0 group-hover:opacity-100 shrink-0" />
-                                )}
-                              </div>
-                              {ev.received_or_start_datetime && (
-                                <div className="text-purple-700 text-[10px]">
-                                  {(() => {
-                                    try {
-                                      return format(parseISO(ev.received_or_start_datetime), "h:mm a");
-                                    } catch {
-                                      return "";
-                                    }
-                                  })()}
-                                </div>
-                              )}
-                            </div>
-                          ))}
-
-                          {dayTasks.map((task) => (
-                            <div
-                              key={`task-${task.id}`}
-                              className="rounded bg-emerald-50 border border-emerald-200 px-2 py-1 text-xs hover:bg-emerald-100 transition-colors"
-                              data-testid={`calendar-task-${task.id}`}
-                            >
-                              <div className="flex items-center gap-1">
-                                <StatusIcon status={task.status} />
-                                <span
-                                  className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ${PRIORITY_COLORS[task.priority] || PRIORITY_COLORS.normal}`}
-                                />
-                                <span className="font-medium text-emerald-900 truncate flex-1">
-                                  {task.title}
-                                </span>
-                              </div>
-                              {task.projectName && (
-                                <div className="text-emerald-700 text-[10px] truncate">
-                                  {task.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </ScrollArea>
-                    )}
+              {showUnscheduled && (
+                <div className="w-64 shrink-0 border-l pl-3 flex flex-col min-h-0">
+                  <div className="flex items-center justify-between mb-2 shrink-0">
+                    <h4 className="text-sm font-semibold text-foreground">Unscheduled Tasks</h4>
+                    <Badge variant="secondary" className="text-xs" data-testid="badge-unscheduled-count">
+                      {unscheduledTasks.length}
+                    </Badge>
                   </div>
-                );
-              })}
-            </div>
+                  <ScrollArea className="flex-1">
+                    <div className="space-y-1.5 pr-2">
+                      {unscheduledTasks.length === 0 ? (
+                        <p className="text-xs text-muted-foreground italic py-4 text-center">
+                          All tasks are scheduled
+                        </p>
+                      ) : (
+                        unscheduledTasks.map((task) => (
+                          <DraggableTaskCard
+                            key={`${task.taskType}-${task.id}`}
+                            task={task}
+                            onDragStart={handleDragStart}
+                          />
+                        ))
+                      )}
+                    </div>
+                  </ScrollArea>
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function DraggableTaskCard({
+  task,
+  onDragStart,
+}: {
+  task: CalendarTask;
+  onDragStart: (task: CalendarTask) => void;
+}) {
+  const isOp = task.taskType === "operational";
+  const borderColor = isOp ? "border-amber-200" : "border-emerald-200";
+  const bgColor = isOp ? "bg-amber-50" : "bg-emerald-50";
+  const hoverColor = isOp ? "hover:bg-amber-100" : "hover:bg-emerald-100";
+  const textColor = isOp ? "text-amber-900" : "text-emerald-900";
+  const subTextColor = isOp ? "text-amber-700" : "text-emerald-700";
+
+  return (
+    <div
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", `${task.taskType}:${task.id}`);
+        onDragStart(task);
+      }}
+      className={`rounded border ${borderColor} ${bgColor} ${hoverColor} px-2 py-1.5 text-xs cursor-grab active:cursor-grabbing transition-colors group`}
+      data-testid={`unscheduled-task-${task.taskType}-${task.id}`}
+    >
+      <div className="flex items-center gap-1">
+        <GripVertical className="h-3 w-3 text-muted-foreground opacity-50 group-hover:opacity-100 shrink-0" />
+        <StatusIcon status={task.status} />
+        <span
+          className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ${PRIORITY_COLORS[task.priority] || PRIORITY_COLORS.normal}`}
+        />
+        <span className={`font-medium ${textColor} truncate flex-1`}>
+          {task.title}
+        </span>
+      </div>
+      {task.projectName && (
+        <div className={`${subTextColor} text-[10px] truncate ml-5`}>
+          {task.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
+        </div>
+      )}
+      {(task.dueDate || task.plannedForDate) && (
+        <div className={`${subTextColor} text-[10px] ml-5`}>
+          Due: {task.dueDate || task.plannedForDate}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TimeGridView({
+  days,
+  viewMode,
+  outlookByDay,
+  scheduledTasksByDay,
+  dropTarget,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onUnschedule,
+  onDragStartScheduled,
+}: {
+  days: Date[];
+  viewMode: "week" | "day";
+  outlookByDay: Record<string, OutlookEvent[]>;
+  scheduledTasksByDay: Record<string, CalendarTask[]>;
+  dropTarget: { dayKey: string; hour: number } | null;
+  onDragOver: (e: React.DragEvent, dayKey: string, hour: number) => void;
+  onDragLeave: () => void;
+  onDrop: (e: React.DragEvent, dayKey: string, hour: number) => void;
+  onUnschedule: (task: CalendarTask) => void;
+  onDragStartScheduled: (task: CalendarTask) => void;
+}) {
+  const slotHeight = viewMode === "day" ? 64 : 48;
+
+  return (
+    <div className="flex min-w-0">
+      <div className="w-14 shrink-0">
+        <div className="h-10" />
+        {HOURS.map((hour) => (
+          <div
+            key={hour}
+            className="text-[10px] text-muted-foreground text-right pr-2 flex items-start justify-end"
+            style={{ height: slotHeight }}
+          >
+            {hourLabel(hour)}
+          </div>
+        ))}
+      </div>
+
+      <div className={`flex-1 grid min-w-0 ${viewMode === "week" ? "grid-cols-7" : "grid-cols-1"} divide-x`}>
+        {days.map((day) => {
+          const key = format(day, "yyyy-MM-dd");
+          const today = isToday(day);
+          const dayOutlookEvents = outlookByDay[key] || [];
+          const dayScheduledTasks = scheduledTasksByDay[key] || [];
+
+          return (
+            <div key={key} className="relative flex flex-col min-w-0">
+              <div
+                className={`h-10 text-xs font-medium flex items-center justify-center border-b sticky top-0 z-10 bg-background ${today ? "text-blue-600 bg-blue-50/50" : "text-muted-foreground"}`}
+              >
+                {format(day, viewMode === "week" ? "EEE d" : "EEEE, MMM d")}
+              </div>
+
+              <div className="relative">
+                {HOURS.map((hour) => {
+                  const isTarget = dropTarget?.dayKey === key && dropTarget?.hour === hour;
+                  return (
+                    <div
+                      key={hour}
+                      className={`border-b border-dashed border-border/50 transition-colors ${isTarget ? "bg-emerald-100/60" : ""}`}
+                      style={{ height: slotHeight }}
+                      onDragOver={(e) => onDragOver(e, key, hour)}
+                      onDragLeave={onDragLeave}
+                      onDrop={(e) => onDrop(e, key, hour)}
+                      data-testid={`timeslot-${key}-${hour}`}
+                    />
+                  );
+                })}
+
+                {dayOutlookEvents.map((ev, i) => {
+                  const startStr = getStartStr(ev);
+                  const endStr = getEndStr(ev);
+                  if (!startStr) return null;
+
+                  let startMins: number, endMins: number;
+                  try {
+                    const startDate = parseISO(startStr);
+                    const endDate = endStr ? parseISO(endStr) : null;
+                    startMins = startDate.getHours() * 60 + startDate.getMinutes();
+                    endMins = endDate ? endDate.getHours() * 60 + endDate.getMinutes() : startMins + 60;
+                  } catch {
+                    return null;
+                  }
+
+                  if (ev.isAllDay) {
+                    startMins = 7 * 60;
+                    endMins = 7 * 60 + 30;
+                  }
+
+                  const topOffset = ((startMins - 7 * 60) / 60) * slotHeight;
+                  const height = Math.max(((endMins - startMins) / 60) * slotHeight, 20);
+
+                  if (topOffset < 0) return null;
+
+                  let timeLabel = "";
+                  try {
+                    if (ev.isAllDay) {
+                      timeLabel = "All day";
+                    } else if (startStr) {
+                      timeLabel = format(parseISO(startStr), "h:mm a");
+                      if (endStr) timeLabel += ` – ${format(parseISO(endStr), "h:mm a")}`;
+                    }
+                  } catch {}
+
+                  return (
+                    <div
+                      key={`outlook-${ev.id || i}`}
+                      className="absolute left-0.5 right-0.5 rounded bg-blue-100 border border-blue-200 px-1.5 py-0.5 text-[10px] cursor-pointer hover:bg-blue-200 transition-colors overflow-hidden z-20"
+                      style={{ top: topOffset, height, minHeight: 20 }}
+                      title={`${ev.subject}\n${timeLabel}\n${getLocationStr(ev)}`}
+                      onClick={() => {
+                        if (ev.webLink) window.open(ev.webLink, "_blank", "noopener,noreferrer");
+                      }}
+                      data-testid={`calendar-outlook-event-${ev.id || i}`}
+                    >
+                      <div className="flex items-center gap-0.5">
+                        <span className="font-medium text-blue-900 truncate flex-1 leading-tight">
+                          {ev.subject || "No Subject"}
+                        </span>
+                        {ev.webLink && (
+                          <ExternalLink className="h-2.5 w-2.5 text-blue-600 shrink-0" />
+                        )}
+                      </div>
+                      {height > 24 && timeLabel && (
+                        <div className="text-blue-700 text-[9px] leading-tight truncate">{timeLabel}</div>
+                      )}
+                      {height > 36 && getLocationStr(ev) && (
+                        <div className="text-blue-600 text-[9px] leading-tight truncate">{getLocationStr(ev)}</div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {dayScheduledTasks.map((task) => {
+                  if (!task.scheduledStartTime) return null;
+                  const startMins = timeToMinutes(task.scheduledStartTime);
+                  const endMins = task.scheduledEndTime
+                    ? timeToMinutes(task.scheduledEndTime)
+                    : startMins + 60;
+
+                  const topOffset = ((startMins - 7 * 60) / 60) * slotHeight;
+                  const height = Math.max(((endMins - startMins) / 60) * slotHeight, 20);
+
+                  if (topOffset < 0) return null;
+
+                  const isOp = task.taskType === "operational";
+                  const bg = isOp ? "bg-amber-100" : "bg-emerald-100";
+                  const border = isOp ? "border-amber-300" : "border-emerald-300";
+                  const textColor = isOp ? "text-amber-900" : "text-emerald-900";
+                  const subColor = isOp ? "text-amber-700" : "text-emerald-700";
+                  const hoverBg = isOp ? "hover:bg-amber-200" : "hover:bg-emerald-200";
+
+                  return (
+                    <div
+                      key={`task-${task.taskType}-${task.id}`}
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.effectAllowed = "move";
+                        e.dataTransfer.setData("text/plain", `${task.taskType}:${task.id}`);
+                        onDragStartScheduled(task);
+                      }}
+                      className={`absolute left-0.5 right-0.5 rounded ${bg} border ${border} px-1.5 py-0.5 text-[10px] cursor-grab active:cursor-grabbing ${hoverBg} transition-colors overflow-hidden z-20 group`}
+                      style={{ top: topOffset, height, minHeight: 20 }}
+                      title={`${task.title}\n${formatTimeDisplay(task.scheduledStartTime)} – ${task.scheduledEndTime ? formatTimeDisplay(task.scheduledEndTime) : ""}`}
+                      data-testid={`calendar-task-${task.taskType}-${task.id}`}
+                    >
+                      <div className="flex items-center gap-0.5">
+                        <StatusIcon status={task.status} />
+                        <span
+                          className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ${PRIORITY_COLORS[task.priority] || PRIORITY_COLORS.normal}`}
+                        />
+                        <span className={`font-medium ${textColor} truncate flex-1 leading-tight`}>
+                          {task.title}
+                        </span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onUnschedule(task);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 shrink-0 p-0.5 rounded hover:bg-black/10 transition-opacity"
+                          title="Remove from calendar"
+                          data-testid={`unschedule-task-${task.taskType}-${task.id}`}
+                        >
+                          <X className="h-2.5 w-2.5" />
+                        </button>
+                      </div>
+                      {height > 24 && (
+                        <div className={`${subColor} text-[9px] leading-tight`}>
+                          {formatTimeDisplay(task.scheduledStartTime)}
+                          {task.scheduledEndTime ? ` – ${formatTimeDisplay(task.scheduledEndTime)}` : ""}
+                        </div>
+                      )}
+                      {height > 36 && task.projectName && (
+                        <div className={`${subColor} text-[9px] leading-tight truncate`}>
+                          {task.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

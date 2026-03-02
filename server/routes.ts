@@ -6,7 +6,7 @@ import fs from "fs";
 import path from "path";
 import { storage } from "./storage";
 import { parseTrackerFile, applyFontColors } from "./excelParser";
-import { insertBudgetSchema, programExpense, programInflows, projectInfo, projectPlan, normalizedCostLines, normalizedRevenueLines, normalizedPlanTasks, normalizedExecutionPhases, smartImportRuns, cosStatusOverrides, revenueTrackingOverrides, users, notifications, notificationThrottle } from "@shared/schema";
+import { insertBudgetSchema, programExpense, programInflows, projectInfo, projectPlan, normalizedCostLines, normalizedRevenueLines, normalizedPlanTasks, normalizedExecutionPhases, smartImportRuns, cosStatusOverrides, revenueTrackingOverrides, users, notifications, notificationThrottle, operationalTasks, mytoolTasks } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, or, sql, isNull, asc, desc, inArray } from "drizzle-orm";
 import { runSmartImportPreview } from "./lib/import/index";
@@ -10471,6 +10471,137 @@ export async function registerRoutes(
       const updated = await storage.updateMytoolSettings(req.body);
       logAuditFromReq(req, { entityType: "mytool_settings", action: "update", changesJson: { description: "MyTool settings updated" } });
       res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ==================== CALENDAR - COMBINED TASKS ====================
+
+  app.get("/api/calendar/my-tasks", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const userId = (req.user as any).id;
+      const userName = (req.user as any).username;
+
+      const [myToolTasksResult, opTasksOwned, opTasksAssigned] = await Promise.all([
+        db.select().from(mytoolTasks).where(eq(mytoolTasks.ownerUserId, userId)),
+        db.select().from(operationalTasks).where(eq(operationalTasks.ownerUserId, userId)),
+        db.select().from(operationalTasks).where(
+          sql`${operationalTasks.assignees}::text[] @> ARRAY[${userName}]::text[]`
+        ),
+      ]);
+
+      const seenOpIds = new Set<number>();
+      const allOpTasks = [...opTasksOwned];
+      for (const t of opTasksAssigned) {
+        if (!seenOpIds.has(t.id)) {
+          seenOpIds.add(t.id);
+          allOpTasks.push(t);
+        }
+      }
+      for (const t of opTasksOwned) seenOpIds.add(t.id);
+
+      const combined = [
+        ...myToolTasksResult.map((t) => ({
+          id: t.id,
+          taskType: "mytool" as const,
+          title: t.title,
+          status: t.status,
+          priority: t.priority,
+          projectName: t.projectName,
+          plannedForDate: t.plannedForDate,
+          dueDate: t.dueAt ? t.dueAt.toISOString().split("T")[0] : null,
+          startDate: t.startDate,
+          scheduledDate: t.scheduledDate,
+          scheduledStartTime: t.scheduledStartTime,
+          scheduledEndTime: t.scheduledEndTime,
+        })),
+        ...allOpTasks.map((t) => ({
+          id: t.id,
+          taskType: "operational" as const,
+          title: t.title,
+          status: t.status,
+          priority: t.priority,
+          projectName: t.projectName,
+          plannedForDate: null,
+          dueDate: t.dueDate,
+          startDate: t.startDate,
+          scheduledDate: t.scheduledDate,
+          scheduledStartTime: t.scheduledStartTime,
+          scheduledEndTime: t.scheduledEndTime,
+        })),
+      ];
+
+      res.json(combined);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/calendar/schedule-task", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const userId = (req.user as any).id;
+      const userName = (req.user as any).username;
+      const { taskType, taskId, scheduledDate, scheduledStartTime, scheduledEndTime } = req.body;
+      if (!taskType || !taskId) {
+        return res.status(400).json({ error: "taskType and taskId required" });
+      }
+
+      const timeRegex = /^\d{2}:\d{2}$/;
+      if (scheduledStartTime && !timeRegex.test(scheduledStartTime)) {
+        return res.status(400).json({ error: "scheduledStartTime must be HH:mm format" });
+      }
+      if (scheduledEndTime && !timeRegex.test(scheduledEndTime)) {
+        return res.status(400).json({ error: "scheduledEndTime must be HH:mm format" });
+      }
+      if (scheduledDate && !/^\d{4}-\d{2}-\d{2}$/.test(scheduledDate)) {
+        return res.status(400).json({ error: "scheduledDate must be YYYY-MM-DD format" });
+      }
+
+      if (taskType === "mytool") {
+        const [task] = await db.select().from(mytoolTasks).where(
+          and(eq(mytoolTasks.id, taskId), eq(mytoolTasks.ownerUserId, userId))
+        );
+        if (!task) return res.status(404).json({ error: "Task not found or not owned by you" });
+
+        await db.update(mytoolTasks)
+          .set({
+            scheduledDate: scheduledDate || null,
+            scheduledStartTime: scheduledStartTime || null,
+            scheduledEndTime: scheduledEndTime || null,
+            updatedAt: new Date(),
+          })
+          .where(eq(mytoolTasks.id, taskId));
+      } else if (taskType === "operational") {
+        const [task] = await db.select().from(operationalTasks).where(eq(operationalTasks.id, taskId));
+        if (!task) return res.status(404).json({ error: "Task not found" });
+
+        const isOwner = task.ownerUserId === userId;
+        const isAssigned = task.assignees?.includes(userName);
+        if (!isOwner && !isAssigned) {
+          return res.status(403).json({ error: "You can only schedule tasks assigned to you" });
+        }
+
+        await db.update(operationalTasks)
+          .set({
+            scheduledDate: scheduledDate || null,
+            scheduledStartTime: scheduledStartTime || null,
+            scheduledEndTime: scheduledEndTime || null,
+            updatedAt: new Date(),
+          })
+          .where(eq(operationalTasks.id, taskId));
+      } else {
+        return res.status(400).json({ error: "taskType must be 'mytool' or 'operational'" });
+      }
+
+      logAuditFromReq(req, {
+        entityType: `${taskType}_task`,
+        action: "calendar_schedule",
+        entityId: String(taskId),
+        changesJson: { scheduledDate, scheduledStartTime, scheduledEndTime },
+      });
+
+      res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
