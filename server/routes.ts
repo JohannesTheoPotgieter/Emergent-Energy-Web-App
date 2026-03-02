@@ -1076,7 +1076,7 @@ export async function registerRoutes(
         }
         if (totalProgramBudget === 0) {
           for (const rev of allNormRevOv) {
-            if (rev.amountExVat) totalProgramBudget += parseFloat(rev.amountExVat);
+            if (rev.amountExVat) totalProgramBudget += parseFloat(rev.amountExVat) || 0;
           }
         }
       }
@@ -1086,14 +1086,14 @@ export async function registerRoutes(
       for (const expense of allExpenses) {
         const paymentDate = expense.expensePaymentDate;
         if (paymentDate && /^\d{4}-\d{2}-\d{2}$/.test(paymentDate) && paymentDate <= today && expense.expenseActualTotal) {
-          actualSpendPaid += parseFloat(expense.expenseActualTotal);
+          actualSpendPaid += parseFloat(expense.expenseActualTotal) || 0;
         }
       }
       for (const cost of allNormCostsOv) {
         if (oldExpenseProjects.has(resolveOvName(cost.projectName))) continue;
         const paymentDate = cost.paidDate;
         if (paymentDate && /^\d{4}-\d{2}-\d{2}$/.test(paymentDate) && paymentDate <= today && cost.amountExVat) {
-          actualSpendPaid += parseFloat(cost.amountExVat);
+          actualSpendPaid += parseFloat(cost.amountExVat) || 0;
         }
       }
 
@@ -1102,14 +1102,14 @@ export async function registerRoutes(
       for (const inflow of allInflows) {
         const paymentDate = inflow.effectiveDate;
         if (paymentDate && /^\d{4}-\d{2}-\d{2}$/.test(paymentDate) && paymentDate <= today && inflow.milestoneAmount) {
-          revenueRealised += parseFloat(inflow.milestoneAmount);
+          revenueRealised += parseFloat(inflow.milestoneAmount) || 0;
         }
       }
       for (const rev of allNormRevOv) {
         if (oldInflowProjects.has(resolveOvName(rev.projectName))) continue;
         const paymentDate = rev.paidDate || rev.inBankDate;
         if (paymentDate && /^\d{4}-\d{2}-\d{2}$/.test(paymentDate) && paymentDate <= today && rev.amountExVat) {
-          revenueRealised += parseFloat(rev.amountExVat);
+          revenueRealised += parseFloat(rev.amountExVat) || 0;
         }
       }
 
@@ -2103,7 +2103,7 @@ export async function registerRoutes(
         if (projectInflows.length > 0) {
           for (const inflow of projectInflows) {
             if (inflow.milestoneAmount) {
-              const amt = parseFloat(inflow.milestoneAmount);
+              const amt = parseFloat(inflow.milestoneAmount) || 0;
               totalContractRevenue += amt;
               const manualInBank = (inflow as any).inBank === 1 || (inflow as any).inBank === '1' || (inflow as any).inBank === true;
               const hasInvoice = !!(inflow.milestoneInvoiceNumber && String(inflow.milestoneInvoiceNumber).trim());
@@ -2117,7 +2117,7 @@ export async function registerRoutes(
         } else if (normRev.length > 0) {
           for (const rev of normRev) {
             if (rev.amountExVat) {
-              const amt = parseFloat(rev.amountExVat);
+              const amt = parseFloat(rev.amountExVat) || 0;
               totalContractRevenue += amt;
               const manualInBank = (rev as any).inBank === 1 || (rev as any).inBank === '1' || (rev as any).inBank === true;
               const hasInvoice = !!(rev.invoiceNumber && String(rev.invoiceNumber).trim());
@@ -2135,7 +2135,7 @@ export async function registerRoutes(
         if (projectExpenses.length > 0) {
           for (const expense of projectExpenses) {
             if (expense.expenseActualTotal) {
-              const amt = parseFloat(expense.expenseActualTotal);
+              const amt = parseFloat(expense.expenseActualTotal) || 0;
               totalExpenses += amt;
               const state = (expense as any).computedState || classifyExpenseState(expense as any);
               if (state === 'Paid') {
@@ -2146,7 +2146,7 @@ export async function registerRoutes(
         } else if (normCosts.length > 0) {
           for (const cost of normCosts) {
             if (cost.amountExVat) {
-              const amt = parseFloat(cost.amountExVat);
+              const amt = parseFloat(cost.amountExVat) || 0;
               totalExpenses += amt;
               const state = classifyExpenseState(cost as any);
               if (state === 'Paid') {
