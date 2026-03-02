@@ -261,14 +261,6 @@ function getUnifiedWorkNavGroups(): NavGroup[] {
     ],
   });
 
-  result.push({
-    heading: "COLLABORATION",
-    section: "COLLABORATION",
-    items: [
-      { label: "Collaboration Hub", icon: Handshake, path: "/collaboration" },
-    ],
-  });
-
   for (const group of base) {
     if (group.section === "COCKPIT") {
       result.push({
