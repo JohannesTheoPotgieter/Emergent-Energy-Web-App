@@ -268,7 +268,7 @@ function getUnifiedWorkNavGroups(): NavGroup[] {
         items: group.items.filter(i => i.path !== "/my-tool"),
       });
     } else if (group.section === "COLLABORATION") {
-      continue;
+      result.push(group);
     } else {
       result.push(group);
     }
