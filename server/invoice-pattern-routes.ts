@@ -35,6 +35,105 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
 
 router.use(jwtAuth);
 
+async function autoCreatePatternsForAliases(
+  counterpartyId: number,
+  nameCanonical: string,
+  aliases: string[],
+  cpType: string,
+  userId: number | null
+): Promise<any[]> {
+  const allTokens = [nameCanonical, ...aliases].filter(a => a && a.trim().length >= 2);
+  const created: any[] = [];
+
+  for (const alias of allTokens) {
+    const normalized = alias.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+    if (!normalized || normalized.length < 2) continue;
+
+    const existing = await db
+      .select()
+      .from(invoicePatternRules)
+      .where(
+        and(
+          eq(invoicePatternRules.counterpartyId, counterpartyId),
+          eq(invoicePatternRules.patternValue, normalized)
+        )
+      );
+    if (existing.length > 0) continue;
+
+    const [rule] = await db
+      .insert(invoicePatternRules)
+      .values({
+        patternType: "REGEX",
+        patternValue: normalized,
+        normalizedExample: `${normalized}-001`,
+        counterpartyId,
+        counterpartyName: nameCanonical,
+        inferredType: cpType as any,
+        confidenceWeight: 70,
+        createdBy: userId,
+        isActive: true,
+      })
+      .returning();
+    created.push(rule);
+  }
+
+  console.log(`[invoice-patterns] Auto-created ${created.length} pattern rules for counterparty "${nameCanonical}" (aliases: ${aliases.join(", ")})`);
+  return created;
+}
+
+async function syncPatternsForCounterparty(
+  counterpartyId: number,
+  nameCanonical: string,
+  aliases: string[],
+  cpType: string,
+  userId: number | null
+): Promise<void> {
+  const existingRules = await db
+    .select()
+    .from(invoicePatternRules)
+    .where(eq(invoicePatternRules.counterpartyId, counterpartyId));
+
+  const autoRules = existingRules.filter(
+    r => r.patternType === "REGEX" && r.timesConfirmed === 0 && r.timesOverridden === 0 && r.timesMatched === 0
+  );
+
+  const allTokens = [nameCanonical, ...aliases]
+    .filter(a => a && a.trim().length >= 2)
+    .map(a => a.trim().toUpperCase().replace(/[^A-Z0-9]/g, ""))
+    .filter(n => n.length >= 2);
+
+  const desiredSet = new Set(allTokens);
+
+  for (const rule of autoRules) {
+    if (!desiredSet.has(rule.patternValue)) {
+      await db.delete(invoicePatternRules).where(eq(invoicePatternRules.id, rule.id));
+    }
+  }
+
+  const existingPatterns = new Set(existingRules.map(r => r.patternValue));
+  for (const token of allTokens) {
+    if (existingPatterns.has(token)) continue;
+    await db.insert(invoicePatternRules).values({
+      patternType: "REGEX",
+      patternValue: token,
+      normalizedExample: `${token}-001`,
+      counterpartyId,
+      counterpartyName: nameCanonical,
+      inferredType: cpType as any,
+      confidenceWeight: 70,
+      createdBy: userId,
+      isActive: true,
+    });
+  }
+
+  await db
+    .update(invoicePatternRules)
+    .set({ counterpartyName: nameCanonical, inferredType: cpType as any })
+    .where(eq(invoicePatternRules.counterpartyId, counterpartyId));
+
+  console.log(`[invoice-patterns] Synced patterns for counterparty "${nameCanonical}" (${allTokens.length} aliases)`);
+}
+
 router.get("/api/invoice-patterns", requireAuth, async (_req: Request, res: Response) => {
   try {
     const rules = await db
@@ -653,17 +752,23 @@ router.post("/api/counterparties", requireAuth, async (req: Request, res: Respon
       return res.status(400).json({ error: "nameCanonical is required" });
     }
     const userId = (req as any).user?.id || null;
+    const aliases: string[] = Array.isArray(nameAliases) ? nameAliases : [];
+    const cpType = typeDefault || "OTHER";
+
     const [cp] = await db
       .insert(counterparties)
       .values({
         nameCanonical: nameCanonical.trim(),
-        typeDefault: typeDefault || "OTHER",
-        nameAliases: nameAliases || [],
+        typeDefault: cpType,
+        nameAliases: aliases,
         isCore: isCore || false,
         createdBy: userId,
       })
       .returning();
-    res.json(cp);
+
+    const createdRules = await autoCreatePatternsForAliases(cp.id, nameCanonical.trim(), aliases, cpType, userId);
+
+    res.json({ ...cp, autoCreatedRules: createdRules.length });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -673,6 +778,7 @@ router.patch("/api/counterparties/:id", requireAuth, async (req: Request, res: R
   try {
     const id = parseInt(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+    const userId = (req as any).user?.id || null;
     const updates: any = {};
     if (req.body.nameCanonical !== undefined) updates.nameCanonical = req.body.nameCanonical.trim();
     if (req.body.typeDefault !== undefined) updates.typeDefault = req.body.typeDefault;
@@ -684,6 +790,17 @@ router.patch("/api/counterparties/:id", requireAuth, async (req: Request, res: R
       .where(eq(counterparties.id, id))
       .returning();
     if (!updated) return res.status(404).json({ error: "Counterparty not found" });
+
+    if (req.body.nameAliases !== undefined || req.body.nameCanonical !== undefined) {
+      await syncPatternsForCounterparty(
+        id,
+        updated.nameCanonical,
+        (updated.nameAliases as string[]) || [],
+        updated.typeDefault,
+        userId
+      );
+    }
+
     res.json(updated);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
