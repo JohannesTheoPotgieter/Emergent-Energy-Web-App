@@ -3360,7 +3360,7 @@ export async function registerRoutes(
 
   app.get("/api/program-dashboard", requireAuth, async (req, res) => {
     try {
-      const [allProjectInfo, allExpenses, rawInflows, allPlans, allEditableFields, allTaskLinks, allOpTasks, manualEntries, allUsers] = await Promise.all([
+      const [allProjectInfo, legacyExpenses, legacyRawInflows, legacyPlans, allEditableFields, allTaskLinks, allOpTasks, manualEntries, allUsers] = await Promise.all([
         storage.getAllProjectInfo(),
         storage.getAllProgramExpenses(),
         storage.getAllProgramInflows(),
@@ -3371,8 +3371,11 @@ export async function registerRoutes(
         storage.getTrackerMonthlyManual('COS'),
         db.select({ name: users.name }).from(users),
       ]);
+      const merged = await getMergedAll(legacyExpenses, legacyRawInflows, legacyPlans);
+      const allExpenses = merged.expenses;
+      const allPlans = merged.plans;
       const validUserNames = new Set(allUsers.map(u => (u.name || '').toLowerCase().trim()));
-      const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
+      const allInflows = resolveInflowEffectiveDates(merged.inflows, allTaskLinks, allOpTasks, allPlans);
 
       const today = new Date().toISOString().split("T")[0];
 
@@ -3794,7 +3797,7 @@ export async function registerRoutes(
 
   app.get("/api/dashboard/high-priority", requireAuth, async (req, res) => {
     try {
-      const [allProjectInfo, allExpenses, rawInflows, rawPlans, allPlanOverrides, allTaskLinks, allOpTasks, inBankOverrides] = await Promise.all([
+      const [allProjectInfo, legacyExpenses, legacyRawInflows, legacyRawPlans, allPlanOverrides, allTaskLinks, allOpTasks, inBankOverrides] = await Promise.all([
         storage.getAllProjectInfo(),
         storage.getAllProgramExpenses(),
         storage.getAllProgramInflows(),
@@ -3804,7 +3807,9 @@ export async function registerRoutes(
         storage.getAllOperationalTasks(),
         db.select().from(revenueTrackingOverrides).where(eq(revenueTrackingOverrides.fieldName, "inBank")),
       ]);
-      const allPlans = applyProjectPlanOverrides(rawPlans, allPlanOverrides);
+      const merged = await getMergedAll(legacyExpenses, legacyRawInflows, legacyRawPlans);
+      const allExpenses = merged.expenses;
+      const allPlans = applyProjectPlanOverrides(merged.plans, allPlanOverrides);
 
       const inBankOverrideSet = new Set(
         inBankOverrides
@@ -3812,7 +3817,7 @@ export async function registerRoutes(
           .map(o => `${o.projectName}::${o.rowNumber}`)
       );
 
-      const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
+      const allInflows = resolveInflowEffectiveDates(merged.inflows, allTaskLinks, allOpTasks, allPlans);
 
       const today = new Date().toISOString().split("T")[0];
       const projectInfoMap = new Map(allProjectInfo.map(info => [info.projectName, info]));
