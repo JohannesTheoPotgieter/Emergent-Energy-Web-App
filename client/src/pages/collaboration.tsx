@@ -44,7 +44,7 @@ function useUnifiedWorkFlag() {
   return flag === true;
 }
 
-function useProjectsList() {
+export function useProjectsList() {
   return useQuery<{ id: number; name: string }[]>({
     queryKey: ["projects-list-for-tagging"],
     queryFn: async () => {
@@ -60,7 +60,7 @@ function useProjectsList() {
   });
 }
 
-function TagToProjectDialog({
+export function TagToProjectDialog({
   open,
   onOpenChange,
   msObjectId,
@@ -175,7 +175,7 @@ function TagToProjectDialog({
   );
 }
 
-function ConvertToTaskDialog({ open, onOpenChange, item }: { open: boolean; onOpenChange: (open: boolean) => void; item: any }) {
+export function ConvertToTaskDialog({ open, onOpenChange, item }: { open: boolean; onOpenChange: (open: boolean) => void; item: any }) {
   const { toast } = useToast();
   const qc = useQueryClient();
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(item?.linkedProjectId || null);
@@ -187,12 +187,17 @@ function ConvertToTaskDialog({ open, onOpenChange, item }: { open: boolean; onOp
   }, [open, item?.id]);
 
   const { data: projects = [] } = useQuery<any[]>({
-    queryKey: ["projects-summary-for-convert"],
+    queryKey: ["projects-list-for-convert"],
     queryFn: async () => {
-      const res = await fetch("/api/projects-summary", { headers: authHeaders(), credentials: "include" });
+      const res = await fetch("/api/projects", { headers: authHeaders(), credentials: "include" });
       if (!res.ok) return [];
-      return res.json();
+      const rows = await res.json();
+      return rows
+        .map((p: any) => ({ id: p.id, name: (p.projectName || p.project_name || "").replace(/_Tracker.*$/i, "").replace(/_/g, " "), phase: p.executionPhase || p.phase || null }))
+        .filter((p: any) => p.name)
+        .sort((a: any, b: any) => a.name.localeCompare(b.name));
     },
+    staleTime: 120_000,
     enabled: open,
   });
 
@@ -246,12 +251,12 @@ function ConvertToTaskDialog({ open, onOpenChange, item }: { open: boolean; onOp
               </button>
               {projects.map((p: any) => (
                 <button
-                  key={p.project_info_id}
-                  className={`w-full text-left px-3 py-2 text-sm hover:bg-muted/50 transition-colors ${selectedProjectId === p.project_info_id ? "bg-primary/10 font-medium" : ""}`}
-                  onClick={() => setSelectedProjectId(p.project_info_id)}
-                  data-testid={`convert-project-${p.project_info_id}`}
+                  key={p.id}
+                  className={`w-full text-left px-3 py-2 text-sm hover:bg-muted/50 transition-colors ${selectedProjectId === p.id ? "bg-primary/10 font-medium" : ""}`}
+                  onClick={() => setSelectedProjectId(p.id)}
+                  data-testid={`convert-project-${p.id}`}
                 >
-                  {p.project_name}
+                  {p.name}
                   {p.phase && <span className="text-xs text-muted-foreground ml-2">({p.phase})</span>}
                 </button>
               ))}
@@ -274,7 +279,7 @@ function ConvertToTaskDialog({ open, onOpenChange, item }: { open: boolean; onOp
   );
 }
 
-function MsObjectActions({ item, onTagClick, onConvertClick }: { item: any; onTagClick: (item: any) => void; onConvertClick?: (item: any) => void }) {
+export function MsObjectActions({ item, onTagClick, onConvertClick }: { item: any; onTagClick: (item: any) => void; onConvertClick?: (item: any) => void }) {
   return (
     <div className="flex items-center gap-1 flex-shrink-0">
       {item.webLink && (
@@ -819,7 +824,7 @@ function SyncedSharePointTab() {
   );
 }
 
-function authHeaders() {
+export function authHeaders() {
   const token = localStorage.getItem("auth_token");
   const h: Record<string, string> = {};
   if (token) h["Authorization"] = `Bearer ${token}`;
