@@ -365,7 +365,7 @@ export default function LifecycleBoardPage() {
   const isExec = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER"].includes(role);
 
   function getGateAuthHeaders(): HeadersInit {
-    const token = localStorage.getItem("company_role_token");
+    const token = localStorage.getItem("auth_token");
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (token) headers["Authorization"] = `Bearer ${token}`;
     return headers;

@@ -458,7 +458,7 @@ export default function Dashboard() {
   const { data: pmUsersList = [] } = useQuery<{ id: number; name: string; username: string; role: string }[]>({
     queryKey: ["/api/pm-assignable-users"],
     queryFn: async () => {
-      const token = localStorage.getItem("company_role_token");
+      const token = localStorage.getItem("auth_token");
       const headers: Record<string, string> = {};
       if (token) headers["Authorization"] = `Bearer ${token}`;
       const res = await fetch("/api/pm-assignable-users", { credentials: "include", headers });

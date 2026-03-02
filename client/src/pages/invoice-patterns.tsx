@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 
 function getAuthHeaders(): Record<string, string> {
-  const token = localStorage.getItem("company_role_token");
+  const token = localStorage.getItem("auth_token");
   const headers: Record<string, string> = {};
   if (token) headers["Authorization"] = `Bearer ${token}`;
   return headers;
