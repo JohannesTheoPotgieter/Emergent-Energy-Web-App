@@ -141,9 +141,12 @@ router.post("/api/admin/migration/register-backup", jwtAuth, requireAuth, requir
     }
 
     const currentUser = (req as any).user;
+    const userName = (currentUser.name || currentUser.username || "admin").replace(/'/g, "''");
+    const safeBackupId = backupId.replace(/'/g, "''");
+    const safeDesc = (description || "Pre-migration backup").replace(/'/g, "''");
     await db.execute(sql.raw(`
       INSERT INTO migration_backups (backup_id, backup_type, description, created_by_user_id, created_by_name)
-      VALUES ('${backupId.replace(/'/g, "''")}', 'manual', '${(description || "Pre-migration backup").replace(/'/g, "''")}', ${currentUser.id}, '${(currentUser.name || currentUser.username).replace(/'/g, "''")}')
+      VALUES ('${safeBackupId}', 'manual', '${safeDesc}', ${currentUser.id}, '${userName}')
     `));
 
     res.json({ success: true, backupId });
