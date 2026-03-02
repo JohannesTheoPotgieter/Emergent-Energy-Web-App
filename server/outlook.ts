@@ -306,20 +306,25 @@ export async function listMessages(options: {
 }
 
 export async function listFlaggedMessages(top: number = 50): Promise<any[]> {
-  const url = `/me/messages?$top=${top}&$filter=flag/flagStatus eq 'flagged'&$select=id,subject,from,receivedDateTime,bodyPreview,webLink,isRead,hasAttachments,flag&$orderby=receivedDateTime desc`;
-  const data = await graphGet(url);
-  return (data.value || []).map((msg: any) => ({
-    id: msg.id,
-    subject: msg.subject || "(No Subject)",
-    sender: msg.from?.emailAddress?.name || msg.from?.emailAddress?.address || null,
-    senderEmail: msg.from?.emailAddress?.address || null,
-    receivedAt: msg.receivedDateTime,
-    snippet: msg.bodyPreview || null,
-    webLink: msg.webLink || null,
-    isRead: msg.isRead,
-    hasAttachments: msg.hasAttachments,
-    flagStatus: msg.flag?.flagStatus || null,
-  }));
+  const url = `/me/messages?$top=${top}&$filter=flag/flagStatus eq 'flagged'&$select=id,subject,from,receivedDateTime,bodyPreview,webLink,isRead,hasAttachments,flag`;
+  try {
+    const data = await graphGet(url);
+    return (data.value || []).map((msg: any) => ({
+      id: msg.id,
+      subject: msg.subject || "(No Subject)",
+      sender: msg.from?.emailAddress?.name || msg.from?.emailAddress?.address || null,
+      senderEmail: msg.from?.emailAddress?.address || null,
+      receivedAt: msg.receivedDateTime,
+      snippet: msg.bodyPreview || null,
+      webLink: msg.webLink || null,
+      isRead: msg.isRead,
+      hasAttachments: msg.hasAttachments,
+      flagStatus: msg.flag?.flagStatus || null,
+    }));
+  } catch (err: any) {
+    console.log(`[Outlook] Flagged messages query failed (non-fatal): ${err.message}`);
+    return [];
+  }
 }
 
 export async function getMessageDetail(messageId: string): Promise<any> {
