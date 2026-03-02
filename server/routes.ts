@@ -6,7 +6,7 @@ import fs from "fs";
 import path from "path";
 import { storage } from "./storage";
 import { parseTrackerFile, applyFontColors } from "./excelParser";
-import { insertBudgetSchema, programExpense, programInflows, projectInfo, projectPlan, normalizedCostLines, normalizedRevenueLines, normalizedPlanTasks, normalizedExecutionPhases, smartImportRuns, cosStatusOverrides, revenueTrackingOverrides, users, notifications, notificationThrottle, operationalTasks, mytoolTasks, engineeringTasks, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications } from "@shared/schema";
+import { insertBudgetSchema, programExpense, programInflows, projectInfo, projectPlan, normalizedCostLines, normalizedRevenueLines, normalizedPlanTasks, normalizedExecutionPhases, smartImportRuns, cosStatusOverrides, revenueTrackingOverrides, users, notifications, notificationThrottle, operationalTasks, mytoolTasks, engineeringTasks, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems } from "@shared/schema";
 import { db } from "./db";
 import { safeLegacyQuery, safeLegacyWrite } from "./legacy-table-guard";
 import { eq, and, or, sql, isNull, asc, desc, inArray } from "drizzle-orm";
@@ -9566,11 +9566,35 @@ export async function registerRoutes(
       if (id < 0) {
         const planId = -id;
         let planTask: any = null;
-        const allProjects = await storage.getAllProjectInfo();
-        for (const proj of allProjects) {
-          const plans = await storage.getProjectPlansByProject(proj.projectName);
-          planTask = plans.find((t: any) => t.id === planId);
-          if (planTask) break;
+
+        const [wiResult] = await db.select().from(workItems).where(eq(workItems.id, planId)).limit(1);
+        if (wiResult) {
+          const projName = wiResult.projectId
+            ? (await db.select({ projectName: projectInfo.projectName }).from(projectInfo).where(eq(projectInfo.id, wiResult.projectId)))[0]?.projectName || ""
+            : "";
+          planTask = {
+            id: wiResult.id,
+            projectName: projName,
+            taskNo: wiResult.wbsCode,
+            rowNumber: null,
+            highLevelProgramme: wiResult.title,
+            actualStart: wiResult.startDate,
+            actualEnd: wiResult.endDate,
+            durationDays: wiResult.duration,
+            actualPctComplete: wiResult.percentComplete,
+            expectedPctComplete: null,
+            createdAt: wiResult.createdAt,
+            comment: wiResult.description,
+          };
+        }
+
+        if (!planTask) {
+          const allProjects = await storage.getAllProjectInfo();
+          for (const proj of allProjects) {
+            const plans = await storage.getProjectPlansByProject(proj.projectName);
+            planTask = plans.find((t: any) => t.id === planId);
+            if (planTask) break;
+          }
         }
         if (!planTask) return res.status(404).json({ error: "Baseline task not found" });
 
@@ -10483,8 +10507,22 @@ export async function registerRoutes(
         const existingOverrides = await storage.getTaskOverridesByScenario(scenario.id);
         const existing = existingOverrides.find((o: any) => o.importedTaskId === actualTaskId);
 
-        const basePlanTaskResult = await safeLegacyQuery(() => db.select().from(projectPlan).where(eq(projectPlan.id, actualTaskId)), []);
-        const basePlanTask = basePlanTaskResult[0];
+        let basePlanTaskResult = await safeLegacyQuery(() => db.select().from(projectPlan).where(eq(projectPlan.id, actualTaskId)), []);
+        let basePlanTask = basePlanTaskResult[0];
+        if (!basePlanTask) {
+          const [wi] = await db.select().from(workItems).where(eq(workItems.id, actualTaskId)).limit(1);
+          if (wi) {
+            basePlanTask = {
+              id: wi.id,
+              highLevelProgramme: wi.title,
+              actualStart: wi.startDate,
+              actualEnd: wi.endDate,
+              actualPctComplete: wi.percentComplete,
+              durationDays: wi.duration,
+              taskNo: wi.wbsCode,
+            } as any;
+          }
+        }
         const taskName = updates.title || basePlanTask?.highLevelProgramme || "Unknown task";
 
         const overrideData: any = {};

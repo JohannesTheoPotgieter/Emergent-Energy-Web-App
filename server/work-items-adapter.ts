@@ -1,6 +1,6 @@
 import { db } from "./db";
-import { eq, and, isNull, sql, asc, desc } from "drizzle-orm";
-import { workItems, workItemAssignments, type WorkItem, type WorkItemAssignment } from "@shared/schema";
+import { eq, and, isNull, sql, asc, desc, inArray } from "drizzle-orm";
+import { workItems, workItemAssignments, projectInfo, type WorkItem, type WorkItemAssignment } from "@shared/schema";
 import { getFeatureFlag } from "./lib/feature-flags";
 
 export const WORK_ITEMS_FLAG = "canonical_work_items_v1";
@@ -287,27 +287,36 @@ export async function getAllPMWorkItemsAsProjectPlan(): Promise<any[]> {
   const projectIds = [...new Set(items.filter(i => i.projectId).map(i => i.projectId!))];
   let projectNameMap = new Map<number, string>();
   if (projectIds.length > 0) {
-    const projects = await db.execute(sql`SELECT id, project_name FROM project_info WHERE id = ANY(ARRAY[${sql.join(projectIds.map(id => sql`${id}`), sql`, `)}])`);
-    for (const row of (projects as any).rows || []) {
-      projectNameMap.set(row.id, row.project_name);
+    const projects = await db
+      .select({ id: projectInfo.id, projectName: projectInfo.projectName })
+      .from(projectInfo)
+      .where(inArray(projectInfo.id, projectIds));
+    for (const row of projects) {
+      projectNameMap.set(row.id, row.projectName);
     }
   }
 
-  return items.map(wi => ({
-    id: wi.id,
-    projectId: wi.projectId,
-    projectName: wi.projectId ? (projectNameMap.get(wi.projectId) || "") : "",
-    highLevelProgramme: wi.title,
-    title: wi.title,
-    taskNo: wi.wbsCode,
-    rowNumber: null,
-    actualStart: wi.startDate,
-    actualEnd: wi.endDate,
-    actualPctComplete: wi.percentComplete,
-    expectedPctComplete: null,
-    durationDays: wi.duration,
-    isMilestone: wi.type === "milestone",
-  }));
+  const rowCounterByProject = new Map<number, number>();
+  return items.map(wi => {
+    const pId = wi.projectId || 0;
+    const rowNum = (rowCounterByProject.get(pId) || 0) + 1;
+    rowCounterByProject.set(pId, rowNum);
+    return {
+      id: wi.id,
+      projectId: wi.projectId,
+      projectName: wi.projectId ? (projectNameMap.get(wi.projectId) || "") : "",
+      highLevelProgramme: wi.title,
+      title: wi.title,
+      taskNo: wi.wbsCode,
+      rowNumber: rowNum,
+      actualStart: wi.startDate,
+      actualEnd: wi.endDate,
+      actualPctComplete: wi.percentComplete,
+      expectedPctComplete: null,
+      durationDays: wi.duration,
+      isMilestone: wi.type === "milestone",
+    };
+  });
 }
 
 function mapToEngStatus(status: string): string {
