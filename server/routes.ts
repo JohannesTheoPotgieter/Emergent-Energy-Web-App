@@ -2219,16 +2219,28 @@ export async function registerRoutes(
 
       const { programExpense, programInflows, normalizedCostLines, normalizedRevenueLines, projectInfo } = await import("@shared/schema");
 
-      const EXCLUDED_PHASES = ["Compliance Handover", "Commercial Close Out", "Closed", "Gone"];
+      const HARD_EXCLUDED = ["Closed", "Gone"];
       const activeProjectsResult = await db.select({
         projectName: projectInfo.projectName,
         phase: projectInfo.executionPhase,
+        phaseUpdatedAt: projectInfo.phaseUpdatedAt,
       })
         .from(projectInfo)
         .where(sql`${projectInfo.isActive} IS NOT FALSE`);
       const activeNames = new Set(
         activeProjectsResult
-          .filter(p => !EXCLUDED_PHASES.includes(p.phase || ""))
+          .filter(p => {
+            const phase = p.phase || "";
+            if (HARD_EXCLUDED.includes(phase)) return false;
+            if (phase === "Compliance Handover") {
+              if (!p.phaseUpdatedAt) return false;
+              const d = p.phaseUpdatedAt instanceof Date
+                ? p.phaseUpdatedAt.toISOString().substring(0, 10)
+                : String(p.phaseUpdatedAt).substring(0, 10);
+              return d >= fyStart && d <= fyEnd;
+            }
+            return true;
+          })
           .map(p => p.projectName.toLowerCase().trim())
       );
 
