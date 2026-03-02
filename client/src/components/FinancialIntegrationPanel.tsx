@@ -255,14 +255,10 @@ export function FinancialIntegrationPanel({ projectName }: { projectName: string
   const syncBg = syncStatus?.syncStatus === "good" ? "bg-emerald-50" : syncStatus?.syncStatus === "partial" ? "bg-amber-50" : "bg-red-50";
 
   return (
-    <>
-      <Card className="relative overflow-hidden border-l-4 border-l-indigo-500" data-testid="financial-integration-panel">
-        <CardContent className="p-4 space-y-3">
-          <button
-            className="flex items-center justify-between w-full text-left cursor-pointer"
-            onClick={() => setExpanded(!expanded)}
-            data-testid="button-toggle-integration"
-          >
+    <Link href={`/project/${encodeURIComponent(projectName)}/financial-linking`}>
+      <Card className="relative overflow-hidden border-l-4 border-l-indigo-500 cursor-pointer hover:shadow-md hover:border-l-indigo-600 transition-all" data-testid="financial-integration-panel">
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between w-full">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
                 <Link2 className="h-4 w-4 text-indigo-600" />
@@ -273,196 +269,19 @@ export function FinancialIntegrationPanel({ projectName }: { projectName: string
               </div>
             </div>
             <div className="flex items-center gap-2">
+              {syncStatus && (
+                <span className={`text-[10px] font-bold ${syncColor}`} data-testid="text-sync-percent">
+                  {syncStatus.overallSyncPercent}% linked
+                </span>
+              )}
               {criticalCount > 0 && <Badge variant="destructive" className="text-[9px]" data-testid="badge-critical-count">{criticalCount} critical</Badge>}
               {warningCount > 0 && <Badge className="text-[9px] bg-amber-100 text-amber-700 hover:bg-amber-100" data-testid="badge-warning-count">{warningCount} warning{warningCount !== 1 ? "s" : ""}</Badge>}
               {pendingRequests.length > 0 && <Badge variant="outline" className="text-[9px] border-blue-300 text-blue-600" data-testid="badge-pending-edits">{pendingRequests.length} pending</Badge>}
-              {expanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+              <ArrowRight className="h-4 w-4 text-muted-foreground" />
             </div>
-          </button>
-
-          {expanded && syncStatus && (
-            <div className={`rounded-lg ${syncBg} p-3 space-y-2`}>
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium">Sync Status</span>
-                <span className={`text-xs font-bold ${syncColor}`} data-testid="text-sync-percent">
-                  {syncStatus.overallSyncPercent}% linked
-                </span>
-              </div>
-              <SyncBar label="Expenditure → Plan" linked={syncStatus.expenditure.linked} total={syncStatus.expenditure.total} percent={syncStatus.expenditure.linkPercent} />
-              <SyncBar label="Revenue → Plan" linked={syncStatus.revenue.linked} total={syncStatus.revenue.total} percent={syncStatus.revenue.linkPercent} />
-              <Link href={`/project/${encodeURIComponent(projectName)}/financial-linking`}>
-                <Button variant="outline" size="sm" className="w-full h-7 text-xs gap-1.5 mt-1" data-testid="button-manage-linking">
-                  <Link2 className="h-3 w-3" /> Manage Linking <ArrowRight className="h-3 w-3 ml-auto" />
-                </Button>
-              </Link>
-            </div>
-          )}
-
-          {expanded && warnings.length > 0 && (
-            <div className="space-y-1.5 max-h-[200px] overflow-y-auto pr-1">
-              {warnings.map((w, i) => (
-                <div key={i} className={`flex items-start gap-2 text-[11px] py-1.5 px-2 rounded ${
-                  w.severity === "critical" ? "bg-red-50 border border-red-100" :
-                  w.severity === "warning" ? "bg-amber-50 border border-amber-100" :
-                  "bg-blue-50 border border-blue-100"
-                }`} data-testid={`warning-${w.type}-${i}`}>
-                  <SeverityIcon severity={w.severity} />
-                  <span className="flex-1">{w.message}</span>
-                  <SeverityBadge severity={w.severity} />
-                </div>
-              ))}
-            </div>
-          )}
-
-          {!expanded && hasContent && (
-            <p className="text-[10px] text-muted-foreground">Tap to view sync status, warnings & integration rules</p>
-          )}
-
-          {expanded && pendingRequests.length > 0 && roleAccess?.canApprove && (
-            <div className="space-y-1.5 border-t pt-2">
-              <div className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
-                <Clock className="h-3 w-3" />
-                Pending Edit Requests
-              </div>
-              {pendingRequests.map((req) => (
-                <div key={req.id} className="flex items-center gap-2 text-[11px] py-1.5 px-2 rounded bg-blue-50 border border-blue-100" data-testid={`edit-request-${req.id}`}>
-                  <FileText className="h-3 w-3 text-blue-600 shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="truncate font-medium">{req.editSummary}</p>
-                    <p className="text-muted-foreground">by {req.requestedByName} · {new Date(req.createdAt).toLocaleDateString()}</p>
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    {req.isCriticalPath && <Badge variant="destructive" className="text-[8px] px-0.5 py-0">CP</Badge>}
-                    {req.affectsRevenue && <Badge className="text-[8px] px-0.5 py-0 bg-emerald-100 text-emerald-700 hover:bg-emerald-100">Rev</Badge>}
-                    {req.affectsExpenditure && <Badge className="text-[8px] px-0.5 py-0 bg-violet-100 text-violet-700 hover:bg-violet-100">Exp</Badge>}
-                    <Button variant="ghost" size="sm" className="h-5 w-5 p-0 text-blue-600" onClick={() => { setReviewDialog(req); setReviewComment(""); }} data-testid={`button-review-${req.id}`}>
-                      <FileText className="h-3 w-3" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {expanded && roleAccess?.canApprove && (
-            <div className="space-y-1.5 border-t pt-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
-                  <Settings className="h-3 w-3" />
-                  Integration Rules
-                </div>
-                <Button variant="ghost" size="sm" className="h-5 text-[10px] px-1.5" onClick={() => setShowRules(!showRules)} data-testid="button-toggle-rules">
-                  {showRules ? "Hide" : "Configure"}
-                </Button>
-              </div>
-              {showRules && (
-                <div className="space-y-1.5">
-                  {rules.map(rule => (
-                    <div key={rule.id} className={`flex items-center gap-2 text-[11px] py-1.5 px-2 rounded border ${rule.isActive ? "bg-emerald-50 border-emerald-100" : "bg-gray-50 border-gray-200 opacity-60"}`} data-testid={`rule-${rule.id}`}>
-                      <ToggleLeft className={`h-3 w-3 shrink-0 cursor-pointer ${rule.isActive ? "text-emerald-600" : "text-gray-400"}`} onClick={() => toggleRuleMutation.mutate({ id: rule.id, isActive: !rule.isActive })} />
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium truncate">{RULE_TYPE_LABELS[rule.ruleType] || rule.ruleType}</p>
-                        <p className="text-muted-foreground truncate">{rule.ruleConfig}</p>
-                      </div>
-                      <Button variant="ghost" size="sm" className="h-4 w-4 p-0 text-red-400 hover:text-red-600" onClick={() => deleteRuleMutation.mutate(rule.id)} data-testid={`button-delete-rule-${rule.id}`}>
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  ))}
-                  <div className="flex items-center gap-1.5 pt-1">
-                    <Select value={newRuleType} onValueChange={setNewRuleType}>
-                      <SelectTrigger className="h-7 text-[10px] flex-1" data-testid="select-rule-type">
-                        <SelectValue placeholder="Rule type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {Object.entries(RULE_TYPE_LABELS).map(([k, v]) => (
-                          <SelectItem key={k} value={k} className="text-xs">{v}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Input
-                      placeholder="Config (e.g. 25%)"
-                      value={newRuleConfig}
-                      onChange={e => setNewRuleConfig(e.target.value)}
-                      className="h-7 text-[10px] flex-1"
-                      data-testid="input-rule-config"
-                    />
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-7 w-7 p-0 shrink-0"
-                      disabled={!newRuleType || !newRuleConfig || createRuleMutation.isPending}
-                      onClick={() => createRuleMutation.mutate({ ruleType: newRuleType, ruleConfig: newRuleConfig })}
-                      data-testid="button-add-rule"
-                    >
-                      <Plus className="h-3 w-3" />
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {!roleAccess?.canEditDirectly && roleAccess?.canSubmitForApproval && (
-            <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground pt-1 border-t">
-              <ShieldAlert className="h-3 w-3" />
-              Your edits require approval from COO, Programme Manager, Finance Manager, or Construction Manager
-            </div>
-          )}
+          </div>
         </CardContent>
       </Card>
-
-      <Dialog open={!!reviewDialog} onOpenChange={(open) => { if (!open) setReviewDialog(null); }}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Review Edit Request</DialogTitle>
-          </DialogHeader>
-          {reviewDialog && (
-            <div className="space-y-3">
-              <div className="text-sm space-y-2 bg-muted/50 p-3 rounded-lg">
-                <div><span className="font-medium">Project:</span> {reviewDialog.projectName}</div>
-                <div><span className="font-medium">Requested by:</span> {reviewDialog.requestedByName} ({reviewDialog.requestedByRole})</div>
-                <div><span className="font-medium">Type:</span> {reviewDialog.editType} → {reviewDialog.editTarget}</div>
-                <div><span className="font-medium">Summary:</span> {reviewDialog.editSummary}</div>
-                <div className="flex gap-1.5 flex-wrap">
-                  {reviewDialog.isCriticalPath && <Badge variant="destructive" className="text-[10px]">Critical Path</Badge>}
-                  {reviewDialog.affectsRevenue && <Badge className="text-[10px] bg-emerald-100 text-emerald-700 hover:bg-emerald-100">Revenue Impact</Badge>}
-                  {reviewDialog.affectsExpenditure && <Badge className="text-[10px] bg-violet-100 text-violet-700 hover:bg-violet-100">Expenditure Impact</Badge>}
-                  {reviewDialog.affectsQuality && <Badge className="text-[10px] bg-amber-100 text-amber-700 hover:bg-amber-100">Quality Impact</Badge>}
-                </div>
-              </div>
-              <Textarea
-                placeholder="Review comment (required for rejection)"
-                value={reviewComment}
-                onChange={(e) => setReviewComment(e.target.value)}
-                className="text-sm"
-                data-testid="input-review-comment"
-              />
-            </div>
-          )}
-          <DialogFooter className="gap-2">
-            <Button
-              variant="destructive"
-              size="sm"
-              disabled={!reviewComment.trim() || reviewComment.trim().length < 3 || rejectMutation.isPending}
-              onClick={() => reviewDialog && rejectMutation.mutate({ id: reviewDialog.id, comment: reviewComment })}
-              data-testid="button-reject-edit"
-            >
-              {rejectMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <XCircle className="h-3 w-3 mr-1" />}
-              Reject
-            </Button>
-            <Button
-              size="sm"
-              disabled={approveMutation.isPending}
-              onClick={() => reviewDialog && approveMutation.mutate({ id: reviewDialog.id, comment: reviewComment })}
-              data-testid="button-approve-edit"
-            >
-              {approveMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <CheckCircle className="h-3 w-3 mr-1" />}
-              Approve
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+    </Link>
   );
 }
