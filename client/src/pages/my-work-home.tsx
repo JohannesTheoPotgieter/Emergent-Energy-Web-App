@@ -129,7 +129,7 @@ export default function MyWorkHomePage() {
     },
   });
 
-  const { data: actionItems = [], isLoading: actionsLoading } = useQuery<MsObject[]>({
+  const { data: msActionItems = [], isLoading: msActionsLoading } = useQuery<MsObject[]>({
     queryKey: ["/api/ms-objects/mine", "action_required"],
     queryFn: async () => {
       const res = await fetch("/api/ms-objects/mine?action_required=true", {
@@ -140,6 +140,132 @@ export default function MyWorkHomePage() {
       return res.json();
     },
   });
+
+  const { data: allTaskData } = useQuery<any>({
+    queryKey: ["/api/my-work/all-tasks"],
+    queryFn: async () => {
+      const res = await fetch("/api/my-work/all-tasks", {
+        credentials: "include",
+        headers: authHeaders(),
+      });
+      if (!res.ok) return null;
+      return res.json();
+    },
+  });
+
+  const { data: unreadNotifs = { items: [], total: 0 } } = useQuery<{ items: any[]; total: number }>({
+    queryKey: ["/api/notifications", "unread"],
+    queryFn: async () => {
+      const res = await fetch("/api/notifications?unreadOnly=true&limit=20", {
+        credentials: "include",
+        headers: authHeaders(),
+      });
+      if (!res.ok) return { items: [], total: 0 };
+      return res.json();
+    },
+  });
+
+  interface ActionItem {
+    id: string;
+    title: string;
+    subtitle?: string;
+    source: "approval" | "deliverable" | "notification" | "tr_register" | "ms_object";
+    sourceLabel: string;
+    sourceColor: string;
+    projectName?: string;
+    link?: string;
+    createdAt?: string;
+  }
+
+  const actionItems: ActionItem[] = useMemo(() => {
+    const items: ActionItem[] = [];
+
+    for (const a of (allTaskData?.approvals?.engineering || [])) {
+      items.push({
+        id: `eng-${a.id}`,
+        title: a.title,
+        subtitle: a.projectName,
+        source: "approval",
+        sourceLabel: "Approval",
+        sourceColor: "bg-amber-50 text-amber-700 border-amber-200",
+        projectName: a.projectName,
+        createdAt: a.createdAt,
+      });
+    }
+    for (const a of (allTaskData?.approvals?.quality || [])) {
+      items.push({
+        id: `qc-${a.id}`,
+        title: a.title,
+        subtitle: a.projectName,
+        source: "approval",
+        sourceLabel: "QC Review",
+        sourceColor: "bg-amber-50 text-amber-700 border-amber-200",
+        projectName: a.projectName,
+        createdAt: a.createdAt,
+      });
+    }
+
+    for (const d of (allTaskData?.deliverables || [])) {
+      const status = d.status || "";
+      if (["NEEDS APPROVAL", "QC APPROVED", "OPERATIONAL APPROVAL", "IN REVIEW"].includes(status)) {
+        items.push({
+          id: `del-${d.id}`,
+          title: d.title,
+          subtitle: `${d.deliverableType || "Deliverable"} — ${status}`,
+          source: "deliverable",
+          sourceLabel: "Deliverable",
+          sourceColor: "bg-rose-50 text-rose-700 border-rose-200",
+          projectName: d.projectName || d.project_name,
+          createdAt: d.createdAt || d.created_at,
+        });
+      }
+    }
+
+    for (const tr of (allTaskData?.trRegister || [])) {
+      if (tr.status !== "Completed" && tr.status !== "Closed") {
+        items.push({
+          id: `tr-${tr.id}`,
+          title: tr.actionDescription,
+          subtitle: `${tr.department || ""} — ${tr.ragStatus || ""}`,
+          source: "tr_register",
+          sourceLabel: "TR Register",
+          sourceColor: "bg-purple-50 text-purple-700 border-purple-200",
+          createdAt: tr.createdAt || tr.created_at,
+        });
+      }
+    }
+
+    for (const n of (unreadNotifs.items || [])) {
+      items.push({
+        id: `notif-${n.id}`,
+        title: n.title,
+        subtitle: n.body || n.projectName || "",
+        source: "notification",
+        sourceLabel: "Notification",
+        sourceColor: "bg-blue-50 text-blue-700 border-blue-200",
+        projectName: n.projectName || n.project_name,
+        createdAt: n.createdAt || n.created_at,
+      });
+    }
+
+    for (const item of msActionItems) {
+      items.push({
+        id: `ms-${item.id}`,
+        title: item.subject_or_title,
+        subtitle: item.preview || undefined,
+        source: "ms_object",
+        sourceLabel: "MS 365",
+        sourceColor: "bg-indigo-50 text-indigo-700 border-indigo-200",
+        link: item.web_link || undefined,
+        createdAt: item.received_or_start_datetime || undefined,
+      });
+    }
+
+    items.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+    return items;
+  }, [allTaskData, unreadNotifs, msActionItems]);
+
+  const actionsLoading = msActionsLoading;
 
   const { data: escalatedItems = [] } = useQuery<Array<{
     id: string; type: string; title: string; projectName: string;
@@ -406,24 +532,33 @@ export default function MyWorkHomePage() {
                   <p className="text-xs text-muted-foreground">No action required items</p>
                 </div>
               ) : (
-                <ScrollArea className="max-h-[250px]">
+                <ScrollArea className="max-h-[300px]">
                   <div className="space-y-1.5">
-                    {actionItems.slice(0, 10).map(item => (
+                    {actionItems.slice(0, 20).map(item => (
                       <div
                         key={item.id}
-                        className="flex items-start gap-2 p-2 rounded-md border border-purple-200/50 bg-purple-50/30 hover:bg-purple-50/50 transition-colors cursor-pointer"
+                        className="flex items-start gap-2 p-2 rounded-md border border-border/50 hover:bg-muted/50 transition-colors cursor-pointer"
                         data-testid={`action-item-${item.id}`}
                       >
-                        <Mail className="h-3 w-3 text-purple-600 mt-0.5 shrink-0" />
                         <div className="min-w-0 flex-1">
-                          <p className="text-xs font-medium truncate">{item.subject_or_title}</p>
-                          {item.preview && (
-                            <p className="text-[10px] text-muted-foreground truncate">{item.preview}</p>
+                          <div className="flex items-center gap-1.5">
+                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold border ${item.sourceColor}`}>
+                              {item.sourceLabel}
+                            </span>
+                            {item.projectName && (
+                              <span className="text-[10px] text-muted-foreground truncate max-w-[100px]">
+                                {item.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs font-medium truncate mt-0.5">{item.title}</p>
+                          {item.subtitle && (
+                            <p className="text-[10px] text-muted-foreground truncate">{item.subtitle}</p>
                           )}
                         </div>
-                        {item.web_link && (
+                        {item.link && (
                           <a
-                            href={item.web_link}
+                            href={item.link}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="shrink-0"
