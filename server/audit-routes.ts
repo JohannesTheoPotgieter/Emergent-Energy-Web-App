@@ -1,6 +1,6 @@
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { changeSets, fieldChanges, OVERRIDE_CATEGORIES } from "@shared/schema";
+import { changeSets, fieldChanges, auditEvents, OVERRIDE_CATEGORIES } from "@shared/schema";
 import { eq, desc, and, sql, gte, lte, or, like, count } from "drizzle-orm";
 import { verifyToken } from "./jwt";
 
@@ -128,7 +128,6 @@ export function registerAuditRoutes(app: Express) {
     }
   });
 
-  // Admin System Activity Log - all ChangeSets with filters
   app.get("/api/audit/activity-log", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const page = parseInt(req.query.page as string) || 1;
@@ -142,50 +141,103 @@ export function registerAuditRoutes(app: Express) {
       const toDate = req.query.to as string;
       const searchQuery = req.query.q as string;
 
-      const conditions: any[] = [];
-      if (sourceFilter) conditions.push(eq(changeSets.source, sourceFilter as any));
-      if (entityTypeFilter) conditions.push(eq(changeSets.entityType, entityTypeFilter));
-      if (projectNameFilter) conditions.push(eq(changeSets.projectName, projectNameFilter));
-      if (actionFilter) conditions.push(eq(changeSets.action, actionFilter));
-      if (fromDate) conditions.push(gte(changeSets.createdAt, new Date(fromDate)));
-      if (toDate) conditions.push(lte(changeSets.createdAt, new Date(toDate)));
+      const filterClauses: string[] = [];
+      const params: any[] = [];
+      let paramIdx = 1;
+
+      if (sourceFilter) { filterClauses.push(`source = $${paramIdx++}`); params.push(sourceFilter); }
+      if (entityTypeFilter) { filterClauses.push(`entity_type = $${paramIdx++}`); params.push(entityTypeFilter); }
+      if (projectNameFilter) { filterClauses.push(`project_name = $${paramIdx++}`); params.push(projectNameFilter); }
+      if (actionFilter) { filterClauses.push(`action = $${paramIdx++}`); params.push(actionFilter); }
+      if (fromDate) { filterClauses.push(`created_at >= $${paramIdx++}`); params.push(new Date(fromDate)); }
+      if (toDate) { filterClauses.push(`created_at <= $${paramIdx++}`); params.push(new Date(toDate)); }
       if (searchQuery) {
-        conditions.push(or(
-          like(changeSets.summary, `%${searchQuery}%`),
-          like(changeSets.action, `%${searchQuery}%`),
-          like(changeSets.entityType, `%${searchQuery}%`),
-        ));
+        filterClauses.push(`(summary ILIKE $${paramIdx} OR action ILIKE $${paramIdx} OR entity_type ILIKE $${paramIdx})`);
+        params.push(`%${searchQuery}%`);
+        paramIdx++;
       }
 
-      const whereClause = conditions.length > 1 ? and(...conditions) : conditions.length === 1 ? conditions[0] : undefined;
+      const whereStr = filterClauses.length > 0 ? `WHERE ${filterClauses.join(' AND ')}` : '';
 
-      const [items, totalResult] = await Promise.all([
-        db.select().from(changeSets)
-          .where(whereClause)
-          .orderBy(desc(changeSets.createdAt))
-          .limit(limit)
-          .offset(offset),
-        db.select({ total: count() }).from(changeSets).where(whereClause),
+      const unionQuery = `
+        WITH unified AS (
+          SELECT id, source::text as source, entity_type, entity_id, action, summary,
+                 project_name, actor_role, actor_user_id as user_id, NULL::text as user_name,
+                 created_at, 'changeset' as record_type, NULL::text as request_path, NULL::text as request_method,
+                 NULL::jsonb as changes_json, NULL::text as ip_address
+          FROM change_sets
+          UNION ALL
+          SELECT id, source::text as source, entity_type, entity_id, action,
+                 COALESCE(
+                   CASE
+                     WHEN action = 'login_success' THEN 'User ' || COALESCE(user_name, 'unknown') || ' logged in (' || COALESCE(actor_role, '') || ')'
+                     WHEN action = 'login_failed' THEN 'Failed login attempt for role ' || COALESCE(actor_role, 'unknown')
+                     WHEN action = 'password_changed' THEN 'Password changed by ' || COALESCE(user_name, 'unknown')
+                     ELSE COALESCE(user_name, 'System') || ' performed ' || action || ' on ' || entity_type
+                   END
+                 ) as summary,
+                 project_name, actor_role, user_id, user_name,
+                 created_at, 'audit_event' as record_type, request_path, request_method,
+                 changes_json, ip_address
+          FROM audit_events
+        )
+        SELECT * FROM unified ${whereStr}
+        ORDER BY created_at DESC
+        LIMIT ${limit} OFFSET ${offset}
+      `;
+
+      const countQuery = `
+        WITH unified AS (
+          SELECT source::text as source, entity_type, action, summary, project_name, created_at FROM change_sets
+          UNION ALL
+          SELECT source::text as source, entity_type, action,
+                 COALESCE(user_name, 'System') || ' performed ' || action as summary,
+                 project_name, created_at FROM audit_events
+        )
+        SELECT COUNT(*) as total FROM unified ${whereStr}
+      `;
+
+      const filtersQuery = `
+        WITH unified AS (
+          SELECT source::text as source, entity_type, action, project_name FROM change_sets
+          UNION ALL
+          SELECT source::text as source, entity_type, action, project_name FROM audit_events
+        )
+        SELECT
+          ARRAY(SELECT DISTINCT source FROM unified WHERE source IS NOT NULL) as sources,
+          ARRAY(SELECT DISTINCT entity_type FROM unified WHERE entity_type IS NOT NULL ORDER BY entity_type LIMIT 100) as entity_types,
+          ARRAY(SELECT DISTINCT action FROM unified WHERE action IS NOT NULL ORDER BY action LIMIT 100) as actions,
+          ARRAY(SELECT DISTINCT project_name FROM unified WHERE project_name IS NOT NULL ORDER BY project_name LIMIT 100) as project_names
+      `;
+
+      const [itemsResult, countResult, filtersResult] = await Promise.all([
+        db.execute(sql.raw(unionQuery.replace(/\$(\d+)/g, (_, n) => {
+          const val = params[parseInt(n) - 1];
+          if (val instanceof Date) return `'${val.toISOString()}'`;
+          if (typeof val === 'string') return `'${val.replace(/'/g, "''")}'`;
+          return String(val);
+        }))),
+        db.execute(sql.raw(countQuery.replace(/\$(\d+)/g, (_, n) => {
+          const val = params[parseInt(n) - 1];
+          if (val instanceof Date) return `'${val.toISOString()}'`;
+          if (typeof val === 'string') return `'${val.replace(/'/g, "''")}'`;
+          return String(val);
+        }))),
+        db.execute(sql.raw(filtersQuery)),
       ]);
 
-      const total = totalResult[0]?.total || 0;
-
-      // Get distinct values for filter dropdowns
-      const [sources, entityTypes, actions, projectNames] = await Promise.all([
-        db.selectDistinct({ value: changeSets.source }).from(changeSets),
-        db.selectDistinct({ value: changeSets.entityType }).from(changeSets),
-        db.selectDistinct({ value: changeSets.action }).from(changeSets).limit(50),
-        db.selectDistinct({ value: changeSets.projectName }).from(changeSets).limit(100),
-      ]);
+      const items = (itemsResult as any).rows || itemsResult;
+      const total = Number((countResult as any).rows?.[0]?.total || (countResult as any)[0]?.total || 0);
+      const filterData = (filtersResult as any).rows?.[0] || (filtersResult as any)[0] || {};
 
       res.json({
         items,
-        pagination: { page, limit, total, totalPages: Math.ceil(Number(total) / limit) },
+        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
         filters: {
-          sources: sources.map((s: any) => s.value),
-          entityTypes: entityTypes.map((e: any) => e.value),
-          actions: actions.map((a: any) => a.value),
-          projectNames: projectNames.map((p: any) => p.value).filter(Boolean),
+          sources: filterData.sources || [],
+          entityTypes: filterData.entity_types || [],
+          actions: filterData.actions || [],
+          projectNames: (filterData.project_names || []).filter(Boolean),
         },
       });
     } catch (err: any) {
