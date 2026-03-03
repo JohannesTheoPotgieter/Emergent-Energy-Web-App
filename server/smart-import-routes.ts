@@ -7,13 +7,11 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import { db } from "./db";
-import { safeLegacyQuery, safeLegacyWrite } from "./legacy-table-guard";
 import { verifyToken } from "./jwt";
 import { runSmartImportPreview } from "./lib/import/index";
 import {
   smartImportRuns,
   importIssues,
-  normalizedPlanTasks,
   normalizedRevenueLines,
   normalizedCostLines,
   normalizedExecutionPhases,
@@ -25,14 +23,9 @@ import {
   invoicePatternMatches,
   projectInfo,
   changeSets,
-  projectPlan,
-  projectPlanOverrides,
-  programExpense,
-  programInflows,
   workingPlanScenario,
   workingPlanTaskOverride,
   workingPlanDependencyOverride,
-  projectPlanDependency,
   auditEvents,
   workItems,
   workItemAssignments,
@@ -1531,12 +1524,32 @@ router.get("/api/smart-import/normalized/:projectName/plan", requireAuth, async 
 
     if (!latestRun) return res.json([]);
 
-    const records = await safeLegacyQuery(
-      () => db.select().from(normalizedPlanTasks).where(eq(normalizedPlanTasks.importRunId, latestRun.id)),
-      []
-    );
+    const records = await db.select().from(workItems)
+      .where(and(
+        eq(workItems.importRunId, latestRun.id),
+        eq(workItems.workstream, "PM"),
+        eq(workItems.source, "SMART_IMPORT"),
+      ));
 
-    res.json(records);
+    res.json(records.map(wi => ({
+      id: wi.id,
+      projectName: projectName,
+      taskName: wi.title,
+      taskNo: wi.wbsCode,
+      phase: wi.phase,
+      startDate: wi.startDate,
+      endDate: wi.endDate,
+      durationDays: wi.duration,
+      owner: wi.ownerName,
+      status: wi.status,
+      pctComplete: wi.percentComplete,
+      expectedPctComplete: wi.expectedPctComplete,
+      isMilestone: wi.isMilestone,
+      indentLevel: wi.indentLevel,
+      sourceSheet: wi.sourceSheet,
+      sourceRow: wi.sourceRow,
+      importRunId: wi.importRunId,
+    })));
   } catch (err: any) {
     console.error("[smart-import] GET normalized plan error:", err);
     res.status(500).json({ error: err.message });
