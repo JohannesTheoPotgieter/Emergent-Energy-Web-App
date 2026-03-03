@@ -1138,7 +1138,7 @@ export function registerLifecycleRoutes(app: Express) {
         await tx.execute(sql`DELETE FROM teams_chat_members WHERE group_id IN (SELECT id FROM teams_chat_groups WHERE project_id = ${pId})`);
         await tx.execute(sql`DELETE FROM working_plan_task_override WHERE scenario_id IN (SELECT id FROM working_plan_scenario WHERE project_name = ${pN})`);
         await tx.execute(sql`DELETE FROM working_plan_dependency_override WHERE scenario_id IN (SELECT id FROM working_plan_scenario WHERE project_name = ${pN})`);
-        await tx.execute(sql`DELETE FROM project_plan_dependency WHERE project_name = ${pN}`);
+        try { await tx.execute(sql`DELETE FROM project_plan_dependency WHERE project_name = ${pN}`); } catch(_e) {}
         await tx.execute(sql`DELETE FROM field_changes WHERE change_set_id IN (SELECT id FROM change_sets WHERE project_name = ${pN})`);
         await tx.execute(sql`DELETE FROM intake_tasks WHERE intake_request_id IN (SELECT id FROM intake_requests WHERE project_id = ${pId})`);
         await tx.execute(sql`DELETE FROM project_links WHERE project_id = ${pId}`);
@@ -1172,10 +1172,10 @@ export function registerLifecycleRoutes(app: Express) {
         await tx.execute(sql`DELETE FROM project_revenue_summary WHERE project_name = ${pN}`);
         await tx.execute(sql`DELETE FROM finance_revenue_monthly WHERE project_name = ${pN}`);
         await tx.execute(sql`DELETE FROM finance_cos_monthly WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM project_plan WHERE project_name = ${pN}`);
+        try { await tx.execute(sql`DELETE FROM project_plan WHERE project_name = ${pN}`); } catch(_e) {}
         await tx.execute(sql`DELETE FROM project_notes WHERE project_name = ${pN}`);
         await tx.execute(sql`DELETE FROM cashflow_points WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM project_plan_overrides WHERE project_name = ${pN}`);
+        try { await tx.execute(sql`DELETE FROM project_plan_overrides WHERE project_name = ${pN}`); } catch(_e) {}
         await tx.execute(sql`DELETE FROM revenue_tracking_overrides WHERE project_name = ${pN}`);
         await tx.execute(sql`DELETE FROM expenditure_overrides WHERE project_name = ${pN}`);
         await tx.execute(sql`DELETE FROM cashflow_planning_overrides WHERE project_name = ${pN}`);
