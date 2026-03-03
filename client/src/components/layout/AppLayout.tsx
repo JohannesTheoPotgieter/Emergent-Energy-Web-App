@@ -295,6 +295,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [showValidationReport, setShowValidationReport] = useState(false);
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
   const [expandedParents, setExpandedParents] = useState<Record<string, boolean>>({});
+  
+  useEffect(() => {
+    if (location === "/") {
+      setCollapsedSections({});
+    }
+  }, [location]);
   const { data, overview, refreshData, isLoading, importFiles, lastUploadResult } = useProgramData();
   const { user, logout } = useAuth();
   const { data: healthStatus } = useQuery({

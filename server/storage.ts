@@ -3,7 +3,7 @@ import { safeLegacyQuery, safeLegacyWrite } from "./legacy-table-guard";
 import { eq, desc, and, or, gte, lte, isNotNull, isNull, sql, inArray, count, not, ilike } from "drizzle-orm";
 import {
   users, projects, expenses, revenues, tasks, budgets, uploadMetadata, refreshLogs,
-  projectInfo, programExpense, programInflows, projectPlan,
+  projectInfo, programExpense, programInflows, projectPlan, normalizedCostLines, normalizedRevenueLines,
   cashflowPoints, financeRevenueMonthly, financeCosMonthly,
   cashflowPlanningOverrides, projectPlanOverrides, revenueTrackingOverrides,
   expenditureOverrides, financeRevenueOverrides, financeCosOverrides,
@@ -770,13 +770,21 @@ export class DatabaseStorage implements IStorage {
     return { active, historical: total - active, total };
   }
 
-  // Program Expense (new)
-  async getAllProgramExpenses(): Promise<ProgramExpense[]> {
-    return this.dbInstance.select().from(programExpense).orderBy(desc(programExpense.createdAt));
+  async getAllProgramExpenses(): Promise<any[]> {
+    const { adaptCostToExpense, createNameResolver } = await import("./lib/data-merge");
+    const [costLines, piRows] = await Promise.all([
+      this.dbInstance.select().from(normalizedCostLines),
+      this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo),
+    ]);
+    const resolve = createNameResolver(piRows.map((r: any) => r.projectName));
+    return costLines.map(c => adaptCostToExpense(c, resolve(c.projectName)));
   }
 
-  async getProgramExpensesByProject(projectName: string): Promise<ProgramExpense[]> {
-    return this.dbInstance.select().from(programExpense).where(eq(programExpense.projectName, projectName));
+  async getProgramExpensesByProject(projectName: string): Promise<any[]> {
+    const { adaptCostToExpense } = await import("./lib/data-merge");
+    const costLines = await this.dbInstance.select().from(normalizedCostLines)
+      .where(eq(normalizedCostLines.projectName, projectName));
+    return costLines.map(c => adaptCostToExpense(c, projectName));
   }
 
   async createManyProgramExpenses(expenseList: InsertProgramExpense[]): Promise<ProgramExpense[]> {
@@ -800,13 +808,21 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
-  // Program Inflows (new)
-  async getAllProgramInflows(): Promise<ProgramInflows[]> {
-    return this.dbInstance.select().from(programInflows).orderBy(desc(programInflows.createdAt));
+  async getAllProgramInflows(): Promise<any[]> {
+    const { adaptRevenueToInflow, createNameResolver } = await import("./lib/data-merge");
+    const [revLines, piRows] = await Promise.all([
+      this.dbInstance.select().from(normalizedRevenueLines),
+      this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo),
+    ]);
+    const resolve = createNameResolver(piRows.map((r: any) => r.projectName));
+    return revLines.map(r => adaptRevenueToInflow(r, resolve(r.projectName)));
   }
 
-  async getProgramInflowsByProject(projectName: string): Promise<ProgramInflows[]> {
-    return this.dbInstance.select().from(programInflows).where(eq(programInflows.projectName, projectName));
+  async getProgramInflowsByProject(projectName: string): Promise<any[]> {
+    const { adaptRevenueToInflow } = await import("./lib/data-merge");
+    const revLines = await this.dbInstance.select().from(normalizedRevenueLines)
+      .where(eq(normalizedRevenueLines.projectName, projectName));
+    return revLines.map(r => adaptRevenueToInflow(r, projectName));
   }
 
   async createManyProgramInflows(inflowList: InsertProgramInflows[]): Promise<ProgramInflows[]> {
