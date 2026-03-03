@@ -2459,38 +2459,67 @@ export async function registerRoutes(
       let totalExpenses = 0;
       let revenueOutstanding = 0;
       let expensesDue = 0;
+      let revenueOverdue = 0;
+      let expensesOverdue = 0;
+
+      const isValidDate = (d: string | null | undefined): boolean =>
+        !!(d && /^\d{4}-\d{2}-\d{2}/.test(d) && d !== '-');
+      const isPastDate = (d: string): boolean => d.substring(0, 10) < todayStr;
 
       for (const rev of allNormRev) {
         if (!activeNames.has(rev.projectName.toLowerCase().trim())) continue;
         const dateField = rev.invoiceDate || rev.paidDate || rev.expectedPaymentDate;
         if (!dateInFY(dateField)) continue;
 
-        if (rev.amountExVat) {
-          const hasInvoice = !!(rev.invoiceNumber && String(rev.invoiceNumber).trim());
-          const hasPaymentReceived = !!(rev.paidDate && String(rev.paidDate).trim() && rev.paidDate !== '-');
-          const isInBank = hasPaymentReceived && hasInvoice;
-          if (isInBank) {
-            totalRevenue += parseFloat(rev.amountExVat) || 0;
-          }
-          if (hasInvoice && !isInBank) {
-            revenueOutstanding += parseFloat(rev.amountExVat) || 0;
+        const amt = parseFloat(rev.amountExVat || '0') || 0;
+        if (amt === 0) continue;
+
+        const hasInvoice = !!(rev.invoiceNumber && String(rev.invoiceNumber).trim());
+        const hasPaidDate = isValidDate(rev.paidDate);
+        const paidDateBlack = hasPaidDate && (rev.paidDateConfirmed === true || rev.paidDateFontColor === 'black');
+        const isInBank = hasInvoice && paidDateBlack;
+
+        if (isInBank) {
+          totalRevenue += amt;
+        } else if (hasInvoice || isValidDate(rev.expectedPaymentDate)) {
+          revenueOutstanding += amt;
+          const dueDate = rev.expectedPaymentDate || rev.invoiceDate;
+          if (isValidDate(dueDate) && isPastDate(dueDate!)) {
+            revenueOverdue += amt;
           }
         }
       }
 
+      const mapCostToExpenseInput = (cost: any) => ({
+        expensePaymentDate: cost.paidDate,
+        expenseInvoiceNumber: cost.invoiceNumber,
+        expenseInvoicedDate: cost.invoiceDate,
+        expensePoNumber: cost.poNumber,
+        invoiceDateFontColor: cost.invoiceDateFontColor,
+        paymentDateFontColor: cost.paidDateFontColor,
+        invoiceDateConfirmed: cost.invoiceDateConfirmed,
+        paymentDateConfirmed: cost.paidDateConfirmed,
+        expenseActualTotal: cost.amountExVat,
+      });
+
       for (const cost of allNormCosts) {
         if (!activeNames.has(cost.projectName.toLowerCase().trim())) continue;
-        const dateField = cost.invoiceDate || cost.paidDate;
+        const dateField = cost.invoiceDate || cost.paidDate || cost.approvedDate;
         if (!dateInFY(dateField)) continue;
 
-        if (cost.amountExVat) {
-          const state = classifyExpenseState(cost as any);
-          if (state === 'Paid') {
-            totalExpenses += parseFloat(cost.amountExVat) || 0;
+        const amt = parseFloat(cost.amountExVat || '0') || 0;
+        if (amt === 0) continue;
+
+        const state = classifyExpenseState(mapCostToExpenseInput(cost));
+
+        if (state === 'Paid') {
+          totalExpenses += amt;
+        } else if (state === 'Invoiced' || state === 'Committed') {
+          expensesDue += amt;
+          const dueDate = cost.paidDate || cost.invoiceDate;
+          if (isValidDate(dueDate) && isPastDate(dueDate!)) {
+            expensesOverdue += amt;
           }
-          const hasPastPaymentDate = cost.paidDate && /^\d{4}-\d{2}-\d{2}/.test(cost.paidDate) && cost.paidDate < todayStr;
-          const noInvoice = !cost.invoiceNumber || cost.invoiceNumber.trim() === '';
-          if (hasPastPaymentDate && noInvoice) expensesDue += parseFloat(cost.amountExVat) || 0;
         }
       }
 
@@ -2507,6 +2536,8 @@ export async function registerRoutes(
         gpMargin,
         revenueOutstanding,
         expensesDue,
+        revenueOverdue,
+        expensesOverdue,
       });
     } catch (err: any) {
       console.error("[Financial Headline] Error:", err);
