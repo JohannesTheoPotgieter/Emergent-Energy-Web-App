@@ -1378,8 +1378,10 @@ function ScheduleRiskWidget({ projects }: { projects: ProjectSummary[] }) {
 function AlertsWidget({ projects }: { projects: ProjectSummary[] }) {
   const activeProjects = projects.filter(p => p.is_active !== false);
 
+  const [, navigate] = useLocation();
+
   const alerts = useMemo(() => {
-    const result: Array<{ id: string; type: "stale" | "behind" | "overrun" | "missing"; title: string; detail: string; severity: "red" | "amber" }> = [];
+    const result: Array<{ id: string; type: "stale" | "behind" | "overrun" | "missing"; title: string; detail: string; severity: "red" | "amber"; projectName: string }> = [];
 
     for (const p of activeProjects) {
       const importDaysAgo = p.last_import_at
@@ -1393,6 +1395,7 @@ function AlertsWidget({ projects }: { projects: ProjectSummary[] }) {
           title: `${cleanProjectName(p.project_name)} — Stale Data`,
           detail: `Last import ${importDaysAgo} days ago`,
           severity: importDaysAgo > 30 ? "red" : "amber",
+          projectName: p.project_name,
         });
       }
 
@@ -1403,6 +1406,7 @@ function AlertsWidget({ projects }: { projects: ProjectSummary[] }) {
           title: `${cleanProjectName(p.project_name)} — Significantly Behind`,
           detail: `${Math.abs(Math.round((p.delta_vs_expected ?? 0) * 100))}% behind expected`,
           severity: "red",
+          projectName: p.project_name,
         });
       }
 
@@ -1413,6 +1417,7 @@ function AlertsWidget({ projects }: { projects: ProjectSummary[] }) {
           title: `${cleanProjectName(p.project_name)} — Budget Overrun`,
           detail: `GP margin: ${((p.gp_percent ?? 0) * 100).toFixed(1)}%`,
           severity: "red",
+          projectName: p.project_name,
         });
       }
     }
@@ -1441,11 +1446,12 @@ function AlertsWidget({ projects }: { projects: ProjectSummary[] }) {
             return (
               <div
                 key={alert.id}
-                className={`flex items-center gap-2.5 p-2 rounded-lg border text-sm ${
+                className={`flex items-center gap-2.5 p-2 rounded-lg border text-sm cursor-pointer transition-colors hover:shadow-sm ${
                   alert.severity === "red"
-                    ? "border-red-200 bg-red-50/30 dark:border-red-900/30 dark:bg-red-950/10"
-                    : "border-amber-200 bg-amber-50/30 dark:border-amber-900/30 dark:bg-amber-950/10"
+                    ? "border-red-200 bg-red-50/30 dark:border-red-900/30 dark:bg-red-950/10 hover:bg-red-50 dark:hover:bg-red-950/20"
+                    : "border-amber-200 bg-amber-50/30 dark:border-amber-900/30 dark:bg-amber-950/10 hover:bg-amber-50 dark:hover:bg-amber-950/20"
                 }`}
+                onClick={() => navigate(`/project/${encodeURIComponent(alert.projectName)}`)}
                 data-testid={`alert-${alert.id}`}
               >
                 <Icon className={`h-4 w-4 shrink-0 ${alert.severity === "red" ? "text-red-500" : "text-amber-500"}`} />
@@ -1453,6 +1459,7 @@ function AlertsWidget({ projects }: { projects: ProjectSummary[] }) {
                   <p className="font-medium text-xs truncate">{alert.title}</p>
                   <p className="text-[11px] text-muted-foreground">{alert.detail}</p>
                 </div>
+                <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
               </div>
             );
           })}
