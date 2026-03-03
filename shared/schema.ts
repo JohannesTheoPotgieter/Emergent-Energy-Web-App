@@ -67,7 +67,9 @@ export const projectInfo = pgTable("project_info", {
   commissioningActual: text("commissioning_actual"),
   clientHandoverActual: text("client_handover_actual"),
   ragStatus: text("rag_status"),
+  ragComment: text("rag_comment"),
   ragUpdatedAt: timestamp("rag_updated_at"),
+  ragUpdatedByUserId: integer("rag_updated_by_user_id"),
   isActive: boolean("is_active").notNull().default(true),
   executionEnabled: boolean("execution_enabled").notNull().default(false),
   executionGateStatus: text("execution_gate_status").notNull().default("NOT_ELIGIBLE"),
@@ -102,6 +104,20 @@ export const projectPhaseHistory = pgTable("project_phase_history", {
 export const insertProjectPhaseHistorySchema = createInsertSchema(projectPhaseHistory).omit({ id: true, changedAt: true });
 export type InsertProjectPhaseHistory = z.infer<typeof insertProjectPhaseHistorySchema>;
 export type ProjectPhaseHistory = typeof projectPhaseHistory.$inferSelect;
+
+export const projectRagAudit = pgTable("project_rag_audit", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
+  fromRag: text("from_rag"),
+  toRag: text("to_rag").notNull(),
+  comment: text("comment").notNull(),
+  changedByUserId: integer("changed_by_user_id").notNull(),
+  changedAt: timestamp("changed_at").notNull().defaultNow(),
+});
+
+export const insertProjectRagAuditSchema = createInsertSchema(projectRagAudit).omit({ id: true, changedAt: true });
+export type InsertProjectRagAudit = z.infer<typeof insertProjectRagAuditSchema>;
+export type ProjectRagAudit = typeof projectRagAudit.$inferSelect;
 
 // Program Expense Table (from Expenditure Breakdown sheet - dual table structure)
 export const programExpense = pgTable("program_expense", {

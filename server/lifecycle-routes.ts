@@ -1,9 +1,9 @@
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { safeLegacyQuery, safeLegacyWrite } from "./legacy-table-guard";
-import { eq, sql, inArray } from "drizzle-orm";
+import { eq, sql, inArray, desc } from "drizzle-orm";
 import { verifyToken } from "./jwt";
-import { projectInfo, operationalTasks, projectPlanOverrides, executionGateLog, mergeAuditLog, programExpense, programInflows, qcChecklist, qcItemInstance, projectPlan, PHASE_TO_ENG_STAGES, normalizedCostLines, normalizedRevenueLines } from "@shared/schema";
+import { projectInfo, operationalTasks, projectPlanOverrides, executionGateLog, mergeAuditLog, programExpense, programInflows, qcChecklist, qcItemInstance, projectPlan, PHASE_TO_ENG_STAGES, normalizedCostLines, normalizedRevenueLines, projectRagAudit, workItems, users } from "@shared/schema";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { generateEngStagesForProject } from "./eng-stage-routes";
 import { logAuditFromReq } from "./audit-logger";
@@ -124,6 +124,113 @@ function saWorkingDays(startDateStr: string | null, endDateStr: string | null): 
 export function registerLifecycleRoutes(app: Express) {
   app.use("/api/lifecycle-board", jwtAuth);
 
+  (async () => {
+    try {
+      await db.execute(sql.raw(`
+        ALTER TABLE project_info ADD COLUMN IF NOT EXISTS rag_comment TEXT;
+        ALTER TABLE project_info ADD COLUMN IF NOT EXISTS rag_updated_by_user_id INTEGER;
+      `));
+      await db.execute(sql.raw(`
+        CREATE TABLE IF NOT EXISTS project_rag_audit (
+          id SERIAL PRIMARY KEY,
+          project_id INTEGER NOT NULL REFERENCES project_info(id) ON DELETE CASCADE,
+          from_rag TEXT,
+          to_rag TEXT NOT NULL,
+          comment TEXT NOT NULL,
+          changed_by_user_id INTEGER NOT NULL,
+          changed_at TIMESTAMP NOT NULL DEFAULT NOW()
+        );
+      `));
+      console.log("[Lifecycle] RAG audit table and columns ensured");
+    } catch (err: any) {
+      console.error("[Lifecycle] Migration error:", err.message);
+    }
+  })();
+
+  const RAG_ROLES = ["COO_ADMIN", "CEO_ADMIN", "CCO"];
+
+  app.post("/api/lifecycle-board/projects/:id/rag", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const role = ((req as any).user as any)?.role || "";
+      if (!RAG_ROLES.includes(role)) {
+        return res.status(403).json({ error: "forbidden", message: "Only COO, CEO, or CCO can update RAG status" });
+      }
+      const projectId = parseInt(req.params.id);
+      if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
+
+      const { rag, comment } = req.body;
+      if (!rag || !["GREEN", "AMBER", "RED"].includes(rag)) {
+        return res.status(400).json({ error: "rag must be GREEN, AMBER, or RED" });
+      }
+      if (!comment || typeof comment !== "string" || comment.trim().length < 5) {
+        return res.status(400).json({ error: "Comment must be at least 5 characters" });
+      }
+
+      const [project] = await db.select({ id: projectInfo.id, ragStatus: projectInfo.ragStatus }).from(projectInfo).where(eq(projectInfo.id, projectId));
+      if (!project) return res.status(404).json({ error: "Project not found" });
+
+      const userId = ((req as any).user as any)?.id;
+      const fromRag = project.ragStatus || null;
+
+      await db.transaction(async (tx) => {
+        await tx.update(projectInfo).set({
+          ragStatus: rag,
+          ragComment: comment.trim(),
+          ragUpdatedAt: new Date(),
+          ragUpdatedByUserId: userId,
+        }).where(eq(projectInfo.id, projectId));
+
+        await tx.insert(projectRagAudit).values({
+          projectId,
+          fromRag,
+          toRag: rag,
+          comment: comment.trim(),
+          changedByUserId: userId,
+        });
+      });
+
+      logAuditFromReq(req, "project.rag_update", { projectId, fromRag, toRag: rag, comment: comment.trim() });
+
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("[lifecycle-board] POST rag error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/lifecycle-board/projects/:id/rag-history", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id);
+      if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
+
+      const history = await db.select({
+        id: projectRagAudit.id,
+        fromRag: projectRagAudit.fromRag,
+        toRag: projectRagAudit.toRag,
+        comment: projectRagAudit.comment,
+        changedByUserId: projectRagAudit.changedByUserId,
+        changedAt: projectRagAudit.changedAt,
+      }).from(projectRagAudit)
+        .where(eq(projectRagAudit.projectId, projectId))
+        .orderBy(desc(projectRagAudit.changedAt));
+
+      const userIds = [...new Set(history.map(h => h.changedByUserId).filter(Boolean))];
+      const userMap = new Map<number, string>();
+      if (userIds.length > 0) {
+        const userRows = await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, userIds));
+        for (const u of userRows) userMap.set(u.id, u.name);
+      }
+
+      res.json(history.map(h => ({
+        ...h,
+        changedByName: userMap.get(h.changedByUserId) || "Unknown",
+      })));
+    } catch (err: any) {
+      console.error("[lifecycle-board] GET rag-history error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get("/api/lifecycle-board/projects", async (_req: Request, res: Response) => {
     try {
       const allProjects = await db.select({
@@ -137,6 +244,9 @@ export function registerLifecycleRoutes(app: Express) {
         isActive: projectInfo.isActive,
         escalationLevel: projectInfo.escalationLevel,
         ragStatus: projectInfo.ragStatus,
+        ragComment: projectInfo.ragComment,
+        ragUpdatedAt: projectInfo.ragUpdatedAt,
+        ragUpdatedByUserId: projectInfo.ragUpdatedByUserId,
         executionEnabled: projectInfo.executionEnabled,
         executionGateStatus: projectInfo.executionGateStatus,
         signedStatus: projectInfo.signedStatus,
@@ -365,6 +475,57 @@ export function registerLifecycleRoutes(app: Express) {
         }
       }
 
+      const lastEngByProjectId = new Map<number, { name: string; at: string }>();
+      try {
+        const engWorkItems = await db.execute(sql.raw(`
+          SELECT DISTINCT ON (wi.project_id)
+            wi.project_id,
+            COALESCE(u.name, 'Unknown') as engineer_name,
+            wi.updated_at
+          FROM work_items wi
+          LEFT JOIN users u ON u.id = wi.owner_user_id
+          WHERE wi.workstream = 'ENG'
+            AND wi.deleted_at IS NULL
+            AND wi.owner_user_id IS NOT NULL
+            AND wi.project_id IS NOT NULL
+          ORDER BY wi.project_id, wi.updated_at DESC
+        `));
+        for (const row of engWorkItems.rows as any[]) {
+          lastEngByProjectId.set(row.project_id, { name: row.engineer_name, at: row.updated_at });
+        }
+      } catch (e: any) {
+        console.warn("[lifecycle-board] last engineer query error:", e.message);
+      }
+
+      const pdPctByProjectId = new Map<number, number>();
+      try {
+        const pdItems = await db.execute(sql.raw(`
+          SELECT project_id,
+            CASE WHEN COUNT(*) > 0 THEN
+              SUM(COALESCE(percent_complete, 0) * GREATEST(COALESCE(duration, 1), 1)) / NULLIF(SUM(GREATEST(COALESCE(duration, 1), 1)), 0)
+            ELSE NULL END as pd_pct
+          FROM work_items
+          WHERE workstream = 'PD'
+            AND deleted_at IS NULL
+            AND project_id IS NOT NULL
+          GROUP BY project_id
+        `));
+        for (const row of pdItems.rows as any[]) {
+          if (row.pd_pct !== null) pdPctByProjectId.set(row.project_id, Number(row.pd_pct));
+        }
+      } catch (e: any) {
+        console.warn("[lifecycle-board] PD pct query error:", e.message);
+      }
+
+      const ragUserIds = allProjects.map(p => (p as any).ragUpdatedByUserId).filter(Boolean);
+      const ragUserMap = new Map<number, string>();
+      if (ragUserIds.length > 0) {
+        try {
+          const ragUsers = await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, ragUserIds));
+          for (const u of ragUsers) ragUserMap.set(u.id, u.name);
+        } catch (e: any) {}
+      }
+
       const projectNormNames = new Set<string>();
       const results: any[] = [];
 
@@ -387,6 +548,11 @@ export function registerLifecycleRoutes(app: Express) {
         const expectedPctComplete = plan.totalExpWeight > 0 ? plan.weightedExpPct / plan.totalExpWeight : null;
         const gpPct = fin.totalRevenue > 0 ? Math.round(((fin.totalRevenue - fin.totalCost) / fin.totalRevenue) * 100) : null;
 
+        const engPct = eng.total > 0 ? eng.done / eng.total : null;
+        const qmPct = qm.total > 0 ? qm.approved / qm.total : null;
+        const pmPct = projectPctComplete;
+        const pdPct = pdPctByProjectId.get(proj.id) ?? null;
+
         results.push({
           id: proj.id,
           projectName: proj.projectName,
@@ -398,6 +564,10 @@ export function registerLifecycleRoutes(app: Express) {
           isActive: proj.isActive,
           escalationLevel: proj.escalationLevel,
           ragStatus: proj.ragStatus,
+          ragComment: proj.ragComment,
+          ragUpdatedAt: proj.ragUpdatedAt,
+          ragUpdatedByUserId: proj.ragUpdatedByUserId,
+          ragUpdatedByName: proj.ragUpdatedByUserId ? ragUserMap.get(proj.ragUpdatedByUserId) || null : null,
           executionEnabled: proj.executionEnabled,
           executionGateStatus: proj.executionGateStatus,
           signedStatus: proj.signedStatus,
@@ -428,6 +598,11 @@ export function registerLifecycleRoutes(app: Express) {
           constructionStartDate: proj.constructionStartDate,
           commissioningDate: proj.commissioningDate,
           clientHandoverDate: proj.clientHandoverDate,
+          lastEngineer: lastEngByProjectId.get(proj.id) || null,
+          pdPercent: pdPct,
+          engPercent: engPct,
+          qmPercent: qmPct,
+          pmPercent: pmPct,
         });
       }
 
