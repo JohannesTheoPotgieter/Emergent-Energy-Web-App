@@ -282,6 +282,45 @@ function InlineWbsEditor({ value, onCommit }: { value: string; onCommit: (v: str
   );
 }
 
+function InlineDateEditor({ value, onCommit }: { value: string | null; onCommit: (v: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const displayVal = value ? value.substring(0, 10) : "";
+  const [localVal, setLocalVal] = useState(displayVal);
+
+  useEffect(() => { setLocalVal(value ? value.substring(0, 10) : ""); }, [value]);
+
+  const commit = () => {
+    setEditing(false);
+    if (localVal !== displayVal && localVal) onCommit(localVal);
+  };
+
+  if (editing) {
+    return (
+      <input
+        data-testid="inline-date-input"
+        className="w-full h-5 text-[10px] tabular-nums text-center border border-primary/40 rounded bg-background outline-none focus:ring-1 focus:ring-primary/30"
+        type="date"
+        value={localVal}
+        onChange={(e) => setLocalVal(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setLocalVal(displayVal); setEditing(false); } }}
+        onClick={(e) => e.stopPropagation()}
+        autoFocus
+      />
+    );
+  }
+
+  return (
+    <span
+      className="cursor-pointer hover:text-primary hover:underline"
+      onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+      title="Click to edit date"
+    >
+      {formatDateCompact(value) || "—"}
+    </span>
+  );
+}
+
 type ZoomLevel = "week" | "month";
 
 export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlanTabProps) {
@@ -310,9 +349,12 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
   const { data: tasks = [], isLoading } = useQuery<any[]>({
     queryKey: ["planning-tasks", projectName],
     queryFn: async () => {
-      const res = await fetch(`/api/planning-tasks/${encodeURIComponent(projectName)}`, { credentials: "include" });
+      const token = localStorage.getItem('auth_token');
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`/api/planning-tasks/${encodeURIComponent(projectName)}`, { credentials: "include", headers });
       if (!res.ok) {
-        const fallback = await fetch(`/api/operational-tasks/${encodeURIComponent(projectName)}`, { credentials: "include" });
+        const fallback = await fetch(`/api/operational-tasks/${encodeURIComponent(projectName)}`, { credentials: "include", headers });
         if (!fallback.ok) return [];
         return fallback.json();
       }
@@ -1044,11 +1086,17 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                           <span className="truncate">{typeof task.assignees === 'string' ? task.assignees.split(',')[0] : '—'}</span>
                         ) : "—"}
                       </td>
-                      <td className="px-1 text-center border-r text-[10px] tabular-nums" data-testid={`start-${task.id}`}>
-                        {formatDateCompact(task.startDate || task.actualStartDate)}
+                      <td className="px-1 text-center border-r text-[10px] tabular-nums" onClick={(e) => e.stopPropagation()} data-testid={`start-${task.id}`}>
+                        <InlineDateEditor
+                          value={task.startDate || task.actualStartDate || null}
+                          onCommit={(v) => updateMutation.mutate({ id: task.id, updates: { startDate: v } })}
+                        />
                       </td>
-                      <td className="px-1 text-center border-r text-[10px] tabular-nums" data-testid={`end-${task.id}`}>
-                        {formatDateCompact(task.dueDate || task.actualEndDate)}
+                      <td className="px-1 text-center border-r text-[10px] tabular-nums" onClick={(e) => e.stopPropagation()} data-testid={`end-${task.id}`}>
+                        <InlineDateEditor
+                          value={task.dueDate || task.actualEndDate || null}
+                          onCommit={(v) => updateMutation.mutate({ id: task.id, updates: { dueDate: v } })}
+                        />
                       </td>
                       <td className="px-1 text-center border-r text-[10px] tabular-nums" data-testid={`days-${task.id}`}>
                         {(() => {
