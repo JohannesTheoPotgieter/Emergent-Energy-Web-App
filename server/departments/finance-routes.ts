@@ -2150,6 +2150,7 @@ router.post("/api/expenditure/overrides", requireAuth, requireAdminOrFinancialEd
       budgetRateUnit: "budgetRateUnit",
       invoiceDateFontColor: "invoiceDateFontColor",
       paymentDateFontColor: "paymentDateFontColor",
+      supplierName: "supplierName",
     };
 
     const projectNames = [...new Set(overrides.map((o: any) => o.projectName))];

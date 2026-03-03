@@ -30,6 +30,7 @@ import {
   workItems,
   workItemAssignments,
   workItemDependencies,
+  projectPlanOverrides,
 } from "@shared/schema";
 import { recordImportChange, recordSystemEvent } from "./lib/audit/diff-engine";
 import { eq, desc, and, or, sql, inArray, isNull } from "drizzle-orm";
@@ -888,6 +889,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
     }
 
     const counts = { planTasks: 0, revenueLines: 0, costLines: 0, executionPhases: 0, counterparties: 0 };
+    const skippedOverrideFields: Array<{ row: number; field: string; importValue: string; manualValue: string }> = [];
 
     await db.transaction(async (tx: any) => {
       const existingTaskOwners = new Map<string, string>();
@@ -918,13 +920,21 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
         .from(workingPlanScenario)
         .where(eq(workingPlanScenario.projectName, projectName));
       if (scenarioIds.length > 0) {
-        const sIds = scenarioIds.map(s => s.id);
+        const sIds = scenarioIds.map((s: any) => s.id);
         await tx.update(workingPlanTaskOverride)
           .set({ importedTaskId: null })
           .where(inArray(workingPlanTaskOverride.scenarioId, sIds));
         await tx.update(workingPlanDependencyOverride)
           .set({ importedDependencyId: null })
           .where(inArray(workingPlanDependencyOverride.scenarioId, sIds));
+      }
+
+      const manualOverridesForProject = await tx.select().from(projectPlanOverrides)
+        .where(eq(projectPlanOverrides.projectName, projectName));
+      const manualOverrideMap = new Map<number, Map<string, string>>();
+      for (const ov of manualOverridesForProject) {
+        if (!manualOverrideMap.has(ov.rowNumber)) manualOverrideMap.set(ov.rowNumber, new Map());
+        manualOverrideMap.get(ov.rowNumber)!.set(ov.fieldName, ov.overrideValue || '');
       }
 
       const existingWorkItemsForImport = await tx
@@ -949,6 +959,12 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
         await tx.delete(workItems).where(inArray(workItems.id, wiIds));
       }
 
+      const OVERRIDE_FIELD_MAP: Record<string, string> = {
+        actualStart: 'startDate', actualEnd: 'endDate', actualPctComplete: 'pctComplete',
+        startDate: 'startDate', endDate: 'endDate', percentComplete: 'pctComplete',
+        status: 'status', owner: 'owner', comment: 'comment',
+      };
+
       if (norm.planTasks && norm.planTasks.length > 0) {
         const planIgnored = ignoredRows.get("PLAN") || new Set();
         const planOverrides = overrideRows.get("PLAN") || new Map();
@@ -957,7 +973,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
           .map((t: any) => {
             const ov = planOverrides.get(t.sourceRow);
             const merged = ov ? { ...t, ...ov } : t;
-            return {
+            const result: any = {
               projectId,
               projectName,
               taskName: merged.taskName,
@@ -981,6 +997,18 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
               sourceRow: t.sourceRow,
               importRunId: runId,
             };
+            const rowOverrides = manualOverrideMap.get(t.sourceRow);
+            if (rowOverrides) {
+              for (const [overrideField, manualValue] of Array.from(rowOverrides.entries())) {
+                const mappedField = OVERRIDE_FIELD_MAP[overrideField] || overrideField;
+                if (mappedField in result) {
+                  const importValue = String(result[mappedField] ?? '');
+                  skippedOverrideFields.push({ row: t.sourceRow, field: overrideField, importValue, manualValue });
+                  result[mappedField] = manualValue;
+                }
+              }
+            }
+            return result;
           });
         if (planValues.length > 0) {
           const workItemByTaskNo = new Map<string, number>();
@@ -1351,7 +1379,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
         projectName: projectName || undefined,
         projectId: projectId || undefined,
         action: "IMPORT_COMMIT",
-        summary: `Import committed: ${counts.planTasks} tasks, ${counts.revenueLines} revenue, ${counts.costLines} cost, ${counts.executionPhases} phases`,
+        summary: `Import committed: ${counts.planTasks} tasks, ${counts.revenueLines} revenue, ${counts.costLines} cost, ${counts.executionPhases} phases${skippedOverrideFields.length > 0 ? ` (${skippedOverrideFields.length} manual override(s) preserved)` : ''}`,
         fileMetadata: { fileName: run.originalFileName, fileHash: run.fileHash },
         fields: importFields,
       });
@@ -1405,7 +1433,12 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
       console.warn("[SmartImport] Auto-archive check failed (non-blocking):", archiveErr.message);
     }
 
-    res.json({ success: true, runId, counts });
+    res.json({
+      success: true,
+      runId,
+      counts,
+      preservedOverrides: skippedOverrideFields.length > 0 ? skippedOverrideFields : undefined,
+    });
   } catch (err: any) {
     console.error("[smart-import] POST commit error:", err);
     res.status(500).json({ error: err.message });

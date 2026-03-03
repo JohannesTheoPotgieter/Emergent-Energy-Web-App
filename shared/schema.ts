@@ -4765,6 +4765,10 @@ export const workItems = pgTable("work_items", {
   scheduledDate: text("scheduled_date"),
   scheduledStartTime: text("scheduled_start_time"),
   scheduledEndTime: text("scheduled_end_time"),
+  baselineStart: text("baseline_start"),
+  baselineEnd: text("baseline_end"),
+  baselineDuration: integer("baseline_duration"),
+  taskMode: text("task_mode").default("auto"),
 });
 export const insertWorkItemSchema = createInsertSchema(workItems).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertWorkItem = z.infer<typeof insertWorkItemSchema>;

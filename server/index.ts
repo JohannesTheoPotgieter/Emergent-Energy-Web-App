@@ -745,6 +745,10 @@ async function backfillPmUserIds() {
       ALTER TABLE work_items ADD COLUMN IF NOT EXISTS source_row INTEGER;
       ALTER TABLE work_items ADD COLUMN IF NOT EXISTS source_sheet TEXT;
       ALTER TABLE work_items ADD COLUMN IF NOT EXISTS import_run_id INTEGER;
+      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS baseline_start TEXT;
+      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS baseline_end TEXT;
+      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS baseline_duration INTEGER;
+      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS task_mode TEXT DEFAULT 'auto';
     `));
   } catch (err: any) {
     console.error('[Migration] work_items canonical columns error:', err.message);
