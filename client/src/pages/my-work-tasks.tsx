@@ -192,6 +192,30 @@ export default function MyWorkTasksPage() {
     },
   });
 
+  const { data: unreadNotifs = { items: [], total: 0 } } = useQuery<{ items: any[]; total: number }>({
+    queryKey: ["/api/notifications", "unread-tasks"],
+    queryFn: async () => {
+      const res = await fetch("/api/notifications?unreadOnly=true&limit=50", {
+        credentials: "include",
+        headers: { ...getAuthHeaders() },
+      });
+      if (!res.ok) return { items: [], total: 0 };
+      return res.json();
+    },
+  });
+
+  const { data: msActionItems = [] } = useQuery<any[]>({
+    queryKey: ["/api/ms-objects/mine", "action_required_tasks"],
+    queryFn: async () => {
+      const res = await fetch("/api/ms-objects/mine?action_required=true", {
+        credentials: "include",
+        headers: { ...getAuthHeaders() },
+      });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
   const { data: rawProjectInfos = [] } = useQuery<any[]>({
     queryKey: ["/api/project-info"],
   });
@@ -401,12 +425,50 @@ export default function MyWorkTasksPage() {
       });
     }
 
+    for (const n of (unreadNotifs.items || [])) {
+      result.push({
+        _key: `notif-${n.id}`,
+        _source: "notifications",
+        _sourceLabel: "Notification",
+        _sourceColor: "bg-orange-50 border-orange-200 text-orange-700",
+        _rawId: n.id,
+        id: n.id,
+        title: n.title || "",
+        status: "inbox" as TaskStatus,
+        priority: n.eventType === "excel_sync_confirmation" ? "normal" : "high",
+        projectName: n.projectName || n.project_name || null,
+        dueAt: null,
+        createdAt: n.createdAt || n.created_at || null,
+        notes: n.body || null,
+      });
+    }
+
+    for (const item of msActionItems) {
+      result.push({
+        _key: `ms-${item.id}`,
+        _source: "notifications",
+        _sourceLabel: "MS 365",
+        _sourceColor: "bg-indigo-50 border-indigo-200 text-indigo-700",
+        _rawId: item.id,
+        id: item.id,
+        title: item.subjectOrTitle || item.subject_or_title || "",
+        status: "inbox" as TaskStatus,
+        priority: "normal",
+        projectName: null,
+        dueAt: null,
+        createdAt: item.receivedOrStartDatetime || item.received_or_start_datetime || null,
+        notes: item.preview || null,
+      });
+    }
+
     return result;
-  }, [allTaskData]);
+  }, [allTaskData, unreadNotifs, msActionItems]);
 
   const invalidateAll = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["/api/my-work/all-tasks"] });
     queryClient.invalidateQueries({ queryKey: ["/api/mytool/tasks"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/notifications", "unread-tasks"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/ms-objects/mine", "action_required_tasks"] });
   }, []);
 
   const createTaskMutation = useMutation({
@@ -592,8 +654,14 @@ export default function MyWorkTasksPage() {
   };
 
   const sourceCounts = useMemo(() => {
-    const counts: Record<SourceFilter, number> = { all: 0, personal: 0, operational: 0, approvals: 0, tr_register: 0, deliverables: 0 };
-    for (const t of unifiedTasks) counts[t._source]++;
+    const counts: Record<SourceFilter, number> = {
+      all: 0, personal: 0, operational: 0, plan: 0,
+      engineering_task: 0, quality_task: 0, approvals: 0,
+      tr_register: 0, deliverables: 0, notifications: 0,
+    };
+    for (const t of unifiedTasks) {
+      if (counts[t._source] !== undefined) counts[t._source]++;
+    }
     counts.all = unifiedTasks.length;
     return counts;
   }, [unifiedTasks]);
