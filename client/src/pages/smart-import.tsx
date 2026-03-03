@@ -2046,6 +2046,7 @@ function PreviewCommitStep({
   const [expandedTables, setExpandedTables] = useState<Record<string, boolean>>({});
   const [manualEditsWarning, setManualEditsWarning] = useState<{ message: string; count: number } | null>(null);
   const [previouslyDeletedWarning, setPreviouslyDeletedWarning] = useState<{ message: string; deletedBy: string; deletedAt: string } | null>(null);
+  const [recencyWarning, setRecencyWarning] = useState<{ message: string; error: string } | null>(null);
   const [, navigate] = useLocation();
   const { toast } = useToast();
 
@@ -2083,6 +2084,8 @@ function PreviewCommitStep({
           setManualEditsWarning({ message: err.message, count: err.manualEditCount });
         } else if (err.error === "previously_deleted") {
           setPreviouslyDeletedWarning({ message: err.message, deletedBy: err.deletedBy, deletedAt: err.deletedAt });
+        } else if (err.error === "import_older_than_existing" || err.error === "import_equal_date") {
+          setRecencyWarning({ message: err.message, error: err.error });
         } else {
           toast({ title: "Error", description: err.message || err.error || "Commit failed", variant: "destructive" });
         }
@@ -2542,7 +2545,7 @@ function BulkCommitPanel({ onBack, onSwitchToWizard }: {
             const res = await fetch(`/api/smart-import/${run.id}/commit`, {
               method: "POST",
               headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
-              body: JSON.stringify({ acknowledgeManualEdits: true, forceCommit: true }),
+              body: JSON.stringify({ acknowledgeManualEdits: true, forceCommit: true, acknowledgeEqualDate: true, forceRecreate: true }),
             });
             if (res.ok) {
               const data = await res.json();
