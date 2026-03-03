@@ -3,7 +3,7 @@ import { db } from "./db";
 import { safeLegacyQuery, safeLegacyWrite } from "./legacy-table-guard";
 import { eq, sql, inArray } from "drizzle-orm";
 import { verifyToken } from "./jwt";
-import { projectInfo, operationalTasks, projectPlanOverrides, executionGateLog, mergeAuditLog, programExpense, programInflows, qcChecklist, qcItemInstance, projectPlan, PHASE_TO_ENG_STAGES } from "@shared/schema";
+import { projectInfo, operationalTasks, projectPlanOverrides, executionGateLog, mergeAuditLog, programExpense, programInflows, qcChecklist, qcItemInstance, projectPlan, PHASE_TO_ENG_STAGES, normalizedCostLines, normalizedRevenueLines } from "@shared/schema";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { generateEngStagesForProject } from "./eng-stage-routes";
 import { logAuditFromReq } from "./audit-logger";
@@ -211,13 +211,6 @@ export function registerLifecycleRoutes(app: Express) {
           return updated;
         });
 
-      const allQmData = await db.select({
-        projectName: qcChecklist.projectName,
-        isApplicable: qcItemInstance.isApplicable,
-        approved: qcItemInstance.approved,
-      }).from(qcChecklist)
-        .innerJoin(qcItemInstance, eq(qcItemInstance.checklistId, qcChecklist.id));
-
       const trackerProjectNames = new Set<string>();
       const expenseNames = await db.selectDistinct({ projectName: programExpense.projectName }).from(programExpense);
       for (const e of expenseNames) {
@@ -230,6 +223,48 @@ export function registerLifecycleRoutes(app: Express) {
       const planProjectNames = [...new Set(rawPlanTasks.map((t: any) => t.projectName).filter(Boolean))];
       for (const pn of planProjectNames) {
         trackerProjectNames.add(normalizeName(pn));
+      }
+
+      const allRevLines = await db.select({
+        projectId: normalizedRevenueLines.projectId,
+        projectName: normalizedRevenueLines.projectName,
+        amountExVat: normalizedRevenueLines.amountExVat,
+        invoiceNumber: normalizedRevenueLines.invoiceNumber,
+        paidDateConfirmed: normalizedRevenueLines.paidDateConfirmed,
+      }).from(normalizedRevenueLines);
+
+      const allCostLines = await db.select({
+        projectId: normalizedCostLines.projectId,
+        projectName: normalizedCostLines.projectName,
+        amountExVat: normalizedCostLines.amountExVat,
+        invoiceNumber: normalizedCostLines.invoiceNumber,
+        invoiceDateConfirmed: normalizedCostLines.invoiceDateConfirmed,
+        poNumber: normalizedCostLines.poNumber,
+        paidDateConfirmed: normalizedCostLines.paidDateConfirmed,
+      }).from(normalizedCostLines);
+
+      const finByNorm = new Map<string, { totalRevenue: number; invoicedRevenue: number; receivedRevenue: number; totalCost: number; invoicedCost: number; paidCost: number }>();
+      for (const r of allRevLines) {
+        const name = r.projectName;
+        if (!name) continue;
+        const norm = normalizeName(name);
+        if (!finByNorm.has(norm)) finByNorm.set(norm, { totalRevenue: 0, invoicedRevenue: 0, receivedRevenue: 0, totalCost: 0, invoicedCost: 0, paidCost: 0 });
+        const entry = finByNorm.get(norm)!;
+        const amt = parseFloat(r.amountExVat || "0") || 0;
+        entry.totalRevenue += amt;
+        if (r.invoiceNumber) entry.invoicedRevenue += amt;
+        if (r.paidDateConfirmed) entry.receivedRevenue += amt;
+      }
+      for (const c of allCostLines) {
+        const name = c.projectName;
+        if (!name) continue;
+        const norm = normalizeName(name);
+        if (!finByNorm.has(norm)) finByNorm.set(norm, { totalRevenue: 0, invoicedRevenue: 0, receivedRevenue: 0, totalCost: 0, invoicedCost: 0, paidCost: 0 });
+        const entry = finByNorm.get(norm)!;
+        const amt = parseFloat(c.amountExVat || "0") || 0;
+        entry.totalCost += amt;
+        if (c.invoiceNumber) entry.invoicedCost += amt;
+        if (c.paidDateConfirmed) entry.paidCost += amt;
       }
 
       const DONE_STATUSES = ["DONE", "QC APPROVED", "COMPLETED"];
@@ -251,10 +286,25 @@ export function registerLifecycleRoutes(app: Express) {
           if (t.priority && ["High", "Urgent", "Highest"].includes(t.priority)) entry.highPriority++;
         }
         if (t.assignees && Array.isArray(t.assignees)) {
-          for (const a of t.assignees) {
-            if (a) entry.assignees.add(a);
-          }
+          for (const a of t.assignees) { if (a) entry.assignees.add(a); }
         }
+      }
+
+      const allQmData = await db.select({
+        projectName: qcChecklist.projectName,
+        isApplicable: qcItemInstance.isApplicable,
+        approved: qcItemInstance.approved,
+      }).from(qcChecklist)
+        .innerJoin(qcItemInstance, eq(qcItemInstance.checklistId, qcChecklist.id));
+
+      const qmByNorm = new Map<string, { total: number; approved: number }>();
+      for (const q of allQmData) {
+        const name = q.projectName;
+        if (!name) continue;
+        const norm = normalizeName(name);
+        if (!qmByNorm.has(norm)) qmByNorm.set(norm, { total: 0, approved: 0 });
+        const entry = qmByNorm.get(norm)!;
+        if (q.isApplicable) { entry.total++; if (q.approved) entry.approved++; }
       }
 
       const todayDate = new Date().toISOString().split("T")[0];
@@ -315,19 +365,6 @@ export function registerLifecycleRoutes(app: Express) {
         }
       }
 
-      const qmByNorm = new Map<string, { total: number; approved: number }>();
-      for (const q of allQmData) {
-        const name = q.projectName;
-        if (!name) continue;
-        const norm = normalizeName(name);
-        if (!qmByNorm.has(norm)) qmByNorm.set(norm, { total: 0, approved: 0 });
-        const entry = qmByNorm.get(norm)!;
-        if (q.isApplicable) {
-          entry.total++;
-          if (q.approved) entry.approved++;
-        }
-      }
-
       const projectNormNames = new Set<string>();
       const results: any[] = [];
 
@@ -335,9 +372,10 @@ export function registerLifecycleRoutes(app: Express) {
         const norm = normalizeName(proj.projectName);
         projectNormNames.add(norm);
 
-        const eng = engByNorm.get(norm) || { total: 0, done: 0, overdue: 0, highPriority: 0, assignees: new Set<string>(), rawName: "" };
         const plan = planByNorm.get(norm) || { total: 0, weightedPct: 0, totalWeight: 0, weightedExpPct: 0, totalExpWeight: 0 };
+        const eng = engByNorm.get(norm) || { total: 0, done: 0, overdue: 0, highPriority: 0, assignees: new Set<string>(), rawName: "" };
         const qm = qmByNorm.get(norm) || { total: 0, approved: 0 };
+        const fin = finByNorm.get(norm) || { totalRevenue: 0, invoicedRevenue: 0, receivedRevenue: 0, totalCost: 0, invoicedCost: 0, paidCost: 0 };
 
         const hasTracker = trackerProjectNames.has(norm);
         let source: "excel" | "engineering" | "both" = hasTracker ? "excel" : "none" as any;
@@ -347,6 +385,7 @@ export function registerLifecycleRoutes(app: Express) {
 
         const projectPctComplete = plan.totalWeight > 0 ? plan.weightedPct / plan.totalWeight : null;
         const expectedPctComplete = plan.totalExpWeight > 0 ? plan.weightedExpPct / plan.totalExpWeight : null;
+        const gpPct = fin.totalRevenue > 0 ? Math.round(((fin.totalRevenue - fin.totalCost) / fin.totalRevenue) * 100) : null;
 
         results.push({
           id: proj.id,
@@ -365,6 +404,7 @@ export function registerLifecycleRoutes(app: Express) {
           executionPhase: proj.executionPhase,
           archivedStatus: proj.archivedStatus,
           source,
+          hasTracker,
           engTotal: eng.total,
           engDone: eng.done,
           engOverdue: eng.overdue,
@@ -376,48 +416,18 @@ export function registerLifecycleRoutes(app: Express) {
           expectedPctComplete,
           qmTotal: qm.total,
           qmApproved: qm.approved,
+          totalRevenue: fin.totalRevenue,
+          invoicedRevenue: fin.invoicedRevenue,
+          receivedRevenue: fin.receivedRevenue,
+          totalCost: fin.totalCost,
+          invoicedCost: fin.invoicedCost,
+          paidCost: fin.paidCost,
+          gpPct,
           phaseUpdatedAt: proj.phaseUpdatedAt,
           updatedAt: proj.updatedAt,
           constructionStartDate: proj.constructionStartDate,
           commissioningDate: proj.commissioningDate,
           clientHandoverDate: proj.clientHandoverDate,
-        });
-      }
-
-      const engNormKeys = Array.from(engByNorm.keys());
-      for (const norm of engNormKeys) {
-        if (projectNormNames.has(norm)) continue;
-
-        const eng = engByNorm.get(norm)!;
-        const plan = planByNorm.get(norm) || { total: 0, weightedPct: 0, totalWeight: 0, weightedExpPct: 0, totalExpWeight: 0 };
-        const qm = qmByNorm.get(norm) || { total: 0, approved: 0 };
-        const projectPctComplete = plan.totalWeight > 0 ? plan.weightedPct / plan.totalWeight : null;
-
-        results.push({
-          id: null,
-          projectName: eng.rawName,
-          sizeKwp: null,
-          pd: null,
-          pm: null,
-          contractValue: null,
-          phase: null,
-          isActive: true,
-          source: "engineering" as const,
-          engTotal: eng.total,
-          engDone: eng.done,
-          engOverdue: eng.overdue,
-          engHighPriority: eng.highPriority,
-          engAssignees: Array.from(eng.assignees),
-          planTotal: plan.total,
-          planAvgPct: plan.totalWeight > 0 ? Math.round((plan.weightedPct / plan.totalWeight) * 100) / 100 : 0,
-          projectPctComplete,
-          qmTotal: qm.total,
-          qmApproved: qm.approved,
-          phaseUpdatedAt: null,
-          updatedAt: null,
-          constructionStartDate: null,
-          commissioningDate: null,
-          clientHandoverDate: null,
         });
       }
 
