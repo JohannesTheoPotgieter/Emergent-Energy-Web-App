@@ -2,9 +2,8 @@ import { Router, Request, Response, NextFunction } from "express";
 import { requireAuth, requireAdmin } from "./shared-middleware";
 import { storage } from "../storage";
 import { db } from "../db";
-import { safeLegacyQuery } from "../legacy-table-guard";
-import { financialEditRequests, financialIntegrationRules, notifications, users, projectPlan, programInflows, programExpense, expenseTaskLinks, milestoneTaskLinks } from "@shared/schema";
-import { eq, and, inArray, desc, sql } from "drizzle-orm";
+import { financialEditRequests, financialIntegrationRules, notifications, users, workItems, projectInfo, expenseTaskLinks, milestoneTaskLinks } from "@shared/schema";
+import { eq, and, inArray, isNull, desc, sql } from "drizzle-orm";
 
 const router = Router();
 
@@ -32,14 +31,17 @@ function requireFinancialApprover(req: Request, res: Response, next: NextFunctio
 async function detectCriticalPathImpact(projectName: string, taskIds: number[]): Promise<boolean> {
   if (taskIds.length === 0) return false;
   try {
-    const tasks = await safeLegacyQuery(() => db.select().from(projectPlan)
-      .where(and(eq(projectPlan.projectName, projectName))), []);
-    const relevantTasks = tasks.filter(t => taskIds.includes(t.rowNumber));
+    const piRow = await db.select({ id: projectInfo.id }).from(projectInfo)
+      .where(eq(projectInfo.projectName, projectName)).limit(1);
+    if (piRow.length === 0) return false;
+    const tasks = await db.select().from(workItems)
+      .where(and(eq(workItems.projectId, piRow[0].id), isNull(workItems.deletedAt)));
+    const relevantTasks = tasks.filter(t => taskIds.includes(t.sourceRow || t.id));
     for (const task of relevantTasks) {
       if ((task as any).isCriticalPath || (task as any).is_critical_path) return true;
-      const pct = Number((task as any).actualPctComplete || 0);
-      if (pct < 1 && (task as any).endDate) {
-        const endDate = new Date((task as any).endDate);
+      const pct = Number(task.percentComplete || 0);
+      if (pct < 1 && task.endDate) {
+        const endDate = new Date(task.endDate);
         const now = new Date();
         if (endDate < now) return true;
       }
@@ -373,7 +375,11 @@ router.get("/api/financial-integration/warnings/:projectName", requireAuth, asyn
 
     const expenses = await storage.getProgramExpensesByProject(projectName);
     const inflows = await storage.getProgramInflowsByProject(projectName);
-    const planTasks = await safeLegacyQuery(() => db.select().from(projectPlan).where(eq(projectPlan.projectName, projectName)), []);
+    const piRow = await db.select({ id: projectInfo.id }).from(projectInfo)
+      .where(eq(projectInfo.projectName, projectName)).limit(1);
+    const planTasks = piRow.length > 0
+      ? await db.select().from(workItems).where(and(eq(workItems.projectId, piRow[0].id), isNull(workItems.deletedAt)))
+      : [];
     const expLinks = await db.select().from(expenseTaskLinks).where(eq(expenseTaskLinks.projectName, projectName));
     const revLinks = await db.select().from(milestoneTaskLinks).where(eq(milestoneTaskLinks.projectName, projectName));
 
@@ -435,17 +441,17 @@ router.get("/api/financial-integration/warnings/:projectName", requireAuth, asyn
       const milestone = inflows.find((r: any) => r.rowNumber === link.milestoneRowNumber);
       if (!milestone) continue;
       const taskId = Math.abs(link.taskId);
-      const task = planTasks.find(t => t.rowNumber === taskId);
+      const task = planTasks.find(t => (t.sourceRow || t.id) === taskId);
       if (!task) continue;
-      const endDate = (task as any).endDate || (task as any).actualEnd;
+      const endDate = task.endDate;
       if (endDate && endDate < today) {
-        const pct = Number((task as any).actualPctComplete || 0);
+        const pct = Number(task.percentComplete || 0);
         if (pct < 1 && !milestone.paymentReceivedDate) {
           warnings.push({
             type: "revenue_at_risk",
             severity: "warning",
-            message: `Revenue milestone "${milestone.milestoneName || "Unnamed"}" linked to overdue task "${(task as any).taskName || "Task"}"`,
-            details: { milestoneId: milestone.id, taskRowNumber: task.rowNumber, taskEndDate: endDate },
+            message: `Revenue milestone "${milestone.milestoneName || "Unnamed"}" linked to overdue task "${task.title || "Task"}"`,
+            details: { milestoneId: milestone.id, taskRowNumber: task.sourceRow || task.id, taskEndDate: endDate },
           });
         }
       }
@@ -455,7 +461,7 @@ router.get("/api/financial-integration/warnings/:projectName", requireAuth, asyn
       const expense = expenses.find((e: any) => e.id === link.expenseId);
       if (!expense) continue;
       const taskId = Math.abs(link.taskId);
-      const task = planTasks.find(t => t.rowNumber === taskId);
+      const task = planTasks.find(t => (t.sourceRow || t.id) === taskId);
       if (!task) continue;
       const budgetAmt = Number((expense as any).budgetTotal) || 0;
       const actualAmt = Number((expense as any).expenseActualTotal) || 0;
@@ -470,9 +476,8 @@ router.get("/api/financial-integration/warnings/:projectName", requireAuth, asyn
     }
 
     const overdueTasks = planTasks.filter(t => {
-      const endDate = (t as any).endDate || (t as any).actualEnd;
-      const pct = Number((t as any).actualPctComplete || 0);
-      return endDate && endDate < today && pct < 1;
+      const pct = Number(t.percentComplete || 0);
+      return t.endDate && t.endDate < today && pct < 1;
     });
     const criticalOverdue = overdueTasks.filter(t => (t as any).isCriticalPath);
     if (criticalOverdue.length > 0) {
@@ -480,7 +485,7 @@ router.get("/api/financial-integration/warnings/:projectName", requireAuth, asyn
         type: "critical_path_delay",
         severity: "critical",
         message: `${criticalOverdue.length} critical path task(s) overdue — may delay handover`,
-        details: { tasks: criticalOverdue.map(t => ({ name: (t as any).taskName, endDate: (t as any).endDate })) },
+        details: { tasks: criticalOverdue.map(t => ({ name: t.title, endDate: t.endDate })) },
       });
     }
 
@@ -514,7 +519,11 @@ router.get("/api/financial-integration/sync-status/:projectName", requireAuth, a
 
     const expenses = await storage.getProgramExpensesByProject(projectName);
     const inflows = await storage.getProgramInflowsByProject(projectName);
-    const planTasks = await safeLegacyQuery(() => db.select().from(projectPlan).where(eq(projectPlan.projectName, projectName)), []);
+    const piRowSync = await db.select({ id: projectInfo.id }).from(projectInfo)
+      .where(eq(projectInfo.projectName, projectName)).limit(1);
+    const planTasks = piRowSync.length > 0
+      ? await db.select().from(workItems).where(and(eq(workItems.projectId, piRowSync[0].id), isNull(workItems.deletedAt)))
+      : [];
     const expLinks = await db.select().from(expenseTaskLinks).where(eq(expenseTaskLinks.projectName, projectName));
     const revLinks = await db.select().from(milestoneTaskLinks).where(eq(milestoneTaskLinks.projectName, projectName));
 

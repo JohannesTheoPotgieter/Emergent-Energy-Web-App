@@ -6,9 +6,9 @@ import fs from "fs";
 import path from "path";
 import { storage } from "./storage";
 import { parseTrackerFile, applyFontColors } from "./excelParser";
-import { insertBudgetSchema, programExpense, programInflows, projectInfo, projectPlan, normalizedCostLines, normalizedRevenueLines, normalizedPlanTasks, normalizedExecutionPhases, smartImportRuns, cosStatusOverrides, revenueTrackingOverrides, users, notifications, notificationThrottle, operationalTasks, mytoolTasks, engineeringTasks, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems, workItemAssignments, clients } from "@shared/schema";
+import { insertBudgetSchema, projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedExecutionPhases, smartImportRuns, cosStatusOverrides, revenueTrackingOverrides, users, notifications, notificationThrottle, operationalTasks, mytoolTasks, engineeringTasks, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems, workItemAssignments, clients } from "@shared/schema";
 import { db } from "./db";
-import { safeLegacyQuery, safeLegacyWrite } from "./legacy-table-guard";
+import { safeLegacyQuery } from "./legacy-table-guard";
 import { eq, and, or, sql, isNull, asc, desc, inArray } from "drizzle-orm";
 import { runSmartImportPreview } from "./lib/import/index";
 import { z } from "zod";
@@ -1016,7 +1016,42 @@ export async function registerRoutes(
                 scheduledEndTime: null,
               }));
             })()
-          : safeLegacyQuery(() => db.select().from(normalizedPlanTasks), []),
+          : (async () => {
+              const [wiRows, piRows] = await Promise.all([
+                db.select().from(workItems).where(and(eq(workItems.workstream, 'PM' as any), eq(workItems.source, 'SMART_IMPORT' as any), isNull(workItems.deletedAt))),
+                db.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo),
+              ]);
+              const piNameMap = new Map(piRows.map(p => [p.id, p.projectName]));
+              return wiRows.map(wi => ({
+                id: wi.id,
+                projectId: wi.projectId,
+                projectName: (wi.projectId ? piNameMap.get(wi.projectId) : null) || "",
+                taskName: wi.title,
+                taskNo: wi.wbsCode,
+                phase: wi.type,
+                startDate: wi.startDate,
+                endDate: wi.endDate,
+                durationDays: wi.duration,
+                actualStartDate: wi.startDate,
+                actualEndDate: wi.endDate,
+                actualDurationDays: wi.duration,
+                owner: null,
+                assigneeUserId: wi.ownerUserId,
+                status: wi.status,
+                pctComplete: wi.percentComplete,
+                expectedPctComplete: null,
+                comment: wi.description,
+                isMilestone: wi.type === "milestone",
+                parentTaskNo: null,
+                indentLevel: 0,
+                sourceSheet: null,
+                sourceRow: null,
+                importRunId: 0,
+                scheduledDate: null,
+                scheduledStartTime: null,
+                scheduledEndTime: null,
+              }));
+            })(),
       ]);
 
       const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
@@ -1843,7 +1878,42 @@ export async function registerRoutes(
                 scheduledEndTime: null,
               }));
             })()
-          : safeLegacyQuery(() => db.select().from(normalizedPlanTasks), []),
+          : (async () => {
+              const [wiRows, piRows] = await Promise.all([
+                db.select().from(workItems).where(and(eq(workItems.workstream, 'PM' as any), eq(workItems.source, 'SMART_IMPORT' as any), isNull(workItems.deletedAt))),
+                db.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo),
+              ]);
+              const piNameMap = new Map(piRows.map(p => [p.id, p.projectName]));
+              return wiRows.map(wi => ({
+                id: wi.id,
+                projectId: wi.projectId,
+                projectName: (wi.projectId ? piNameMap.get(wi.projectId) : null) || "",
+                taskName: wi.title,
+                taskNo: wi.wbsCode,
+                phase: wi.type,
+                startDate: wi.startDate,
+                endDate: wi.endDate,
+                durationDays: wi.duration,
+                actualStartDate: wi.startDate,
+                actualEndDate: wi.endDate,
+                actualDurationDays: wi.duration,
+                owner: null,
+                assigneeUserId: wi.ownerUserId,
+                status: wi.status,
+                pctComplete: wi.percentComplete,
+                expectedPctComplete: null,
+                comment: wi.description,
+                isMilestone: wi.type === "milestone",
+                parentTaskNo: null,
+                indentLevel: 0,
+                sourceSheet: null,
+                sourceRow: null,
+                importRunId: 0,
+                scheduledDate: null,
+                scheduledStartTime: null,
+                scheduledEndTime: null,
+              }));
+            })(),
         storage.getAllProjectPlanOverrides(),
         db.execute(sql`SELECT project_name, MAX(COALESCE(committed_at, uploaded_at)) as last_import FROM smart_import_runs WHERE status = 'COMMITTED' GROUP BY project_name`),
         db.select().from(clients),
@@ -2353,7 +2423,7 @@ export async function registerRoutes(
         return d >= fyStart && d <= fyEnd;
       };
 
-      const { programExpense, programInflows, normalizedCostLines, normalizedRevenueLines, projectInfo } = await import("@shared/schema");
+      const { normalizedCostLines, normalizedRevenueLines, projectInfo } = await import("@shared/schema");
 
       const HARD_EXCLUDED = ["Closed", "Gone"];
       const activeProjectsResult = await db.select({
@@ -4503,7 +4573,15 @@ export async function registerRoutes(
               .where(eq(projectInfo.projectName, resolvedProjectName));
             const pId = existingProject?.id || null;
 
-            await safeLegacyWrite(() => db.delete(normalizedPlanTasks).where(eq(normalizedPlanTasks.projectName, resolvedProjectName)));
+            if (pId) {
+              await db.delete(workItems).where(
+                and(
+                  eq(workItems.projectId, pId),
+                  eq(workItems.workstream, 'PM' as any),
+                  eq(workItems.source, 'SMART_IMPORT' as any)
+                )
+              );
+            }
             await db.delete(normalizedRevenueLines).where(eq(normalizedRevenueLines.projectName, resolvedProjectName));
             await db.delete(normalizedCostLines).where(eq(normalizedCostLines.projectName, resolvedProjectName));
             await db.delete(normalizedExecutionPhases).where(eq(normalizedExecutionPhases.projectName, resolvedProjectName));
@@ -4521,16 +4599,25 @@ export async function registerRoutes(
             const importRunId = dummyRun[0].id;
 
             if (norm.planTasks.length > 0) {
-              await safeLegacyWrite(() => db.insert(normalizedPlanTasks).values(norm.planTasks.map((t: any) => ({
-                projectId: pId, projectName: resolvedProjectName,
-                taskName: t.taskName, taskNo: t.taskNo || null, phase: t.phase,
-                startDate: t.startDate, endDate: t.endDate, durationDays: t.durationDays,
-                actualStartDate: t.actualStartDate, actualEndDate: t.actualEndDate,
-                actualDurationDays: t.actualDurationDays,
-                owner: t.owner, status: t.status, pctComplete: t.pctComplete,
-                comment: t.comment, sourceSheet: t.sourceSheet, sourceRow: t.sourceRow,
+              await db.insert(workItems).values(norm.planTasks.map((t: any, idx: number) => ({
+                projectId: pId,
+                workstream: 'PM' as any,
+                source: 'SMART_IMPORT' as any,
+                title: t.taskName,
+                wbsCode: t.taskNo || null,
+                type: t.phase,
+                startDate: t.startDate,
+                endDate: t.endDate,
+                duration: t.durationDays,
+                ownerName: t.owner,
+                status: t.status || 'Not Started',
+                percentComplete: t.pctComplete,
+                description: t.comment,
+                sourceSheet: t.sourceSheet,
+                sourceRow: t.sourceRow,
                 importRunId,
-              }))));
+                externalRef: `${resolvedProjectName}::PLAN::${t.taskNo || idx}::${importRunId}`,
+              })));
             }
             if (norm.revenueLines.length > 0) {
               await db.insert(normalizedRevenueLines).values(norm.revenueLines.map((r: any) => ({
@@ -7998,25 +8085,22 @@ export async function registerRoutes(
           return res.status(400).json({ error: "BAD_REQUEST", message: "percentComplete must be between 0 and 100" });
         }
         const pctVal = parsed / 100;
-        await safeLegacyWrite(() => db.update(projectPlan).set({ actualPctComplete: pctVal }).where(eq(projectPlan.id, id)));
         try {
           const result = await db.update(workItems).set({ percentComplete: pctVal }).where(
             and(eq(workItems.legacyTable, "project_plan"), eq(workItems.legacyId, id))
           ).returning({ id: workItems.id });
           if (result.length === 0) {
-            const ppRow = await db.select({ projectName: projectPlan.projectName, highLevelProgramme: projectPlan.highLevelProgramme }).from(projectPlan).where(eq(projectPlan.id, id)).limit(1);
-            if (ppRow.length > 0 && ppRow[0].projectName) {
-              const piRow = await db.select({ id: projectInfo.id }).from(projectInfo).where(eq(projectInfo.projectName, ppRow[0].projectName)).limit(1);
-              if (piRow.length > 0) {
-                await db.update(workItems).set({ percentComplete: pctVal }).where(
-                  and(
-                    eq(workItems.projectId, piRow[0].id),
-                    eq(workItems.title, ppRow[0].highLevelProgramme || ""),
-                    eq(workItems.workstream, "PM" as any),
-                    isNull(workItems.deletedAt)
-                  )
-                );
-              }
+            const wiByProject = await db.execute(sql`
+              SELECT wi.id, wi.title, pi.project_name
+              FROM work_items wi
+              JOIN project_info pi ON wi.project_id = pi.id
+              WHERE wi.legacy_table = 'project_plan' AND wi.legacy_id = ${id} AND wi.deleted_at IS NULL
+              LIMIT 1
+            `);
+            if (wiByProject.rows.length > 0) {
+              await db.update(workItems).set({ percentComplete: pctVal }).where(
+                eq(workItems.id, (wiByProject.rows[0] as any).id)
+              );
             }
           }
         } catch (e) {
@@ -8591,8 +8675,8 @@ export async function registerRoutes(
       const startDate = String(req.query.start || new Date().toISOString().split('T')[0]);
 
       const [legacyExp, legacyInf, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
-        db.select().from(programExpense),
-        db.select().from(programInflows),
+        storage.getAllProgramExpenses(),
+        storage.getAllProgramInflows(),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
         storage.getAllProjectPlans(),
@@ -8663,8 +8747,8 @@ export async function registerRoutes(
       }
 
       const [legacyExp2, legacyInf2, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
-        db.select().from(programExpense),
-        db.select().from(programInflows),
+        storage.getAllProgramExpenses(),
+        storage.getAllProgramInflows(),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
         storage.getAllProjectPlans(),
@@ -9601,8 +9685,8 @@ export async function registerRoutes(
       if (!weekStart || !weekEnd) return res.status(400).json({ error: "weekStart and weekEnd required" });
 
       const [legacyExpSWD, legacyInfSWD, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
-        db.select().from(programExpense),
-        db.select().from(programInflows),
+        storage.getAllProgramExpenses(),
+        storage.getAllProgramInflows(),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
         storage.getAllProjectPlans(),
@@ -10790,7 +10874,13 @@ export async function registerRoutes(
 
       const actualTaskId = Math.abs(taskId);
 
-      const planTaskResult = await safeLegacyQuery(() => db.select().from(projectPlan).where(eq(projectPlan.id, actualTaskId)), []);
+      const planTaskResult = await db.select().from(workItems).where(
+        and(
+          eq(workItems.legacyTable, "project_plan"),
+          eq(workItems.legacyId, actualTaskId),
+          isNull(workItems.deletedAt)
+        )
+      ).limit(1);
       const isProjectPlanTask = planTaskResult.length > 0;
 
       const workItemResult = !isProjectPlanTask
@@ -10810,7 +10900,7 @@ export async function registerRoutes(
         const existing = existingOverrides.find((o: any) => o.importedTaskId === actualTaskId);
 
         const basePlanTask = planTaskResult[0];
-        const taskName = updates.title || basePlanTask?.highLevelProgramme || "Unknown task";
+        const taskName = updates.title || basePlanTask?.title || "Unknown task";
 
         const overrideData: any = {};
         const notifFields: { field: string; old: string | null; new_: string | null }[] = [];
@@ -10862,7 +10952,6 @@ export async function registerRoutes(
           if (statusVal === "Done" && pctVal === undefined) updateFields.actualPctComplete = 1.0;
 
           if (Object.keys(updateFields).length > 0) {
-            await safeLegacyWrite(() => db.update(projectPlan).set(updateFields).where(eq(projectPlan.id, actualTaskId)));
             try {
               const wiPct = updateFields.actualPctComplete;
               if (wiPct !== undefined) {
@@ -10870,19 +10959,17 @@ export async function registerRoutes(
                   and(eq(workItems.legacyTable, "project_plan"), eq(workItems.legacyId, actualTaskId))
                 ).returning({ id: workItems.id });
                 if (result.length === 0) {
-                  const ppRow = await db.select({ projectName: projectPlan.projectName, highLevelProgramme: projectPlan.highLevelProgramme }).from(projectPlan).where(eq(projectPlan.id, actualTaskId)).limit(1);
-                  if (ppRow.length > 0 && ppRow[0].projectName) {
-                    const piRow = await db.select({ id: projectInfo.id }).from(projectInfo).where(eq(projectInfo.projectName, ppRow[0].projectName)).limit(1);
-                    if (piRow.length > 0) {
-                      await db.update(workItems).set({ percentComplete: wiPct }).where(
-                        and(
-                          eq(workItems.projectId, piRow[0].id),
-                          eq(workItems.title, ppRow[0].highLevelProgramme || ""),
-                          eq(workItems.workstream, "PM" as any),
-                          isNull(workItems.deletedAt)
-                        )
-                      );
-                    }
+                  const wiByProject = await db.execute(sql`
+                    SELECT wi.id, wi.title, pi.project_name
+                    FROM work_items wi
+                    JOIN project_info pi ON wi.project_id = pi.id
+                    WHERE wi.legacy_table = 'project_plan' AND wi.legacy_id = ${actualTaskId} AND wi.deleted_at IS NULL
+                    LIMIT 1
+                  `);
+                  if (wiByProject.rows.length > 0) {
+                    await db.update(workItems).set({ percentComplete: wiPct }).where(
+                      eq(workItems.id, (wiByProject.rows[0] as any).id)
+                    );
                   }
                 }
               }
@@ -10976,17 +11063,19 @@ export async function registerRoutes(
         }
 
         try {
-          await safeLegacyWrite(() =>
-            db.update(normalizedPlanTasks).set({
-              ...(updates.title != null ? { highLevelProgramme: updates.title } : {}),
-              ...(updates.startDate != null ? { actualStart: updates.startDate } : {}),
-              ...(updates.dueDate != null || updates.endDate != null ? { actualEnd: updates.dueDate || updates.endDate } : {}),
-              ...(updates.percentComplete != null ? { actualPctComplete: updates.percentComplete / 100 } : {}),
-              ...(updates.status === "Done" && updates.percentComplete == null ? { actualPctComplete: 1.0 } : {}),
-            }).where(eq(normalizedPlanTasks.id, actualTaskId))
-          );
+          const wiSyncFields: any = {};
+          if (updates.title != null) wiSyncFields.title = updates.title;
+          if (updates.startDate != null) wiSyncFields.startDate = updates.startDate;
+          if (updates.dueDate != null || updates.endDate != null) wiSyncFields.endDate = updates.dueDate || updates.endDate;
+          if (updates.percentComplete != null) wiSyncFields.percentComplete = updates.percentComplete / 100;
+          if (updates.status === "Done" && updates.percentComplete == null) wiSyncFields.percentComplete = 1.0;
+          if (Object.keys(wiSyncFields).length > 0) {
+            await db.update(workItems).set(wiSyncFields).where(
+              and(eq(workItems.legacyTable, "normalized_plan_tasks"), eq(workItems.legacyId, actualTaskId), isNull(workItems.deletedAt))
+            );
+          }
         } catch (e) {
-          console.warn(`[planning-tasks] Failed to sync to normalized_plan_tasks for task ${actualTaskId}:`, e);
+          console.warn(`[planning-tasks] Failed to sync to work_items for task ${actualTaskId}:`, e);
         }
 
         const isAdminRole = ["admin", "COO_ADMIN", "CEO_ADMIN"].includes(user.role || "");

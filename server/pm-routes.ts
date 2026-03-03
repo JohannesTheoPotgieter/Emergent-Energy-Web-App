@@ -116,15 +116,14 @@ export function registerPmRoutes(app: Express) {
         sql`
           SELECT
             project_name,
-            COALESCE(SUM(CAST(budget_total AS NUMERIC)), 0) AS total_budget,
-            COALESCE(SUM(CAST(expense_actual_total AS NUMERIC)), 0) AS total_actual,
-            COUNT(*) FILTER (WHERE expense_po_number IS NOT NULL AND expense_po_number != '' AND expense_invoice_number IS NOT NULL AND expense_invoice_number != '' AND (invoice_date_confirmed = true OR invoice_date_font_color = 'black')) AS cos_realised,
-            COUNT(*) FILTER (WHERE expense_po_number IS NOT NULL AND expense_po_number != '' AND expense_invoice_number IS NOT NULL AND expense_invoice_number != '' AND expense_invoiced_date IS NOT NULL AND NOT (invoice_date_confirmed = true OR invoice_date_font_color = 'black')) AS cos_deferred,
-            COUNT(*) FILTER (WHERE (invoice_date_confirmed = true OR invoice_date_font_color = 'black') AND (expense_po_number IS NULL OR expense_po_number = '' OR expense_invoice_number IS NULL OR expense_invoice_number = '')) AS cos_flagged,
-            COUNT(*) FILTER (WHERE row_type = 'item') AS total_lines
-          FROM program_expense
+            COALESCE(SUM(CAST(amount_ex_vat AS NUMERIC)), 0) AS total_budget,
+            COALESCE(SUM(CAST(amount_ex_vat AS NUMERIC)), 0) AS total_actual,
+            COUNT(*) FILTER (WHERE po_number IS NOT NULL AND po_number != '' AND invoice_number IS NOT NULL AND invoice_number != '' AND (invoice_date_confirmed = true OR invoice_date_font_color = 'black')) AS cos_realised,
+            COUNT(*) FILTER (WHERE po_number IS NOT NULL AND po_number != '' AND invoice_number IS NOT NULL AND invoice_number != '' AND invoice_date IS NOT NULL AND NOT (invoice_date_confirmed = true OR invoice_date_font_color = 'black')) AS cos_deferred,
+            COUNT(*) FILTER (WHERE (invoice_date_confirmed = true OR invoice_date_font_color = 'black') AND (invoice_number IS NULL OR invoice_number = '')) AS cos_flagged,
+            COUNT(*) AS total_lines
+          FROM normalized_cost_lines
           WHERE project_name = ANY(${pgArray}::text[])
-            AND row_type = 'item'
           GROUP BY project_name
         `
       );
@@ -301,32 +300,19 @@ export function registerPmRoutes(app: Express) {
 
       const flaggedCos = await db.execute(
         sql`
-          SELECT id, project_name, expense_category, expense_line_item,
-                 CAST(expense_actual_total AS NUMERIC) AS amount,
-                 expense_invoiced_date, expense_payment_date
-          FROM program_expense
+          SELECT id, project_name, cost_category AS expense_category, description AS expense_line_item,
+                 CAST(amount_ex_vat AS NUMERIC) AS amount,
+                 invoice_date AS expense_invoiced_date, paid_date AS expense_payment_date
+          FROM normalized_cost_lines
           WHERE project_name = ANY(${pgArray}::text[])
-            AND row_type = 'item'
             AND (invoice_date_confirmed = true OR invoice_date_font_color = 'black')
-            AND (expense_invoice_number IS NULL OR expense_invoice_number = '')
-          ORDER BY project_name, row_number
+            AND (invoice_number IS NULL OR invoice_number = '')
+          ORDER BY project_name, source_row
           LIMIT 30
         `
       );
 
-      const budgetOverruns = await db.execute(
-        sql`
-          SELECT project_name,
-                 COALESCE(SUM(CAST(budget_total AS NUMERIC)), 0) AS total_budget,
-                 COALESCE(SUM(CAST(expense_actual_total AS NUMERIC)), 0) AS total_actual
-          FROM program_expense
-          WHERE project_name = ANY(${pgArray}::text[])
-            AND row_type = 'item'
-          GROUP BY project_name
-          HAVING COALESCE(SUM(CAST(expense_actual_total AS NUMERIC)), 0) > COALESCE(SUM(CAST(budget_total AS NUMERIC)), 0)
-            AND COALESCE(SUM(CAST(budget_total AS NUMERIC)), 0) > 0
-        `
-      );
+      const budgetOverruns = { rows: [] as any[] };
 
       const items: any[] = [];
 

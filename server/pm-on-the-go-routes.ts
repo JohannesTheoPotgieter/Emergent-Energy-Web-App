@@ -279,12 +279,12 @@ export function registerPmOnTheGoRoutes(app: Express) {
             pi.escalation_level,
             pi.is_active,
             COALESCE(
-              (SELECT SUM(CAST(pe.budget_total AS NUMERIC))
-               FROM program_expense pe WHERE pe.project_name = pi.project_name AND pe.row_type = 'item'), 0
+              (SELECT SUM(CAST(ncl.amount_ex_vat AS NUMERIC))
+               FROM normalized_cost_lines ncl WHERE ncl.project_name = pi.project_name), 0
             ) AS total_budget,
             COALESCE(
-              (SELECT SUM(CAST(pe.expense_actual_total AS NUMERIC))
-               FROM program_expense pe WHERE pe.project_name = pi.project_name AND pe.row_type = 'item'), 0
+              (SELECT SUM(CAST(ncl.amount_ex_vat AS NUMERIC))
+               FROM normalized_cost_lines ncl WHERE ncl.project_name = pi.project_name), 0
             ) AS total_spent,
             COALESCE(
               (SELECT COUNT(*) FROM pm_on_the_go_actions a
@@ -362,11 +362,11 @@ export function registerPmOnTheGoRoutes(app: Express) {
 
         const financials = await db.execute(sql`
           SELECT
-            COALESCE(SUM(CAST(budget_total AS NUMERIC)), 0) AS total_budget,
-            COALESCE(SUM(CAST(expense_actual_total AS NUMERIC)), 0) AS total_spent,
-            COALESCE(SUM(CASE WHEN expense_po_number IS NOT NULL AND expense_po_number != '' THEN CAST(expense_actual_total AS NUMERIC) ELSE 0 END), 0) AS committed
-          FROM program_expense
-          WHERE project_name = ${p.projectName} AND row_type = 'item'
+            COALESCE(SUM(CAST(amount_ex_vat AS NUMERIC)), 0) AS total_budget,
+            COALESCE(SUM(CAST(amount_ex_vat AS NUMERIC)), 0) AS total_spent,
+            COALESCE(SUM(CASE WHEN po_number IS NOT NULL AND po_number != '' THEN CAST(amount_ex_vat AS NUMERIC) ELSE 0 END), 0) AS committed
+          FROM normalized_cost_lines
+          WHERE project_name = ${p.projectName}
         `);
         const fin = (financials.rows as any[])[0] || {};
         const budget = parseFloat(fin.total_budget) || 0;

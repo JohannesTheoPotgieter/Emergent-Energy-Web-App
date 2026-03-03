@@ -1,9 +1,8 @@
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { safeLegacyQuery, safeLegacyWrite } from "./legacy-table-guard";
-import { eq, sql, inArray, desc } from "drizzle-orm";
+import { eq, sql, inArray, desc, and, isNull } from "drizzle-orm";
 import { verifyToken } from "./jwt";
-import { projectInfo, operationalTasks, projectPlanOverrides, executionGateLog, mergeAuditLog, programExpense, programInflows, qcChecklist, qcItemInstance, projectPlan, PHASE_TO_ENG_STAGES, normalizedCostLines, normalizedRevenueLines, projectRagAudit, workItems, users } from "@shared/schema";
+import { projectInfo, operationalTasks, projectPlanOverrides, executionGateLog, mergeAuditLog, qcChecklist, qcItemInstance, PHASE_TO_ENG_STAGES, normalizedCostLines, normalizedRevenueLines, projectRagAudit, workItems, users } from "@shared/schema";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { generateEngStagesForProject } from "./eng-stage-routes";
 import { logAuditFromReq } from "./audit-logger";
@@ -322,11 +321,11 @@ export function registerLifecycleRoutes(app: Express) {
         });
 
       const trackerProjectNames = new Set<string>();
-      const expenseNames = await db.selectDistinct({ projectName: programExpense.projectName }).from(programExpense);
+      const expenseNames = await db.selectDistinct({ projectName: normalizedCostLines.projectName }).from(normalizedCostLines);
       for (const e of expenseNames) {
         if (e.projectName) trackerProjectNames.add(normalizeName(e.projectName));
       }
-      const inflowNames = await db.selectDistinct({ projectName: programInflows.projectName }).from(programInflows);
+      const inflowNames = await db.selectDistinct({ projectName: normalizedRevenueLines.projectName }).from(normalizedRevenueLines);
       for (const i of inflowNames) {
         if (i.projectName) trackerProjectNames.add(normalizeName(i.projectName));
       }
@@ -663,10 +662,11 @@ export function registerLifecycleRoutes(app: Express) {
           .where(eq(operationalTasks.projectName, sourceClean))
           .returning();
 
-        const movedPlan = await safeLegacyWrite(() => tx.update(projectPlan)
-          .set({ projectName: target.projectName })
-          .where(eq(projectPlan.projectName, source.projectName))
-          .returning()) || [];
+        const movedPlanResult = await tx.update(workItems)
+          .set({ projectId: targetProjectId })
+          .where(and(eq(workItems.workstream, 'PM'), eq(workItems.source, 'SMART_IMPORT'), eq(workItems.projectId, sourceProjectId), isNull(workItems.deletedAt)))
+          .returning();
+        const movedPlan = movedPlanResult || [];
 
         const fillFields: Record<string, any> = {};
         const conflicts: { field: string; primaryValue: any; secondaryValue: any }[] = [];
@@ -1011,7 +1011,10 @@ export function registerLifecycleRoutes(app: Express) {
       const secondaryClean = secondary.projectName.replace(/_Tracker$/i, "").replace(/_/g, " ");
 
       const allTasks = await db.select({ projectName: operationalTasks.projectName }).from(operationalTasks);
-      const allPlans = await safeLegacyQuery(() => db.select({ projectName: projectPlan.projectName }).from(projectPlan), []);
+      const allPlansRaw = await db.select({ projectId: workItems.projectId }).from(workItems).where(and(eq(workItems.workstream, 'PM'), eq(workItems.source, 'SMART_IMPORT'), isNull(workItems.deletedAt)));
+      const piRows = await db.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo);
+      const piNameMap = new Map<number, string>(piRows.map((p: any) => [p.id, p.projectName]));
+      const allPlans = allPlansRaw.map((wi: any) => ({ projectName: wi.projectId ? piNameMap.get(wi.projectId) || null : null }));
 
       const primaryNorm = normalizeName(primary.projectName);
       const secondaryNorm = normalizeName(secondary.projectName);
@@ -1153,7 +1156,7 @@ export function registerLifecycleRoutes(app: Express) {
         await tx.execute(sql`DELETE FROM project_portfolio_assignments WHERE project_id = ${pId}`);
         await tx.execute(sql`DELETE FROM teams_chat_groups WHERE project_id = ${pId}`);
         await tx.execute(sql`DELETE FROM intake_requests WHERE project_id = ${pId}`);
-        await safeLegacyWrite(() => tx.execute(sql`DELETE FROM normalized_plan_tasks WHERE project_id = ${pId} OR project_name = ${pN}`));
+        await tx.execute(sql`DELETE FROM work_items WHERE workstream = 'PM' AND source = 'SMART_IMPORT' AND (project_id = ${pId} OR external_ref LIKE ${pN + '::PLAN::%'})`);
         await tx.execute(sql`DELETE FROM normalized_revenue_lines WHERE project_id = ${pId} OR project_name = ${pN}`);
         await tx.execute(sql`DELETE FROM normalized_cost_lines WHERE project_id = ${pId} OR project_name = ${pN}`);
         await tx.execute(sql`DELETE FROM normalized_execution_phases WHERE project_id = ${pId} OR project_name = ${pN}`);
@@ -1164,12 +1167,12 @@ export function registerLifecycleRoutes(app: Express) {
         await tx.execute(sql`DELETE FROM invoice_pattern_matches WHERE project_id = ${pId}`);
         await tx.execute(sql`DELETE FROM tr_item_project_links WHERE project_id = ${pId}`);
 
-        await tx.execute(sql`DELETE FROM program_expense WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM program_inflows WHERE project_name = ${pN}`);
+        await tx.delete(normalizedCostLines).where(eq(normalizedCostLines.projectName, pN));
+        await tx.delete(normalizedRevenueLines).where(eq(normalizedRevenueLines.projectName, pN));
         await tx.execute(sql`DELETE FROM project_revenue_summary WHERE project_name = ${pN}`);
         await tx.execute(sql`DELETE FROM finance_revenue_monthly WHERE project_name = ${pN}`);
         await tx.execute(sql`DELETE FROM finance_cos_monthly WHERE project_name = ${pN}`);
-        await safeLegacyWrite(() => tx.execute(sql`DELETE FROM project_plan WHERE project_name = ${pN}`));
+        await tx.execute(sql`DELETE FROM project_plan WHERE project_name = ${pN}`);
         await tx.execute(sql`DELETE FROM project_notes WHERE project_name = ${pN}`);
         await tx.execute(sql`DELETE FROM cashflow_points WHERE project_name = ${pN}`);
         await tx.execute(sql`DELETE FROM project_plan_overrides WHERE project_name = ${pN}`);

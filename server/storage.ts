@@ -3,7 +3,7 @@ import { safeLegacyQuery, safeLegacyWrite } from "./legacy-table-guard";
 import { eq, desc, and, or, gte, lte, isNotNull, isNull, sql, inArray, count, not, ilike } from "drizzle-orm";
 import {
   users, projects, expenses, revenues, tasks, budgets, uploadMetadata, refreshLogs,
-  projectInfo, programExpense, programInflows, projectPlan, normalizedCostLines, normalizedRevenueLines,
+  projectInfo, normalizedCostLines, normalizedRevenueLines, workItems,
   cashflowPoints, financeRevenueMonthly, financeCosMonthly,
   cashflowPlanningOverrides, projectPlanOverrides, revenueTrackingOverrides,
   expenditureOverrides, financeRevenueOverrides, financeCosOverrides,
@@ -789,23 +789,60 @@ export class DatabaseStorage implements IStorage {
 
   async createManyProgramExpenses(expenseList: InsertProgramExpense[]): Promise<ProgramExpense[]> {
     if (expenseList.length === 0) return [];
-    // Explicitly provide timestamp for SQLite compatibility
-    const now = new Date();
-    const withTimestamps = expenseList.map(e => ({ ...e, createdAt: now }));
-    return this.dbInstance.insert(programExpense).values(withTimestamps).returning();
+    const mapped = expenseList.map(e => ({
+      projectName: e.projectName,
+      costCategory: e.expenseCategory || null,
+      description: e.expenseLineItem || null,
+      amountExVat: e.expenseActualTotal?.toString() || null,
+      invoiceNumber: e.expenseInvoiceNumber || null,
+      invoiceDate: e.expenseInvoicedDate || null,
+      invoiceDateConfirmed: e.invoiceDateConfirmed ?? null,
+      invoiceDateFontColor: e.invoiceDateFontColor || null,
+      paidDate: e.expensePaymentDate || null,
+      paidDateConfirmed: e.paymentDateConfirmed ?? null,
+      paidDateFontColor: e.paymentDateFontColor || null,
+      poNumber: e.expensePoNumber || null,
+      counterpartyName: e.supplierName || null,
+      sourceRow: e.rowNumber || null,
+    }));
+    const results = await this.dbInstance.insert(normalizedCostLines).values(mapped).returning();
+    const { adaptCostToExpense } = await import("./lib/data-merge");
+    return results.map(r => adaptCostToExpense(r, r.projectName)) as any;
   }
 
   async deleteProgramExpensesByProject(projectName: string): Promise<void> {
-    await this.dbInstance.delete(programExpense).where(eq(programExpense.projectName, projectName));
+    await this.dbInstance.delete(normalizedCostLines).where(eq(normalizedCostLines.projectName, projectName));
   }
 
   async updateProgramExpenseFields(id: number, fields: Record<string, any>): Promise<ProgramExpense | undefined> {
+    const mappedFields: Record<string, any> = {};
+    const fieldMap: Record<string, string> = {
+      expenseCategory: 'costCategory',
+      expenseLineItem: 'description',
+      expenseActualTotal: 'amountExVat',
+      expenseInvoiceNumber: 'invoiceNumber',
+      expenseInvoicedDate: 'invoiceDate',
+      expensePaymentDate: 'paidDate',
+      expensePoNumber: 'poNumber',
+      supplierName: 'counterpartyName',
+      invoiceDateConfirmed: 'invoiceDateConfirmed',
+      invoiceDateFontColor: 'invoiceDateFontColor',
+      paymentDateConfirmed: 'paidDateConfirmed',
+      paymentDateFontColor: 'paidDateFontColor',
+    };
+    for (const [key, value] of Object.entries(fields)) {
+      const mapped = fieldMap[key] || key;
+      mappedFields[mapped] = value;
+    }
+    const canonicalId = id >= 900000 ? id - 900000 : id;
     const result = await this.dbInstance
-      .update(programExpense)
-      .set(fields)
-      .where(eq(programExpense.id, id))
+      .update(normalizedCostLines)
+      .set(mappedFields)
+      .where(eq(normalizedCostLines.id, canonicalId))
       .returning();
-    return result[0];
+    if (!result[0]) return undefined;
+    const { adaptCostToExpense } = await import("./lib/data-merge");
+    return adaptCostToExpense(result[0], result[0].projectName) as any;
   }
 
   async getAllProgramInflows(): Promise<any[]> {
@@ -827,30 +864,89 @@ export class DatabaseStorage implements IStorage {
 
   async createManyProgramInflows(inflowList: InsertProgramInflows[]): Promise<ProgramInflows[]> {
     if (inflowList.length === 0) return [];
-    // Explicitly provide timestamp for SQLite compatibility
-    const now = new Date();
-    const withTimestamps = inflowList.map(i => ({ ...i, createdAt: now }));
-    return this.dbInstance.insert(programInflows).values(withTimestamps).returning();
+    const mapped = inflowList.map(i => ({
+      projectName: i.projectName,
+      milestoneName: i.milestoneName || null,
+      description: i.milestoneName || null,
+      amountExVat: i.milestoneAmount?.toString() || null,
+      invoiceNumber: i.milestoneInvoiceNumber || null,
+      invoiceDate: i.invoiceRaisedDate || null,
+      expectedPaymentDate: i.plannedPaymentDate || null,
+      paidDate: i.paymentReceivedDate || null,
+      sourceRow: i.rowNumber || null,
+      importRunId: 0,
+    }));
+    const results = await this.dbInstance.insert(normalizedRevenueLines).values(mapped).returning();
+    const { adaptRevenueToInflow } = await import("./lib/data-merge");
+    return results.map(r => adaptRevenueToInflow(r, r.projectName)) as any;
   }
 
   async deleteProgramInflowsByProject(projectName: string): Promise<void> {
-    await this.dbInstance.delete(programInflows).where(eq(programInflows.projectName, projectName));
+    await this.dbInstance.delete(normalizedRevenueLines).where(eq(normalizedRevenueLines.projectName, projectName));
   }
 
-  // Project Plan (new)
+  // Project Plan — reads from work_items (PM workstream, SMART_IMPORT source)
+  private mapWorkItemToProjectPlan(wi: any, pName: string): ProjectPlan {
+    return {
+      id: wi.id,
+      projectName: pName,
+      rowNumber: wi.sourceRow || wi.id,
+      taskNo: wi.wbsCode || null,
+      highLevelProgramme: wi.title,
+      actualStart: wi.startDate || null,
+      durationDays: wi.duration || null,
+      actualEnd: wi.endDate || null,
+      actualPctComplete: wi.percentComplete != null ? wi.percentComplete : null,
+      expectedPctComplete: wi.expectedPctComplete || null,
+      createdAt: wi.createdAt,
+    } as ProjectPlan;
+  }
+
   async getAllProjectPlans(): Promise<ProjectPlan[]> {
-    return safeLegacyQuery(() => this.dbInstance.select().from(projectPlan).orderBy(desc(projectPlan.createdAt)), []);
+    const [rows, piRows] = await Promise.all([
+      this.dbInstance.select().from(workItems)
+        .where(isNull(workItems.deletedAt))
+        .orderBy(desc(workItems.createdAt)),
+      this.dbInstance.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo),
+    ]);
+    const piNameMap = new Map(piRows.map((p: any) => [p.id, p.projectName]));
+    return rows.map((wi: any) => this.mapWorkItemToProjectPlan(wi, (wi.projectId ? piNameMap.get(wi.projectId) : null) || ""));
   }
 
   async getProjectPlansByProject(projectName: string): Promise<ProjectPlan[]> {
-    return safeLegacyQuery(() => this.dbInstance.select().from(projectPlan).where(eq(projectPlan.projectName, projectName)), []);
+    const piRow = await this.dbInstance.select({ id: projectInfo.id }).from(projectInfo)
+      .where(eq(projectInfo.projectName, projectName)).limit(1);
+    if (piRow.length === 0) return [];
+    const rows = await this.dbInstance.select().from(workItems)
+      .where(and(eq(workItems.projectId, piRow[0].id), isNull(workItems.deletedAt)));
+    return rows.map((wi: any) => this.mapWorkItemToProjectPlan(wi, projectName));
   }
 
   async createManyProjectPlans(planList: InsertProjectPlan[]): Promise<ProjectPlan[]> {
     if (planList.length === 0) return [];
+    const projectNames = Array.from(new Set(planList.map(p => p.projectName)));
+    const piRows = await this.dbInstance.select({ id: projectInfo.id, projectName: projectInfo.projectName })
+      .from(projectInfo).where(inArray(projectInfo.projectName, projectNames));
+    const piMap = new Map(piRows.map(p => [p.projectName, p.id]));
     const now = new Date();
-    const withTimestamps = planList.map(p => ({ ...p, createdAt: now }));
-    return safeLegacyQuery(() => this.dbInstance.insert(projectPlan).values(withTimestamps).returning(), []);
+    const wiValues = planList.map(p => ({
+      projectId: piMap.get(p.projectName) || null,
+      workstream: 'PM' as const,
+      source: 'SMART_IMPORT' as const,
+      title: p.highLevelProgramme || `Task ${p.rowNumber || 0}`,
+      wbsCode: p.taskNo || null,
+      startDate: p.actualStart || null,
+      endDate: p.actualEnd || null,
+      duration: p.durationDays || null,
+      percentComplete: p.actualPctComplete || null,
+      expectedPctComplete: p.expectedPctComplete || null,
+      sourceRow: p.rowNumber || null,
+      status: 'Not Started',
+      createdAt: now,
+      updatedAt: now,
+    }));
+    const results = await this.dbInstance.insert(workItems).values(wiValues).returning();
+    return results.map((wi: any) => this.mapWorkItemToProjectPlan(wi, planList[0]?.projectName || ""));
   }
 
   async deleteProjectPlansByProject(projectName: string): Promise<void> {
@@ -867,8 +963,19 @@ export class DatabaseStorage implements IStorage {
         .set({ importedDependencyId: null })
         .where(inArray(workingPlanDependencyOverride.scenarioId, sIds));
     }
-    await safeLegacyWrite(() => this.dbInstance.delete(projectPlanDependency).where(eq(projectPlanDependency.projectName, projectName)));
-    await safeLegacyWrite(() => this.dbInstance.delete(projectPlan).where(eq(projectPlan.projectName, projectName)));
+    await this.dbInstance.delete(projectPlanDependency).where(eq(projectPlanDependency.projectName, projectName));
+    const piRow = await this.dbInstance.select({ id: projectInfo.id }).from(projectInfo)
+      .where(eq(projectInfo.projectName, projectName)).limit(1);
+    if (piRow.length > 0) {
+      await this.dbInstance.update(workItems)
+        .set({ deletedAt: new Date() })
+        .where(and(
+          eq(workItems.projectId, piRow[0].id),
+          eq(workItems.workstream, "PM"),
+          eq(workItems.source, "SMART_IMPORT"),
+          isNull(workItems.deletedAt),
+        ));
+    }
   }
 
   // Cashflow Points (new)
@@ -1456,9 +1563,9 @@ export class DatabaseStorage implements IStorage {
     await safeDelete(financeCosMonthly, "financeCosMonthly");
     await safeDelete(financeRevenueMonthly, "financeRevenueMonthly");
     await safeDelete(cashflowPoints, "cashflowPoints");
-    await safeDelete(projectPlan, "projectPlan");
-    await safeDelete(programInflows, "programInflows");
-    await safeDelete(programExpense, "programExpense");
+    await safeDelete(normalizedCostLines, "normalizedCostLines");
+    await safeDelete(normalizedRevenueLines, "normalizedRevenueLines");
+    await safeDelete(workItems, "workItems");
     await safeDelete(projectInfo, "projectInfo");
     await safeDelete(refreshLogs, "refreshLogs");
     await safeDelete(uploadMetadata, "uploadMetadata");
@@ -1578,8 +1685,25 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createManualExpense(data: InsertProgramExpense): Promise<ProgramExpense> {
-    const inserted = await this.dbInstance.insert(programExpense).values(data).returning();
-    return inserted[0];
+    const mapped = {
+      projectName: data.projectName,
+      costCategory: data.expenseCategory || null,
+      description: data.expenseLineItem || null,
+      amountExVat: data.expenseActualTotal?.toString() || null,
+      invoiceNumber: data.expenseInvoiceNumber || null,
+      invoiceDate: data.expenseInvoicedDate || null,
+      invoiceDateConfirmed: data.invoiceDateConfirmed ?? null,
+      invoiceDateFontColor: data.invoiceDateFontColor || null,
+      paidDate: data.expensePaymentDate || null,
+      paidDateConfirmed: data.paymentDateConfirmed ?? null,
+      paidDateFontColor: data.paymentDateFontColor || null,
+      poNumber: data.expensePoNumber || null,
+      counterpartyName: data.supplierName || null,
+      sourceRow: data.rowNumber || null,
+    };
+    const inserted = await this.dbInstance.insert(normalizedCostLines).values(mapped).returning();
+    const { adaptCostToExpense } = await import("./lib/data-merge");
+    return adaptCostToExpense(inserted[0], inserted[0].projectName) as any;
   }
 
   // Home Notes
