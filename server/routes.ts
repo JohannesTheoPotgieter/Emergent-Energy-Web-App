@@ -8056,9 +8056,25 @@ export async function registerRoutes(
         const pctVal = parsed / 100;
         await safeLegacyWrite(() => db.update(projectPlan).set({ actualPctComplete: pctVal }).where(eq(projectPlan.id, id)));
         try {
-          await db.update(workItems).set({ percentComplete: pctVal }).where(
+          const result = await db.update(workItems).set({ percentComplete: pctVal }).where(
             and(eq(workItems.legacyTable, "project_plan"), eq(workItems.legacyId, id))
-          );
+          ).returning({ id: workItems.id });
+          if (result.length === 0) {
+            const ppRow = await db.select({ projectName: projectPlan.projectName, highLevelProgramme: projectPlan.highLevelProgramme }).from(projectPlan).where(eq(projectPlan.id, id)).limit(1);
+            if (ppRow.length > 0 && ppRow[0].projectName) {
+              const piRow = await db.select({ id: projectInfo.id }).from(projectInfo).where(eq(projectInfo.projectName, ppRow[0].projectName)).limit(1);
+              if (piRow.length > 0) {
+                await db.update(workItems).set({ percentComplete: pctVal }).where(
+                  and(
+                    eq(workItems.projectId, piRow[0].id),
+                    eq(workItems.title, ppRow[0].highLevelProgramme || ""),
+                    eq(workItems.workstream, "PM" as any),
+                    isNull(workItems.deletedAt)
+                  )
+                );
+              }
+            }
+          }
         } catch (e) {
           console.warn(`[working-plan] Failed to sync percentComplete to work_items for task ${id}:`, e);
         }
@@ -10887,9 +10903,25 @@ export async function registerRoutes(
             try {
               const wiPct = updateFields.actualPctComplete;
               if (wiPct !== undefined) {
-                await db.update(workItems).set({ percentComplete: wiPct }).where(
+                const result = await db.update(workItems).set({ percentComplete: wiPct }).where(
                   and(eq(workItems.legacyTable, "project_plan"), eq(workItems.legacyId, actualTaskId))
-                );
+                ).returning({ id: workItems.id });
+                if (result.length === 0) {
+                  const ppRow = await db.select({ projectName: projectPlan.projectName, highLevelProgramme: projectPlan.highLevelProgramme }).from(projectPlan).where(eq(projectPlan.id, actualTaskId)).limit(1);
+                  if (ppRow.length > 0 && ppRow[0].projectName) {
+                    const piRow = await db.select({ id: projectInfo.id }).from(projectInfo).where(eq(projectInfo.projectName, ppRow[0].projectName)).limit(1);
+                    if (piRow.length > 0) {
+                      await db.update(workItems).set({ percentComplete: wiPct }).where(
+                        and(
+                          eq(workItems.projectId, piRow[0].id),
+                          eq(workItems.title, ppRow[0].highLevelProgramme || ""),
+                          eq(workItems.workstream, "PM" as any),
+                          isNull(workItems.deletedAt)
+                        )
+                      );
+                    }
+                  }
+                }
               }
             } catch (e) {
               console.warn(`[planning-tasks] Failed to sync percentComplete to work_items for task ${actualTaskId}:`, e);

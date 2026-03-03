@@ -441,7 +441,7 @@ export function registerEngineeringRoutes(app: Express) {
         if (updates.priority) wiUpdates.priority = updates.priority;
         if (updates.startDate !== undefined) wiUpdates.startDate = updates.startDate;
         if (updates.dueDate !== undefined) wiUpdates.endDate = updates.dueDate;
-        if (updates.percentComplete !== undefined) wiUpdates.percentComplete = updates.percentComplete;
+        if (updates.percentComplete !== undefined) wiUpdates.percentComplete = updates.percentComplete / 100;
         if (updates.ownerUserId !== undefined) wiUpdates.ownerUserId = updates.ownerUserId;
         await updateWorkItemByLegacy("operational_tasks", id, wiUpdates);
       } catch (syncErr) {
