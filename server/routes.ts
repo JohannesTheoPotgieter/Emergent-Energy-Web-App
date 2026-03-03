@@ -10441,15 +10441,16 @@ export async function registerRoutes(
             const hasWbs = ct.taskNo && String(ct.taskNo).trim().length > 0;
             const hasStart = ct.startDate && String(ct.startDate).trim().length > 0;
             const hasEnd = ct.endDate && String(ct.endDate).trim().length > 0;
-            if (!hasWbs && !hasStart && !hasEnd) {
-              console.log(`[planning-tasks] Filtered header row: "${ct.taskName}" (wbs=${ct.taskNo}, start=${ct.startDate}, end=${ct.endDate})`);
-              return false;
-            }
+            if (!hasWbs && !hasStart && !hasEnd) return false;
             return true;
           });
-          console.log(`[planning-tasks] ${projectName}: ${canonicalTasks.length} canonical -> ${filteredCanonical.length} after header filter`);
 
+          const usedIds = new Set<number>();
           baselineTasks = filteredCanonical.map((ct: any, idx: number) => {
+            let taskId = ct.id || (idx + 1);
+            while (usedIds.has(taskId)) taskId = taskId + 100000;
+            usedIds.add(taskId);
+
             const rawPct = ct.pctComplete != null ? Number(ct.pctComplete) : 0;
             const pctComplete = rawPct > 1 ? Math.round(rawPct) : Math.round(rawPct * 100);
             let status = "Not Started";
@@ -10473,7 +10474,7 @@ export async function registerRoutes(
             }
 
             return {
-              id: -(ct.id || (idx + 1)),
+              id: -taskId,
               projectName,
               planProjectName: projectName,
               importedTaskId: ct.id,
@@ -10774,12 +10775,7 @@ export async function registerRoutes(
         } else {
           parent.percentComplete = computedActual;
         }
-        const storedExpected = getStoredExpected(parent);
-        if (parent.isBaseline && storedExpected != null) {
-          parent.computedExpectedPct = storedExpected;
-        } else {
-          parent.computedExpectedPct = totalWeight > 0 ? Math.round(totalWeightedExpected / totalWeight) : calcExpected(parent);
-        }
+        parent.computedExpectedPct = totalWeight > 0 ? Math.round(totalWeightedExpected / totalWeight) : calcExpected(parent);
         parent.isParent = true;
         parent.childCount = children.length;
       };
@@ -10820,12 +10816,6 @@ export async function registerRoutes(
       };
 
       const result = Array.from(taskMap.values()).sort(sortByTaskCode);
-      // DEBUG: Log first 5 tasks' % FORE values
-      console.log(`[planning-tasks DEBUG] ${projectName}: ${result.length} tasks in response`);
-      for (let i = 0; i < Math.min(5, result.length); i++) {
-        const t = result[i];
-        console.log(`  [${i}] WBS=${t.taskNumber}, title="${(t.title||'').substring(0,30)}", expectedPercentComplete=${t.expectedPercentComplete}, computedExpectedPct=${t.computedExpectedPct}, percentComplete=${t.percentComplete}, start=${t.startDate}, due=${t.dueDate}`);
-      }
       res.json(result);
     } catch (err: any) {
       console.error("Planning tasks error:", err);
