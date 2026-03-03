@@ -431,15 +431,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </button>
       </div>
 
-      <nav className="flex-1 overflow-y-auto py-2 px-2 space-y-0.5 overscroll-contain">
+      <nav className="flex-1 overflow-y-auto py-1 px-1.5 space-y-px overscroll-contain">
         <Link href="/" className={cn(
-          "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-150 group select-none",
+          "flex items-center gap-2.5 px-2.5 py-1.5 rounded-md transition-all duration-150 group select-none",
           location === "/" 
             ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium shadow-md" 
             : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:scale-[0.98]"
         )}>
-          <Home className="w-4.5 h-4.5 shrink-0" />
-          {sidebarShowLabels && <span className="text-sm">Home</span>}
+          <Home className="w-4 h-4 shrink-0" />
+          {sidebarShowLabels && <span className="text-[13px]">Home</span>}
         </Link>
 
 
@@ -472,12 +472,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           });
 
           return (
-          <div key={group.heading} className="pt-3">
+          <div key={group.heading} className="pt-2">
             {sidebarShowLabels ? (
               <button
                 onClick={() => toggleSection(group.heading)}
                 className={cn(
-                  "w-full flex items-center justify-between px-3 pb-1 text-[10px] font-bold uppercase tracking-widest transition-colors",
+                  "w-full flex items-center justify-between px-2.5 pb-0.5 text-[9px] font-bold uppercase tracking-widest transition-colors",
                   hasActiveItem ? "text-sidebar-foreground/60" : "text-sidebar-foreground/35 hover:text-sidebar-foreground/50"
                 )}
               >
@@ -508,7 +508,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   <button
                     onClick={() => setExpandedParents(prev => ({ ...prev, [item.path]: !isParentExpanded }))}
                     className={cn(
-                      "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-150 group text-[13px] select-none",
+                      "w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md transition-all duration-150 group text-[13px] select-none",
                       isActive || childActive
                         ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium shadow-md"
                         : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:scale-[0.98]"
@@ -524,7 +524,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   </button>
                 ) : itemQuery ? (
                   <a href={item.path} className={cn(
-                    "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-150 group text-[13px] select-none cursor-pointer",
+                    "flex items-center gap-2.5 px-2.5 py-1.5 rounded-md transition-all duration-150 group text-[13px] select-none cursor-pointer",
                     isActive
                       ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium shadow-md"
                       : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:scale-[0.98] nav-item-glow"
@@ -534,7 +534,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   </a>
                 ) : (
                   <Link href={item.path} className={cn(
-                    "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-150 group text-[13px] select-none",
+                    "flex items-center gap-2.5 px-2.5 py-1.5 rounded-md transition-all duration-150 group text-[13px] select-none",
                     isActive
                       ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium shadow-md"
                       : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:scale-[0.98] nav-item-glow"
@@ -547,7 +547,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   const isChildActive = location === child.path || location.startsWith(child.path);
                   return (
                     <Link key={child.path} href={child.path} className={cn(
-                      "flex items-center gap-3 pl-7 pr-3 py-2 rounded-lg transition-all duration-150 text-[12px] select-none",
+                      "flex items-center gap-2.5 pl-7 pr-2.5 py-1 rounded-md transition-all duration-150 text-[12px] select-none",
                       isChildActive
                         ? "bg-sidebar-primary/80 text-sidebar-primary-foreground font-medium"
                         : "text-sidebar-foreground/55 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:scale-[0.98]"
@@ -565,9 +565,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         })}
       </nav>
 
-      <div className="p-3 md:p-4 border-t border-sidebar-border">
-        <div className="flex items-center gap-3">
-          <Avatar className="w-9 h-9 border border-sidebar-border/50 shrink-0">
+      <div className="p-2 md:p-3 border-t border-sidebar-border">
+        <div className="flex items-center gap-2.5">
+          <Avatar className="w-8 h-8 border border-sidebar-border/50 shrink-0">
             <AvatarFallback>{(user?.name || "U").substring(0, 2).toUpperCase()}</AvatarFallback>
           </Avatar>
           {sidebarShowLabels && (
