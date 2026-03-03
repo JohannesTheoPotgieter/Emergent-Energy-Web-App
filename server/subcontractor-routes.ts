@@ -1,6 +1,6 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { normalizedCostLines, counterparties, programExpense, projectInfo, invoicePatternRules } from "@shared/schema";
+import { normalizedCostLines, counterparties, projectInfo, invoicePatternRules } from "@shared/schema";
 import { eq, sql } from "drizzle-orm";
 import { extractSupplierName } from "./lib/calculations/supplierExtractor";
 import { verifyToken } from "./jwt";
@@ -339,7 +339,13 @@ router.post("/api/procurement-analysis/run", requireAuth, async (req: Request, r
   try {
     const userId = (req as any).user?.id || null;
 
-    const expenses = await db.select().from(programExpense);
+    const { adaptCostToExpense, createNameResolver } = await import("./lib/data-merge");
+    const [rawCosts, piRows] = await Promise.all([
+      db.select().from(normalizedCostLines),
+      db.select({ projectName: projectInfo.projectName }).from(projectInfo),
+    ]);
+    const resolve = createNameResolver(piRows.map(p => p.projectName));
+    const expenses = rawCosts.map(c => adaptCostToExpense(c, resolve(c.projectName)));
     if (expenses.length === 0) {
       return res.json({ success: true, costLines: 0, counterpartiesCreated: 0, counterpartiesMatched: 0, projects: 0, message: "No expense data found" });
     }
@@ -490,11 +496,10 @@ router.get("/api/procurement-analysis/status", requireAuth, async (_req: Request
   try {
     const [costResult] = await db.select({ count: sql<number>`count(*)` }).from(normalizedCostLines);
     const [cpResult] = await db.select({ count: sql<number>`count(*)` }).from(counterparties);
-    const [expResult] = await db.select({ count: sql<number>`count(*)` }).from(programExpense);
     res.json({
       costLines: Number(costResult.count),
       counterparties: Number(cpResult.count),
-      sourceExpenses: Number(expResult.count),
+      sourceExpenses: Number(costResult.count),
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

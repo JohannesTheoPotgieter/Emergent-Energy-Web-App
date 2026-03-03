@@ -736,6 +736,21 @@ async function backfillPmUserIds() {
   }
 
   try {
+    await db.execute(sql.raw(`
+      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS expected_pct_complete REAL;
+      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS indent_level INTEGER DEFAULT 0;
+      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS is_milestone BOOLEAN DEFAULT FALSE;
+      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS phase TEXT;
+      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS owner_name TEXT;
+      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS source_row INTEGER;
+      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS source_sheet TEXT;
+      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS import_run_id INTEGER;
+    `));
+  } catch (err: any) {
+    console.error('[Migration] work_items canonical columns error:', err.message);
+  }
+
+  try {
     const { backfillWorkItems } = await import("./work-items-backfill");
     await backfillWorkItems();
   } catch (err: any) {

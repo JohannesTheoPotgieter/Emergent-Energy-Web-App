@@ -50,27 +50,12 @@ function isCashflowConfirmedCheck(exp: any): boolean {
   return payDateConfirmed;
 }
 
-async function getMergedExpensesAndInflows(legacyExpenses: any[], legacyInflows: any[]) {
-  const piRows = await db.select({ projectName: projectInfo.projectName }).from(projectInfo);
-  const piNames = piRows.map((r: any) => r.projectName);
-  const resolve = createNameResolver(piNames);
-  const { costLines, revenueLines } = await fetchAllNormalized();
-  return {
-    expenses: mergeExpensesOnly(legacyExpenses, costLines, resolve),
-    inflows: mergeInflowsOnly(legacyInflows, revenueLines, resolve),
-  };
+async function getMergedExpensesAndInflows(expenses: any[], inflows: any[]) {
+  return { expenses, inflows };
 }
 
-async function getMergedAll(legacyExpenses: any[], legacyInflows: any[], legacyPlans: any[]) {
-  const piRows = await db.select({ projectName: projectInfo.projectName }).from(projectInfo);
-  const piNames = piRows.map((r: any) => r.projectName);
-  const resolve = createNameResolver(piNames);
-  const { costLines, revenueLines, planTasks } = await fetchAllNormalized();
-  return {
-    expenses: mergeExpensesOnly(legacyExpenses, costLines, resolve),
-    inflows: mergeInflowsOnly(legacyInflows, revenueLines, resolve),
-    plans: mergePlansOnly(legacyPlans, planTasks, resolve),
-  };
+async function getMergedAll(expenses: any[], inflows: any[], plans: any[]) {
+  return { expenses, inflows, plans };
 }
 
 // Ensure uploads directory exists
@@ -2395,50 +2380,25 @@ export async function registerRoutes(
           .map(p => p.projectName.toLowerCase().trim())
       );
 
-      const allExpenses = await db.select().from(programExpense);
-      const allInflows = await db.select().from(programInflows);
-      const allNormCosts = await db.select().from(normalizedCostLines);
-      const allNormRev = await db.select().from(normalizedRevenueLines);
+      const [allNormCosts, allNormRev] = await Promise.all([
+        db.select().from(normalizedCostLines),
+        db.select().from(normalizedRevenueLines),
+      ]);
 
       let totalRevenue = 0;
       let totalExpenses = 0;
       let revenueOutstanding = 0;
       let expensesDue = 0;
 
-      const projectsWithInflows = new Set<string>();
-      const projectsWithExpenses = new Set<string>();
-
-      for (const inf of allInflows) {
-        if (!activeNames.has(inf.projectName.toLowerCase().trim())) continue;
-        const dateField = inf.invoiceRaisedDate || inf.paymentReceivedDate || inf.plannedPaymentDate;
-        if (!dateInFY(dateField)) continue;
-        projectsWithInflows.add(inf.projectName.toLowerCase().trim());
-
-        if (inf.milestoneAmount) {
-          const manualInBank = (inf as any).inBank === 1 || (inf as any).inBank === '1' || (inf as any).inBank === true;
-          const hasInvoice = !!(inf.milestoneInvoiceNumber && String(inf.milestoneInvoiceNumber).trim());
-          const hasPaymentReceived = !!(inf.paymentReceivedDate && String(inf.paymentReceivedDate).trim() && inf.paymentReceivedDate !== '-');
-          const isInBank = manualInBank || (hasPaymentReceived && hasInvoice);
-          if (isInBank) {
-            totalRevenue += parseFloat(inf.milestoneAmount) || 0;
-          }
-          if (hasInvoice && !isInBank) {
-            revenueOutstanding += parseFloat(inf.milestoneAmount) || 0;
-          }
-        }
-      }
-
       for (const rev of allNormRev) {
         if (!activeNames.has(rev.projectName.toLowerCase().trim())) continue;
-        if (projectsWithInflows.has(rev.projectName.toLowerCase().trim())) continue;
         const dateField = rev.invoiceDate || rev.paidDate || rev.expectedPaymentDate;
         if (!dateInFY(dateField)) continue;
 
         if (rev.amountExVat) {
-          const manualInBank = (rev as any).inBank === 1 || (rev as any).inBank === '1' || (rev as any).inBank === true;
           const hasInvoice = !!(rev.invoiceNumber && String(rev.invoiceNumber).trim());
           const hasPaymentReceived = !!(rev.paidDate && String(rev.paidDate).trim() && rev.paidDate !== '-');
-          const isInBank = manualInBank || (hasPaymentReceived && hasInvoice);
+          const isInBank = hasPaymentReceived && hasInvoice;
           if (isInBank) {
             totalRevenue += parseFloat(rev.amountExVat) || 0;
           }
@@ -2448,27 +2408,8 @@ export async function registerRoutes(
         }
       }
 
-      for (const exp of allExpenses) {
-        if (!activeNames.has(exp.projectName.toLowerCase().trim())) continue;
-        if (exp.rowType === 'category' || exp.rowType === 'subtotal' || exp.rowType === 'blank') continue;
-        const dateField = exp.expenseInvoicedDate || exp.expensePaymentDate || exp.forecastPaymentDate;
-        if (!dateInFY(dateField)) continue;
-        projectsWithExpenses.add(exp.projectName.toLowerCase().trim());
-
-        if (exp.expenseActualTotal) {
-          const state = classifyExpenseState(exp as any);
-          if (state === 'Paid') {
-            totalExpenses += parseFloat(exp.expenseActualTotal) || 0;
-          }
-          const hasPastPaymentDate = exp.expensePaymentDate && /^\d{4}-\d{2}-\d{2}/.test(exp.expensePaymentDate) && exp.expensePaymentDate < todayStr;
-          const noInvoice = !exp.expenseInvoiceNumber || exp.expenseInvoiceNumber.trim() === '';
-          if (hasPastPaymentDate && noInvoice) expensesDue += parseFloat(exp.expenseActualTotal) || 0;
-        }
-      }
-
       for (const cost of allNormCosts) {
         if (!activeNames.has(cost.projectName.toLowerCase().trim())) continue;
-        if (projectsWithExpenses.has(cost.projectName.toLowerCase().trim())) continue;
         const dateField = cost.invoiceDate || cost.paidDate;
         if (!dateInFY(dateField)) continue;
 
@@ -8442,7 +8383,7 @@ export async function registerRoutes(
 
   app.get("/api/cos-control/summary", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const legacyExp = await db.select().from(programExpense);
+      const legacyExp = await storage.getAllProgramExpenses();
       const { expenses } = await getMergedExpensesAndInflows(legacyExp, []);
       const lines = expenses
         .filter((e: any) => e.rowType === 'item' || !e.rowType)
@@ -8477,7 +8418,7 @@ export async function registerRoutes(
 
   app.get("/api/cos-control/by-project", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const legacyExp = await db.select().from(programExpense);
+      const legacyExp = await storage.getAllProgramExpenses();
       const { expenses } = await getMergedExpensesAndInflows(legacyExp, []);
       const lines = expenses
         .filter((e: any) => e.rowType === 'item' || !e.rowType)
@@ -8513,7 +8454,7 @@ export async function registerRoutes(
   app.get("/api/cos-control/lines", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { project, state, supplier, search } = req.query;
-      const legacyExp = await db.select().from(programExpense);
+      const legacyExp = await storage.getAllProgramExpenses();
       let expenses = (await getMergedExpensesAndInflows(legacyExp, [])).expenses;
 
       let lines = expenses
@@ -8563,7 +8504,7 @@ export async function registerRoutes(
 
   app.get("/api/cos-control/invoices", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const legacyExp = await db.select().from(programExpense);
+      const legacyExp = await storage.getAllProgramExpenses();
       const { expenses } = await getMergedExpensesAndInflows(legacyExp, []);
       const invoiceMap = new Map<string, any>();
 
@@ -8602,7 +8543,7 @@ export async function registerRoutes(
 
   app.get("/api/cos-control/pos", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const legacyExp = await db.select().from(programExpense);
+      const legacyExp = await storage.getAllProgramExpenses();
       const { expenses } = await getMergedExpensesAndInflows(legacyExp, []);
       const poMap = new Map<string, any>();
 
@@ -8790,8 +8731,8 @@ export async function registerRoutes(
   app.get("/api/data-quality/scan", requireAuth, requireAdmin, async (req, res) => {
     try {
 
-      const legacyExpDQ = await db.select().from(programExpense);
-      const legacyInfDQ = await db.select().from(programInflows);
+      const legacyExpDQ = await storage.getAllProgramExpenses();
+      const legacyInfDQ = await storage.getAllProgramInflows();
       const mergedDQ = await getMergedExpensesAndInflows(legacyExpDQ, legacyInfDQ);
       const expenses = mergedDQ.expenses;
       const inflows = mergedDQ.inflows;
@@ -8933,8 +8874,8 @@ export async function registerRoutes(
   app.get("/api/planning-board/projects", requireAuth, requireAdmin, async (req, res) => {
     try {
       const projects = await db.select().from(projectInfo);
-      const legacyExpPB = await db.select().from(programExpense);
-      const legacyInfPB = await db.select().from(programInflows);
+      const legacyExpPB = await storage.getAllProgramExpenses();
+      const legacyInfPB = await storage.getAllProgramInflows();
       const mergedPB = await getMergedExpensesAndInflows(legacyExpPB, legacyInfPB);
       const expenses = mergedPB.expenses;
       const inflows = mergedPB.inflows;
@@ -9086,7 +9027,7 @@ export async function registerRoutes(
   app.get("/api/cos-control/scenario-monthly", requireAuth, requireAdmin, async (req, res) => {
     try {
       const scenarioId = req.query.scenarioId ? parseInt(req.query.scenarioId as string) : null;
-      const legacyExpSM = await db.select().from(programExpense);
+      const legacyExpSM = await storage.getAllProgramExpenses();
       const allExpenses = (await getMergedExpensesAndInflows(legacyExpSM, [])).expenses;
       const items = allExpenses.filter((e: any) => e.rowType === 'item' || !e.rowType);
 
@@ -9335,7 +9276,7 @@ export async function registerRoutes(
       const project = req.query.project as string || '';
       const state = req.query.state as string || '';
 
-      const legacyExpSI = await db.select().from(programExpense);
+      const legacyExpSI = await storage.getAllProgramExpenses();
       const allExpenses = (await getMergedExpensesAndInflows(legacyExpSI, [])).expenses;
       const items = allExpenses.filter((e: any) => e.rowType === 'item' || !e.rowType);
 
@@ -9426,7 +9367,7 @@ export async function registerRoutes(
       const project = req.query.project as string || '';
       const state = req.query.state as string || '';
 
-      const legacyExpSL = await db.select().from(programExpense);
+      const legacyExpSL = await storage.getAllProgramExpenses();
       const allExpenses = (await getMergedExpensesAndInflows(legacyExpSL, [])).expenses;
       const items = allExpenses.filter((e: any) => e.rowType === 'item' || !e.rowType);
 
@@ -9501,7 +9442,7 @@ export async function registerRoutes(
       const scenarioId = req.query.scenarioId ? parseInt(req.query.scenarioId as string) : null;
       if (!scenarioId) return res.json({ shifts: [], cashflowDelta: [] });
 
-      const legacyExpSI2 = await db.select().from(programExpense);
+      const legacyExpSI2 = await storage.getAllProgramExpenses();
       const allExpenses = (await getMergedExpensesAndInflows(legacyExpSI2, [])).expenses;
       const items = allExpenses.filter((e: any) => e.rowType === 'item' || !e.rowType);
       const overrides = await storage.getDateOverridesByScenario(scenarioId);
@@ -9544,8 +9485,8 @@ export async function registerRoutes(
       const scenarioId = req.query.scenarioId ? parseInt(req.query.scenarioId as string) : null;
       const projectFilter = req.query.project as string || '';
 
-      const legacyExpSW = await db.select().from(programExpense);
-      const legacyInfSW = await db.select().from(programInflows);
+      const legacyExpSW = await storage.getAllProgramExpenses();
+      const legacyInfSW = await storage.getAllProgramInflows();
       const [allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),

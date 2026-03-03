@@ -899,26 +899,23 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
     await db.transaction(async (tx: any) => {
       const existingTaskOwners = new Map<string, string>();
       {
-        const existingTasks = await safeLegacyQuery(
-          () => projectId
-            ? tx.select({ taskName: normalizedPlanTasks.taskName, owner: normalizedPlanTasks.owner }).from(normalizedPlanTasks).where(eq(normalizedPlanTasks.projectId, projectId))
-            : tx.select({ taskName: normalizedPlanTasks.taskName, owner: normalizedPlanTasks.owner }).from(normalizedPlanTasks).where(eq(normalizedPlanTasks.projectName, projectName)),
-          [] as { taskName: string; owner: string | null }[]
-        );
-        for (const t of existingTasks) {
-          if (t.owner && t.owner.trim()) {
-            existingTaskOwners.set(t.taskName, t.owner);
+        const existingWiTasks = projectId
+          ? await tx.select({ title: workItems.title, ownerName: workItems.ownerName }).from(workItems)
+              .where(and(eq(workItems.projectId, projectId), eq(workItems.workstream, "PM"), eq(workItems.source, "SMART_IMPORT")))
+          : await tx.select({ title: workItems.title, ownerName: workItems.ownerName }).from(workItems)
+              .where(and(sql`${workItems.externalRef} LIKE ${projectName + '::PLAN::%'}`, eq(workItems.workstream, "PM")));
+        for (const t of existingWiTasks) {
+          if (t.ownerName && t.ownerName.trim()) {
+            existingTaskOwners.set(t.title, t.ownerName);
           }
         }
       }
 
       if (projectId) {
-        await safeLegacyWrite(() => tx.delete(normalizedPlanTasks).where(eq(normalizedPlanTasks.projectId, projectId)));
         await tx.delete(normalizedRevenueLines).where(eq(normalizedRevenueLines.projectId, projectId));
         await tx.delete(normalizedCostLines).where(eq(normalizedCostLines.projectId, projectId));
         await tx.delete(normalizedExecutionPhases).where(eq(normalizedExecutionPhases.projectId, projectId));
       } else {
-        await safeLegacyWrite(() => tx.delete(normalizedPlanTasks).where(eq(normalizedPlanTasks.projectName, projectName)));
         await tx.delete(normalizedRevenueLines).where(eq(normalizedRevenueLines.projectName, projectName));
         await tx.delete(normalizedCostLines).where(eq(normalizedCostLines.projectName, projectName));
         await tx.delete(normalizedExecutionPhases).where(eq(normalizedExecutionPhases.projectName, projectName));
@@ -936,8 +933,6 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
           .set({ importedDependencyId: null })
           .where(inArray(workingPlanDependencyOverride.scenarioId, sIds));
       }
-      await safeLegacyWrite(() => tx.delete(projectPlanDependency).where(eq(projectPlanDependency.projectName, projectName)));
-      await safeLegacyWrite(() => tx.delete(projectPlan).where(eq(projectPlan.projectName, projectName)));
 
       const existingWorkItemsForImport = await tx
         .select({ id: workItems.id })
@@ -947,10 +942,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
           eq(workItems.workstream, "PM"),
           projectId
             ? eq(workItems.projectId, projectId)
-            : or(
-                sql`${workItems.externalRef} LIKE ${projectName + '::PLAN::%'}`,
-                sql`${workItems.externalRef} LIKE 'NPT::%' AND ${workItems.projectId} IN (SELECT id FROM project_info WHERE project_name = ${projectName})`
-              ),
+            : sql`${workItems.externalRef} LIKE ${projectName + '::PLAN::%'}`,
         ));
       if (existingWorkItemsForImport.length > 0) {
         const wiIds = existingWorkItemsForImport.map((w: { id: number }) => w.id);
@@ -963,13 +955,6 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
         await tx.delete(workItemAssignments).where(inArray(workItemAssignments.workItemId, wiIds));
         await tx.delete(workItems).where(inArray(workItems.id, wiIds));
       }
-      await tx.delete(programExpense).where(
-        and(
-          eq(programExpense.projectName, projectName),
-          or(eq(programExpense.isManual, false), isNull(programExpense.isManual))
-        )
-      );
-      await tx.delete(programInflows).where(eq(programInflows.projectName, projectName));
 
       if (norm.planTasks && norm.planTasks.length > 0) {
         const planIgnored = ignoredRows.get("PLAN") || new Set();
@@ -1005,161 +990,79 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
             };
           });
         if (planValues.length > 0) {
-          await safeLegacyWrite(() => tx.insert(normalizedPlanTasks).values(planValues));
+          const workItemByTaskNo = new Map<string, number>();
+          const workItemByIdx = new Map<number, number>();
 
-          const legacyPlanBatch = planValues.map((t: any, idx: number) => ({
-            projectName,
-            rowNumber: t.sourceRow || (idx + 1),
-            taskNo: t.taskNo || String(idx + 1),
-            highLevelProgramme: t.taskName,
-            actualStart: t.actualStartDate || t.startDate || null,
-            durationDays: t.actualDurationDays || t.durationDays || null,
-            actualEnd: t.actualEndDate || t.endDate || null,
-            actualPctComplete: t.pctComplete != null ? Number(t.pctComplete) : null,
-            expectedPctComplete: t.expectedPctComplete != null ? Number(t.expectedPctComplete) : null,
-          }));
-          for (let i = 0; i < legacyPlanBatch.length; i += 100) {
-            await tx.insert(projectPlan).values(legacyPlanBatch.slice(i, i + 100));
+          for (let idx = 0; idx < planValues.length; idx++) {
+            const pv = planValues[idx] as any;
+            const wbsCode = pv.taskNo || null;
+            const externalRef = `${projectName}::PLAN::${idx}::${wbsCode || ''}`;
+
+            const [insertedWi] = await tx.insert(workItems).values({
+              clientId: null,
+              projectId: projectId || null,
+              workstream: "PM" as any,
+              type: pv.isMilestone ? "milestone" : "task",
+              source: "SMART_IMPORT" as any,
+              title: pv.taskName,
+              description: pv.comment || null,
+              status: pv.status || "Not Started",
+              priority: null,
+              startDate: pv.startDate || pv.actualStartDate || null,
+              endDate: pv.endDate || pv.actualEndDate || null,
+              duration: pv.durationDays || pv.actualDurationDays || null,
+              percentComplete: pv.pctComplete != null ? Number(pv.pctComplete) : 0,
+              expectedPctComplete: pv.expectedPctComplete != null ? Number(pv.expectedPctComplete) : null,
+              wbsCode: wbsCode,
+              outlineNumber: wbsCode,
+              indentLevel: pv.indentLevel ?? 0,
+              isMilestone: pv.isMilestone ?? false,
+              phase: pv.phase || null,
+              parentId: null,
+              ownerUserId: null,
+              ownerName: pv.owner || null,
+              isShared: false,
+              externalRef,
+              legacyTable: null,
+              legacyId: null,
+              sourceRow: pv.sourceRow || null,
+              sourceSheet: pv.sourceSheet || null,
+              importRunId: runId,
+              createdBy: userId,
+            }).returning();
+
+            if (wbsCode) {
+              workItemByTaskNo.set(wbsCode, insertedWi.id);
+            }
+            workItemByIdx.set(idx, insertedWi.id);
           }
 
-          const hierarchyOverrides: any[] = [];
-          const taskNoToRow = new Map<string, number>();
-          for (const t of legacyPlanBatch) {
-            if (t.taskNo) taskNoToRow.set(t.taskNo, t.rowNumber);
-          }
-
-          for (const pv of planValues) {
-            const rowNumber = pv.sourceRow || 0;
-            if (!rowNumber) continue;
-            const pName = pv.projectName;
-
-            if (pv.isMilestone) {
-              hierarchyOverrides.push({
-                projectName: pName, rowNumber,
-                fieldName: "isMilestone", overrideValue: "true", createdBy: userId,
-              });
-            }
-
-            if (pv.indentLevel != null && pv.indentLevel > 0) {
-              hierarchyOverrides.push({
-                projectName: pName, rowNumber,
-                fieldName: "indentLevel", overrideValue: String(pv.indentLevel), createdBy: userId,
-              });
-            }
-
-            if (pv.parentTaskNo && taskNoToRow.has(pv.parentTaskNo)) {
-              const parentRow = taskNoToRow.get(pv.parentTaskNo)!;
-              hierarchyOverrides.push({
-                projectName: pName, rowNumber,
-                fieldName: "parentRowNumber", overrideValue: String(parentRow), createdBy: userId,
-              });
-            }
-          }
-
-          if (hierarchyOverrides.length > 0) {
-            const now = new Date();
-            for (const ov of hierarchyOverrides) {
-              const existing = await tx.select({ id: projectPlanOverrides.id })
-                .from(projectPlanOverrides)
-                .where(and(
-                  eq(projectPlanOverrides.projectName, ov.projectName),
-                  eq(projectPlanOverrides.rowNumber, ov.rowNumber),
-                  eq(projectPlanOverrides.fieldName, ov.fieldName),
-                ))
-                .limit(1);
-              if (existing.length > 0) {
-                await tx.update(projectPlanOverrides)
-                  .set({ overrideValue: ov.overrideValue, updatedAt: now })
-                  .where(eq(projectPlanOverrides.id, existing[0].id));
-              } else {
-                await tx.insert(projectPlanOverrides).values({
-                  ...ov, createdAt: now, updatedAt: now,
-                });
+          for (let idx = 0; idx < planValues.length; idx++) {
+            const pv = planValues[idx] as any;
+            if (pv.parentTaskNo && workItemByTaskNo.has(pv.parentTaskNo)) {
+              const parentWorkItemId = workItemByTaskNo.get(pv.parentTaskNo)!;
+              const childWorkItemId = workItemByIdx.get(idx);
+              if (childWorkItemId) {
+                await tx.update(workItems)
+                  .set({ parentId: parentWorkItemId })
+                  .where(eq(workItems.id, childWorkItemId));
               }
             }
           }
-        }
-        counts.planTasks = planValues.length;
 
-        const insertedNormTasks = await safeLegacyQuery(
-          () => tx
-            .select({ id: normalizedPlanTasks.id, taskName: normalizedPlanTasks.taskName, taskNo: normalizedPlanTasks.taskNo })
-            .from(normalizedPlanTasks)
-            .where(eq(normalizedPlanTasks.importRunId, runId)),
-          [] as { id: number; taskName: string; taskNo: string | null }[]
-        );
-        const normTaskIdByRow = new Map<number, number>();
-        const normTaskIdByName = new Map<string, number>();
-        for (const nt of insertedNormTasks) {
-          normTaskIdByName.set(nt.taskName, nt.id);
-        }
-
-        const workItemExternalRefToId = new Map<string, number>();
-        const workItemByTaskNo = new Map<string, number>();
-
-        for (let idx = 0; idx < planValues.length; idx++) {
-          const pv = planValues[idx] as any;
-          const wbsCode = pv.taskNo || null;
-          const externalRef = `${projectName}::PLAN::${idx}::${wbsCode || ''}`;
-          const normTaskId = normTaskIdByName.get(pv.taskName) || null;
-
-          const [insertedWi] = await tx.insert(workItems).values({
-            clientId: null,
-            projectId: projectId || null,
-            workstream: "PM" as any,
-            type: pv.isMilestone ? "milestone" : "task",
-            source: "SMART_IMPORT" as any,
-            title: pv.taskName,
-            description: pv.comment || null,
-            status: pv.status || "Not Started",
-            priority: null,
-            startDate: pv.startDate || pv.actualStartDate || null,
-            endDate: pv.endDate || pv.actualEndDate || null,
-            duration: pv.durationDays || pv.actualDurationDays || null,
-            percentComplete: pv.pctComplete != null ? Number(pv.pctComplete) : 0,
-            wbsCode: wbsCode,
-            outlineNumber: wbsCode,
-            parentId: null,
-            ownerUserId: null,
-            isShared: false,
-            externalRef,
-            legacyTable: "normalized_plan_tasks",
-            legacyId: normTaskId,
-            createdBy: userId,
-          }).returning();
-
-          workItemExternalRefToId.set(externalRef, insertedWi.id);
-          if (wbsCode) {
-            workItemByTaskNo.set(wbsCode, insertedWi.id);
-          }
-          normTaskIdByRow.set(idx, insertedWi.id);
-        }
-
-        for (let idx = 0; idx < planValues.length; idx++) {
-          const pv = planValues[idx] as any;
-          if (pv.parentTaskNo && workItemByTaskNo.has(pv.parentTaskNo)) {
-            const parentWorkItemId = workItemByTaskNo.get(pv.parentTaskNo)!;
-            const childWorkItemId = normTaskIdByRow.get(idx);
-            if (childWorkItemId) {
-              await tx.update(workItems)
-                .set({ parentId: parentWorkItemId })
-                .where(eq(workItems.id, childWorkItemId));
-            }
-          }
-        }
-
-        if (userId) {
-          for (let idx = 0; idx < planValues.length; idx++) {
-            const pv = planValues[idx] as any;
-            if (pv.owner && pv.owner.trim()) {
-              const wiId = normTaskIdByRow.get(idx);
-              if (wiId && pv.assigneeUserId) {
-                await tx.insert(workItemAssignments).values({
-                  workItemId: wiId,
-                  userId: pv.assigneeUserId,
-                  role: "OWNER" as any,
-                  allocationPct: null,
-                });
+          if (userId) {
+            for (let idx = 0; idx < planValues.length; idx++) {
+              const pv = planValues[idx] as any;
+              if (pv.owner && pv.owner.trim()) {
+                const wiId = workItemByIdx.get(idx);
+                if (wiId && pv.assigneeUserId) {
+                  await tx.insert(workItemAssignments).values({
+                    workItemId: wiId,
+                    userId: pv.assigneeUserId,
+                    role: "OWNER" as any,
+                    allocationPct: null,
+                  });
+                }
               }
             }
           }
@@ -1199,22 +1102,6 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
           });
         if (revValues.length > 0) {
           await tx.insert(normalizedRevenueLines).values(revValues);
-
-          const legacyRevBatch = revValues.map((r: any, idx: number) => ({
-            projectName,
-            rowNumber: r.sourceRow || (idx + 1),
-            milestoneNo: String(idx + 1),
-            milestoneName: r.milestoneName || r.description || null,
-            milestoneAmount: r.amountExVat || null,
-            plannedPaymentDate: r.expectedPaymentDate || null,
-            milestoneInvoiceNumber: r.invoiceNumber || null,
-            invoiceRaisedDate: r.invoiceDate || null,
-            paymentReceivedDate: r.paidDate || null,
-            inBank: r.inBankDate ? 1 : 0,
-          }));
-          for (let i = 0; i < legacyRevBatch.length; i += 100) {
-            await tx.insert(programInflows).values(legacyRevBatch.slice(i, i + 100));
-          }
         }
         counts.revenueLines = revValues.length;
       }
@@ -1334,48 +1221,6 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
             return normalized;
           });
           await tx.insert(normalizedCostLines).values(normalizedInserts);
-
-          const legacyCostBatch = costValues.map((c: any, idx: number) => {
-            let lineStatus = "Planned";
-            if (c.paidDate) {
-              lineStatus = "Paid";
-            } else if (c.invoiceNumber || c.invoiceDate) {
-              lineStatus = "Invoiced";
-            } else if (c.poNumber) {
-              lineStatus = "Committed";
-            }
-            return {
-            projectName,
-            rowNumber: c.sourceRow || (idx + 1),
-            rowType: "item" as const,
-            expenseCategory: c.costCategory || null,
-            expenseLineItem: c.description || null,
-            budgetQty: c._budgetQty || null,
-            budgetRateUnit: c._budgetRate || null,
-            budgetTotal: c._budgetTotal || null,
-            expenseQty: c._budgetQty || null,
-            expenseRateUnit: c._budgetRate || null,
-            expenseActualTotal: c.amountExVat || null,
-            expensePoNumber: c.poNumber || null,
-            expenseInvoiceNumber: c.invoiceNumber || null,
-            expenseInvoicedDate: c.invoiceDate || null,
-            invoiceDateConfirmed: c.invoiceDateConfirmed || false,
-            invoiceDateFontColor: c.invoiceDateFontColor || null,
-            expensePaymentDate: c.paidDate || null,
-            paymentDateConfirmed: c.paidDateConfirmed || false,
-            paymentDateFontColor: c.paidDateFontColor || null,
-            revenueAmount: c._revenueRecognitionAmount || null,
-            actualCosTotal: c._actualCos || null,
-            budgetCosTotal: c._budgetCos || null,
-            forecastPaymentDate: c._forecastPaymentDate || null,
-            computedForecastPaymentDate: c._forecastPaymentDate || null,
-            supplierName: c.counterpartyName || null,
-            lineStatus,
-          } as any;
-          });
-          for (let i = 0; i < legacyCostBatch.length; i += 100) {
-            await tx.insert(programExpense).values(legacyCostBatch.slice(i, i + 100));
-          }
         }
         counts.costLines = costValues.length;
 
@@ -1588,19 +1433,17 @@ router.post("/api/smart-import/:runId/rollback", requireAuth, async (req: Reques
     }
 
     await db.transaction(async (tx: any) => {
-      await safeLegacyWrite(() => tx.delete(normalizedPlanTasks).where(eq(normalizedPlanTasks.importRunId, runId)));
       await tx.delete(normalizedRevenueLines).where(eq(normalizedRevenueLines.importRunId, runId));
       await tx.delete(normalizedCostLines).where(eq(normalizedCostLines.importRunId, runId));
       await tx.delete(normalizedExecutionPhases).where(eq(normalizedExecutionPhases.importRunId, runId));
 
-      const projectName = run.projectName;
       const rollbackWis = await tx
         .select({ id: workItems.id })
         .from(workItems)
         .where(and(
           eq(workItems.source, "SMART_IMPORT"),
           eq(workItems.workstream, "PM"),
-          run.projectId ? eq(workItems.projectId, run.projectId) : sql`${workItems.externalRef} LIKE ${projectName + '::PLAN::%'}`,
+          eq(workItems.importRunId, runId),
         ));
       if (rollbackWis.length > 0) {
         const wiIds = rollbackWis.map((w: any) => w.id);

@@ -5,7 +5,7 @@ import { verifyToken } from "./jwt";
 import {
   portfolios, portfolioRolloutPlans, portfolioRolloutPhases,
   projectPortfolioAssignments, projectInfo, users,
-  qcChecklist, qcItemInstance, programExpense, programInflows,
+  qcChecklist, qcItemInstance, normalizedCostLines, normalizedRevenueLines,
 } from "@shared/schema";
 import { logAuditFromReq } from "./audit-logger";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
@@ -334,8 +334,11 @@ export function registerPortfolioRoutes(app: Express) {
       const projects = await db.select().from(projectInfo).where(inArray(projectInfo.id, projectIds));
       const projectNames = projects.map(p => p.projectName);
 
-      const rawExpenses = await db.select().from(programExpense).where(inArray(programExpense.projectName, projectNames));
-      const rawInflows = await db.select().from(programInflows).where(inArray(programInflows.projectName, projectNames));
+      const { adaptCostToExpense, adaptRevenueToInflow } = await import("./lib/data-merge");
+      const rawCosts = await db.select().from(normalizedCostLines).where(inArray(normalizedCostLines.projectName, projectNames));
+      const rawRev = await db.select().from(normalizedRevenueLines).where(inArray(normalizedRevenueLines.projectName, projectNames));
+      const rawExpenses = rawCosts.map(c => adaptCostToExpense(c, c.projectName));
+      const rawInflows = rawRev.map(r => adaptRevenueToInflow(r, r.projectName));
       const allWorkItems = await getAllPMWorkItemsAsProjectPlan();
       const allPlans = allWorkItems.filter((wi: any) => projectNames.includes(wi.projectName));
 
@@ -593,8 +596,15 @@ export function registerPortfolioRoutes(app: Express) {
 
       const projectMap = new Map(allProjects.map(p => [p.id, p]));
 
-      const allExpenses = await db.select().from(programExpense);
-      const allInflows = await db.select().from(programInflows);
+      const { adaptCostToExpense, adaptRevenueToInflow, createNameResolver } = await import("./lib/data-merge");
+      const [allCosts, allRev, piNames] = await Promise.all([
+        db.select().from(normalizedCostLines),
+        db.select().from(normalizedRevenueLines),
+        db.select({ projectName: projectInfo.projectName }).from(projectInfo),
+      ]);
+      const resolve = createNameResolver(piNames.map(p => p.projectName));
+      const allExpenses = allCosts.map(c => adaptCostToExpense(c, resolve(c.projectName)));
+      const allInflows = allRev.map(r => adaptRevenueToInflow(r, resolve(r.projectName)));
       const allPlanTasks = await getAllPMWorkItemsAsProjectPlan();
 
       const expenseByProject = new Map<string, any[]>();
