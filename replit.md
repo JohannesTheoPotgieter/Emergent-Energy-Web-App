@@ -12,7 +12,7 @@ Preferred communication style: Simple, everyday language.
 -   **Frameworks & Libraries**: React 18 with TypeScript, TanStack React Query, React Context.
 -   **UI/UX**: `shadcn/ui` and Tailwind CSS v4 for mobile-first responsive design, with Recharts for data visualization.
 -   **Forms**: React Hook Form with Zod validation.
--   **Key Features**: Financial tracking, project and quality management, Smart Excel Import wizard, Subcontractor Dashboard, UX Guidance System, Project Awareness Bar, Business Alert Engine, Weekly Review Wizard, Execution Dashboard, Permission Gate System, TR Register, PM Dashboard, and a Gamification System.
+-   **Key Features**: Financial tracking, project and quality management, Smart Excel Import wizard, Subcontractor Dashboard, UX Guidance System, Project Awareness Bar, Business Alert Engine, Weekly Review Wizard, Execution Dashboard, Permission Gate System, PM Dashboard, and a Gamification System.
 -   **Project Plan Tab**: MS Project-style grid with auto-numbered rows, WBS, duration/date editing, predecessors, resource assignment, inline % complete, and auto-calculated RAG status. Baseline tracking is supported.
 -   **Revenue Tracking Tab**: KPI summary strip and a `shadcn/ui` table with sticky headers, status badges, inline editing, override indicators, and full audit logging.
 -   **Expenditure Breakdown Tab**: KPI cards and a table with collapsible category grouping, status badges, override indicators, inline editing, and task linking.
@@ -23,7 +23,7 @@ Preferred communication style: Simple, everyday language.
 -   **Financials**: Uses "Actual vs Costed" terminology with a financial year of September to August, and an AI-style Financial Integration Panel.
 -   **Project Creation**: COO/CEO initiated projects auto-generate engineering stage templates.
 -   **Portfolio Dashboard**: Four view modes (Project Management, Finance, Quality, Engineering) with Recharts visualizations.
--   **Unified Work ("My Work")**: Consolidates personal and project-related tasks, calendar (with Outlook integration), and communications. All Microsoft 365 data (calendar events, emails, tasks) is scoped to the logged-in user's SSO token — each user sees their own Outlook calendar and inbox.
+-   **Unified Work ("My Work")**: Consolidates personal and project-related tasks, calendar (with Outlook integration), and communications. All Microsoft 365 data (calendar events, emails, tasks) is scoped to the logged-in user's SSO token — each user sees their own Outlook calendar and inbox. My Work Tasks is the primary task management hub — it aggregates tasks from all sources (personal, project, engineering, quality, approvals, TR Register/action items, deliverables, notifications, MS 365). Includes KPI cards, List/Board (Kanban) view toggle, full New Task dialog (personal tasks or action items with RAG status, department, project linking), source filter tabs, and task detail drawers. TR Register has been merged into My Work Tasks — `/tr-register` redirects to `/my-work/tasks`.
 -   **Approvals Screen**: Consolidated view for user-specific pending approvals.
 -   **Teams Chat Groups**: MS Teams-styled channel-based group chat for departments and projects.
 -   **PM On-The-Go Mode**: Mobile-first interface for site managers, enforcing daily updates and supporting PO requests/invoice linking.

@@ -49,7 +49,6 @@ import WeeklyReviewsPage from "@/pages/weekly-reviews";
 import AdminRolesPage from "@/pages/admin-roles";
 import AdminApprovalsPage from "@/pages/admin-approvals";
 import LeaderboardPage from "@/pages/leaderboard";
-import TrRegisterPage from "@/pages/tr-register";
 import FeedbackPage from "@/pages/feedback";
 import EeInfoPage from "@/pages/ee-info";
 import PMDashboard from "@/pages/pm-dashboard";
