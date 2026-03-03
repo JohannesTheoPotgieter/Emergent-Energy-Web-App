@@ -153,7 +153,6 @@ const PERM_CATEGORIES: PermCat[] = [
       { entity: "weekly_review_wizard" as PermissionEntity, label: "Weekly Reviews", actions: ["view", "edit"] },
       { entity: "weekly_reviews" as PermissionEntity, label: "Weekly Review Data", actions: ["view", "edit"] },
       { entity: "create_project" as PermissionEntity, label: "Create Project", actions: ["edit"] },
-      { entity: "project_creation" as PermissionEntity, label: "Project Creation", actions: ["edit"] },
       { entity: "approvals" as PermissionEntity, label: "Approvals", actions: ["view", "approve"] },
       { entity: "project_normalized" as PermissionEntity, label: "Normalized View", actions: ["view"] },
     ],
