@@ -813,9 +813,33 @@ export default function ProjectDetailPage() {
     ? (qualityGatesPassed === qualityGatesTotal && qualityGatesTotal > 0 ? "green" : qualityApprovedItems > 0 ? "amber" : "red")
     : "red";
 
+  const isInflowInBank = (r: any): boolean => {
+    const manualInBank = r.inBank === 1 || r.inBank === '1' || r.inBank === true;
+    const hasInvoice = !!(r.milestoneInvoiceNumber && String(r.milestoneInvoiceNumber).trim());
+    const hasPaymentReceived = !!(r.paymentReceivedDate && String(r.paymentReceivedDate).trim() && r.paymentReceivedDate !== '-');
+    return manualInBank || (hasPaymentReceived && hasInvoice);
+  };
+
+  const isExpensePaid = (e: any): boolean => {
+    const hasPaymentDate = !!(e.expensePaymentDate && String(e.expensePaymentDate).trim());
+    const hasInvoiceNumber = !!(e.expenseInvoiceNumber && String(e.expenseInvoiceNumber).trim());
+    if (!hasInvoiceNumber || !hasPaymentDate) return false;
+    const paymentDateConfirmed = e.paymentDateConfirmed === true || e.paymentDateFontColor === 'black';
+    return paymentDateConfirmed;
+  };
+
+  const isCosRealised = (e: any): boolean => {
+    const hasInvoice = !!(e.expenseInvoiceNumber && String(e.expenseInvoiceNumber).trim());
+    const hasInvDate = !!(e.expenseInvoicedDate && String(e.expenseInvoicedDate).trim());
+    const hasPO = !!(e.expensePoNumber && String(e.expensePoNumber).trim());
+    if (!hasInvoice || !hasInvDate || !hasPO) return false;
+    const dateConfirmed = e.invoiceDateConfirmed === true || e.invoiceDateFontColor === 'black';
+    return dateConfirmed;
+  };
+
   const nextMilestone = useMemo(() => {
     const unpaid = (revenueData as any[])
-      .filter((r: any) => !r.paymentReceivedDate && r.plannedPaymentDate)
+      .filter((r: any) => !isInflowInBank(r) && r.plannedPaymentDate)
       .sort((a: any, b: any) => new Date(a.plannedPaymentDate).getTime() - new Date(b.plannedPaymentDate).getTime());
     if (unpaid.length > 0) {
       const m = unpaid[0];
@@ -823,18 +847,22 @@ export default function ProjectDetailPage() {
     }
     const hasAny = (revenueData as any[]).length > 0;
     if (hasAny) {
-      return { name: "All Milestones Paid", date: null, allPaid: true };
+      return { name: "All Paid", date: null, allPaid: true };
     }
     return null;
   }, [revenueData]);
 
   const totalPaidInflows = (revenueData as any[]).reduce((s: number, r: any) => {
-    if (r.paymentReceivedDate) return s + (Number(r.milestoneAmount) || 0);
+    if (isInflowInBank(r)) return s + (Number(r.milestoneAmount) || 0);
     return s;
   }, 0);
   const revenueRealisedPct = contractValue > 0 ? (totalPaidInflows / contractValue) * 100 : 0;
 
-  const cosRealisedPct = budgetTotal > 0 ? (totalExpenses / budgetTotal) * 100 : 0;
+  const totalRealisedCos = (expenseData as any[]).reduce((s: number, e: any) => {
+    if (isCosRealised(e)) return s + (Number(e.expenseActualTotal) || 0);
+    return s;
+  }, 0);
+  const cosRealisedPct = budgetTotal > 0 ? (totalRealisedCos / budgetTotal) * 100 : 0;
   const marginDelta = revenueRealisedPct - cosRealisedPct;
 
   const hasRedRag = scheduleRag === "red" || costRag === "red" || qualityRag === "red";
@@ -863,8 +891,8 @@ export default function ProjectDetailPage() {
         result.push({ severity: "warning", message: `Revenue milestone "${r.milestoneName || "Unnamed"}" due within 14 days — no invoice raised`, key: `rev-${r.id || r.milestoneName}` });
       }
     });
-    if (totalExpenses > totalPaidInflows && totalPaidInflows > 0) {
-      result.push({ severity: "warning", message: `COS (R${totalExpenses.toLocaleString()}) exceeds paid revenue (R${totalPaidInflows.toLocaleString()})`, key: "cos-exceeds-rev" });
+    if (totalRealisedCos > totalPaidInflows && totalPaidInflows > 0) {
+      result.push({ severity: "warning", message: `Realised COS (R${totalRealisedCos.toLocaleString()}) exceeds received revenue (R${totalPaidInflows.toLocaleString()})`, key: "cos-exceeds-rev" });
     }
     const engTaskAlerts = engDataForAlerts?.tasks || [];
     const overdueEng = engTaskAlerts.filter((t: any) => t.dueDate && t.dueDate < today && t.status !== "COMPLETE");
@@ -875,7 +903,7 @@ export default function ProjectDetailPage() {
       result.push({ severity: "info", message: "No project plan data uploaded yet", key: "no-plan" });
     }
     return result;
-  }, [revenueData, expenseData, engDataForAlerts, planTasks, totalExpenses, today]);
+  }, [revenueData, expenseData, engDataForAlerts, planTasks, totalRealisedCos, totalPaidInflows, today]);
 
   const primaryCta = useMemo(() => {
     if (phase?.includes("FIRST_ASSESSMENT") || phase?.includes("COST_PROPOSAL")) {
