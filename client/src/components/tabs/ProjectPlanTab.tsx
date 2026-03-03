@@ -129,8 +129,7 @@ function InlinePctEditor({ taskId, pct, projectName }: { taskId: number; pct: nu
       const token = localStorage.getItem("auth_token");
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (token) headers["Authorization"] = `Bearer ${token}`;
-      const negativeId = -Math.abs(taskId);
-      const res = await fetch(`/api/planning-tasks/${negativeId}`, {
+      const res = await fetch(`/api/planning-tasks/${taskId}`, {
         method: "PATCH",
         credentials: "include",
         headers,
