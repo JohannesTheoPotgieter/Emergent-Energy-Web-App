@@ -883,17 +883,6 @@ router.get("/api/admin/import/runs/:id", requireAuth, requireAdmin, async (req, 
   }
 });
 
-// ==================== SP FILES ====================
-
-router.get("/api/sp-files", requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const files = await storage.getAllSpFiles();
-    res.json(files);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // ==================== MS INTEGRATION SETTINGS ====================
 
 router.get("/api/admin/ms-integration", requireAuth, requireAdmin, async (req, res) => {

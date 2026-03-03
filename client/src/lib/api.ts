@@ -1,5 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 import { getErrorMessage } from "./errors";
+import { parseApiError, networkError, ApiError } from "./api-error";
 
 const API_BASE = "/api";
 
@@ -20,54 +21,39 @@ async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
-  
+
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
-  
-  const response = await fetch(url, {
-    ...options,
-    credentials: "include",
-    headers: {
-      ...headers,
-      ...options?.headers,
-    },
-  });
-  
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...options,
+      credentials: "include",
+      headers: {
+        ...headers,
+        ...options?.headers,
+      },
+    });
+  } catch {
+    throw networkError();
+  }
+
   if (!response.ok) {
     let errorData: any = {};
     try {
       errorData = await response.json();
     } catch {
-      // JSON parse failed, use statusText as fallback
       errorData = { message: response.statusText || "Request failed" };
     }
-    
-    // Use safe error message extraction
-    const errorMessage = getErrorMessage(errorData, `HTTP ${response.status}: ${response.statusText || 'Request failed'}`);
-    
-    // Log detailed error info in development
-    if (process.env.NODE_ENV === 'development') {
-      console.error('[API Error]', {
-        url,
-        status: response.status,
-        message: errorMessage,
-        data: errorData,
-      });
-    }
-    
-    // Create error object and attach metadata
-    const error = new Error(errorMessage);
-    (error as any).status = response.status;
-    (error as any).dbMode = errorData?.dbMode;
-    
-    throw error;
+
+    throw parseApiError(response, errorData);
   }
-  
+
   return response.json();
 }
 
-// Auth API
 export const authApi = {
   login: async (username: string, password: string) => {
     return fetchJSON<{ message: string; user: User; token: string }>(`${API_BASE}/auth/login`, {
@@ -88,7 +74,6 @@ export const authApi = {
   },
 };
 
-// Dashboard API
 export const dashboardApi = {
   getData: async () => {
     return fetchJSON<DashboardData>(`${API_BASE}/dashboard`);
@@ -108,7 +93,6 @@ export const dashboardApi = {
   },
 };
 
-// Projects API
 export const projectsApi = {
   getAll: async () => {
     return fetchJSON<Project[]>(`${API_BASE}/projects`);
@@ -118,37 +102,48 @@ export const projectsApi = {
   },
 };
 
-// Expenses API
 export const expensesApi = {
   getAll: async (projectId?: number) => {
-    const url = projectId 
-      ? `${API_BASE}/expenses?projectId=${projectId}` 
+    const url = projectId
+      ? `${API_BASE}/expenses?projectId=${projectId}`
       : `${API_BASE}/expenses`;
     return fetchJSON<Expense[]>(url);
   },
 };
 
-// Revenues API
 export const revenuesApi = {
   getAll: async (projectId?: number) => {
-    const url = projectId 
-      ? `${API_BASE}/revenues?projectId=${projectId}` 
+    const url = projectId
+      ? `${API_BASE}/revenues?projectId=${projectId}`
       : `${API_BASE}/revenues`;
     return fetchJSON<Revenue[]>(url);
   },
 };
 
-// Tasks API
 export const tasksApi = {
   getAll: async (projectId?: number) => {
-    const url = projectId 
-      ? `${API_BASE}/tasks?projectId=${projectId}` 
+    const url = projectId
+      ? `${API_BASE}/tasks?projectId=${projectId}`
       : `${API_BASE}/tasks`;
     return fetchJSON<Task[]>(url);
   },
 };
 
-// Budgets API
+export interface Budget {
+  id: number;
+  projectId: number;
+  month: string;
+  category: string;
+  amount: string;
+}
+
+export interface CreateBudget {
+  projectId: number;
+  month: string;
+  category: "REV" | "COS" | "OPS";
+  amount: string;
+}
+
 export const budgetsApi = {
   getAll: async () => {
     return fetchJSON<Budget[]>(`${API_BASE}/budgets`);
@@ -166,26 +161,35 @@ export const budgetsApi = {
   },
 };
 
-// Upload API
+export const budgetsQueryOptions = queryOptions({
+  queryKey: ["budgets"],
+  queryFn: budgetsApi.getAll,
+});
+
 export const uploadApi = {
   uploadFiles: async (files: File[]) => {
     const formData = new FormData();
     files.forEach(file => formData.append("files", file));
-    
+
     const token = getAuthToken();
     const headers: Record<string, string> = {};
-    
+
     if (token) {
       headers["Authorization"] = `Bearer ${token}`;
     }
-    
-    const response = await fetch(`${API_BASE}/upload`, {
-      method: "POST",
-      credentials: "include",
-      headers,
-      body: formData,
-    });
-    
+
+    let response: Response;
+    try {
+      response = await fetch(`${API_BASE}/upload`, {
+        method: "POST",
+        credentials: "include",
+        headers,
+        body: formData,
+      });
+    } catch {
+      throw networkError();
+    }
+
     if (!response.ok) {
       let errorData: any = {};
       try {
@@ -193,12 +197,9 @@ export const uploadApi = {
       } catch {
         errorData = { message: "Upload failed" };
       }
-      
-      const errorMessage = getErrorMessage(errorData, `Upload failed: ${response.statusText || 'Unknown error'}`);
-      
-      throw new Error(errorMessage);
+      throw parseApiError(response, errorData);
     }
-    
+
     return response.json() as Promise<UploadResult>;
   },
   getHistory: async () => {
@@ -206,7 +207,6 @@ export const uploadApi = {
   },
 };
 
-// Overview API (new tracker-based data)
 export const overviewApi = {
   getData: async () => {
     return fetchJSON<OverviewData>(`${API_BASE}/overview`);
@@ -219,7 +219,7 @@ export const overviewApi = {
     if (projectName) params.append('projectName', projectName);
     if (startDate) params.append('startDate', startDate);
     if (endDate) params.append('endDate', endDate);
-    
+
     const url = params.toString() ? `${API_BASE}/program-expenses?${params}` : `${API_BASE}/program-expenses`;
     return fetchJSON<ProgramExpense[]>(url);
   },
@@ -228,13 +228,13 @@ export const overviewApi = {
     if (projectName) params.append('projectName', projectName);
     if (startDate) params.append('startDate', startDate);
     if (endDate) params.append('endDate', endDate);
-    
+
     const url = params.toString() ? `${API_BASE}/program-inflows?${params}` : `${API_BASE}/program-inflows`;
     return fetchJSON<ProgramInflow[]>(url);
   },
   getProjectPlans: async (projectName?: string) => {
-    const url = projectName 
-      ? `${API_BASE}/project-plans?projectName=${encodeURIComponent(projectName)}` 
+    const url = projectName
+      ? `${API_BASE}/project-plans?projectName=${encodeURIComponent(projectName)}`
       : `${API_BASE}/project-plans`;
     return fetchJSON<ProjectPlanItem[]>(url);
   },
@@ -243,7 +243,6 @@ export const overviewApi = {
   },
 };
 
-// Export API (these return files, not JSON)
 export const exportApi = {
   projects: () => `${API_BASE}/export/projects`,
   expenses: () => `${API_BASE}/export/expenses`,
@@ -252,7 +251,6 @@ export const exportApi = {
   projectsSummary: () => `${API_BASE}/export/projects-summary`,
 };
 
-// Types
 export interface User {
   id: number;
   email: string;
@@ -313,27 +311,11 @@ export interface Task {
   rowLocator?: number;
 }
 
-export interface Budget {
-  id: number;
-  projectId: number;
-  month: string;
-  category: string;
-  amount: string;
-}
-
-export interface CreateBudget {
-  projectId: number;
-  month: string;
-  category: "REV" | "COS" | "OPS";
-  amount: string;
-}
-
 export interface DashboardData {
   projects: Project[];
   expenses: Expense[];
   revenues: Revenue[];
   tasks: Task[];
-  budgets: Budget[];
   lastRefresh: string | null;
 }
 
@@ -501,7 +483,7 @@ export const cashflowApi = {
     if (projectName) params.append('projectName', projectName);
     if (startDate) params.append('startDate', startDate);
     if (endDate) params.append('endDate', endDate);
-    
+
     const url = params.toString() ? `${API_BASE}/cashflow?${params}` : `${API_BASE}/cashflow`;
     return fetchJSON<CashflowPoint[]>(url);
   },
@@ -535,7 +517,7 @@ export const financeApi = {
     if (projectName) params.append('projectName', projectName);
     if (startDate) params.append('startDate', startDate);
     if (endDate) params.append('endDate', endDate);
-    
+
     const url = params.toString() ? `${API_BASE}/finance/revenue?${params}` : `${API_BASE}/finance/revenue`;
     return fetchJSON<FinanceRevenueMonthly[]>(url);
   },
@@ -544,13 +526,12 @@ export const financeApi = {
     if (projectName) params.append('projectName', projectName);
     if (startDate) params.append('startDate', startDate);
     if (endDate) params.append('endDate', endDate);
-    
+
     const url = params.toString() ? `${API_BASE}/finance/cos?${params}` : `${API_BASE}/finance/cos`;
     return fetchJSON<FinanceCosMonthly[]>(url);
   },
 };
 
-// Query Options
 export const dashboardQueryOptions = queryOptions({
   queryKey: ["dashboard"],
   queryFn: dashboardApi.getData,
@@ -560,11 +541,6 @@ export const dashboardQueryOptions = queryOptions({
 export const projectsQueryOptions = queryOptions({
   queryKey: ["projects"],
   queryFn: projectsApi.getAll,
-});
-
-export const budgetsQueryOptions = queryOptions({
-  queryKey: ["budgets"],
-  queryFn: budgetsApi.getAll,
 });
 
 export const overviewQueryOptions = queryOptions({
