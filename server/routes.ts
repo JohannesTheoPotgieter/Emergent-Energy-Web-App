@@ -10437,7 +10437,15 @@ export async function registerRoutes(
           const allOps = await storage.getOperationalTasksByProject(projectName);
           operationalTasks = allOps.filter((t: any) => t.externalSource !== "clickup");
 
-          baselineTasks = canonicalTasks.map((ct: any, idx: number) => {
+          const filteredCanonical = canonicalTasks.filter((ct: any) => {
+            const hasWbs = ct.taskNo && String(ct.taskNo).trim().length > 0;
+            const hasStart = ct.startDate && String(ct.startDate).trim().length > 0;
+            const hasEnd = ct.endDate && String(ct.endDate).trim().length > 0;
+            if (!hasWbs && !hasStart && !hasEnd) return false;
+            return true;
+          });
+
+          baselineTasks = filteredCanonical.map((ct: any, idx: number) => {
             const rawPct = ct.pctComplete != null ? Number(ct.pctComplete) : 0;
             const pctComplete = rawPct > 1 ? Math.round(rawPct) : Math.round(rawPct * 100);
             let status = "Not Started";
