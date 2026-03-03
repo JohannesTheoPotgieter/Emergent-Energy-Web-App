@@ -118,9 +118,9 @@ export function registerPmRoutes(app: Express) {
             project_name,
             COALESCE(SUM(CAST(budget_total AS NUMERIC)), 0) AS total_budget,
             COALESCE(SUM(CAST(expense_actual_total AS NUMERIC)), 0) AS total_actual,
-            COUNT(*) FILTER (WHERE expense_invoice_number IS NOT NULL AND expense_invoice_number != '' AND (invoice_date_confirmed = true OR invoice_date_font_color = 'black')) AS cos_realised,
-            COUNT(*) FILTER (WHERE expense_invoice_number IS NOT NULL AND expense_invoice_number != '' AND expense_invoiced_date IS NOT NULL AND invoice_date_font_color = 'red') AS cos_deferred,
-            COUNT(*) FILTER (WHERE (invoice_date_confirmed = true OR invoice_date_font_color = 'black') AND (expense_invoice_number IS NULL OR expense_invoice_number = '')) AS cos_flagged,
+            COUNT(*) FILTER (WHERE expense_po_number IS NOT NULL AND expense_po_number != '' AND expense_invoice_number IS NOT NULL AND expense_invoice_number != '' AND (invoice_date_confirmed = true OR invoice_date_font_color = 'black')) AS cos_realised,
+            COUNT(*) FILTER (WHERE expense_po_number IS NOT NULL AND expense_po_number != '' AND expense_invoice_number IS NOT NULL AND expense_invoice_number != '' AND expense_invoiced_date IS NOT NULL AND NOT (invoice_date_confirmed = true OR invoice_date_font_color = 'black')) AS cos_deferred,
+            COUNT(*) FILTER (WHERE (invoice_date_confirmed = true OR invoice_date_font_color = 'black') AND (expense_po_number IS NULL OR expense_po_number = '' OR expense_invoice_number IS NULL OR expense_invoice_number = '')) AS cos_flagged,
             COUNT(*) FILTER (WHERE row_type = 'item') AS total_lines
           FROM program_expense
           WHERE project_name = ANY(${pgArray}::text[])

@@ -1081,35 +1081,49 @@ export async function registerRoutes(
         }
       }
 
-      // actual_spend_paid = SUM(expense_actual_total where payment_date is valid YYYY-MM-DD and <= today)
+      // actual_spend_paid = SUM(expense_actual_total where classifyExpenseState === 'Paid')
       let actualSpendPaid = 0;
       for (const expense of allExpenses) {
-        const paymentDate = expense.expensePaymentDate;
-        if (paymentDate && /^\d{4}-\d{2}-\d{2}$/.test(paymentDate) && paymentDate <= today && expense.expenseActualTotal) {
-          actualSpendPaid += parseFloat(expense.expenseActualTotal) || 0;
+        if (expense.expenseActualTotal) {
+          const state = classifyExpenseState(expense as any);
+          if (state === 'Paid') {
+            actualSpendPaid += parseFloat(expense.expenseActualTotal) || 0;
+          }
         }
       }
       for (const cost of allNormCostsOv) {
         if (oldExpenseProjects.has(resolveOvName(cost.projectName))) continue;
-        const paymentDate = cost.paidDate;
-        if (paymentDate && /^\d{4}-\d{2}-\d{2}$/.test(paymentDate) && paymentDate <= today && cost.amountExVat) {
-          actualSpendPaid += parseFloat(cost.amountExVat) || 0;
+        if (cost.amountExVat) {
+          const state = classifyExpenseState(cost as any);
+          if (state === 'Paid') {
+            actualSpendPaid += parseFloat(cost.amountExVat) || 0;
+          }
         }
       }
 
-      // revenue_realised = SUM(milestone_amount where effective date is valid and <= today)
+      // revenue_realised = SUM(milestone_amount where in-bank: manualInBank || (hasPaymentReceived && hasInvoice))
       let revenueRealised = 0;
       for (const inflow of allInflows) {
-        const paymentDate = inflow.effectiveDate;
-        if (paymentDate && /^\d{4}-\d{2}-\d{2}$/.test(paymentDate) && paymentDate <= today && inflow.milestoneAmount) {
-          revenueRealised += parseFloat(inflow.milestoneAmount) || 0;
+        if (inflow.milestoneAmount) {
+          const manualInBank = (inflow as any).inBank === 1 || (inflow as any).inBank === '1' || (inflow as any).inBank === true;
+          const hasInvoice = !!(inflow.milestoneInvoiceNumber && String(inflow.milestoneInvoiceNumber).trim());
+          const hasPaymentReceived = !!(inflow.paymentReceivedDate && String(inflow.paymentReceivedDate).trim() && inflow.paymentReceivedDate !== '-');
+          const isInBank = manualInBank || (hasPaymentReceived && hasInvoice);
+          if (isInBank) {
+            revenueRealised += parseFloat(inflow.milestoneAmount) || 0;
+          }
         }
       }
       for (const rev of allNormRevOv) {
         if (oldInflowProjects.has(resolveOvName(rev.projectName))) continue;
-        const paymentDate = rev.paidDate || rev.inBankDate;
-        if (paymentDate && /^\d{4}-\d{2}-\d{2}$/.test(paymentDate) && paymentDate <= today && rev.amountExVat) {
-          revenueRealised += parseFloat(rev.amountExVat) || 0;
+        if (rev.amountExVat) {
+          const manualInBank = (rev as any).inBank === 1 || (rev as any).inBank === '1' || (rev as any).inBank === true;
+          const hasInvoice = !!(rev.invoiceNumber && String(rev.invoiceNumber).trim());
+          const hasPaymentReceived = !!(rev.paidDate && String(rev.paidDate).trim() && rev.paidDate !== '-');
+          const isInBank = manualInBank || (hasPaymentReceived && hasInvoice);
+          if (isInBank) {
+            revenueRealised += parseFloat(rev.amountExVat) || 0;
+          }
         }
       }
 
@@ -1333,15 +1347,24 @@ export async function registerRoutes(
           currentVoTotal += safeNum(rs.currentVoTotal);
         }
       } else {
-        // Fallback: compute from raw program_inflows and program_expense
+        // Fallback: compute from raw program_inflows and program_expense using proper in-bank/paid logic
         for (const inflow of allInflows) {
           if (inflow.milestoneAmount) {
-            actualRevenue += safeNum(inflow.milestoneAmount);
+            const manualInBank = (inflow as any).inBank === 1 || (inflow as any).inBank === '1' || (inflow as any).inBank === true;
+            const hasInvoice = !!(inflow.milestoneInvoiceNumber && String(inflow.milestoneInvoiceNumber).trim());
+            const hasPaymentReceived = !!(inflow.paymentReceivedDate && String(inflow.paymentReceivedDate).trim() && inflow.paymentReceivedDate !== '-');
+            const isInBank = manualInBank || (hasPaymentReceived && hasInvoice);
+            if (isInBank) {
+              actualRevenue += safeNum(inflow.milestoneAmount);
+            }
           }
         }
         for (const expense of allExpenses) {
           if (expense.expenseActualTotal) {
-            actualExpenses += safeNum(expense.expenseActualTotal);
+            const state = classifyExpenseState(expense as any);
+            if (state === 'Paid') {
+              actualExpenses += safeNum(expense.expenseActualTotal);
+            }
           }
         }
       }
@@ -2387,12 +2410,18 @@ export async function registerRoutes(
         const dateField = inf.invoiceRaisedDate || inf.paymentReceivedDate || inf.plannedPaymentDate;
         if (!dateInFY(dateField)) continue;
         projectsWithInflows.add(inf.projectName.toLowerCase().trim());
-        if (inf.milestoneAmount) totalRevenue += parseFloat(inf.milestoneAmount);
 
         if (inf.milestoneAmount) {
-          const hasPayment = inf.paymentReceivedDate && /^\d{4}-\d{2}-\d{2}/.test(inf.paymentReceivedDate) && inf.paymentReceivedDate <= todayStr;
-          const noInvoice = !inf.milestoneInvoiceNumber || inf.milestoneInvoiceNumber.trim() === '';
-          if (hasPayment && noInvoice) revenueOutstanding += parseFloat(inf.milestoneAmount);
+          const manualInBank = (inf as any).inBank === 1 || (inf as any).inBank === '1' || (inf as any).inBank === true;
+          const hasInvoice = !!(inf.milestoneInvoiceNumber && String(inf.milestoneInvoiceNumber).trim());
+          const hasPaymentReceived = !!(inf.paymentReceivedDate && String(inf.paymentReceivedDate).trim() && inf.paymentReceivedDate !== '-');
+          const isInBank = manualInBank || (hasPaymentReceived && hasInvoice);
+          if (isInBank) {
+            totalRevenue += parseFloat(inf.milestoneAmount) || 0;
+          }
+          if (hasInvoice && !isInBank) {
+            revenueOutstanding += parseFloat(inf.milestoneAmount) || 0;
+          }
         }
       }
 
@@ -2401,12 +2430,18 @@ export async function registerRoutes(
         if (projectsWithInflows.has(rev.projectName.toLowerCase().trim())) continue;
         const dateField = rev.invoiceDate || rev.paidDate || rev.expectedPaymentDate;
         if (!dateInFY(dateField)) continue;
-        if (rev.amountExVat) totalRevenue += parseFloat(rev.amountExVat);
 
         if (rev.amountExVat) {
-          const hasPayment = rev.paidDate && /^\d{4}-\d{2}-\d{2}/.test(rev.paidDate) && rev.paidDate <= todayStr;
-          const noInvoice = !rev.invoiceNumber || rev.invoiceNumber.trim() === '';
-          if (hasPayment && noInvoice) revenueOutstanding += parseFloat(rev.amountExVat);
+          const manualInBank = (rev as any).inBank === 1 || (rev as any).inBank === '1' || (rev as any).inBank === true;
+          const hasInvoice = !!(rev.invoiceNumber && String(rev.invoiceNumber).trim());
+          const hasPaymentReceived = !!(rev.paidDate && String(rev.paidDate).trim() && rev.paidDate !== '-');
+          const isInBank = manualInBank || (hasPaymentReceived && hasInvoice);
+          if (isInBank) {
+            totalRevenue += parseFloat(rev.amountExVat) || 0;
+          }
+          if (hasInvoice && !isInBank) {
+            revenueOutstanding += parseFloat(rev.amountExVat) || 0;
+          }
         }
       }
 
@@ -2416,12 +2451,15 @@ export async function registerRoutes(
         const dateField = exp.expenseInvoicedDate || exp.expensePaymentDate || exp.forecastPaymentDate;
         if (!dateInFY(dateField)) continue;
         projectsWithExpenses.add(exp.projectName.toLowerCase().trim());
-        if (exp.expenseActualTotal) totalExpenses += parseFloat(exp.expenseActualTotal);
 
         if (exp.expenseActualTotal) {
+          const state = classifyExpenseState(exp as any);
+          if (state === 'Paid') {
+            totalExpenses += parseFloat(exp.expenseActualTotal) || 0;
+          }
           const hasPastPaymentDate = exp.expensePaymentDate && /^\d{4}-\d{2}-\d{2}/.test(exp.expensePaymentDate) && exp.expensePaymentDate < todayStr;
           const noInvoice = !exp.expenseInvoiceNumber || exp.expenseInvoiceNumber.trim() === '';
-          if (hasPastPaymentDate && noInvoice) expensesDue += parseFloat(exp.expenseActualTotal);
+          if (hasPastPaymentDate && noInvoice) expensesDue += parseFloat(exp.expenseActualTotal) || 0;
         }
       }
 
@@ -2430,12 +2468,15 @@ export async function registerRoutes(
         if (projectsWithExpenses.has(cost.projectName.toLowerCase().trim())) continue;
         const dateField = cost.invoiceDate || cost.paidDate;
         if (!dateInFY(dateField)) continue;
-        if (cost.amountExVat) totalExpenses += parseFloat(cost.amountExVat);
 
         if (cost.amountExVat) {
+          const state = classifyExpenseState(cost as any);
+          if (state === 'Paid') {
+            totalExpenses += parseFloat(cost.amountExVat) || 0;
+          }
           const hasPastPaymentDate = cost.paidDate && /^\d{4}-\d{2}-\d{2}/.test(cost.paidDate) && cost.paidDate < todayStr;
           const noInvoice = !cost.invoiceNumber || cost.invoiceNumber.trim() === '';
-          if (hasPastPaymentDate && noInvoice) expensesDue += parseFloat(cost.amountExVat);
+          if (hasPastPaymentDate && noInvoice) expensesDue += parseFloat(cost.amountExVat) || 0;
         }
       }
 
