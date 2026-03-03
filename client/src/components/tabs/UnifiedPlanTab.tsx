@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, invalidateProjectQueries } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -380,10 +380,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
       await apiRequest("PATCH", `/api/planning-tasks/${id}`, { projectName, ...updates });
     },
     onSuccess: (_data, variables) => {
-      qc.invalidateQueries({ queryKey: ["planning-tasks", projectName] });
-      qc.invalidateQueries({ queryKey: ["operational-tasks", projectName] });
-      qc.invalidateQueries({ queryKey: ["working-plan", projectName] });
-      qc.invalidateQueries({ queryKey: ["/api/projects-summary"] });
+      invalidateProjectQueries(qc, projectName);
       const field = Object.keys(variables.updates)[0];
       if (field === "percentComplete") toast({ title: "Progress updated" });
       else if (field === "startDate" || field === "dueDate") toast({ title: "Date updated" });
@@ -398,8 +395,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
       await apiRequest("POST", "/api/planning-tasks", { projectName, title, status: "Not Started" });
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["planning-tasks", projectName] });
-      qc.invalidateQueries({ queryKey: ["operational-tasks", projectName] });
+      invalidateProjectQueries(qc, projectName);
       setNewTaskTitle("");
     },
   });
@@ -409,8 +405,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
       await apiRequest("POST", "/api/project-plan/structure", { operation, projectName, data });
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["planning-tasks", projectName] });
-      qc.invalidateQueries({ queryKey: ["/api/projects-summary"] });
+      invalidateProjectQueries(qc, projectName);
     },
   });
 
@@ -419,7 +414,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
       await apiRequest("POST", "/api/project-plan/structure", { operation: "renumber", projectName, data: {} });
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["planning-tasks", projectName] });
+      invalidateProjectQueries(qc, projectName);
       toast({ title: "Numbering updated" });
     },
   });
@@ -447,7 +442,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
       }
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["planning-tasks", projectName] });
+      invalidateProjectQueries(qc, projectName);
       setSelectedIds(new Set());
     },
   });
@@ -639,7 +634,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
       });
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["planning-tasks", projectName] });
+      invalidateProjectQueries(qc, projectName);
       toast({ title: "Task number updated" });
     },
   });
@@ -652,7 +647,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
       });
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["planning-tasks", projectName] });
+      invalidateProjectQueries(qc, projectName);
       toast({ title: "Converted to milestone" });
       setConvertMilestoneDialogOpen(false);
       setConvertMilestoneTask(null);
@@ -670,7 +665,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
       });
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["planning-tasks", projectName] });
+      invalidateProjectQueries(qc, projectName);
       toast({ title: "Tasks grouped & WBS renumbered" });
       setGroupUnderDialogOpen(false);
       setGroupUnderTask(null);
@@ -688,7 +683,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
       });
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["planning-tasks", projectName] });
+      invalidateProjectQueries(qc, projectName);
       toast({ title: "Task ungrouped & WBS renumbered" });
     },
   });
@@ -703,7 +698,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
       });
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["planning-tasks", projectName] });
+      invalidateProjectQueries(qc, projectName);
       toast({ title: "Tasks reordered & WBS renumbered" });
     },
   });
