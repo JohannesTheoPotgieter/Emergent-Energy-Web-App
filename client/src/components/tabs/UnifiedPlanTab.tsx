@@ -1252,6 +1252,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                 <th className="w-[60px] px-1 py-0 text-center border-b border-r font-semibold text-slate-600 overflow-hidden" style={{ height: 28 }} data-testid="header-predecessors">Pred.</th>
                 <th className="w-[70px] px-1 py-0 text-center border-b border-r font-semibold text-slate-600 overflow-hidden" style={{ height: 28 }} data-testid="header-lead">Resource</th>
                 <th className="w-[90px] px-1 py-0 text-center border-b border-r font-semibold text-slate-600 overflow-hidden" style={{ height: 28 }} data-testid="header-pct-done">% Complete</th>
+                <th className="w-[70px] px-1 py-0 text-center border-b border-r font-semibold text-slate-600 overflow-hidden" style={{ height: 28 }} data-testid="header-expected-pct">Expected %</th>
                 <th className="w-10 px-1 py-0 text-center border-b border-r font-semibold text-slate-600 overflow-hidden" style={{ height: 28 }} data-testid="header-status">Status</th>
                 {isAdmin && <th className="w-7 px-0 py-0 border-b font-semibold text-slate-600 overflow-hidden" style={{ height: 28 }} />}
               </tr>
@@ -1259,7 +1260,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
             <tbody>
               {visibleTasks.length === 0 ? (
                 <tr>
-                  <td colSpan={isAdmin ? 14 : 12} className="text-center text-muted-foreground py-12">
+                  <td colSpan={isAdmin ? 15 : 13} className="text-center text-muted-foreground py-12">
                     <div className="flex flex-col items-center gap-2">
                       <Circle className="h-8 w-8 text-slate-300" />
                       <span className="text-emerald-600 font-medium">No tasks found</span>
@@ -1447,6 +1448,13 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                             pct={pct}
                             onCommit={(v) => updateMutation.mutate({ id: task.id, updates: { percentComplete: v } })}
                           />
+                        )}
+                      </td>
+                      <td className="px-1 text-center border-r text-[10px] tabular-nums" data-testid={`expected-pct-${task.id}`}>
+                        {expPct !== null ? (
+                          <span className={isLate ? "text-red-600 font-semibold" : "text-slate-500"}>{expPct}%</span>
+                        ) : (
+                          <span className="text-slate-300">—</span>
                         )}
                       </td>
                       <td className="px-1 text-center border-r" data-testid={`status-${task.id}`}>
