@@ -23,7 +23,7 @@ Preferred communication style: Simple, everyday language.
 -   **Financials**: Uses "Actual vs Costed" terminology with a financial year of September to August, and an AI-style Financial Integration Panel.
 -   **Project Creation**: COO/CEO initiated projects auto-generate engineering stage templates.
 -   **Portfolio Dashboard**: Four view modes (Project Management, Finance, Quality, Engineering) with Recharts visualizations.
--   **Unified Work ("My Work")**: Consolidates personal and project-related tasks, calendar (with Outlook integration), and communications.
+-   **Unified Work ("My Work")**: Consolidates personal and project-related tasks, calendar (with Outlook integration), and communications. All Microsoft 365 data (calendar events, emails, tasks) is scoped to the logged-in user's SSO token — each user sees their own Outlook calendar and inbox.
 -   **Approvals Screen**: Consolidated view for user-specific pending approvals.
 -   **Teams Chat Groups**: MS Teams-styled channel-based group chat for departments and projects.
 -   **PM On-The-Go Mode**: Mobile-first interface for site managers, enforcing daily updates and supporting PO requests/invoice linking.
