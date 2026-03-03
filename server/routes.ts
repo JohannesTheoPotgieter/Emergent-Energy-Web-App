@@ -3767,10 +3767,11 @@ export async function registerRoutes(
         for (const expense of projectExpenses) {
           if (expense.expenseActualTotal) {
             const amt = parseFloat(expense.expenseActualTotal) || 0;
-            const hasPastPaymentDate = expense.expensePaymentDate && /^\d{4}-\d{2}-\d{2}$/.test(expense.expensePaymentDate) && expense.expensePaymentDate < today;
             const state = expense.computedState || '';
             const isOverdueState = state === 'Invoiced' || state === 'Committed';
-            if (hasPastPaymentDate && amt > 0 && isOverdueState) {
+            const overdueDate = expense.expensePaymentDate || expense.expenseInvoicedDate;
+            const hasPastOverdueDate = overdueDate && /^\d{4}-\d{2}-\d{2}/.test(overdueDate) && overdueDate < today;
+            if (hasPastOverdueDate && amt > 0 && isOverdueState) {
               expenseOverdue += amt;
               projExpOverdue += amt;
               if (expense.expenseInvoiceNumber && expense.expenseInvoiceNumber.trim() !== '') {
@@ -4011,7 +4012,7 @@ export async function registerRoutes(
           .map(o => `${o.projectName}::${o.rowNumber}`)
       );
 
-      const allInflows = resolveInflowEffectiveDates(merged.inflows, allTaskLinks, allOpTasks, allPlans);
+      const allInflows = resolveInflowEffectiveDates(legacyRawInflows, allTaskLinks, allOpTasks, allPlans);
 
       const today = new Date().toISOString().split("T")[0];
       const projectInfoMap = new Map(allProjectInfo.map(info => [info.projectName, info]));
@@ -4038,24 +4039,25 @@ export async function registerRoutes(
       }> = [];
 
       for (const expense of allExpenses) {
-        if (expense.expenseActualTotal && expense.expensePaymentDate) {
-          const amt = parseFloat(expense.expenseActualTotal) || 0;
-          const state = expense.computedState || '';
-          if (amt > 0 && expense.expensePaymentDate < today && (state === 'Invoiced' || state === 'Committed')) {
-            if (isMegaParkOutsideFY(expense.projectName, expense.expensePaymentDate)) continue;
-            overdueExpenses.push({
-              id: expense.id,
-              projectName: expense.projectName,
-              lineItem: expense.expenseLineItem,
-              invoiceNumber: expense.expenseInvoiceNumber,
-              poNumber: expense.expensePoNumber,
-              amount: amt,
-              paymentDate: expense.expensePaymentDate,
-              severity: amt >= 500000 ? "Critical" : amt >= 100000 ? "High" : "Medium",
-              hasInvoice: !!expense.expenseInvoiceNumber && expense.expenseInvoiceNumber.trim() !== '',
-            });
-          }
-        }
+        if (!expense.expenseActualTotal) continue;
+        const amt = parseFloat(expense.expenseActualTotal) || 0;
+        if (amt <= 0) continue;
+        const state = expense.computedState || '';
+        if (state !== 'Invoiced' && state !== 'Committed') continue;
+        const overdueDate = expense.expensePaymentDate || expense.expenseInvoicedDate;
+        if (!overdueDate || !(/^\d{4}-\d{2}-\d{2}/.test(overdueDate)) || overdueDate >= today) continue;
+        if (isMegaParkOutsideFY(expense.projectName, overdueDate)) continue;
+        overdueExpenses.push({
+          id: expense.id,
+          projectName: expense.projectName,
+          lineItem: expense.expenseLineItem,
+          invoiceNumber: expense.expenseInvoiceNumber,
+          poNumber: expense.expensePoNumber,
+          amount: amt,
+          paymentDate: overdueDate,
+          severity: amt >= 500000 ? "Critical" : amt >= 100000 ? "High" : "Medium",
+          hasInvoice: !!expense.expenseInvoiceNumber && expense.expenseInvoiceNumber.trim() !== '',
+        });
       }
       overdueExpenses.sort((a, b) => b.amount - a.amount);
 
