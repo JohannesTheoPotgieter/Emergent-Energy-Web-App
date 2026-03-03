@@ -26,7 +26,7 @@ import {
   Milestone, FolderPlus, Hash, RefreshCw, Target,
   Calendar, AlertCircle, ChevronLeft, ZoomIn, ArrowRight,
   GripVertical, MoreHorizontal, ArrowDownToLine, Unlink,
-  ArrowUp, ArrowDown, Diamond, FolderOpen,
+  ArrowUp, ArrowDown, Diamond, FolderOpen, Link2, Link2Off,
 } from "lucide-react";
 import UserAssignmentPicker from "@/components/UserAssignmentPicker";
 import {
