@@ -439,8 +439,8 @@ export default function MsIntegrationSettingsPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-[960px] mx-auto" data-testid="ms-integration-settings-page">
-      <header>
+    <div className="flex flex-col min-h-0 flex-1 max-w-[960px] mx-auto w-full" data-testid="ms-integration-settings-page">
+      <header className="shrink-0 mb-4">
         <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 flex items-center gap-2" data-testid="text-page-title">
           <Settings2 className="h-7 w-7 text-blue-600" />
           Microsoft Integration Settings
@@ -450,8 +450,8 @@ export default function MsIntegrationSettingsPage() {
         </p>
       </header>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-6 h-10">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col min-h-0 flex-1">
+        <TabsList className="grid w-full grid-cols-6 h-10 shrink-0">
           <TabsTrigger value="overview" className="text-xs gap-1" data-testid="tab-overview">
             <Activity className="h-3.5 w-3.5" /> Overview
           </TabsTrigger>
@@ -472,7 +472,7 @@ export default function MsIntegrationSettingsPage() {
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="overview" className="mt-4 space-y-4">
+        <TabsContent value="overview" className="mt-4 flex-1 overflow-y-auto min-h-0 space-y-4">
           <Card data-testid="card-feature-flags">
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
@@ -617,7 +617,7 @@ export default function MsIntegrationSettingsPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="outlook" className="mt-4 space-y-4">
+        <TabsContent value="outlook" className="mt-4 flex-1 overflow-y-auto min-h-0 space-y-4">
           <Card data-testid="card-outlook-connection">
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
@@ -752,7 +752,7 @@ export default function MsIntegrationSettingsPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="sharepoint" className="mt-4 space-y-4">
+        <TabsContent value="sharepoint" className="mt-4 flex-1 overflow-y-auto min-h-0 space-y-4">
           <Card data-testid="card-sharepoint-config">
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
@@ -897,7 +897,7 @@ export default function MsIntegrationSettingsPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="teams" className="mt-4 space-y-4">
+        <TabsContent value="teams" className="mt-4 flex-1 overflow-y-auto min-h-0 space-y-4">
           <Card data-testid="card-teams-config">
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
@@ -999,7 +999,7 @@ export default function MsIntegrationSettingsPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="users" className="mt-4 space-y-4">
+        <TabsContent value="users" className="mt-4 flex-1 flex flex-col min-h-0 gap-4">
           <Card className="border-blue-200/50 bg-blue-50/30">
             <CardContent className="p-3 text-sm text-blue-800">
               <p>
@@ -1037,18 +1037,18 @@ export default function MsIntegrationSettingsPage() {
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
           ) : (
-            <Card>
-              <CardContent className="p-0">
-                <div className="overflow-x-auto">
+            <Card className="flex-1 min-h-0 flex flex-col">
+              <CardContent className="p-0 flex-1 min-h-0 flex flex-col">
+                <div className="overflow-auto flex-1 min-h-0">
                   <table className="w-full text-sm" data-testid="users-mapping-table">
-                    <thead>
+                    <thead className="sticky top-0 z-10">
                       <tr className="bg-muted/40 border-b text-[11px] text-muted-foreground">
-                        <th className="text-left p-2.5 pl-3">User</th>
-                        <th className="text-left p-2.5">Role</th>
-                        <th className="text-left p-2.5">Email</th>
-                        <th className="text-left p-2.5">Microsoft ID</th>
-                        <th className="text-left p-2.5">Status</th>
-                        <th className="text-left p-2.5 w-20">Action</th>
+                        <th className="text-left p-2.5 pl-3 bg-muted/40">User</th>
+                        <th className="text-left p-2.5 bg-muted/40">Role</th>
+                        <th className="text-left p-2.5 bg-muted/40">Email</th>
+                        <th className="text-left p-2.5 bg-muted/40">Microsoft ID</th>
+                        <th className="text-left p-2.5 bg-muted/40">Status</th>
+                        <th className="text-left p-2.5 w-20 bg-muted/40">Action</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1163,7 +1163,7 @@ export default function MsIntegrationSettingsPage() {
           </Dialog>
         </TabsContent>
 
-        <TabsContent value="permissions" className="mt-4 space-y-4">
+        <TabsContent value="permissions" className="mt-4 flex-1 overflow-y-auto min-h-0 space-y-4">
           <Card>
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
