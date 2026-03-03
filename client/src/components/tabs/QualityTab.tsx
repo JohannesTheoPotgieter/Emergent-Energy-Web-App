@@ -392,6 +392,30 @@ export function QualityTab({ projectName }: QualityTabProps) {
     return map;
   }, [teamMembers]);
 
+  const getItemQmStatusFn = (instance: any): string => {
+    if (instance.qmStatus && instance.qmStatus !== "not_started") return instance.qmStatus;
+    if (instance.isApplicable === false) return "na";
+    if (instance.approved) return "pass";
+    return "not_started";
+  };
+
+  const overallStats = useMemo(() => {
+    const allInstances = checklistData?.itemInstances || [];
+    const applicable = allInstances.filter((i: any) => i.isApplicable !== false);
+    const passed = applicable.filter((i: any) => getItemQmStatusFn(i) === "pass");
+    const failed = applicable.filter((i: any) => getItemQmStatusFn(i) === "fail");
+    const inReview = applicable.filter((i: any) => getItemQmStatusFn(i) === "review");
+    const unassigned = applicable.filter((i: any) => !i.assigneeUserId);
+    return {
+      total: applicable.length,
+      passed: passed.length,
+      failed: failed.length,
+      inReview: inReview.length,
+      unassigned: unassigned.length,
+      percent: applicable.length > 0 ? Math.round((passed.length / applicable.length) * 100) : 0,
+    };
+  }, [checklistData?.itemInstances]);
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -426,12 +450,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
     setExpandedPhases(prev => ({ ...prev, [phaseId]: !prev[phaseId] }));
   };
 
-  const getItemQmStatus = (instance: any): string => {
-    if (instance.qmStatus && instance.qmStatus !== "not_started") return instance.qmStatus;
-    if (instance.isApplicable === false) return "na";
-    if (instance.approved) return "pass";
-    return "not_started";
-  };
+  const getItemQmStatus = getItemQmStatusFn;
 
   const getPhaseProgress = (phaseId: number) => {
     const phaseGroups = groups.filter((g: any) => g.templatePhaseId === phaseId);
@@ -494,22 +513,6 @@ export function QualityTab({ projectName }: QualityTabProps) {
   const meaningfulTasks = projectTasks.filter((t: any) =>
     t.taskNo && t.highLevelProgramme && t.taskNo !== "No." && t.highLevelProgramme !== "HIGH LEVEL PROGRAMME"
   );
-
-  const overallStats = useMemo(() => {
-    const applicable = itemInstances.filter((i: any) => i.isApplicable !== false);
-    const passed = applicable.filter((i: any) => getItemQmStatus(i) === "pass");
-    const failed = applicable.filter((i: any) => getItemQmStatus(i) === "fail");
-    const inReview = applicable.filter((i: any) => getItemQmStatus(i) === "review");
-    const unassigned = applicable.filter((i: any) => !i.assigneeUserId);
-    return {
-      total: applicable.length,
-      passed: passed.length,
-      failed: failed.length,
-      inReview: inReview.length,
-      unassigned: unassigned.length,
-      percent: applicable.length > 0 ? Math.round((passed.length / applicable.length) * 100) : 0,
-    };
-  }, [itemInstances]);
 
   const shouldShowItem = (instance: any) => {
     if (statusFilter === "all") return true;
