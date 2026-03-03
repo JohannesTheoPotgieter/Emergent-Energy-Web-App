@@ -6,6 +6,7 @@ import { AuthProvider } from "@/hooks/use-auth";
 import { ProgramProvider } from "@/hooks/use-program-data";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { NetworkStatus } from "@/components/NetworkStatus";
 import AppLayout from "@/components/layout/AppLayout";
 import LoginPage from "@/pages/login";
 import Home from "@/pages/home";
@@ -14,7 +15,6 @@ import ProjectsSummary from "@/pages/projects";
 import CashflowPage from "@/pages/cashflow";
 import RevenueTracker from "@/pages/revenue";
 import CostTracker from "@/pages/cos";
-import UploadPage from "@/pages/upload";
 import NotFound from "@/pages/not-found";
 import ProjectDetailPage from "@/pages/project-detail";
 import AdminPage from "@/pages/admin";
@@ -76,11 +76,6 @@ import MyWorkTasksPage from "@/pages/my-work-tasks";
 import MyWorkCalendarPage from "@/pages/my-work-calendar";
 import DatabaseMigrationPage from "@/pages/database-migration";
 import { useAuth } from "@/hooks/use-auth";
-import { useProgramData } from "@/hooks/use-program-data";
-import { TrackerTable } from "@/components/dashboard/TrackerTable";
-import { format } from "date-fns";
-import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
 
 const EPM_ALLOWED_PATHS = ["/", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/projects", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/collaboration/sharepoint", "/notifications", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/meetings"];
 const PM_ALLOWED_PATHS = ["/", "/pm-dashboard", "/pm/on-the-go", "/projects", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/cashflow", "/cos", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/collaboration/sharepoint", "/notifications", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/meetings"];
@@ -128,114 +123,6 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function ProcurementPage() {
-  const { data } = useProgramData();
-  const procurementData = data?.expenses.filter(e => e.category === "Procurement") || [];
-  
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-2">
-        <h2 className="text-3xl font-heading font-bold text-foreground">Procurement</h2>
-        <p className="text-muted-foreground">Supply chain tracking and material acquisition status.</p>
-      </div>
-      <TrackerTable 
-        title="Procurement Records" 
-        data={procurementData} 
-        columns={[
-          { header: "ID", accessorKey: "id" },
-          { header: "Vendor", accessorKey: "vendor" },
-          { header: "Description", accessorKey: "description" },
-          { header: "Amount", accessorKey: (i) => `R${parseFloat(i.amount).toLocaleString()}` },
-          { header: "Status", accessorKey: "status" },
-        ]} 
-        onExport={() => window.open("/api/export/expenses", "_blank")}
-      />
-    </div>
-  );
-}
-
-function ConstructionPage() {
-  const { data } = useProgramData();
-  const constructionData = data?.expenses.filter(e => 
-    e.category === "Construction" || e.category === "Grid Connection"
-  ) || [];
-  
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-2">
-        <h2 className="text-3xl font-heading font-bold text-foreground">Construction & Grid</h2>
-        <p className="text-muted-foreground">On-site progress and grid connection milestones.</p>
-      </div>
-      <TrackerTable 
-        title="Construction Milestones" 
-        data={constructionData} 
-        columns={[
-          { header: "ID", accessorKey: "id" },
-          { header: "Category", accessorKey: "category" },
-          { header: "Description", accessorKey: "description" },
-          { header: "Amount", accessorKey: (i) => `R${parseFloat(i.amount).toLocaleString()}` },
-          { header: "Date", accessorKey: (i) => format(new Date(i.date), "dd MMM yyyy") },
-        ]} 
-        onExport={() => window.open("/api/export/expenses", "_blank")}
-      />
-    </div>
-  );
-}
-
-function TaskRegisterPage() {
-  const { data } = useProgramData();
-  const projects = data?.projects || [];
-  const tasks = data?.tasks || [];
-  
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-2">
-        <h2 className="text-3xl font-heading font-bold text-foreground">Task Register</h2>
-        <p className="text-muted-foreground">Master schedule and action items.</p>
-      </div>
-      <TrackerTable 
-        title="All Project Tasks" 
-        data={tasks} 
-        columns={[
-          { header: "Task Name", accessorKey: "taskName", className: "font-medium" },
-          { header: "Project", accessorKey: (t) => projects.find(p => p.id === t.projectId)?.name || "Unknown" },
-          { header: "Assignee", accessorKey: "assignee" },
-          { header: "Start", accessorKey: "startDate" },
-          { header: "End", accessorKey: "endDate" },
-          { 
-            header: "Progress", 
-            accessorKey: (t) => (
-              <div className="w-24 bg-secondary rounded-full h-2 overflow-hidden">
-                <div className="bg-primary h-full" style={{ width: `${t.progress}%` }} />
-              </div>
-            ) 
-          },
-          { 
-            header: "Status", 
-            accessorKey: (t) => (
-              <Badge variant={t.status === 'Complete' ? 'default' : t.status === 'Delayed' ? 'destructive' : 'outline'}>
-                {t.status}
-              </Badge>
-            )
-          },
-        ]} 
-        onExport={() => window.open("/api/export/tasks", "_blank")}
-      />
-    </div>
-  );
-}
-
-function CompliancePage() {
-  return (
-    <div className="space-y-6">
-      <h2 className="text-3xl font-heading font-bold text-foreground">Compliance</h2>
-      <Card className="p-12 border-2 border-dashed flex items-center justify-center text-muted-foreground">
-        Compliance module pending regulatory data integration.
-      </Card>
-    </div>
-  );
-}
-
 function ProtectedPages() {
   return (
     <RoleGuard>
@@ -261,7 +148,6 @@ function ProtectedPages() {
         <Route path="/my-tool/settings" component={MyToolSettingsPage} />
         <Route path="/company-priorities" component={MyToolPrioritiesPage} />
         <Route path="/my-tool/help" component={MyToolHelpPage} />
-        <Route path="/upload">{() => <Redirect to="/admin" />}</Route>
         <Route path="/admin" component={AdminPage} />
         <Route path="/admin/my-tool-settings" component={MyToolAdminSettingsPage} />
         <Route path="/quality" component={QmDashboardPage} />
@@ -342,6 +228,7 @@ function App() {
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
           <ProgramProvider>
+            <NetworkStatus />
             <Router />
             <Toaster />
           </ProgramProvider>

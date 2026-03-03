@@ -1,9 +1,20 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { ApiError, parseApiError, networkError } from "./api-error";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
-    const text = (await res.text()) || res.statusText;
-    throw new Error(`${res.status}: ${text}`);
+    let body: any = {};
+    try {
+      body = await res.json();
+    } catch {
+      try {
+        const text = await res.text();
+        body = { message: text || res.statusText };
+      } catch {
+        body = { message: res.statusText || "Request failed" };
+      }
+    }
+    throw parseApiError(res, body);
   }
 }
 
@@ -21,12 +32,17 @@ export async function apiRequest(
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const res = await fetch(url, {
-    method,
-    headers,
-    body: data ? JSON.stringify(data) : undefined,
-    credentials: "include",
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method,
+      headers,
+      body: data ? JSON.stringify(data) : undefined,
+      credentials: "include",
+    });
+  } catch (err) {
+    throw networkError();
+  }
 
   await throwIfResNotOk(res);
   return res;
@@ -44,10 +60,15 @@ export const getQueryFn: <T>(options: {
       headers["Authorization"] = `Bearer ${token}`;
     }
 
-    const res = await fetch(queryKey.join("/") as string, {
-      credentials: "include",
-      headers,
-    });
+    let res: Response;
+    try {
+      res = await fetch(queryKey.join("/") as string, {
+        credentials: "include",
+        headers,
+      });
+    } catch {
+      throw networkError();
+    }
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {
       return null;
@@ -76,9 +97,14 @@ export const queryClient = new QueryClient({
       staleTime: 15_000,
       gcTime: 300_000,
       retry: (failureCount, error) => {
+        if (error instanceof ApiError) {
+          if (!error.retryable) return false;
+          if (error.status === 401 || error.status === 403 || error.status === 404) return false;
+        }
         if (error instanceof Error && error.message.startsWith("401")) return false;
         return failureCount < 2;
       },
+      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
     },
     mutations: {
       retry: false,
