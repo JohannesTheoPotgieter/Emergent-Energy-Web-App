@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
 import {
   Loader2,
   Save,
@@ -40,8 +41,6 @@ import {
   Zap,
   ChevronDown,
   ChevronRight,
-  CheckCircle2,
-  XCircle,
   LayoutDashboard,
   FolderKanban,
   DollarSign,
@@ -49,11 +48,9 @@ import {
   ShieldCheck,
   BookOpen,
   Settings,
-  Lock,
   Briefcase,
   FileText,
   MessageSquare,
-  Database,
   FileEdit,
 } from "lucide-react";
 import {
@@ -69,22 +66,23 @@ const ALL_SECTIONS = [
   "MY_WORK", "COCKPIT", "COLLABORATION", "PROJECTS", "MONEY", "PROJECT_DEVELOPMENT", "DELIVERY", "GOVERNANCE", "PROJECT_DETAIL", "INFORMATION", "SETTINGS",
 ] as const;
 
-const SECTION_META: Record<string, { label: string; icon: any; color: string }> = {
-  MY_WORK: { label: "My Work", icon: Briefcase, color: "bg-sky-50 border-sky-200 text-sky-700" },
-  COCKPIT: { label: "EXCO", icon: LayoutDashboard, color: "bg-indigo-50 border-indigo-200 text-indigo-700" },
-  COLLABORATION: { label: "Collaboration", icon: MessageSquare, color: "bg-pink-50 border-pink-200 text-pink-700" },
-  PROJECTS: { label: "Project Management", icon: FolderKanban, color: "bg-blue-50 border-blue-200 text-blue-700" },
-  MONEY: { label: "Project Finance", icon: DollarSign, color: "bg-emerald-50 border-emerald-200 text-emerald-700" },
-  DELIVERY: { label: "Engineering", icon: Wrench, color: "bg-orange-50 border-orange-200 text-orange-700" },
-  GOVERNANCE: { label: "Governance", icon: ShieldCheck, color: "bg-purple-50 border-purple-200 text-purple-700" },
-  PROJECT_DETAIL: { label: "Project Detail Tabs", icon: FileText, color: "bg-cyan-50 border-cyan-200 text-cyan-700" },
-  INFORMATION: { label: "Information", icon: BookOpen, color: "bg-cyan-50 border-cyan-200 text-cyan-700" },
-  PROJECT_DEVELOPMENT: { label: "Project Development", icon: FileEdit, color: "bg-teal-50 border-teal-200 text-teal-700" },
-  SETTINGS: { label: "Settings", icon: Settings, color: "bg-slate-50 border-slate-200 text-slate-700" },
+const SECTION_META: Record<string, { label: string; icon: any; color: string; bg: string; description: string }> = {
+  MY_WORK: { label: "My Work", icon: Briefcase, color: "text-sky-600", bg: "bg-sky-50 border-sky-200", description: "Personal tasks, calendar, meetings" },
+  COCKPIT: { label: "EXCO", icon: LayoutDashboard, color: "text-indigo-600", bg: "bg-indigo-50 border-indigo-200", description: "Executive cockpit, lifecycle board" },
+  COLLABORATION: { label: "Collaboration", icon: MessageSquare, color: "text-pink-600", bg: "bg-pink-50 border-pink-200", description: "Email, Teams, SharePoint" },
+  PROJECTS: { label: "Project Management", icon: FolderKanban, color: "text-blue-600", bg: "bg-blue-50 border-blue-200", description: "Execution, portfolios, reviews" },
+  MONEY: { label: "Project Finance", icon: DollarSign, color: "text-emerald-600", bg: "bg-emerald-50 border-emerald-200", description: "Cashflow, COS, procurement" },
+  PROJECT_DEVELOPMENT: { label: "Project Development", icon: FileEdit, color: "text-teal-600", bg: "bg-teal-50 border-teal-200", description: "PD dashboard, tickets, clients" },
+  DELIVERY: { label: "Engineering", icon: Wrench, color: "text-orange-600", bg: "bg-orange-50 border-orange-200", description: "Task board, stages, pipeline" },
+  GOVERNANCE: { label: "Governance", icon: ShieldCheck, color: "text-purple-600", bg: "bg-purple-50 border-purple-200", description: "Quality dashboard, compliance" },
+  PROJECT_DETAIL: { label: "Project Detail Tabs", icon: FileText, color: "text-cyan-600", bg: "bg-cyan-50 border-cyan-200", description: "Per-project tab access control" },
+  INFORMATION: { label: "Information", icon: BookOpen, color: "text-cyan-700", bg: "bg-cyan-50 border-cyan-200", description: "Feedback, knowledge base, leaderboard" },
+  SETTINGS: { label: "Admin", icon: Settings, color: "text-slate-600", bg: "bg-slate-50 border-slate-200", description: "Roles, audit, integrations" },
 };
 
 interface PermCat {
   key: string;
+  section: string;
   label: string;
   icon: any;
   color: string;
@@ -93,24 +91,17 @@ interface PermCat {
 
 const PERM_CATEGORIES: PermCat[] = [
   {
-    key: "my_work",
-    label: "My Work",
-    icon: Briefcase,
-    color: "bg-sky-500",
+    key: "my_work", section: "MY_WORK", label: "My Work", icon: Briefcase, color: "bg-sky-500",
     items: [
       { entity: "home" as PermissionEntity, label: "Home", actions: ["view"] },
       { entity: "my_work" as PermissionEntity, label: "Calendar", actions: ["view", "edit"] },
       { entity: "my_tool" as PermissionEntity, label: "Tasks", actions: ["view", "edit"] },
       { entity: "meetings" as PermissionEntity, label: "Meetings", actions: ["view", "edit"] },
       { entity: "ms_sync" as PermissionEntity, label: "Microsoft 365 Sync", actions: ["view", "edit"] },
-      { entity: "project_tagging" as PermissionEntity, label: "Project Tagging", actions: ["view", "edit", "delete"] },
     ],
   },
   {
-    key: "exco",
-    label: "EXCO",
-    icon: LayoutDashboard,
-    color: "bg-indigo-500",
+    key: "exco", section: "COCKPIT", label: "EXCO", icon: LayoutDashboard, color: "bg-indigo-500",
     items: [
       { entity: "company_priorities" as PermissionEntity, label: "Company Priorities", actions: ["view", "edit", "delete"] },
       { entity: "lifecycle" as PermissionEntity, label: "Company Lifecycle Board", actions: ["view", "edit", "override"] },
@@ -121,10 +112,7 @@ const PERM_CATEGORIES: PermCat[] = [
     ],
   },
   {
-    key: "collaboration",
-    label: "Collaboration",
-    icon: MessageSquare,
-    color: "bg-pink-500",
+    key: "collaboration", section: "COLLABORATION", label: "Collaboration", icon: MessageSquare, color: "bg-pink-500",
     items: [
       { entity: "collaboration_hub" as PermissionEntity, label: "Email", actions: ["view", "edit"] },
       { entity: "teams_chat" as PermissionEntity, label: "Teams Chat", actions: ["view", "edit", "delete"] },
@@ -136,10 +124,7 @@ const PERM_CATEGORIES: PermCat[] = [
     ],
   },
   {
-    key: "pm",
-    label: "Project Management",
-    icon: FolderKanban,
-    color: "bg-blue-500",
+    key: "pm", section: "PROJECTS", label: "Project Management", icon: FolderKanban, color: "bg-blue-500",
     items: [
       { entity: "execution_board" as PermissionEntity, label: "Execution Board", actions: ["view", "edit"] },
       { entity: "projects" as PermissionEntity, label: "Project Summary", actions: ["view", "edit", "delete"] },
@@ -158,10 +143,7 @@ const PERM_CATEGORIES: PermCat[] = [
     ],
   },
   {
-    key: "finance",
-    label: "Project Finance",
-    icon: DollarSign,
-    color: "bg-emerald-500",
+    key: "finance", section: "MONEY", label: "Project Finance", icon: DollarSign, color: "bg-emerald-500",
     items: [
       { entity: "cashflow" as PermissionEntity, label: "Cashflow", actions: ["view", "edit"] },
       { entity: "cashflow_forecast" as PermissionEntity, label: "Cashflow Forecast", actions: ["view", "edit"] },
@@ -177,10 +159,7 @@ const PERM_CATEGORIES: PermCat[] = [
     ],
   },
   {
-    key: "project_dev",
-    label: "Project Development",
-    icon: FileEdit,
-    color: "bg-teal-500",
+    key: "project_dev", section: "PROJECT_DEVELOPMENT", label: "Project Development", icon: FileEdit, color: "bg-teal-500",
     items: [
       { entity: "pd_dashboard" as PermissionEntity, label: "PD Dashboard", actions: ["view"] },
       { entity: "pd_tickets" as PermissionEntity, label: "PD Tickets", actions: ["view", "edit", "delete"] },
@@ -188,10 +167,7 @@ const PERM_CATEGORIES: PermCat[] = [
     ],
   },
   {
-    key: "engineering",
-    label: "Engineering",
-    icon: Wrench,
-    color: "bg-orange-500",
+    key: "engineering", section: "DELIVERY", label: "Engineering", icon: Wrench, color: "bg-orange-500",
     items: [
       { entity: "engineering" as PermissionEntity, label: "Engineering Dashboard", actions: ["view", "edit"] },
       { entity: "eng_tasks" as PermissionEntity, label: "Task Board", actions: ["view", "edit", "delete"] },
@@ -202,20 +178,14 @@ const PERM_CATEGORIES: PermCat[] = [
     ],
   },
   {
-    key: "quality",
-    label: "Governance",
-    icon: ShieldCheck,
-    color: "bg-purple-500",
+    key: "quality", section: "GOVERNANCE", label: "Governance", icon: ShieldCheck, color: "bg-purple-500",
     items: [
       { entity: "quality" as PermissionEntity, label: "Quality Dashboard", actions: ["view", "edit", "approve", "override"] },
       { entity: "governance" as PermissionEntity, label: "Governance", actions: ["view", "edit"] },
     ],
   },
   {
-    key: "project_detail",
-    label: "Project Detail Tabs",
-    icon: FileText,
-    color: "bg-cyan-500",
+    key: "project_detail", section: "PROJECT_DETAIL", label: "Project Detail Tabs", icon: FileText, color: "bg-cyan-500",
     items: [
       { entity: "pd_overview" as PermissionEntity, label: "Overview", actions: ["view", "edit"] },
       { entity: "pd_plan" as PermissionEntity, label: "Project Plan", actions: ["view", "edit"] },
@@ -236,10 +206,7 @@ const PERM_CATEGORIES: PermCat[] = [
     ],
   },
   {
-    key: "information",
-    label: "Information",
-    icon: BookOpen,
-    color: "bg-cyan-600",
+    key: "information", section: "INFORMATION", label: "Information", icon: BookOpen, color: "bg-cyan-600",
     items: [
       { entity: "feedback" as PermissionEntity, label: "Feedback & Support", actions: ["view", "edit"] },
       { entity: "ee_info" as PermissionEntity, label: "Emergent Energy Info", actions: ["view", "edit"] },
@@ -252,16 +219,13 @@ const PERM_CATEGORIES: PermCat[] = [
     ],
   },
   {
-    key: "settings",
-    label: "Settings",
-    icon: Settings,
-    color: "bg-slate-500",
+    key: "settings", section: "SETTINGS", label: "Admin", icon: Settings, color: "bg-slate-500",
     items: [
       { entity: "admin_roles" as PermissionEntity, label: "Roles & Permissions", actions: ["view", "edit"] },
       { entity: "activity_log" as PermissionEntity, label: "Change Audit", actions: ["view"] },
       { entity: "ms_integration" as PermissionEntity, label: "Microsoft 365", actions: ["view", "edit"] },
       { entity: "database_migration" as PermissionEntity, label: "Database Migration", actions: ["view", "edit"] },
-      { entity: "admin" as PermissionEntity, label: "Admin Settings", actions: ["view", "edit"] },
+      { entity: "admin" as PermissionEntity, label: "App Settings", actions: ["view", "edit"] },
       { entity: "data_import" as PermissionEntity, label: "Data Import", actions: ["view", "edit"] },
       { entity: "data_export" as PermissionEntity, label: "Data Export & Reports", actions: ["view"] },
       { entity: "audit_trail" as PermissionEntity, label: "Audit Trail", actions: ["view"] },
@@ -269,12 +233,12 @@ const PERM_CATEGORIES: PermCat[] = [
   },
 ];
 
-const ACTION_STYLE: Record<PermissionAction, { label: string; icon: any; bg: string }> = {
-  view: { label: "View", icon: Eye, bg: "bg-blue-600" },
-  edit: { label: "Edit", icon: Edit3, bg: "bg-amber-600" },
-  approve: { label: "Approve", icon: ThumbsUp, bg: "bg-green-600" },
-  override: { label: "Override", icon: Zap, bg: "bg-purple-600" },
-  delete: { label: "Delete", icon: Trash2, bg: "bg-red-600" },
+const ACTION_META: Record<PermissionAction, { label: string; short: string; icon: any; activeColor: string; activeBg: string }> = {
+  view: { label: "View", short: "V", icon: Eye, activeColor: "text-blue-700", activeBg: "bg-blue-100 border-blue-300 text-blue-700" },
+  edit: { label: "Edit", short: "E", icon: Edit3, activeColor: "text-amber-700", activeBg: "bg-amber-100 border-amber-300 text-amber-700" },
+  approve: { label: "Approve", short: "A", icon: ThumbsUp, activeColor: "text-green-700", activeBg: "bg-green-100 border-green-300 text-green-700" },
+  override: { label: "Override", short: "O", icon: Zap, activeColor: "text-purple-700", activeBg: "bg-purple-100 border-purple-300 text-purple-700" },
+  delete: { label: "Delete", short: "D", icon: Trash2, activeColor: "text-red-700", activeBg: "bg-red-100 border-red-300 text-red-700" },
 };
 
 function getAuthHeaders(): HeadersInit {
@@ -409,6 +373,14 @@ function PermissionsTab({ toast, shared }: { toast: any; shared: ReturnType<type
     setPendingChanges(prev => ({ ...prev, [selectedRole]: { ...prev[selectedRole], sections: next } }));
   };
 
+  const visibleCategories = useMemo(() => {
+    return PERM_CATEGORIES.filter(cat => {
+      if (cat.section === "PROJECT_DETAIL") return true;
+      if (cat.section === "SETTINGS") return true;
+      return effectiveSections.includes(cat.section);
+    });
+  }, [effectiveSections]);
+
   const handleSave = async () => {
     const changes = pendingChanges[selectedRole];
     if (!changes) return;
@@ -534,7 +506,7 @@ function PermissionsTab({ toast, shared }: { toast: any; shared: ReturnType<type
           </Card>
         </div>
 
-        <div className="flex-1 min-w-0 space-y-3">
+        <div className="flex-1 min-w-0 space-y-4">
           {currentRole && (
             <>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
@@ -584,76 +556,110 @@ function PermissionsTab({ toast, shared }: { toast: any; shared: ReturnType<type
                 </div>
               </div>
 
-              <div className="rounded border border-gray-100 overflow-hidden" data-testid="card-sidebar-access">
-                <div className="flex items-center gap-1.5 px-2 py-1 bg-gray-50/80">
-                  <Lock className="h-3 w-3 text-gray-400" />
-                  <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Sidebar Sections</span>
-                  <span className="text-[10px] text-gray-400">{effectiveSections.length}/{ALL_SECTIONS.length}</span>
-                </div>
-                <div className="flex flex-wrap gap-1 px-2 py-1.5">
-                  {ALL_SECTIONS.map(s => {
-                    const meta = SECTION_META[s];
-                    const active = effectiveSections.includes(s);
-                    const Icon = meta.icon;
-                    return (
-                      <button
-                        key={s}
-                        className={`flex items-center gap-1 px-2 py-[3px] rounded border text-[10px] font-medium transition-all ${active ? meta.color : "border-gray-100 bg-gray-50/50 text-gray-300"}`}
-                        onClick={() => toggleSection(s)}
-                        data-testid={`toggle-section-${selectedRole}-${s}`}
-                      >
-                        <Icon className="h-2.5 w-2.5" />
-                        {meta.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+              <Card data-testid="card-sidebar-access">
+                <CardHeader className="py-3 px-4">
+                  <CardTitle className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                    <Shield className="h-4 w-4 text-gray-400" />
+                    Sidebar Sections
+                    <Badge variant="secondary" className="text-[10px] font-normal">{effectiveSections.length} of {ALL_SECTIONS.length} active</Badge>
+                  </CardTitle>
+                  <p className="text-xs text-muted-foreground">Toggle sections on/off. Disabled sections hide from the user's sidebar and their permissions below.</p>
+                </CardHeader>
+                <CardContent className="px-4 pb-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                    {ALL_SECTIONS.map(s => {
+                      const meta = SECTION_META[s];
+                      const active = effectiveSections.includes(s);
+                      const Icon = meta.icon;
+                      return (
+                        <button
+                          key={s}
+                          className={`flex items-center gap-3 p-3 rounded-lg border transition-all text-left ${
+                            active
+                              ? `${meta.bg} shadow-sm`
+                              : "border-gray-100 bg-gray-50/30 opacity-50 hover:opacity-75"
+                          }`}
+                          onClick={() => toggleSection(s)}
+                          data-testid={`toggle-section-${selectedRole}-${s}`}
+                        >
+                          <div className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 ${
+                            active ? "bg-white/80 shadow-sm" : "bg-gray-100"
+                          }`}>
+                            <Icon className={`h-4 w-4 ${active ? meta.color : "text-gray-400"}`} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-xs font-semibold ${active ? "text-gray-800" : "text-gray-400"}`}>{meta.label}</p>
+                            <p className={`text-[10px] truncate ${active ? "text-gray-500" : "text-gray-300"}`}>{meta.description}</p>
+                          </div>
+                          <Switch
+                            checked={active}
+                            onCheckedChange={() => toggleSection(s)}
+                            className="shrink-0"
+                            onClick={e => e.stopPropagation()}
+                            data-testid={`switch-section-${selectedRole}-${s}`}
+                          />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
 
-              <div className="space-y-0.5" data-testid="permission-categories">
-                {PERM_CATEGORIES.map(cat => {
+              <div className="space-y-2" data-testid="permission-categories">
+                {visibleCategories.length === 0 && (
+                  <Card>
+                    <CardContent className="py-8 text-center">
+                      <p className="text-sm text-muted-foreground">Enable sidebar sections above to configure their permissions.</p>
+                    </CardContent>
+                  </Card>
+                )}
+                {visibleCategories.map(cat => {
                   const Icon = cat.icon;
                   const activeCount = cat.items.filter(i => i.actions.some(a => getEntityPerm(selectedRole, i.entity, a))).length;
-                  const isCollapsed = expanded.has(cat.key);
+                  const isExpanded = !expanded.has(cat.key);
                   return (
-                    <div key={cat.key} className="rounded border border-gray-100 overflow-hidden" data-testid={`category-${cat.key}`}>
-                      <div className="flex items-center gap-1.5 px-2 py-1 bg-gray-50/80">
+                    <Card key={cat.key} className="overflow-hidden" data-testid={`category-${cat.key}`}>
+                      <div className="flex items-center gap-2 px-4 py-2.5 bg-gray-50/80 border-b">
                         <button
-                          className="flex items-center gap-1.5 flex-1 text-left"
+                          className="flex items-center gap-2 flex-1 text-left"
                           onClick={() => setExpanded(prev => { const n = new Set(prev); n.has(cat.key) ? n.delete(cat.key) : n.add(cat.key); return n; })}
                           data-testid={`btn-expand-category-${cat.key}`}
                         >
-                          {isCollapsed ? <ChevronRight className="h-3 w-3 text-gray-400 shrink-0" /> : <ChevronDown className="h-3 w-3 text-gray-400 shrink-0" />}
-                          <div className={`h-4 w-4 rounded ${cat.color} flex items-center justify-center shrink-0`}>
-                            <Icon className="h-2.5 w-2.5 text-white" />
+                          {isExpanded ? <ChevronDown className="h-3.5 w-3.5 text-gray-400 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 text-gray-400 shrink-0" />}
+                          <div className={`h-5 w-5 rounded ${cat.color} flex items-center justify-center shrink-0`}>
+                            <Icon className="h-3 w-3 text-white" />
                           </div>
-                          <span className="text-[11px] font-semibold text-gray-600 uppercase tracking-wide">{cat.label}</span>
-                          <span className="text-[10px] text-gray-400">{activeCount}/{cat.items.length}</span>
+                          <span className="text-xs font-semibold text-gray-700">{cat.label}</span>
+                          <Badge variant="secondary" className="text-[10px] font-normal ml-1">{activeCount}/{cat.items.length}</Badge>
                         </button>
-                        <div className="flex items-center gap-px shrink-0">
-                          <button className="h-4 px-1.5 rounded text-[8px] font-bold text-green-600 hover:bg-green-50" onClick={() => setCategoryPreset(cat, "all")} data-testid={`preset-full-${cat.key}`}>ALL</button>
-                          <button className="h-4 px-1.5 rounded text-[8px] font-bold text-blue-600 hover:bg-blue-50" onClick={() => setCategoryPreset(cat, "view")} data-testid={`preset-view-${cat.key}`}>VIEW</button>
-                          <button className="h-4 px-1.5 rounded text-[8px] font-bold text-red-500 hover:bg-red-50" onClick={() => setCategoryPreset(cat, "none")} data-testid={`preset-none-${cat.key}`}>OFF</button>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] font-semibold text-green-600 hover:bg-green-50" onClick={() => setCategoryPreset(cat, "all")} data-testid={`preset-full-${cat.key}`}>All</Button>
+                          <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] font-semibold text-blue-600 hover:bg-blue-50" onClick={() => setCategoryPreset(cat, "view")} data-testid={`preset-view-${cat.key}`}>View Only</Button>
+                          <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] font-semibold text-red-500 hover:bg-red-50" onClick={() => setCategoryPreset(cat, "none")} data-testid={`preset-none-${cat.key}`}>Off</Button>
                         </div>
                       </div>
-                      {!isCollapsed && (
-                        <div className="grid gap-0 border-t border-gray-100">
-                          {cat.items.map((item, idx) => (
-                            <div key={item.entity} className={`flex items-center gap-1 px-2 py-[3px] ${idx % 2 === 0 ? "bg-white" : "bg-gray-50/40"} hover:bg-blue-50/40`} data-testid={`entity-row-${selectedRole}-${item.entity}`}>
-                              <span className="text-[11px] text-gray-600 w-[160px] shrink-0 truncate leading-tight" title={item.label}>{item.label}</span>
-                              <div className="flex items-center gap-[3px]">
+                      {isExpanded && (
+                        <div className="divide-y divide-gray-50">
+                          {cat.items.map((item) => (
+                            <div key={item.entity} className="flex items-center gap-3 px-4 py-2 hover:bg-blue-50/30 transition-colors" data-testid={`entity-row-${selectedRole}-${item.entity}`}>
+                              <span className="text-xs text-gray-700 flex-1 min-w-0 truncate" title={item.label}>{item.label}</span>
+                              <div className="flex items-center gap-1.5 shrink-0">
                                 {item.actions.map(action => {
                                   const active = getEntityPerm(selectedRole, item.entity, action);
-                                  const style = ACTION_STYLE[action];
+                                  const meta = ACTION_META[action];
                                   return (
                                     <button
                                       key={action}
-                                      className={`h-[18px] w-[18px] rounded-sm text-[8px] font-bold transition-all flex items-center justify-center ${active ? `${style.bg} text-white shadow-sm` : "bg-gray-100 text-gray-300 hover:bg-gray-200"}`}
+                                      className={`h-6 px-2 rounded-md text-[10px] font-semibold border transition-all flex items-center gap-1 ${
+                                        active
+                                          ? meta.activeBg
+                                          : "bg-gray-50 border-gray-200 text-gray-300 hover:bg-gray-100 hover:text-gray-500"
+                                      }`}
                                       onClick={() => toggleEntityPerm(selectedRole, item.entity, action)}
-                                      title={`${style.label}: ${item.label}`}
+                                      title={`${meta.label}: ${item.label}`}
                                       data-testid={`perm-${selectedRole}-${item.entity}-${action}`}
                                     >
-                                      {style.label[0]}
+                                      {meta.short}
                                     </button>
                                   );
                                 })}
@@ -662,7 +668,7 @@ function PermissionsTab({ toast, shared }: { toast: any; shared: ReturnType<type
                           ))}
                         </div>
                       )}
-                    </div>
+                    </Card>
                   );
                 })}
               </div>
