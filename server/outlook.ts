@@ -430,8 +430,8 @@ async function graphGetWithToken(url: string, token: string): Promise<any> {
 
 export async function getJoinedTeams(ssoToken?: string | null): Promise<any[]> {
   try {
-    const token = ssoToken || (await getAccessToken());
-    const data = await graphGetWithToken("/me/joinedTeams?$select=id,displayName,description", token);
+    if (!ssoToken) throw new Error("User SSO token required for /me/joinedTeams");
+    const data = await graphGetWithToken("/me/joinedTeams?$select=id,displayName,description", ssoToken);
     return (data.value || []).map((t: any) => ({
       id: t.id,
       displayName: t.displayName,
@@ -445,8 +445,8 @@ export async function getJoinedTeams(ssoToken?: string | null): Promise<any[]> {
 
 export async function getTeamChannels(teamId: string, ssoToken?: string | null): Promise<any[]> {
   try {
-    const token = ssoToken || (await getAccessToken());
-    const data = await graphGetWithToken(`/teams/${teamId}/channels?$select=id,displayName,description,membershipType`, token);
+    if (!ssoToken) throw new Error("User SSO token required for team channels");
+    const data = await graphGetWithToken(`/teams/${teamId}/channels?$select=id,displayName,description,membershipType`, ssoToken);
     return (data.value || []).map((ch: any) => ({
       id: ch.id,
       displayName: ch.displayName,
@@ -461,8 +461,8 @@ export async function getTeamChannels(teamId: string, ssoToken?: string | null):
 
 export async function getMyChats(top: number = 30, ssoToken?: string | null): Promise<any[]> {
   try {
-    const token = ssoToken || (await getAccessToken());
-    const data = await graphGetWithToken(`/me/chats?$top=${top}&$expand=members&$select=id,topic,chatType,lastUpdatedDateTime`, token);
+    if (!ssoToken) throw new Error("User SSO token required for /me/chats");
+    const data = await graphGetWithToken(`/me/chats?$top=${top}&$expand=members&$select=id,topic,chatType,lastUpdatedDateTime`, ssoToken);
     return (data.value || []).map((chat: any) => ({
       id: chat.id,
       topic: chat.topic || null,
@@ -479,9 +479,9 @@ export async function getMyChats(top: number = 30, ssoToken?: string | null): Pr
   }
 }
 
-export async function discoverSharePointSites(): Promise<any[]> {
+export async function discoverSharePointSites(userAccessToken?: string | null): Promise<any[]> {
   try {
-    const data = await graphGet("/sites?search=*&$select=id,displayName,webUrl&$top=30");
+    const data = await graphGet("/sites?search=*&$select=id,displayName,webUrl&$top=30", userAccessToken);
     return (data.value || []).map((site: any) => ({
       id: site.id,
       displayName: site.displayName,
@@ -493,9 +493,9 @@ export async function discoverSharePointSites(): Promise<any[]> {
   }
 }
 
-export async function getSiteDrives(siteId: string): Promise<any[]> {
+export async function getSiteDrives(siteId: string, userAccessToken?: string | null): Promise<any[]> {
   try {
-    const data = await graphGet(`/sites/${siteId}/drives?$select=id,name,driveType,webUrl`);
+    const data = await graphGet(`/sites/${siteId}/drives?$select=id,name,driveType,webUrl`, userAccessToken);
     return (data.value || []).map((d: any) => ({
       id: d.id,
       name: d.name,

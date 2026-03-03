@@ -20,12 +20,25 @@ interface SyncResult {
   errors: string[];
 }
 
+async function getUserToken(userId: number): Promise<string | null> {
+  try {
+    const { getSsoTokenForUser } = await import("./ms-account-service");
+    return await getSsoTokenForUser(userId);
+  } catch {
+    return null;
+  }
+}
+
 export async function syncUserCalendar(userId: number): Promise<SyncResult> {
   const result: SyncResult = { type: "calendar", synced: 0, errors: [] };
 
   try {
-    if (!isOutlookConfigured()) {
-      result.errors.push("Outlook connector not configured");
+    const ssoToken = await getUserToken(userId);
+    if (!ssoToken && !isOutlookConfigured()) {
+      result.errors.push("No SSO token or Outlook connector configured for calendar sync");
+      return result;
+    }
+    if (!ssoToken) {
       return result;
     }
 
@@ -36,7 +49,7 @@ export async function syncUserCalendar(userId: number): Promise<SyncResult> {
     endDate.setDate(endDate.getDate() + 30);
 
     const formatDate = (d: Date) => d.toISOString().split("T")[0];
-    const events = await getCalendarEvents(formatDate(startDate), formatDate(endDate));
+    const events = await getCalendarEvents(formatDate(startDate), formatDate(endDate), ssoToken);
 
     for (const evt of events) {
       try {
@@ -75,15 +88,19 @@ export async function syncUserEmail(userId: number): Promise<SyncResult> {
   const result: SyncResult = { type: "email", synced: 0, errors: [] };
 
   try {
-    if (!isOutlookConfigured()) {
-      result.errors.push("Outlook connector not configured");
+    const ssoToken = await getUserToken(userId);
+    if (!ssoToken && !isOutlookConfigured()) {
+      result.errors.push("No SSO token or Outlook connector configured for email sync");
+      return result;
+    }
+    if (!ssoToken) {
       return result;
     }
 
-    const messages = await listMessages({ top: 50, folder: "inbox" });
+    const messages = await listMessages({ top: 50, folder: "inbox" }, ssoToken);
     let flagged: any[] = [];
     try {
-      flagged = await listFlaggedMessages(20);
+      flagged = await listFlaggedMessages(20, ssoToken);
     } catch (err: any) {
       console.log(`[MS Sync] Flagged messages fetch failed (non-fatal): ${err.message}`);
     }
@@ -137,14 +154,9 @@ export async function syncUserTeams(userId: number): Promise<SyncResult> {
   const result: SyncResult = { type: "teams", synced: 0, errors: [] };
 
   try {
-    let ssoToken: string | null = null;
-    try {
-      const { getSsoTokenForUser } = await import("./ms-account-service");
-      ssoToken = await getSsoTokenForUser(userId);
-    } catch {}
-
-    if (!ssoToken && !isOutlookConfigured()) {
-      result.errors.push("No SSO token or Outlook connector configured for Teams sync");
+    const ssoToken = await getUserToken(userId);
+    if (!ssoToken) {
+      result.errors.push("No SSO token for Teams sync — user must sign in with Microsoft");
       return result;
     }
 
@@ -204,97 +216,54 @@ export async function syncAllForUser(userId: number): Promise<SyncResult[]> {
 
 export async function getSyncStatus(userId: number): Promise<{
   lastSync: string | null;
-  objectCounts: Record<string, number>;
-  connected: boolean;
+  counts: { events: number; emails: number; teams: number };
 }> {
-  try {
-    const account = await db.select().from(msAccounts).where(eq(msAccounts.userId, userId)).limit(1);
-    const connected = account.length > 0 && account[0].status === "active";
+  const [lastSyncRow] = await db.execute(sql`
+    SELECT MAX(last_synced_at) as last_sync FROM ms_objects WHERE user_id = ${userId}
+  `) as any[];
 
-    const counts = await db.execute(sql`
-      SELECT type, COUNT(*) as count
-      FROM ms_objects
-      WHERE user_id = ${userId}
-      GROUP BY type
-    `);
+  const [countRow] = await db.execute(sql`
+    SELECT
+      COUNT(CASE WHEN type = 'event' THEN 1 END) as events,
+      COUNT(CASE WHEN type = 'email' THEN 1 END) as emails,
+      COUNT(CASE WHEN type = 'teams' THEN 1 END) as teams
+    FROM ms_objects WHERE user_id = ${userId}
+  `) as any[];
 
-    const objectCounts: Record<string, number> = {};
-    for (const row of (counts as any).rows || counts || []) {
-      objectCounts[row.type] = parseInt(row.count, 10);
-    }
-
-    const lastSyncRow = await db.execute(sql`
-      SELECT MAX(last_synced_at) as last_sync
-      FROM ms_objects
-      WHERE user_id = ${userId}
-    `);
-
-    const lastSync = ((lastSyncRow as any).rows?.[0] || (lastSyncRow as any)[0])?.last_sync || null;
-
-    return { lastSync, objectCounts, connected };
-  } catch (err: any) {
-    return { lastSync: null, objectCounts: {}, connected: false };
-  }
+  return {
+    lastSync: lastSyncRow?.last_sync?.toISOString?.() || null,
+    counts: {
+      events: parseInt(countRow?.events || "0"),
+      emails: parseInt(countRow?.emails || "0"),
+      teams: parseInt(countRow?.teams || "0"),
+    },
+  };
 }
 
-async function ensureAllUsersHaveMsAccounts(): Promise<void> {
-  try {
-    if (!isOutlookConfigured()) return;
-
-    const allUsers = await db.execute(sql`SELECT id, username, email, name FROM users`);
-    const rows = (allUsers as any).rows || allUsers || [];
-    const existingAccounts = await db.select({ userId: msAccounts.userId }).from(msAccounts);
-    const existingUserIds = new Set(existingAccounts.map(a => a.userId));
-
-    let created = 0;
-    for (const user of rows) {
-      if (!existingUserIds.has(user.id)) {
-        try {
-          await db.insert(msAccounts).values({
-            userId: user.id,
-            tenantId: process.env.AZURE_TENANT_ID || "",
-            msUserId: `local-${user.id}`,
-            email: user.email || user.username || "",
-            displayName: user.name || user.username || `User ${user.id}`,
-            status: "active",
-          }).onConflictDoNothing();
-          created++;
-        } catch { }
-      }
-    }
-    if (created > 0) {
-      console.log(`[MS Sync] Auto-created ${created} ms_account entries for existing users`);
-    }
-  } catch (err: any) {
-    console.warn("[MS Sync] Could not auto-create ms_accounts:", err.message);
+export function startPeriodicSync() {
+  if (globalSyncTimer) {
+    clearInterval(globalSyncTimer);
   }
-}
-
-export function startPeriodicSync(): void {
-  if (globalSyncTimer) return;
-
-  ensureAllUsersHaveMsAccounts();
 
   globalSyncTimer = setInterval(async () => {
     try {
-      const activeAccounts = await db.select().from(msAccounts).where(eq(msAccounts.status, "active"));
-
-      for (const account of activeAccounts) {
+      const accounts = await db.select().from(msAccounts).where(eq(msAccounts.status, "active"));
+      for (const account of accounts) {
         try {
           await syncAllForUser(account.userId);
         } catch (err: any) {
-          console.warn(`[MS Sync] Periodic sync failed for user ${account.userId}:`, err.message);
+          console.error(`[MS Sync] Periodic sync failed for user ${account.userId}:`, err.message);
         }
       }
     } catch (err: any) {
-      console.warn("[MS Sync] Periodic sync error:", err.message);
+      console.error("[MS Sync] Periodic sync loop error:", err.message);
     }
   }, SYNC_INTERVAL_MS);
 
-  console.log(`[MS Sync] Periodic sync started (every ${SYNC_INTERVAL_MS / 60000} minutes)`);
+  console.log("[MS Sync] Periodic sync started (every 15 minutes)");
 }
 
-export function stopPeriodicSync(): void {
+export function stopPeriodicSync() {
   if (globalSyncTimer) {
     clearInterval(globalSyncTimer);
     globalSyncTimer = null;
