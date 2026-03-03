@@ -12765,13 +12765,25 @@ export async function registerRoutes(
     }
   });
 
+  async function getUserSsoToken(req: any): Promise<string | null> {
+    const userId = req.user?.id || req.user?.userId;
+    if (!userId) return null;
+    try {
+      const { getSsoTokenForUser } = await import("./ms-account-service");
+      return await getSsoTokenForUser(userId);
+    } catch {
+      return null;
+    }
+  }
+
   app.get("/api/outlook/events", requireAuth, async (req, res) => {
     try {
       const { start, end } = req.query;
       if (!start || !end) {
         return res.status(400).json({ error: "start and end query params required (YYYY-MM-DD)" });
       }
-      const events = await outlook.getCalendarEvents(start as string, end as string);
+      const userToken = await getUserSsoToken(req);
+      const events = await outlook.getCalendarEvents(start as string, end as string, userToken);
       res.json(events);
     } catch (err: any) {
       if (err.message?.includes("not connected") || err.message?.includes("not available")) {
@@ -12788,10 +12800,11 @@ export async function registerRoutes(
       if (!date || !startTime || !endTime || !label) {
         return res.status(400).json({ error: "date, startTime, endTime, label are required" });
       }
+      const userToken = await getUserSsoToken(req);
       const eventId = await outlook.createOutlookEvent({
         date, startTime, endTime, label,
         idempotencyKey: idempotencyKey || `tb-${Date.now()}`,
-      });
+      }, userToken);
       logAuditFromReq(req, { entityType: "outlook_event", action: "create", entityId: eventId, changesJson: { description: "Outlook calendar event created", label, date } });
       res.json({ eventId });
     } catch (err: any) {
@@ -12803,9 +12816,10 @@ export async function registerRoutes(
   app.patch("/api/outlook/events/:eventId", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { calendarId, date, startTime, endTime, label } = req.body;
+      const userToken = await getUserSsoToken(req);
       await outlook.updateOutlookEvent(req.params.eventId, calendarId || null, {
         date, startTime, endTime, label,
-      });
+      }, userToken);
       logAuditFromReq(req, { entityType: "outlook_event", action: "update", entityId: req.params.eventId, changesJson: { description: "Outlook event updated", label } });
       res.json({ success: true });
     } catch (err: any) {
@@ -12817,7 +12831,8 @@ export async function registerRoutes(
   app.delete("/api/outlook/events/:eventId", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { calendarId } = req.query;
-      await outlook.deleteOutlookEvent(req.params.eventId, (calendarId as string) || null);
+      const userToken = await getUserSsoToken(req);
+      await outlook.deleteOutlookEvent(req.params.eventId, (calendarId as string) || null, userToken);
       logAuditFromReq(req, { entityType: "outlook_event", action: "delete", entityId: req.params.eventId, changesJson: { description: "Outlook event deleted" } });
       res.json({ success: true });
     } catch (err: any) {
@@ -12829,12 +12844,13 @@ export async function registerRoutes(
   app.get("/api/outlook/messages", requireAuth, async (req, res) => {
     try {
       const { search, top, skip, folder } = req.query;
+      const userToken = await getUserSsoToken(req);
       const messages = await outlook.listMessages({
         search: search ? String(search) : undefined,
         top: top ? parseInt(String(top)) : 20,
         skip: skip ? parseInt(String(skip)) : 0,
         folder: folder ? String(folder) : "inbox",
-      });
+      }, userToken);
       res.json(messages);
     } catch (err: any) {
       if (err.message?.includes("not connected") || err.message?.includes("not available") || err.message?.includes("not configured")) {
@@ -12847,7 +12863,8 @@ export async function registerRoutes(
 
   app.get("/api/outlook/messages/:id", requireAuth, async (req, res) => {
     try {
-      const msg = await outlook.getMessageDetail(req.params.id);
+      const userToken = await getUserSsoToken(req);
+      const msg = await outlook.getMessageDetail(req.params.id, userToken);
       res.json(msg);
     } catch (err: any) {
       console.error("[Outlook] Message detail error:", err);
@@ -12908,12 +12925,13 @@ export async function registerRoutes(
       if (!to || !subject || !approvalTitle) {
         return res.status(400).json({ error: "to, subject, and approvalTitle are required" });
       }
+      const userToken = await getUserSsoToken(req);
       await outlook.sendApprovalEmail({
         to, subject, approvalTitle,
         approvalDescription: approvalDescription || "",
         approveUrl: approveUrl || "#",
         rejectUrl: rejectUrl || "#",
-      });
+      }, userToken);
       logAuditFromReq(req, { entityType: "outlook_email", action: "send_approval", changesJson: { description: "Approval email sent", to, subject } });
       res.json({ success: true });
     } catch (err: any) {
@@ -12924,7 +12942,8 @@ export async function registerRoutes(
 
   app.get("/api/outlook/folders", requireAuth, async (req, res) => {
     try {
-      const folders = await outlook.listMailFolders();
+      const userToken = await getUserSsoToken(req);
+      const folders = await outlook.listMailFolders(userToken);
       res.json(folders);
     } catch (err: any) {
       if (err.message?.includes("not connected") || err.message?.includes("not available") || err.message?.includes("not configured")) {
@@ -13023,7 +13042,8 @@ export async function registerRoutes(
       if (!to || !Array.isArray(to) || to.length === 0 || !subject) {
         return res.status(400).json({ error: "to (array) and subject are required" });
       }
-      await outlook.sendMail({ to, cc: cc || [], subject, body: body || "", bodyType: bodyType || "Text" });
+      const userToken = await getUserSsoToken(req);
+      await outlook.sendMail({ to, cc: cc || [], subject, body: body || "", bodyType: bodyType || "Text" }, userToken);
       logAuditFromReq(req, { entityType: "outlook_email", action: "send", changesJson: { description: "Email sent", to, subject } });
       res.json({ success: true });
     } catch (err: any) {
@@ -13038,7 +13058,8 @@ export async function registerRoutes(
       if (!comment) {
         return res.status(400).json({ error: "comment is required" });
       }
-      await outlook.replyToMessage(req.params.id, comment, !!replyAll);
+      const userToken = await getUserSsoToken(req);
+      await outlook.replyToMessage(req.params.id, comment, !!replyAll, userToken);
       logAuditFromReq(req, { entityType: "outlook_email", action: "reply", entityId: req.params.id, changesJson: { description: "Email reply sent", replyAll: !!replyAll } });
       res.json({ success: true });
     } catch (err: any) {
@@ -13053,7 +13074,8 @@ export async function registerRoutes(
       if (!to || !Array.isArray(to) || to.length === 0) {
         return res.status(400).json({ error: "to (array) is required" });
       }
-      await outlook.forwardMessage(req.params.id, comment || "", to);
+      const userToken = await getUserSsoToken(req);
+      await outlook.forwardMessage(req.params.id, comment || "", to, userToken);
       logAuditFromReq(req, { entityType: "outlook_email", action: "forward", entityId: req.params.id, changesJson: { description: "Email forwarded", to } });
       res.json({ success: true });
     } catch (err: any) {

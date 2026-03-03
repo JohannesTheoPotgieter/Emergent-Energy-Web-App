@@ -106,8 +106,13 @@ export async function getConnectionStatus(): Promise<{
 const MYTOOL_CALENDAR_NAME = "EE – My Tool Blocks";
 let cachedCalendarId: string | null = null;
 
-async function graphGet(url: string): Promise<any> {
-  const token = await getAccessToken();
+async function resolveToken(userAccessToken?: string | null): Promise<string> {
+  if (userAccessToken) return userAccessToken;
+  return getAccessToken();
+}
+
+async function graphGet(url: string, userAccessToken?: string | null): Promise<any> {
+  const token = await resolveToken(userAccessToken);
   const res = await fetch(`https://graph.microsoft.com/v1.0${url}`, {
     headers: {
       Authorization: `Bearer ${token}`,
@@ -122,8 +127,8 @@ async function graphGet(url: string): Promise<any> {
   return res.json();
 }
 
-async function graphPost(url: string, body: any): Promise<any> {
-  const token = await getAccessToken();
+async function graphPost(url: string, body: any, userAccessToken?: string | null): Promise<any> {
+  const token = await resolveToken(userAccessToken);
   const res = await fetch(`https://graph.microsoft.com/v1.0${url}`, {
     method: "POST",
     headers: {
@@ -140,8 +145,8 @@ async function graphPost(url: string, body: any): Promise<any> {
   return res.json();
 }
 
-async function graphPatch(url: string, body: any): Promise<any> {
-  const token = await getAccessToken();
+async function graphPatch(url: string, body: any, userAccessToken?: string | null): Promise<any> {
+  const token = await resolveToken(userAccessToken);
   const res = await fetch(`https://graph.microsoft.com/v1.0${url}`, {
     method: "PATCH",
     headers: {
@@ -157,8 +162,8 @@ async function graphPatch(url: string, body: any): Promise<any> {
   return res.json();
 }
 
-async function graphDelete(url: string): Promise<void> {
-  const token = await getAccessToken();
+async function graphDelete(url: string, userAccessToken?: string | null): Promise<void> {
+  const token = await resolveToken(userAccessToken);
   const res = await fetch(`https://graph.microsoft.com/v1.0${url}`, {
     method: "DELETE",
     headers: { Authorization: `Bearer ${token}` },
@@ -169,12 +174,12 @@ async function graphDelete(url: string): Promise<void> {
   }
 }
 
-export async function getCalendarEvents(startDate: string, endDate: string): Promise<any[]> {
+export async function getCalendarEvents(startDate: string, endDate: string, userAccessToken?: string | null): Promise<any[]> {
   const start = `${startDate}T00:00:00`;
   const end = `${endDate}T23:59:59`;
   const url = `/me/calendarView?startDateTime=${encodeURIComponent(start)}&endDateTime=${encodeURIComponent(end)}&$select=id,subject,start,end,isAllDay,location,organizer,showAs,isCancelled,type&$top=200&$orderby=start/dateTime`;
 
-  const data = await graphGet(url);
+  const data = await graphGet(url, userAccessToken);
   return (data.value || []).map((evt: any) => ({
     id: evt.id,
     subject: evt.subject,
@@ -192,19 +197,19 @@ export async function getCalendarEvents(startDate: string, endDate: string): Pro
   }));
 }
 
-async function ensureMyToolCalendar(): Promise<string> {
-  if (cachedCalendarId) return cachedCalendarId;
+async function ensureMyToolCalendar(userAccessToken?: string | null): Promise<string> {
+  if (cachedCalendarId && !userAccessToken) return cachedCalendarId;
 
-  const calendarsData = await graphGet("/me/calendars?$select=id,name");
+  const calendarsData = await graphGet("/me/calendars?$select=id,name", userAccessToken);
   const existing = (calendarsData.value || []).find((c: any) => c.name === MYTOOL_CALENDAR_NAME);
 
   if (existing) {
-    cachedCalendarId = existing.id;
+    if (!userAccessToken) cachedCalendarId = existing.id;
     return existing.id;
   }
 
-  const created = await graphPost("/me/calendars", { name: MYTOOL_CALENDAR_NAME });
-  cachedCalendarId = created.id;
+  const created = await graphPost("/me/calendars", { name: MYTOOL_CALENDAR_NAME }, userAccessToken);
+  if (!userAccessToken) cachedCalendarId = created.id;
   return created.id;
 }
 
@@ -214,8 +219,8 @@ export async function createOutlookEvent(block: {
   endTime: string;
   label: string;
   idempotencyKey: string;
-}): Promise<string> {
-  const calendarId = await ensureMyToolCalendar();
+}, userAccessToken?: string | null): Promise<string> {
+  const calendarId = await ensureMyToolCalendar(userAccessToken);
 
   const event = {
     subject: block.label,
@@ -237,7 +242,7 @@ export async function createOutlookEvent(block: {
     ],
   };
 
-  const created = await graphPost(`/me/calendars/${calendarId}/events`, event);
+  const created = await graphPost(`/me/calendars/${calendarId}/events`, event, userAccessToken);
   return created.id;
 }
 
@@ -250,6 +255,7 @@ export async function updateOutlookEvent(
     endTime?: string;
     label?: string;
   },
+  userAccessToken?: string | null,
 ): Promise<void> {
   const patch: any = {};
   if (updates.label) patch.subject = updates.label;
@@ -264,15 +270,15 @@ export async function updateOutlookEvent(
     ? `/me/calendars/${calendarId}/events/${eventId}`
     : `/me/events/${eventId}`;
 
-  await graphPatch(url, patch);
+  await graphPatch(url, patch, userAccessToken);
 }
 
-export async function deleteOutlookEvent(eventId: string, calendarId: string | null): Promise<void> {
+export async function deleteOutlookEvent(eventId: string, calendarId: string | null, userAccessToken?: string | null): Promise<void> {
   const url = calendarId
     ? `/me/calendars/${calendarId}/events/${eventId}`
     : `/me/events/${eventId}`;
 
-  await graphDelete(url);
+  await graphDelete(url, userAccessToken);
 }
 
 export async function listMessages(options: {
@@ -280,7 +286,7 @@ export async function listMessages(options: {
   top?: number;
   skip?: number;
   folder?: string;
-}): Promise<any[]> {
+}, userAccessToken?: string | null): Promise<any[]> {
   const top = options.top || 20;
   const skip = options.skip || 0;
   const folder = options.folder || "inbox";
@@ -291,7 +297,7 @@ export async function listMessages(options: {
     url = `/me/messages?$top=${top}&$skip=${skip}&$search="${encodeURIComponent(options.search)}"&$select=id,subject,from,receivedDateTime,bodyPreview,webLink,isRead,hasAttachments`;
   }
 
-  const data = await graphGet(url);
+  const data = await graphGet(url, userAccessToken);
   return (data.value || []).map((msg: any) => ({
     id: msg.id,
     subject: msg.subject || "(No Subject)",
@@ -305,10 +311,10 @@ export async function listMessages(options: {
   }));
 }
 
-export async function listFlaggedMessages(top: number = 50): Promise<any[]> {
+export async function listFlaggedMessages(top: number = 50, userAccessToken?: string | null): Promise<any[]> {
   const url = `/me/messages?$top=${top}&$filter=flag/flagStatus eq 'flagged'&$select=id,subject,from,receivedDateTime,bodyPreview,webLink,isRead,hasAttachments,flag`;
   try {
-    const data = await graphGet(url);
+    const data = await graphGet(url, userAccessToken);
     return (data.value || []).map((msg: any) => ({
       id: msg.id,
       subject: msg.subject || "(No Subject)",
@@ -327,8 +333,8 @@ export async function listFlaggedMessages(top: number = 50): Promise<any[]> {
   }
 }
 
-export async function getMessageDetail(messageId: string): Promise<any> {
-  const msg = await graphGet(`/me/messages/${messageId}?$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,bodyPreview,webLink,body,isRead,hasAttachments,conversationId`);
+export async function getMessageDetail(messageId: string, userAccessToken?: string | null): Promise<any> {
+  const msg = await graphGet(`/me/messages/${messageId}?$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,bodyPreview,webLink,body,isRead,hasAttachments,conversationId`, userAccessToken);
   return {
     id: msg.id,
     subject: msg.subject || "(No Subject)",
@@ -347,8 +353,8 @@ export async function getMessageDetail(messageId: string): Promise<any> {
   };
 }
 
-export async function listMailFolders(): Promise<any[]> {
-  const data = await graphGet("/me/mailFolders?$top=100&$select=id,displayName,totalItemCount,unreadItemCount,parentFolderId");
+export async function listMailFolders(userAccessToken?: string | null): Promise<any[]> {
+  const data = await graphGet("/me/mailFolders?$top=100&$select=id,displayName,totalItemCount,unreadItemCount,parentFolderId", userAccessToken);
   const folders = (data.value || []).map((f: any) => ({
     id: f.id,
     displayName: f.displayName,
@@ -361,7 +367,7 @@ export async function listMailFolders(): Promise<any[]> {
   for (const folder of folders) {
     result.push(folder);
     try {
-      const childData = await graphGet(`/me/mailFolders/${folder.id}/childFolders?$top=50&$select=id,displayName,totalItemCount,unreadItemCount,parentFolderId`);
+      const childData = await graphGet(`/me/mailFolders/${folder.id}/childFolders?$top=50&$select=id,displayName,totalItemCount,unreadItemCount,parentFolderId`, userAccessToken);
       for (const child of (childData.value || [])) {
         result.push({
           id: child.id,
@@ -382,7 +388,7 @@ export async function sendMail(options: {
   subject: string;
   body: string;
   bodyType?: "Text" | "HTML";
-}): Promise<void> {
+}, userAccessToken?: string | null): Promise<void> {
   await graphPost("/me/sendMail", {
     message: {
       subject: options.subject,
@@ -391,21 +397,21 @@ export async function sendMail(options: {
       ccRecipients: (options.cc || []).map(addr => ({ emailAddress: { address: addr } })),
     },
     saveToSentItems: true,
-  });
+  }, userAccessToken);
 }
 
-export async function replyToMessage(messageId: string, comment: string, replyAll: boolean = false): Promise<void> {
+export async function replyToMessage(messageId: string, comment: string, replyAll: boolean = false, userAccessToken?: string | null): Promise<void> {
   const endpoint = replyAll ? "replyAll" : "reply";
   await graphPost(`/me/messages/${messageId}/${endpoint}`, {
     comment,
-  });
+  }, userAccessToken);
 }
 
-export async function forwardMessage(messageId: string, comment: string, toRecipients: string[]): Promise<void> {
+export async function forwardMessage(messageId: string, comment: string, toRecipients: string[], userAccessToken?: string | null): Promise<void> {
   await graphPost(`/me/messages/${messageId}/forward`, {
     comment,
     toRecipients: toRecipients.map(addr => ({ emailAddress: { address: addr } })),
-  });
+  }, userAccessToken);
 }
 
 async function graphGetWithToken(url: string, token: string): Promise<any> {
@@ -509,7 +515,7 @@ export async function sendApprovalEmail(options: {
   approvalDescription: string;
   approveUrl: string;
   rejectUrl: string;
-}): Promise<void> {
+}, userAccessToken?: string | null): Promise<void> {
   const htmlBody = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
       <h2 style="color: #1a1a1a;">Approval Required</h2>
@@ -536,5 +542,5 @@ export async function sendApprovalEmail(options: {
       toRecipients: [{ emailAddress: { address: options.to } }],
     },
     saveToSentItems: true,
-  });
+  }, userAccessToken);
 }
