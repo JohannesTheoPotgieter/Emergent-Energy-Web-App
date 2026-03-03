@@ -761,7 +761,7 @@ export default function MyWorkTasksPage() {
               <Label className="text-xs font-medium">Description</Label>
               <Textarea placeholder="Additional details..." value={newTask.description} onChange={e => setNewTask(t => ({ ...t, description: e.target.value }))} className="mt-1 min-h-[60px]" data-testid="input-new-desc" />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className={`grid ${newTask.type === "personal" ? "grid-cols-3" : "grid-cols-2"} gap-3`}>
               <div>
                 <Label className="text-xs font-medium">Priority</Label>
                 <Select value={newTask.priority} onValueChange={v => setNewTask(t => ({ ...t, priority: v as TaskPriority }))}>
@@ -774,6 +774,20 @@ export default function MyWorkTasksPage() {
                   </SelectContent>
                 </Select>
               </div>
+              {newTask.type === "personal" && (
+                <div>
+                  <Label className="text-xs font-medium">Status</Label>
+                  <Select value={newTask.status} onValueChange={v => setNewTask(t => ({ ...t, status: v as TaskStatus }))}>
+                    <SelectTrigger className="mt-1 h-8 text-xs" data-testid="select-new-status"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="inbox">Not Started</SelectItem>
+                      <SelectItem value="in_progress">In Progress</SelectItem>
+                      <SelectItem value="blocked">Blocked</SelectItem>
+                      <SelectItem value="done">Done</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div>
                 <Label className="text-xs font-medium">Due Date</Label>
                 <Input type="date" value={newTask.dueDate} onChange={e => setNewTask(t => ({ ...t, dueDate: e.target.value }))} className="mt-1 h-8 text-xs" data-testid="input-new-due" />
@@ -800,6 +814,10 @@ export default function MyWorkTasksPage() {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+            <div>
+              <Label className="text-xs font-medium">Assign To</Label>
+              <AssignToSelector selected={newTask.assignees} onChange={a => setNewTask(t => ({ ...t, assignees: a }))} />
             </div>
             {newTask.type === "action" && (
               <div>
@@ -1029,6 +1047,72 @@ function UnifiedTaskDetailSheet({ task, open, onOpenChange, onInvalidate, allPro
         </div>
       </SheetContent>
     </Sheet>
+  );
+}
+
+function AssignToSelector({ selected, onChange }: { selected: string[]; onChange: (v: string[]) => void }) {
+  const { data: users = [] } = useQuery<{ id: number; name: string; username: string }[]>({
+    queryKey: ["/api/users/assignable"],
+    queryFn: async () => {
+      const res = await fetch("/api/users/assignable", { headers: { ...getAuthHeaders() }, credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+
+  const filtered = users.filter(u =>
+    !search.trim() || u.name?.toLowerCase().includes(search.toLowerCase()) || u.username?.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const displayName = (nameVal: string) => {
+    const u = users.find(usr => usr.name === nameVal);
+    return u?.name || nameVal;
+  };
+
+  const toggle = (name: string) => {
+    onChange(selected.includes(name) ? selected.filter(n => n !== name) : [...selected, name]);
+  };
+
+  return (
+    <div className="mt-1">
+      <div className="flex flex-wrap gap-1.5 mb-1.5">
+        {selected.map(name => (
+          <span key={name} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 border border-blue-200 text-blue-700">
+            <User className="h-2.5 w-2.5" /> {displayName(name)}
+            <button onClick={() => onChange(selected.filter(n => n !== name))} className="hover:text-red-500" data-testid={`btn-remove-assignee-${name}`}><X className="h-2.5 w-2.5" /></button>
+          </span>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-dashed border-border text-xs text-muted-foreground hover:bg-muted hover:border-border transition-colors"
+        data-testid="btn-assign-to-picker"
+      >
+        <Users className="h-3 w-3" /> {selected.length === 0 ? "Add assignees" : "Edit assignees"}
+      </button>
+      {open && (
+        <div className="mt-1.5 border rounded-lg bg-background shadow-md max-h-40 overflow-y-auto">
+          <div className="p-1.5 border-b">
+            <Input placeholder="Search users..." value={search} onChange={e => setSearch(e.target.value)} className="h-7 text-xs" data-testid="input-assign-search" />
+          </div>
+          <div className="p-1">
+            {filtered.map(u => (
+              <button key={u.id} onClick={() => toggle(u.name)} className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs text-left transition-colors ${selected.includes(u.name) ? "bg-blue-50 text-blue-700" : "hover:bg-muted"}`} data-testid={`assign-user-${u.id}`}>
+                <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center text-[8px] ${selected.includes(u.name) ? "bg-blue-500 border-blue-500 text-white" : "border-border"}`}>
+                  {selected.includes(u.name) ? "✓" : ""}
+                </span>
+                <span className="truncate">{u.name}</span>
+              </button>
+            ))}
+            {filtered.length === 0 && <p className="text-xs text-muted-foreground text-center py-2">No users found</p>}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
