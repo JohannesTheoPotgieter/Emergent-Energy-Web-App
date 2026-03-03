@@ -28,7 +28,8 @@ import UserAssignmentPicker from "@/components/UserAssignmentPicker";
 
 type SortField = "priority" | "dueDate" | "createdAt" | "status";
 type SortDirection = "asc" | "desc";
-type SourceFilter = "all" | "personal" | "operational" | "plan" | "engineering_task" | "quality_task" | "approvals" | "tr_register" | "deliverables" | "notifications";
+type SourceFilter = "all" | "personal" | "operational" | "plan" | "engineering_task" | "quality_task" | "approvals" | "tr_register" | "deliverables" | "notifications" | "tracking";
+type TrackingRole = "assignee" | "creator" | "both";
 type ViewMode = "list" | "board";
 
 const priorityOrder: Record<string, number> = { critical: 0, high: 1, urgent: 0, High: 1, Med: 2, Low: 3, normal: 2, low: 3 };
@@ -106,6 +107,7 @@ interface UnifiedTask {
   owners?: string[] | null;
   resolvedOwners?: ResolvedUser[] | null;
   trId?: string | null;
+  _trackingRole?: TrackingRole;
 }
 
 const SOURCE_CONFIG: Record<SourceFilter, { label: string; shortLabel: string; icon: any; color: string; bgColor: string; dot: string }> = {
@@ -117,6 +119,7 @@ const SOURCE_CONFIG: Record<SourceFilter, { label: string; shortLabel: string; i
   quality_task: { label: "Quality", shortLabel: "QC", icon: ShieldCheck, color: "text-rose-600", bgColor: "bg-rose-50 border-rose-200", dot: "bg-rose-500" },
   approvals: { label: "Approvals", shortLabel: "Approvals", icon: ShieldCheck, color: "text-amber-600", bgColor: "bg-amber-50 border-amber-200", dot: "bg-amber-500" },
   tr_register: { label: "Actions", shortLabel: "Actions", icon: BookOpen, color: "text-purple-600", bgColor: "bg-purple-50 border-purple-200", dot: "bg-purple-500" },
+  tracking: { label: "Tracking", shortLabel: "Tracking", icon: Eye, color: "text-teal-600", bgColor: "bg-teal-50 border-teal-200", dot: "bg-teal-500" },
   deliverables: { label: "Deliverables", shortLabel: "Deliver", icon: FileCheck, color: "text-rose-600", bgColor: "bg-rose-50 border-rose-200", dot: "bg-rose-500" },
   notifications: { label: "Notifications", shortLabel: "Notifs", icon: AlertTriangle, color: "text-orange-600", bgColor: "bg-orange-50 border-orange-200", dot: "bg-orange-500" },
 };
@@ -278,6 +281,7 @@ export default function MyWorkTasksPage() {
         subtaskCount: t.subtaskCount || 0, parentTaskId: t.parentTaskId || t.parent_task_id || null,
         percentComplete: t.percentComplete || t.percent_complete || 0, assignees: t.assignees || null,
         resolvedAssignees: t.resolvedAssignees || null, description: t.description || null,
+        _trackingRole: t.trackingRole || "assignee",
       });
     }
 
@@ -308,6 +312,7 @@ export default function MyWorkTasksPage() {
         createdAt: t.createdAt || t.created_at || null, notes: t.outcomeComments || t.supportingInfo || null,
         ragStatus: t.ragStatus || null, owners: t.owners || null, resolvedOwners: t.resolvedOwners || null,
         trId: t.trId || null, department: t.department || null,
+        _trackingRole: t.trackingRole || "assignee",
       });
     }
 
@@ -525,7 +530,11 @@ export default function MyWorkTasksPage() {
 
   const filteredTasks = useMemo(() => {
     let result = [...unifiedTasks];
-    if (sourceFilter !== "all") result = result.filter(t => t._source === sourceFilter);
+    if (sourceFilter === "tracking") {
+      result = result.filter(t => t._trackingRole === "creator" || t._trackingRole === "both");
+    } else if (sourceFilter !== "all") {
+      result = result.filter(t => t._source === sourceFilter);
+    }
     if (debouncedSearch.trim()) {
       const lower = debouncedSearch.toLowerCase();
       result = result.filter(t =>
@@ -558,8 +567,11 @@ export default function MyWorkTasksPage() {
   const toggleExpand = (taskId: number) => setExpandedTasks(prev => { const next = new Set(prev); if (next.has(taskId)) next.delete(taskId); else next.add(taskId); return next; });
 
   const sourceCounts = useMemo(() => {
-    const counts: Record<SourceFilter, number> = { all: 0, personal: 0, operational: 0, plan: 0, engineering_task: 0, quality_task: 0, approvals: 0, tr_register: 0, deliverables: 0, notifications: 0 };
-    for (const t of unifiedTasks) { if (counts[t._source] !== undefined) counts[t._source]++; }
+    const counts: Record<SourceFilter, number> = { all: 0, personal: 0, operational: 0, plan: 0, engineering_task: 0, quality_task: 0, approvals: 0, tr_register: 0, tracking: 0, deliverables: 0, notifications: 0 };
+    for (const t of unifiedTasks) {
+      if (counts[t._source] !== undefined) counts[t._source]++;
+      if (t._trackingRole === "creator" || t._trackingRole === "both") counts.tracking++;
+    }
     counts.all = unifiedTasks.length;
     return counts;
   }, [unifiedTasks]);
@@ -787,9 +799,10 @@ export default function MyWorkTasksPage() {
                           className={`bg-background rounded-md border p-2 transition-all hover:shadow-sm hover:border-primary/30 ${canDrag ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"} ${draggedTask?._key === task._key ? "opacity-40" : ""}`}
                           data-testid={`board-card-${task._key}`}
                         >
-                          <div className="flex items-center gap-1 mb-1">
+                          <div className="flex items-center gap-1 mb-1 flex-wrap">
                             <span className={`inline-flex px-1 py-px rounded text-[9px] font-bold ${pb.class}`}>{pb.label}</span>
                             <span className={`inline-flex px-1.5 py-px rounded text-[9px] font-medium border ${task._sourceColor}`}>{task._sourceLabel}</span>
+                            {(task._trackingRole === "creator" || task._trackingRole === "both") && <span className="inline-flex items-center gap-0.5 px-1.5 py-px rounded text-[9px] font-medium border bg-teal-50 border-teal-200 text-teal-700"><Eye className="h-2.5 w-2.5" />Tracking</span>}
                             {task.ragStatus && <span className={`w-2 h-2 rounded-full shrink-0 ${task.ragStatus === "Red" ? "bg-red-500" : task.ragStatus === "Amber" ? "bg-amber-500" : "bg-green-500"}`} />}
                           </div>
                           <p className="text-[11px] font-medium leading-snug line-clamp-2 mb-1">{task.title}</p>
@@ -999,6 +1012,7 @@ function CompactTaskRow({ task, isExpanded, onToggleExpand, onOpenDrawer, onStat
         )}
 
         <span className={`shrink-0 inline-flex items-center px-1.5 py-px rounded text-[9px] font-medium border ${task._sourceColor}`} data-testid={`badge-source-${task._key}`}>{task._sourceLabel}</span>
+        {(task._trackingRole === "creator" || task._trackingRole === "both") && <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-px rounded text-[9px] font-medium border bg-teal-50 border-teal-200 text-teal-700" data-testid={`badge-tracking-${task._key}`}><Eye className="h-2.5 w-2.5" />Tracking</span>}
 
         <div className="hidden sm:block shrink-0" onClick={e => e.stopPropagation()}>
           <UserAssignmentPicker taskId={task._rawId} taskSource={task._source === "approvals" ? "operational" : task._source} resolvedUsers={task.resolvedAssignees || task.resolvedOwners || null} textNames={task.assignees || task.owners || null} mode={["operational", "tr_register"].includes(task._source) ? "multi" : "single"} size="xs" invalidateKeys={["/api/my-work/all-tasks", "/api/mytool/tasks", "/api/tr-register"]} />
@@ -1099,6 +1113,7 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects }
         <div className="px-4 pt-4 pb-3 border-b shrink-0">
           <div className="flex items-center gap-1.5 mb-2 flex-wrap">
             <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium border ${task._sourceColor}`}>{task._sourceLabel}</span>
+            {(task._trackingRole === "creator" || task._trackingRole === "both") && <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[10px] font-medium border bg-teal-50 border-teal-200 text-teal-700"><Eye className="h-3 w-3" />Tracking</span>}
             <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-semibold border ${statusColor}`}>{statusLabel}</span>
             <span className={`text-[10px] font-semibold ${priorityColor}`}>{priorityLabel}</span>
             {task.ragStatus && (
