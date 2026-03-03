@@ -519,7 +519,7 @@ export default function MyWorkCalendarPage() {
 
       <Card className="flex-1 flex flex-col min-h-0">
         <CardHeader className="pb-3 shrink-0">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <Button
                 variant="outline"
@@ -532,7 +532,7 @@ export default function MyWorkCalendarPage() {
               >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
-              <h3 className="text-lg font-semibold min-w-[220px] text-center" data-testid="text-calendar-range">
+              <h3 className="text-sm sm:text-lg font-semibold min-w-0 sm:min-w-[220px] text-center truncate" data-testid="text-calendar-range">
                 {viewMode === "week"
                   ? `${format(weekStart, "MMM d")} – ${format(weekEnd, "MMM d, yyyy")}`
                   : format(currentDate, "EEEE, MMMM d, yyyy")}
@@ -549,7 +549,7 @@ export default function MyWorkCalendarPage() {
                 <ChevronRight className="h-4 w-4" />
               </Button>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
               <Button
                 variant="outline"
                 size="sm"
@@ -570,6 +570,7 @@ export default function MyWorkCalendarPage() {
                 variant={viewMode === "week" ? "default" : "outline"}
                 size="sm"
                 onClick={() => setViewMode("week")}
+                className="hidden sm:inline-flex"
                 data-testid="calendar-week-view"
               >
                 Week
@@ -581,11 +582,11 @@ export default function MyWorkCalendarPage() {
                 data-testid="calendar-toggle-unscheduled"
               >
                 <ListTodo className="h-4 w-4 mr-1" />
-                Tasks ({unscheduledTasks.length})
+                <span className="hidden sm:inline">Tasks</span> ({unscheduledTasks.length})
               </Button>
             </div>
           </div>
-          <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground flex-wrap">
+          <div className="flex items-center gap-3 sm:gap-4 mt-3 text-xs text-muted-foreground flex-wrap">
             <div className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-sm bg-blue-100 border border-blue-200" />
               Outlook Events
@@ -598,7 +599,7 @@ export default function MyWorkCalendarPage() {
             ))}
           </div>
         </CardHeader>
-        <CardContent className="flex-1 flex min-h-0 gap-3">
+        <CardContent className="flex-1 flex flex-col sm:flex-row min-h-0 gap-3">
           {isLoading ? (
             <div className="flex items-center justify-center py-12 flex-1">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -621,7 +622,7 @@ export default function MyWorkCalendarPage() {
               </div>
 
               {showUnscheduled && (
-                <div className="w-64 shrink-0 border-l pl-3 flex flex-col min-h-0">
+                <div className="w-full sm:w-64 shrink-0 border-t sm:border-t-0 sm:border-l pt-3 sm:pt-0 sm:pl-3 flex flex-col min-h-0 max-h-[200px] sm:max-h-none">
                   <div className="flex items-center justify-between mb-2 shrink-0">
                     <h4 className="text-sm font-semibold text-foreground">Unscheduled Tasks</h4>
                     <Badge variant="secondary" className="text-xs" data-testid="badge-unscheduled-count">

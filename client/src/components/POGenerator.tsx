@@ -211,7 +211,7 @@ export function POGenerator({ projectName, projectManager }: POGeneratorProps) {
           Purchase Orders
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto w-[95vw] sm:w-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Package className="h-5 w-5" />
@@ -355,7 +355,7 @@ export function POGenerator({ projectName, projectManager }: POGeneratorProps) {
 
             <div className="border rounded-lg p-4 space-y-3">
               <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Supplier Details</h4>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <Label className="text-xs">Supplier Name *</Label>
                   <Input
@@ -402,7 +402,8 @@ export function POGenerator({ projectName, projectManager }: POGeneratorProps) {
                   <Plus className="h-3 w-3 mr-1" /> Add Item
                 </Button>
               </div>
-              <Table>
+              <div className="overflow-x-auto -mx-4 px-4">
+              <Table className="min-w-[600px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="text-xs w-8">#</TableHead>
@@ -487,6 +488,7 @@ export function POGenerator({ projectName, projectManager }: POGeneratorProps) {
                   ))}
                 </TableBody>
               </Table>
+              </div>
               <div className="flex justify-end">
                 <div className="text-right space-y-1">
                   <div className="text-xs text-muted-foreground">Sub-Total: <span className="font-medium text-foreground">R {subtotal.toLocaleString("en-ZA", { minimumFractionDigits: 2 })}</span></div>
@@ -498,7 +500,7 @@ export function POGenerator({ projectName, projectManager }: POGeneratorProps) {
 
             <div className="border rounded-lg p-4 space-y-3">
               <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Delivery & Terms</h4>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <Label className="text-xs">Payment Terms</Label>
                   <Input
