@@ -381,9 +381,10 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
     const today = startOfDay(new Date());
     let minStart: Date | null = null;
     let maxEnd: Date | null = null;
-    let totalActualPercent = 0;
-    let totalExpectedPercent = 0;
-    let countWithDates = 0;
+    let weightedActual = 0;
+    let weightedExpected = 0;
+    let totalWeight = 0;
+    let totalExpWeight = 0;
     let lateTasks = 0;
     
     tasks.forEach(task => {
@@ -400,18 +401,20 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
         }
       }
       
+      const dur = (task.durationDays && task.durationDays > 0) ? task.durationDays : 1;
       const actualPct = Math.round((task.percentComplete || 0) * 100);
-      totalActualPercent += actualPct;
+      weightedActual += actualPct * dur;
+      totalWeight += dur;
       
       if (task.startDate && task.endDate) {
         const start = parseISO(task.startDate);
         const end = parseISO(task.endDate);
         if (isValid(start) && isValid(end)) {
-          countWithDates++;
           const totalDuration = differenceInCalendarDays(end, start);
           const elapsed = differenceInCalendarDays(today, start);
           const expectedPct = totalDuration > 0 ? clamp(elapsed / totalDuration, 0, 1) * 100 : 100;
-          totalExpectedPercent += expectedPct;
+          weightedExpected += expectedPct * dur;
+          totalExpWeight += dur;
           
           if (actualPct < expectedPct && isAfter(today, start)) {
             lateTasks++;
@@ -421,8 +424,8 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
     });
     
     const durationDays = minStart && maxEnd ? differenceInCalendarDays(maxEnd, minStart) + 1 : 0;
-    const overallActual = tasks.length > 0 ? Math.round(totalActualPercent / tasks.length) : 0;
-    const overallExpected = countWithDates > 0 ? Math.round(totalExpectedPercent / countWithDates) : null;
+    const overallActual = totalWeight > 0 ? Math.round(weightedActual / totalWeight) : 0;
+    const overallExpected = totalExpWeight > 0 ? Math.round(weightedExpected / totalExpWeight) : null;
     
     return {
       projectStart: minStart,

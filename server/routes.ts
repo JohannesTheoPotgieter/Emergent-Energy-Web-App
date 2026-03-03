@@ -1261,41 +1261,44 @@ export async function registerRoutes(
         phaseDistribution[phase].kw += safeNum(p.sizeKwp);
       }
 
-      const projectDeltas = new Map<string, { weightedActual: number; weightedExpected: number; totalWeight: number; hasSummary: boolean }>();
-      for (const plan of allPlans) {
-        const taskNo = (plan.taskNo || '').toString().toLowerCase().trim();
-        const isSummary = taskNo === 'no.' || taskNo === 'no' || taskNo === '#';
-        if (isSummary && plan.actualPctComplete !== null && plan.expectedPctComplete !== null) {
-          projectDeltas.set(plan.projectName, { 
-            weightedActual: plan.actualPctComplete, 
-            weightedExpected: plan.expectedPctComplete, 
-            totalWeight: 1,
-            hasSummary: true 
-          });
-        }
-      }
+      const todayStr = today;
+      const projectDeltas = new Map<string, { weightedActual: number; weightedExpected: number; totalWeight: number }>();
       for (const plan of allPlans) {
         if ((plan as any).rowNumber < 0 && (plan as any).isVirtual) continue;
         const taskNo2 = (plan.taskNo || '').toString().toLowerCase().trim();
         const isSummary2 = taskNo2 === 'no.' || taskNo2 === 'no' || taskNo2 === '#';
         if (isSummary2) continue;
         if (!projectDeltas.has(plan.projectName)) {
-          projectDeltas.set(plan.projectName, { weightedActual: 0, weightedExpected: 0, totalWeight: 0, hasSummary: false });
+          projectDeltas.set(plan.projectName, { weightedActual: 0, weightedExpected: 0, totalWeight: 0 });
         }
         const pd = projectDeltas.get(plan.projectName)!;
-        if (!pd.hasSummary) {
-          const dur = plan.durationDays && plan.durationDays > 0 ? plan.durationDays : 1;
-          pd.weightedActual += (plan.actualPctComplete ?? 0) * dur;
-          pd.weightedExpected += (plan.expectedPctComplete ?? 0) * dur;
-          pd.totalWeight += dur;
+        const dur = plan.durationDays && plan.durationDays > 0 ? plan.durationDays : 1;
+        pd.weightedActual += (plan.actualPctComplete ?? 0) * dur;
+        let exp = plan.expectedPctComplete;
+        if (exp == null || exp === undefined) {
+          const tStart = plan.actualStart?.substring?.(0, 10) || plan.startDate?.substring?.(0, 10);
+          const tEnd = plan.actualEnd?.substring?.(0, 10) || plan.endDate?.substring?.(0, 10);
+          if (tStart && tEnd && /^\d{4}-\d{2}-\d{2}/.test(tStart) && /^\d{4}-\d{2}-\d{2}/.test(tEnd)) {
+            if (todayStr >= tEnd) exp = 1.0;
+            else if (todayStr <= tStart) exp = 0.0;
+            else {
+              const totalDays = Math.max(1, (new Date(tEnd).getTime() - new Date(tStart).getTime()) / 86400000);
+              const elapsedDays = (new Date(todayStr).getTime() - new Date(tStart).getTime()) / 86400000;
+              exp = Math.min(elapsedDays / totalDays, 1.0);
+            }
+          } else {
+            exp = 0;
+          }
         }
+        pd.weightedExpected += (exp ?? 0) * dur;
+        pd.totalWeight += dur;
       }
 
       const projectDeltaValues: { projectName: string; delta: number; avgActual: number; avgExpected: number }[] = [];
       for (const [projectName, pd] of Array.from(projectDeltas.entries())) {
         if (pd.totalWeight > 0) {
-          const avgActual = pd.hasSummary ? pd.weightedActual : pd.weightedActual / pd.totalWeight;
-          const avgExpected = pd.hasSummary ? pd.weightedExpected : pd.weightedExpected / pd.totalWeight;
+          const avgActual = pd.weightedActual / pd.totalWeight;
+          const avgExpected = pd.weightedExpected / pd.totalWeight;
           const delta = (avgActual - avgExpected) * 100;
           projectDeltaValues.push({ projectName, delta, avgActual: avgActual * 100, avgExpected: avgExpected * 100 });
         }
