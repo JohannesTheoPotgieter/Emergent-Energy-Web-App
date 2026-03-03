@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import {
   FileText, Plus, Trash2, Download, Send, Package, Loader2,
-  ChevronDown, ChevronUp, Eye,
+  ChevronDown, ChevronUp, Eye, Copy, ArrowUp, ArrowDown, GripVertical,
 } from "lucide-react";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -171,6 +171,35 @@ export function POGenerator({ projectName, projectManager }: POGeneratorProps) {
   function removeLineItem(idx: number) {
     if (lineItems.length <= 1) return;
     setLineItems(prev => prev.filter((_, i) => i !== idx));
+  }
+
+  function duplicateLineItem(idx: number) {
+    setLineItems(prev => {
+      const copy = [...prev];
+      copy.splice(idx + 1, 0, { ...prev[idx] });
+      return copy;
+    });
+  }
+
+  function moveLineItem(idx: number, direction: "up" | "down") {
+    setLineItems(prev => {
+      const copy = [...prev];
+      const target = direction === "up" ? idx - 1 : idx + 1;
+      if (target < 0 || target >= copy.length) return prev;
+      [copy[idx], copy[target]] = [copy[target], copy[idx]];
+      return copy;
+    });
+  }
+
+  function handleLineKeyDown(e: React.KeyboardEvent, idx: number, field: string) {
+    if (e.key === "Enter" && idx === lineItems.length - 1 && field === "pricePerUnit") {
+      e.preventDefault();
+      addLineItem();
+      setTimeout(() => {
+        const nextDesc = document.querySelector(`[data-testid="input-line-desc-${idx + 1}"]`) as HTMLInputElement;
+        nextDesc?.focus();
+      }, 50);
+    }
   }
 
   const subtotal = lineItems.reduce((s, item) => s + (item.qty || 0) * (item.pricePerUnit || 0), 0);
@@ -397,13 +426,17 @@ export function POGenerator({ projectName, projectManager }: POGeneratorProps) {
 
             <div className="border rounded-lg p-4 space-y-3">
               <div className="flex items-center justify-between">
-                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Line Items</h4>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  Line Items
+                  <Badge variant="secondary" className="ml-2 text-[10px]">{lineItems.length} item{lineItems.length !== 1 ? "s" : ""}</Badge>
+                </h4>
                 <Button variant="outline" size="sm" onClick={addLineItem} data-testid="btn-add-line-item">
                   <Plus className="h-3 w-3 mr-1" /> Add Item
                 </Button>
               </div>
+              <p className="text-[11px] text-muted-foreground">Press Enter on the last row's price field to quickly add another item.</p>
               <div className="overflow-x-auto -mx-4 px-4">
-              <Table className="min-w-[600px]">
+              <Table className="min-w-[700px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="text-xs w-8">#</TableHead>
@@ -413,19 +446,19 @@ export function POGenerator({ projectName, projectManager }: POGeneratorProps) {
                     <TableHead className="text-xs w-16">Unit</TableHead>
                     <TableHead className="text-xs w-28">Price/Unit *</TableHead>
                     <TableHead className="text-xs w-28 text-right">Subtotal</TableHead>
-                    <TableHead className="w-8"></TableHead>
+                    <TableHead className="text-xs w-24 text-center">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {lineItems.map((item, idx) => (
-                    <TableRow key={idx}>
-                      <TableCell className="text-xs">{idx + 1}</TableCell>
+                    <TableRow key={idx} className="group">
+                      <TableCell className="text-xs font-medium text-muted-foreground">{idx + 1}</TableCell>
                       <TableCell>
                         <Input
                           className="h-8 text-xs"
                           value={item.description}
                           onChange={e => updateLineItem(idx, "description", e.target.value)}
-                          placeholder="Description"
+                          placeholder="Item description"
                           data-testid={`input-line-desc-${idx}`}
                         />
                       </TableCell>
@@ -465,6 +498,7 @@ export function POGenerator({ projectName, projectManager }: POGeneratorProps) {
                           step={0.01}
                           value={item.pricePerUnit || ""}
                           onChange={e => updateLineItem(idx, "pricePerUnit", parseFloat(e.target.value) || 0)}
+                          onKeyDown={e => handleLineKeyDown(e, idx, "pricePerUnit")}
                           data-testid={`input-line-price-${idx}`}
                         />
                       </TableCell>
@@ -472,24 +506,62 @@ export function POGenerator({ projectName, projectManager }: POGeneratorProps) {
                         R {((item.qty || 0) * (item.pricePerUnit || 0)).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}
                       </TableCell>
                       <TableCell>
-                        {lineItems.length > 1 && (
+                        <div className="flex items-center justify-center gap-0.5">
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-7 w-7 p-0"
-                            onClick={() => removeLineItem(idx)}
-                            data-testid={`btn-remove-line-${idx}`}
+                            className="h-6 w-6 p-0 opacity-50 hover:opacity-100"
+                            onClick={() => moveLineItem(idx, "up")}
+                            disabled={idx === 0}
+                            title="Move up"
+                            data-testid={`btn-move-up-${idx}`}
                           >
-                            <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                            <ArrowUp className="h-3 w-3" />
                           </Button>
-                        )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 w-6 p-0 opacity-50 hover:opacity-100"
+                            onClick={() => moveLineItem(idx, "down")}
+                            disabled={idx === lineItems.length - 1}
+                            title="Move down"
+                            data-testid={`btn-move-down-${idx}`}
+                          >
+                            <ArrowDown className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 w-6 p-0 opacity-50 hover:opacity-100"
+                            onClick={() => duplicateLineItem(idx)}
+                            title="Duplicate row"
+                            data-testid={`btn-duplicate-line-${idx}`}
+                          >
+                            <Copy className="h-3 w-3" />
+                          </Button>
+                          {lineItems.length > 1 && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 w-6 p-0 opacity-50 hover:opacity-100"
+                              onClick={() => removeLineItem(idx)}
+                              title="Remove row"
+                              data-testid={`btn-remove-line-${idx}`}
+                            >
+                              <Trash2 className="h-3 w-3 text-destructive" />
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
               </div>
-              <div className="flex justify-end">
+              <div className="flex items-center justify-between">
+                <Button variant="ghost" size="sm" onClick={addLineItem} className="text-xs text-muted-foreground" data-testid="btn-add-line-item-bottom">
+                  <Plus className="h-3 w-3 mr-1" /> Add another item
+                </Button>
                 <div className="text-right space-y-1">
                   <div className="text-xs text-muted-foreground">Sub-Total: <span className="font-medium text-foreground">R {subtotal.toLocaleString("en-ZA", { minimumFractionDigits: 2 })}</span></div>
                   <div className="text-xs text-muted-foreground">VAT (15%): <span className="font-medium text-foreground">R {vatAmount.toLocaleString("en-ZA", { minimumFractionDigits: 2 })}</span></div>
