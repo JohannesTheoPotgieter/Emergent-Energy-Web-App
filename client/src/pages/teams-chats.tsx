@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, lazy, Suspense } from "react";
 import { Link } from "wouter";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
@@ -46,8 +46,20 @@ import {
   Building2,
   FolderKanban,
   ExternalLink,
+  Zap,
+  RefreshCw,
+  AlertTriangle,
+  Link2,
+  Tag,
+  ClipboardCheck,
 } from "lucide-react";
-import { format, formatDistanceToNow, isToday, isYesterday } from "date-fns";
+import { format, formatDistanceToNow, isToday, isYesterday, parseISO } from "date-fns";
+import { MsObjectActions, TagToProjectDialog, ConvertToTaskDialog } from "./collaboration";
+
+function authHeaders(): Record<string, string> {
+  const token = localStorage.getItem("auth_token");
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 interface ChatMember {
   id: number;
@@ -141,9 +153,178 @@ function formatDateHeader(dateStr: string) {
   return format(d, "EEEE, MMMM d, yyyy");
 }
 
+function ActivitySection() {
+  const [tagDialogOpen, setTagDialogOpen] = useState(false);
+  const [tagTarget, setTagTarget] = useState<any>(null);
+  const [convertDialogOpen, setConvertDialogOpen] = useState(false);
+  const [convertTarget, setConvertTarget] = useState<any>(null);
+  const [autoSyncDone, setAutoSyncDone] = useState(false);
+  const { toast } = useToast();
+  const qc = useQueryClient();
+
+  const syncMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/ms-sync/trigger", {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ type: "teams" }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Sync failed" }));
+        throw new Error(err.error || "Sync failed");
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ["ms-objects-mine"] });
+      const total = (data.results || []).reduce((s: number, r: any) => s + (r.synced || 0), 0);
+      if (total > 0) {
+        toast({ title: `Synced ${total} Teams items` });
+      } else {
+        toast({ title: "Teams sync complete", description: "No new items" });
+      }
+    },
+    onError: (err: any) => toast({ title: "Sync failed", description: err.message, variant: "destructive" }),
+  });
+
+  const { data: items = [], isLoading, isFetched } = useQuery<any[]>({
+    queryKey: ["ms-objects-mine", "teams"],
+    queryFn: async () => {
+      const res = await fetch("/api/ms-objects/mine?type=teams", { headers: authHeaders(), credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    staleTime: 30_000,
+  });
+
+  useEffect(() => {
+    if (isFetched && items.length === 0 && !autoSyncDone && !syncMutation.isPending) {
+      setAutoSyncDone(true);
+      syncMutation.mutate();
+    }
+  }, [isFetched, items.length, autoSyncDone]);
+
+  return (
+    <div className="flex-1 overflow-y-auto" data-testid="activity-section">
+      <div className="max-w-4xl mx-auto p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900" data-testid="text-activity-title">Teams Activity</h2>
+            <p className="text-sm text-muted-foreground">Mentions, chats, and activity synced from Microsoft Teams</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => syncMutation.mutate()}
+              disabled={syncMutation.isPending}
+              data-testid="sync-teams-button"
+            >
+              <RefreshCw className={`h-4 w-4 mr-1.5 ${syncMutation.isPending ? "animate-spin" : ""}`} />
+              {syncMutation.isPending ? "Syncing..." : "Sync Now"}
+            </Button>
+            <Badge variant="outline" className="text-xs" data-testid="synced-teams-count">
+              {items.length} items
+            </Badge>
+          </div>
+        </div>
+
+        {isLoading || syncMutation.isPending ? (
+          <div className="flex items-center justify-center py-16">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <span className="ml-2 text-sm text-muted-foreground">{syncMutation.isPending ? "Syncing Teams from Microsoft 365..." : "Loading..."}</span>
+          </div>
+        ) : items.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <div className="w-16 h-16 rounded-2xl bg-purple-50 flex items-center justify-center mb-4">
+              <Zap className="h-8 w-8 text-purple-400" />
+            </div>
+            <p className="text-muted-foreground text-sm font-medium">No Teams activity synced</p>
+            <p className="text-xs text-muted-foreground mt-1">Click "Sync Now" to pull your Teams chats from Microsoft 365</p>
+            <Button
+              variant="default"
+              size="sm"
+              className="mt-4"
+              onClick={() => syncMutation.mutate()}
+              disabled={syncMutation.isPending}
+              data-testid="sync-teams-empty-button"
+            >
+              <RefreshCw className="h-4 w-4 mr-1.5" /> Sync Teams
+            </Button>
+          </div>
+        ) : (
+          <div className="divide-y rounded-xl border bg-white shadow-sm">
+            {items.map((item: any) => (
+              <div
+                key={item.id}
+                className={`group flex items-start gap-3 px-4 py-3.5 hover:bg-muted/50 transition-colors ${item.actionRequired ? "bg-purple-50/40" : ""}`}
+                data-testid={`synced-teams-item-${item.id}`}
+              >
+                <div className="flex-shrink-0 mt-0.5">
+                  {item.actionRequired ? (
+                    <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center">
+                      <AlertTriangle className="h-4 w-4 text-purple-600" />
+                    </div>
+                  ) : (
+                    <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
+                      <MessageSquare className="h-4 w-4 text-gray-500" />
+                    </div>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium truncate">{item.subjectOrTitle || "Teams Activity"}</span>
+                    {item.actionRequired && (
+                      <Badge className="bg-purple-100 text-purple-700 text-[10px]">Mention</Badge>
+                    )}
+                    {item.linkedProjectId && (
+                      <Badge variant="secondary" className="text-[10px]" data-testid={`teams-project-badge-${item.id}`}>
+                        <Link2 className="h-3 w-3 mr-0.5" /> Tagged
+                      </Badge>
+                    )}
+                  </div>
+                  {item.preview && (
+                    <p className="text-xs text-muted-foreground truncate mt-0.5">{item.preview}</p>
+                  )}
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {item.receivedOrStartDatetime ? format(parseISO(item.receivedOrStartDatetime), "MMM d, h:mm a") : ""}
+                  </p>
+                </div>
+                <MsObjectActions
+                  item={item}
+                  onTagClick={(i) => { setTagTarget(i); setTagDialogOpen(true); }}
+                  onConvertClick={(i) => { setConvertTarget(i); setConvertDialogOpen(true); }}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <TagToProjectDialog
+        open={tagDialogOpen}
+        onOpenChange={setTagDialogOpen}
+        msObjectId={tagTarget?.id || null}
+        currentProjectId={tagTarget?.linkedProjectId}
+      />
+      {convertTarget && (
+        <Suspense fallback={null}>
+          <ConvertToTaskDialog
+            open={convertDialogOpen}
+            onOpenChange={setConvertDialogOpen}
+            item={convertTarget}
+          />
+        </Suspense>
+      )}
+    </div>
+  );
+}
+
 export default function TeamsChatsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const [viewMode, setViewMode] = useState<"activity" | "chat">("activity");
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showMembersPanel, setShowMembersPanel] = useState(false);
@@ -323,7 +504,41 @@ export default function TeamsChatsPage() {
   }, [messages]);
 
   return (
-    <div className="flex h-[calc(100vh-56px)] bg-white overflow-hidden" data-testid="teams-chats-page">
+    <div className="flex flex-col h-[calc(100vh-56px)] bg-white overflow-hidden" data-testid="teams-chats-page">
+      <div className="flex items-center gap-4 px-4 py-2 bg-white border-b shrink-0" data-testid="teams-section-toggle">
+        <h1 className="text-base font-semibold text-gray-900 mr-2">Teams Chat</h1>
+        <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+          <button
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+              viewMode === "activity"
+                ? "bg-white text-gray-900 shadow-sm"
+                : "text-gray-500 hover:text-gray-700"
+            }`}
+            onClick={() => setViewMode("activity")}
+            data-testid="teams-view-activity"
+          >
+            <Zap className="h-3.5 w-3.5" />
+            Activity
+          </button>
+          <button
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+              viewMode === "chat"
+                ? "bg-white text-gray-900 shadow-sm"
+                : "text-gray-500 hover:text-gray-700"
+            }`}
+            onClick={() => setViewMode("chat")}
+            data-testid="teams-view-chat"
+          >
+            <MessageSquare className="h-3.5 w-3.5" />
+            Chat
+          </button>
+        </div>
+      </div>
+
+      {viewMode === "activity" ? (
+        <ActivitySection />
+      ) : (
+      <div className="flex flex-1 overflow-hidden">
       <div className="w-72 bg-[#292929] flex flex-col shrink-0 border-r border-[#3b3b3b]" data-testid="teams-sidebar">
         <div className="p-3 border-b border-[#3b3b3b]">
           <div className="flex items-center justify-between mb-2.5">
@@ -869,6 +1084,8 @@ export default function TeamsChatsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      </div>
+      )}
     </div>
   );
 }
