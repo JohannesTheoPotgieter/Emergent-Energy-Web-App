@@ -331,9 +331,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [expandedParents, setExpandedParents] = useState<Record<string, boolean>>({});
   
   useEffect(() => {
-    if (location === "/") {
-      setCollapsedSections({});
-    }
+    setCollapsedSections({});
   }, [location]);
   const { data, overview, refreshData, isLoading, importFiles, lastUploadResult } = useProgramData();
   const { user, logout } = useAuth();
@@ -410,7 +408,24 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, [mobileOpen]);
 
   const toggleSection = (heading: string) => {
-    setCollapsedSections(prev => ({ ...prev, [heading]: !prev[heading] }));
+    setCollapsedSections(prev => {
+      const next = { ...prev };
+      if (next[heading] !== undefined) {
+        next[heading] = !next[heading];
+      } else {
+        const groups = getNavGroups(!!unifiedWorkFlag);
+        const group = groups.find(g => g.heading === heading);
+        const currentSearch = window.location.search;
+        const groupHasActive = group?.items.some(item => {
+          const ip = item.path.split("?")[0];
+          const iq = item.path.includes("?") ? item.path.split("?")[1] : null;
+          if (iq) return location === ip && currentSearch === `?${iq}`;
+          return location === item.path || (item.path === "/my-tool" && location.startsWith("/my-tool")) || (item.path !== "/" && item.path !== "/engineering" && location.startsWith(item.path));
+        });
+        next[heading] = !!groupHasActive;
+      }
+      return next;
+    });
   };
 
   const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
@@ -549,7 +564,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             });
             if (visibleItems.length === 0) return null;
 
-            const isCollapsed = collapsedSections[group.heading] && sidebarShowLabels;
             const currentSearchStr = typeof window !== "undefined" ? window.location.search : "";
             const hasActiveItem = visibleItems.some(item => {
               const ip = item.path.split("?")[0];
@@ -561,10 +575,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 (item.children && item.children.some(c => location === c.path || location.startsWith(c.path)));
             });
 
+            const isCollapsed = sidebarShowLabels && (
+              collapsedSections[group.heading] !== undefined
+                ? collapsedSections[group.heading]
+                : !hasActiveItem
+            );
             const sectionColor = SECTION_COLORS[group.section] || "text-sidebar-foreground/40";
 
             return (
-              <div key={group.heading} className="pt-3 first:pt-1">
+              <div key={group.heading} className="pt-2 first:pt-1">
                 {sidebarShowLabels ? (
                   <button
                     onClick={() => toggleSection(group.heading)}
