@@ -907,7 +907,7 @@ export async function registerRoutes(
         await ensureMsAccount(dbUser.id, result.msProfile, undefined, {
           accessToken: result.accessToken,
           expiresOn: result.expiresOn,
-        });
+        }, result.tokenCache);
       } catch (msAcctErr: any) {
         console.error("[MS Auth] Failed to upsert ms_account:", msAcctErr.message);
       }
@@ -12799,6 +12799,18 @@ export async function registerRoutes(
     }
   }
 
+  async function userHasMsAccount(req: any): Promise<boolean> {
+    const userId = req.user?.id || req.user?.userId;
+    if (!userId) return false;
+    try {
+      const { getMsAccountForUser } = await import("./ms-account-service");
+      const account = await getMsAccountForUser(userId);
+      return !!(account && account.status === "active");
+    } catch {
+      return false;
+    }
+  }
+
   app.get("/api/outlook/events", requireAuth, async (req, res) => {
     try {
       const { start, end } = req.query;
@@ -12806,6 +12818,10 @@ export async function registerRoutes(
         return res.status(400).json({ error: "start and end query params required (YYYY-MM-DD)" });
       }
       const userToken = await getUserSsoToken(req);
+      const hasLinkedAccount = await userHasMsAccount(req);
+      if (hasLinkedAccount && !userToken) {
+        return res.json([]);
+      }
       const events = await outlook.getCalendarEvents(start as string, end as string, userToken);
       res.json(events);
     } catch (err: any) {
@@ -12868,6 +12884,10 @@ export async function registerRoutes(
     try {
       const { search, top, skip, folder } = req.query;
       const userToken = await getUserSsoToken(req);
+      const hasLinkedAccount = await userHasMsAccount(req);
+      if (hasLinkedAccount && !userToken) {
+        return res.json([]);
+      }
       const messages = await outlook.listMessages({
         search: search ? String(search) : undefined,
         top: top ? parseInt(String(top)) : 20,
@@ -12887,6 +12907,10 @@ export async function registerRoutes(
   app.get("/api/outlook/messages/:id", requireAuth, async (req, res) => {
     try {
       const userToken = await getUserSsoToken(req);
+      const hasLinkedAccount = await userHasMsAccount(req);
+      if (hasLinkedAccount && !userToken) {
+        return res.status(401).json({ error: "Microsoft token expired. Please sign in again with Microsoft." });
+      }
       const msg = await outlook.getMessageDetail(req.params.id, userToken);
       res.json(msg);
     } catch (err: any) {
@@ -12949,6 +12973,10 @@ export async function registerRoutes(
         return res.status(400).json({ error: "to, subject, and approvalTitle are required" });
       }
       const userToken = await getUserSsoToken(req);
+      const hasLinkedAccount = await userHasMsAccount(req);
+      if (hasLinkedAccount && !userToken) {
+        return res.status(401).json({ error: "Microsoft token expired. Please sign in again with Microsoft." });
+      }
       await outlook.sendApprovalEmail({
         to, subject, approvalTitle,
         approvalDescription: approvalDescription || "",
@@ -12966,6 +12994,10 @@ export async function registerRoutes(
   app.get("/api/outlook/folders", requireAuth, async (req, res) => {
     try {
       const userToken = await getUserSsoToken(req);
+      const hasLinkedAccount = await userHasMsAccount(req);
+      if (hasLinkedAccount && !userToken) {
+        return res.json([]);
+      }
       const folders = await outlook.listMailFolders(userToken);
       res.json(folders);
     } catch (err: any) {
@@ -13066,6 +13098,10 @@ export async function registerRoutes(
         return res.status(400).json({ error: "to (array) and subject are required" });
       }
       const userToken = await getUserSsoToken(req);
+      const hasLinkedAccount = await userHasMsAccount(req);
+      if (hasLinkedAccount && !userToken) {
+        return res.status(401).json({ error: "Microsoft token expired. Please sign in again with Microsoft." });
+      }
       await outlook.sendMail({ to, cc: cc || [], subject, body: body || "", bodyType: bodyType || "Text" }, userToken);
       logAuditFromReq(req, { entityType: "outlook_email", action: "send", changesJson: { description: "Email sent", to, subject } });
       res.json({ success: true });
@@ -13082,6 +13118,10 @@ export async function registerRoutes(
         return res.status(400).json({ error: "comment is required" });
       }
       const userToken = await getUserSsoToken(req);
+      const hasLinkedAccount = await userHasMsAccount(req);
+      if (hasLinkedAccount && !userToken) {
+        return res.status(401).json({ error: "Microsoft token expired. Please sign in again with Microsoft." });
+      }
       await outlook.replyToMessage(req.params.id, comment, !!replyAll, userToken);
       logAuditFromReq(req, { entityType: "outlook_email", action: "reply", entityId: req.params.id, changesJson: { description: "Email reply sent", replyAll: !!replyAll } });
       res.json({ success: true });
@@ -13098,6 +13138,10 @@ export async function registerRoutes(
         return res.status(400).json({ error: "to (array) is required" });
       }
       const userToken = await getUserSsoToken(req);
+      const hasLinkedAccount = await userHasMsAccount(req);
+      if (hasLinkedAccount && !userToken) {
+        return res.status(401).json({ error: "Microsoft token expired. Please sign in again with Microsoft." });
+      }
       await outlook.forwardMessage(req.params.id, comment || "", to, userToken);
       logAuditFromReq(req, { entityType: "outlook_email", action: "forward", entityId: req.params.id, changesJson: { description: "Email forwarded", to } });
       res.json({ success: true });
