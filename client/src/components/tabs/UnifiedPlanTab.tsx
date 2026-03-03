@@ -1576,7 +1576,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
               );
             })}
 
-            <div style={{ paddingTop: 28 }}>
+            <div>
               {visibleTasks.map((task) => {
                 const bar = getBarStyle(task);
                 const pct = task.percentComplete || 0;
