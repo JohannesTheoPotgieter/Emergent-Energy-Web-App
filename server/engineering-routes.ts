@@ -1303,6 +1303,121 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
+  app.get("/api/excel-updates", requireAuth, async (req, res) => {
+    try {
+      const userId = getUser(req).id;
+      const { status, search, limit: rawLimit, offset: rawOffset } = req.query;
+      const pageLimit = Math.min(parseInt(rawLimit as string) || 50, 200);
+      const pageOffset = parseInt(rawOffset as string) || 0;
+
+      const excelEventTypes = ["excel_sync_confirmation", "plan.change_confirmation"];
+      const conditions: any[] = [
+        eq(notifications.recipientUserId, userId),
+        inArray(notifications.eventType, excelEventTypes),
+      ];
+
+      if (status === "pending") conditions.push(isNull(notifications.confirmedAt));
+      if (status === "confirmed") conditions.push(sql`${notifications.confirmedAt} IS NOT NULL`);
+      if (typeof search === "string" && search.trim()) {
+        const term = `%${search.trim().toLowerCase()}%`;
+        conditions.push(sql`(LOWER(${notifications.title}) LIKE ${term} OR LOWER(COALESCE(${notifications.body},'')) LIKE ${term} OR LOWER(COALESCE(${notifications.projectName},'')) LIKE ${term})`);
+      }
+
+      const whereClause = and(...conditions);
+
+      const [items, [countResult], [pendingCountResult], [confirmedCountResult], projectsResult] = await Promise.all([
+        db.select().from(notifications)
+          .where(whereClause)
+          .orderBy(desc(notifications.createdAt))
+          .limit(pageLimit)
+          .offset(pageOffset),
+        db.select({ total: sql<number>`count(*)::int` })
+          .from(notifications).where(whereClause),
+        db.select({ count: sql<number>`count(*)::int` })
+          .from(notifications)
+          .where(and(
+            eq(notifications.recipientUserId, userId),
+            inArray(notifications.eventType, excelEventTypes),
+            isNull(notifications.confirmedAt)
+          )),
+        db.select({ count: sql<number>`count(*)::int` })
+          .from(notifications)
+          .where(and(
+            eq(notifications.recipientUserId, userId),
+            inArray(notifications.eventType, excelEventTypes),
+            sql`${notifications.confirmedAt} IS NOT NULL`
+          )),
+        db.selectDistinct({ projectName: notifications.projectName })
+          .from(notifications)
+          .where(and(
+            eq(notifications.recipientUserId, userId),
+            inArray(notifications.eventType, excelEventTypes),
+          ))
+          .orderBy(notifications.projectName),
+      ]);
+
+      res.json({
+        items,
+        total: countResult?.total || 0,
+        pendingCount: pendingCountResult?.count || 0,
+        confirmedCount: confirmedCountResult?.count || 0,
+        projects: projectsResult.map(p => p.projectName).filter(Boolean),
+      });
+    } catch (err: any) {
+      console.error("[ExcelUpdates] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/excel-updates/bulk-confirm", requireAuth, async (req, res) => {
+    try {
+      const userId = getUser(req).id;
+      const { notificationIds } = req.body;
+
+      if (!Array.isArray(notificationIds) || notificationIds.length === 0) {
+        return res.status(400).json({ error: "notificationIds array is required" });
+      }
+
+      const [confirmer] = await db.select({ name: users.name }).from(users).where(eq(users.id, userId));
+      const now = new Date();
+
+      const toConfirm = await db.select().from(notifications)
+        .where(and(
+          inArray(notifications.id, notificationIds),
+          eq(notifications.recipientUserId, userId),
+          eq(notifications.requiresConfirmation, true),
+          isNull(notifications.confirmedAt)
+        ));
+
+      if (toConfirm.length === 0) {
+        return res.json({ success: true, confirmedCount: 0 });
+      }
+
+      await db.update(notifications)
+        .set({ confirmedByUserId: userId, confirmedAt: now, isRead: true, readAt: now })
+        .where(and(
+          inArray(notifications.id, toConfirm.map(n => n.id)),
+          eq(notifications.recipientUserId, userId)
+        ));
+
+      logAuditFromReq(req, {
+        entityType: "notification",
+        action: "bulk_confirm",
+        changesJson: { description: "Bulk Excel update confirmation", count: toConfirm.length, ids: toConfirm.map(n => n.id) },
+      });
+
+      res.json({
+        success: true,
+        confirmedCount: toConfirm.length,
+        confirmedBy: confirmer?.name || "Unknown",
+        confirmedAt: now,
+      });
+    } catch (err: any) {
+      console.error("[ExcelUpdates] Bulk confirm error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // ========== SHAREPOINT FILE POINTERS ==========
 
   app.get("/api/eng/file-pointers/:entityType/:entityId", requireAuth, async (req, res) => {
