@@ -74,6 +74,7 @@ import MyWorkHomePage from "@/pages/my-work-home";
 import MyWorkTasksPage from "@/pages/my-work-tasks";
 import MyWorkCalendarPage from "@/pages/my-work-calendar";
 import DatabaseMigrationPage from "@/pages/database-migration";
+import ClientsPage from "@/pages/clients";
 import { useAuth } from "@/hooks/use-auth";
 
 const EPM_ALLOWED_PATHS = ["/", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/projects", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/collaboration/sharepoint", "/notifications", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/meetings"];
@@ -201,6 +202,7 @@ function ProtectedPages() {
         <Route path="/my-work/meetings" component={MyToolMeetingsPage} />
         <Route path="/admin/eng-templates">{() => <Redirect to="/admin/phase-templates" />}</Route>
         <Route path="/admin/database-migration" component={DatabaseMigrationPage} />
+        <Route path="/clients" component={ClientsPage} />
 
         <Route component={NotFound} />
       </Switch>

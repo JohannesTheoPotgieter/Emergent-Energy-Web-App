@@ -38,7 +38,8 @@ Preferred communication style: Simple, everyday language.
 -   **Data Storage**: PostgreSQL with Drizzle ORM.
 -   **Logic**: Pure-function modules, automated backfill for computed columns, and audit trails.
 -   **Canonical Data Model**: All data reads/writes exclusively use `work_items` for tasks, `normalized_cost_lines` for costs, and `normalized_revenue_lines` for revenue. Legacy tables are fully deprecated.
--   **Client Management**: API for managing clients and assigning them to projects.
+-   **Client Management**: Standalone Clients page at `/clients` in EXCO nav section. API for managing clients (`GET/POST /api/pd/clients`, `PATCH /api/pd/clients/:id`, `GET /api/pd/clients/project-counts`) and assigning them to projects.
+-   **Quality All-Items API**: `GET /api/quality/all-items` returns flat list of all QC item instances across all projects with joins to template items, phases, groups, checklists, evidence counts, and assignee names. Supports `?project=X&phase=Y&status=Z` filtering.
 -   **Engineering Task Deliverables & Approval**: Supports file attachments, approval workflows, and prevents self-approval.
 -   **Dual-Write to work_items**: Engineering task CRUD operations dual-write to both legacy `operational_tasks` and canonical `work_items`.
 -   **Plan Task work_items Sync**: Plan task edits sync to `work_items` directly.
