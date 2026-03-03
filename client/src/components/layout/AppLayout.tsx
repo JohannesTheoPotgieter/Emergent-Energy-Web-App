@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
+import { EmergentGPT } from "@/components/EmergentGPT";
 import { 
   LayoutDashboard, 
   FileSpreadsheet, 
@@ -885,7 +886,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         {screenTourSteps && location !== "/" && (
           <button
             onClick={() => setScreenTourActive(true)}
-            className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-4 py-2.5 shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-200 text-sm font-medium"
+            className="fixed bottom-6 right-24 z-50 flex items-center gap-2 rounded-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-4 py-2.5 shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-200 text-sm font-medium"
             data-testid="button-screen-tour"
           >
             <Compass className="h-4 w-4" />
@@ -900,6 +901,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             externalSteps={screenTourSteps}
           />
         )}
+
+        <EmergentGPT />
       </main>
     </div>
   );
