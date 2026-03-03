@@ -1,12 +1,13 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Check, FileSpreadsheet, Loader2, Clock, CheckCircle2,
   AlertTriangle, ChevronLeft, ChevronRight, Filter,
+  CheckCheck, ArrowRight, GitBranch, LayoutList,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -36,7 +37,7 @@ function timeAgo(dateStr: string) {
   return d.toLocaleDateString();
 }
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 30;
 
 export default function ExcelUpdatesPage() {
   const qc = useQueryClient();
@@ -44,59 +45,32 @@ export default function ExcelUpdatesPage() {
   const [tab, setTab] = useState<"pending" | "confirmed" | "all">("pending");
   const [projectFilter, setProjectFilter] = useState("");
   const [page, setPage] = useState(0);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
   const queryParams = useMemo(() => {
     const params = new URLSearchParams();
-    params.set("eventType", "excel_sync_confirmation");
+    if (tab !== "all") params.set("status", tab);
     params.set("limit", String(PAGE_SIZE));
     params.set("offset", String(page * PAGE_SIZE));
     if (projectFilter) params.set("search", projectFilter);
     return params.toString();
-  }, [page, projectFilter]);
+  }, [tab, page, projectFilter]);
 
-  const { data: notifsData, isLoading } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ["excel-updates", queryParams],
     queryFn: async () => {
-      const res = await fetch(`/api/notifications?${queryParams}`, { headers: authHeaders(), credentials: "include" });
+      const res = await fetch(`/api/excel-updates?${queryParams}`, { headers: authHeaders(), credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch");
       return res.json();
     },
     refetchInterval: 30000,
   });
 
-  const planParams = useMemo(() => {
-    const params = new URLSearchParams();
-    params.set("eventType", "plan.change_confirmation");
-    params.set("limit", String(PAGE_SIZE));
-    params.set("offset", String(page * PAGE_SIZE));
-    if (projectFilter) params.set("search", projectFilter);
-    return params.toString();
-  }, [page, projectFilter]);
-
-  const { data: planNotifsData } = useQuery({
-    queryKey: ["plan-change-updates", planParams],
-    queryFn: async () => {
-      const res = await fetch(`/api/notifications?${planParams}`, { headers: authHeaders(), credentials: "include" });
-      return res.json();
-    },
-    refetchInterval: 30000,
-  });
-
-  const allItems = useMemo(() => {
-    const excel = (notifsData?.items ?? []).map((n: any) => ({ ...n, source: "excel_sync" }));
-    const plan = (planNotifsData?.items ?? []).map((n: any) => ({ ...n, source: "plan_change" }));
-    const combined = [...excel, ...plan];
-    combined.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    return combined;
-  }, [notifsData, planNotifsData]);
-
-  const filtered = useMemo(() => {
-    if (tab === "pending") return allItems.filter((n: any) => !n.confirmedAt);
-    if (tab === "confirmed") return allItems.filter((n: any) => !!n.confirmedAt);
-    return allItems;
-  }, [allItems, tab]);
-
-  const pendingCount = allItems.filter((n: any) => !n.confirmedAt).length;
-  const confirmedCount = allItems.filter((n: any) => !!n.confirmedAt).length;
+  const items = data?.items ?? [];
+  const total = data?.total ?? 0;
+  const pendingCount = data?.pendingCount ?? 0;
+  const confirmedCount = data?.confirmedCount ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const confirmMutation = useMutation({
     mutationFn: async (notifId: number) => {
@@ -109,15 +83,76 @@ export default function ExcelUpdatesPage() {
       return res.json();
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["excel-updates"] });
-      qc.invalidateQueries({ queryKey: ["plan-change-updates"] });
-      qc.invalidateQueries({ queryKey: ["notifications"] });
-      toast({ title: "Confirmed", description: "Marked as saved in Excel tracker" });
+      invalidateAll();
+      toast({ title: "Confirmed", description: "Marked as captured in Excel tracker" });
     },
     onError: () => {
       toast({ title: "Error", description: "Could not confirm", variant: "destructive" });
     },
   });
+
+  const bulkConfirmMutation = useMutation({
+    mutationFn: async (ids: number[]) => {
+      const res = await fetch("/api/excel-updates/bulk-confirm", {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ notificationIds: ids }),
+      });
+      if (!res.ok) throw new Error("Failed to bulk confirm");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      invalidateAll();
+      setSelectedIds(new Set());
+      toast({ title: "Bulk Confirmed", description: `${data.confirmedCount} updates confirmed by ${data.confirmedBy}` });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Could not bulk confirm", variant: "destructive" });
+    },
+  });
+
+  function invalidateAll() {
+    qc.invalidateQueries({ queryKey: ["excel-updates"] });
+    qc.invalidateQueries({ queryKey: ["notifications"] });
+    qc.invalidateQueries({ queryKey: ["notifications-center"] });
+    qc.invalidateQueries({ queryKey: ["notifications-unread-count"] });
+    qc.invalidateQueries({ queryKey: ["notifications-list"] });
+  }
+
+  const toggleSelect = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAllPending = () => {
+    const pendingIds = items.filter((n: any) => !n.confirmedAt).map((n: any) => n.id);
+    setSelectedIds(new Set(pendingIds));
+  };
+
+  const handleConfirmAll = () => {
+    const pendingIds = items.filter((n: any) => !n.confirmedAt).map((n: any) => n.id);
+    if (pendingIds.length > 0) bulkConfirmMutation.mutate(pendingIds);
+  };
+
+  const handleConfirmSelected = () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length > 0) bulkConfirmMutation.mutate(ids);
+  };
+
+  const grouped = useMemo(() => {
+    const groups: Record<string, any[]> = {};
+    for (const item of items) {
+      const project = (item.projectName || "Unknown").replace(/_Tracker$/i, "").replace(/_/g, " ");
+      if (!groups[project]) groups[project] = [];
+      groups[project].push(item);
+    }
+    return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
+  }, [items]);
 
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-4" data-testid="excel-updates-page">
@@ -129,7 +164,7 @@ export default function ExcelUpdatesPage() {
               Excel Updates
             </h1>
             <p className="text-sm text-slate-500 dark:text-slate-400">
-              Track changes that need to be captured in Excel trackers
+              Changes that need to be captured in Excel trackers
             </p>
           </div>
         </div>
@@ -142,8 +177,44 @@ export default function ExcelUpdatesPage() {
         )}
       </div>
 
+      <div className="grid grid-cols-3 gap-3" data-testid="excel-updates-kpis">
+        <Card className="border-amber-200 dark:border-amber-800/50">
+          <CardContent className="p-3 flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-amber-50 dark:bg-amber-900/30">
+              <Clock className="w-5 h-5 text-amber-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-amber-700 dark:text-amber-400" data-testid="kpi-pending">{pendingCount}</p>
+              <p className="text-xs text-slate-500">Pending</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-emerald-200 dark:border-emerald-800/50">
+          <CardContent className="p-3 flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-emerald-50 dark:bg-emerald-900/30">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-emerald-700 dark:text-emerald-400" data-testid="kpi-confirmed">{confirmedCount}</p>
+              <p className="text-xs text-slate-500">Confirmed</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-slate-200 dark:border-slate-700">
+          <CardContent className="p-3 flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800">
+              <LayoutList className="w-5 h-5 text-slate-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-slate-700 dark:text-slate-300" data-testid="kpi-total">{pendingCount + confirmedCount}</p>
+              <p className="text-xs text-slate-500">Total</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
       <div className="flex items-center gap-3 flex-wrap">
-        <Tabs value={tab} onValueChange={(v) => { setTab(v as any); setPage(0); }}>
+        <Tabs value={tab} onValueChange={(v) => { setTab(v as any); setPage(0); setSelectedIds(new Set()); }}>
           <TabsList data-testid="tabs-filter">
             <TabsTrigger value="pending" className="gap-1.5" data-testid="tab-pending">
               <Clock className="w-3.5 h-3.5" />
@@ -154,7 +225,7 @@ export default function ExcelUpdatesPage() {
               Confirmed ({confirmedCount})
             </TabsTrigger>
             <TabsTrigger value="all" className="gap-1.5" data-testid="tab-all">
-              All ({allItems.length})
+              All ({pendingCount + confirmedCount})
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -170,13 +241,51 @@ export default function ExcelUpdatesPage() {
             data-testid="input-project-filter"
           />
         </div>
+
+        {tab === "pending" && pendingCount > 0 && (
+          <div className="flex items-center gap-2 ml-auto">
+            {selectedIds.size > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-xs gap-1 border-amber-300 text-amber-700 hover:bg-amber-50"
+                onClick={handleConfirmSelected}
+                disabled={bulkConfirmMutation.isPending}
+                data-testid="button-confirm-selected"
+              >
+                {bulkConfirmMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                Confirm Selected ({selectedIds.size})
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-xs gap-1"
+              onClick={selectAllPending}
+              data-testid="button-select-all"
+            >
+              <CheckCheck className="w-3 h-3" />
+              Select All
+            </Button>
+            <Button
+              size="sm"
+              className="text-xs gap-1 bg-amber-500 hover:bg-amber-600 text-white"
+              onClick={handleConfirmAll}
+              disabled={bulkConfirmMutation.isPending}
+              data-testid="button-confirm-all"
+            >
+              {bulkConfirmMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCheck className="w-3.5 h-3.5" />}
+              Confirm All
+            </Button>
+          </div>
+        )}
       </div>
 
       {isLoading ? (
         <div className="flex items-center justify-center py-16" data-testid="loading-state">
           <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
         </div>
-      ) : filtered.length === 0 ? (
+      ) : items.length === 0 ? (
         <Card data-testid="empty-state">
           <CardContent className="flex flex-col items-center justify-center py-16 text-center">
             {tab === "pending" ? (
@@ -195,115 +304,155 @@ export default function ExcelUpdatesPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-2">
-          {filtered.map((n: any) => {
-            const details = parseChangeDetails(n.changeDetails);
-            const isConfirmed = !!n.confirmedAt;
-            const projectDisplay = (n.projectName || details?.projectName || "Unknown")
-              .replace(/_Tracker$/i, "").replace(/_/g, " ");
+        <div className="space-y-4">
+          {grouped.map(([project, projectItems]) => (
+            <div key={project} data-testid={`group-${project}`}>
+              <div className="flex items-center gap-2 mb-2 px-1">
+                <GitBranch className="w-3.5 h-3.5 text-slate-400" />
+                <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">{project}</span>
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                  {projectItems.length}
+                </Badge>
+              </div>
+              <div className="space-y-1.5">
+                {projectItems.map((n: any) => {
+                  const details = parseChangeDetails(n.changeDetails);
+                  const isConfirmed = !!n.confirmedAt;
+                  const isSelected = selectedIds.has(n.id);
+                  const isExcelSync = n.eventType === "excel_sync_confirmation";
 
-            return (
-              <Card
-                key={n.id}
-                className={`transition-colors ${isConfirmed ? "bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800" : "bg-white dark:bg-slate-900 border-amber-200 dark:border-amber-800/50"}`}
-                data-testid={`card-update-${n.id}`}
-              >
-                <CardContent className="p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Badge
-                          variant="outline"
-                          className={isConfirmed
-                            ? "text-emerald-600 border-emerald-200 bg-emerald-50 dark:bg-emerald-900/30"
-                            : "text-amber-600 border-amber-200 bg-amber-50 dark:bg-amber-900/30"
-                          }
-                          data-testid={`badge-status-${n.id}`}
-                        >
-                          {isConfirmed ? (
-                            <><CheckCircle2 className="w-3 h-3 mr-1" /> Confirmed</>
-                          ) : (
-                            <><Clock className="w-3 h-3 mr-1" /> Pending</>
+                  return (
+                    <Card
+                      key={n.id}
+                      className={`transition-all ${isConfirmed ? "bg-slate-50/80 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 opacity-75" : "bg-white dark:bg-slate-900 border-l-4 border-l-amber-400 border-t border-r border-b border-amber-200 dark:border-amber-800/50"} ${isSelected && !isConfirmed ? "ring-2 ring-amber-300 dark:ring-amber-700" : ""}`}
+                      data-testid={`card-update-${n.id}`}
+                    >
+                      <CardContent className="p-3">
+                        <div className="flex items-start gap-3">
+                          {!isConfirmed && tab === "pending" && (
+                            <label className="flex items-center pt-0.5 cursor-pointer" onClick={(e) => e.stopPropagation()}>
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleSelect(n.id)}
+                                className="w-4 h-4 rounded border-slate-300 text-amber-500 focus:ring-amber-400"
+                                data-testid={`checkbox-${n.id}`}
+                              />
+                            </label>
                           )}
-                        </Badge>
-                        <span className="text-xs text-slate-400">{timeAgo(n.createdAt)}</span>
-                        {n.source === "plan_change" && (
-                          <Badge variant="outline" className="text-xs text-blue-600 border-blue-200 bg-blue-50 dark:bg-blue-900/30">
-                            Plan Change
-                          </Badge>
-                        )}
-                      </div>
 
-                      <p className="font-semibold text-sm text-slate-800 dark:text-slate-100 mb-0.5" data-testid={`text-project-${n.id}`}>
-                        {projectDisplay}
-                      </p>
-                      <p className="text-sm text-slate-600 dark:text-slate-300" data-testid={`text-body-${n.id}`}>
-                        {n.body || n.title}
-                      </p>
-
-                      {details && (
-                        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
-                          {details.changedBy && (
-                            <span>Changed by: <strong className="text-slate-700 dark:text-slate-300">{details.changedBy}</strong></span>
-                          )}
-                          {details.changeType && (
-                            <span>Type: <strong className="text-slate-700 dark:text-slate-300">{details.changeType.replace(/_/g, " ")}</strong></span>
-                          )}
-                          {details.details && Object.keys(details.details).length > 0 && (
-                            <div className="w-full mt-1 p-2 bg-slate-50 dark:bg-slate-800 rounded border border-slate-100 dark:border-slate-700">
-                              {Object.entries(details.details).map(([k, v]) => (
-                                <div key={k} className="flex gap-2">
-                                  <span className="text-slate-400 min-w-[80px]">{k}:</span>
-                                  <span className="text-slate-700 dark:text-slate-300">{String(v)}</span>
-                                </div>
-                              ))}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                              <Badge
+                                variant="outline"
+                                className={`text-[10px] px-1.5 py-0 ${isExcelSync
+                                  ? "text-orange-600 border-orange-200 bg-orange-50 dark:bg-orange-900/30"
+                                  : "text-blue-600 border-blue-200 bg-blue-50 dark:bg-blue-900/30"
+                                }`}
+                              >
+                                {isExcelSync ? "Excel Sync" : "Plan Change"}
+                              </Badge>
+                              <Badge
+                                variant="outline"
+                                className={`text-[10px] px-1.5 py-0 ${isConfirmed
+                                  ? "text-emerald-600 border-emerald-200 bg-emerald-50 dark:bg-emerald-900/30"
+                                  : "text-amber-600 border-amber-200 bg-amber-50 dark:bg-amber-900/30"
+                                }`}
+                                data-testid={`badge-status-${n.id}`}
+                              >
+                                {isConfirmed ? <><CheckCircle2 className="w-3 h-3 mr-0.5" /> Confirmed</> : <><Clock className="w-3 h-3 mr-0.5" /> Pending</>}
+                              </Badge>
+                              <span className="text-[10px] text-slate-400">{timeAgo(n.createdAt)}</span>
                             </div>
+
+                            <p className="text-sm text-slate-700 dark:text-slate-200 leading-snug" data-testid={`text-body-${n.id}`}>
+                              {n.body || n.title}
+                            </p>
+
+                            {details && (
+                              <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 text-[11px] text-slate-500">
+                                {details.changedBy && (
+                                  <span>By: <strong className="text-slate-700 dark:text-slate-300">{details.changedBy}</strong></span>
+                                )}
+                                {details.changeType && (
+                                  <span>Type: <strong className="text-slate-700 dark:text-slate-300">{details.changeType.replace(/_/g, " ")}</strong></span>
+                                )}
+                                {details.details && typeof details.details === "object" && Object.keys(details.details).length > 0 && (
+                                  <div className="w-full mt-1 p-1.5 bg-slate-50 dark:bg-slate-800 rounded border border-slate-100 dark:border-slate-700 text-[11px]">
+                                    {Object.entries(details.details).map(([k, v]) => (
+                                      <div key={k} className="flex gap-2">
+                                        <span className="text-slate-400 min-w-[70px]">{k}:</span>
+                                        <span className="text-slate-700 dark:text-slate-300 truncate">{String(v)}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                {details.changes && Array.isArray(details.changes) && details.changes.length > 0 && (
+                                  <div className="w-full mt-1 p-1.5 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-100 dark:border-blue-800 text-[11px]">
+                                    {details.changes.map((ch: any, i: number) => (
+                                      <div key={i} className="flex items-center gap-2">
+                                        <ArrowRight className="w-2.5 h-2.5 text-blue-400 flex-shrink-0" />
+                                        <span className="text-slate-700 dark:text-slate-300">
+                                          {ch.field && <strong>{ch.field}: </strong>}
+                                          {ch.oldValue && <span className="line-through text-red-400 mr-1">{ch.oldValue}</span>}
+                                          {ch.newValue && <span className="text-emerald-600">{ch.newValue}</span>}
+                                          {ch.operation && <span>{ch.operation}</span>}
+                                          {ch.tasks && Array.isArray(ch.tasks) && ch.tasks.length > 0 && (
+                                            <span className="text-slate-400"> ({ch.tasks.join(", ")})</span>
+                                          )}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {isConfirmed && n.confirmedAt && (
+                              <p className="text-[10px] text-emerald-600 mt-1 flex items-center gap-1">
+                                <Check className="w-3 h-3" />
+                                Confirmed {new Date(n.confirmedAt).toLocaleString()}
+                              </p>
+                            )}
+                          </div>
+
+                          {!isConfirmed && (
+                            <Button
+                              size="sm"
+                              className="shrink-0 h-7 text-xs bg-amber-500 hover:bg-amber-600 text-white"
+                              onClick={() => confirmMutation.mutate(n.id)}
+                              disabled={confirmMutation.isPending}
+                              data-testid={`button-confirm-${n.id}`}
+                            >
+                              {confirmMutation.isPending ? (
+                                <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                              ) : (
+                                <Check className="w-3 h-3 mr-1" />
+                              )}
+                              Confirm
+                            </Button>
                           )}
                         </div>
-                      )}
-
-                      {isConfirmed && n.confirmedAt && (
-                        <p className="text-xs text-emerald-600 mt-1.5 flex items-center gap-1">
-                          <Check className="w-3 h-3" />
-                          Confirmed {new Date(n.confirmedAt).toLocaleString()}
-                        </p>
-                      )}
-                    </div>
-
-                    {!isConfirmed && (
-                      <Button
-                        size="sm"
-                        className="shrink-0 bg-amber-500 hover:bg-amber-600 text-white"
-                        onClick={() => confirmMutation.mutate(n.id)}
-                        disabled={confirmMutation.isPending}
-                        data-testid={`button-confirm-${n.id}`}
-                      >
-                        {confirmMutation.isPending ? (
-                          <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
-                        ) : (
-                          <Check className="w-3.5 h-3.5 mr-1" />
-                        )}
-                        Confirm
-                      </Button>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
-      {allItems.length > PAGE_SIZE && (
+      {totalPages > 1 && (
         <div className="flex items-center justify-between pt-1">
           <span className="text-xs text-gray-500">
-            Page {page + 1}
+            Page {page + 1} of {totalPages} ({total} total)
           </span>
           <div className="flex gap-1">
             <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(p => p - 1)} data-testid="button-prev-page">
               <ChevronLeft className="w-4 h-4" />
             </Button>
-            <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} data-testid="button-next-page">
+            <Button variant="outline" size="sm" disabled={page >= totalPages - 1} onClick={() => setPage(p => p + 1)} data-testid="button-next-page">
               <ChevronRight className="w-4 h-4" />
             </Button>
           </div>
