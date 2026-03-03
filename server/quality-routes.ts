@@ -379,7 +379,7 @@ export function registerQualityRoutes(app: Express) {
   app.post("/api/quality/project/:projectName/item/:itemInstanceId", requireAuth, requireAdminOrQm, requirePermission('pd_quality', 'edit'), async (req, res) => {
     try {
       const itemId = parseInt(req.params.itemInstanceId);
-      const { startDate, endDate, isApplicable, notApplicableReason, approvalComment, allowedWorkingDays, qmStatus } = req.body;
+      const { startDate, endDate, isApplicable, notApplicableReason, approvalComment, allowedWorkingDays, qmStatus, assigneeUserId } = req.body;
 
       const ALLOWED_QM_STATUSES = ["pending", "pass", "fail", "review", "na"];
       if (qmStatus !== undefined && !ALLOWED_QM_STATUSES.includes(qmStatus)) {
@@ -410,6 +410,7 @@ export function registerQualityRoutes(app: Express) {
       }
       if (notApplicableReason !== undefined) updates.notApplicableReason = notApplicableReason;
       if (approvalComment !== undefined) updates.approvalComment = approvalComment;
+      if (assigneeUserId !== undefined) updates.assigneeUserId = assigneeUserId === null ? null : parseInt(assigneeUserId);
 
       if (qmStatus !== undefined) {
         updates.qmStatus = qmStatus;

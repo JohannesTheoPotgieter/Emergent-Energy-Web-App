@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getQueryFn, apiRequest } from "@/lib/queryClient";
 import { InteractiveTutorial, useInteractiveTutorial } from "@/components/InteractiveTutorial";
@@ -1816,13 +1817,17 @@ export default function Home() {
   const queryClient = useQueryClient();
   const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
   const canEdit = isAdmin || (companyRole && ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO"].includes(companyRole));
+  const { toast } = useToast();
   const tutorial = useInteractiveTutorial();
   const [showWidgetConfig, setShowWidgetConfig] = useState(false);
 
   const { data: widgetConfig } = useQuery<WidgetConfig>({
     queryKey: ["dashboard-widget-config"],
     queryFn: async () => {
-      const res = await fetch("/api/dashboard/widget-config", { credentials: "include" });
+      const headers: Record<string, string> = {};
+      const token = localStorage.getItem('auth_token');
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch("/api/dashboard/widget-config", { credentials: "include", headers });
       if (!res.ok) return { widgetOrder: [...DEFAULT_WIDGET_ORDER], hiddenWidgets: [] };
       return res.json();
     },
@@ -1836,6 +1841,10 @@ export default function Home() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["dashboard-widget-config"] });
       setShowWidgetConfig(false);
+      toast({ title: "Layout saved", description: "Your dashboard layout has been updated." });
+    },
+    onError: () => {
+      toast({ title: "Save failed", description: "Could not save your layout. Please try again.", variant: "destructive" });
     },
   });
 
