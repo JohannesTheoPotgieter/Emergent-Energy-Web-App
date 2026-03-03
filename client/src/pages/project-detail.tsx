@@ -253,6 +253,9 @@ const STATUS_BADGE: Record<string, string> = {
   "PROVIDE FEEDBACK": "bg-purple-100 text-purple-700",
 };
 
+const ALL_STATUSES = ["TO DO", "IN PROGRESS", "HOLD", "NEEDS APPROVAL", "COMPLETE", "QC APPROVED", "PROVIDE FEEDBACK", "OPERATIONAL APPROVAL", "PROJECTS ASSISTANCE"];
+const ALL_PRIORITIES = ["Low", "Med", "High", "Critical"];
+
 function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: number | null; isAdmin: boolean; projectName: string }) {
   const { toast } = useToast();
   const qc = useQueryClient();
