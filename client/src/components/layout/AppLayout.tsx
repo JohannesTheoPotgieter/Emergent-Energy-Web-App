@@ -54,6 +54,9 @@ import {
   Compass,
   Smartphone,
   Mail,
+  UserCog,
+  PanelLeft,
+  ChevronLeft,
 } from "lucide-react";
 import { UX_REDESIGN_ENABLED } from "@shared/schema";
 import { useProgramData } from "@/hooks/use-program-data";
@@ -71,6 +74,12 @@ import { InteractiveTutorial } from "@/components/InteractiveTutorial";
 import { PmModeToggle } from "@/components/PmModeToggle";
 import { getScreenTour } from "@/data/screen-tours";
 import type { ScreenTourStep } from "@/data/screen-tours";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface NavItem {
   label: string;
@@ -78,14 +87,31 @@ interface NavItem {
   path: string;
   className?: string;
   requiredPermission?: { entity: string; action: string };
-  children?: { label: string; icon: any; path: string }[];
+  badge?: string;
+  children?: { label: string; icon: any; path: string; badge?: string }[];
 }
 
 interface NavGroup {
   heading: string;
   section: string;
+  icon?: any;
   items: NavItem[];
 }
+
+const SECTION_COLORS: Record<string, string> = {
+  MY_WORK: "text-sky-400",
+  COCKPIT: "text-amber-400",
+  COLLABORATION: "text-pink-400",
+  PROJECTS: "text-blue-400",
+  MONEY: "text-emerald-400",
+  PROJECT_DEVELOPMENT: "text-teal-400",
+  DELIVERY: "text-orange-400",
+  GOVERNANCE: "text-purple-400",
+  INFORMATION: "text-cyan-400",
+  FEEDBACK: "text-cyan-400",
+  ADMIN: "text-slate-400",
+  SETTINGS: "text-slate-400",
+};
 
 function getLegacyNavGroups(): NavGroup[] {
   return [
@@ -155,6 +181,7 @@ function getRedesignedNavGroups(): NavGroup[] {
     {
       heading: "EXCO",
       section: "COCKPIT",
+      icon: Layers,
       items: [
         { label: "My Tool", icon: Briefcase, path: "/my-tool" },
         { label: "Company Priorities", icon: Flag, path: "/company-priorities" },
@@ -164,6 +191,7 @@ function getRedesignedNavGroups(): NavGroup[] {
     {
       heading: "COLLABORATION",
       section: "COLLABORATION",
+      icon: Handshake,
       items: [
         { label: "Collaboration Hub", icon: Handshake, path: "/collaboration" },
         { label: "Teams Chat", icon: MessageSquare, path: "/teams/chats" },
@@ -173,6 +201,7 @@ function getRedesignedNavGroups(): NavGroup[] {
     {
       heading: "PROJECT MANAGEMENT",
       section: "PROJECTS",
+      icon: FolderKanban,
       items: [
         { label: "Execution Board", icon: Gauge, path: "/dashboard" },
         { label: "Project Summary", icon: FolderKanban, path: "/projects" },
@@ -187,6 +216,7 @@ function getRedesignedNavGroups(): NavGroup[] {
     {
       heading: "PROJECT FINANCE",
       section: "MONEY",
+      icon: Wallet,
       items: [
         { label: "Cashflow", icon: Wallet, path: "/cashflow" },
         { label: "COS Tracker", icon: TrendingUp, path: "/cos" },
@@ -197,6 +227,7 @@ function getRedesignedNavGroups(): NavGroup[] {
     {
       heading: "PROJECT DEVELOPMENT",
       section: "PROJECT_DEVELOPMENT",
+      icon: FileEdit,
       items: [
         { label: "PD Dashboard", icon: FileEdit, path: "/pd" },
         { label: "PD Tickets", icon: ClipboardList, path: "/pd/tickets" },
@@ -205,6 +236,7 @@ function getRedesignedNavGroups(): NavGroup[] {
     {
       heading: "ENGINEERING",
       section: "DELIVERY",
+      icon: HardHat,
       items: [
         { label: "Engineering", icon: HardHat, path: "/engineering" },
         { label: "Task Board", icon: ListTodo, path: "/engineering/tasks" },
@@ -213,6 +245,7 @@ function getRedesignedNavGroups(): NavGroup[] {
     {
       heading: "GOVERNANCE",
       section: "GOVERNANCE",
+      icon: ShieldCheck,
       items: [
         { label: "Quality Dashboard", icon: ShieldCheck, path: "/quality" },
       ],
@@ -220,6 +253,7 @@ function getRedesignedNavGroups(): NavGroup[] {
     {
       heading: "INFORMATION",
       section: "INFORMATION",
+      icon: BookOpen,
       items: [
         { label: "Feedback & Support", icon: MessageSquareText, path: "/feedback" },
         { label: "Emergent Energy Info", icon: BookOpen, path: "/ee-info" },
@@ -227,18 +261,15 @@ function getRedesignedNavGroups(): NavGroup[] {
       ],
     },
     {
-      heading: "SETTINGS",
+      heading: "ADMIN",
       section: "SETTINGS",
+      icon: Cog,
       items: [
-        {
-          label: "Settings", icon: Cog, path: "/admin/settings",
-          children: [
-            { label: "Roles & Permissions", icon: ShieldAlert, path: "/admin/roles" },
-            { label: "Change Audit", icon: Activity, path: "/admin/activity-log" },
-            { label: "Microsoft 365", icon: Plug, path: "/admin/ms-integration" },
-            { label: "Database Migration", icon: Database, path: "/admin/database-migration" },
-          ],
-        },
+        { label: "Users & Roles", icon: UserCog, path: "/admin/roles" },
+        { label: "App Settings", icon: Cog, path: "/admin/settings" },
+        { label: "Change Audit", icon: Activity, path: "/admin/activity-log" },
+        { label: "Microsoft 365", icon: Plug, path: "/admin/ms-integration" },
+        { label: "Database Migration", icon: Database, path: "/admin/database-migration" },
       ],
     },
   ];
@@ -251,10 +282,11 @@ function getUnifiedWorkNavGroups(): NavGroup[] {
   result.push({
     heading: "MY WORK",
     section: "MY_WORK",
+    icon: Home,
     items: [
       { label: "Home", icon: Home, path: "/my-work" },
-      { label: "Calendar", icon: CalendarCheck, path: "/my-work/calendar" },
       { label: "Tasks", icon: ListChecks, path: "/my-work/tasks" },
+      { label: "Calendar", icon: CalendarCheck, path: "/my-work/calendar" },
       { label: "Meetings", icon: MessageSquareText, path: "/my-work/meetings" },
     ],
   });
@@ -269,6 +301,7 @@ function getUnifiedWorkNavGroups(): NavGroup[] {
       result.push({
         heading: "COLLABORATION",
         section: "COLLABORATION",
+        icon: Handshake,
         items: [
           { label: "Email", icon: Mail, path: "/collaboration/email" },
           { label: "Teams Chat", icon: MessageSquare, path: "/teams/chats" },
@@ -408,214 +441,331 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   const sidebarShowLabels = mobileOpen || !desktopCollapsed;
 
+  const isAdmin = ['COO_ADMIN', 'CEO_ADMIN'].includes(companyRole || '') || ['COO_ADMIN', 'CEO_ADMIN', 'admin'].includes(user?.role || '');
+
+  const getRoleDisplayName = (role: string | undefined | null): string => {
+    if (!role) return "";
+    const map: Record<string, string> = {
+      COO_ADMIN: "COO Admin",
+      CEO_ADMIN: "CEO Admin",
+      CCO: "CCO",
+      CFO: "CFO",
+      PROGRAM_MANAGER: "Program Manager",
+      PROGRAM_FINANCE_MANAGER: "Finance Manager",
+      CONSTRUCTION_MANAGER: "Construction Mgr",
+      QUALITY_MANAGER: "Quality Manager",
+      ENGINEERING_MANAGER: "Engineering Mgr",
+      ENGINEER: "Engineer",
+      ACCOUNTANT: "Accountant",
+      KEY_ACCOUNTS_MANAGER: "Key Accounts",
+      PROJECT_MANAGER_SITE: "Site PM",
+      PROJECT_DEVELOPER: "Project Developer",
+    };
+    return map[role] || role.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+  };
+
+  const getRoleBadgeColor = (role: string | undefined | null): string => {
+    if (!role) return "bg-slate-500/20 text-slate-300 border-slate-500/30";
+    if (['COO_ADMIN', 'CEO_ADMIN'].includes(role)) return "bg-amber-500/20 text-amber-300 border-amber-500/30";
+    if (['CCO'].includes(role)) return "bg-orange-500/20 text-orange-300 border-orange-500/30";
+    if (['CFO', 'PROGRAM_FINANCE_MANAGER', 'ACCOUNTANT'].includes(role)) return "bg-emerald-500/20 text-emerald-300 border-emerald-500/30";
+    if (['QUALITY_MANAGER'].includes(role)) return "bg-purple-500/20 text-purple-300 border-purple-500/30";
+    if (['ENGINEER', 'ENGINEERING_MANAGER'].includes(role)) return "bg-orange-500/20 text-orange-300 border-orange-500/30";
+    if (['PROJECT_MANAGER_SITE', 'CONSTRUCTION_MANAGER'].includes(role)) return "bg-cyan-500/20 text-cyan-300 border-cyan-500/30";
+    if (['PROJECT_DEVELOPER'].includes(role)) return "bg-violet-500/20 text-violet-300 border-violet-500/30";
+    return "bg-blue-500/20 text-blue-300 border-blue-500/30";
+  };
+
   const sidebarContent = (
-    <>
-      <div className="h-14 md:h-16 flex items-center px-4 border-b border-sidebar-border bg-sidebar/50 backdrop-blur-sm">
-        <Link href="/" className="flex items-center gap-2.5 min-w-0">
-          <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-emerald-400 to-green-600 flex items-center justify-center shrink-0 shadow-md shadow-emerald-900/30">
-            <img src="/emergent-leaf.png" className="h-5 w-5 object-contain" alt="Emergent Energy" />
-          </div>
-          {sidebarShowLabels && (
-            <div className="flex flex-col leading-tight min-w-0">
-              <span className="text-sm font-bold text-sidebar-foreground tracking-tight">Emergent</span>
-              <span className="text-[10px] font-medium text-emerald-400/80 uppercase tracking-widest">Energy</span>
+    <TooltipProvider delayDuration={200}>
+      <>
+        <div className="h-14 md:h-16 flex items-center px-3 border-b border-sidebar-border/60 bg-sidebar">
+          <Link href="/" className="flex items-center gap-2.5 min-w-0">
+            <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-emerald-400 to-green-600 flex items-center justify-center shrink-0 shadow-lg shadow-emerald-900/40">
+              <img src="/emergent-leaf.png" className="h-5 w-5 object-contain" alt="Emergent Energy" />
             </div>
-          )}
-        </Link>
-        <button
-          onClick={() => setMobileOpen(false)}
-          className="ml-auto md:hidden p-1.5 rounded-md text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent"
-          aria-label="Close menu"
-        >
-          <X className="w-5 h-5" />
-        </button>
-      </div>
-
-      <nav className="flex-1 overflow-y-auto py-1 px-1.5 space-y-px overscroll-contain">
-        <Link href="/" className={cn(
-          "flex items-center gap-2.5 px-2.5 py-1.5 rounded-md transition-all duration-150 group select-none",
-          location === "/" 
-            ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium shadow-md" 
-            : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:scale-[0.98]"
-        )}>
-          <Home className="w-4 h-4 shrink-0" />
-          {sidebarShowLabels && <span className="text-[13px]">Home</span>}
-        </Link>
-
-
-        {navGroups.filter(group => {
-          if (group.section === "FEEDBACK" || group.section === "INFORMATION" || group.section === "MY_WORK") return true;
-          if (allowedSections.length === 0 && !activeRole) return group.section === "PROJECTS";
-          return allowedSections.includes(group.section);
-        }).map((group) => {
-          let visibleItems = group.items.filter(item => {
-            if (item.path === "/engineering/sync" && companyRole !== "COO_ADMIN") return false;
-            if (item.path === "/pm/on-the-go" && companyRole !== "PROJECT_MANAGER_SITE") return false;
-            if (companyRole === "PROJECT_MANAGER_SITE") {
-              const pmVisiblePaths = ["/projects", "/pm-dashboard", "/pm/on-the-go", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/cashflow", "/cos", "/portfolios"];
-              return pmVisiblePaths.some(p => item.path === p);
-            }
-            return true;
-          });
-          if (visibleItems.length === 0) return null;
-
-          const isCollapsed = collapsedSections[group.heading] && sidebarShowLabels;
-          const currentSearchStr = typeof window !== "undefined" ? window.location.search : "";
-          const hasActiveItem = visibleItems.some(item => {
-            const ip = item.path.split("?")[0];
-            const iq = item.path.includes("?") ? item.path.split("?")[1] : null;
-            if (iq) return location === ip && currentSearchStr === `?${iq}`;
-            return location === item.path || 
-              (item.path === "/my-tool" && location.startsWith("/my-tool")) || 
-              (item.path !== "/" && item.path !== "/engineering" && location.startsWith(item.path)) ||
-              (item.children && item.children.some(c => location === c.path || location.startsWith(c.path)));
-          });
-
-          return (
-          <div key={group.heading} className="pt-2">
-            {sidebarShowLabels ? (
-              <button
-                onClick={() => toggleSection(group.heading)}
-                className={cn(
-                  "w-full flex items-center justify-between px-2.5 pb-0.5 text-[9px] font-bold uppercase tracking-widest transition-colors",
-                  hasActiveItem ? "text-sidebar-foreground/60" : "text-sidebar-foreground/35 hover:text-sidebar-foreground/50"
-                )}
-              >
-                <span>{group.heading}</span>
-                {isCollapsed ? (
-                  <ChevronRight className="w-3 h-3" />
-                ) : (
-                  <ChevronDown className="w-3 h-3" />
-                )}
-              </button>
-            ) : (
-              <div className="h-px bg-sidebar-border mx-2 mb-1" />
+            {sidebarShowLabels && (
+              <div className="flex flex-col leading-tight min-w-0">
+                <span className="text-sm font-bold text-sidebar-foreground tracking-tight">Emergent</span>
+                <span className="text-[10px] font-medium text-emerald-400/80 uppercase tracking-widest">Energy</span>
+              </div>
             )}
-            {!isCollapsed && visibleItems.map((item) => {
-              const itemPathname = item.path.split("?")[0];
-              const itemQuery = item.path.includes("?") ? item.path.split("?")[1] : null;
-              const currentSearch = typeof window !== "undefined" ? window.location.search : "";
-              const isActive = itemQuery
-                ? location === itemPathname && currentSearch === `?${itemQuery}`
-                : location === item.path || (item.path === "/my-tool" && location.startsWith("/my-tool")) || (item.path !== "/" && item.path !== "/engineering" && location.startsWith(item.path));
-              const hasChildren = item.children && item.children.length > 0;
-              const childActive = hasChildren && item.children!.some(c => location === c.path || location.startsWith(c.path));
-              const isParentExpanded = expandedParents[item.path] ?? childActive ?? false;
+          </Link>
+          {sidebarShowLabels && (
+            <button
+              onClick={() => {
+                if (mobileOpen) setMobileOpen(false);
+                else setDesktopCollapsed(true);
+              }}
+              className="ml-auto p-1.5 rounded-md text-sidebar-foreground/40 hover:text-sidebar-foreground/70 hover:bg-sidebar-accent transition-colors"
+              aria-label="Collapse sidebar"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+          )}
+        </div>
 
-              return (
-              <div key={item.path}>
-                {hasChildren ? (
+        <nav className="flex-1 overflow-y-auto py-2 px-2 space-y-0.5 overscroll-contain scrollbar-thin">
+          {!sidebarShowLabels ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Link href="/" className={cn(
+                  "flex items-center justify-center p-2 rounded-lg transition-all duration-150",
+                  location === "/" 
+                    ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-md shadow-emerald-900/30" 
+                    : "text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                )}>
+                  <Home className="w-5 h-5" />
+                </Link>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="font-medium">Home</TooltipContent>
+            </Tooltip>
+          ) : (
+            <Link href="/" className={cn(
+              "flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-150 group",
+              location === "/" 
+                ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium shadow-md shadow-emerald-900/30" 
+                : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+            )}>
+              <Home className="w-[18px] h-[18px] shrink-0" />
+              <span className="text-[13px]">Home</span>
+            </Link>
+          )}
+
+          {navGroups.filter(group => {
+            if (group.section === "FEEDBACK" || group.section === "INFORMATION" || group.section === "MY_WORK") return true;
+            if (allowedSections.length === 0 && !activeRole) return group.section === "PROJECTS";
+            return allowedSections.includes(group.section);
+          }).map((group) => {
+            let visibleItems = group.items.filter(item => {
+              if (item.path === "/engineering/sync" && companyRole !== "COO_ADMIN") return false;
+              if (item.path === "/pm/on-the-go" && companyRole !== "PROJECT_MANAGER_SITE") return false;
+              if (companyRole === "PROJECT_MANAGER_SITE") {
+                const pmVisiblePaths = ["/projects", "/pm-dashboard", "/pm/on-the-go", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/cashflow", "/cos", "/portfolios"];
+                return pmVisiblePaths.some(p => item.path === p);
+              }
+              return true;
+            });
+            if (visibleItems.length === 0) return null;
+
+            const isCollapsed = collapsedSections[group.heading] && sidebarShowLabels;
+            const currentSearchStr = typeof window !== "undefined" ? window.location.search : "";
+            const hasActiveItem = visibleItems.some(item => {
+              const ip = item.path.split("?")[0];
+              const iq = item.path.includes("?") ? item.path.split("?")[1] : null;
+              if (iq) return location === ip && currentSearchStr === `?${iq}`;
+              return location === item.path || 
+                (item.path === "/my-tool" && location.startsWith("/my-tool")) || 
+                (item.path !== "/" && item.path !== "/engineering" && location.startsWith(item.path)) ||
+                (item.children && item.children.some(c => location === c.path || location.startsWith(c.path)));
+            });
+
+            const sectionColor = SECTION_COLORS[group.section] || "text-sidebar-foreground/40";
+
+            return (
+              <div key={group.heading} className="pt-3 first:pt-1">
+                {sidebarShowLabels ? (
                   <button
-                    onClick={() => setExpandedParents(prev => ({ ...prev, [item.path]: !isParentExpanded }))}
+                    onClick={() => toggleSection(group.heading)}
                     className={cn(
-                      "w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md transition-all duration-150 group text-[13px] select-none",
-                      isActive || childActive
-                        ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium shadow-md"
-                        : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:scale-[0.98]"
+                      "w-full flex items-center justify-between px-3 pb-1 transition-colors group/section",
                     )}
                   >
-                    <item.icon className={cn("w-4 h-4 shrink-0", item.className)} />
-                    {sidebarShowLabels && (
-                      <>
-                        <span className="flex-1 text-left">{item.label}</span>
-                        {isParentExpanded ? <ChevronDown className="w-3 h-3 shrink-0 transition-transform duration-200" /> : <ChevronRight className="w-3 h-3 shrink-0 transition-transform duration-200" />}
-                      </>
-                    )}
+                    <div className="flex items-center gap-1.5">
+                      <div className={cn("w-1 h-3 rounded-full transition-colors", hasActiveItem ? sectionColor.replace("text-", "bg-") : "bg-sidebar-foreground/15")} />
+                      <span className={cn(
+                        "text-[10px] font-semibold uppercase tracking-[0.08em] transition-colors",
+                        hasActiveItem ? sectionColor : "text-sidebar-foreground/40 group-hover/section:text-sidebar-foreground/55"
+                      )}>{group.heading}</span>
+                    </div>
+                    <span className={cn("transition-transform duration-200", isCollapsed ? "" : "rotate-0")}>
+                      {isCollapsed ? (
+                        <ChevronRight className="w-3 h-3 text-sidebar-foreground/30" />
+                      ) : (
+                        <ChevronDown className="w-3 h-3 text-sidebar-foreground/30" />
+                      )}
+                    </span>
                   </button>
-                ) : itemQuery ? (
-                  <a href={item.path} className={cn(
-                    "flex items-center gap-2.5 px-2.5 py-1.5 rounded-md transition-all duration-150 group text-[13px] select-none cursor-pointer",
-                    isActive
-                      ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium shadow-md"
-                      : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:scale-[0.98] nav-item-glow"
-                  )}>
-                    <item.icon className={cn("w-4 h-4 shrink-0", item.className)} />
-                    {sidebarShowLabels && <span>{item.label}</span>}
-                  </a>
                 ) : (
-                  <Link href={item.path} className={cn(
-                    "flex items-center gap-2.5 px-2.5 py-1.5 rounded-md transition-all duration-150 group text-[13px] select-none",
-                    isActive
-                      ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium shadow-md"
-                      : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:scale-[0.98] nav-item-glow"
-                  )}>
-                    <item.icon className={cn("w-4 h-4 shrink-0", item.className)} />
-                    {sidebarShowLabels && <span>{item.label}</span>}
-                  </Link>
+                  <div className="h-px bg-sidebar-border/40 mx-3 my-1" />
                 )}
-                {hasChildren && isParentExpanded && sidebarShowLabels && item.children!.map(child => {
-                  const isChildActive = location === child.path || location.startsWith(child.path);
-                  return (
-                    <Link key={child.path} href={child.path} className={cn(
-                      "flex items-center gap-2.5 pl-7 pr-2.5 py-1 rounded-md transition-all duration-150 text-[12px] select-none",
-                      isChildActive
-                        ? "bg-sidebar-primary/80 text-sidebar-primary-foreground font-medium"
-                        : "text-sidebar-foreground/55 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:scale-[0.98]"
-                    )}>
-                      <child.icon className="w-3.5 h-3.5 shrink-0" />
-                      <span>{child.label}</span>
-                    </Link>
-                  );
-                })}
-              </div>
-              );
-            })}
-          </div>
-          );
-        })}
-      </nav>
+                {!isCollapsed && (
+                  <div className="space-y-px">
+                    {visibleItems.map((item) => {
+                      const itemPathname = item.path.split("?")[0];
+                      const itemQuery = item.path.includes("?") ? item.path.split("?")[1] : null;
+                      const currentSearch = typeof window !== "undefined" ? window.location.search : "";
+                      const isActive = itemQuery
+                        ? location === itemPathname && currentSearch === `?${itemQuery}`
+                        : location === item.path || (item.path === "/my-tool" && location.startsWith("/my-tool")) || (item.path !== "/" && item.path !== "/engineering" && location.startsWith(item.path));
+                      const hasChildren = item.children && item.children.length > 0;
+                      const childActive = hasChildren && item.children!.some(c => location === c.path || location.startsWith(c.path));
+                      const isParentExpanded = expandedParents[item.path] ?? childActive ?? false;
 
-      <div className="p-2 md:p-3 border-t border-sidebar-border">
-        <div className="flex items-center gap-2.5">
-          <Avatar className="w-8 h-8 border border-sidebar-border/50 shrink-0">
-            <AvatarFallback>{(user?.name || "U").substring(0, 2).toUpperCase()}</AvatarFallback>
-          </Avatar>
-          {sidebarShowLabels && (
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-1.5">
-                <p className="text-sm font-medium truncate">{user?.name}</p>
-                <span className={cn(
-                  "text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full shrink-0",
-                  ['admin', 'COO_ADMIN', 'CEO_ADMIN'].includes(user?.role || '')
-                    ? "bg-amber-500/20 text-amber-300" 
-                    : ['quality_manager', 'QUALITY_MANAGER'].includes(user?.role || '')
-                    ? "bg-emerald-500/20 text-emerald-300"
-                    : ['eng_program_manager', 'ENGINEERING_MANAGER'].includes(user?.role || '')
-                    ? "bg-orange-500/20 text-orange-300"
-                    : "bg-blue-500/20 text-blue-300"
-                )}>
-                  {companyRole
-                    ? (companyRole === "COO_ADMIN" ? "COO" : companyRole === "CEO_ADMIN" ? "CEO" : companyRole.replace(/_/g, " ").split(" ").map(w => w[0]).join(""))
-                    : user?.role === 'admin' ? "COO" : user?.role === 'quality_manager' ? "QM" : user?.role === 'eng_program_manager' ? "EPM" : user?.role?.replace(/_/g, " ").split(" ").map((w: string) => w[0]).join("") || ""}
-                </span>
+                      const navLink = (
+                        <div key={item.path}>
+                          {hasChildren ? (
+                            <button
+                              onClick={() => setExpandedParents(prev => ({ ...prev, [item.path]: !isParentExpanded }))}
+                              className={cn(
+                                "w-full flex items-center gap-3 px-3 py-[7px] rounded-lg transition-all duration-150 group text-[13px] select-none",
+                                isActive || childActive
+                                  ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium shadow-md shadow-emerald-900/20"
+                                  : "text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                              )}
+                            >
+                              <item.icon className={cn("w-[18px] h-[18px] shrink-0", item.className)} />
+                              {sidebarShowLabels && (
+                                <>
+                                  <span className="flex-1 text-left">{item.label}</span>
+                                  {item.badge && (
+                                    <span className="text-[10px] font-medium bg-sidebar-foreground/10 text-sidebar-foreground/60 px-1.5 py-0.5 rounded-md">{item.badge}</span>
+                                  )}
+                                  {isParentExpanded ? <ChevronDown className="w-3.5 h-3.5 shrink-0 text-sidebar-foreground/40" /> : <ChevronRight className="w-3.5 h-3.5 shrink-0 text-sidebar-foreground/40" />}
+                                </>
+                              )}
+                            </button>
+                          ) : itemQuery ? (
+                            <a href={item.path} className={cn(
+                              "flex items-center gap-3 px-3 py-[7px] rounded-lg transition-all duration-150 group text-[13px] select-none cursor-pointer",
+                              isActive
+                                ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium shadow-md shadow-emerald-900/20"
+                                : "text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                            )}>
+                              <item.icon className={cn("w-[18px] h-[18px] shrink-0", item.className)} />
+                              {sidebarShowLabels && (
+                                <>
+                                  <span className="flex-1">{item.label}</span>
+                                  {item.badge && (
+                                    <span className="text-[10px] font-medium bg-sidebar-foreground/10 text-sidebar-foreground/60 px-1.5 py-0.5 rounded-md">{item.badge}</span>
+                                  )}
+                                </>
+                              )}
+                            </a>
+                          ) : (
+                            <Link href={item.path} className={cn(
+                              "flex items-center gap-3 px-3 py-[7px] rounded-lg transition-all duration-150 group text-[13px] select-none",
+                              isActive
+                                ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium shadow-md shadow-emerald-900/20"
+                                : "text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                            )}>
+                              <item.icon className={cn("w-[18px] h-[18px] shrink-0", item.className)} />
+                              {sidebarShowLabels && (
+                                <>
+                                  <span className="flex-1">{item.label}</span>
+                                  {item.badge && (
+                                    <span className="text-[10px] font-medium bg-sidebar-foreground/10 text-sidebar-foreground/60 px-1.5 py-0.5 rounded-md">{item.badge}</span>
+                                  )}
+                                </>
+                              )}
+                            </Link>
+                          )}
+                          {hasChildren && isParentExpanded && sidebarShowLabels && (
+                            <div className="ml-4 pl-3 border-l border-sidebar-border/30 space-y-px mt-0.5">
+                              {item.children!.map(child => {
+                                const isChildActive = location === child.path || location.startsWith(child.path);
+                                return (
+                                  <Link key={child.path} href={child.path} className={cn(
+                                    "flex items-center gap-2.5 px-2.5 py-[5px] rounded-md transition-all duration-150 text-[12px] select-none",
+                                    isChildActive
+                                      ? "bg-sidebar-primary/70 text-sidebar-primary-foreground font-medium"
+                                      : "text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground/80"
+                                  )}>
+                                    <child.icon className="w-3.5 h-3.5 shrink-0" />
+                                    <span>{child.label}</span>
+                                    {child.badge && (
+                                      <span className="text-[10px] font-medium bg-sidebar-foreground/10 text-sidebar-foreground/50 px-1.5 py-0.5 rounded-md ml-auto">{child.badge}</span>
+                                    )}
+                                  </Link>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+
+                      if (!sidebarShowLabels) {
+                        return (
+                          <Tooltip key={item.path}>
+                            <TooltipTrigger asChild>
+                              {navLink}
+                            </TooltipTrigger>
+                            <TooltipContent side="right" className="font-medium">{item.label}</TooltipContent>
+                          </Tooltip>
+                        );
+                      }
+
+                      return navLink;
+                    })}
+                  </div>
+                )}
               </div>
-              <p className="text-xs text-sidebar-foreground/50 truncate">{companyRole ? companyRole.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, c => c.toUpperCase()) : user?.email}</p>
-            </div>
+            );
+          })}
+        </nav>
+
+        <div className="border-t border-sidebar-border/60 bg-sidebar/80">
+          {isAdmin && sidebarShowLabels && (
+            <Link href="/admin/roles" className={cn(
+              "flex items-center gap-2.5 mx-2 mt-2 px-3 py-2 rounded-lg text-[12px] font-medium transition-all duration-150",
+              location.startsWith("/admin/roles")
+                ? "bg-amber-500/15 text-amber-300 border border-amber-500/25"
+                : "text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground/80 border border-transparent"
+            )}>
+              <UserCog className="w-4 h-4 shrink-0" />
+              <span>Manage Users & Roles</span>
+              <ChevronRight className="w-3 h-3 ml-auto opacity-40" />
+            </Link>
           )}
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            className="h-8 w-8 text-sidebar-foreground/50 hover:text-white shrink-0"
-            onClick={() => { localStorage.removeItem("company_role"); localStorage.removeItem("auth_token"); logout(); }}
-            title="Log out"
-          >
-            <LogOut className="w-4 h-4" />
-          </Button>
+          <div className="p-2.5">
+            <div className={cn(
+              "flex items-center gap-2.5 p-2 rounded-lg transition-colors",
+              sidebarShowLabels ? "hover:bg-sidebar-accent/50" : ""
+            )}>
+              <Avatar className="w-9 h-9 border-2 border-sidebar-border/40 shrink-0 shadow-sm">
+                <AvatarFallback className="bg-gradient-to-br from-emerald-600/30 to-green-600/30 text-emerald-300 text-xs font-bold">
+                  {(user?.name || "U").substring(0, 2).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+              {sidebarShowLabels && (
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-sidebar-foreground truncate">{user?.name}</p>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className={cn(
+                      "text-[10px] font-semibold px-1.5 py-0.5 rounded-md border inline-flex items-center",
+                      getRoleBadgeColor(companyRole || user?.role)
+                    )}>
+                      {getRoleDisplayName(companyRole || user?.role)}
+                    </span>
+                  </div>
+                </div>
+              )}
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-8 w-8 text-sidebar-foreground/40 hover:text-red-400 hover:bg-red-500/10 shrink-0"
+                onClick={() => { localStorage.removeItem("company_role"); localStorage.removeItem("auth_token"); logout(); }}
+                title="Log out"
+              >
+                <LogOut className="w-4 h-4" />
+              </Button>
+            </div>
+            {sidebarShowLabels && appVersion && (
+              <p className="text-[10px] text-sidebar-foreground/25 mt-1 text-center" data-testid="text-app-version">
+                v{appVersion.version}{appVersion.buildNumber ? ` (${appVersion.buildNumber})` : ""}
+              </p>
+            )}
+          </div>
         </div>
-        {sidebarShowLabels && appVersion && (
-          <p className="text-[10px] text-sidebar-foreground/30 mt-2 text-center" data-testid="text-app-version">
-            v{appVersion.version}{appVersion.buildNumber ? ` (${appVersion.buildNumber})` : ""}
-          </p>
-        )}
-      </div>
-    </>
+      </>
+    </TooltipProvider>
   );
 
   return (
     <div className="min-h-screen bg-background flex overflow-hidden">
       <div
         className={cn(
-          "fixed inset-0 bg-black/40 backdrop-blur-sm z-40 md:hidden transition-opacity duration-300",
+          "fixed inset-0 bg-black/50 backdrop-blur-sm z-40 md:hidden transition-opacity duration-300",
           mobileOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
         )}
         onClick={() => setMobileOpen(false)}
@@ -624,7 +774,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 bg-sidebar text-sidebar-foreground flex flex-col border-r border-sidebar-border shadow-2xl transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] w-[280px] md:hidden will-change-transform",
+          "fixed inset-y-0 left-0 z-50 bg-sidebar text-sidebar-foreground flex flex-col border-r border-sidebar-border/60 shadow-2xl transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] w-[280px] md:hidden will-change-transform",
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
@@ -633,8 +783,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       <aside 
         className={cn(
-          "hidden md:flex bg-sidebar text-sidebar-foreground flex-col transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] border-r border-sidebar-border shadow-xl z-20 will-change-[width]",
-          desktopCollapsed ? "w-20" : "w-64"
+          "hidden md:flex bg-sidebar text-sidebar-foreground flex-col transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] border-r border-sidebar-border/60 shadow-xl z-20 will-change-[width]",
+          desktopCollapsed ? "w-[68px]" : "w-[260px]"
         )}
       >
         {sidebarContent}
@@ -659,7 +809,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               className="hidden md:inline-flex shrink-0"
               data-testid="btn-desktop-sidebar-toggle"
             >
-              <Menu className="w-5 h-5" />
+              {desktopCollapsed ? <PanelLeft className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </Button>
             <h1 className="text-base md:text-xl font-heading font-semibold text-foreground truncate">
               {currentPageLabel}

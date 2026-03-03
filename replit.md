@@ -28,6 +28,7 @@ Preferred communication style: Simple, everyday language.
 -   **Teams Chat Groups**: MS Teams-styled channel-based group chat for departments and projects.
 -   **PM On-The-Go Mode**: Mobile-first interface for site managers, enforcing daily updates and supporting PO requests/invoice linking.
 -   **Knowledge Base**: Wiki-style system with SOP-enriched nodes.
+-   **Navigation**: Redesigned sidebar with color-coded section indicators, tooltip support for collapsed state, and promoted "Users & Roles" admin shortcut in the user profile area. Sections flow: My Work → EXCO → Collaboration → Project Management → Finance → Project Development → Engineering → Governance → Information → Admin. Admin section now has Users & Roles as a top-level item (not nested under Settings). Collapsed sidebar width reduced to 68px with icon-only tooltips.
 
 ### Backend
 -   **Frameworks & Libraries**: Express.js with TypeScript.
