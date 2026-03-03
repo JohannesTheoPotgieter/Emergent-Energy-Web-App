@@ -1196,6 +1196,29 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
         </div>
       )}
 
+      <style dangerouslySetInnerHTML={{ __html: `
+        .plan-grid-table { border-collapse: collapse; }
+        .plan-grid-table tbody tr { height: ${ROW_HEIGHT}px; }
+        .plan-grid-table tbody td {
+          height: ${ROW_HEIGHT}px;
+          max-height: ${ROW_HEIGHT}px;
+          overflow: hidden;
+          box-sizing: border-box;
+          vertical-align: middle;
+          padding-top: 0;
+          padding-bottom: 0;
+        }
+        .plan-grid-table thead tr { height: 28px; }
+        .plan-grid-table thead th {
+          height: 28px;
+          max-height: 28px;
+          overflow: hidden;
+          box-sizing: border-box;
+          vertical-align: middle;
+          padding-top: 0;
+          padding-bottom: 0;
+        }
+      `}} />
       <div className="flex border rounded-md overflow-hidden bg-white" style={{ height: "calc(100vh - 320px)", minHeight: "400px" }} data-testid="plan-grid-container">
         <div
           ref={bodyScrollRef}
@@ -1204,11 +1227,11 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
           onScroll={handleBodyScroll}
           data-testid="plan-grid-left"
         >
-          <table className="w-full text-[11px] border-collapse">
+          <table className="plan-grid-table w-full text-[11px] border-collapse" style={{ tableLayout: "fixed" }}>
             <thead className="sticky top-0 z-20 bg-slate-100">
-              <tr>
-                {isAdmin && <th className="w-5 px-0 py-1.5 border-b border-r" />}
-                <th className="w-7 px-1 py-1.5 text-center border-b border-r font-semibold text-slate-600">
+              <tr style={{ height: 28, maxHeight: 28 }}>
+                {isAdmin && <th className="w-5 px-0 py-0 border-b border-r overflow-hidden" style={{ height: 28 }} />}
+                <th className="w-7 px-1 py-0 text-center border-b border-r font-semibold text-slate-600 overflow-hidden" style={{ height: 28 }}>
                   <Checkbox
                     checked={selectedIds.size === visibleTasks.length && visibleTasks.length > 0}
                     onCheckedChange={(checked) => {
@@ -1219,18 +1242,18 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                     data-testid="checkbox-select-all"
                   />
                 </th>
-                <th className="w-8 px-1 py-1.5 text-center border-b border-r font-semibold text-slate-600" data-testid="header-row-num">#</th>
-                <th className="w-6 px-0 py-1.5 text-center border-b border-r font-semibold text-slate-600" data-testid="header-indicator"></th>
-                <th className="w-12 px-1 py-1.5 text-center border-b border-r font-semibold text-slate-600" data-testid="header-wbs">WBS</th>
-                <th className="min-w-[140px] px-2 py-1.5 text-left border-b border-r font-semibold text-slate-600" data-testid="header-task">Task Name</th>
-                <th className="w-14 px-1 py-1.5 text-center border-b border-r font-semibold text-slate-600" data-testid="header-duration">Duration</th>
-                <th className="w-[68px] px-1 py-1.5 text-center border-b border-r font-semibold text-slate-600" data-testid="header-start">Start</th>
-                <th className="w-[68px] px-1 py-1.5 text-center border-b border-r font-semibold text-slate-600" data-testid="header-end">Finish</th>
-                <th className="w-[60px] px-1 py-1.5 text-center border-b border-r font-semibold text-slate-600" data-testid="header-predecessors">Pred.</th>
-                <th className="w-[70px] px-1 py-1.5 text-center border-b border-r font-semibold text-slate-600" data-testid="header-lead">Resource</th>
-                <th className="w-[90px] px-1 py-1.5 text-center border-b border-r font-semibold text-slate-600" data-testid="header-pct-done">% Complete</th>
-                <th className="w-10 px-1 py-1.5 text-center border-b border-r font-semibold text-slate-600" data-testid="header-status">Status</th>
-                {isAdmin && <th className="w-7 px-0 py-1.5 border-b font-semibold text-slate-600" />}
+                <th className="w-8 px-1 py-0 text-center border-b border-r font-semibold text-slate-600 overflow-hidden" style={{ height: 28 }} data-testid="header-row-num">#</th>
+                <th className="w-6 px-0 py-0 text-center border-b border-r font-semibold text-slate-600 overflow-hidden" style={{ height: 28 }} data-testid="header-indicator"></th>
+                <th className="w-12 px-1 py-0 text-center border-b border-r font-semibold text-slate-600 overflow-hidden" style={{ height: 28 }} data-testid="header-wbs">WBS</th>
+                <th className="min-w-[140px] px-2 py-0 text-left border-b border-r font-semibold text-slate-600 overflow-hidden" style={{ height: 28 }} data-testid="header-task">Task Name</th>
+                <th className="w-14 px-1 py-0 text-center border-b border-r font-semibold text-slate-600 overflow-hidden" style={{ height: 28 }} data-testid="header-duration">Duration</th>
+                <th className="w-[68px] px-1 py-0 text-center border-b border-r font-semibold text-slate-600 overflow-hidden" style={{ height: 28 }} data-testid="header-start">Start</th>
+                <th className="w-[68px] px-1 py-0 text-center border-b border-r font-semibold text-slate-600 overflow-hidden" style={{ height: 28 }} data-testid="header-end">Finish</th>
+                <th className="w-[60px] px-1 py-0 text-center border-b border-r font-semibold text-slate-600 overflow-hidden" style={{ height: 28 }} data-testid="header-predecessors">Pred.</th>
+                <th className="w-[70px] px-1 py-0 text-center border-b border-r font-semibold text-slate-600 overflow-hidden" style={{ height: 28 }} data-testid="header-lead">Resource</th>
+                <th className="w-[90px] px-1 py-0 text-center border-b border-r font-semibold text-slate-600 overflow-hidden" style={{ height: 28 }} data-testid="header-pct-done">% Complete</th>
+                <th className="w-10 px-1 py-0 text-center border-b border-r font-semibold text-slate-600 overflow-hidden" style={{ height: 28 }} data-testid="header-status">Status</th>
+                {isAdmin && <th className="w-7 px-0 py-0 border-b font-semibold text-slate-600 overflow-hidden" style={{ height: 28 }} />}
               </tr>
             </thead>
             <tbody>
@@ -1305,7 +1328,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                         ${isDragging ? "opacity-40" : ""}
                         ${dropClass}
                       `}
-                      style={{ height: ROW_HEIGHT }}
+                      style={{ height: ROW_HEIGHT, maxHeight: ROW_HEIGHT, overflow: "hidden" }}
                       onClick={() => onTaskClick?.(task.id)}
                       draggable={isAdmin}
                       onDragStart={(e) => handleDragStart(e, task)}
