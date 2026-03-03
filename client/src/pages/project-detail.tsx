@@ -1102,18 +1102,6 @@ export default function ProjectDetailPage() {
     return result;
   }, [revenueData, expenseData, engDataForAlerts, planTasks, totalRealisedCos, totalPaidInflows, today]);
 
-  const primaryCta = useMemo(() => {
-    if (phase?.includes("FIRST_ASSESSMENT") || phase?.includes("COST_PROPOSAL")) {
-      return { label: "Advance Gate", icon: <Zap className="h-4 w-4" />, action: () => setPhaseModalOpen(true) };
-    }
-    if (executionPhase && phase?.includes("CONSTRUCTION")) {
-      return { label: "Start Weekly Review", icon: <Play className="h-4 w-4" />, action: () => navigateToSection("project-management", "history") };
-    }
-    if (hasRedRag) {
-      return { label: "Resolve Issue", icon: <AlertTriangle className="h-4 w-4" />, action: () => { setAlertsExpanded(true); alertsRef.current?.scrollIntoView({ behavior: "smooth" }); } };
-    }
-    return { label: "View Tasks", icon: <Eye className="h-4 w-4" />, action: () => navigateToSection("project-management", "task-grid") };
-  }, [phase, executionPhase, hasRedRag]);
 
   const ragColor = (rag: "green" | "amber" | "red") => rag === "green" ? "text-emerald-600" : rag === "amber" ? "text-amber-600" : "text-red-600";
 
@@ -1195,12 +1183,6 @@ export default function ProjectDetailPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <Button size="sm" onClick={primaryCta.action} className="gap-1.5" data-testid="button-primary-cta">
-            {primaryCta.icon}
-            {primaryCta.label}
-          </Button>
-        </div>
       </div>
 
       <Card className="sticky top-0 z-10 shadow-sm" data-testid="awareness-bar">
