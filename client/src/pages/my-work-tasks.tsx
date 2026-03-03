@@ -3,27 +3,26 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import { format, isPast, parseISO } from "date-fns";
+import { format, isPast, parseISO, formatDistanceToNow } from "date-fns";
 import TaskDetailDrawer from "@/components/mytool/TaskDetailDrawer";
 import { TaskItem, TaskStatus, TaskPriority } from "@/components/mytool/TaskCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Plus, Loader2, Search, Trash2, ChevronDown, ChevronRight, ArrowUpDown, X,
   Inbox, Filter, Eye, Calendar, Building2, FolderOpen, AlertTriangle, ListTodo,
   ClipboardList, ShieldCheck, FileCheck, BookOpen, CheckCircle2, Circle, Clock,
   AlertCircle, Wrench, Users, User, LayoutList, Columns3, Link2, GripVertical,
-  Save, RotateCw,
+  Save, RotateCw, MoreHorizontal, ArrowRight, Hash, Tag,
 } from "lucide-react";
 import UserAssignmentPicker from "@/components/UserAssignmentPicker";
 
@@ -109,17 +108,17 @@ interface UnifiedTask {
   trId?: string | null;
 }
 
-const SOURCE_CONFIG: Record<SourceFilter, { label: string; icon: any; color: string; bgColor: string }> = {
-  all: { label: "All", icon: ListTodo, color: "text-foreground", bgColor: "bg-muted" },
-  personal: { label: "Personal", icon: ClipboardList, color: "text-blue-600", bgColor: "bg-blue-50 border-blue-200" },
-  operational: { label: "Project Tasks", icon: Building2, color: "text-emerald-600", bgColor: "bg-emerald-50 border-emerald-200" },
-  plan: { label: "Project Plan", icon: Calendar, color: "text-violet-600", bgColor: "bg-violet-50 border-violet-200" },
-  engineering_task: { label: "Engineering", icon: Wrench, color: "text-cyan-600", bgColor: "bg-cyan-50 border-cyan-200" },
-  quality_task: { label: "Quality", icon: ShieldCheck, color: "text-rose-600", bgColor: "bg-rose-50 border-rose-200" },
-  approvals: { label: "Approvals", icon: ShieldCheck, color: "text-amber-600", bgColor: "bg-amber-50 border-amber-200" },
-  tr_register: { label: "Actions", icon: BookOpen, color: "text-purple-600", bgColor: "bg-purple-50 border-purple-200" },
-  deliverables: { label: "Deliverables", icon: FileCheck, color: "text-rose-600", bgColor: "bg-rose-50 border-rose-200" },
-  notifications: { label: "Notifications", icon: AlertTriangle, color: "text-orange-600", bgColor: "bg-orange-50 border-orange-200" },
+const SOURCE_CONFIG: Record<SourceFilter, { label: string; shortLabel: string; icon: any; color: string; bgColor: string; dot: string }> = {
+  all: { label: "All", shortLabel: "All", icon: ListTodo, color: "text-foreground", bgColor: "bg-muted", dot: "bg-slate-400" },
+  personal: { label: "Personal", shortLabel: "Personal", icon: ClipboardList, color: "text-blue-600", bgColor: "bg-blue-50 border-blue-200", dot: "bg-blue-500" },
+  operational: { label: "Project Tasks", shortLabel: "Project", icon: Building2, color: "text-emerald-600", bgColor: "bg-emerald-50 border-emerald-200", dot: "bg-emerald-500" },
+  plan: { label: "Project Plan", shortLabel: "Plan", icon: Calendar, color: "text-violet-600", bgColor: "bg-violet-50 border-violet-200", dot: "bg-violet-500" },
+  engineering_task: { label: "Engineering", shortLabel: "Eng", icon: Wrench, color: "text-cyan-600", bgColor: "bg-cyan-50 border-cyan-200", dot: "bg-cyan-500" },
+  quality_task: { label: "Quality", shortLabel: "QC", icon: ShieldCheck, color: "text-rose-600", bgColor: "bg-rose-50 border-rose-200", dot: "bg-rose-500" },
+  approvals: { label: "Approvals", shortLabel: "Approvals", icon: ShieldCheck, color: "text-amber-600", bgColor: "bg-amber-50 border-amber-200", dot: "bg-amber-500" },
+  tr_register: { label: "Actions", shortLabel: "Actions", icon: BookOpen, color: "text-purple-600", bgColor: "bg-purple-50 border-purple-200", dot: "bg-purple-500" },
+  deliverables: { label: "Deliverables", shortLabel: "Deliver", icon: FileCheck, color: "text-rose-600", bgColor: "bg-rose-50 border-rose-200", dot: "bg-rose-500" },
+  notifications: { label: "Notifications", shortLabel: "Notifs", icon: AlertTriangle, color: "text-orange-600", bgColor: "bg-orange-50 border-orange-200", dot: "bg-orange-500" },
 };
 
 function getAuthHeaders(): Record<string, string> {
@@ -161,6 +160,13 @@ function saveMyWorkDefault(view: MyWorkDefaultView, userId?: number) {
 function clearMyWorkDefault(userId?: number) {
   localStorage.removeItem(getMwViewKey(userId));
 }
+
+const PRIORITY_BADGE: Record<string, { label: string; class: string }> = {
+  critical: { label: "P1", class: "bg-red-500 text-white" },
+  high: { label: "P2", class: "bg-orange-100 text-orange-700 border border-orange-200" },
+  normal: { label: "P3", class: "bg-slate-100 text-slate-500 border border-slate-200" },
+  low: { label: "P4", class: "bg-slate-50 text-slate-400 border border-slate-100" },
+};
 
 export default function MyWorkTasksPage() {
   const { toast } = useToast();
@@ -561,7 +567,7 @@ export default function MyWorkTasksPage() {
   const handleSaveDefaultView = useCallback(() => {
     saveMyWorkDefault({ viewMode, sortField, sortDirection, sourceFilter }, user?.id);
     setHasCustomDefault(true);
-    toast({ title: "Default view saved", description: "This page will open with your current view settings next time." });
+    toast({ title: "Default view saved" });
   }, [viewMode, sortField, sortDirection, sourceFilter, toast, user?.id]);
 
   const handleResetDefaultView = useCallback(() => {
@@ -571,7 +577,7 @@ export default function MyWorkTasksPage() {
     setSortField("priority");
     setSortDirection("asc");
     setSourceFilter("all");
-    toast({ title: "Default view reset", description: "This page will open with the standard list view." });
+    toast({ title: "Default view reset" });
   }, [toast, user?.id]);
 
   const kpiStats = useMemo(() => {
@@ -610,128 +616,141 @@ export default function MyWorkTasksPage() {
 
   if (isLoading) {
     return (
-      <div className="p-6 space-y-4 flex-1" data-testid="loading-skeleton">
-        <div className="flex items-center gap-3">{[1, 2, 3, 4, 5].map(i => (<Skeleton key={i} className="h-8 w-24 rounded-full" />))}</div>
-        <div className="space-y-2">{[1, 2, 3, 4, 5, 6, 7, 8].map(i => (<Skeleton key={i} className="h-14 w-full rounded-lg" />))}</div>
+      <div className="p-4 space-y-2 flex-1" data-testid="loading-skeleton">
+        <Skeleton className="h-10 w-full rounded-lg" />
+        <Skeleton className="h-8 w-full rounded-lg" />
+        <div className="space-y-1">{[1, 2, 3, 4, 5, 6, 7, 8].map(i => (<Skeleton key={i} className="h-10 w-full rounded" />))}</div>
       </div>
     );
   }
 
   return (
     <div className="flex flex-col min-h-0 flex-1 max-w-6xl mx-auto w-full" data-testid="my-work-tasks-page">
-      <div className="shrink-0 flex items-center justify-between mb-4" data-testid="tasks-header">
-        <div className="flex items-center gap-3">
-          <h2 className="text-xl font-bold tracking-tight text-foreground" data-testid="text-tasks-title">My Tasks</h2>
-          <Badge variant="secondary" className="text-xs tabular-nums font-semibold" data-testid="badge-total-count">{filteredTasks.length}</Badge>
-        </div>
+
+      <div className="shrink-0 flex items-center justify-between gap-3 mb-3" data-testid="tasks-header">
         <div className="flex items-center gap-2">
-          <div className="flex items-center border rounded-lg overflow-hidden shadow-sm">
-            <button onClick={() => setViewMode("list")} className={`p-1.5 transition-colors ${viewMode === "list" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`} data-testid="btn-view-list" title="List view"><LayoutList className="h-4 w-4" /></button>
-            <button onClick={() => setViewMode("board")} className={`p-1.5 transition-colors ${viewMode === "board" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`} data-testid="btn-view-board" title="Board view"><Columns3 className="h-4 w-4" /></button>
-          </div>
-          <div className="flex items-center border rounded-md">
-            <Button variant="ghost" size="sm" className="h-8 px-2 text-xs gap-1" onClick={handleSaveDefaultView} data-testid="btn-save-default-view" title="Save current view as your default">
-              <Save className="h-3.5 w-3.5" /><span className="hidden sm:inline">Save Default</span>
-            </Button>
-            {hasCustomDefault && (
-              <Button variant="ghost" size="sm" className="h-8 px-2 text-xs gap-1 text-muted-foreground" onClick={handleResetDefaultView} data-testid="btn-reset-default-view" title="Reset to standard view">
-                <RotateCw className="h-3.5 w-3.5" />
-              </Button>
+          <h2 className="text-lg font-bold tracking-tight text-foreground" data-testid="text-tasks-title">My Tasks</h2>
+          <div className="flex items-center gap-1.5 text-xs">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-semibold border border-blue-200" data-testid="kpi-active">
+              <ListTodo className="h-3 w-3" /> {kpiStats.active}
+            </span>
+            {kpiStats.overdue > 0 && (
+              <button onClick={() => { setOverdueOnly(!overdueOnly); }} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-semibold border transition-all ${overdueOnly ? "bg-red-500 text-white border-red-500" : "bg-red-50 text-red-600 border-red-200 hover:bg-red-100"}`} data-testid="kpi-overdue">
+                <AlertCircle className="h-3 w-3" /> {kpiStats.overdue} overdue
+              </button>
             )}
+            {kpiStats.critical > 0 && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 font-semibold border border-amber-200" data-testid="kpi-critical">
+                <AlertTriangle className="h-3 w-3" /> {kpiStats.critical}
+              </span>
+            )}
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200" data-testid="kpi-done">
+              <CheckCircle2 className="h-3 w-3" /> {kpiStats.done}
+            </span>
           </div>
-          <Button variant={groomMode ? "default" : "outline"} size="sm" className={`h-8 text-xs ${groomMode ? "bg-amber-500 hover:bg-amber-600 text-white" : ""}`} onClick={() => setGroomMode(!groomMode)} data-testid="button-groom-mode"><Eye className="h-3 w-3 mr-1" /> Groom</Button>
-          <Button variant={showFilters ? "default" : "outline"} size="sm" className="h-8 text-xs" onClick={() => setShowFilters(!showFilters)} data-testid="button-toggle-filters">
-            <Filter className="h-3 w-3 mr-1" /> Filters {activeFilters > 0 && <Badge variant="secondary" className="ml-1 text-[10px] h-4 px-1">{activeFilters}</Badge>}
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="flex items-center border rounded-md overflow-hidden">
+            <button onClick={() => setViewMode("list")} className={`p-1.5 transition-colors ${viewMode === "list" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`} data-testid="btn-view-list" title="List view"><LayoutList className="h-3.5 w-3.5" /></button>
+            <button onClick={() => setViewMode("board")} className={`p-1.5 transition-colors ${viewMode === "board" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`} data-testid="btn-view-board" title="Board view"><Columns3 className="h-3.5 w-3.5" /></button>
+          </div>
+          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1" onClick={handleSaveDefaultView} data-testid="btn-save-default-view" title="Save default">
+            <Save className="h-3 w-3" />
           </Button>
-          <Button size="sm" className="h-8 gap-1 shadow-sm" onClick={() => setCreateDialogOpen(true)} data-testid="button-new-task"><Plus className="h-4 w-4" /> New Task</Button>
+          {hasCustomDefault && (
+            <Button variant="ghost" size="sm" className="h-7 px-1.5 text-xs text-muted-foreground" onClick={handleResetDefaultView} data-testid="btn-reset-default-view" title="Reset default">
+              <RotateCw className="h-3 w-3" />
+            </Button>
+          )}
+          <Button variant={groomMode ? "default" : "ghost"} size="sm" className={`h-7 text-xs px-2 ${groomMode ? "bg-amber-500 hover:bg-amber-600 text-white" : ""}`} onClick={() => setGroomMode(!groomMode)} data-testid="button-groom-mode"><Eye className="h-3 w-3" /></Button>
+          <Button size="sm" className="h-7 gap-1 text-xs shadow-sm" onClick={() => setCreateDialogOpen(true)} data-testid="button-new-task"><Plus className="h-3.5 w-3.5" /> New</Button>
         </div>
       </div>
 
-      <div className="shrink-0 grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-        <Card className="bg-gradient-to-br from-blue-50 to-blue-100/50 border-blue-200/60 shadow-sm"><CardContent className="p-3 flex items-center gap-3"><div className="h-9 w-9 rounded-lg bg-blue-100 flex items-center justify-center shadow-inner"><ListTodo className="h-4 w-4 text-blue-600" /></div><div><p className="text-[10px] text-blue-600/80 uppercase tracking-wider font-medium">Active</p><p className="text-lg font-bold tabular-nums text-blue-900" data-testid="kpi-active">{kpiStats.active}</p></div></CardContent></Card>
-        <Card className={`bg-gradient-to-br from-red-50 to-red-100/50 border-red-200/60 shadow-sm ${kpiStats.overdue > 0 ? "ring-1 ring-red-300" : ""}`}><CardContent className="p-3 flex items-center gap-3 cursor-pointer" onClick={() => { setOverdueOnly(!overdueOnly); setShowFilters(false); }}><div className="h-9 w-9 rounded-lg bg-red-100 flex items-center justify-center shadow-inner"><AlertCircle className="h-4 w-4 text-red-600" /></div><div><p className="text-[10px] text-red-600/80 uppercase tracking-wider font-medium">Overdue</p><p className="text-lg font-bold tabular-nums text-red-700" data-testid="kpi-overdue">{kpiStats.overdue}</p></div></CardContent></Card>
-        <Card className="bg-gradient-to-br from-amber-50 to-amber-100/50 border-amber-200/60 shadow-sm"><CardContent className="p-3 flex items-center gap-3"><div className="h-9 w-9 rounded-lg bg-amber-100 flex items-center justify-center shadow-inner"><AlertTriangle className="h-4 w-4 text-amber-600" /></div><div><p className="text-[10px] text-amber-600/80 uppercase tracking-wider font-medium">High Priority</p><p className="text-lg font-bold tabular-nums text-amber-900" data-testid="kpi-critical">{kpiStats.critical}</p></div></CardContent></Card>
-        <Card className="bg-gradient-to-br from-emerald-50 to-emerald-100/50 border-emerald-200/60 shadow-sm"><CardContent className="p-3 flex items-center gap-3"><div className="h-9 w-9 rounded-lg bg-emerald-100 flex items-center justify-center shadow-inner"><CheckCircle2 className="h-4 w-4 text-emerald-600" /></div><div><p className="text-[10px] text-emerald-600/80 uppercase tracking-wider font-medium">Completed</p><p className="text-lg font-bold tabular-nums text-emerald-900" data-testid="kpi-done">{kpiStats.done}</p></div></CardContent></Card>
-      </div>
-
-      <div className="shrink-0 flex items-center gap-1.5 flex-wrap mb-3" data-testid="source-filter-tabs">
-        {(Object.keys(SOURCE_CONFIG) as SourceFilter[]).map(src => {
-          const config = SOURCE_CONFIG[src]; const Icon = config.icon; const count = sourceCounts[src]; const active = sourceFilter === src;
-          return (
-            <button key={src} onClick={() => setSourceFilter(src)} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${active ? "bg-primary text-primary-foreground border-primary shadow-sm" : "bg-background text-muted-foreground border-border/50 hover:bg-muted hover:border-border"}`} data-testid={`tab-source-${src}`}>
-              <Icon className="h-3.5 w-3.5" /> {config.label} <span className={`text-[10px] ${active ? "opacity-80" : "opacity-60"}`}>{count}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="shrink-0 flex items-center gap-2 mb-2" data-testid="search-bar">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-          <Input placeholder="Search tasks, projects, action items..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-9 text-sm h-9" data-testid="input-task-search" />
-          {searchText && <button onClick={() => setSearchText("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>}
+      <div className="shrink-0 flex items-center gap-2 mb-2">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <Input placeholder="Search tasks..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-8 h-8 text-xs" data-testid="input-task-search" />
+          {searchText && <button onClick={() => setSearchText("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><X className="h-3 w-3" /></button>}
         </div>
-        {overdueOnly && (
-          <Badge variant="destructive" className="cursor-pointer gap-1 text-xs" onClick={() => setOverdueOnly(false)} data-testid="badge-overdue-filter">
-            <AlertCircle className="h-3 w-3" /> Overdue <X className="h-3 w-3 ml-1" />
-          </Badge>
-        )}
-        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-          <span className="text-[10px] uppercase tracking-wider font-medium">Sort:</span>
+
+        <div className="flex items-center gap-0.5 overflow-x-auto" data-testid="source-filter-tabs">
+          {(Object.keys(SOURCE_CONFIG) as SourceFilter[]).map(src => {
+            const config = SOURCE_CONFIG[src]; const count = sourceCounts[src]; const active = sourceFilter === src;
+            if (count === 0 && src !== "all") return null;
+            return (
+              <button key={src} onClick={() => setSourceFilter(src)} className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-all whitespace-nowrap ${active ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-muted"}`} data-testid={`tab-source-${src}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${active ? "bg-white/70" : config.dot}`} />
+                {config.shortLabel} {count > 0 && <span className={`text-[10px] ${active ? "opacity-80" : "opacity-50"}`}>{count}</span>}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex items-center gap-0.5 ml-auto shrink-0">
+          <Button variant={showFilters ? "secondary" : "ghost"} size="sm" className="h-7 px-2 text-xs" onClick={() => setShowFilters(!showFilters)} data-testid="button-toggle-filters">
+            <Filter className="h-3 w-3" /> {activeFilters > 0 && <span className="ml-0.5 text-[10px] bg-primary text-primary-foreground rounded-full w-4 h-4 flex items-center justify-center">{activeFilters}</span>}
+          </Button>
           {(["priority", "dueDate", "status"] as SortField[]).map(field => (
-            <button key={field} onClick={() => handleSort(field)} className={`flex items-center gap-0.5 px-2 py-1 rounded transition-colors ${sortField === field ? "bg-primary/10 text-primary font-medium" : "hover:bg-muted"}`} data-testid={`sort-${field}`}>
-              {field === "priority" ? "Priority" : field === "dueDate" ? "Due" : "Status"} {sortField === field && <ArrowUpDown className="h-3 w-3" />}
+            <button key={field} onClick={() => handleSort(field)} className={`px-1.5 py-1 rounded text-[10px] font-medium transition-colors ${sortField === field ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted"}`} data-testid={`sort-${field}`}>
+              {field === "priority" ? "Pri" : field === "dueDate" ? "Due" : "Stat"}
+              {sortField === field && <span className="ml-0.5">{sortDirection === "asc" ? "↑" : "↓"}</span>}
             </button>
           ))}
         </div>
       </div>
 
+      {overdueOnly && (
+        <div className="shrink-0 mb-1.5">
+          <Badge variant="destructive" className="cursor-pointer gap-1 text-[10px]" onClick={() => setOverdueOnly(false)} data-testid="badge-overdue-filter">
+            <AlertCircle className="h-3 w-3" /> Showing overdue only <X className="h-3 w-3 ml-1" />
+          </Badge>
+        </div>
+      )}
+
       {showFilters && (
-        <div className="shrink-0 flex flex-wrap items-end gap-3 p-3 rounded-lg border border-border/50 bg-muted/20 mb-2" data-testid="filter-bar">
-          <div className="space-y-1">
-            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Status</label>
-            <div className="flex gap-1">{allStatuses.map(s => { const isActive = statusFilter.includes(s); return (<button key={s} onClick={() => toggleStatus(s)} className={`px-2 py-0.5 rounded text-[10px] font-medium border transition-colors ${isActive ? "bg-primary text-primary-foreground border-primary" : "bg-background border-border/50 text-muted-foreground hover:border-border"}`} data-testid={`filter-status-${s}`}>{s.replace("_", " ")}</button>); })}</div>
+        <div className="shrink-0 flex flex-wrap items-center gap-2 px-3 py-2 rounded-lg border border-border/50 bg-muted/20 mb-2 text-[10px]" data-testid="filter-bar">
+          <div className="flex items-center gap-1">
+            <span className="font-semibold text-muted-foreground uppercase tracking-wider mr-1">Status:</span>
+            {allStatuses.map(s => { const isActive = statusFilter.includes(s); return (<button key={s} onClick={() => toggleStatus(s)} className={`px-1.5 py-0.5 rounded font-medium border transition-colors ${isActive ? "bg-primary text-primary-foreground border-primary" : "bg-background border-border/50 text-muted-foreground hover:border-border"}`} data-testid={`filter-status-${s}`}>{s.replace("_", " ")}</button>); })}
           </div>
-          <div className="space-y-1">
-            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Priority</label>
-            <div className="flex gap-1">{allPriorities.map(p => { const isActive = priorityFilter.includes(p); return (<button key={p} onClick={() => togglePriority(p)} className={`px-2 py-0.5 rounded text-[10px] font-semibold border transition-colors ${isActive ? "bg-primary text-primary-foreground border-primary" : "bg-background border-border/50 text-muted-foreground hover:border-border"}`} data-testid={`filter-priority-${p}`}>{p === "critical" ? "P1" : p === "high" ? "P2" : p === "normal" ? "P3" : "P4"}</button>); })}</div>
+          <Separator orientation="vertical" className="h-4" />
+          <div className="flex items-center gap-1">
+            <span className="font-semibold text-muted-foreground uppercase tracking-wider mr-1">Priority:</span>
+            {allPriorities.map(p => { const isActive = priorityFilter.includes(p); return (<button key={p} onClick={() => togglePriority(p)} className={`px-1.5 py-0.5 rounded font-semibold border transition-colors ${isActive ? "bg-primary text-primary-foreground border-primary" : "bg-background border-border/50 text-muted-foreground hover:border-border"}`} data-testid={`filter-priority-${p}`}>{p === "critical" ? "P1" : p === "high" ? "P2" : p === "normal" ? "P3" : "P4"}</button>); })}
           </div>
           {allProjects.length > 0 && (
-            <div className="space-y-1">
-              <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1"><FolderOpen className="h-3 w-3" /> Project</label>
-              <select value={projectFilter} onChange={e => setProjectFilter(e.target.value)} className="text-xs border border-border rounded-md px-2 py-1.5 bg-background h-7" data-testid="select-project-filter">
+            <>
+              <Separator orientation="vertical" className="h-4" />
+              <select value={projectFilter} onChange={e => setProjectFilter(e.target.value)} className="text-[10px] border border-border rounded px-1.5 py-0.5 bg-background h-5" data-testid="select-project-filter">
                 <option value="">All Projects</option>
                 {allProjects.map(p => (<option key={p} value={p}>{p.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}</option>))}
               </select>
-            </div>
+            </>
           )}
-          <div className="space-y-1">
-            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Overdue</label>
-            <button onClick={() => setOverdueOnly(!overdueOnly)} className={`px-2 py-0.5 rounded text-[10px] font-medium border transition-colors ${overdueOnly ? "bg-red-500 text-white border-red-500" : "bg-background border-border/50 text-muted-foreground hover:border-border"}`} data-testid="filter-overdue-toggle">
-              {overdueOnly ? "Showing Overdue" : "Show Overdue"}
-            </button>
-          </div>
-          {activeFilters > 0 && (<Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground" onClick={() => { setStatusFilter([]); setPriorityFilter([]); setProjectFilter(""); setOverdueOnly(false); }} data-testid="button-clear-all-filters">Clear all</Button>)}
+          {activeFilters > 0 && (<button onClick={() => { setStatusFilter([]); setPriorityFilter([]); setProjectFilter(""); setOverdueOnly(false); }} className="text-[10px] text-red-500 hover:underline ml-1" data-testid="button-clear-all-filters">Clear all</button>)}
         </div>
       )}
 
       {viewMode === "list" ? (
-        <div className="flex-1 min-h-0 overflow-y-auto space-y-1" data-testid="task-list">
+        <div className="flex-1 min-h-0 overflow-y-auto" data-testid="task-list">
           {filteredTasks.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-              <Inbox className="h-10 w-10 mb-3 opacity-40" />
+              <Inbox className="h-8 w-8 mb-2 opacity-40" />
               <p className="text-sm font-medium">No tasks found</p>
-              <p className="text-xs mt-1 opacity-70">{overdueOnly ? "No overdue tasks — nice work!" : sourceFilter !== "all" ? "Try switching to 'All' to see all your tasks" : "Click '+ New Task' to get started."}</p>
+              <p className="text-xs mt-1 opacity-70">{overdueOnly ? "No overdue tasks" : sourceFilter !== "all" ? "Try 'All' to see everything" : "Click '+ New' to get started"}</p>
             </div>
           ) : (
-            filteredTasks.map(task => (
-              <TaskRow key={task._key} task={task} isExpanded={expandedTasks.has(task.id)} onToggleExpand={() => task._source === "operational" && task.subtaskCount! > 0 && toggleExpand(task.id)} onOpenDrawer={() => handleOpenDrawer(task)} onStatusChange={handleStatusChange} onDelete={task._source === "personal" ? () => deleteTaskMutation.mutate(task.id) : undefined} onAddSubtask={task._source === "operational" ? () => setSubtaskDialog({ parentId: task.id, projectName: task.projectName || "" }) : undefined} allTaskData={allTaskData} onSubtaskAddForChild={(parentId: number, projectName: string) => setSubtaskDialog({ parentId, projectName })} isOverdue={isTaskOverdue(task)} />
-            ))
+            <div className="divide-y divide-border/40">
+              {filteredTasks.map(task => (
+                <CompactTaskRow key={task._key} task={task} isExpanded={expandedTasks.has(task.id)} onToggleExpand={() => task._source === "operational" && task.subtaskCount! > 0 && toggleExpand(task.id)} onOpenDrawer={() => handleOpenDrawer(task)} onStatusChange={handleStatusChange} onDelete={task._source === "personal" ? () => deleteTaskMutation.mutate(task.id) : undefined} onAddSubtask={task._source === "operational" ? () => setSubtaskDialog({ parentId: task.id, projectName: task.projectName || "" }) : undefined} allTaskData={allTaskData} onSubtaskAddForChild={(parentId: number, projectName: string) => setSubtaskDialog({ parentId, projectName })} isOverdue={isTaskOverdue(task)} onQuickStatus={(newStatus) => boardStatusMutation.mutate({ task, newStatus })} />
+              ))}
+            </div>
           )}
         </div>
       ) : (
         <div className="flex-1 min-h-0 overflow-x-auto">
-          <div className="grid grid-cols-4 gap-3 h-full min-w-[800px]">
+          <div className="grid grid-cols-4 gap-2 h-full min-w-[800px]">
             {BOARD_COLUMNS.map(col => {
               const colTasks = filteredTasks.filter(t => {
                 if (col.key === "inbox") return t.status === "inbox" || t.status === "planned";
@@ -742,45 +761,44 @@ export default function MyWorkTasksPage() {
               return (
                 <div
                   key={col.key}
-                  className={`flex flex-col min-h-0 rounded-xl border-2 bg-muted/10 border-t-4 ${col.color} transition-all ${isDropTarget ? "border-primary/50 bg-primary/5 shadow-md" : "border-transparent"}`}
+                  className={`flex flex-col min-h-0 rounded-lg border bg-muted/10 border-t-2 ${col.color} transition-all ${isDropTarget ? "border-primary/50 bg-primary/5 shadow-md" : ""}`}
                   onDragOver={(e) => handleBoardDragOver(e, col.key)}
                   onDragLeave={() => setDropTargetCol(null)}
                   onDrop={(e) => handleBoardDrop(e, col.key)}
                   data-testid={`board-col-${col.key}`}
                 >
-                  <div className={`shrink-0 px-3 py-2.5 flex items-center justify-between rounded-t-lg ${col.headerBg}`}>
-                    <div className="flex items-center gap-2">
+                  <div className={`shrink-0 px-2.5 py-2 flex items-center justify-between ${col.headerBg}`}>
+                    <div className="flex items-center gap-1.5">
                       <span className={`w-2 h-2 rounded-full ${col.dotColor}`} />
-                      <span className="text-xs font-semibold">{col.label}</span>
+                      <span className="text-[11px] font-semibold">{col.label}</span>
                     </div>
-                    <Badge variant="secondary" className="text-[10px] h-5 px-1.5 font-semibold">{colTasks.length}</Badge>
+                    <Badge variant="secondary" className="text-[10px] h-4 px-1 font-semibold">{colTasks.length}</Badge>
                   </div>
-                  <div className="flex-1 min-h-0 overflow-y-auto px-2 pb-2 pt-1 space-y-1.5">
+                  <div className="flex-1 min-h-0 overflow-y-auto px-1.5 pb-1.5 pt-1 space-y-1">
                     {colTasks.map(task => {
                       const canDrag = ["personal", "operational", "engineering_task", "tr_register"].includes(task._source);
+                      const pb = PRIORITY_BADGE[task.priority] || PRIORITY_BADGE.normal;
                       return (
                         <div
                           key={task._key}
                           draggable={canDrag}
                           onDragStart={(e) => handleBoardDragStart(e, task)}
                           onClick={() => handleOpenDrawer(task)}
-                          className={`bg-background rounded-lg border p-2.5 transition-all hover:shadow-md hover:border-primary/30 ${canDrag ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"} ${draggedTask?._key === task._key ? "opacity-40" : ""}`}
+                          className={`bg-background rounded-md border p-2 transition-all hover:shadow-sm hover:border-primary/30 ${canDrag ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"} ${draggedTask?._key === task._key ? "opacity-40" : ""}`}
                           data-testid={`board-card-${task._key}`}
                         >
-                          <div className="flex items-center gap-1.5 mb-1.5">
-                            <span className={`inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${task.priority === "critical" ? "text-red-600 bg-red-50" : task.priority === "high" ? "text-orange-600 bg-orange-50" : task.priority === "low" ? "text-slate-400 bg-slate-50" : "text-blue-600 bg-blue-50"}`}>
-                              {task.priority === "critical" ? "P1" : task.priority === "high" ? "P2" : task.priority === "low" ? "P4" : "P3"}
-                            </span>
-                            <span className={`inline-flex px-1.5 py-0.5 rounded-full text-[9px] font-medium border ${task._sourceColor}`}>{task._sourceLabel}</span>
+                          <div className="flex items-center gap-1 mb-1">
+                            <span className={`inline-flex px-1 py-px rounded text-[9px] font-bold ${pb.class}`}>{pb.label}</span>
+                            <span className={`inline-flex px-1.5 py-px rounded text-[9px] font-medium border ${task._sourceColor}`}>{task._sourceLabel}</span>
                             {task.ragStatus && <span className={`w-2 h-2 rounded-full shrink-0 ${task.ragStatus === "Red" ? "bg-red-500" : task.ragStatus === "Amber" ? "bg-amber-500" : "bg-green-500"}`} />}
                           </div>
-                          <p className="text-xs font-medium leading-snug line-clamp-2 mb-1.5">{task.title}</p>
-                          <div className="flex items-center justify-between">
-                            {task.projectName && <span className="text-[9px] text-muted-foreground truncate max-w-[120px]">{task.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}</span>}
-                            {task.dueAt && <span className={`text-[9px] ${isTaskOverdue(task) ? "text-red-500 font-semibold" : "text-muted-foreground"}`}>{(() => { try { return format(new Date(task.dueAt), "dd MMM"); } catch { return ""; } })()}</span>}
+                          <p className="text-[11px] font-medium leading-snug line-clamp-2 mb-1">{task.title}</p>
+                          <div className="flex items-center justify-between text-[9px] text-muted-foreground">
+                            {task.projectName && <span className="truncate max-w-[100px]">{task.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}</span>}
+                            {task.dueAt && <span className={isTaskOverdue(task) ? "text-red-500 font-semibold" : ""}>{(() => { try { return format(new Date(task.dueAt), "dd MMM"); } catch { return ""; } })()}</span>}
                           </div>
                           {task.percentComplete !== undefined && task.percentComplete > 0 && (
-                            <div className="mt-1.5 flex items-center gap-1.5">
+                            <div className="mt-1 flex items-center gap-1">
                               <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden"><div className="h-full bg-emerald-500 rounded-full" style={{ width: `${task.percentComplete}%` }} /></div>
                               <span className="text-[9px] text-muted-foreground">{task.percentComplete}%</span>
                             </div>
@@ -797,35 +815,35 @@ export default function MyWorkTasksPage() {
       )}
 
       {drawerOpen && drawerTask && (<TaskDetailDrawer task={drawerTask} open={drawerOpen} onOpenChange={(open) => setDrawerOpen(open)} onInvalidate={invalidateAll} />)}
-      {unifiedDetailOpen && unifiedDetailTask && (<UnifiedTaskDetailSheet task={unifiedDetailTask} open={unifiedDetailOpen} onOpenChange={setUnifiedDetailOpen} onInvalidate={invalidateAll} allProjects={allProjects} />)}
+      {unifiedDetailOpen && unifiedDetailTask && (<TaskDetailPanel task={unifiedDetailTask} open={unifiedDetailOpen} onOpenChange={setUnifiedDetailOpen} onInvalidate={invalidateAll} allProjects={allProjects} />)}
 
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Plus className="h-5 w-5" /> New Task</DialogTitle>
+            <DialogTitle className="flex items-center gap-2 text-base"><Plus className="h-4 w-4" /> New Task</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 pt-2">
+          <div className="space-y-3 pt-1">
             <div className="flex gap-2">
-              <button onClick={() => setNewTask(t => ({ ...t, type: "personal" }))} className={`flex-1 px-3 py-2.5 rounded-lg border text-xs font-medium transition-all ${newTask.type === "personal" ? "bg-blue-50 border-blue-300 text-blue-700 shadow-sm" : "border-border text-muted-foreground hover:bg-muted"}`} data-testid="btn-type-personal">
-                <ClipboardList className="h-4 w-4 mx-auto mb-1" /> Personal Task
+              <button onClick={() => setNewTask(t => ({ ...t, type: "personal" }))} className={`flex-1 px-3 py-2 rounded-lg border text-xs font-medium transition-all ${newTask.type === "personal" ? "bg-blue-50 border-blue-300 text-blue-700 shadow-sm" : "border-border text-muted-foreground hover:bg-muted"}`} data-testid="btn-type-personal">
+                <ClipboardList className="h-4 w-4 mx-auto mb-0.5" /> Personal Task
               </button>
-              <button onClick={() => setNewTask(t => ({ ...t, type: "action" }))} className={`flex-1 px-3 py-2.5 rounded-lg border text-xs font-medium transition-all ${newTask.type === "action" ? "bg-purple-50 border-purple-300 text-purple-700 shadow-sm" : "border-border text-muted-foreground hover:bg-muted"}`} data-testid="btn-type-action">
-                <BookOpen className="h-4 w-4 mx-auto mb-1" /> Action Item
+              <button onClick={() => setNewTask(t => ({ ...t, type: "action" }))} className={`flex-1 px-3 py-2 rounded-lg border text-xs font-medium transition-all ${newTask.type === "action" ? "bg-purple-50 border-purple-300 text-purple-700 shadow-sm" : "border-border text-muted-foreground hover:bg-muted"}`} data-testid="btn-type-action">
+                <BookOpen className="h-4 w-4 mx-auto mb-0.5" /> Action Item
               </button>
             </div>
             <div>
               <Label className="text-xs font-medium">Title <span className="text-red-500">*</span></Label>
-              <Input placeholder={newTask.type === "action" ? "Describe the action..." : "What needs to be done?"} value={newTask.title} onChange={e => setNewTask(t => ({ ...t, title: e.target.value }))} className="mt-1" data-testid="input-new-title" autoFocus />
+              <Input placeholder={newTask.type === "action" ? "Describe the action..." : "What needs to be done?"} value={newTask.title} onChange={e => setNewTask(t => ({ ...t, title: e.target.value }))} className="mt-1 h-8 text-sm" data-testid="input-new-title" autoFocus />
             </div>
             <div>
               <Label className="text-xs font-medium">Description</Label>
-              <Textarea placeholder="Additional details..." value={newTask.description} onChange={e => setNewTask(t => ({ ...t, description: e.target.value }))} className="mt-1 min-h-[60px]" data-testid="input-new-desc" />
+              <Textarea placeholder="Additional details..." value={newTask.description} onChange={e => setNewTask(t => ({ ...t, description: e.target.value }))} className="mt-1 min-h-[50px] text-sm" data-testid="input-new-desc" />
             </div>
-            <div className={`grid ${newTask.type === "personal" ? "grid-cols-3" : "grid-cols-2"} gap-3`}>
+            <div className={`grid ${newTask.type === "personal" ? "grid-cols-3" : "grid-cols-2"} gap-2`}>
               <div>
                 <Label className="text-xs font-medium">Priority</Label>
                 <Select value={newTask.priority} onValueChange={v => setNewTask(t => ({ ...t, priority: v as TaskPriority }))}>
-                  <SelectTrigger className="mt-1 h-8 text-xs" data-testid="select-new-priority"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="mt-1 h-7 text-xs" data-testid="select-new-priority"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="critical">P1 — Critical</SelectItem>
                     <SelectItem value="high">P2 — High</SelectItem>
@@ -838,7 +856,7 @@ export default function MyWorkTasksPage() {
                 <div>
                   <Label className="text-xs font-medium">Status</Label>
                   <Select value={newTask.status} onValueChange={v => setNewTask(t => ({ ...t, status: v as TaskStatus }))}>
-                    <SelectTrigger className="mt-1 h-8 text-xs" data-testid="select-new-status"><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="mt-1 h-7 text-xs" data-testid="select-new-status"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="inbox">Not Started</SelectItem>
                       <SelectItem value="in_progress">In Progress</SelectItem>
@@ -850,14 +868,14 @@ export default function MyWorkTasksPage() {
               )}
               <div>
                 <Label className="text-xs font-medium">Due Date</Label>
-                <Input type="date" value={newTask.dueDate} onChange={e => setNewTask(t => ({ ...t, dueDate: e.target.value }))} className="mt-1 h-8 text-xs" data-testid="input-new-due" />
+                <Input type="date" value={newTask.dueDate} onChange={e => setNewTask(t => ({ ...t, dueDate: e.target.value }))} className="mt-1 h-7 text-xs" data-testid="input-new-due" />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-2">
               <div>
-                <Label className="text-xs font-medium">Link to Project</Label>
+                <Label className="text-xs font-medium">Project</Label>
                 <Select value={newTask.projectName} onValueChange={v => setNewTask(t => ({ ...t, projectName: v === "__none" ? "" : v }))}>
-                  <SelectTrigger className="mt-1 h-8 text-xs" data-testid="select-new-project"><SelectValue placeholder="None" /></SelectTrigger>
+                  <SelectTrigger className="mt-1 h-7 text-xs" data-testid="select-new-project"><SelectValue placeholder="None" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none">None</SelectItem>
                     {allProjects.map(p => (<SelectItem key={p} value={p}>{p.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}</SelectItem>))}
@@ -867,7 +885,7 @@ export default function MyWorkTasksPage() {
               <div>
                 <Label className="text-xs font-medium">Department</Label>
                 <Select value={newTask.department} onValueChange={v => setNewTask(t => ({ ...t, department: v === "__none" ? "" : v }))}>
-                  <SelectTrigger className="mt-1 h-8 text-xs" data-testid="select-new-dept"><SelectValue placeholder="None" /></SelectTrigger>
+                  <SelectTrigger className="mt-1 h-7 text-xs" data-testid="select-new-dept"><SelectValue placeholder="None" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none">None</SelectItem>
                     {DEPARTMENTS.map(d => (<SelectItem key={d} value={d}>{d}</SelectItem>))}
@@ -882,10 +900,10 @@ export default function MyWorkTasksPage() {
             {newTask.type === "action" && (
               <div>
                 <Label className="text-xs font-medium">RAG Status</Label>
-                <div className="flex gap-2 mt-1">
+                <div className="flex gap-1.5 mt-1">
                   {["Green", "Amber", "Red"].map(rag => (
-                    <button key={rag} onClick={() => setNewTask(t => ({ ...t, ragStatus: rag }))} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all ${newTask.ragStatus === rag ? (rag === "Red" ? "bg-red-50 border-red-300 text-red-700" : rag === "Amber" ? "bg-amber-50 border-amber-300 text-amber-700" : "bg-emerald-50 border-emerald-300 text-emerald-700") : "border-border text-muted-foreground hover:bg-muted"}`} data-testid={`btn-rag-${rag.toLowerCase()}`}>
-                      <span className={`w-2.5 h-2.5 rounded-full ${rag === "Red" ? "bg-red-500" : rag === "Amber" ? "bg-amber-500" : "bg-emerald-500"}`} /> {rag}
+                    <button key={rag} onClick={() => setNewTask(t => ({ ...t, ragStatus: rag }))} className={`flex items-center gap-1 px-2.5 py-1 rounded-md border text-xs font-medium transition-all ${newTask.ragStatus === rag ? (rag === "Red" ? "bg-red-50 border-red-300 text-red-700" : rag === "Amber" ? "bg-amber-50 border-amber-300 text-amber-700" : "bg-emerald-50 border-emerald-300 text-emerald-700") : "border-border text-muted-foreground hover:bg-muted"}`} data-testid={`btn-rag-${rag.toLowerCase()}`}>
+                      <span className={`w-2 h-2 rounded-full ${rag === "Red" ? "bg-red-500" : rag === "Amber" ? "bg-amber-500" : "bg-emerald-500"}`} /> {rag}
                     </button>
                   ))}
                 </div>
@@ -903,10 +921,10 @@ export default function MyWorkTasksPage() {
 
       <Dialog open={!!subtaskDialog} onOpenChange={(open) => { if (!open) setSubtaskDialog(null); }}>
         <DialogContent className="sm:max-w-md">
-          <DialogHeader><DialogTitle>Add Subtask</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle className="text-base">Add Subtask</DialogTitle></DialogHeader>
           <div className="space-y-3">
-            <div><label className="text-xs font-medium text-muted-foreground">Title</label><Input placeholder="Subtask title..." value={newSubtaskTitle} onChange={e => setNewSubtaskTitle(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && newSubtaskTitle.trim() && subtaskDialog) createSubtaskMutation.mutate({ parentId: subtaskDialog.parentId, title: newSubtaskTitle.trim(), priority: newSubtaskPriority }); }} data-testid="input-subtask-title" /></div>
-            <div><label className="text-xs font-medium text-muted-foreground">Priority</label><Select value={newSubtaskPriority} onValueChange={setNewSubtaskPriority}><SelectTrigger className="h-8 text-xs" data-testid="select-subtask-priority"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="High">High</SelectItem><SelectItem value="Med">Medium</SelectItem><SelectItem value="Low">Low</SelectItem></SelectContent></Select></div>
+            <div><label className="text-xs font-medium text-muted-foreground">Title</label><Input placeholder="Subtask title..." value={newSubtaskTitle} onChange={e => setNewSubtaskTitle(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && newSubtaskTitle.trim() && subtaskDialog) createSubtaskMutation.mutate({ parentId: subtaskDialog.parentId, title: newSubtaskTitle.trim(), priority: newSubtaskPriority }); }} className="h-8" data-testid="input-subtask-title" /></div>
+            <div><label className="text-xs font-medium text-muted-foreground">Priority</label><Select value={newSubtaskPriority} onValueChange={setNewSubtaskPriority}><SelectTrigger className="h-7 text-xs" data-testid="select-subtask-priority"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="High">High</SelectItem><SelectItem value="Med">Medium</SelectItem><SelectItem value="Low">Low</SelectItem></SelectContent></Select></div>
           </div>
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => setSubtaskDialog(null)} data-testid="button-cancel-subtask">Cancel</Button>
@@ -918,15 +936,122 @@ export default function MyWorkTasksPage() {
   );
 }
 
-function UnifiedTaskDetailSheet({ task, open, onOpenChange, onInvalidate, allProjects }: { task: UnifiedTask; open: boolean; onOpenChange: (open: boolean) => void; onInvalidate: () => void; allProjects: string[] }) {
+function CompactTaskRow({ task, isExpanded, onToggleExpand, onOpenDrawer, onStatusChange, onDelete, onAddSubtask, allTaskData, onSubtaskAddForChild, isOverdue, onQuickStatus }: { task: UnifiedTask; isExpanded: boolean; onToggleExpand: () => void; onOpenDrawer: () => void; onStatusChange: (id: number, status: TaskStatus) => void; onDelete?: () => void; onAddSubtask?: () => void; allTaskData: any; onSubtaskAddForChild: (parentId: number, projectName: string) => void; isOverdue: boolean; onQuickStatus: (newStatus: string) => void }) {
+  const subtasks = useMemo(() => {
+    if (!isExpanded || task._source !== "operational" || !allTaskData?.operational) return [];
+    return (allTaskData.operational as any[]).filter(t => t.parentTaskId === task.id || t.parent_task_id === task.id);
+  }, [isExpanded, task, allTaskData]);
+
+  const { data: fetchedSubtasks } = useQuery<any[]>({
+    queryKey: [`/api/eng/tasks/${task.id}/subtasks`],
+    enabled: isExpanded && task._source === "operational" && (task.subtaskCount || 0) > 0,
+    queryFn: async () => {
+      const token = localStorage.getItem("auth_token");
+      const res = await fetch(`/api/eng/tasks/${task.id}/subtasks`, { headers: token ? { Authorization: `Bearer ${token}` } : {}, credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const displaySubtasks = fetchedSubtasks || subtasks;
+  const pb = PRIORITY_BADGE[task.priority] || PRIORITY_BADGE.normal;
+  const isDone = task.status === "done" || task.status === "cancelled";
+
+  const statusDot = task.status === "done" ? "bg-emerald-500" : task.status === "in_progress" ? "bg-blue-500" : task.status === "blocked" ? "bg-red-500" : task.status === "waiting" ? "bg-amber-500" : task.status === "cancelled" ? "bg-slate-300" : "bg-slate-300";
+
+  const canQuickStatus = ["personal", "operational", "engineering_task", "tr_register"].includes(task._source);
+
+  return (
+    <div data-testid={`task-row-${task._key}`}>
+      <div className={`flex items-center gap-1.5 px-2 py-1.5 transition-all hover:bg-muted/40 cursor-pointer group ${isDone ? "opacity-50" : ""} ${isOverdue ? "bg-red-50/30" : ""}`} onClick={onOpenDrawer}>
+
+        {task._source === "operational" && (task.subtaskCount || 0) > 0 ? (
+          <button onClick={e => { e.stopPropagation(); onToggleExpand(); }} className="shrink-0 p-0.5 rounded hover:bg-muted" data-testid={`btn-expand-${task._key}`}>
+            {isExpanded ? <ChevronDown className="h-3 w-3 text-muted-foreground" /> : <ChevronRight className="h-3 w-3 text-muted-foreground" />}
+          </button>
+        ) : (
+          <div className="shrink-0 w-4" />
+        )}
+
+        <button
+          onClick={e => { e.stopPropagation(); if (canQuickStatus) onQuickStatus(isDone ? "inbox" : "done"); }}
+          className={`shrink-0 w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all ${
+            isDone ? "border-emerald-500 bg-emerald-500" : "border-slate-300 hover:border-emerald-400 hover:bg-emerald-50"
+          }`}
+          data-testid={`btn-complete-${task._key}`}
+          title={isDone ? "Reopen" : "Complete"}
+        >
+          {isDone && <CheckCircle2 className="h-2.5 w-2.5 text-white" />}
+        </button>
+
+        <span className={`shrink-0 inline-flex px-1 py-px rounded text-[9px] font-bold leading-none ${pb.class}`}>{pb.label}</span>
+
+        <div className="flex-1 min-w-0 flex items-center gap-1.5">
+          <span className={`text-[13px] truncate ${isDone ? "line-through text-muted-foreground" : "text-foreground"}`} data-testid={`text-task-title-${task._key}`}>{task.title}</span>
+          {task.subtaskCount && task.subtaskCount > 0 && <span className="text-[9px] text-muted-foreground bg-muted px-1 py-px rounded shrink-0">{task.subtaskCount}</span>}
+        </div>
+
+        {task.percentComplete !== undefined && task.percentComplete > 0 && (
+          <div className="hidden sm:flex items-center gap-1 shrink-0 w-16">
+            <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden"><div className="h-full bg-emerald-500 rounded-full" style={{ width: `${task.percentComplete}%` }} /></div>
+            <span className="text-[9px] text-muted-foreground w-6 text-right">{task.percentComplete}%</span>
+          </div>
+        )}
+
+        <span className={`shrink-0 inline-flex items-center px-1.5 py-px rounded text-[9px] font-medium border ${task._sourceColor}`} data-testid={`badge-source-${task._key}`}>{task._sourceLabel}</span>
+
+        <div className="hidden sm:block shrink-0" onClick={e => e.stopPropagation()}>
+          <UserAssignmentPicker taskId={task._rawId} taskSource={task._source === "approvals" ? "operational" : task._source} resolvedUsers={task.resolvedAssignees || task.resolvedOwners || null} textNames={task.assignees || task.owners || null} mode={["operational", "tr_register"].includes(task._source) ? "multi" : "single"} size="xs" invalidateKeys={["/api/my-work/all-tasks", "/api/mytool/tasks", "/api/tr-register"]} />
+        </div>
+
+        {task.projectName && <span className="hidden lg:inline shrink-0 text-[9px] text-muted-foreground truncate max-w-[100px]" title={task.projectName} data-testid={`badge-project-${task._key}`}>{task.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}</span>}
+        {task.ragStatus && <span className={`shrink-0 w-2 h-2 rounded-full ${task.ragStatus === "Red" ? "bg-red-500" : task.ragStatus === "Amber" ? "bg-amber-500" : "bg-green-500"}`} title={`RAG: ${task.ragStatus}`} />}
+        {task.dueAt && <span className={`hidden sm:inline shrink-0 text-[9px] tabular-nums ${isOverdue ? "text-red-500 font-bold" : "text-muted-foreground"}`} data-testid={`text-due-${task._key}`}>{(() => { try { return format(new Date(task.dueAt), "dd MMM"); } catch { return ""; } })()}</span>}
+
+        <div className="shrink-0 flex items-center gap-px opacity-0 group-hover:opacity-100 transition-opacity">
+          {canQuickStatus && !isDone && (
+            <>
+              <button onClick={e => { e.stopPropagation(); onQuickStatus("in_progress"); }} className={`p-0.5 rounded transition-colors ${task.status === "in_progress" ? "text-blue-500" : "text-muted-foreground/40 hover:text-blue-500"}`} title="In Progress"><Clock className="h-3 w-3" /></button>
+              <button onClick={e => { e.stopPropagation(); onQuickStatus("blocked"); }} className={`p-0.5 rounded transition-colors ${task.status === "blocked" ? "text-red-500" : "text-muted-foreground/40 hover:text-red-500"}`} title="Blocked"><AlertCircle className="h-3 w-3" /></button>
+            </>
+          )}
+          {task._source === "operational" && onAddSubtask && <button onClick={e => { e.stopPropagation(); onAddSubtask(); }} className="p-0.5 rounded text-muted-foreground/40 hover:text-emerald-500" title="Add subtask" data-testid={`btn-add-subtask-${task._key}`}><Plus className="h-3 w-3" /></button>}
+          {task._source === "personal" && onDelete && <button onClick={e => { e.stopPropagation(); onDelete(); }} className="p-0.5 rounded text-muted-foreground/40 hover:text-red-500" data-testid={`btn-delete-${task._key}`}><Trash2 className="h-3 w-3" /></button>}
+        </div>
+      </div>
+
+      {isExpanded && displaySubtasks.length > 0 && (
+        <div className="ml-8 border-l-2 border-emerald-200 pl-2" data-testid={`subtasks-${task._key}`}>
+          {displaySubtasks.map((st: any) => {
+            const stStatus = normalizeStatus(st.status);
+            const stDone = stStatus === "done";
+            return (
+              <div key={st.id} className="flex items-center gap-1.5 px-1.5 py-1 hover:bg-muted/30 text-[12px]" data-testid={`subtask-${st.id}`}>
+                <span className={`w-3 h-3 rounded-full border-2 flex items-center justify-center ${stDone ? "border-emerald-500 bg-emerald-500" : "border-slate-300"}`}>
+                  {stDone && <CheckCircle2 className="h-2 w-2 text-white" />}
+                </span>
+                <span className={`flex-1 truncate ${stDone ? "line-through text-muted-foreground" : ""}`}>{st.title}</span>
+                <span className="text-[9px] text-muted-foreground">{st.priority}</span>
+              </div>
+            );
+          })}
+          <button onClick={() => onSubtaskAddForChild(task.id, task.projectName || "")} className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-emerald-600" data-testid={`btn-add-more-subtask-${task._key}`}><Plus className="h-2.5 w-2.5" /> Add subtask</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects }: { task: UnifiedTask; open: boolean; onOpenChange: (open: boolean) => void; onInvalidate: () => void; allProjects: string[] }) {
   const { toast } = useToast();
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editNotes, setEditNotes] = useState(task.notes || "");
+  const [detailTab, setDetailTab] = useState("details");
 
   const statusLabel = task.status === "done" ? "Done" : task.status === "in_progress" ? "In Progress" : task.status === "blocked" ? "Blocked" : task.status === "waiting" ? "Waiting" : task.status === "cancelled" ? "Cancelled" : task.status === "inbox" ? "To Do" : task.status === "planned" ? "Planned" : task.status;
   const priorityLabel = task.priority === "critical" ? "P1 — Critical" : task.priority === "high" ? "P2 — High" : task.priority === "low" ? "P4 — Low" : "P3 — Normal";
   const priorityColor = task.priority === "critical" ? "text-red-600" : task.priority === "high" ? "text-orange-600" : task.priority === "low" ? "text-slate-400" : "text-blue-600";
-  const statusColor = task.status === "done" ? "bg-green-100 text-green-700" : task.status === "in_progress" ? "bg-blue-100 text-blue-700" : task.status === "blocked" ? "bg-red-100 text-red-700" : task.status === "waiting" ? "bg-amber-100 text-amber-700" : task.status === "cancelled" ? "bg-slate-100 text-slate-500" : "bg-slate-100 text-slate-600";
+  const statusColor = task.status === "done" ? "bg-emerald-100 text-emerald-700 border-emerald-200" : task.status === "in_progress" ? "bg-blue-100 text-blue-700 border-blue-200" : task.status === "blocked" ? "bg-red-100 text-red-700 border-red-200" : task.status === "waiting" ? "bg-amber-100 text-amber-700 border-amber-200" : task.status === "cancelled" ? "bg-slate-100 text-slate-500 border-slate-200" : "bg-slate-100 text-slate-600 border-slate-200";
   const isOverdue = (() => { if (!task.dueAt || task.status === "done" || task.status === "cancelled") return false; try { return isPast(parseISO(task.dueAt)); } catch { return false; } })();
 
   const updateStatusMutation = useMutation({
@@ -970,141 +1095,140 @@ function UnifiedTaskDetailSheet({ task, open, onOpenChange, onInvalidate, allPro
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="sm:max-w-lg overflow-y-auto" data-testid="unified-task-detail-sheet">
-        <SheetHeader className="pb-4">
-          <div className="flex items-center gap-2 mb-2 flex-wrap">
-            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${task._sourceColor}`}>{task._sourceLabel}</span>
-            <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${statusColor}`}>{statusLabel}</span>
+      <SheetContent className="sm:max-w-lg p-0 flex flex-col" data-testid="unified-task-detail-sheet">
+        <div className="px-4 pt-4 pb-3 border-b shrink-0">
+          <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium border ${task._sourceColor}`}>{task._sourceLabel}</span>
+            <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-semibold border ${statusColor}`}>{statusLabel}</span>
+            <span className={`text-[10px] font-semibold ${priorityColor}`}>{priorityLabel}</span>
             {task.ragStatus && (
-              <span className="inline-flex items-center gap-1.5 text-xs">
-                <span className={`w-3 h-3 rounded-full ${task.ragStatus === "Red" ? "bg-red-500" : task.ragStatus === "Amber" ? "bg-amber-500" : "bg-green-500"}`} />
-                <span className="text-muted-foreground font-medium">{task.ragStatus}</span>
+              <span className="inline-flex items-center gap-1 text-[10px]">
+                <span className={`w-2 h-2 rounded-full ${task.ragStatus === "Red" ? "bg-red-500" : task.ragStatus === "Amber" ? "bg-amber-500" : "bg-green-500"}`} />
+                <span className="text-muted-foreground">{task.ragStatus}</span>
               </span>
             )}
-            {isOverdue && <Badge variant="destructive" className="text-[10px]">Overdue</Badge>}
+            {isOverdue && <Badge variant="destructive" className="text-[9px] px-1.5 py-0">Overdue</Badge>}
           </div>
-          <SheetTitle className="text-left text-base leading-snug" data-testid="text-unified-task-title">{task.title}</SheetTitle>
-        </SheetHeader>
-
-        <div className="space-y-5 pt-2">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label className="text-xs text-muted-foreground">Priority</Label>
-              <p className={`text-sm font-semibold mt-0.5 ${priorityColor}`} data-testid="text-unified-priority">{priorityLabel}</p>
-            </div>
+          <h3 className="text-sm font-semibold leading-snug" data-testid="text-unified-task-title">{task.title}</h3>
+          <div className="flex items-center gap-3 mt-2 text-[10px] text-muted-foreground">
             {task.projectName && (
-              <div>
-                <Label className="text-xs text-muted-foreground">Project</Label>
-                <p className="text-sm font-medium mt-0.5" data-testid="text-unified-project">{task.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}</p>
-              </div>
+              <span className="flex items-center gap-1" data-testid="text-unified-project">
+                <FolderOpen className="h-3 w-3" /> {task.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
+              </span>
             )}
             {task.dueAt && (
-              <div>
-                <Label className="text-xs text-muted-foreground">Due Date</Label>
-                <p className={`text-sm mt-0.5 ${isOverdue ? "text-red-600 font-bold" : ""}`} data-testid="text-unified-due">
-                  {(() => { try { return format(new Date(task.dueAt), "dd MMM yyyy"); } catch { return task.dueAt; } })()}
-                </p>
-              </div>
+              <span className={`flex items-center gap-1 ${isOverdue ? "text-red-600 font-semibold" : ""}`} data-testid="text-unified-due">
+                <Calendar className="h-3 w-3" /> {(() => { try { return format(new Date(task.dueAt), "dd MMM yyyy"); } catch { return task.dueAt; } })()}
+              </span>
             )}
-            {task.createdAt && (
-              <div>
-                <Label className="text-xs text-muted-foreground">Created</Label>
-                <p className="text-sm mt-0.5 text-muted-foreground">{(() => { try { return format(new Date(task.createdAt), "dd MMM yyyy"); } catch { return ""; } })()}</p>
-              </div>
-            )}
-            {task.percentComplete !== undefined && task.percentComplete > 0 && (
-              <div className="col-span-2">
-                <Label className="text-xs text-muted-foreground">Progress</Label>
-                <div className="flex items-center gap-2 mt-1">
-                  <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden"><div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${task.percentComplete}%` }} /></div>
-                  <span className="text-xs font-medium">{task.percentComplete}%</span>
-                </div>
-              </div>
-            )}
-            {task.department && <div><Label className="text-xs text-muted-foreground">Department</Label><p className="text-sm mt-0.5">{task.department}</p></div>}
-            {task.trId && <div><Label className="text-xs text-muted-foreground">TR ID</Label><p className="text-sm font-mono mt-0.5">{task.trId}</p></div>}
+            {task.department && <span className="flex items-center gap-1"><Tag className="h-3 w-3" /> {task.department}</span>}
+            {task.trId && <span className="flex items-center gap-1 font-mono"><Hash className="h-3 w-3" /> {task.trId}</span>}
           </div>
-
-          <Separator />
-
-          <div>
-            <Label className="text-xs text-muted-foreground mb-2 block">Assigned To</Label>
-            <div onClick={e => e.stopPropagation()}>
-              <UserAssignmentPicker taskId={task._rawId} taskSource={task._source === "approvals" ? "operational" : task._source} resolvedUsers={task.resolvedAssignees || task.resolvedOwners || null} textNames={task.assignees || task.owners || null} mode={["operational", "tr_register"].includes(task._source) ? "multi" : "single"} size="sm" invalidateKeys={["/api/my-work/all-tasks", "/api/mytool/tasks", "/api/tr-register"]} />
-            </div>
-          </div>
-
-          {canEditInline && task._source === "tr_register" && (
-            <>
-              <Separator />
-              <div>
-                <Label className="text-xs text-muted-foreground mb-2 block">RAG Status</Label>
-                <div className="flex gap-2">
-                  {["Green", "Amber", "Red"].map(rag => (
-                    <button key={rag} onClick={() => updateTrFieldMutation.mutate({ ragStatus: rag })} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all ${task.ragStatus === rag ? (rag === "Red" ? "bg-red-50 border-red-300 text-red-700 shadow-sm" : rag === "Amber" ? "bg-amber-50 border-amber-300 text-amber-700 shadow-sm" : "bg-emerald-50 border-emerald-300 text-emerald-700 shadow-sm") : "border-border text-muted-foreground hover:bg-muted"}`} disabled={updateTrFieldMutation.isPending} data-testid={`btn-detail-rag-${rag.toLowerCase()}`}>
-                      <span className={`w-2.5 h-2.5 rounded-full ${rag === "Red" ? "bg-red-500" : rag === "Amber" ? "bg-amber-500" : "bg-emerald-500"}`} /> {rag}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
-
-          {(task.notes || task.description) && (
-            <>
-              <Separator />
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <Label className="text-xs text-muted-foreground">Notes / Comments</Label>
-                  {canEditInline && editingField !== "notes" && (
-                    <button onClick={() => { setEditNotes(task.notes || ""); setEditingField("notes"); }} className="text-xs text-primary hover:underline">Edit</button>
-                  )}
-                </div>
-                {editingField === "notes" ? (
-                  <div className="space-y-2">
-                    <Textarea value={editNotes} onChange={e => setEditNotes(e.target.value)} className="min-h-[80px] text-sm" />
-                    <div className="flex gap-2">
-                      <Button size="sm" variant="outline" onClick={() => setEditingField(null)}>Cancel</Button>
-                      <Button size="sm" onClick={() => updateTrFieldMutation.mutate({ outcomeComments: editNotes })} disabled={updateTrFieldMutation.isPending}>
-                        {updateTrFieldMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null} Save
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-sm text-foreground whitespace-pre-wrap bg-muted/30 rounded-lg p-3" data-testid="text-unified-notes">{task.notes || task.description}</p>
-                )}
-              </div>
-            </>
-          )}
-
-          {canChangeStatus && (
-            <>
-              <Separator />
-              <div>
-                <Label className="text-xs text-muted-foreground mb-2 block">Change Status</Label>
-                <div className="flex flex-wrap gap-2">
-                  {task._source === "approvals" && task._key.startsWith("approval-qc-") ? (
-                    <>
-                      <Button size="sm" variant={task.status === "in_progress" ? "default" : "outline"} onClick={() => updateStatusMutation.mutate("in_progress")} disabled={updateStatusMutation.isPending} data-testid="btn-status-in-progress"><Clock className="h-3.5 w-3.5 mr-1" /> In Progress</Button>
-                      <Button size="sm" variant="outline" className="text-green-600 hover:bg-green-50" onClick={() => updateStatusMutation.mutate("done")} disabled={updateStatusMutation.isPending} data-testid="btn-status-pass"><CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Pass</Button>
-                      <Button size="sm" variant="outline" className="text-red-600 hover:bg-red-50" onClick={() => updateStatusMutation.mutate("blocked")} disabled={updateStatusMutation.isPending} data-testid="btn-status-fail"><AlertCircle className="h-3.5 w-3.5 mr-1" /> Fail</Button>
-                    </>
-                  ) : (
-                    <>
-                      <Button size="sm" variant={task.status === "inbox" ? "default" : "outline"} onClick={() => updateStatusMutation.mutate(task._source === "engineering_task" ? "inbox" : "inbox")} disabled={updateStatusMutation.isPending} data-testid="btn-status-todo"><Circle className="h-3.5 w-3.5 mr-1" /> To Do</Button>
-                      <Button size="sm" variant={task.status === "in_progress" ? "default" : "outline"} onClick={() => updateStatusMutation.mutate(task._source === "tr_register" ? "in_progress" : "In Progress")} disabled={updateStatusMutation.isPending} data-testid="btn-status-in-progress"><Clock className="h-3.5 w-3.5 mr-1" /> In Progress</Button>
-                      <Button size="sm" variant="outline" className="text-green-600 hover:bg-green-50" onClick={() => updateStatusMutation.mutate("done")} disabled={updateStatusMutation.isPending} data-testid="btn-status-done"><CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Done</Button>
-                      <Button size="sm" variant="outline" className="text-red-600 hover:bg-red-50" onClick={() => updateStatusMutation.mutate(task._source === "tr_register" ? "blocked" : "Blocked")} disabled={updateStatusMutation.isPending} data-testid="btn-status-blocked"><AlertCircle className="h-3.5 w-3.5 mr-1" /> Blocked</Button>
-                    </>
-                  )}
-                  {updateStatusMutation.isPending && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-                </div>
-              </div>
-            </>
-          )}
-
-          {task.deliverableType && <div><Label className="text-xs text-muted-foreground">Deliverable Type</Label><p className="text-sm mt-0.5">{task.deliverableType}</p></div>}
         </div>
+
+        <Tabs value={detailTab} onValueChange={setDetailTab} className="flex-1 flex flex-col min-h-0">
+          <TabsList className="shrink-0 mx-4 mt-2 h-8">
+            <TabsTrigger value="details" className="text-xs h-7">Details</TabsTrigger>
+            <TabsTrigger value="actions" className="text-xs h-7">Actions</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="details" className="flex-1 overflow-y-auto px-4 pb-4 mt-0">
+            <div className="space-y-4 pt-3">
+              {task.percentComplete !== undefined && task.percentComplete > 0 && (
+                <div>
+                  <Label className="text-[10px] text-muted-foreground uppercase tracking-wider">Progress</Label>
+                  <div className="flex items-center gap-2 mt-1">
+                    <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden"><div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${task.percentComplete}%` }} /></div>
+                    <span className="text-xs font-semibold">{task.percentComplete}%</span>
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <Label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1.5 block">Assigned To</Label>
+                <div onClick={e => e.stopPropagation()}>
+                  <UserAssignmentPicker taskId={task._rawId} taskSource={task._source === "approvals" ? "operational" : task._source} resolvedUsers={task.resolvedAssignees || task.resolvedOwners || null} textNames={task.assignees || task.owners || null} mode={["operational", "tr_register"].includes(task._source) ? "multi" : "single"} size="sm" invalidateKeys={["/api/my-work/all-tasks", "/api/mytool/tasks", "/api/tr-register"]} />
+                </div>
+              </div>
+
+              {canEditInline && task._source === "tr_register" && (
+                <div>
+                  <Label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1.5 block">RAG Status</Label>
+                  <div className="flex gap-1.5">
+                    {["Green", "Amber", "Red"].map(rag => (
+                      <button key={rag} onClick={() => updateTrFieldMutation.mutate({ ragStatus: rag })} className={`flex items-center gap-1 px-2.5 py-1 rounded-md border text-[11px] font-medium transition-all ${task.ragStatus === rag ? (rag === "Red" ? "bg-red-50 border-red-300 text-red-700 shadow-sm" : rag === "Amber" ? "bg-amber-50 border-amber-300 text-amber-700 shadow-sm" : "bg-emerald-50 border-emerald-300 text-emerald-700 shadow-sm") : "border-border text-muted-foreground hover:bg-muted"}`} disabled={updateTrFieldMutation.isPending} data-testid={`btn-detail-rag-${rag.toLowerCase()}`}>
+                        <span className={`w-2 h-2 rounded-full ${rag === "Red" ? "bg-red-500" : rag === "Amber" ? "bg-amber-500" : "bg-emerald-500"}`} /> {rag}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {(task.notes || task.description) && (
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <Label className="text-[10px] text-muted-foreground uppercase tracking-wider">Notes</Label>
+                    {canEditInline && editingField !== "notes" && (
+                      <button onClick={() => { setEditNotes(task.notes || ""); setEditingField("notes"); }} className="text-[10px] text-primary hover:underline">Edit</button>
+                    )}
+                  </div>
+                  {editingField === "notes" ? (
+                    <div className="space-y-1.5">
+                      <Textarea value={editNotes} onChange={e => setEditNotes(e.target.value)} className="min-h-[60px] text-xs" />
+                      <div className="flex gap-1.5">
+                        <Button size="sm" variant="outline" className="h-6 text-xs" onClick={() => setEditingField(null)}>Cancel</Button>
+                        <Button size="sm" className="h-6 text-xs" onClick={() => updateTrFieldMutation.mutate({ outcomeComments: editNotes })} disabled={updateTrFieldMutation.isPending}>Save</Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-foreground whitespace-pre-wrap bg-muted/30 rounded-md p-2.5 leading-relaxed" data-testid="text-unified-notes">{task.notes || task.description}</p>
+                  )}
+                </div>
+              )}
+
+              {task.createdAt && (
+                <div className="text-[10px] text-muted-foreground pt-2 border-t">
+                  Created {(() => { try { return formatDistanceToNow(new Date(task.createdAt), { addSuffix: true }); } catch { return ""; } })()}
+                </div>
+              )}
+
+              {task.deliverableType && <div><Label className="text-[10px] text-muted-foreground uppercase tracking-wider">Deliverable Type</Label><p className="text-xs mt-0.5">{task.deliverableType}</p></div>}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="actions" className="flex-1 overflow-y-auto px-4 pb-4 mt-0">
+            <div className="space-y-4 pt-3">
+              {canChangeStatus && (
+                <div>
+                  <Label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2 block">Change Status</Label>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {task._source === "approvals" && task._key.startsWith("approval-qc-") ? (
+                      <>
+                        <Button size="sm" variant={task.status === "in_progress" ? "default" : "outline"} className="h-8 text-xs justify-start" onClick={() => updateStatusMutation.mutate("in_progress")} disabled={updateStatusMutation.isPending} data-testid="btn-status-in-progress"><Clock className="h-3 w-3 mr-1.5" /> In Progress</Button>
+                        <Button size="sm" variant="outline" className="h-8 text-xs justify-start text-green-600 hover:bg-green-50" onClick={() => updateStatusMutation.mutate("done")} disabled={updateStatusMutation.isPending} data-testid="btn-status-pass"><CheckCircle2 className="h-3 w-3 mr-1.5" /> Pass</Button>
+                        <Button size="sm" variant="outline" className="h-8 text-xs justify-start text-red-600 hover:bg-red-50" onClick={() => updateStatusMutation.mutate("blocked")} disabled={updateStatusMutation.isPending} data-testid="btn-status-fail"><AlertCircle className="h-3 w-3 mr-1.5" /> Fail</Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button size="sm" variant={task.status === "inbox" ? "default" : "outline"} className="h-8 text-xs justify-start" onClick={() => updateStatusMutation.mutate(task._source === "engineering_task" ? "inbox" : "inbox")} disabled={updateStatusMutation.isPending} data-testid="btn-status-todo"><Circle className="h-3 w-3 mr-1.5" /> To Do</Button>
+                        <Button size="sm" variant={task.status === "in_progress" ? "default" : "outline"} className="h-8 text-xs justify-start" onClick={() => updateStatusMutation.mutate(task._source === "tr_register" ? "in_progress" : "In Progress")} disabled={updateStatusMutation.isPending} data-testid="btn-status-in-progress"><Clock className="h-3 w-3 mr-1.5" /> In Progress</Button>
+                        <Button size="sm" variant="outline" className="h-8 text-xs justify-start text-emerald-600 hover:bg-emerald-50" onClick={() => updateStatusMutation.mutate("done")} disabled={updateStatusMutation.isPending} data-testid="btn-status-done"><CheckCircle2 className="h-3 w-3 mr-1.5" /> Done</Button>
+                        <Button size="sm" variant="outline" className="h-8 text-xs justify-start text-red-600 hover:bg-red-50" onClick={() => updateStatusMutation.mutate(task._source === "tr_register" ? "blocked" : "Blocked")} disabled={updateStatusMutation.isPending} data-testid="btn-status-blocked"><AlertCircle className="h-3 w-3 mr-1.5" /> Blocked</Button>
+                      </>
+                    )}
+                  </div>
+                  {updateStatusMutation.isPending && <div className="flex items-center gap-1 mt-1.5 text-[10px] text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" /> Updating...</div>}
+                </div>
+              )}
+
+              {!canChangeStatus && (
+                <div className="text-center py-6 text-muted-foreground">
+                  <p className="text-xs">Status changes for this task type must be done from the source.</p>
+                </div>
+              )}
+            </div>
+          </TabsContent>
+        </Tabs>
       </SheetContent>
     </Sheet>
   );
@@ -1138,9 +1262,9 @@ function AssignToSelector({ selected, onChange }: { selected: string[]; onChange
 
   return (
     <div className="mt-1">
-      <div className="flex flex-wrap gap-1.5 mb-1.5">
+      <div className="flex flex-wrap gap-1 mb-1">
         {selected.map(name => (
-          <span key={name} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 border border-blue-200 text-blue-700">
+          <span key={name} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 border border-blue-200 text-blue-700">
             <User className="h-2.5 w-2.5" /> {displayName(name)}
             <button onClick={() => onChange(selected.filter(n => n !== name))} className="hover:text-red-500" data-testid={`btn-remove-assignee-${name}`}><X className="h-2.5 w-2.5" /></button>
           </span>
@@ -1149,113 +1273,27 @@ function AssignToSelector({ selected, onChange }: { selected: string[]; onChange
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-dashed border-border text-xs text-muted-foreground hover:bg-muted hover:border-border transition-colors"
+        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-dashed border-border text-[10px] text-muted-foreground hover:bg-muted transition-colors"
         data-testid="btn-assign-to-picker"
       >
-        <Users className="h-3 w-3" /> {selected.length === 0 ? "Add assignees" : "Edit assignees"}
+        <Users className="h-3 w-3" /> {selected.length === 0 ? "Add assignees" : "Edit"}
       </button>
       {open && (
-        <div className="mt-1.5 border rounded-lg bg-background shadow-md max-h-40 overflow-y-auto">
-          <div className="p-1.5 border-b">
-            <Input placeholder="Search users..." value={search} onChange={e => setSearch(e.target.value)} className="h-7 text-xs" data-testid="input-assign-search" />
+        <div className="mt-1 border rounded-md bg-background shadow-md max-h-36 overflow-y-auto">
+          <div className="p-1 border-b">
+            <Input placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)} className="h-6 text-[10px]" data-testid="input-assign-search" />
           </div>
-          <div className="p-1">
+          <div className="p-0.5">
             {filtered.map(u => (
-              <button key={u.id} onClick={() => toggle(u.name)} className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs text-left transition-colors ${selected.includes(u.name) ? "bg-blue-50 text-blue-700" : "hover:bg-muted"}`} data-testid={`assign-user-${u.id}`}>
-                <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center text-[8px] ${selected.includes(u.name) ? "bg-blue-500 border-blue-500 text-white" : "border-border"}`}>
+              <button key={u.id} onClick={() => toggle(u.name)} className={`w-full flex items-center gap-1.5 px-1.5 py-1 rounded text-[11px] text-left transition-colors ${selected.includes(u.name) ? "bg-blue-50 text-blue-700" : "hover:bg-muted"}`} data-testid={`assign-user-${u.id}`}>
+                <span className={`w-3 h-3 rounded border flex items-center justify-center text-[8px] ${selected.includes(u.name) ? "bg-blue-500 border-blue-500 text-white" : "border-border"}`}>
                   {selected.includes(u.name) ? "✓" : ""}
                 </span>
                 <span className="truncate">{u.name}</span>
               </button>
             ))}
-            {filtered.length === 0 && <p className="text-xs text-muted-foreground text-center py-2">No users found</p>}
+            {filtered.length === 0 && <p className="text-[10px] text-muted-foreground text-center py-2">No users found</p>}
           </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function TaskRow({ task, isExpanded, onToggleExpand, onOpenDrawer, onStatusChange, onDelete, onAddSubtask, allTaskData, onSubtaskAddForChild, isOverdue }: { task: UnifiedTask; isExpanded: boolean; onToggleExpand: () => void; onOpenDrawer: () => void; onStatusChange: (id: number, status: TaskStatus) => void; onDelete?: () => void; onAddSubtask?: () => void; allTaskData: any; onSubtaskAddForChild: (parentId: number, projectName: string) => void; isOverdue: boolean }) {
-  const subtasks = useMemo(() => {
-    if (!isExpanded || task._source !== "operational" || !allTaskData?.operational) return [];
-    return (allTaskData.operational as any[]).filter(t => t.parentTaskId === task.id || t.parent_task_id === task.id);
-  }, [isExpanded, task, allTaskData]);
-
-  const { data: fetchedSubtasks } = useQuery<any[]>({
-    queryKey: [`/api/eng/tasks/${task.id}/subtasks`],
-    enabled: isExpanded && task._source === "operational" && (task.subtaskCount || 0) > 0,
-    queryFn: async () => {
-      const token = localStorage.getItem("auth_token");
-      const res = await fetch(`/api/eng/tasks/${task.id}/subtasks`, { headers: token ? { Authorization: `Bearer ${token}` } : {}, credentials: "include" });
-      if (!res.ok) return [];
-      return res.json();
-    },
-  });
-
-  const displaySubtasks = fetchedSubtasks || subtasks;
-
-  const priorityColor = task.priority === "critical" ? "text-red-600 bg-red-50" : task.priority === "high" ? "text-orange-600 bg-orange-50" : task.priority === "low" ? "text-slate-400 bg-slate-50" : "text-blue-600 bg-blue-50";
-  const statusIcon = task.status === "done" ? <CheckCircle2 className="h-4 w-4 text-green-500" /> : task.status === "in_progress" ? <Clock className="h-4 w-4 text-blue-500" /> : task.status === "blocked" ? <AlertCircle className="h-4 w-4 text-red-500" /> : task.status === "waiting" ? <AlertTriangle className="h-4 w-4 text-amber-500" /> : task.status === "cancelled" ? <X className="h-4 w-4 text-slate-400" /> : <Circle className="h-4 w-4 text-slate-300" />;
-
-  return (
-    <div data-testid={`task-row-${task._key}`}>
-      <div className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border transition-all hover:shadow-sm cursor-pointer group ${task.status === "done" ? "opacity-60 bg-muted/30 border-border/30" : isOverdue ? "bg-red-50/40 border-red-200/60 hover:border-red-300" : "bg-background border-border/50 hover:border-border"}`} onClick={onOpenDrawer}>
-        {task._source === "operational" && (task.subtaskCount || 0) > 0 && (
-          <button onClick={e => { e.stopPropagation(); onToggleExpand(); }} className="shrink-0 p-0.5 rounded hover:bg-muted transition-colors" data-testid={`btn-expand-${task._key}`}>
-            {isExpanded ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
-          </button>
-        )}
-        {(task._source !== "operational" || !(task.subtaskCount && task.subtaskCount > 0)) && <div className="shrink-0 w-5" />}
-
-        <div className="shrink-0">{statusIcon}</div>
-
-        <span className={`shrink-0 inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${priorityColor}`}>
-          {task.priority === "critical" ? "P1" : task.priority === "high" ? "P2" : task.priority === "low" ? "P4" : "P3"}
-        </span>
-
-        <div className="flex-1 min-w-0 flex items-center gap-2">
-          <span className={`text-sm truncate ${task.status === "done" ? "line-through text-muted-foreground" : "text-foreground"}`} data-testid={`text-task-title-${task._key}`}>{task.title}</span>
-          {task.subtaskCount && task.subtaskCount > 0 && <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full shrink-0">{task.subtaskCount} sub</span>}
-          {task.percentComplete !== undefined && task.percentComplete > 0 && task._source === "operational" && (
-            <div className="hidden sm:flex items-center gap-1 shrink-0">
-              <div className="w-12 h-1.5 bg-muted rounded-full overflow-hidden"><div className="h-full bg-emerald-500 rounded-full" style={{ width: `${task.percentComplete}%` }} /></div>
-              <span className="text-[10px] text-muted-foreground">{task.percentComplete}%</span>
-            </div>
-          )}
-        </div>
-
-        <span className={`shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border ${task._sourceColor}`} data-testid={`badge-source-${task._key}`}>{task._sourceLabel}</span>
-
-        <div className="hidden sm:block shrink-0" onClick={e => e.stopPropagation()}>
-          <UserAssignmentPicker taskId={task._rawId} taskSource={task._source === "approvals" ? "operational" : task._source} resolvedUsers={task.resolvedAssignees || task.resolvedOwners || null} textNames={task.assignees || task.owners || null} mode={["operational", "tr_register"].includes(task._source) ? "multi" : "single"} size="xs" invalidateKeys={["/api/my-work/all-tasks", "/api/mytool/tasks", "/api/tr-register"]} />
-        </div>
-
-        {task.projectName && <span className="hidden md:inline shrink-0 text-[10px] text-muted-foreground bg-muted/50 px-2 py-0.5 rounded truncate max-w-[120px]" title={task.projectName} data-testid={`badge-project-${task._key}`}>{task.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}</span>}
-        {task.ragStatus && <span className={`shrink-0 w-2.5 h-2.5 rounded-full ${task.ragStatus === "Red" ? "bg-red-500" : task.ragStatus === "Amber" ? "bg-amber-500" : "bg-green-500"}`} title={`RAG: ${task.ragStatus}`} />}
-        {task.dueAt && <span className={`hidden sm:inline shrink-0 text-[10px] ${isOverdue ? "text-red-500 font-semibold" : "text-muted-foreground"}`} data-testid={`text-due-${task._key}`}>{(() => { try { return format(new Date(task.dueAt), "dd MMM"); } catch { return ""; } })()}</span>}
-
-        <div className="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-          {task._source === "operational" && onAddSubtask && <button onClick={e => { e.stopPropagation(); onAddSubtask(); }} className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors" title="Add subtask" data-testid={`btn-add-subtask-${task._key}`}><Plus className="h-3.5 w-3.5" /></button>}
-          {task._source === "personal" && onDelete && <button onClick={e => { e.stopPropagation(); onDelete(); }} className="p-1 rounded hover:bg-red-50 text-muted-foreground hover:text-red-500 transition-colors" data-testid={`btn-delete-${task._key}`}><Trash2 className="h-3.5 w-3.5" /></button>}
-        </div>
-      </div>
-
-      {isExpanded && displaySubtasks.length > 0 && (
-        <div className="ml-8 mt-1 space-y-0.5 border-l-2 border-emerald-200 pl-3" data-testid={`subtasks-${task._key}`}>
-          {displaySubtasks.map((st: any) => {
-            const stStatus = normalizeStatus(st.status);
-            const stIcon = stStatus === "done" ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> : stStatus === "in_progress" ? <Clock className="h-3.5 w-3.5 text-blue-500" /> : <Circle className="h-3.5 w-3.5 text-slate-300" />;
-            return (
-              <div key={st.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted/50 text-sm" data-testid={`subtask-${st.id}`}>
-                {stIcon}
-                <span className={`flex-1 truncate ${stStatus === "done" ? "line-through text-muted-foreground" : ""}`}>{st.title}</span>
-                <span className="text-[10px] text-muted-foreground">{st.priority}</span>
-                {st.dueDate && <span className="text-[10px] text-muted-foreground">{(() => { try { return format(new Date(st.dueDate || st.due_date), "dd MMM"); } catch { return ""; } })()}</span>}
-              </div>
-            );
-          })}
-          <button onClick={() => onSubtaskAddForChild(task.id, task.projectName || "")} className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground hover:text-emerald-600 transition-colors" data-testid={`btn-add-more-subtask-${task._key}`}><Plus className="h-3 w-3" /> Add subtask</button>
         </div>
       )}
     </div>
