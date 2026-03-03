@@ -2,7 +2,7 @@ import { db } from "./db";
 import { eq, and, gt, inArray } from "drizzle-orm";
 import { notifications, notificationThrottle, users } from "@shared/schema";
 
-const EXCEL_SYNC_ROLES = ['PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER'];
+const EXCEL_SYNC_ROLES = ['PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'COO_ADMIN', 'CEO_ADMIN'];
 const DEDUP_WINDOW_MS = 2 * 60 * 1000;
 
 function hashEntityId(str: string): number {
