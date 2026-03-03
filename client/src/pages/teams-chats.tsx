@@ -163,6 +163,12 @@ function ActivitySection() {
   const { toast } = useToast();
   const qc = useQueryClient();
 
+  useEffect(() => {
+    qc.removeQueries({ queryKey: ["ms-objects-mine", "teams"] });
+    setAutoSyncDone(false);
+    setSsoUnavailable(false);
+  }, []);
+
   const syncMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch("/api/ms-sync/trigger", {
@@ -200,7 +206,8 @@ function ActivitySection() {
       if (!res.ok) return [];
       return res.json();
     },
-    staleTime: 30_000,
+    staleTime: 0,
+    gcTime: 0,
   });
 
   useEffect(() => {
