@@ -1016,7 +1016,7 @@ export default function ProjectDetailPage() {
     const hasPaymentDate = !!(e.expensePaymentDate && String(e.expensePaymentDate).trim());
     const hasInvoiceNumber = !!(e.expenseInvoiceNumber && String(e.expenseInvoiceNumber).trim());
     if (!hasInvoiceNumber || !hasPaymentDate) return false;
-    const paymentDateConfirmed = e.paymentDateConfirmed === true || e.paymentDateFontColor === 'black';
+    const paymentDateConfirmed = e.paymentDateFontColor === 'red' ? false : (e.paymentDateFontColor === 'black' ? true : e.paymentDateConfirmed === true);
     return paymentDateConfirmed;
   };
 
@@ -1025,7 +1025,7 @@ export default function ProjectDetailPage() {
     const hasInvDate = !!(e.expenseInvoicedDate && String(e.expenseInvoicedDate).trim());
     const hasPO = !!(e.expensePoNumber && String(e.expensePoNumber).trim());
     if (!hasInvoice || !hasInvDate || !hasPO) return false;
-    const dateConfirmed = e.invoiceDateConfirmed === true || e.invoiceDateFontColor === 'black';
+    const dateConfirmed = e.invoiceDateFontColor === 'red' ? false : (e.invoiceDateFontColor === 'black' ? true : e.invoiceDateConfirmed === true);
     return dateConfirmed;
   };
 

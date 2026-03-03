@@ -15,9 +15,9 @@ export interface ExpenseLineInput {
 }
 
 export function isDateBlack(confirmed: boolean | null | undefined, fontColor: string | null | undefined): boolean {
-  if (confirmed === true) return true;
+  if (fontColor === 'red') return false;
   if (fontColor === 'black') return true;
-  if (confirmed == null && (fontColor == null || fontColor === '')) return true;
+  if (confirmed === true) return true;
   return false;
 }
 

@@ -1183,9 +1183,11 @@ router.get("/api/program-dashboard", requireAuth, async (req, res) => {
       const hasInvoice = !!(exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim());
       const hasInvDate = !!(exp.expenseInvoicedDate && String(exp.expenseInvoicedDate).trim());
       const hasPO = !!(exp.expensePoNumber && String(exp.expensePoNumber).trim());
+      const fontColor = (exp as any).invoiceDateFontColor;
       const dateConfirmed = hasInvDate && (
-        exp.invoiceDateConfirmed === true ||
-        (exp as any).invoiceDateFontColor === 'black'
+        fontColor === 'red' ? false :
+        fontColor === 'black' ? true :
+        exp.invoiceDateConfirmed === true
       );
       if (hasInvoice && hasInvDate && hasPO && dateConfirmed) {
         cosRealisedByMonth.set(monthKey, (cosRealisedByMonth.get(monthKey) || 0) + amount);
