@@ -24,7 +24,7 @@ import { buildOverrideMap, applyOverridesToCashflowLines, applyOverridesToCOSLin
 import { recordOverride, recordManualEdit } from "./lib/audit/diff-engine";
 import { OVERRIDE_CATEGORIES } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
-import { createNameResolver, fetchAllNormalized, mergeExpensesOnly, mergeInflowsOnly, mergePlansOnly, mapCostToExpenseInput } from "./lib/data-merge";
+import { createNameResolver, mapCostToExpenseInput } from "./lib/data-merge";
 import { sendExcelSyncNotification } from "./excel-sync-notifications";
 import { logAuditFromReq } from "./audit-logger";
 import { isWorkItemsEnabled, getWorkItemsAsNormalizedPlanTasks, getWorkItemsAsOperationalTasks, getWorkItemsAsMytoolTasks } from "./work-items-adapter";
@@ -54,9 +54,6 @@ async function getMergedExpensesAndInflows(expenses: any[], inflows: any[]) {
   return { expenses, inflows };
 }
 
-async function getMergedAll(expenses: any[], inflows: any[], plans: any[]) {
-  return { expenses, inflows, plans };
-}
 
 // Ensure uploads directory exists
 const uploadDir = path.join(process.cwd(), 'uploads');
@@ -1235,10 +1232,9 @@ export async function registerRoutes(
         storage.getAllOperationalTasks(),
         storage.getAllProjectPlanOverrides(),
       ]);
-      const merged = await getMergedAll(legacyExpenses, legacyRawInflows, legacyPlans);
-      const allExpenses = merged.expenses;
-      const allPlans = applyProjectPlanOverrides(merged.plans, allPlanOverrides);
-      const allInflows = resolveInflowEffectiveDates(merged.inflows, allTaskLinks, allOpTasks, allPlans);
+      const allExpenses = legacyExpenses;
+      const allPlans = applyProjectPlanOverrides(legacyPlans, allPlanOverrides);
+      const allInflows = resolveInflowEffectiveDates(legacyRawInflows, allTaskLinks, allOpTasks, allPlans);
 
       const today = new Date().toISOString().split("T")[0];
       const fyRange = getFYRange();
@@ -1370,7 +1366,7 @@ export async function registerRoutes(
           currentVoTotal += safeNum(rs.currentVoTotal);
         }
       } else {
-        // Fallback: compute from raw program_inflows and program_expense using proper in-bank/paid logic
+        // Fallback: compute from normalized_revenue_lines and normalized_cost_lines using proper in-bank/paid logic
         for (const inflow of allInflows) {
           if (inflow.milestoneAmount) {
             const manualInBank = (inflow as any).inBank === 1 || (inflow as any).inBank === '1' || (inflow as any).inBank === true;
@@ -3571,11 +3567,10 @@ export async function registerRoutes(
         storage.getTrackerMonthlyManual('COS'),
         db.select({ name: users.name }).from(users),
       ]);
-      const merged = await getMergedAll(legacyExpenses, legacyRawInflows, legacyPlans);
-      const allExpenses = merged.expenses;
-      const allPlans = merged.plans;
+      const allExpenses = legacyExpenses;
+      const allPlans = legacyPlans;
       const validUserNames = new Set(allUsers.map(u => (u.name || '').toLowerCase().trim()));
-      const allInflows = resolveInflowEffectiveDates(merged.inflows, allTaskLinks, allOpTasks, allPlans);
+      const allInflows = resolveInflowEffectiveDates(legacyRawInflows, allTaskLinks, allOpTasks, allPlans);
 
       const today = new Date().toISOString().split("T")[0];
 
@@ -4007,9 +4002,8 @@ export async function registerRoutes(
         storage.getAllOperationalTasks(),
         db.select().from(revenueTrackingOverrides).where(eq(revenueTrackingOverrides.fieldName, "inBank")),
       ]);
-      const merged = await getMergedAll(legacyExpenses, legacyRawInflows, legacyRawPlans);
-      const allExpenses = merged.expenses;
-      const allPlans = applyProjectPlanOverrides(merged.plans, allPlanOverrides);
+      const allExpenses = legacyExpenses;
+      const allPlans = applyProjectPlanOverrides(legacyRawPlans, allPlanOverrides);
 
       const inBankOverrideSet = new Set(
         inBankOverrides
@@ -7814,7 +7808,7 @@ export async function registerRoutes(
         addCheck("cashflow_nonzero", false, { error: err.message });
       }
 
-      // 6. Revenue data check (program_inflows)
+      // 6. Revenue data check (normalized_revenue_lines)
       try {
         const projects = await storage.getAllProjectInfo();
         let totalInflows = 0;
@@ -7832,7 +7826,7 @@ export async function registerRoutes(
         addCheck("revenue_data", false, { error: err.message });
       }
 
-      // 7. COS data check (program_expenses)
+      // 7. COS data check (normalized_cost_lines)
       try {
         const projects = await storage.getAllProjectInfo();
         let totalExpenses = 0;
@@ -7963,7 +7957,7 @@ export async function registerRoutes(
       // Get or create active scenario
       const scenario = await storage.getOrCreateActiveScenario(decodedName);
 
-      // Get base tasks from project_plan
+      // Get base tasks from work_items (PM/SMART_IMPORT)
       const baseTasks = await storage.getProjectPlansByProject(decodedName);
 
       // Get task overrides
