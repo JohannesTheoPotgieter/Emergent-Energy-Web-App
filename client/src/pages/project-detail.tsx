@@ -605,16 +605,21 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
                               <div>
                                 <Label className="text-[10px] uppercase text-muted-foreground">Assignee</Label>
                                 <Select
-                                  defaultValue={task.ownerUserId ? String(task.ownerUserId) : ""}
+                                  defaultValue={task.ownerUserId ? String(task.ownerUserId) : "__unassigned"}
                                   onValueChange={(v) => {
-                                    const uid = parseInt(v);
-                                    if (!isNaN(uid)) updateMutation.mutate({ taskId: tid, updates: { ownerUserId: uid } });
+                                    if (v === "__unassigned") {
+                                      updateMutation.mutate({ taskId: tid, updates: { ownerUserId: null } });
+                                    } else {
+                                      const uid = parseInt(v);
+                                      if (!isNaN(uid)) updateMutation.mutate({ taskId: tid, updates: { ownerUserId: uid } });
+                                    }
                                   }}
                                 >
                                   <SelectTrigger className="h-8 text-sm mt-1" data-testid={`select-assignee-${task.id}`}>
                                     <SelectValue placeholder="Unassigned" />
                                   </SelectTrigger>
                                   <SelectContent>
+                                    <SelectItem value="__unassigned">Unassigned</SelectItem>
                                     {(allUsers || []).map((u: any) => (
                                       <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>
                                     ))}
