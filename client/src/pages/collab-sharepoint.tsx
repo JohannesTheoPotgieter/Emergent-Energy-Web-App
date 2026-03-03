@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -36,6 +36,7 @@ function formatFileSize(bytes: number | null | undefined) {
 export default function CollabSharePointPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const qc = useQueryClient();
   const [tagDialogOpen, setTagDialogOpen] = useState(false);
   const [tagTarget, setTagTarget] = useState<any>(null);
   const [convertDialogOpen, setConvertDialogOpen] = useState(false);
@@ -47,6 +48,12 @@ export default function CollabSharePointPage() {
   const [setupMode, setSetupMode] = useState(false);
   const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
 
+  useEffect(() => {
+    qc.removeQueries({ queryKey: ["ms-objects-mine", "sharepoint_file"] });
+    qc.removeQueries({ queryKey: ["sp-config"] });
+    qc.removeQueries({ queryKey: ["sp-files"] });
+  }, []);
+
   const { data: syncedItems = [] } = useQuery<any[]>({
     queryKey: ["ms-objects-mine", "sharepoint_file"],
     queryFn: async () => {
@@ -54,7 +61,8 @@ export default function CollabSharePointPage() {
       if (!res.ok) return [];
       return res.json();
     },
-    staleTime: 30_000,
+    staleTime: 0,
+    gcTime: 0,
   });
 
   const { data: config, isLoading: loadingConfig, refetch: refetchConfig } = useQuery<any>({
@@ -64,7 +72,8 @@ export default function CollabSharePointPage() {
       if (!res.ok) return null;
       return res.json();
     },
-    staleTime: 120_000,
+    staleTime: 0,
+    gcTime: 0,
   });
 
   const { data: sites, isLoading: loadingSites } = useQuery<any[]>({
@@ -102,7 +111,8 @@ export default function CollabSharePointPage() {
       return res.json();
     },
     enabled: !!activeDriveId && !setupMode,
-    staleTime: 30_000,
+    staleTime: 0,
+    gcTime: 0,
   });
 
   const navigateToFolder = (id: string, name: string) => {

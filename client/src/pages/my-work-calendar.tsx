@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -171,6 +171,11 @@ export default function MyWorkCalendarPage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
+  useEffect(() => {
+    queryClient.removeQueries({ queryKey: ["outlook-status"] });
+    queryClient.removeQueries({ queryKey: ["outlook-events-calendar"] });
+  }, []);
+
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
   const weekEnd = endOfWeek(currentDate, { weekStartsOn: 1 });
 
@@ -183,7 +188,8 @@ export default function MyWorkCalendarPage() {
       const res = await fetch("/api/outlook/status", { headers: authHeaders(), credentials: "include" });
       return res.json();
     },
-    staleTime: 60_000,
+    staleTime: 0,
+    gcTime: 0,
   });
 
   const { data: outlookEvents = [], isLoading: outlookLoading } = useQuery<OutlookEvent[]>({
@@ -198,7 +204,8 @@ export default function MyWorkCalendarPage() {
       return Array.isArray(data) ? data.filter((e: OutlookEvent) => !e.isCancelled) : [];
     },
     enabled: connectionStatus?.connected === true,
-    staleTime: 30_000,
+    staleTime: 0,
+    gcTime: 0,
   });
 
   const { data: allTaskData, isLoading: tasksLoading } = useQuery<any>({
@@ -211,7 +218,8 @@ export default function MyWorkCalendarPage() {
       if (!res.ok) return null;
       return res.json();
     },
-    staleTime: 30_000,
+    staleTime: 0,
+    gcTime: 0,
   });
 
   const calendarTasks: CalendarTask[] = useMemo(() => {
