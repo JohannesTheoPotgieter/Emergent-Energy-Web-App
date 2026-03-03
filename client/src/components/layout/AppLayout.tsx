@@ -699,7 +699,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <div className="flex-1 overflow-hidden p-3 sm:p-4 md:p-6 flex flex-col min-h-0">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6 flex flex-col min-h-0">
           <div className="w-full max-w-[1920px] mx-auto animate-in fade-in slide-in-from-bottom-2 duration-300 flex-1 flex flex-col min-h-0 min-w-0 gap-4" data-page-content>
             <DatabaseStatusBanner />
             {showValidationReport && lastUploadResult && (
