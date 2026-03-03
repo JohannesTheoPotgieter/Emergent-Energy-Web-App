@@ -8,13 +8,13 @@ import { useToast } from "@/hooks/use-toast";
 import { format, parseISO } from "date-fns";
 import {
   Mail, Loader2, Search, Inbox, AlertTriangle,
-  CheckCheck, Link2, RefreshCw,
+  CheckCheck, Link2, RefreshCw, ShieldAlert,
 } from "lucide-react";
 import {
   authHeaders, TagToProjectDialog, ConvertToTaskDialog, MsObjectActions,
 } from "./collaboration";
 
-function useEmailSync() {
+function useEmailSync(onSsoUnavailable: () => void) {
   const qc = useQueryClient();
   const { toast } = useToast();
   return useMutation({
@@ -31,7 +31,7 @@ function useEmailSync() {
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ["ms-objects-mine"] });
       if (data.error === "ms_sso_required") {
-        toast({ title: "Microsoft sign-in required", description: data.message || "Please sign in with Microsoft to sync emails.", variant: "destructive" });
+        onSsoUnavailable();
         return;
       }
       const total = (data.results || []).reduce((s: number, r: any) => s + (r.synced || 0), 0);
@@ -51,7 +51,8 @@ export default function CollabEmailPage() {
   const [convertDialogOpen, setConvertDialogOpen] = useState(false);
   const [convertTarget, setConvertTarget] = useState<any>(null);
   const [autoSyncDone, setAutoSyncDone] = useState(false);
-  const syncMutation = useEmailSync();
+  const [ssoUnavailable, setSsoUnavailable] = useState(false);
+  const syncMutation = useEmailSync(() => setSsoUnavailable(true));
 
   const { data: items = [], isLoading, isFetched } = useQuery<any[]>({
     queryKey: ["ms-objects-mine", "email"],
@@ -120,10 +121,26 @@ export default function CollabEmailPage() {
         </Badge>
       </div>
 
+      {ssoUnavailable && (
+        <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-blue-200 bg-blue-50 text-blue-800" data-testid="sso-unavailable-banner">
+          <ShieldAlert className="h-5 w-5 shrink-0 text-blue-600" />
+          <div className="flex-1">
+            <p className="text-sm font-medium">Microsoft 365 integration is not available</p>
+            <p className="text-xs text-blue-600 mt-0.5">Please sign in with your Microsoft account to view and sync your Outlook emails. Contact your administrator if you need access.</p>
+          </div>
+        </div>
+      )}
+
       {isLoading || syncMutation.isPending ? (
         <div className="flex items-center justify-center py-16">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           <span className="ml-2 text-sm text-muted-foreground">{syncMutation.isPending ? "Syncing emails from Microsoft 365..." : "Loading..."}</span>
+        </div>
+      ) : ssoUnavailable && filtered.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <ShieldAlert className="h-12 w-12 text-blue-400 mb-3" />
+          <p className="text-sm font-medium text-foreground">Microsoft 365 integration not available</p>
+          <p className="text-xs text-muted-foreground mt-1 max-w-md">Your Microsoft account is not connected. Sign in with Microsoft SSO to sync your Outlook emails, calendar, and Teams data.</p>
         </div>
       ) : filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">

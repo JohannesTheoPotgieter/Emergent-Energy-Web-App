@@ -453,6 +453,10 @@ async function backfillPmUserIds() {
   const { registerPmOnTheGoRoutes } = await import("./pm-on-the-go-routes");
   registerPmOnTheGoRoutes(app);
 
+  const { registerPoRoutes, ensurePoTables } = await import("./po-routes");
+  await ensurePoTables();
+  registerPoRoutes(app);
+
   const { registerTrRegisterRoutes, seedTrRegisterData } = await import("./tr-register-routes");
   registerTrRegisterRoutes(app);
   await seedTrRegisterData().catch(err => console.error('[Seed] TR Register error:', err));

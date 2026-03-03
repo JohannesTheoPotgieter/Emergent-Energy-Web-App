@@ -159,6 +159,7 @@ function ActivitySection() {
   const [convertDialogOpen, setConvertDialogOpen] = useState(false);
   const [convertTarget, setConvertTarget] = useState<any>(null);
   const [autoSyncDone, setAutoSyncDone] = useState(false);
+  const [ssoUnavailable, setSsoUnavailable] = useState(false);
   const { toast } = useToast();
   const qc = useQueryClient();
 
@@ -179,7 +180,7 @@ function ActivitySection() {
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ["ms-objects-mine"] });
       if (data.error === "ms_sso_required") {
-        toast({ title: "Microsoft sign-in required", description: data.message || "Please sign in with Microsoft to sync Teams.", variant: "destructive" });
+        setSsoUnavailable(true);
         return;
       }
       const total = (data.results || []).reduce((s: number, r: any) => s + (r.synced || 0), 0);
@@ -234,10 +235,28 @@ function ActivitySection() {
           </div>
         </div>
 
+        {ssoUnavailable && (
+          <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-blue-200 bg-blue-50 text-blue-800" data-testid="sso-unavailable-banner">
+            <AlertTriangle className="h-5 w-5 shrink-0 text-blue-600" />
+            <div className="flex-1">
+              <p className="text-sm font-medium">Microsoft 365 integration is not available</p>
+              <p className="text-xs text-blue-600 mt-0.5">Please sign in with your Microsoft account to view and sync your Teams chats. Contact your administrator if you need access.</p>
+            </div>
+          </div>
+        )}
+
         {isLoading || syncMutation.isPending ? (
           <div className="flex items-center justify-center py-16">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             <span className="ml-2 text-sm text-muted-foreground">{syncMutation.isPending ? "Syncing Teams from Microsoft 365..." : "Loading..."}</span>
+          </div>
+        ) : ssoUnavailable && items.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <div className="w-16 h-16 rounded-2xl bg-blue-50 flex items-center justify-center mb-4">
+              <AlertTriangle className="h-8 w-8 text-blue-400" />
+            </div>
+            <p className="text-sm font-medium text-foreground">Microsoft 365 integration not available</p>
+            <p className="text-xs text-muted-foreground mt-1 max-w-md">Your Microsoft account is not connected. Sign in with Microsoft SSO to sync your Teams chats and activity.</p>
           </div>
         ) : items.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">

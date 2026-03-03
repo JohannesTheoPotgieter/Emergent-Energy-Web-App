@@ -288,9 +288,8 @@ export default function ClientsPage() {
                 const isExpanded = expandedId === client.id;
                 const count = projectCountMap.get(client.id) ?? 0;
                 return (
-                  <> 
+                  <Fragment key={client.id}> 
                     <TableRow
-                      key={client.id}
                       data-testid={`row-client-${client.id}`}
                       className="cursor-pointer hover:bg-muted/50"
                     >
@@ -443,7 +442,7 @@ export default function ClientsPage() {
                         </TableCell>
                       </TableRow>
                     )}
-                  </>
+                  </Fragment>
                 );
               })
             )}
