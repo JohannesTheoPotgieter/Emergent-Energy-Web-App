@@ -44,8 +44,8 @@ export function createNameResolver(projectInfoNames: string[]) {
 }
 
 export function adaptCostToExpense(cost: NormalizedCostLine, resolvedName: string): any {
-  const invoiceDateConfirmed = cost.invoiceDateConfirmed ?? false;
-  const paidDateConfirmed = cost.paidDateConfirmed ?? false;
+  const rawInvoiceDateConfirmed = cost.invoiceDateConfirmed;
+  const rawPaidDateConfirmed = cost.paidDateConfirmed;
   const invoiceDateFontColor = cost.invoiceDateFontColor ?? null;
   const paymentDateFontColor = cost.paidDateFontColor ?? null;
 
@@ -54,15 +54,15 @@ export function adaptCostToExpense(cost: NormalizedCostLine, resolvedName: strin
   const hasPO = !!(cost.poNumber);
   const hasPaidDate = !!(cost.paidDate);
 
-  const hasInvoiceColorInfo = invoiceDateConfirmed !== null || invoiceDateFontColor !== null;
+  const hasInvoiceColorInfo = rawInvoiceDateConfirmed != null || invoiceDateFontColor != null;
   const invoiceDateActual = hasInvoiceDate && (
-    invoiceDateConfirmed === true ||
+    rawInvoiceDateConfirmed === true ||
     invoiceDateFontColor === 'black' ||
     !hasInvoiceColorInfo
   );
-  const hasPaymentColorInfo = paidDateConfirmed !== null || paymentDateFontColor !== null;
+  const hasPaymentColorInfo = rawPaidDateConfirmed != null || paymentDateFontColor != null;
   const paidDateActual = hasPaidDate && (
-    paidDateConfirmed === true ||
+    rawPaidDateConfirmed === true ||
     paymentDateFontColor === 'black' ||
     !hasPaymentColorInfo
   );
@@ -89,9 +89,9 @@ export function adaptCostToExpense(cost: NormalizedCostLine, resolvedName: strin
     forecastPaymentDate: null,
     computedForecastPaymentDate: null,
     computedState,
-    invoiceDateConfirmed,
+    invoiceDateConfirmed: rawInvoiceDateConfirmed ?? false,
     invoiceDateFontColor,
-    paymentDateConfirmed: paidDateConfirmed,
+    paymentDateConfirmed: rawPaidDateConfirmed ?? false,
     paymentDateFontColor,
     supplierName: cost.counterpartyName,
     _isNormalized: true,
