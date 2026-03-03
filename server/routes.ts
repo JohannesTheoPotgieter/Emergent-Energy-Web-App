@@ -1390,11 +1390,19 @@ export async function registerRoutes(
       const grossProfit = actualRevenue - actualExpenses;
       const grossProfitPercent = actualRevenue > 0 ? (grossProfit / actualRevenue) * 100 : 0;
 
-      // Revenue outstanding = invoiced but not received
       let revenueOutstanding = 0;
       for (const inf of allInflows) {
-        if (inf.invoiceRaisedDate && !inf.paymentReceivedDate && inf.milestoneAmount) {
-          revenueOutstanding += safeNum(inf.milestoneAmount);
+        if (inf.milestoneAmount) {
+          const hasInvoice = !!(inf.milestoneInvoiceNumber && inf.milestoneInvoiceNumber.trim());
+          const hasPaidDate = inf.paymentReceivedDate && /^\d{4}-\d{2}-\d{2}/.test(inf.paymentReceivedDate);
+          const paidClr = inf.paidDateFontColor ?? null;
+          const paidConf = inf.paidDateConfirmed;
+          const hasColorInfo = (paidConf != null && paidConf !== false) || (paidClr != null && paidClr !== '');
+          const paidBlack = hasPaidDate && (paidConf === true || paidClr === 'black' || !hasColorInfo);
+          const isInBank = hasInvoice && paidBlack;
+          if (hasInvoice && !isInBank) {
+            revenueOutstanding += safeNum(inf.milestoneAmount);
+          }
         }
       }
 
@@ -2289,14 +2297,18 @@ export async function registerRoutes(
         const deltaVsExpected = (projectPctComplete !== null && expectedPctComplete !== null)
           ? projectPctComplete - expectedPctComplete : null;
 
-        // Revenue Outstanding (Excel spec): SUM(MilstoneAmount) where PaymentRecievedDate <= today AND MilestoneInvoiceNumber is blank
         let revenueOutstanding = 0;
         if (projectInflows.length > 0) {
           for (const inflow of projectInflows) {
             if (inflow.milestoneAmount) {
-              const hasPayment = inflow.paymentReceivedDate && /^\d{4}-\d{2}-\d{2}/.test(inflow.paymentReceivedDate) && inflow.paymentReceivedDate <= today;
-              const noInvoice = !inflow.milestoneInvoiceNumber || inflow.milestoneInvoiceNumber.trim() === '';
-              if (hasPayment && noInvoice) {
+              const hasInvoice = !!(inflow.milestoneInvoiceNumber && inflow.milestoneInvoiceNumber.trim());
+              const hasPaidDate = inflow.paymentReceivedDate && /^\d{4}-\d{2}-\d{2}/.test(inflow.paymentReceivedDate);
+              const paidDateConf = inflow.paidDateConfirmed ?? inflow.paymentReceivedDateConfirmed ?? null;
+              const paidDateClr = inflow.paidDateFontColor ?? inflow.paymentReceivedDateFontColor ?? null;
+              const hasPaymentColorInfo = paidDateConf != null || (paidDateClr != null && paidDateClr !== '');
+              const paidBlack = hasPaidDate && (paidDateConf === true || paidDateClr === 'black' || !hasPaymentColorInfo);
+              const isInBank = hasInvoice && paidBlack;
+              if (hasInvoice && !isInBank) {
                 revenueOutstanding += parseFloat(inflow.milestoneAmount) || 0;
               }
             }
@@ -2304,9 +2316,12 @@ export async function registerRoutes(
         } else if (normRev.length > 0) {
           for (const rev of normRev) {
             if (rev.amountExVat) {
-              const hasPayment = rev.paidDate && /^\d{4}-\d{2}-\d{2}/.test(rev.paidDate) && rev.paidDate <= today;
-              const noInvoice = !rev.invoiceNumber || rev.invoiceNumber.trim() === '';
-              if (hasPayment && noInvoice) {
+              const hasInvoice = !!(rev.invoiceNumber && rev.invoiceNumber.trim());
+              const hasPaidDate = rev.paidDate && /^\d{4}-\d{2}-\d{2}/.test(rev.paidDate);
+              const hasPaymentColorInfo = rev.paidDateConfirmed != null || (rev.paidDateFontColor != null && rev.paidDateFontColor !== '');
+              const paidBlack = hasPaidDate && (rev.paidDateConfirmed === true || rev.paidDateFontColor === 'black' || !hasPaymentColorInfo);
+              const isInBank = hasInvoice && paidBlack;
+              if (hasInvoice && !isInBank) {
                 revenueOutstanding += parseFloat(rev.amountExVat) || 0;
               }
             }
@@ -2478,7 +2493,7 @@ export async function registerRoutes(
 
         if (isInBank) {
           totalRevenue += amt;
-        } else if (hasInvoice || isValidDate(rev.expectedPaymentDate)) {
+        } else if (hasInvoice) {
           revenueOutstanding += amt;
           const dueDate = rev.expectedPaymentDate || rev.invoiceDate;
           if (isValidDate(dueDate) && isPastDate(dueDate!)) {
@@ -3733,12 +3748,14 @@ export async function registerRoutes(
         for (const inflow of projectInflows) {
           if (inflow.milestoneAmount) {
             const amt = parseFloat(inflow.milestoneAmount) || 0;
-            const hasInvoiceNum = inflow.milestoneInvoiceNumber && inflow.milestoneInvoiceNumber.trim() !== '';
-            const rcvDate = inflow.paymentReceivedDate && inflow.paymentReceivedDate.trim() !== '' ? inflow.paymentReceivedDate.trim() : null;
-            const paymentNotReceived = !rcvDate || !/^\d{4}-\d{2}-\d{2}/.test(rcvDate) || rcvDate > today;
-            const dateToCheck = inflow.effectiveDate || inflow.invoiceRaisedDate;
-            const dateInPast = dateToCheck && /^\d{4}-\d{2}-\d{2}/.test(dateToCheck) && dateToCheck < today;
-            if (hasInvoiceNum && paymentNotReceived && dateInPast && amt > 0) {
+            const hasInvoice = !!(inflow.milestoneInvoiceNumber && inflow.milestoneInvoiceNumber.trim());
+            const hasPaidDate = inflow.paymentReceivedDate && /^\d{4}-\d{2}-\d{2}/.test(inflow.paymentReceivedDate);
+            const paidClr = inflow.paidDateFontColor ?? null;
+            const paidConf = inflow.paidDateConfirmed;
+            const hasColorInfo = (paidConf != null && paidConf !== false) || (paidClr != null && paidClr !== '');
+            const paidBlack = hasPaidDate && (paidConf === true || paidClr === 'black' || !hasColorInfo);
+            const isInBank = hasInvoice && paidBlack;
+            if (hasInvoice && !isInBank && amt > 0) {
               revenueOutstanding += amt;
               projRevOutstanding += amt;
             }
