@@ -58,6 +58,7 @@ import {
 import { UX_REDESIGN_ENABLED } from "@shared/schema";
 import { useProgramData } from "@/hooks/use-program-data";
 import { useAuth } from "@/hooks/use-auth";
+import { authApi } from "@/lib/api";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
@@ -318,8 +319,24 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       const res = await fetch("/api/version", { credentials: "include" });
       return res.json();
     },
-    staleTime: Infinity,
+    refetchInterval: 60_000,
   });
+
+  useEffect(() => {
+    if (!appVersion?.version) return;
+    const storedVersion = localStorage.getItem("app_version");
+    if (!storedVersion) {
+      localStorage.setItem("app_version", appVersion.version);
+      return;
+    }
+    if (storedVersion !== appVersion.version) {
+      localStorage.setItem("app_version", appVersion.version);
+      localStorage.removeItem("auth_token");
+      localStorage.removeItem("company_role");
+      try { authApi.logout().catch(() => {}); } catch {}
+      window.location.href = "/auth/login";
+    }
+  }, [appVersion?.version]);
 
   const { data: unifiedWorkFlag } = useQuery<boolean>({
     queryKey: ["feature-flag-unified-work"],

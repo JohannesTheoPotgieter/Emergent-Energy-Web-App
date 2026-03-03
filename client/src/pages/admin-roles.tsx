@@ -585,76 +585,76 @@ function PermissionsTab({ toast, shared }: { toast: any; shared: ReturnType<type
                 </div>
               </div>
 
-              <Card data-testid="card-sidebar-access">
-                <CardHeader className="py-2.5 px-4">
-                  <CardTitle className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Sidebar Sections</CardTitle>
-                </CardHeader>
-                <CardContent className="px-4 pb-3 pt-0">
-                  <div className="flex flex-wrap gap-1.5">
-                    {ALL_SECTIONS.map(s => {
-                      const meta = SECTION_META[s];
-                      const active = effectiveSections.includes(s);
-                      const Icon = meta.icon;
-                      return (
-                        <button
-                          key={s}
-                          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-all ${active ? meta.color : "border-gray-100 bg-gray-50/50 text-gray-400"}`}
-                          onClick={() => toggleSection(s)}
-                          data-testid={`toggle-section-${selectedRole}-${s}`}
-                        >
-                          <Icon className="h-3 w-3" />
-                          {meta.label}
-                          {active ? <CheckCircle2 className="h-3 w-3 text-green-600" /> : <XCircle className="h-3 w-3 text-gray-300" />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
+              <div className="rounded border border-gray-100 overflow-hidden" data-testid="card-sidebar-access">
+                <div className="flex items-center gap-1.5 px-2 py-1 bg-gray-50/80">
+                  <Lock className="h-3 w-3 text-gray-400" />
+                  <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Sidebar Sections</span>
+                  <span className="text-[10px] text-gray-400">{effectiveSections.length}/{ALL_SECTIONS.length}</span>
+                </div>
+                <div className="flex flex-wrap gap-1 px-2 py-1.5">
+                  {ALL_SECTIONS.map(s => {
+                    const meta = SECTION_META[s];
+                    const active = effectiveSections.includes(s);
+                    const Icon = meta.icon;
+                    return (
+                      <button
+                        key={s}
+                        className={`flex items-center gap-1 px-2 py-[3px] rounded border text-[10px] font-medium transition-all ${active ? meta.color : "border-gray-100 bg-gray-50/50 text-gray-300"}`}
+                        onClick={() => toggleSection(s)}
+                        data-testid={`toggle-section-${selectedRole}-${s}`}
+                      >
+                        <Icon className="h-2.5 w-2.5" />
+                        {meta.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
 
-              <div className="space-y-1" data-testid="permission-categories">
+              <div className="space-y-0.5" data-testid="permission-categories">
                 {PERM_CATEGORIES.map(cat => {
                   const Icon = cat.icon;
                   const activeCount = cat.items.filter(i => i.actions.some(a => getEntityPerm(selectedRole, i.entity, a))).length;
                   const isCollapsed = expanded.has(cat.key);
                   return (
-                    <div key={cat.key} className="rounded-lg border border-gray-100 overflow-hidden" data-testid={`category-${cat.key}`}>
-                      <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50/80">
+                    <div key={cat.key} className="rounded border border-gray-100 overflow-hidden" data-testid={`category-${cat.key}`}>
+                      <div className="flex items-center gap-1.5 px-2 py-1 bg-gray-50/80">
                         <button
-                          className="flex items-center gap-2 flex-1 text-left"
+                          className="flex items-center gap-1.5 flex-1 text-left"
                           onClick={() => setExpanded(prev => { const n = new Set(prev); n.has(cat.key) ? n.delete(cat.key) : n.add(cat.key); return n; })}
                           data-testid={`btn-expand-category-${cat.key}`}
                         >
-                          <div className={`h-5 w-5 rounded ${cat.color} flex items-center justify-center shrink-0`}>
-                            <Icon className="h-3 w-3 text-white" />
+                          {isCollapsed ? <ChevronRight className="h-3 w-3 text-gray-400 shrink-0" /> : <ChevronDown className="h-3 w-3 text-gray-400 shrink-0" />}
+                          <div className={`h-4 w-4 rounded ${cat.color} flex items-center justify-center shrink-0`}>
+                            <Icon className="h-2.5 w-2.5 text-white" />
                           </div>
-                          <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">{cat.label}</span>
-                          <Badge variant="outline" className="text-[9px] px-1 py-0 h-4">{activeCount}/{cat.items.length}</Badge>
-                          {isCollapsed ? <ChevronRight className="h-3 w-3 text-gray-400" /> : <ChevronDown className="h-3 w-3 text-gray-400" />}
+                          <span className="text-[11px] font-semibold text-gray-600 uppercase tracking-wide">{cat.label}</span>
+                          <span className="text-[10px] text-gray-400">{activeCount}/{cat.items.length}</span>
                         </button>
-                        <div className="flex items-center gap-0.5 shrink-0">
-                          <button className="h-5 px-1.5 rounded border border-green-200 text-[9px] font-medium text-green-700 hover:bg-green-50" onClick={() => setCategoryPreset(cat, "all")} data-testid={`preset-full-${cat.key}`}>All</button>
-                          <button className="h-5 px-1.5 rounded border border-blue-200 text-[9px] font-medium text-blue-700 hover:bg-blue-50" onClick={() => setCategoryPreset(cat, "view")} data-testid={`preset-view-${cat.key}`}>View</button>
-                          <button className="h-5 px-1.5 rounded border border-red-200 text-[9px] font-medium text-red-700 hover:bg-red-50" onClick={() => setCategoryPreset(cat, "none")} data-testid={`preset-none-${cat.key}`}>None</button>
+                        <div className="flex items-center gap-px shrink-0">
+                          <button className="h-4 px-1.5 rounded text-[8px] font-bold text-green-600 hover:bg-green-50" onClick={() => setCategoryPreset(cat, "all")} data-testid={`preset-full-${cat.key}`}>ALL</button>
+                          <button className="h-4 px-1.5 rounded text-[8px] font-bold text-blue-600 hover:bg-blue-50" onClick={() => setCategoryPreset(cat, "view")} data-testid={`preset-view-${cat.key}`}>VIEW</button>
+                          <button className="h-4 px-1.5 rounded text-[8px] font-bold text-red-500 hover:bg-red-50" onClick={() => setCategoryPreset(cat, "none")} data-testid={`preset-none-${cat.key}`}>OFF</button>
                         </div>
                       </div>
                       {!isCollapsed && (
-                        <div className="divide-y divide-gray-50">
+                        <div className="grid gap-0 border-t border-gray-100">
                           {cat.items.map((item, idx) => (
-                            <div key={item.entity} className={`flex items-center gap-2 px-3 py-1 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50/30"} hover:bg-blue-50/30 transition-colors`} data-testid={`entity-row-${selectedRole}-${item.entity}`}>
-                              <span className="text-[12px] text-gray-600 w-[180px] shrink-0 truncate" title={item.label}>{item.label}</span>
-                              <div className="flex items-center gap-0.5 flex-wrap">
+                            <div key={item.entity} className={`flex items-center gap-1 px-2 py-[3px] ${idx % 2 === 0 ? "bg-white" : "bg-gray-50/40"} hover:bg-blue-50/40`} data-testid={`entity-row-${selectedRole}-${item.entity}`}>
+                              <span className="text-[11px] text-gray-600 w-[160px] shrink-0 truncate leading-tight" title={item.label}>{item.label}</span>
+                              <div className="flex items-center gap-[3px]">
                                 {item.actions.map(action => {
                                   const active = getEntityPerm(selectedRole, item.entity, action);
                                   const style = ACTION_STYLE[action];
                                   return (
                                     <button
                                       key={action}
-                                      className={`h-5 px-2 rounded text-[9px] font-semibold transition-all inline-flex items-center gap-0.5 ${active ? `${style.bg} text-white` : "bg-gray-100 text-gray-300 hover:bg-gray-200"}`}
+                                      className={`h-[18px] w-[18px] rounded-sm text-[8px] font-bold transition-all flex items-center justify-center ${active ? `${style.bg} text-white shadow-sm` : "bg-gray-100 text-gray-300 hover:bg-gray-200"}`}
                                       onClick={() => toggleEntityPerm(selectedRole, item.entity, action)}
+                                      title={`${style.label}: ${item.label}`}
                                       data-testid={`perm-${selectedRole}-${item.entity}-${action}`}
                                     >
-                                      {style.label}
+                                      {style.label[0]}
                                     </button>
                                   );
                                 })}
