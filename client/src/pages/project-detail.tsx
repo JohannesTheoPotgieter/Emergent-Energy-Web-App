@@ -806,8 +806,6 @@ export default function ProjectDetailPage() {
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [phaseModalOpen, setPhaseModalOpen] = useState(false);
-  const [alertsExpanded, setAlertsExpanded] = useState(true);
-  const alertsRef = useRef<HTMLDivElement>(null);
 
   const searchParams = useMemo(() => new URLSearchParams(searchString), [searchString]);
   const urlTab = searchParams.get("tab");
@@ -1080,29 +1078,6 @@ export default function ProjectDetailPage() {
   const engCompletedTasks = engStageCompletedTasks + engBoardCompleted;
   const engStagePct = engTotalTasks > 0 ? (engCompletedTasks / engTotalTasks) * 100 : 0;
 
-  const alerts = useMemo(() => {
-    const result: { severity: "warning" | "info"; message: string; key: string }[] = [];
-    const now = new Date();
-    const in14Days = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
-    (revenueData as any[]).forEach((r: any) => {
-      const planned = r.plannedPaymentDate ? new Date(r.plannedPaymentDate) : null;
-      if (planned && planned >= now && planned <= in14Days && !r.invoiceRaisedDate) {
-        result.push({ severity: "warning", message: `Revenue milestone "${r.milestoneName || "Unnamed"}" due within 14 days — no invoice raised`, key: `rev-${r.id || r.milestoneName}` });
-      }
-    });
-    if (totalRealisedCos > totalPaidInflows && totalPaidInflows > 0) {
-      result.push({ severity: "warning", message: `Realised COS (R${totalRealisedCos.toLocaleString()}) exceeds received revenue (R${totalPaidInflows.toLocaleString()})`, key: "cos-exceeds-rev" });
-    }
-    const engTaskAlerts = engDataForAlerts?.tasks || [];
-    const overdueEng = engTaskAlerts.filter((t: any) => t.dueDate && t.dueDate < today && t.status !== "COMPLETE");
-    if (overdueEng.length > 0) {
-      result.push({ severity: "warning", message: `${overdueEng.length} overdue engineering task${overdueEng.length > 1 ? "s" : ""}`, key: "eng-overdue" });
-    }
-    if (planTasks.length === 0) {
-      result.push({ severity: "info", message: "No project plan data uploaded yet", key: "no-plan" });
-    }
-    return result;
-  }, [revenueData, expenseData, engDataForAlerts, planTasks, totalRealisedCos, totalPaidInflows, today]);
 
 
   const ragColor = (rag: "green" | "amber" | "red") => rag === "green" ? "text-emerald-600" : rag === "amber" ? "text-amber-600" : "text-red-600";
@@ -1265,38 +1240,6 @@ export default function ProjectDetailPage() {
         ) : null;
       })()}
 
-      {alerts.length > 0 && (
-        <div ref={alertsRef} data-testid="alert-panel">
-          <button
-            onClick={() => setAlertsExpanded(!alertsExpanded)}
-            className="flex items-center gap-2 w-full text-left mb-2"
-            data-testid="button-toggle-alerts"
-          >
-            <AlertTriangle className="h-4 w-4 text-amber-600" />
-            <span className="text-sm font-semibold">Business Alerts</span>
-            <Badge variant="destructive" className="text-[10px] px-1.5 py-0" data-testid="badge-alert-count">
-              {alerts.length}
-            </Badge>
-            {alertsExpanded ? <ChevronUp className="h-4 w-4 ml-auto" /> : <ChevronDown className="h-4 w-4 ml-auto" />}
-          </button>
-          {alertsExpanded && (
-            <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar" data-testid="alert-cards">
-              {alerts.map(alert => (
-                <Card key={alert.key} className="flex-shrink-0 w-72 border-l-4 border-l-amber-400" data-testid={`alert-card-${alert.key}`}>
-                  <CardContent className="p-3 flex items-start gap-2">
-                    {alert.severity === "warning" ? (
-                      <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
-                    ) : (
-                      <AlertCircle className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
-                    )}
-                    <span className="text-xs leading-tight">{alert.message}</span>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
 
       {activeSection === "overview" && (
         <div className="space-y-6" data-testid="overview-section">
