@@ -42,6 +42,7 @@ import { SharePointFilesTab } from "@/components/tabs/SharePointFilesTab";
 import { ProjectApprovalsTab } from "@/components/tabs/ProjectApprovalsTab";
 import { ProjectNotificationsTab } from "@/components/tabs/ProjectNotificationsTab";
 import { POGenerator } from "@/components/POGenerator";
+import CaptureDeliverable from "@/components/CaptureDeliverable";
 import { useProgramData } from "@/hooks/use-program-data";
 import { useAuth } from "@/hooks/use-auth";
 import DataSourceDebug from "@/components/DataSourceDebug";
@@ -1185,6 +1186,7 @@ export default function ProjectDetailPage() {
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">
+          <CaptureDeliverable projectId={projectInfoId ?? undefined} projectName={projectName} />
           <POGenerator projectName={projectName} projectManager={pm !== "—" ? pm : undefined} />
         </div>
       </div>
