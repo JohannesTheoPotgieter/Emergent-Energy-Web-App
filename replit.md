@@ -57,7 +57,7 @@ Preferred communication style: Simple, everyday language.
 ### Database Architecture
 -   **Core Structure**: `project_info` as the central entity, linked to `clients`.
 -   **Primary Data Sources**: `normalized_cost_lines`, `normalized_revenue_lines`, `work_items` (canonical).
--   **Derived Data**: Metrics for dashboards are computed live from `work_items`.
+-   **Derived Data**: Metrics for dashboards are computed live from `work_items`. All PM dashboard KPIs (High Priority Actions, COS, Cashflow, Revenue Outstanding, Expense Overdue, Projects Behind Plan, Overdue Tasks, Upcoming Milestones) read exclusively from canonical tables via storage adapters (`adaptCostToExpense`, `adaptRevenueToInflow`, `mapWorkItemToProjectPlan`).
 -   **Financial Calculation Rules**: Consistent rules for "in bank" revenue, "Paid" expenses, "COS Realised," and GP% calculations, aligned with the September to August financial year.
 -   **Canonical Work Items**: `work_items` table is the single source of truth for all task reads, with a feature flag `canonical_work_items_v1` enabled. Backfill runs on startup.
 -   **Migration Finalize**: Admin-only UI for legacy table cleanup, including verification, backup, archive, and permanent drop capabilities.

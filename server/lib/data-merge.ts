@@ -75,6 +75,7 @@ export function adaptCostToExpense(cost: NormalizedCostLine, resolvedName: strin
   return {
     id: cost.id + 900000,
     projectName: resolvedName,
+    rowNumber: (cost as any).sourceRow || cost.id,
     rowType: "item",
     expenseCategory: cost.costCategory || "General",
     expenseLineItem: cost.description,
@@ -98,9 +99,16 @@ export function adaptCostToExpense(cost: NormalizedCostLine, resolvedName: strin
 }
 
 export function adaptRevenueToInflow(rev: NormalizedRevenueLine, resolvedName: string): any {
+  const hasPaymentReceived = !!(rev.paidDate && String(rev.paidDate).trim() && rev.paidDate !== '-');
+  const hasInvoice = !!(rev.invoiceNumber && String(rev.invoiceNumber).trim());
+  const manualInBank = (rev as any).inBank === 1 || (rev as any).inBank === '1' || (rev as any).inBank === true;
+  const inBank = manualInBank || (hasPaymentReceived && hasInvoice) ? 1 : 0;
+
   return {
     id: rev.id + 900000,
     projectName: resolvedName,
+    rowNumber: (rev as any).sourceRow || rev.id,
+    milestoneNo: (rev as any).sourceRow || null,
     milestoneName: rev.milestoneName || rev.description,
     milestoneAmount: rev.amountExVat,
     milestoneInvoiceNumber: rev.invoiceNumber,
@@ -112,6 +120,7 @@ export function adaptRevenueToInflow(rev: NormalizedRevenueLine, resolvedName: s
     paidDateFontColor: rev.paidDateFontColor ?? null,
     paidDateConfirmed: rev.paidDateConfirmed ?? false,
     inBankDate: rev.inBankDate,
+    inBank,
     effectiveDate: rev.paidDate || rev.inBankDate || rev.expectedPaymentDate || rev.invoiceDate,
     _isNormalized: true,
   };
