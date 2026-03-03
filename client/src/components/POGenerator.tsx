@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -52,6 +52,36 @@ export function POGenerator({ projectName, projectManager }: POGeneratorProps) {
 
   const { toast } = useToast();
   const qc = useQueryClient();
+
+  const { data: supplierList = [] } = useQuery<any[]>({
+    queryKey: ["supplier-list"],
+    queryFn: async () => {
+      const res = await fetch("/api/subcontractor-dashboard/supplier-list", { headers: authHeaders() });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: open && showForm,
+  });
+
+  async function loadSupplierDetails(name: string) {
+    try {
+      const res = await fetch(`/api/subcontractor-dashboard/supplier-details/${encodeURIComponent(name)}`, {
+        headers: authHeaders(),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.exists) {
+        setSupplierName(data.name_canonical || name);
+        if (data.vat_number) setSupplierVat(data.vat_number);
+        if (data.address) setSupplierAddress(data.address);
+        if (data.contact_person) {
+          const contact = [data.contact_person, data.contact_phone].filter(Boolean).join(" — ");
+          setSupplierContact(contact);
+        }
+        if (data.payment_terms) setPaymentTerms(data.payment_terms);
+      }
+    } catch {}
+  }
 
   const { data: poList = [], isLoading: loadingList } = useQuery<any[]>({
     queryKey: ["po-list", projectName],
@@ -384,13 +414,32 @@ export function POGenerator({ projectName, projectManager }: POGeneratorProps) {
 
             <div className="border rounded-lg p-4 space-y-3">
               <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Supplier Details</h4>
+              {supplierList.length > 0 && !supplierName && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <p className="text-xs text-blue-700 font-medium mb-2">Select an existing supplier to auto-fill details:</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {supplierList.filter((s: any) => s.name_canonical).slice(0, 20).map((s: any) => (
+                      <Button
+                        key={s.id}
+                        variant="outline"
+                        size="sm"
+                        className="h-6 text-[11px] px-2"
+                        onClick={() => loadSupplierDetails(s.name_canonical)}
+                        data-testid={`btn-select-supplier-${s.id}`}
+                      >
+                        {s.name_canonical}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <Label className="text-xs">Supplier Name *</Label>
                   <Input
                     value={supplierName}
                     onChange={e => setSupplierName(e.target.value)}
-                    placeholder="e.g. Menlo"
+                    placeholder="e.g. Menlo — or select above"
                     data-testid="input-supplier-name"
                   />
                 </div>
