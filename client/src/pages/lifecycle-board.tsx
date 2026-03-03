@@ -33,6 +33,10 @@ interface ProjectInfo {
   isActive: boolean;
   escalationLevel: string | null;
   ragStatus: string | null;
+  ragComment: string | null;
+  ragUpdatedAt: string | null;
+  ragUpdatedByUserId: number | null;
+  ragUpdatedByName: string | null;
   source: "excel" | "engineering" | "both" | "none";
   engTotal: number;
   engDone: number;
@@ -42,6 +46,7 @@ interface ProjectInfo {
   planTotal: number;
   planAvgPct: number;
   projectPctComplete: number | null;
+  expectedPctComplete: number | null;
   qmTotal: number;
   qmApproved: number;
   executionEnabled: boolean;
@@ -49,11 +54,17 @@ interface ProjectInfo {
   signedStatus: string;
   executionPhase: string | null;
   archivedStatus: string;
+  hasTracker: boolean;
   phaseUpdatedAt: string | null;
   updatedAt: string | null;
   constructionStartDate: string | null;
   commissioningDate: string | null;
   clientHandoverDate: string | null;
+  lastEngineer: { name: string; at: string } | null;
+  pdPercent: number | null;
+  engPercent: number | null;
+  qmPercent: number | null;
+  pmPercent: number | null;
 }
 
 const PRE_PM_PHASES = ["first_assessment", "cost_proposal"];
@@ -211,6 +222,20 @@ function formatZAR(value: string | number | null): string | null {
   return `R ${num.toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 }
 
+function compactBar(label: string, pct: number | null, color: string, id?: number | null) {
+  if (pct === null || pct === undefined) return null;
+  const display = Math.round(pct * 100);
+  return (
+    <div className="flex items-center gap-1 text-[10px]" data-testid={`pct-${label}-${id}`}>
+      <span className="text-muted-foreground w-[22px] shrink-0 font-medium text-[9px]">{label}</span>
+      <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden min-w-[30px]">
+        <div className={`h-full rounded-full ${color}`} style={{ width: `${Math.min(display, 100)}%` }} />
+      </div>
+      <span className="text-muted-foreground w-[26px] text-right text-[9px]">{display}%</span>
+    </div>
+  );
+}
+
 function pctBar(label: string, done: number, total: number, color: string) {
   if (total === 0) return null;
   const pct = Math.round((done / total) * 100);
@@ -225,6 +250,50 @@ function pctBar(label: string, done: number, total: number, color: string) {
   );
 }
 
+function ragDot(status: string | null) {
+  const colorMap: Record<string, string> = {
+    Green: "bg-green-500",
+    GREEN: "bg-green-500",
+    green: "bg-green-500",
+    Amber: "bg-amber-500",
+    AMBER: "bg-amber-500",
+    amber: "bg-amber-500",
+    Red: "bg-red-500",
+    RED: "bg-red-500",
+    red: "bg-red-500",
+  };
+  const color = status ? colorMap[status] || "bg-gray-300" : "bg-gray-300";
+  return <div className={`w-2.5 h-2.5 rounded-full ${color} shrink-0 ring-1 ring-black/10`} />;
+}
+
+function trackerBadge(hasTracker: boolean) {
+  if (hasTracker) {
+    return (
+      <span className="text-[8px] font-bold px-1 py-0 rounded bg-green-100 text-green-700 border border-green-200 leading-tight">
+        Linked
+      </span>
+    );
+  }
+  return (
+    <span className="text-[8px] font-bold px-1 py-0 rounded bg-red-50 text-red-500 border border-red-200 leading-tight">
+      No tracker
+    </span>
+  );
+}
+
+function timeAgo(dateStr: string | null | undefined): string {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return "";
+  const diff = Date.now() - d.getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `${days}d ago`;
+  return `${Math.floor(days / 30)}mo ago`;
+}
 
 function sourceBadge(source: string) {
   if (source === "both") {
@@ -336,6 +405,12 @@ export default function LifecycleBoardPage() {
     overrideReason: "",
   });
   const [showOverrideReason, setShowOverrideReason] = useState(false);
+  const [ragModalOpen, setRagModalOpen] = useState(false);
+  const [ragModalProject, setRagModalProject] = useState<ProjectInfo | null>(null);
+  const [ragForm, setRagForm] = useState({ rag: "", comment: "" });
+  const [ragSaving, setRagSaving] = useState(false);
+  const [ragHistory, setRagHistory] = useState<any[]>([]);
+  const [ragHistoryLoading, setRagHistoryLoading] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ProjectInfo | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -373,6 +448,46 @@ export default function LifecycleBoardPage() {
 
   const invalidateProjects = () => {
     queryClient.invalidateQueries({ queryKey: ["/api/lifecycle-board/projects"] });
+  };
+
+  const canEditRag = ["COO_ADMIN", "CEO_ADMIN", "CCO"].includes(role);
+
+  const openRagModal = async (p: ProjectInfo, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setRagModalProject(p);
+    setRagForm({ rag: (p.ragStatus || "").toUpperCase(), comment: "" });
+    setRagModalOpen(true);
+    setRagHistory([]);
+    if (p.id) {
+      setRagHistoryLoading(true);
+      try {
+        const res = await fetch(`/api/lifecycle-board/projects/${p.id}/rag-history`, { credentials: "include", headers: getAuthHeaders() });
+        if (res.ok) setRagHistory(await res.json());
+      } catch {} finally { setRagHistoryLoading(false); }
+    }
+  };
+
+  const handleSaveRag = async () => {
+    if (!ragModalProject?.id) return;
+    setRagSaving(true);
+    try {
+      const res = await fetch(`/api/lifecycle-board/projects/${ragModalProject.id}/rag`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+        credentials: "include",
+        body: JSON.stringify({ rag: ragForm.rag, comment: ragForm.comment }),
+      });
+      if (res.ok) {
+        toast({ title: "RAG Updated", description: `RAG status set to ${ragForm.rag}` });
+        setRagModalOpen(false);
+        invalidateProjects();
+      } else {
+        const err = await res.json();
+        toast({ title: "Error", description: err.error || "Failed to update RAG", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Error", description: "Network error", variant: "destructive" });
+    } finally { setRagSaving(false); }
   };
 
   const openProjectDialog = (p: ProjectInfo) => {
@@ -862,16 +977,14 @@ export default function LifecycleBoardPage() {
                     </p>
                   )}
                   {items.map((p) => {
-                    const isTracker = p.id !== null && p.id > 0;
-                    const isEngOnly = p.source === "engineering" && !isTracker;
                     const isGone = p.phase?.toLowerCase() === "gone";
                     return (
                       <Card
                         key={p.id ?? p.projectName}
                         className={`shadow-sm hover:shadow-md transition-all border-l-[3px] ${
-                          p.projectPctComplete != null && p.projectPctComplete >= 0.9 ? "border-l-emerald-500" :
-                          p.projectPctComplete != null && p.projectPctComplete >= 0.5 ? "border-l-blue-500" :
-                          p.projectPctComplete != null && p.projectPctComplete >= 0.2 ? "border-l-amber-500" :
+                          p.ragStatus?.toUpperCase() === "RED" ? "border-l-red-500" :
+                          p.ragStatus?.toUpperCase() === "AMBER" ? "border-l-amber-500" :
+                          p.ragStatus?.toUpperCase() === "GREEN" ? "border-l-green-500" :
                           "border-l-slate-300"
                         } ${isGone ? "opacity-60 cursor-not-allowed" : "cursor-grab active:cursor-grabbing"} ${draggedProject?.projectName === p.projectName ? "opacity-40" : ""}`}
                         draggable={!isGone}
@@ -880,81 +993,69 @@ export default function LifecycleBoardPage() {
                         onClick={() => openProjectDialog(p)}
                         data-testid={`card-project-${p.id}`}
                       >
-                        <CardContent className="p-2.5 space-y-1.5">
-                          <div className="flex items-start justify-between gap-1">
-                            <div className="flex items-start gap-1 min-w-0 flex-1">
-                              <GripVertical className="w-3 h-3 text-muted-foreground/50 shrink-0 mt-0.5" />
-                              <div className="font-semibold text-xs leading-snug" data-testid={`text-project-name-${p.id}`} title={cleanProjectName(p.projectName)}>
-                                {cleanProjectName(p.projectName)}
-                              </div>
+                        <CardContent className="p-2 space-y-1">
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              className="shrink-0 hover:scale-125 transition-transform"
+                              onClick={(e) => openRagModal(p, e)}
+                              title={p.ragStatus ? `RAG: ${p.ragStatus}` : "Set RAG"}
+                              data-testid={`rag-dot-${p.id}`}
+                            >
+                              {ragDot(p.ragStatus)}
+                            </button>
+                            <div className="font-semibold text-[11px] leading-snug truncate flex-1 min-w-0" data-testid={`text-project-name-${p.id}`} title={cleanProjectName(p.projectName)}>
+                              {cleanProjectName(p.projectName)}
                             </div>
-                            {sourceBadge(p.source)}
+                            {trackerBadge(p.hasTracker)}
                           </div>
-                          <div className="flex flex-wrap items-center gap-1.5 pl-4">
+
+                          <div className="flex flex-wrap items-center gap-1 text-[9px] text-muted-foreground pl-4">
                             {p.sizeKwp && parseFloat(p.sizeKwp) > 0 && (
-                              <span className="text-[10px] text-muted-foreground font-medium flex items-center gap-0.5" data-testid={`text-size-${p.id}`}>
-                                <Zap className="w-3 h-3 text-amber-500" />
+                              <span className="flex items-center gap-0.5 font-medium" data-testid={`text-size-${p.id}`}>
+                                <Zap className="w-2.5 h-2.5 text-amber-500" />
                                 {parseFloat(p.sizeKwp).toFixed(0)} kWp
                               </span>
                             )}
                             {formatZAR(p.contractValue) && (
-                              <span className="text-[10px] text-muted-foreground font-medium" data-testid={`text-value-${p.id}`}>
+                              <span className="font-medium" data-testid={`text-value-${p.id}`}>
                                 {formatZAR(p.contractValue)}
                               </span>
                             )}
-                            {p.executionEnabled && (
-                              <Badge className="bg-green-100 text-green-700 text-[9px] px-1 py-0 border-green-300" data-testid={`badge-execution-${p.id}`}>
-                                <ShieldCheck className="w-2.5 h-2.5 mr-0.5" />Exec
-                              </Badge>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[9px] text-muted-foreground pl-4">
+                            {p.pd && (
+                              <span className="flex items-center gap-0.5" data-testid={`text-pd-${p.id}`}>
+                                <span className="font-semibold text-blue-600">PD</span> {p.pd}
+                              </span>
                             )}
-                            {!p.executionEnabled && p.executionGateStatus === "ELIGIBLE" && (
-                              <Badge className="bg-yellow-100 text-yellow-700 text-[9px] px-1 py-0 border-yellow-300" data-testid={`badge-eligible-${p.id}`}>
-                                Eligible
-                              </Badge>
+                            {p.pm && (
+                              <span className="flex items-center gap-0.5" data-testid={`text-pm-${p.id}`}>
+                                <span className="font-semibold text-indigo-600">PM</span> {p.pm}
+                              </span>
+                            )}
+                            {p.lastEngineer && (
+                              <span className="flex items-center gap-0.5 italic" data-testid={`text-last-eng-${p.id}`} title={`Last eng activity: ${p.lastEngineer.name}`}>
+                                <Wrench className="w-2.5 h-2.5 text-purple-400" />
+                                {p.lastEngineer.name}
+                                <span className="text-[8px] opacity-70">{timeAgo(p.lastEngineer.at)}</span>
+                              </span>
                             )}
                           </div>
-                          {p.pm && (
-                            <div className="text-[11px] text-muted-foreground flex items-center gap-1 pl-4" data-testid={`text-pm-${p.id}`}>
-                              <User className="w-3 h-3 shrink-0 text-slate-400" />
-                              <span className="truncate">{p.pm}</span>
-                            </div>
-                          )}
-                          {(() => {
-                            const phaseKey = mapPhaseToGroup(p.phase, p.source);
-                            const showPM = phaseShowsPM(phaseKey);
-                            const showEng = phaseShowsEng(phaseKey);
-                            const showQM = phaseShowsQM(phaseKey);
-                            const hasAnyBar = (showPM && p.projectPctComplete != null) || (showEng && p.engTotal > 0) || (showQM && p.qmTotal > 0);
-                            if (!hasAnyBar) return null;
-                            return (
-                              <div className="space-y-1 mt-1 pl-4">
-                                {showEng && pctBar("Eng", p.engDone, p.engTotal, "bg-purple-500")}
-                                {showQM && pctBar("QM", p.qmApproved, p.qmTotal, "bg-teal-500")}
-                                {showPM && p.projectPctComplete != null && (
-                                  <div className="flex items-center gap-1.5 text-[10px]" data-testid={`pct-complete-${p.id}`}>
-                                    <span className="text-muted-foreground w-[28px] shrink-0 font-medium">PM</span>
-                                    <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden min-w-[40px]">
-                                      <div
-                                        className={`h-full rounded-full transition-all ${
-                                          p.projectPctComplete >= 0.9 ? "bg-emerald-500" :
-                                          p.projectPctComplete >= 0.5 ? "bg-blue-500" :
-                                          p.projectPctComplete >= 0.2 ? "bg-amber-500" : "bg-slate-400"
-                                        }`}
-                                        style={{ width: `${Math.min(Math.round(p.projectPctComplete * 100), 100)}%` }}
-                                      />
-                                    </div>
-                                    <span className="text-muted-foreground w-[30px] text-right font-medium">{Math.round(p.projectPctComplete * 100)}%</span>
-                                  </div>
-                                )}
-                                {p.engOverdue > 0 && (
-                                  <div className="flex items-center gap-1 text-[10px] text-red-600 font-medium">
-                                    <AlertCircle className="w-3 h-3" />
-                                    {p.engOverdue} overdue
-                                  </div>
-                                )}
+
+                          <div className="space-y-0.5 mt-0.5 pl-4">
+                            {compactBar("PD", p.pdPercent, "bg-blue-500", p.id)}
+                            {compactBar("Eng", p.engPercent, "bg-purple-500", p.id)}
+                            {compactBar("QA", p.qmPercent, "bg-teal-500", p.id)}
+                            {compactBar("PM", p.pmPercent, "bg-emerald-500", p.id)}
+                            {p.engOverdue > 0 && (
+                              <div className="flex items-center gap-0.5 text-[9px] text-red-600 font-medium">
+                                <AlertCircle className="w-2.5 h-2.5" />
+                                {p.engOverdue} overdue
                               </div>
-                            );
-                          })()}
+                            )}
+                          </div>
                         </CardContent>
                       </Card>
                     );
@@ -1849,6 +1950,98 @@ export default function LifecycleBoardPage() {
               </DialogFooter>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={ragModalOpen} onOpenChange={setRagModalOpen}>
+        <DialogContent className="max-w-md w-[95vw] sm:w-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2" data-testid="rag-modal-title">
+              {ragModalProject && ragDot(ragModalProject.ragStatus)}
+              RAG Status — {ragModalProject ? cleanProjectName(ragModalProject.projectName) : ""}
+            </DialogTitle>
+            <DialogDescription>
+              <span className="block text-xs mt-1">
+                Current: <span className="font-medium">{ragModalProject?.ragStatus || "Not set"}</span>
+                {ragModalProject?.ragUpdatedByName && <span> by {ragModalProject.ragUpdatedByName}</span>}
+                {ragModalProject?.ragUpdatedAt && <span> ({timeAgo(ragModalProject.ragUpdatedAt)})</span>}
+              </span>
+              {ragModalProject?.ragComment && (
+                <span className="block text-xs italic mt-0.5 text-muted-foreground">"{ragModalProject.ragComment}"</span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          {canEditRag ? (
+            <div className="space-y-3" data-testid="rag-edit-form">
+              <div>
+                <Label className="text-sm font-medium">RAG Status</Label>
+                <Select value={ragForm.rag} onValueChange={(v) => setRagForm(f => ({ ...f, rag: v }))}>
+                  <SelectTrigger data-testid="select-rag-status"><SelectValue placeholder="Select RAG" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="GREEN">
+                      <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-green-500" /> Green</span>
+                    </SelectItem>
+                    <SelectItem value="AMBER">
+                      <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-amber-500" /> Amber</span>
+                    </SelectItem>
+                    <SelectItem value="RED">
+                      <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-red-500" /> Red</span>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-sm font-medium">Comment (min 5 chars)</Label>
+                <Textarea
+                  value={ragForm.comment}
+                  onChange={(e) => setRagForm(f => ({ ...f, comment: e.target.value }))}
+                  placeholder="Reason for this RAG status..."
+                  rows={3}
+                  data-testid="input-rag-comment"
+                />
+              </div>
+              <DialogFooter className="gap-2">
+                <Button variant="outline" onClick={() => setRagModalOpen(false)} data-testid="button-cancel-rag">Cancel</Button>
+                <Button
+                  onClick={handleSaveRag}
+                  disabled={ragSaving || !ragForm.rag || ragForm.comment.trim().length < 5}
+                  data-testid="button-save-rag"
+                >
+                  {ragSaving ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
+                  Update RAG
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : (
+            <div className="text-sm text-muted-foreground py-2" data-testid="rag-readonly">
+              RAG updates are restricted to COO, CEO, and CCO roles.
+            </div>
+          )}
+
+          {ragHistory.length > 0 && (
+            <div className="border-t pt-3 mt-2">
+              <h4 className="text-xs font-semibold mb-2">History</h4>
+              <div className="space-y-2 max-h-40 overflow-y-auto">
+                {ragHistory.map((h: any) => (
+                  <div key={h.id} className="flex items-start gap-2 text-[11px]">
+                    <div className="flex items-center gap-1 shrink-0">
+                      {ragDot(h.fromRag)}
+                      <ArrowRight className="w-3 h-3 text-muted-foreground" />
+                      {ragDot(h.toRag)}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-muted-foreground">
+                        <span className="font-medium text-foreground">{h.changedByName}</span> — {timeAgo(h.changedAt)}
+                      </div>
+                      <div className="text-muted-foreground italic truncate" title={h.comment}>{h.comment}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {ragHistoryLoading && <div className="text-xs text-muted-foreground text-center py-2">Loading history...</div>}
         </DialogContent>
       </Dialog>
     </div>

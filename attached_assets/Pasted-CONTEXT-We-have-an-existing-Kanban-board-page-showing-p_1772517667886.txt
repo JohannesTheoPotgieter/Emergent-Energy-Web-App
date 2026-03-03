@@ -1,0 +1,88 @@
+CONTEXT
+We have an existing Kanban/board page showing projects across lifecycle columns. Do NOT break existing functionality (drag/drop, filters, counts, project open, etc.). We need a modern card redesign and new data points.
+
+GOAL
+Upgrade the board project cards to a sleek, modern layout and ensure each card clearly shows:
+1) Project Development %,
+2) Engineering %,
+3) Quality %,
+4) Project Management %,
+5) Tracker linked status (linked/not linked),
+6) Project Developer (PD),
+7) Project Manager (PM) ONLY if linked/assigned,
+8) Last Engineer who worked on a task for this project (with relative time),
+9) Overall Health RAG (Green/Amber/Red) that is USER-SETTABLE but ONLY by roles: COO, CEO, CCO.
+
+REQUIREMENTS (NON-NEGOTIABLE)
+- Do not remove any existing data or features. Only refactor UI + add fields/APIs safely.
+- RAG status must be editable only by COO/CEO/CCO and viewable by all.
+- Every RAG change must require a comment and must be audited in a history table.
+- Add a small modal to change RAG (dropdown + comment + save).
+- Tracker status must be displayed as a clear badge: “Tracker linked” (green) or “No tracker” (red).
+- Show PD name, PM name (or “—” if not assigned), Last Engineer name + “Xd ago”.
+
+DATA MODEL CHANGES
+1) Add to Projects (or equivalent project meta table):
+- overall_rag (ENUM: GREEN, AMBER, RED) default GREEN (or NULL if you prefer)
+- overall_rag_comment TEXT nullable
+- overall_rag_updated_at DATETIME nullable
+- overall_rag_updated_by_user_id FK nullable
+- tracker_linked BOOLEAN (or derive but must be returned as boolean for UI)
+- project_developer_user_id FK (if not already present)
+- project_manager_user_id FK nullable (if not already present)
+
+2) Create project_rag_audit table:
+- id (PK)
+- project_id (FK)
+- from_rag
+- to_rag
+- comment
+- changed_by_user_id
+- changed_at
+
+DERIVED FIELD: LAST ENGINEER
+Implement a reliable derivation:
+- Prefer task activity logs if they exist.
+- Otherwise use tasks table:
+   - filter: project_id = X AND discipline/type = 'ENGINEERING'
+   - take most recent by updated_at (or completed_at if more appropriate)
+Return:
+- last_engineer_user_id
+- last_engineer_name
+- last_engineer_at
+Also compute a relative time string in UI (e.g., 2d ago).
+
+API CHANGES
+- Update board list endpoint (whatever powers the board) to include:
+  - pd_user {id, name}
+  - pm_user {id, name} or null
+  - last_engineer {id, name, at}
+  - overall_rag, overall_rag_comment, overall_rag_updated_at, overall_rag_updated_by_user_id
+  - tracker_linked boolean
+  - progress percentages: pd_percent, eng_percent, qa_percent, pm_percent
+- Create endpoint: POST /projects/:id/rag
+  - Body: { rag: GREEN|AMBER|RED, comment: string }
+  - Authorization: only roles COO, CEO, CCO can update
+  - Validate: comment length >= 5
+  - On success:
+     - write project fields
+     - insert audit record
+
+UI CHANGES
+Redesign project card with clear hierarchy:
+- Top row: RAG dot+label (left), project name (center), tracker badge (right)
+- Second row: kWp, value, stage
+- Ownership row: PD: <name>, PM: <name or —>, Last Eng: <name> (<relative time>)
+- Progress section: show the four % values with compact bars/lines (PD, ENG, QA, PM)
+- Clicking RAG opens modal (only editable if user role is COO/CEO/CCO; otherwise view-only)
+
+TESTING / QA
+- Ensure drag/drop and column counts still work.
+- Verify unauthorized roles cannot call POST /rag (server-side) and cannot edit in UI.
+- Verify audit row created on each change.
+- Verify last engineer updates when an engineering task changes.
+- Verify tracker badge matches real linkage.
+- No regressions.
+
+DELIVERY
+Implement in dev environment. Add migration scripts. Update any seed/mock data as needed. Provide a short note of files changed and how to test manually.
