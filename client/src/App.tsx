@@ -172,7 +172,9 @@ function ProtectedPages() {
         <Route path="/admin/roles" component={AdminRolesPage} />
         <Route path="/admin/approvals" component={AdminApprovalsPage} />
         <Route path="/leaderboard" component={LeaderboardPage} />
-        <Route path="/tr-register" component={TrRegisterPage} />
+        <Route path="/tr-register">
+          <Redirect to="/my-work/tasks" />
+        </Route>
         <Route path="/feedback" component={FeedbackPage} />
         <Route path="/ee-info" component={EeInfoPage} />
         <Route path="/pm-dashboard" component={PMDashboard} />
