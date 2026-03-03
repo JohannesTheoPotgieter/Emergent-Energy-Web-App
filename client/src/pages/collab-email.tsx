@@ -52,7 +52,14 @@ export default function CollabEmailPage() {
   const [convertTarget, setConvertTarget] = useState<any>(null);
   const [autoSyncDone, setAutoSyncDone] = useState(false);
   const [ssoUnavailable, setSsoUnavailable] = useState(false);
+  const qc = useQueryClient();
   const syncMutation = useEmailSync(() => setSsoUnavailable(true));
+
+  useEffect(() => {
+    qc.removeQueries({ queryKey: ["ms-objects-mine", "email"] });
+    setAutoSyncDone(false);
+    setSsoUnavailable(false);
+  }, []);
 
   const { data: items = [], isLoading, isFetched } = useQuery<any[]>({
     queryKey: ["ms-objects-mine", "email"],
@@ -61,7 +68,8 @@ export default function CollabEmailPage() {
       if (!res.ok) return [];
       return res.json();
     },
-    staleTime: 30_000,
+    staleTime: 0,
+    gcTime: 0,
   });
 
   useEffect(() => {
