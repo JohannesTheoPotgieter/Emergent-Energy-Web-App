@@ -51,7 +51,7 @@ import UserAssignmentPicker from "@/components/UserAssignmentPicker";
 
 type SortField = "priority" | "dueDate" | "createdAt" | "status";
 type SortDirection = "asc" | "desc";
-type SourceFilter = "all" | "personal" | "operational" | "plan" | "engineering_task" | "quality_task" | "approvals" | "tr_register" | "deliverables";
+type SourceFilter = "all" | "personal" | "operational" | "plan" | "engineering_task" | "quality_task" | "approvals" | "tr_register" | "deliverables" | "notifications";
 
 const priorityOrder: Record<string, number> = { critical: 0, high: 1, urgent: 0, High: 1, Med: 2, Low: 3, normal: 2, low: 3 };
 const statusOrder: Record<string, number> = { in_progress: 0, "IN PROGRESS": 0, planned: 1, inbox: 2, "TO DO": 2, blocked: 3, BLOCKED: 3, waiting: 4, "ON HOLD": 4, done: 5, DONE: 5, COMPLETE: 5, cancelled: 6 };
@@ -139,6 +139,7 @@ const SOURCE_CONFIG: Record<SourceFilter, { label: string; icon: any; color: str
   approvals: { label: "Approvals", icon: ShieldCheck, color: "text-amber-600", bgColor: "bg-amber-50 border-amber-200" },
   tr_register: { label: "TR Register", icon: BookOpen, color: "text-purple-600", bgColor: "bg-purple-50 border-purple-200" },
   deliverables: { label: "Deliverables", icon: FileCheck, color: "text-rose-600", bgColor: "bg-rose-50 border-rose-200" },
+  notifications: { label: "Notifications", icon: AlertTriangle, color: "text-orange-600", bgColor: "bg-orange-50 border-orange-200" },
 };
 
 function getAuthHeaders(): Record<string, string> {
