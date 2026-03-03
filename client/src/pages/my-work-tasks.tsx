@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import { format, isPast, parseISO, formatDistanceToNow } from "date-fns";
+import { format, isPast, parseISO, formatDistanceToNow, differenceInCalendarDays, startOfDay } from "date-fns";
 import TaskDetailDrawer from "@/components/mytool/TaskDetailDrawer";
 import { TaskItem, TaskStatus, TaskPriority } from "@/components/mytool/TaskCard";
 import { Badge } from "@/components/ui/badge";
@@ -22,7 +22,8 @@ import {
   Inbox, Filter, Eye, Calendar, Building2, FolderOpen, AlertTriangle, ListTodo,
   ClipboardList, ShieldCheck, FileCheck, BookOpen, CheckCircle2, Circle, Clock,
   AlertCircle, Wrench, Users, User, LayoutList, Columns3, Link2, GripVertical,
-  Save, RotateCw, MoreHorizontal, ArrowRight, Hash, Tag,
+  Save, RotateCw, MoreHorizontal, ArrowRight, Hash, Tag, TrendingUp, Zap,
+  Target, Activity,
 } from "lucide-react";
 import UserAssignmentPicker from "@/components/UserAssignmentPicker";
 
@@ -169,6 +170,30 @@ const PRIORITY_BADGE: Record<string, { label: string; class: string }> = {
   high: { label: "P2", class: "bg-orange-100 text-orange-700 border border-orange-200" },
   normal: { label: "P3", class: "bg-slate-100 text-slate-500 border border-slate-200" },
   low: { label: "P4", class: "bg-slate-50 text-slate-400 border border-slate-100" },
+};
+
+function smartDueLabel(dueAt: string | null): { label: string; urgency: "overdue" | "today" | "tomorrow" | "soon" | "future" | "none" } {
+  if (!dueAt) return { label: "", urgency: "none" };
+  try {
+    const d = parseISO(dueAt);
+    const now = startOfDay(new Date());
+    const diff = differenceInCalendarDays(d, now);
+    if (diff < -1) return { label: `${Math.abs(diff)}d overdue`, urgency: "overdue" };
+    if (diff === -1) return { label: "Yesterday", urgency: "overdue" };
+    if (diff === 0) return { label: "Today", urgency: "today" };
+    if (diff === 1) return { label: "Tomorrow", urgency: "tomorrow" };
+    if (diff <= 7) return { label: `${diff}d`, urgency: "soon" };
+    return { label: format(d, "dd MMM"), urgency: "future" };
+  } catch { return { label: "", urgency: "none" }; }
+}
+
+const DUE_URGENCY_STYLES: Record<string, string> = {
+  overdue: "text-red-600 bg-red-50 border-red-200 font-bold",
+  today: "text-amber-700 bg-amber-50 border-amber-200 font-semibold",
+  tomorrow: "text-orange-600 bg-orange-50 border-orange-200 font-medium",
+  soon: "text-blue-600 bg-blue-50 border-blue-200 font-medium",
+  future: "text-muted-foreground bg-muted/30 border-border/50",
+  none: "",
 };
 
 export default function MyWorkTasksPage() {
@@ -597,7 +622,12 @@ export default function MyWorkTasksPage() {
     const overdue = active.filter(t => isTaskOverdue(t));
     const critical = active.filter(t => t.priority === "critical" || t.priority === "high");
     const done = unifiedTasks.filter(t => t.status === "done");
-    return { total: unifiedTasks.length, active: active.length, overdue: overdue.length, critical: critical.length, done: done.length };
+    const blocked = active.filter(t => t.status === "blocked");
+    const inProgress = active.filter(t => t.status === "in_progress");
+    const dueToday = active.filter(t => { try { return t.dueAt && differenceInCalendarDays(parseISO(t.dueAt), startOfDay(new Date())) === 0; } catch { return false; } });
+    const dueSoon = active.filter(t => { try { if (!t.dueAt) return false; const diff = differenceInCalendarDays(parseISO(t.dueAt), startOfDay(new Date())); return diff >= 0 && diff <= 3; } catch { return false; } });
+    const completionRate = unifiedTasks.length > 0 ? Math.round((done.length / unifiedTasks.length) * 100) : 0;
+    return { total: unifiedTasks.length, active: active.length, overdue: overdue.length, critical: critical.length, done: done.length, blocked: blocked.length, inProgress: inProgress.length, dueToday: dueToday.length, dueSoon: dueSoon.length, completionRate };
   }, [unifiedTasks, isTaskOverdue]);
 
   const activeFilters = statusFilter.length + priorityFilter.length + (projectFilter ? 1 : 0) + (overdueOnly ? 1 : 0);
@@ -639,43 +669,68 @@ export default function MyWorkTasksPage() {
   return (
     <div className="flex flex-col min-h-0 flex-1 max-w-6xl mx-auto w-full" data-testid="my-work-tasks-page">
 
-      <div className="shrink-0 flex items-center justify-between gap-3 mb-3" data-testid="tasks-header">
-        <div className="flex items-center gap-2">
+      <div className="shrink-0 mb-3" data-testid="tasks-header">
+        <div className="flex items-center justify-between gap-3 mb-3">
           <h2 className="text-lg font-bold tracking-tight text-foreground" data-testid="text-tasks-title">My Tasks</h2>
-          <div className="flex items-center gap-1.5 text-xs">
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-semibold border border-blue-200" data-testid="kpi-active">
-              <ListTodo className="h-3 w-3" /> {kpiStats.active}
-            </span>
-            {kpiStats.overdue > 0 && (
-              <button onClick={() => { setOverdueOnly(!overdueOnly); }} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-semibold border transition-all ${overdueOnly ? "bg-red-500 text-white border-red-500" : "bg-red-50 text-red-600 border-red-200 hover:bg-red-100"}`} data-testid="kpi-overdue">
-                <AlertCircle className="h-3 w-3" /> {kpiStats.overdue} overdue
-              </button>
-            )}
-            {kpiStats.critical > 0 && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 font-semibold border border-amber-200" data-testid="kpi-critical">
-                <AlertTriangle className="h-3 w-3" /> {kpiStats.critical}
-              </span>
-            )}
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200" data-testid="kpi-done">
-              <CheckCircle2 className="h-3 w-3" /> {kpiStats.done}
-            </span>
+          <div className="flex items-center gap-1.5">
+            <div className="flex items-center border rounded-md overflow-hidden">
+              <button onClick={() => setViewMode("list")} className={`p-1.5 transition-colors ${viewMode === "list" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`} data-testid="btn-view-list" title="List view"><LayoutList className="h-3.5 w-3.5" /></button>
+              <button onClick={() => setViewMode("board")} className={`p-1.5 transition-colors ${viewMode === "board" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`} data-testid="btn-view-board" title="Board view"><Columns3 className="h-3.5 w-3.5" /></button>
+            </div>
+            <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1" onClick={handleSaveDefaultView} data-testid="btn-save-default-view" title="Save default"><Save className="h-3 w-3" /></Button>
+            {hasCustomDefault && <Button variant="ghost" size="sm" className="h-7 px-1.5 text-xs text-muted-foreground" onClick={handleResetDefaultView} data-testid="btn-reset-default-view" title="Reset default"><RotateCw className="h-3 w-3" /></Button>}
+            <Button variant={groomMode ? "default" : "ghost"} size="sm" className={`h-7 text-xs px-2 ${groomMode ? "bg-amber-500 hover:bg-amber-600 text-white" : ""}`} onClick={() => setGroomMode(!groomMode)} data-testid="button-groom-mode"><Eye className="h-3 w-3" /></Button>
+            <Button size="sm" className="h-7 gap-1 text-xs shadow-sm" onClick={() => setCreateDialogOpen(true)} data-testid="button-new-task"><Plus className="h-3.5 w-3.5" /> New</Button>
           </div>
         </div>
-        <div className="flex items-center gap-1.5">
-          <div className="flex items-center border rounded-md overflow-hidden">
-            <button onClick={() => setViewMode("list")} className={`p-1.5 transition-colors ${viewMode === "list" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`} data-testid="btn-view-list" title="List view"><LayoutList className="h-3.5 w-3.5" /></button>
-            <button onClick={() => setViewMode("board")} className={`p-1.5 transition-colors ${viewMode === "board" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`} data-testid="btn-view-board" title="Board view"><Columns3 className="h-3.5 w-3.5" /></button>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2" data-testid="kpi-cards">
+          <div className="relative overflow-hidden rounded-xl border bg-gradient-to-br from-blue-500 to-blue-600 p-3 text-white shadow-sm" data-testid="kpi-active">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-medium text-blue-100 uppercase tracking-wider">Active</p>
+                <p className="text-2xl font-bold mt-0.5">{kpiStats.active}</p>
+                <p className="text-[10px] text-blue-200 mt-0.5">{kpiStats.inProgress} in progress</p>
+              </div>
+              <div className="rounded-full bg-white/20 p-2"><ListTodo className="h-5 w-5" /></div>
+            </div>
+            {kpiStats.dueToday > 0 && <div className="mt-1.5 text-[10px] font-semibold bg-white/20 rounded-md px-1.5 py-0.5 inline-flex items-center gap-1"><Zap className="h-2.5 w-2.5" /> {kpiStats.dueToday} due today</div>}
           </div>
-          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1" onClick={handleSaveDefaultView} data-testid="btn-save-default-view" title="Save default">
-            <Save className="h-3 w-3" />
-          </Button>
-          {hasCustomDefault && (
-            <Button variant="ghost" size="sm" className="h-7 px-1.5 text-xs text-muted-foreground" onClick={handleResetDefaultView} data-testid="btn-reset-default-view" title="Reset default">
-              <RotateCw className="h-3 w-3" />
-            </Button>
-          )}
-          <Button variant={groomMode ? "default" : "ghost"} size="sm" className={`h-7 text-xs px-2 ${groomMode ? "bg-amber-500 hover:bg-amber-600 text-white" : ""}`} onClick={() => setGroomMode(!groomMode)} data-testid="button-groom-mode"><Eye className="h-3 w-3" /></Button>
-          <Button size="sm" className="h-7 gap-1 text-xs shadow-sm" onClick={() => setCreateDialogOpen(true)} data-testid="button-new-task"><Plus className="h-3.5 w-3.5" /> New</Button>
+
+          <button onClick={() => setOverdueOnly(!overdueOnly)} className={`relative overflow-hidden rounded-xl border p-3 text-left shadow-sm transition-all ${kpiStats.overdue > 0 ? "bg-gradient-to-br from-red-500 to-red-600 text-white hover:shadow-md" : "bg-gradient-to-br from-slate-100 to-slate-50 text-slate-500 border-slate-200"} ${overdueOnly ? "ring-2 ring-red-300 ring-offset-1" : ""}`} data-testid="kpi-overdue">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className={`text-[10px] font-medium uppercase tracking-wider ${kpiStats.overdue > 0 ? "text-red-100" : "text-slate-400"}`}>Overdue</p>
+                <p className="text-2xl font-bold mt-0.5">{kpiStats.overdue}</p>
+                <p className={`text-[10px] mt-0.5 ${kpiStats.overdue > 0 ? "text-red-200" : "text-slate-400"}`}>{kpiStats.blocked} blocked</p>
+              </div>
+              <div className={`rounded-full p-2 ${kpiStats.overdue > 0 ? "bg-white/20" : "bg-slate-200"}`}><AlertCircle className="h-5 w-5" /></div>
+            </div>
+            {overdueOnly && <div className="mt-1.5 text-[10px] font-semibold bg-white/20 rounded-md px-1.5 py-0.5 inline-flex items-center gap-1"><Filter className="h-2.5 w-2.5" /> Filtering</div>}
+          </button>
+
+          <div className="relative overflow-hidden rounded-xl border bg-gradient-to-br from-amber-500 to-orange-500 p-3 text-white shadow-sm" data-testid="kpi-critical">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-medium text-amber-100 uppercase tracking-wider">High Priority</p>
+                <p className="text-2xl font-bold mt-0.5">{kpiStats.critical}</p>
+                <p className="text-[10px] text-amber-200 mt-0.5">{kpiStats.dueSoon} due within 3d</p>
+              </div>
+              <div className="rounded-full bg-white/20 p-2"><AlertTriangle className="h-5 w-5" /></div>
+            </div>
+          </div>
+
+          <div className="relative overflow-hidden rounded-xl border bg-gradient-to-br from-emerald-500 to-emerald-600 p-3 text-white shadow-sm" data-testid="kpi-done">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-medium text-emerald-100 uppercase tracking-wider">Completed</p>
+                <p className="text-2xl font-bold mt-0.5">{kpiStats.done}</p>
+                <p className="text-[10px] text-emerald-200 mt-0.5">{kpiStats.completionRate}% rate</p>
+              </div>
+              <div className="rounded-full bg-white/20 p-2"><CheckCircle2 className="h-5 w-5" /></div>
+            </div>
+            <div className="mt-1.5 h-1.5 bg-white/20 rounded-full overflow-hidden"><div className="h-full bg-white/60 rounded-full transition-all" style={{ width: `${kpiStats.completionRate}%` }} /></div>
+          </div>
         </div>
       </div>
 
@@ -790,30 +845,39 @@ export default function MyWorkTasksPage() {
                     {colTasks.map(task => {
                       const canDrag = ["personal", "operational", "engineering_task", "tr_register"].includes(task._source);
                       const pb = PRIORITY_BADGE[task.priority] || PRIORITY_BADGE.normal;
+                      const cardDue = smartDueLabel(task.dueAt);
+                      const cardDueStyle = DUE_URGENCY_STYLES[cardDue.urgency] || "";
+                      const cardOverdue = isTaskOverdue(task);
                       return (
                         <div
                           key={task._key}
                           draggable={canDrag}
                           onDragStart={(e) => handleBoardDragStart(e, task)}
                           onClick={() => handleOpenDrawer(task)}
-                          className={`bg-background rounded-md border p-2 transition-all hover:shadow-sm hover:border-primary/30 ${canDrag ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"} ${draggedTask?._key === task._key ? "opacity-40" : ""}`}
+                          className={`bg-background rounded-lg border p-2.5 transition-all hover:shadow-md hover:border-primary/30 ${canDrag ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"} ${draggedTask?._key === task._key ? "opacity-40" : ""} ${cardOverdue ? "border-l-2 border-l-red-400" : ""}`}
                           data-testid={`board-card-${task._key}`}
                         >
-                          <div className="flex items-center gap-1 mb-1 flex-wrap">
-                            <span className={`inline-flex px-1 py-px rounded text-[9px] font-bold ${pb.class}`}>{pb.label}</span>
-                            <span className={`inline-flex px-1.5 py-px rounded text-[9px] font-medium border ${task._sourceColor}`}>{task._sourceLabel}</span>
-                            {(task._trackingRole === "creator" || task._trackingRole === "both") && <span className="inline-flex items-center gap-0.5 px-1.5 py-px rounded text-[9px] font-medium border bg-teal-50 border-teal-200 text-teal-700"><Eye className="h-2.5 w-2.5" />Tracking</span>}
-                            {task.ragStatus && <span className={`w-2 h-2 rounded-full shrink-0 ${task.ragStatus === "Red" ? "bg-red-500" : task.ragStatus === "Amber" ? "bg-amber-500" : "bg-green-500"}`} />}
+                          <div className="flex items-center gap-1 mb-1.5 flex-wrap">
+                            <span className={`inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold ${pb.class}`}>{pb.label}</span>
+                            <span className={`inline-flex px-1.5 py-0.5 rounded text-[9px] font-medium border ${task._sourceColor}`}>{task._sourceLabel}</span>
+                            {(task._trackingRole === "creator" || task._trackingRole === "both") && <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium border bg-teal-50 border-teal-200 text-teal-700"><Eye className="h-2.5 w-2.5" />Tracking</span>}
+                            {task.ragStatus && <span className={`inline-flex items-center gap-0.5 text-[9px] font-medium ${task.ragStatus === "Red" ? "text-red-600" : task.ragStatus === "Amber" ? "text-amber-600" : "text-green-600"}`}><span className={`w-1.5 h-1.5 rounded-full ${task.ragStatus === "Red" ? "bg-red-500" : task.ragStatus === "Amber" ? "bg-amber-500" : "bg-green-500"}`} />{task.ragStatus}</span>}
                           </div>
-                          <p className="text-[11px] font-medium leading-snug line-clamp-2 mb-1">{task.title}</p>
-                          <div className="flex items-center justify-between text-[9px] text-muted-foreground">
-                            {task.projectName && <span className="truncate max-w-[100px]">{task.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}</span>}
-                            {task.dueAt && <span className={isTaskOverdue(task) ? "text-red-500 font-semibold" : ""}>{(() => { try { return format(new Date(task.dueAt), "dd MMM"); } catch { return ""; } })()}</span>}
+                          <p className="text-[12px] font-medium leading-snug line-clamp-2 mb-1.5">{task.title}</p>
+                          <div className="flex items-center justify-between gap-1">
+                            {task.projectName && <span className="text-[10px] text-muted-foreground truncate max-w-[110px]">{task.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}</span>}
+                            {cardDue.label && <span className={`inline-flex items-center gap-0.5 px-1 py-px rounded border text-[9px] shrink-0 ${cardDueStyle}`}><Clock className="h-2 w-2" />{cardDue.label}</span>}
                           </div>
                           {task.percentComplete !== undefined && task.percentComplete > 0 && (
-                            <div className="mt-1 flex items-center gap-1">
-                              <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden"><div className="h-full bg-emerald-500 rounded-full" style={{ width: `${task.percentComplete}%` }} /></div>
-                              <span className="text-[9px] text-muted-foreground">{task.percentComplete}%</span>
+                            <div className="mt-1.5 flex items-center gap-1">
+                              <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden"><div className="h-full bg-emerald-500 rounded-full" style={{ width: `${task.percentComplete}%` }} /></div>
+                              <span className="text-[9px] font-medium text-muted-foreground">{task.percentComplete}%</span>
+                            </div>
+                          )}
+                          {(task.resolvedAssignees || task.resolvedOwners || task.assignees || task.owners) && (
+                            <div className="mt-1.5 flex items-center gap-1">
+                              <User className="h-2.5 w-2.5 text-muted-foreground" />
+                              <span className="text-[9px] text-muted-foreground truncate">{(task.resolvedAssignees || task.resolvedOwners)?.map(u => u.name).join(", ") || (task.assignees || task.owners)?.join(", ")}</span>
                             </div>
                           )}
                         </div>
@@ -974,13 +1038,16 @@ function CompactTaskRow({ task, isExpanded, onToggleExpand, onOpenDrawer, onStat
 
   const canQuickStatus = ["personal", "operational", "engineering_task", "tr_register"].includes(task._source);
 
+  const due = smartDueLabel(task.dueAt);
+  const dueStyle = DUE_URGENCY_STYLES[due.urgency] || "";
+
   return (
     <div data-testid={`task-row-${task._key}`}>
-      <div className={`flex items-center gap-1.5 px-2 py-1.5 transition-all hover:bg-muted/40 cursor-pointer group ${isDone ? "opacity-50" : ""} ${isOverdue ? "bg-red-50/30" : ""}`} onClick={onOpenDrawer}>
+      <div className={`flex items-center gap-2 px-3 py-2.5 transition-all hover:bg-muted/40 cursor-pointer group ${isDone ? "opacity-50" : ""} ${isOverdue && !isDone ? "bg-red-50/40 border-l-2 border-l-red-400" : ""} ${task.status === "blocked" && !isDone ? "bg-amber-50/30 border-l-2 border-l-amber-400" : ""}`} onClick={onOpenDrawer}>
 
         {task._source === "operational" && (task.subtaskCount || 0) > 0 ? (
           <button onClick={e => { e.stopPropagation(); onToggleExpand(); }} className="shrink-0 p-0.5 rounded hover:bg-muted" data-testid={`btn-expand-${task._key}`}>
-            {isExpanded ? <ChevronDown className="h-3 w-3 text-muted-foreground" /> : <ChevronRight className="h-3 w-3 text-muted-foreground" />}
+            {isExpanded ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
           </button>
         ) : (
           <div className="shrink-0 w-4" />
@@ -988,49 +1055,58 @@ function CompactTaskRow({ task, isExpanded, onToggleExpand, onOpenDrawer, onStat
 
         <button
           onClick={e => { e.stopPropagation(); if (canQuickStatus) onQuickStatus(isDone ? "inbox" : "done"); }}
-          className={`shrink-0 w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all ${
-            isDone ? "border-emerald-500 bg-emerald-500" : "border-slate-300 hover:border-emerald-400 hover:bg-emerald-50"
+          className={`shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
+            isDone ? "border-emerald-500 bg-emerald-500" : task.status === "in_progress" ? "border-blue-400 bg-blue-50" : task.status === "blocked" ? "border-red-400 bg-red-50" : "border-slate-300 hover:border-emerald-400 hover:bg-emerald-50"
           }`}
           data-testid={`btn-complete-${task._key}`}
           title={isDone ? "Reopen" : "Complete"}
         >
-          {isDone && <CheckCircle2 className="h-2.5 w-2.5 text-white" />}
+          {isDone && <CheckCircle2 className="h-3 w-3 text-white" />}
+          {!isDone && task.status === "in_progress" && <div className="w-2 h-2 rounded-full bg-blue-400" />}
+          {!isDone && task.status === "blocked" && <div className="w-2 h-2 rounded-full bg-red-400" />}
         </button>
 
-        <span className={`shrink-0 inline-flex px-1 py-px rounded text-[9px] font-bold leading-none ${pb.class}`}>{pb.label}</span>
+        <span className={`shrink-0 inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold leading-none ${pb.class}`}>{pb.label}</span>
 
-        <div className="flex-1 min-w-0 flex items-center gap-1.5">
-          <span className={`text-[13px] truncate ${isDone ? "line-through text-muted-foreground" : "text-foreground"}`} data-testid={`text-task-title-${task._key}`}>{task.title}</span>
-          {task.subtaskCount && task.subtaskCount > 0 && <span className="text-[9px] text-muted-foreground bg-muted px-1 py-px rounded shrink-0">{task.subtaskCount}</span>}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5">
+            <span className={`text-[13px] leading-tight truncate ${isDone ? "line-through text-muted-foreground" : "text-foreground font-medium"}`} data-testid={`text-task-title-${task._key}`}>{task.title}</span>
+            {task.subtaskCount && task.subtaskCount > 0 && <span className="text-[9px] text-muted-foreground bg-muted px-1 py-px rounded shrink-0">{task.subtaskCount} sub</span>}
+          </div>
+          <div className="flex items-center gap-2 mt-0.5">
+            {task.projectName && <span className="text-[10px] text-muted-foreground truncate max-w-[140px]" title={task.projectName} data-testid={`badge-project-${task._key}`}>{task.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}</span>}
+            {task.percentComplete !== undefined && task.percentComplete > 0 && (
+              <div className="flex items-center gap-1 shrink-0">
+                <div className="w-12 h-1.5 bg-muted rounded-full overflow-hidden"><div className="h-full bg-emerald-500 rounded-full" style={{ width: `${task.percentComplete}%` }} /></div>
+                <span className="text-[9px] text-muted-foreground">{task.percentComplete}%</span>
+              </div>
+            )}
+            {task.ragStatus && <span className={`shrink-0 inline-flex items-center gap-0.5 text-[9px] font-medium ${task.ragStatus === "Red" ? "text-red-600" : task.ragStatus === "Amber" ? "text-amber-600" : "text-green-600"}`}><span className={`w-1.5 h-1.5 rounded-full ${task.ragStatus === "Red" ? "bg-red-500" : task.ragStatus === "Amber" ? "bg-amber-500" : "bg-green-500"}`} />{task.ragStatus}</span>}
+          </div>
         </div>
 
-        {task.percentComplete !== undefined && task.percentComplete > 0 && (
-          <div className="hidden sm:flex items-center gap-1 shrink-0 w-16">
-            <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden"><div className="h-full bg-emerald-500 rounded-full" style={{ width: `${task.percentComplete}%` }} /></div>
-            <span className="text-[9px] text-muted-foreground w-6 text-right">{task.percentComplete}%</span>
-          </div>
-        )}
-
-        <span className={`shrink-0 inline-flex items-center px-1.5 py-px rounded text-[9px] font-medium border ${task._sourceColor}`} data-testid={`badge-source-${task._key}`}>{task._sourceLabel}</span>
-        {(task._trackingRole === "creator" || task._trackingRole === "both") && <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-px rounded text-[9px] font-medium border bg-teal-50 border-teal-200 text-teal-700" data-testid={`badge-tracking-${task._key}`}><Eye className="h-2.5 w-2.5" />Tracking</span>}
+        <span className={`shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium border ${task._sourceColor}`} data-testid={`badge-source-${task._key}`}>{task._sourceLabel}</span>
+        {(task._trackingRole === "creator" || task._trackingRole === "both") && <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium border bg-teal-50 border-teal-200 text-teal-700" data-testid={`badge-tracking-${task._key}`}><Eye className="h-2.5 w-2.5" />Tracking</span>}
 
         <div className="hidden sm:block shrink-0" onClick={e => e.stopPropagation()}>
           <UserAssignmentPicker taskId={task._rawId} taskSource={task._source === "approvals" ? "operational" : task._source} resolvedUsers={task.resolvedAssignees || task.resolvedOwners || null} textNames={task.assignees || task.owners || null} mode={["operational", "tr_register"].includes(task._source) ? "multi" : "single"} size="xs" invalidateKeys={["/api/my-work/all-tasks", "/api/mytool/tasks", "/api/tr-register"]} />
         </div>
 
-        {task.projectName && <span className="hidden lg:inline shrink-0 text-[9px] text-muted-foreground truncate max-w-[100px]" title={task.projectName} data-testid={`badge-project-${task._key}`}>{task.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}</span>}
-        {task.ragStatus && <span className={`shrink-0 w-2 h-2 rounded-full ${task.ragStatus === "Red" ? "bg-red-500" : task.ragStatus === "Amber" ? "bg-amber-500" : "bg-green-500"}`} title={`RAG: ${task.ragStatus}`} />}
-        {task.dueAt && <span className={`hidden sm:inline shrink-0 text-[9px] tabular-nums ${isOverdue ? "text-red-500 font-bold" : "text-muted-foreground"}`} data-testid={`text-due-${task._key}`}>{(() => { try { return format(new Date(task.dueAt), "dd MMM"); } catch { return ""; } })()}</span>}
+        {due.label && (
+          <span className={`shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] tabular-nums ${dueStyle}`} data-testid={`text-due-${task._key}`}>
+            <Clock className="h-2.5 w-2.5" />{due.label}
+          </span>
+        )}
 
-        <div className="shrink-0 flex items-center gap-px opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
           {canQuickStatus && !isDone && (
             <>
-              <button onClick={e => { e.stopPropagation(); onQuickStatus("in_progress"); }} className={`p-0.5 rounded transition-colors ${task.status === "in_progress" ? "text-blue-500" : "text-muted-foreground/40 hover:text-blue-500"}`} title="In Progress"><Clock className="h-3 w-3" /></button>
-              <button onClick={e => { e.stopPropagation(); onQuickStatus("blocked"); }} className={`p-0.5 rounded transition-colors ${task.status === "blocked" ? "text-red-500" : "text-muted-foreground/40 hover:text-red-500"}`} title="Blocked"><AlertCircle className="h-3 w-3" /></button>
+              <button onClick={e => { e.stopPropagation(); onQuickStatus("in_progress"); }} className={`p-1 rounded transition-colors ${task.status === "in_progress" ? "text-blue-500 bg-blue-50" : "text-muted-foreground/40 hover:text-blue-500 hover:bg-blue-50"}`} title="In Progress"><Clock className="h-3 w-3" /></button>
+              <button onClick={e => { e.stopPropagation(); onQuickStatus("blocked"); }} className={`p-1 rounded transition-colors ${task.status === "blocked" ? "text-red-500 bg-red-50" : "text-muted-foreground/40 hover:text-red-500 hover:bg-red-50"}`} title="Blocked"><AlertCircle className="h-3 w-3" /></button>
             </>
           )}
-          {task._source === "operational" && onAddSubtask && <button onClick={e => { e.stopPropagation(); onAddSubtask(); }} className="p-0.5 rounded text-muted-foreground/40 hover:text-emerald-500" title="Add subtask" data-testid={`btn-add-subtask-${task._key}`}><Plus className="h-3 w-3" /></button>}
-          {task._source === "personal" && onDelete && <button onClick={e => { e.stopPropagation(); onDelete(); }} className="p-0.5 rounded text-muted-foreground/40 hover:text-red-500" data-testid={`btn-delete-${task._key}`}><Trash2 className="h-3 w-3" /></button>}
+          {task._source === "operational" && onAddSubtask && <button onClick={e => { e.stopPropagation(); onAddSubtask(); }} className="p-1 rounded text-muted-foreground/40 hover:text-emerald-500 hover:bg-emerald-50" title="Add subtask" data-testid={`btn-add-subtask-${task._key}`}><Plus className="h-3 w-3" /></button>}
+          {task._source === "personal" && onDelete && <button onClick={e => { e.stopPropagation(); onDelete(); }} className="p-1 rounded text-muted-foreground/40 hover:text-red-500 hover:bg-red-50" data-testid={`btn-delete-${task._key}`}><Trash2 className="h-3 w-3" /></button>}
         </div>
       </div>
 
@@ -1107,6 +1183,9 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects }
   const canChangeStatus = ["operational", "approvals", "engineering_task", "quality_task", "tr_register"].includes(task._source);
   const canEditInline = task._source === "tr_register";
 
+  const detailDue = smartDueLabel(task.dueAt);
+  const detailDueStyle = DUE_URGENCY_STYLES[detailDue.urgency] || "";
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="sm:max-w-lg p-0 flex flex-col" data-testid="unified-task-detail-sheet">
@@ -1117,27 +1196,28 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects }
             <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-semibold border ${statusColor}`}>{statusLabel}</span>
             <span className={`text-[10px] font-semibold ${priorityColor}`}>{priorityLabel}</span>
             {task.ragStatus && (
-              <span className="inline-flex items-center gap-1 text-[10px]">
+              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-medium ${task.ragStatus === "Red" ? "bg-red-50 border-red-200 text-red-700" : task.ragStatus === "Amber" ? "bg-amber-50 border-amber-200 text-amber-700" : "bg-emerald-50 border-emerald-200 text-emerald-700"}`}>
                 <span className={`w-2 h-2 rounded-full ${task.ragStatus === "Red" ? "bg-red-500" : task.ragStatus === "Amber" ? "bg-amber-500" : "bg-green-500"}`} />
-                <span className="text-muted-foreground">{task.ragStatus}</span>
+                {task.ragStatus}
               </span>
             )}
             {isOverdue && <Badge variant="destructive" className="text-[9px] px-1.5 py-0">Overdue</Badge>}
           </div>
           <h3 className="text-sm font-semibold leading-snug" data-testid="text-unified-task-title">{task.title}</h3>
-          <div className="flex items-center gap-3 mt-2 text-[10px] text-muted-foreground">
+          <div className="flex items-center flex-wrap gap-2 mt-2.5">
             {task.projectName && (
-              <span className="flex items-center gap-1" data-testid="text-unified-project">
+              <span className="flex items-center gap-1 text-[10px] text-muted-foreground bg-muted/50 rounded-md px-1.5 py-0.5" data-testid="text-unified-project">
                 <FolderOpen className="h-3 w-3" /> {task.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
               </span>
             )}
-            {task.dueAt && (
-              <span className={`flex items-center gap-1 ${isOverdue ? "text-red-600 font-semibold" : ""}`} data-testid="text-unified-due">
-                <Calendar className="h-3 w-3" /> {(() => { try { return format(new Date(task.dueAt), "dd MMM yyyy"); } catch { return task.dueAt; } })()}
+            {detailDue.label && (
+              <span className={`flex items-center gap-1 text-[10px] rounded-md px-1.5 py-0.5 border ${detailDueStyle}`} data-testid="text-unified-due">
+                <Clock className="h-3 w-3" /> {detailDue.label}
+                {task.dueAt && <span className="text-[9px] opacity-70 ml-0.5">({(() => { try { return format(new Date(task.dueAt), "dd MMM yyyy"); } catch { return ""; } })()})</span>}
               </span>
             )}
-            {task.department && <span className="flex items-center gap-1"><Tag className="h-3 w-3" /> {task.department}</span>}
-            {task.trId && <span className="flex items-center gap-1 font-mono"><Hash className="h-3 w-3" /> {task.trId}</span>}
+            {task.department && <span className="flex items-center gap-1 text-[10px] text-muted-foreground bg-muted/50 rounded-md px-1.5 py-0.5"><Tag className="h-3 w-3" /> {task.department}</span>}
+            {task.trId && <span className="flex items-center gap-1 text-[10px] font-mono text-muted-foreground bg-muted/50 rounded-md px-1.5 py-0.5"><Hash className="h-3 w-3" /> {task.trId}</span>}
           </div>
         </div>
 
