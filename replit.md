@@ -31,7 +31,8 @@ Preferred communication style: Simple, everyday language.
 
 ### Backend
 -   **Frameworks & Libraries**: Express.js with TypeScript.
--   **Authentication & Authorization**: Passport.js with local strategy and Microsoft 365 SSO via `@azure/msal-node`, using PostgreSQL for sessions, RBAC, and granular permissions.
+-   **Authentication & Authorization**: Passport.js with local strategy and Microsoft 365 SSO via `@azure/msal-node`, using PostgreSQL for sessions, RBAC, and granular permissions. Auto-logout on version change: AppLayout polls `/api/version` every 60s and forces logout + redirect to login if server version differs from stored `app_version` in localStorage.
+-   **Roles & Permissions UI**: Compact grid-based permissions page with single-letter action toggles (V/E/A/O/D), collapsible categories with ALL/VIEW/OFF presets, and sidebar section toggle chips. 11 permission categories aligned to sidebar structure.
 -   **File Handling**: Multer for uploads, `exceljs` for parsing.
 -   **Data Storage**: PostgreSQL with Drizzle ORM.
 -   **Logic**: Pure-function modules, automated backfill for computed columns, and audit trails.

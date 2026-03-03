@@ -1,36 +1,32 @@
 {
   "notes": [
     {
-      "title": "V1.5 — The One Where The Money Finally Makes Sense",
-      "description": "Revenue Outstanding no longer counts every line that has a date and a dream. If there's no invoice, it's not outstanding — it's a wish. Headline dropped from R142.6M to R2.8M. Turns out we weren't that rich. Disappointing, but accurate."
+      "title": "V1.5.5 — The One Where Permissions Stop Taking Up Half Your Screen",
+      "description": "The Roles & Permissions page went on a diet. Categories now display as a compact grid instead of a scrollable novel. Toggle actions with a single click, bulk-set entire categories with one button, and see everything at a glance. Your scroll wheel sends its regards."
     },
     {
-      "title": "Revenue Overdue: No Longer a Horror Movie",
-      "description": "Previously showed R55.9M overdue, which would have required some very awkward phone calls. Now correctly shows R606K. The difference? We stopped counting forecast payment dates from projects that haven't even sent an invoice yet. Revolutionary concept, we know."
+      "title": "Sidebar Sections: Now With More Sections",
+      "description": "Added 'Project Detail Tabs' to the sidebar access controls because apparently people wanted to control who sees what inside a project. Also aligned all sections to match the actual sidebar order, which — believe it or not — was not the case before. Nobody noticed. We noticed. It's fixed."
     },
     {
-      "title": "MS Project Called, We Answered",
-      "description": "The Project Plan tab now looks like it went to finishing school. Full toolbar with Add Task, Milestones, Indent, Outdent, Move Up/Down, and Delete — all with proper icons like a civilized application. WBS numbering, duration editing, baseline tracking, and a Gantt chart that actually syncs. Your mouse will feel important."
+      "title": "Permission Entities: The Census Is Complete",
+      "description": "Added Excel Updates, Database Migration, My Work, MS Sync, and Project Tagging to the permission system. Previously these features were like the wild west — everyone could access them, nobody could be stopped. Law and order has been restored."
     },
     {
-      "title": "Revenue Tab: Now With Actual UX",
-      "description": "KPI strip at the top so you can panic about outstanding revenue without scrolling. Status badges that change colour based on reality (green = money in bank, red = still praying). Inline editing, override indicators with blue dots, and a save bar that judges you if your comment is too short."
+      "title": "Version Check: You Can't Outrun Updates Anymore",
+      "description": "When we publish a new version, everyone gets logged out automatically. No more 'but it worked on my session from last Tuesday.' Fresh login, fresh version, fresh start. Your cached auth tokens have been given a retirement date."
     },
     {
-      "title": "Expenditure Tab: Budget Anxiety, Visualised",
-      "description": "Five KPI cards showing Budget, Actual, COS, Variance, and GP% — with red highlighting when you're over budget, because the numbers alone weren't stressful enough. Collapsible category groups, status badges, and override dots so you always know who changed what and can assign blame efficiently."
+      "title": "My Work Task Board: Now Actually Counts Things",
+      "description": "Filter tabs used to show '0' for everything because someone forgot to initialise the counter keys. Notifications and MS 365 action items now appear with proper source badges. The Task Board can finally count to potato."
     },
     {
-      "title": "In Bank Logic: Now Understands Colours",
-      "description": "Payment dates with red font colour mean 'forecast' not 'received'. The system used to count these as money in the bank, which was optimistic at best, delusional at worst. Now it checks font colour and confirmation flags across ALL dashboards consistently. Same truth, every screen."
+      "title": "Teams Chat: No Longer a Dead End",
+      "description": "The sidebar link to Teams Chat was pointing to a simplified page that did approximately nothing useful. Now it goes to the full two-tab experience with Activity and Chat. The old page is still technically alive, like a appendix — present but purposeless."
     },
     {
-      "title": "Null Legacy IDs: No Longer a Death Sentence",
-      "description": "Tasks created through Smart Import without a legacy mapping used to be completely uneditable — like a PDF of a spreadsheet screenshot. Fixed with a 3-level lookup fallback. Your tasks are no longer orphans."
-    },
-    {
-      "title": "Easter Egg: Still Here",
-      "description": "We didn't remove it. We didn't even look at it. Some things are sacred."
+      "title": "Easter Egg: Still Undiscovered",
+      "description": "At this point we're starting to wonder if anyone even looks. It's fine. It'll wait. It has nowhere to be."
     }
   ]
 }
