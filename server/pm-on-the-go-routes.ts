@@ -65,11 +65,13 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
   res.status(401).json({ error: "Authentication required" });
 }
 
-function requireProjectManagerSite(req: Request, res: Response, next: NextFunction) {
+const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN", "CCO", "PROGRAM_MANAGER", "CONSTRUCTION_MANAGER"];
+
+function requireProjectManagerOrAdmin(req: Request, res: Response, next: NextFunction) {
   const user = (req as any).user || req.user;
   if (!user) return res.status(401).json({ error: "Authentication required" });
-  if (user.role !== "PROJECT_MANAGER_SITE") {
-    return res.status(403).json({ error: "Access denied. PROJECT_MANAGER_SITE role required." });
+  if (user.role !== "PROJECT_MANAGER_SITE" && !ADMIN_ROLES.includes(user.role)) {
+    return res.status(403).json({ error: "Access denied. PM or admin role required." });
   }
   next();
 }
@@ -80,6 +82,7 @@ async function requirePmAssignment(req: Request, res: Response, next: NextFuncti
   if (!user || !projectId || isNaN(projectId)) {
     return res.status(400).json({ error: "Invalid project ID" });
   }
+  if (ADMIN_ROLES.includes(user.role)) return next();
   try {
     const rows = await db
       .select({ pmUserId: projectInfo.pmUserId })
@@ -214,7 +217,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
   app.get(
     "/api/pm-otg/mode",
     requireAuth,
-    requireProjectManagerSite,
+    requireProjectManagerOrAdmin,
     async (req: Request, res: Response) => {
       try {
         const user = getUser(req);
@@ -233,7 +236,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
   app.put(
     "/api/pm-otg/mode",
     requireAuth,
-    requireProjectManagerSite,
+    requireProjectManagerOrAdmin,
     async (req: Request, res: Response) => {
       try {
         const user = getUser(req);
@@ -264,7 +267,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
   app.get(
     "/api/pm-otg/projects",
     requireAuth,
-    requireProjectManagerSite,
+    requireProjectManagerOrAdmin,
     async (req: Request, res: Response) => {
       try {
         const user = getUser(req);
@@ -284,7 +287,8 @@ export function registerPmOnTheGoRoutes(app: Express) {
             ) AS total_budget,
             COALESCE(
               (SELECT SUM(CAST(ncl.amount_ex_vat AS NUMERIC))
-               FROM normalized_cost_lines ncl WHERE ncl.project_name = pi.project_name), 0
+               FROM normalized_cost_lines ncl WHERE ncl.project_name = pi.project_name
+               AND ncl.paid_date IS NOT NULL AND ncl.paid_date != ''), 0
             ) AS total_spent,
             COALESCE(
               (SELECT COUNT(*) FROM pm_on_the_go_actions a
@@ -308,7 +312,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
                AND a.status = 'pending'), 0
             ) AS open_escalations
           FROM project_info pi
-          WHERE pi.pm_user_id = ${user.id}
+          WHERE ${ADMIN_ROLES.includes(user.role) ? sql`TRUE` : sql`pi.pm_user_id = ${user.id}`}
             AND pi.archived_status = 'ACTIVE'
           ORDER BY pi.project_name
         `);
@@ -346,7 +350,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
   app.get(
     "/api/pm-otg/projects/:projectId/snapshot",
     requireAuth,
-    requireProjectManagerSite,
+    requireProjectManagerOrAdmin,
     requirePmAssignment,
     async (req: Request, res: Response) => {
       try {
@@ -363,7 +367,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
         const financials = await db.execute(sql`
           SELECT
             COALESCE(SUM(CAST(amount_ex_vat AS NUMERIC)), 0) AS total_budget,
-            COALESCE(SUM(CAST(amount_ex_vat AS NUMERIC)), 0) AS total_spent,
+            COALESCE(SUM(CASE WHEN paid_date IS NOT NULL AND paid_date != '' THEN CAST(amount_ex_vat AS NUMERIC) ELSE 0 END), 0) AS total_spent,
             COALESCE(SUM(CASE WHEN po_number IS NOT NULL AND po_number != '' THEN CAST(amount_ex_vat AS NUMERIC) ELSE 0 END), 0) AS committed
           FROM normalized_cost_lines
           WHERE project_name = ${p.projectName}
@@ -441,7 +445,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
   app.post(
     "/api/pm-otg/projects/:projectId/site-visit",
     requireAuth,
-    requireProjectManagerSite,
+    requireProjectManagerOrAdmin,
     requirePmAssignment,
     photoUpload.array("photos", 10),
     async (req: Request, res: Response) => {
@@ -521,7 +525,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
   app.post(
     "/api/pm-otg/projects/:projectId/generate-po",
     requireAuth,
-    requireProjectManagerSite,
+    requireProjectManagerOrAdmin,
     requirePmAssignment,
     async (req: Request, res: Response) => {
       try {
@@ -578,7 +582,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
   app.post(
     "/api/pm-otg/projects/:projectId/link-invoice",
     requireAuth,
-    requireProjectManagerSite,
+    requireProjectManagerOrAdmin,
     requirePmAssignment,
     async (req: Request, res: Response) => {
       try {
@@ -634,7 +638,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
   app.post(
     "/api/pm-otg/projects/:projectId/raise-variation",
     requireAuth,
-    requireProjectManagerSite,
+    requireProjectManagerOrAdmin,
     requirePmAssignment,
     async (req: Request, res: Response) => {
       try {
@@ -691,7 +695,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
   app.post(
     "/api/pm-otg/projects/:projectId/log-delay",
     requireAuth,
-    requireProjectManagerSite,
+    requireProjectManagerOrAdmin,
     requirePmAssignment,
     async (req: Request, res: Response) => {
       try {
@@ -747,7 +751,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
   app.post(
     "/api/pm-otg/projects/:projectId/log-risk",
     requireAuth,
-    requireProjectManagerSite,
+    requireProjectManagerOrAdmin,
     requirePmAssignment,
     async (req: Request, res: Response) => {
       try {
@@ -803,7 +807,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
   app.post(
     "/api/pm-otg/projects/:projectId/upload-photo",
     requireAuth,
-    requireProjectManagerSite,
+    requireProjectManagerOrAdmin,
     requirePmAssignment,
     photoUpload.single("photo"),
     async (req: Request, res: Response) => {
@@ -852,7 +856,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
   app.post(
     "/api/pm-otg/projects/:projectId/update-progress",
     requireAuth,
-    requireProjectManagerSite,
+    requireProjectManagerOrAdmin,
     requirePmAssignment,
     async (req: Request, res: Response) => {
       try {
@@ -922,7 +926,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
   app.post(
     "/api/pm-otg/projects/:projectId/escalate",
     requireAuth,
-    requireProjectManagerSite,
+    requireProjectManagerOrAdmin,
     requirePmAssignment,
     async (req: Request, res: Response) => {
       try {
@@ -983,7 +987,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
   app.get(
     "/api/pm-otg/projects/:projectId/compliance",
     requireAuth,
-    requireProjectManagerSite,
+    requireProjectManagerOrAdmin,
     requirePmAssignment,
     async (req: Request, res: Response) => {
       try {
@@ -1032,7 +1036,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
   app.post(
     "/api/pm-otg/projects/:projectId/compliance/risk-confirm",
     requireAuth,
-    requireProjectManagerSite,
+    requireProjectManagerOrAdmin,
     requirePmAssignment,
     async (req: Request, res: Response) => {
       try {
