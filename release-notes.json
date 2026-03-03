@@ -1,28 +1,36 @@
 {
   "notes": [
     {
-      "title": "V1.4 — The One Where We Stopped Fighting With Our Own Database",
-      "description": "Bulk import no longer trips over its own shoelaces. Legacy table ghosts can't crash the party anymore, warnings can be squashed in one click, and every dashboard now reads from the same single source of truth. Cleaner, faster, calmer."
+      "title": "V1.5 — The One Where The Money Finally Makes Sense",
+      "description": "Revenue Outstanding no longer counts every line that has a date and a dream. If there's no invoice, it's not outstanding — it's a wish. Headline dropped from R142.6M to R2.8M. Turns out we weren't that rich. Disappointing, but accurate."
     },
     {
-      "title": "Smart Import: No More Duplicate Key Tantrums",
-      "description": "Bulk commit used to crash mid-flight if legacy tables were missing — like trying to sit in a chair someone already moved. Now those deletes are properly guarded, and old work items get cleaned up regardless of whether they were filed under 'NPT::' or '::PLAN::'. Import away without fear."
+      "title": "Revenue Overdue: No Longer a Horror Movie",
+      "description": "Previously showed R55.9M overdue, which would have required some very awkward phone calls. Now correctly shows R606K. The difference? We stopped counting forecast payment dates from projects that haven't even sent an invoice yet. Revolutionary concept, we know."
     },
     {
-      "title": "Resolve All Warnings Button",
-      "description": "Tired of clicking through 47 warnings one by one before you can commit? Same. The new 'Resolve All Warnings' button in the bulk commit panel clears every non-blocker warning across all your pending files in one satisfying click. You're welcome."
+      "title": "MS Project Called, We Answered",
+      "description": "The Project Plan tab now looks like it went to finishing school. Full toolbar with Add Task, Milestones, Indent, Outdent, Move Up/Down, and Delete — all with proper icons like a civilized application. WBS numbering, duration editing, baseline tracking, and a Gantt chart that actually syncs. Your mouse will feel important."
     },
     {
-      "title": "One Table To Rule Them All",
-      "description": "Every dashboard — Portfolio, My Work, PM On-The-Go, Planning, Gamification, Milestones, Quality — now reads from the canonical work_items table. No more 'but the numbers are different on that other screen' conversations. One table, one truth, zero arguments."
+      "title": "Revenue Tab: Now With Actual UX",
+      "description": "KPI strip at the top so you can panic about outstanding revenue without scrolling. Status badges that change colour based on reality (green = money in bank, red = still praying). Inline editing, override indicators with blue dots, and a save bar that judges you if your comment is too short."
     },
     {
-      "title": "Legacy Table Graceful Degradation",
-      "description": "If a legacy table has been archived or doesn't exist, the app no longer panics and throws errors at your face. It quietly moves on, like a mature adult. All project_plan and normalized_plan_tasks operations are wrapped in safety guards so the new database structure just works."
+      "title": "Expenditure Tab: Budget Anxiety, Visualised",
+      "description": "Five KPI cards showing Budget, Actual, COS, Variance, and GP% — with red highlighting when you're over budget, because the numbers alone weren't stressful enough. Collapsible category groups, status badges, and override dots so you always know who changed what and can assign blame efficiently."
     },
     {
-      "title": "Backfill: Harder, Better, Faster, Stronger",
-      "description": "The work_items backfill now handles each legacy source table independently. If one table is missing, the others still migrate just fine. Think of it as a relay team where one runner tripping doesn't disqualify the whole squad."
+      "title": "In Bank Logic: Now Understands Colours",
+      "description": "Payment dates with red font colour mean 'forecast' not 'received'. The system used to count these as money in the bank, which was optimistic at best, delusional at worst. Now it checks font colour and confirmation flags across ALL dashboards consistently. Same truth, every screen."
+    },
+    {
+      "title": "Null Legacy IDs: No Longer a Death Sentence",
+      "description": "Tasks created through Smart Import without a legacy mapping used to be completely uneditable — like a PDF of a spreadsheet screenshot. Fixed with a 3-level lookup fallback. Your tasks are no longer orphans."
+    },
+    {
+      "title": "Easter Egg: Still Here",
+      "description": "We didn't remove it. We didn't even look at it. Some things are sacred."
     }
   ]
 }
