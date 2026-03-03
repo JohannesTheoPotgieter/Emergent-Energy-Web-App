@@ -253,6 +253,9 @@ const STATUS_BADGE: Record<string, string> = {
   "PROVIDE FEEDBACK": "bg-purple-100 text-purple-700",
 };
 
+const ALL_STATUSES = ["TO DO", "IN PROGRESS", "HOLD", "NEEDS APPROVAL", "COMPLETE", "QC APPROVED", "PROVIDE FEEDBACK", "OPERATIONAL APPROVAL", "PROJECTS ASSISTANCE"];
+const ALL_PRIORITIES = ["Low", "Med", "High", "Critical"];
+
 function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: number | null; isAdmin: boolean; projectName: string }) {
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -261,6 +264,7 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
   const [newTitle, setNewTitle] = useState("");
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
+  const [expandedTaskId, setExpandedTaskId] = useState<number | null>(null);
   const { allowed: canEdit } = usePermission('pd_eng_tasks', 'edit');
   const { allowed: canDelete } = usePermission('pd_eng_tasks', 'delete');
 
@@ -272,6 +276,15 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
       return res.json();
     },
     enabled: !!projectInfoId,
+  });
+
+  const { data: allUsers } = useQuery<any[]>({
+    queryKey: ["users-list"],
+    queryFn: async () => {
+      const res = await fetch("/api/users", { headers: { Authorization: `Bearer ${localStorage.getItem("auth_token")}` } });
+      if (!res.ok) return [];
+      return res.json();
+    },
   });
 
   const createMutation = useMutation({
@@ -291,6 +304,25 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
       qc.invalidateQueries({ queryKey: ["project-eng-tasks", projectInfoId] });
       setNewTitle("");
       setShowAddForm(false);
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ taskId, updates }: { taskId: number; updates: Record<string, any> }) => {
+      const res = await engFetch(`/api/eng/tasks/${taskId}`, {
+        method: "PATCH",
+        body: JSON.stringify(updates),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to update task");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Task updated" });
+      qc.invalidateQueries({ queryKey: ["project-eng-tasks", projectInfoId] });
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
@@ -337,20 +369,25 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
   }
 
   const tasks = engData?.tasks || [];
-  const openTasks = tasks.filter((t: any) => t.status !== "COMPLETE");
-  const completedTasks = tasks.filter((t: any) => t.status === "COMPLETE");
-  const overdue = tasks.filter((t: any) => t.dueDate && t.dueDate < new Date().toISOString().split("T")[0] && t.status !== "COMPLETE");
+  const openTasks = tasks.filter((t: any) => t.status !== "COMPLETE" && t.status !== "Complete");
+  const completedTasks = tasks.filter((t: any) => t.status === "COMPLETE" || t.status === "Complete");
+  const overdue = tasks.filter((t: any) => {
+    const due = t.dueDate || t.endDate;
+    return due && due < new Date().toISOString().split("T")[0] && t.status !== "COMPLETE" && t.status !== "Complete";
+  });
 
   const phaseGroups = new Map<string, any[]>();
   for (const t of tasks) {
-    const ph = t.phase || "Unassigned";
+    const ph = t.phase || t.workstream || "Unassigned";
     if (!phaseGroups.has(ph)) phaseGroups.set(ph, []);
     phaseGroups.get(ph)!.push(t);
   }
 
+  const getTaskId = (task: any) => task.id;
+
   return (
     <div className="space-y-4" data-testid="eng-tasks-tab">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <h3 className="text-sm font-semibold">Engineering Tasks</h3>
         <div className="flex gap-2">
           {tasks.length === 0 && isAdmin && (
@@ -452,37 +489,176 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
               <Card>
                 <div className="divide-y">
                   {phaseTasks.map((task: any) => {
-                    const isTaskOverdue = task.dueDate && task.dueDate < new Date().toISOString().split("T")[0] && task.status !== "COMPLETE";
+                    const taskDue = task.dueDate || task.endDate;
+                    const displayStatus = task.status || "TO DO";
+                    const isTaskOverdue = taskDue && taskDue < new Date().toISOString().split("T")[0] && displayStatus !== "COMPLETE" && displayStatus !== "Complete";
+                    const isExpanded = expandedTaskId === task.id;
+                    const tid = getTaskId(task);
+
                     return (
-                      <div key={task.id} className={`flex items-center gap-2.5 px-4 py-2.5 hover:bg-muted/20 transition-colors text-sm ${isTaskOverdue ? "bg-red-50/30" : ""}`} data-testid={`eng-task-row-${task.id}`}>
-                        <div className="flex-1 flex items-center gap-2.5 min-w-0 cursor-pointer" onClick={() => setLocation(`/engineering?task=${task.id}`)}>
-                          <Circle className={`h-2.5 w-2.5 fill-current shrink-0 ${STATUS_DOT[task.status] || "text-gray-400"}`} />
-                          <span className="flex-1 min-w-0 truncate">{task.title}</span>
-                          {task.primaryWorkstream && <Badge variant="outline" className="text-[9px] px-1.5 py-0 shrink-0">{task.primaryWorkstream}</Badge>}
-                          <Badge className={`text-[9px] px-1.5 py-0 shrink-0 ${STATUS_BADGE[task.status] || "bg-gray-100"}`}>{task.status}</Badge>
-                          {task.dueDate && (
+                      <div key={task.id} data-testid={`eng-task-row-${task.id}`}>
+                        <div className={`flex items-center gap-2 sm:gap-2.5 px-3 sm:px-4 py-2.5 hover:bg-muted/20 transition-colors text-sm cursor-pointer ${isTaskOverdue ? "bg-red-50/30" : ""}`}
+                          onClick={() => setExpandedTaskId(isExpanded ? null : task.id)}
+                        >
+                          <Circle className={`h-2.5 w-2.5 fill-current shrink-0 ${STATUS_DOT[displayStatus] || "text-gray-400"}`} />
+                          <span className="flex-1 min-w-0 truncate text-xs sm:text-sm">{task.title}</span>
+                          <Badge className={`text-[9px] px-1.5 py-0 shrink-0 hidden sm:inline-flex ${STATUS_BADGE[displayStatus] || "bg-gray-100"}`}>{displayStatus}</Badge>
+                          {taskDue && (
                             <span className={`text-[10px] flex items-center gap-0.5 shrink-0 ${isTaskOverdue ? "text-red-600 font-semibold" : "text-muted-foreground"}`}>
                               <Calendar className="h-3 w-3" />
-                              {new Date(task.dueDate).toLocaleDateString("en-ZA", { day: "2-digit", month: "short" })}
+                              <span className="hidden sm:inline">{new Date(taskDue).toLocaleDateString("en-ZA", { day: "2-digit", month: "short" })}</span>
                             </span>
                           )}
-                          {task.assignees && task.assignees[0] && (
-                            <span className="text-[10px] text-muted-foreground flex items-center gap-0.5 shrink-0 max-w-[80px] truncate">
-                              <User className="h-3 w-3" />{task.assignees[0]}
-                            </span>
-                          )}
+                          {isExpanded ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
                         </div>
-                        {canDelete && deleteConfirmId !== task.id && (
-                          <button onClick={(e) => { e.stopPropagation(); setDeleteConfirmId(task.id); }} className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors shrink-0" data-testid={`btn-delete-eng-task-${task.id}`}>
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
+
+                        {isExpanded && canEdit && (
+                          <div className="px-3 sm:px-4 pb-3 pt-1 bg-muted/10 border-t border-dashed space-y-3" onClick={(e) => e.stopPropagation()}>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div>
+                                <Label className="text-[10px] uppercase text-muted-foreground">Title</Label>
+                                <Input
+                                  defaultValue={task.title}
+                                  className="h-8 text-sm mt-1"
+                                  onBlur={(e) => {
+                                    const v = e.target.value.trim();
+                                    if (v && v !== task.title) updateMutation.mutate({ taskId: tid, updates: { title: v } });
+                                  }}
+                                  data-testid={`input-title-${task.id}`}
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-[10px] uppercase text-muted-foreground">Status</Label>
+                                <Select
+                                  defaultValue={displayStatus}
+                                  onValueChange={(v) => updateMutation.mutate({ taskId: tid, updates: { status: v } })}
+                                >
+                                  <SelectTrigger className="h-8 text-sm mt-1" data-testid={`select-status-${task.id}`}>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {ALL_STATUSES.map(s => (
+                                      <SelectItem key={s} value={s}>{s}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                              <div>
+                                <Label className="text-[10px] uppercase text-muted-foreground">Priority</Label>
+                                <Select
+                                  defaultValue={task.priority || "Med"}
+                                  onValueChange={(v) => updateMutation.mutate({ taskId: tid, updates: { priority: v } })}
+                                >
+                                  <SelectTrigger className="h-8 text-sm mt-1" data-testid={`select-priority-${task.id}`}>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {ALL_PRIORITIES.map(p => (
+                                      <SelectItem key={p} value={p}>{p}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div>
+                                <Label className="text-[10px] uppercase text-muted-foreground">Start Date</Label>
+                                <Input
+                                  type="date"
+                                  defaultValue={task.startDate || ""}
+                                  className="h-8 text-sm mt-1"
+                                  onBlur={(e) => {
+                                    if (e.target.value !== (task.startDate || "")) updateMutation.mutate({ taskId: tid, updates: { startDate: e.target.value || null } });
+                                  }}
+                                  data-testid={`input-start-${task.id}`}
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-[10px] uppercase text-muted-foreground">Due Date</Label>
+                                <Input
+                                  type="date"
+                                  defaultValue={taskDue || ""}
+                                  className="h-8 text-sm mt-1"
+                                  onBlur={(e) => {
+                                    if (e.target.value !== (taskDue || "")) updateMutation.mutate({ taskId: tid, updates: { dueDate: e.target.value || null } });
+                                  }}
+                                  data-testid={`input-due-${task.id}`}
+                                />
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div>
+                                <Label className="text-[10px] uppercase text-muted-foreground">Assignee</Label>
+                                <Select
+                                  defaultValue={task.ownerUserId ? String(task.ownerUserId) : ""}
+                                  onValueChange={(v) => {
+                                    const uid = parseInt(v);
+                                    if (!isNaN(uid)) updateMutation.mutate({ taskId: tid, updates: { ownerUserId: uid } });
+                                  }}
+                                >
+                                  <SelectTrigger className="h-8 text-sm mt-1" data-testid={`select-assignee-${task.id}`}>
+                                    <SelectValue placeholder="Unassigned" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {(allUsers || []).map((u: any) => (
+                                      <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div>
+                                <Label className="text-[10px] uppercase text-muted-foreground">Description</Label>
+                                <Textarea
+                                  defaultValue={task.description || ""}
+                                  className="text-sm mt-1 min-h-[60px]"
+                                  placeholder="Add a description..."
+                                  onBlur={(e) => {
+                                    if (e.target.value !== (task.description || "")) updateMutation.mutate({ taskId: tid, updates: { description: e.target.value } });
+                                  }}
+                                  data-testid={`input-desc-${task.id}`}
+                                />
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between pt-1">
+                              <div className="flex items-center gap-2">
+                                <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => setLocation(`/engineering?task=${tid}`)} data-testid={`btn-full-view-${task.id}`}>
+                                  <Eye className="h-3 w-3" /> Full View
+                                </Button>
+                                {task.workstream && <Badge variant="outline" className="text-[9px]">{task.workstream}</Badge>}
+                                {task.source && <Badge variant="secondary" className="text-[9px]">{task.source}</Badge>}
+                              </div>
+                              <div className="flex gap-1">
+                                {canDelete && (
+                                  deleteConfirmId === task.id ? (
+                                    <div className="flex items-center gap-1">
+                                      <Button size="sm" variant="destructive" className="h-6 text-[10px] px-2" onClick={() => deleteMutation.mutate(tid)} disabled={deleteMutation.isPending} data-testid={`btn-confirm-delete-eng-task-${task.id}`}>
+                                        {deleteMutation.isPending ? "..." : "Delete"}
+                                      </Button>
+                                      <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2" onClick={() => setDeleteConfirmId(null)} data-testid={`btn-cancel-delete-eng-task-${task.id}`}>No</Button>
+                                    </div>
+                                  ) : (
+                                    <Button size="sm" variant="ghost" className="h-7 text-xs text-red-500 hover:text-red-700 gap-1" onClick={() => setDeleteConfirmId(task.id)} data-testid={`btn-delete-eng-task-${task.id}`}>
+                                      <Trash2 className="h-3 w-3" /> Delete
+                                    </Button>
+                                  )
+                                )}
+                              </div>
+                            </div>
+                          </div>
                         )}
-                        {deleteConfirmId === task.id && (
-                          <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-                            <Button size="sm" variant="destructive" className="h-6 text-[10px] px-2" onClick={() => deleteMutation.mutate(task.id)} disabled={deleteMutation.isPending} data-testid={`btn-confirm-delete-eng-task-${task.id}`}>
-                              {deleteMutation.isPending ? "..." : "Delete"}
+
+                        {isExpanded && !canEdit && (
+                          <div className="px-3 sm:px-4 pb-3 pt-1 bg-muted/10 border-t border-dashed space-y-2" onClick={(e) => e.stopPropagation()}>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                              <div><span className="text-muted-foreground">Status:</span> <Badge className={`text-[9px] ${STATUS_BADGE[displayStatus] || "bg-gray-100"}`}>{displayStatus}</Badge></div>
+                              <div><span className="text-muted-foreground">Priority:</span> {task.priority || "Med"}</div>
+                              <div><span className="text-muted-foreground">Start:</span> {task.startDate || "—"}</div>
+                              <div><span className="text-muted-foreground">Due:</span> {taskDue || "—"}</div>
+                            </div>
+                            {task.description && <p className="text-xs text-muted-foreground">{task.description}</p>}
+                            <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => setLocation(`/engineering?task=${tid}`)} data-testid={`btn-full-view-${task.id}`}>
+                              <Eye className="h-3 w-3" /> Full View
                             </Button>
-                            <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2" onClick={() => setDeleteConfirmId(null)} data-testid={`btn-cancel-delete-eng-task-${task.id}`}>No</Button>
                           </div>
                         )}
                       </div>

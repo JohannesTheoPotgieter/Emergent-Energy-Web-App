@@ -23,7 +23,7 @@ import { applyTemplate } from "./template-routes";
 import { requirePermission } from "./permission-middleware";
 import { sendExcelSyncNotification } from "./excel-sync-notifications";
 import { logAuditFromReq } from "./audit-logger";
-import { isWorkItemsEnabled, getWorkItemsAsEngineeringTasks } from "./work-items-adapter";
+import { isWorkItemsEnabled, getWorkItemsAsEngineeringTasks, createWorkItem, updateWorkItemByLegacy, softDeleteWorkItemByLegacy, mapFromOpsStatus, getWorkItemsForProject } from "./work-items-adapter";
 
 const approvalUploadsDir = path.join(process.cwd(), "uploads", "approvals");
 if (!fs.existsSync(approvalUploadsDir)) fs.mkdirSync(approvalUploadsDir, { recursive: true });
@@ -332,6 +332,27 @@ export function registerEngineeringRoutes(app: Express) {
         details: { taskId: task.id, title: task.title, status: task.status },
       }).catch(() => {});
 
+      try {
+        await createWorkItem({
+          projectId: task.projectId || null,
+          title: task.title,
+          description: task.description || null,
+          status: mapFromOpsStatus(task.status || "TO DO"),
+          priority: task.priority || null,
+          workstream: "ENG",
+          type: "task",
+          startDate: task.startDate || null,
+          endDate: task.dueDate || null,
+          ownerUserId: task.ownerUserId || null,
+          createdBy: getUser(req).id,
+          legacyTable: "operational_tasks",
+          legacyId: task.id,
+          externalRef: `OT::${task.id}`,
+        });
+      } catch (syncErr) {
+        console.warn("[WorkItems] Sync on create failed (non-fatal):", (syncErr as Error).message);
+      }
+
       res.json(task);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
@@ -410,6 +431,21 @@ export function registerEngineeringRoutes(app: Express) {
           changeDescription: `Engineering task "${updated.title}" status changed from "${existing.status}" to "${updates.status}".`,
           details: { taskId: id, taskTitle: updated.title, oldStatus: existing.status, newStatus: updates.status },
         }).catch(() => {});
+      }
+
+      try {
+        const wiUpdates: any = {};
+        if (updates.title) wiUpdates.title = updates.title;
+        if (updates.description !== undefined) wiUpdates.description = updates.description;
+        if (updates.status) wiUpdates.status = mapFromOpsStatus(updates.status);
+        if (updates.priority) wiUpdates.priority = updates.priority;
+        if (updates.startDate !== undefined) wiUpdates.startDate = updates.startDate;
+        if (updates.dueDate !== undefined) wiUpdates.endDate = updates.dueDate;
+        if (updates.percentComplete !== undefined) wiUpdates.percentComplete = updates.percentComplete;
+        if (updates.ownerUserId !== undefined) wiUpdates.ownerUserId = updates.ownerUserId;
+        await updateWorkItemByLegacy("operational_tasks", id, wiUpdates);
+      } catch (syncErr) {
+        console.warn("[WorkItems] Sync on update failed (non-fatal):", (syncErr as Error).message);
       }
 
       res.json(updated);
@@ -650,6 +686,12 @@ export function registerEngineeringRoutes(app: Express) {
         changeDescription: `Engineering task deleted: "${existing.title}".`,
         details: { taskId: id, title: existing.title },
       }).catch(() => {});
+
+      try {
+        await softDeleteWorkItemByLegacy("operational_tasks", id);
+      } catch (syncErr) {
+        console.warn("[WorkItems] Sync on delete failed (non-fatal):", (syncErr as Error).message);
+      }
 
       res.json({ success: true, message: `Task "${existing.title}" deleted` });
     } catch (err: any) {
@@ -2427,18 +2469,57 @@ export function registerEngineeringRoutes(app: Express) {
 
       const cleanName = project.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ");
 
-      const tasks = await db.select().from(operationalTasks)
-        .where(or(
-          eq(operationalTasks.projectName, cleanName),
-          eq(operationalTasks.projectId, projectId),
-          and(
-            eq(operationalTasks.status, "PROJECTS ASSISTANCE"),
-            eq(operationalTasks.projectId, projectId)
-          )
-        ))
-        .orderBy(asc(operationalTasks.sortOrder), asc(operationalTasks.id));
+      const wiEnabled = await isWorkItemsEnabled();
+      let allTasks: any[];
 
-      const uniqueTasks = Array.from(new Map(tasks.map(t => [t.id, t])).values());
+      if (wiEnabled) {
+        const wiTasks = await getWorkItemsForProject(projectId);
+        const engWiTasks = wiTasks.map(t => ({
+          ...t,
+          id: t.legacyId ?? t.id,
+        }));
+
+        const legacyTasks = await db.select().from(operationalTasks)
+          .where(or(
+            eq(operationalTasks.projectName, cleanName),
+            eq(operationalTasks.projectId, projectId),
+            and(
+              eq(operationalTasks.status, "PROJECTS ASSISTANCE"),
+              eq(operationalTasks.projectId, projectId)
+            )
+          ))
+          .orderBy(asc(operationalTasks.sortOrder), asc(operationalTasks.id));
+
+        const wiLegacyIds = new Set(engWiTasks.filter(t => t.legacyTable === "operational_tasks").map(t => t.legacyId));
+
+        const unmatchedLegacy = legacyTasks
+          .filter(lt => !wiLegacyIds.has(lt.id))
+          .map(lt => ({
+            ...lt,
+            workItemId: null,
+            legacyId: lt.id,
+            legacyTable: "operational_tasks",
+            workstream: "ENG",
+            dueDate: lt.dueDate,
+            percentComplete: lt.percentComplete ?? 0,
+          }));
+
+        allTasks = [...engWiTasks, ...unmatchedLegacy];
+      } else {
+        const tasks = await db.select().from(operationalTasks)
+          .where(or(
+            eq(operationalTasks.projectName, cleanName),
+            eq(operationalTasks.projectId, projectId),
+            and(
+              eq(operationalTasks.status, "PROJECTS ASSISTANCE"),
+              eq(operationalTasks.projectId, projectId)
+            )
+          ))
+          .orderBy(asc(operationalTasks.sortOrder), asc(operationalTasks.id));
+        allTasks = tasks;
+      }
+
+      const uniqueTasks = Array.from(new Map(allTasks.map(t => [t.id, t])).values());
 
       res.json({
         projectName: cleanName,
