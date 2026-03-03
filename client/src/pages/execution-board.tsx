@@ -13,7 +13,7 @@ import {
   Loader2, Search, Zap, AlertCircle, CheckCircle2, AlertTriangle,
   TrendingUp, TrendingDown, DollarSign, BarChart3,
   Calendar, ChevronDown, ChevronUp, ExternalLink, Target,
-  Building2, ArrowRight, ClipboardList, Receipt,
+  Building2, ArrowRight, ClipboardList, Receipt, Activity,
 } from "lucide-react";
 
 interface ProjectInfo {
@@ -59,6 +59,10 @@ function formatCurrency(value: number): string {
   return `R${value.toFixed(0)}`;
 }
 
+function formatCurrencyFull(value: number): string {
+  return `R${value.toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+}
+
 function ragColor(rag: string | null): string {
   if (!rag) return "bg-slate-100 text-slate-500 border-slate-200";
   const colors: Record<string, string> = {
@@ -69,47 +73,61 @@ function ragColor(rag: string | null): string {
   return colors[rag] || "bg-slate-50 text-slate-600 border-slate-200";
 }
 
-function progressBarColor(pct: number, expected: number | null): string {
-  if (expected !== null && pct < expected - 10) return "bg-red-500";
-  if (expected !== null && pct < expected - 5) return "bg-amber-500";
-  if (pct >= 90) return "bg-emerald-500";
-  if (pct >= 60) return "bg-blue-500";
-  return "bg-blue-400";
-}
-
 function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "";
+  if (!dateStr) return "—";
   return new Date(dateStr).toLocaleDateString("en-ZA", { day: "2-digit", month: "short", year: "2-digit" });
 }
 
 function ScheduleHealthBadge({ actual, expected }: { actual: number | null; expected: number | null }) {
-  if (actual === null) return <Badge variant="outline" className="text-[9px] text-slate-400">No plan</Badge>;
+  if (actual === null) return <Badge variant="outline" className="text-[10px] text-slate-400 border-slate-200">No plan</Badge>;
   const diff = expected !== null ? Math.round((actual - expected) * 100) : null;
-  if (diff === null) return <Badge variant="outline" className="text-[9px]">{Math.round(actual * 100)}%</Badge>;
+  if (diff === null) return <Badge variant="outline" className="text-[10px]">{Math.round(actual * 100)}%</Badge>;
   if (diff >= 0) {
     return (
-      <Badge className="text-[9px] bg-emerald-50 text-emerald-700 border-emerald-200 gap-0.5">
-        <TrendingUp className="w-2.5 h-2.5" />+{diff}%
+      <Badge className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-200 gap-0.5 font-medium">
+        <TrendingUp className="w-3 h-3" />+{diff}%
       </Badge>
     );
   }
   return (
-    <Badge className="text-[9px] bg-red-50 text-red-700 border-red-200 gap-0.5">
-      <TrendingDown className="w-2.5 h-2.5" />{diff}%
+    <Badge className="text-[10px] bg-red-50 text-red-700 border-red-200 gap-0.5 font-medium">
+      <TrendingDown className="w-3 h-3" />{diff}%
     </Badge>
   );
 }
 
-function ProgressBar({ value, max, color, expected, height = "h-2" }: {
-  value: number; max: number; color: string; expected?: number | null; height?: string;
+function DualProgressBar({ actual, expected, height = "h-2.5" }: {
+  actual: number; expected: number | null; height?: string;
+}) {
+  const actualPct = Math.min(100, Math.max(0, actual));
+  const expectedPct = expected !== null ? Math.min(100, Math.max(0, expected)) : null;
+  const isAhead = expectedPct !== null && actualPct >= expectedPct;
+  const isBehind = expectedPct !== null && actualPct < expectedPct - 5;
+  const barColor = isBehind ? "bg-red-500" : isAhead ? "bg-emerald-500" : "bg-blue-500";
+
+  return (
+    <div className={`w-full ${height} bg-slate-100 rounded-full overflow-hidden relative`}>
+      {expectedPct !== null && (
+        <div
+          className="absolute top-0 h-full rounded-full border-r-2 border-dashed border-slate-400/60 bg-slate-200/50"
+          style={{ width: `${expectedPct}%` }}
+        />
+      )}
+      <div
+        className={`relative h-full rounded-full transition-all duration-700 ease-out ${barColor}`}
+        style={{ width: `${actualPct}%` }}
+      />
+    </div>
+  );
+}
+
+function FinanceBar({ value, max, color, height = "h-2" }: {
+  value: number; max: number; color: string; height?: string;
 }) {
   const pct = max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0;
   return (
-    <div className={`w-full ${height} bg-slate-100 rounded-full overflow-hidden relative`}>
-      {expected !== undefined && expected !== null && (
-        <div className="absolute top-0 h-full bg-slate-300/40 rounded-full" style={{ width: `${Math.min(expected, 100)}%` }} />
-      )}
-      <div className={`relative h-full rounded-full transition-all duration-500 ${color}`} style={{ width: `${pct}%` }} />
+    <div className={`w-full ${height} bg-slate-100 rounded-full overflow-hidden`}>
+      <div className={`h-full rounded-full transition-all duration-500 ${color}`} style={{ width: `${pct}%` }} />
     </div>
   );
 }
@@ -194,18 +212,26 @@ export default function ExecutionBoard() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20" data-testid="execution-board-loading">
-        <Loader2 className="w-6 h-6 animate-spin text-emerald-600" />
+      <div className="flex flex-col items-center justify-center py-24 gap-3" data-testid="execution-board-loading">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        <p className="text-sm text-muted-foreground">Loading execution data...</p>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 gap-3" data-testid="execution-board-error">
-        <AlertCircle className="w-8 h-8 text-red-500" />
-        <p className="text-sm text-red-600">{error}</p>
-        <Button variant="outline" size="sm" onClick={loadData} data-testid="btn-retry">Retry</Button>
+      <div className="flex flex-col items-center justify-center py-24 gap-4" data-testid="execution-board-error">
+        <div className="rounded-full bg-red-50 p-4">
+          <AlertCircle className="w-8 h-8 text-red-500" />
+        </div>
+        <div className="text-center">
+          <p className="text-sm font-medium text-red-700 mb-1">Failed to load data</p>
+          <p className="text-xs text-muted-foreground max-w-xs">{error}</p>
+        </div>
+        <Button variant="outline" size="sm" onClick={loadData} data-testid="btn-retry" className="gap-1.5">
+          <Activity className="w-3.5 h-3.5" /> Retry
+        </Button>
       </div>
     );
   }
@@ -213,11 +239,11 @@ export default function ExecutionBoard() {
   if (!canView) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]" data-testid="access-denied-container">
-        <Card className="max-w-md w-full">
+        <Card className="max-w-md w-full shadow-lg">
           <CardContent className="py-12 text-center">
             <AlertTriangle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
             <h2 className="text-xl font-semibold mb-2" data-testid="text-access-denied">Access Denied</h2>
-            <p className="text-muted-foreground">You don't have permission to view this page.</p>
+            <p className="text-muted-foreground text-sm">You don't have permission to view the Execution Dashboard.</p>
           </CardContent>
         </Card>
       </div>
@@ -225,99 +251,108 @@ export default function ExecutionBoard() {
   }
 
   return (
-    <div className="space-y-4 sm:space-y-6 max-w-[1400px] mx-auto" data-testid="execution-board-page">
-      <div className="flex items-start sm:items-center justify-between flex-wrap gap-2">
+    <div className="space-y-5 max-w-[1440px] mx-auto" data-testid="execution-board-page">
+      <div className="flex items-start sm:items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-lg sm:text-2xl font-bold tracking-tight" data-testid="text-execution-title">Execution Dashboard</h1>
-          <p className="text-muted-foreground text-xs sm:text-sm">Plan progress & financial health across active projects</p>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight flex items-center gap-2" data-testid="text-execution-title">
+            <Activity className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600" />
+            Execution Dashboard
+          </h1>
+          <p className="text-muted-foreground text-xs sm:text-sm mt-0.5">Plan progress & financial health across active projects</p>
         </div>
-        <Badge variant="outline" className="text-xs font-medium px-2.5 py-1">
+        <Badge className="text-xs font-semibold px-3 py-1.5 bg-blue-50 text-blue-700 border-blue-200">
           {stats.total} active project{stats.total !== 1 ? "s" : ""}
         </Badge>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 sm:gap-3">
-        <Card className="border-l-4 border-l-blue-500" data-testid="stat-avg-completion">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+        <Card className="border-l-4 border-l-blue-500 shadow-sm hover:shadow-md transition-shadow" data-testid="stat-avg-completion">
           <CardContent className="p-3 sm:p-4">
-            <div className="flex items-center gap-1.5 mb-1.5">
-              <Target className="w-3.5 h-3.5 text-blue-600" />
-              <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Avg Completion</span>
+            <div className="flex items-center gap-1.5 mb-2">
+              <Target className="w-4 h-4 text-blue-600" />
+              <span className="text-[10px] sm:text-[11px] text-muted-foreground uppercase tracking-wider font-semibold">Avg Completion</span>
             </div>
-            <div className="text-xl sm:text-2xl font-bold">{stats.avgCompletion}%</div>
-            <ProgressBar value={stats.avgCompletion} max={100} color="bg-blue-500" height="h-1.5" />
+            <div className="text-2xl sm:text-3xl font-bold text-blue-700">{stats.avgCompletion}%</div>
+            <div className="mt-2">
+              <FinanceBar value={stats.avgCompletion} max={100} color="bg-blue-500" height="h-1.5" />
+            </div>
           </CardContent>
         </Card>
 
-        <Card className={`border-l-4 ${stats.behindSchedule > 0 ? "border-l-red-500" : "border-l-emerald-500"}`} data-testid="stat-schedule-health">
+        <Card className={`border-l-4 shadow-sm hover:shadow-md transition-shadow ${stats.behindSchedule > 0 ? "border-l-red-500" : "border-l-emerald-500"}`} data-testid="stat-schedule-health">
           <CardContent className="p-3 sm:p-4">
-            <div className="flex items-center gap-1.5 mb-1.5">
-              <BarChart3 className={`w-3.5 h-3.5 ${stats.behindSchedule > 0 ? "text-red-600" : "text-emerald-600"}`} />
-              <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Schedule</span>
+            <div className="flex items-center gap-1.5 mb-2">
+              <BarChart3 className={`w-4 h-4 ${stats.behindSchedule > 0 ? "text-red-600" : "text-emerald-600"}`} />
+              <span className="text-[10px] sm:text-[11px] text-muted-foreground uppercase tracking-wider font-semibold">Schedule</span>
             </div>
-            <div className={`text-xl sm:text-2xl font-bold ${stats.behindSchedule > 0 ? "text-red-600" : "text-emerald-600"}`}>
+            <div className={`text-2xl sm:text-3xl font-bold ${stats.behindSchedule > 0 ? "text-red-600" : "text-emerald-600"}`}>
               {stats.behindSchedule > 0 ? `${stats.behindSchedule} behind` : "On track"}
             </div>
-            <p className="text-[10px] text-muted-foreground">
-              {stats.total - stats.behindSchedule}/{stats.total} on schedule
+            <p className="text-[11px] text-muted-foreground mt-1">
+              {stats.total - stats.behindSchedule} of {stats.total} on schedule
             </p>
           </CardContent>
         </Card>
 
-        <Card className="border-l-4 border-l-emerald-500" data-testid="stat-revenue">
+        <Card className="border-l-4 border-l-emerald-500 shadow-sm hover:shadow-md transition-shadow" data-testid="stat-revenue">
           <CardContent className="p-3 sm:p-4">
-            <div className="flex items-center gap-1.5 mb-1.5">
-              <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
-              <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Revenue</span>
+            <div className="flex items-center gap-1.5 mb-2">
+              <DollarSign className="w-4 h-4 text-emerald-600" />
+              <span className="text-[10px] sm:text-[11px] text-muted-foreground uppercase tracking-wider font-semibold">Revenue</span>
             </div>
-            <div className="text-xl sm:text-2xl font-bold">{formatCurrency(stats.totalRevenue)}</div>
-            <div className="flex items-center gap-1.5 mt-1">
-              <ProgressBar value={stats.totalReceived} max={stats.totalRevenue} color="bg-emerald-500" height="h-1" />
-              <span className="text-[9px] text-muted-foreground whitespace-nowrap shrink-0">{formatCurrency(stats.totalReceived)} in</span>
+            <div className="text-2xl sm:text-3xl font-bold text-emerald-700">{formatCurrency(stats.totalRevenue)}</div>
+            <div className="flex items-center gap-2 mt-2">
+              <div className="flex-1">
+                <FinanceBar value={stats.totalReceived} max={stats.totalRevenue} color="bg-emerald-500" height="h-1.5" />
+              </div>
+              <span className="text-[10px] text-muted-foreground whitespace-nowrap shrink-0">{formatCurrency(stats.totalReceived)} in</span>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border-l-4 border-l-orange-500" data-testid="stat-costs">
+        <Card className="border-l-4 border-l-orange-500 shadow-sm hover:shadow-md transition-shadow" data-testid="stat-costs">
           <CardContent className="p-3 sm:p-4">
-            <div className="flex items-center gap-1.5 mb-1.5">
-              <Receipt className="w-3.5 h-3.5 text-orange-600" />
-              <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Costs</span>
+            <div className="flex items-center gap-1.5 mb-2">
+              <Receipt className="w-4 h-4 text-orange-600" />
+              <span className="text-[10px] sm:text-[11px] text-muted-foreground uppercase tracking-wider font-semibold">Costs</span>
             </div>
-            <div className="text-xl sm:text-2xl font-bold">{formatCurrency(stats.totalCost)}</div>
-            <div className="flex items-center gap-1.5 mt-1">
-              <ProgressBar value={stats.totalPaid} max={stats.totalCost} color="bg-orange-500" height="h-1" />
-              <span className="text-[9px] text-muted-foreground whitespace-nowrap shrink-0">{formatCurrency(stats.totalPaid)} paid</span>
+            <div className="text-2xl sm:text-3xl font-bold text-orange-700">{formatCurrency(stats.totalCost)}</div>
+            <div className="flex items-center gap-2 mt-2">
+              <div className="flex-1">
+                <FinanceBar value={stats.totalPaid} max={stats.totalCost} color="bg-orange-500" height="h-1.5" />
+              </div>
+              <span className="text-[10px] text-muted-foreground whitespace-nowrap shrink-0">{formatCurrency(stats.totalPaid)} paid</span>
             </div>
           </CardContent>
         </Card>
 
-        <Card className={`border-l-4 col-span-2 lg:col-span-1 ${(stats.overallGP ?? 0) >= 20 ? "border-l-emerald-500" : (stats.overallGP ?? 0) >= 0 ? "border-l-amber-500" : "border-l-red-500"}`} data-testid="stat-gp">
+        <Card className={`border-l-4 col-span-2 md:col-span-1 shadow-sm hover:shadow-md transition-shadow ${(stats.overallGP ?? 0) >= 20 ? "border-l-emerald-500" : (stats.overallGP ?? 0) >= 0 ? "border-l-amber-500" : "border-l-red-500"}`} data-testid="stat-gp">
           <CardContent className="p-3 sm:p-4">
-            <div className="flex items-center gap-1.5 mb-1.5">
-              <TrendingUp className={`w-3.5 h-3.5 ${(stats.overallGP ?? 0) >= 20 ? "text-emerald-600" : (stats.overallGP ?? 0) >= 0 ? "text-amber-600" : "text-red-600"}`} />
-              <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Overall GP%</span>
+            <div className="flex items-center gap-1.5 mb-2">
+              <TrendingUp className={`w-4 h-4 ${(stats.overallGP ?? 0) >= 20 ? "text-emerald-600" : (stats.overallGP ?? 0) >= 0 ? "text-amber-600" : "text-red-600"}`} />
+              <span className="text-[10px] sm:text-[11px] text-muted-foreground uppercase tracking-wider font-semibold">Overall GP%</span>
             </div>
-            <div className={`text-xl sm:text-2xl font-bold ${(stats.overallGP ?? 0) >= 20 ? "text-emerald-600" : (stats.overallGP ?? 0) >= 0 ? "text-amber-600" : "text-red-600"}`}>
+            <div className={`text-2xl sm:text-3xl font-bold ${(stats.overallGP ?? 0) >= 20 ? "text-emerald-600" : (stats.overallGP ?? 0) >= 0 ? "text-amber-600" : "text-red-600"}`}>
               {stats.overallGP !== null ? `${stats.overallGP}%` : "—"}
             </div>
-            <p className="text-[9px] text-muted-foreground">Contract: {formatCurrency(stats.totalContractValue)}</p>
+            <p className="text-[10px] text-muted-foreground mt-1">Contract: {formatCurrency(stats.totalContractValue)}</p>
           </CardContent>
         </Card>
       </div>
 
       <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-        <div className="relative flex-1 min-w-[160px] max-w-xs">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+        <div className="relative flex-1 min-w-[180px] max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Search projects..."
-            className="pl-8 h-8 text-sm"
+            className="pl-9 h-9 text-sm"
             data-testid="input-search-execution"
           />
         </div>
         <Select value={phaseFilter} onValueChange={setPhaseFilter}>
-          <SelectTrigger className="w-[160px] h-8 text-xs" data-testid="select-trigger-phase-filter">
+          <SelectTrigger className="w-[170px] h-9 text-xs" data-testid="select-trigger-phase-filter">
             <SelectValue placeholder="All phases" />
           </SelectTrigger>
           <SelectContent>
@@ -328,29 +363,34 @@ export default function ExecutionBoard() {
             ))}
           </SelectContent>
         </Select>
-        <span className="ml-auto text-[10px] text-muted-foreground" data-testid="text-filtered-count">
-          Showing {filtered.length} of {executionProjects.length}
+        <span className="ml-auto text-[11px] text-muted-foreground font-medium" data-testid="text-filtered-count">
+          {filtered.length} of {executionProjects.length} shown
         </span>
       </div>
 
       {executionProjects.length === 0 ? (
-        <Card data-testid="empty-state">
-          <CardContent className="flex flex-col items-center justify-center py-16 gap-3">
-            <Building2 className="w-10 h-10 text-slate-300" />
-            <p className="text-sm text-muted-foreground text-center max-w-md">
-              No projects in execution yet. Projects require signed evidence and admin approval to enter execution.
-            </p>
+        <Card className="shadow-sm" data-testid="empty-state">
+          <CardContent className="flex flex-col items-center justify-center py-20 gap-4">
+            <div className="rounded-full bg-slate-50 p-5">
+              <Building2 className="w-10 h-10 text-slate-300" />
+            </div>
+            <div className="text-center max-w-md">
+              <p className="text-sm font-medium text-slate-600 mb-1">No projects in execution yet</p>
+              <p className="text-xs text-muted-foreground">
+                Projects require signed evidence and admin approval to enter execution.
+              </p>
+            </div>
           </CardContent>
         </Card>
       ) : filtered.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12 gap-2">
+        <Card className="shadow-sm">
+          <CardContent className="flex flex-col items-center justify-center py-16 gap-3">
             <Search className="w-8 h-8 text-slate-300" />
             <p className="text-sm text-muted-foreground">No projects match your filters</p>
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-2" data-testid="execution-projects-list">
+        <div className="space-y-2.5" data-testid="execution-projects-list">
           {filtered.map((p) => {
             const actualPct = p.projectPctComplete !== null ? Math.round(p.projectPctComplete * 100) : null;
             const expectedPct = p.expectedPctComplete !== null ? Math.round(p.expectedPctComplete * 100) : null;
@@ -359,258 +399,287 @@ export default function ExecutionBoard() {
             const revenueCollectedPct = p.totalRevenue > 0 ? Math.round((p.receivedRevenue / p.totalRevenue) * 100) : 0;
             const costPaidPct = p.totalCost > 0 ? Math.round((p.paidCost / p.totalCost) * 100) : 0;
             const scheduleDiff = (actualPct !== null && expectedPct !== null) ? actualPct - expectedPct : null;
+            const projectGP = p.gpPct;
 
             return (
               <Card
                 key={p.id ?? p.projectName}
-                className={`overflow-hidden transition-all duration-200 ${isExpanded ? "ring-1 ring-blue-300 shadow-md" : "hover:shadow-sm"}`}
+                className={`overflow-hidden transition-all duration-200 shadow-sm ${isExpanded ? "ring-2 ring-blue-200 shadow-md" : "hover:shadow-md hover:border-blue-100"}`}
                 data-testid={`card-project-${p.id}`}
               >
                 <div
-                  className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 cursor-pointer group"
+                  className="flex items-center gap-2 sm:gap-4 px-3 sm:px-5 py-3 sm:py-4 cursor-pointer select-none"
                   onClick={() => setExpandedId(isExpanded ? null : p.id)}
                 >
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5 sm:gap-2 mb-0.5">
+                    <div className="flex items-center gap-2 mb-1">
                       <button
-                        className="font-semibold text-sm truncate hover:text-blue-600 hover:underline transition-colors text-left"
+                        className="font-semibold text-sm sm:text-[15px] truncate hover:text-blue-600 transition-colors text-left leading-tight"
                         onClick={(e) => { e.stopPropagation(); if (p.id) setLocation(`/projects/${p.id}`); }}
                         data-testid={`link-name-${p.id}`}
                       >
                         {cleanProjectName(p.projectName)}
                       </button>
-                      <Badge className={`text-[8px] px-1 py-0 shrink-0 border ${ragColor(p.ragStatus)}`}>
+                      <Badge className={`text-[9px] px-1.5 py-0 shrink-0 border ${ragColor(p.ragStatus)}`}>
                         {p.ragStatus || "—"}
                       </Badge>
                       {p.executionPhase && (
-                        <Badge variant="secondary" className="text-[8px] px-1 py-0 shrink-0 hidden sm:inline-flex">
+                        <Badge variant="secondary" className="text-[9px] px-1.5 py-0 shrink-0 hidden sm:inline-flex">
                           {p.executionPhase}
                         </Badge>
                       )}
                     </div>
-                    <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                      {p.pm && <span className="truncate max-w-[100px]">{p.pm}</span>}
-                      {p.sizeKwp && <span>{p.sizeKwp} kWp</span>}
-                      {contractVal > 0 && <span className="hidden sm:inline">{formatCurrency(contractVal)}</span>}
+                    <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+                      {p.pm && <span className="truncate max-w-[120px]">{p.pm}</span>}
+                      {p.sizeKwp && <span className="font-medium">{p.sizeKwp} kWp</span>}
+                      {contractVal > 0 && <span className="hidden sm:inline font-medium">{formatCurrency(contractVal)}</span>}
                     </div>
                   </div>
 
-                  <div className="hidden md:flex items-center gap-3 shrink-0">
+                  <div className="hidden md:flex items-center gap-4 shrink-0">
                     {actualPct !== null && (
-                      <div className="flex items-center gap-2 w-[140px]">
+                      <div className="flex items-center gap-2 w-[160px]">
                         <div className="flex-1">
-                          <ProgressBar value={actualPct} max={100} color={progressBarColor(actualPct, expectedPct)} expected={expectedPct} height="h-2" />
+                          <DualProgressBar actual={actualPct} expected={expectedPct} height="h-2.5" />
                         </div>
-                        <span className="text-xs font-bold tabular-nums w-[32px] text-right">{actualPct}%</span>
+                        <span className="text-sm font-bold tabular-nums w-[36px] text-right">{actualPct}%</span>
                       </div>
                     )}
                     <ScheduleHealthBadge actual={p.projectPctComplete} expected={p.expectedPctComplete} />
                   </div>
 
-                  <div className="hidden lg:flex items-center gap-3 shrink-0 text-[10px]">
+                  <div className="hidden lg:flex items-center gap-4 shrink-0">
                     {p.totalRevenue > 0 && (
-                      <div className="flex items-center gap-1 text-emerald-600">
-                        <DollarSign className="w-3 h-3" />
-                        <span className="font-medium">{formatCurrency(p.receivedRevenue)}/{formatCurrency(p.totalRevenue)}</span>
+                      <div className="flex items-center gap-1 text-[11px] text-emerald-600">
+                        <DollarSign className="w-3.5 h-3.5" />
+                        <span className="font-semibold">{formatCurrency(p.receivedRevenue)}/{formatCurrency(p.totalRevenue)}</span>
                       </div>
                     )}
-                    {p.gpPct !== null && (
-                      <span className={`font-bold ${p.gpPct >= 20 ? "text-emerald-600" : p.gpPct >= 0 ? "text-amber-600" : "text-red-600"}`}>
-                        GP {p.gpPct}%
+                    {projectGP !== null && (
+                      <span className={`text-[11px] font-bold ${projectGP >= 20 ? "text-emerald-600" : projectGP >= 0 ? "text-amber-600" : "text-red-600"}`}>
+                        GP {projectGP}%
                       </span>
                     )}
                   </div>
 
-                  {isExpanded ? (
-                    <ChevronUp className="w-4 h-4 text-muted-foreground shrink-0" />
-                  ) : (
-                    <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0 group-hover:text-foreground transition-colors" />
+                  <div className={`flex items-center justify-center w-7 h-7 rounded-full transition-colors ${isExpanded ? "bg-blue-50 text-blue-600" : "text-muted-foreground hover:bg-slate-50"}`}>
+                    {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  </div>
+                </div>
+
+                {/* Mobile summary bar */}
+                <div className="md:hidden px-3 pb-2 flex items-center gap-2">
+                  {actualPct !== null && (
+                    <div className="flex items-center gap-2 flex-1">
+                      <div className="flex-1">
+                        <DualProgressBar actual={actualPct} expected={expectedPct} height="h-2" />
+                      </div>
+                      <span className="text-xs font-bold tabular-nums">{actualPct}%</span>
+                      <ScheduleHealthBadge actual={p.projectPctComplete} expected={p.expectedPctComplete} />
+                    </div>
                   )}
                 </div>
 
                 {isExpanded && (
-                  <div className="border-t bg-muted/30 px-3 sm:px-4 py-3 sm:py-4 space-y-4">
+                  <div className="border-t bg-slate-50/60 px-3 sm:px-5 py-4 sm:py-5">
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-                      <div className="rounded-lg bg-background border p-3 space-y-2">
+                      <div className="rounded-xl bg-white border shadow-sm p-4 space-y-3">
                         <div className="flex items-center justify-between">
-                          <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Plan Progress</span>
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                            <span className="text-[11px] text-muted-foreground uppercase tracking-wider font-semibold">Plan Progress</span>
+                          </div>
                           {p.id && (
                             <button
-                              className="text-[10px] text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-0.5"
+                              className="text-[11px] text-blue-600 hover:text-blue-800 font-medium flex items-center gap-0.5 hover:underline"
                               onClick={(e) => { e.stopPropagation(); setLocation(`/projects/${p.id}?tab=plan`); }}
                               data-testid={`btn-view-plan-${p.id}`}
                             >
-                              View <ArrowRight className="w-2.5 h-2.5" />
+                              View <ArrowRight className="w-3 h-3" />
                             </button>
                           )}
                         </div>
                         {actualPct !== null ? (
                           <>
-                            <div className="flex items-baseline gap-1">
-                              <span className="text-2xl font-bold">{actualPct}%</span>
+                            <div className="flex items-baseline gap-1.5">
+                              <span className="text-3xl font-bold">{actualPct}%</span>
                               {expectedPct !== null && (
-                                <span className="text-[10px] text-muted-foreground">/ {expectedPct}% expected</span>
+                                <span className="text-[11px] text-muted-foreground">/ {expectedPct}% expected</span>
                               )}
                             </div>
-                            <ProgressBar value={actualPct} max={100} color={progressBarColor(actualPct, expectedPct)} expected={expectedPct} height="h-2.5" />
-                            {scheduleDiff !== null && (
-                              <div className={`text-[10px] font-medium flex items-center gap-0.5 ${scheduleDiff >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                                {scheduleDiff >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                                {scheduleDiff >= 0 ? `${scheduleDiff}% ahead` : `${Math.abs(scheduleDiff)}% behind`}
-                              </div>
-                            )}
-                            <p className="text-[10px] text-muted-foreground">{p.planTotal} plan tasks</p>
+                            <DualProgressBar actual={actualPct} expected={expectedPct} height="h-3" />
+                            <div className="flex items-center justify-between">
+                              {scheduleDiff !== null && (
+                                <div className={`text-[11px] font-semibold flex items-center gap-0.5 ${scheduleDiff >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                                  {scheduleDiff >= 0 ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
+                                  {scheduleDiff >= 0 ? `${scheduleDiff}% ahead` : `${Math.abs(scheduleDiff)}% behind`}
+                                </div>
+                              )}
+                              <span className="text-[11px] text-muted-foreground">{p.planTotal} tasks</span>
+                            </div>
                           </>
                         ) : (
-                          <p className="text-xs text-slate-400 italic">No plan imported</p>
+                          <div className="py-3 text-center">
+                            <p className="text-xs text-slate-400 italic">No plan imported</p>
+                          </div>
                         )}
                       </div>
 
-                      <div className="rounded-lg bg-background border p-3 space-y-2">
+                      <div className="rounded-xl bg-white border shadow-sm p-4 space-y-3">
                         <div className="flex items-center justify-between">
-                          <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Revenue</span>
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                            <span className="text-[11px] text-muted-foreground uppercase tracking-wider font-semibold">Revenue</span>
+                          </div>
                           {p.id && (
                             <button
-                              className="text-[10px] text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-0.5"
+                              className="text-[11px] text-blue-600 hover:text-blue-800 font-medium flex items-center gap-0.5 hover:underline"
                               onClick={(e) => { e.stopPropagation(); setLocation(`/projects/${p.id}?tab=revenue`); }}
                               data-testid={`btn-view-revenue-${p.id}`}
                             >
-                              View <ArrowRight className="w-2.5 h-2.5" />
+                              View <ArrowRight className="w-3 h-3" />
                             </button>
                           )}
                         </div>
                         {p.totalRevenue > 0 ? (
                           <>
-                            <div className="flex items-baseline gap-1">
-                              <span className="text-2xl font-bold">{formatCurrency(p.totalRevenue)}</span>
-                              <span className="text-[10px] text-muted-foreground">costed</span>
+                            <div className="flex items-baseline gap-1.5">
+                              <span className="text-3xl font-bold text-emerald-700">{formatCurrency(p.totalRevenue)}</span>
+                              <span className="text-[11px] text-muted-foreground">costed</span>
                             </div>
-                            <ProgressBar value={p.receivedRevenue} max={p.totalRevenue} color="bg-emerald-500" height="h-2.5" />
-                            <div className="flex justify-between text-[10px] text-muted-foreground">
-                              <span>Invoiced: {formatCurrency(p.invoicedRevenue)}</span>
-                              <span className="font-medium text-emerald-600">{revenueCollectedPct}% received</span>
+                            <FinanceBar value={p.receivedRevenue} max={p.totalRevenue} color="bg-emerald-500" height="h-3" />
+                            <div className="flex justify-between text-[11px]">
+                              <span className="text-muted-foreground">Invoiced: {formatCurrency(p.invoicedRevenue)}</span>
+                              <span className="font-semibold text-emerald-600">{revenueCollectedPct}% in bank</span>
                             </div>
                           </>
                         ) : (
-                          <p className="text-xs text-slate-400 italic">No revenue data</p>
+                          <div className="py-3 text-center">
+                            <p className="text-xs text-slate-400 italic">No revenue data</p>
+                          </div>
                         )}
                       </div>
 
-                      <div className="rounded-lg bg-background border p-3 space-y-2">
+                      <div className="rounded-xl bg-white border shadow-sm p-4 space-y-3">
                         <div className="flex items-center justify-between">
-                          <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Expenditure</span>
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-1.5 h-1.5 rounded-full bg-orange-500" />
+                            <span className="text-[11px] text-muted-foreground uppercase tracking-wider font-semibold">Expenditure</span>
+                          </div>
                           {p.id && (
                             <button
-                              className="text-[10px] text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-0.5"
+                              className="text-[11px] text-blue-600 hover:text-blue-800 font-medium flex items-center gap-0.5 hover:underline"
                               onClick={(e) => { e.stopPropagation(); setLocation(`/projects/${p.id}?tab=expenditure`); }}
                               data-testid={`btn-view-costs-${p.id}`}
                             >
-                              View <ArrowRight className="w-2.5 h-2.5" />
+                              View <ArrowRight className="w-3 h-3" />
                             </button>
                           )}
                         </div>
                         {p.totalCost > 0 ? (
                           <>
-                            <div className="flex items-baseline gap-1">
-                              <span className="text-2xl font-bold">{formatCurrency(p.totalCost)}</span>
-                              <span className="text-[10px] text-muted-foreground">costed</span>
+                            <div className="flex items-baseline gap-1.5">
+                              <span className="text-3xl font-bold text-orange-700">{formatCurrency(p.totalCost)}</span>
+                              <span className="text-[11px] text-muted-foreground">costed</span>
                             </div>
-                            <ProgressBar value={p.paidCost} max={p.totalCost} color="bg-orange-500" height="h-2.5" />
-                            <div className="flex justify-between text-[10px] text-muted-foreground">
-                              <span>Invoiced: {formatCurrency(p.invoicedCost)}</span>
-                              <span className="font-medium text-orange-600">{costPaidPct}% paid</span>
+                            <FinanceBar value={p.paidCost} max={p.totalCost} color="bg-orange-500" height="h-3" />
+                            <div className="flex justify-between text-[11px]">
+                              <span className="text-muted-foreground">Invoiced: {formatCurrency(p.invoicedCost)}</span>
+                              <span className="font-semibold text-orange-600">{costPaidPct}% paid</span>
                             </div>
                           </>
                         ) : (
-                          <p className="text-xs text-slate-400 italic">No cost data</p>
+                          <div className="py-3 text-center">
+                            <p className="text-xs text-slate-400 italic">No cost data</p>
+                          </div>
                         )}
                       </div>
 
-                      <div className="rounded-lg bg-background border p-3 space-y-2">
+                      <div className="rounded-xl bg-white border shadow-sm p-4 space-y-3">
                         <div className="flex items-center justify-between">
-                          <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">GP% & Dates</span>
+                          <div className="flex items-center gap-1.5">
+                            <div className={`w-1.5 h-1.5 rounded-full ${(projectGP ?? 0) >= 20 ? "bg-emerald-500" : (projectGP ?? 0) >= 0 ? "bg-amber-500" : "bg-red-500"}`} />
+                            <span className="text-[11px] text-muted-foreground uppercase tracking-wider font-semibold">GP% & Dates</span>
+                          </div>
                           {p.id && (
                             <button
-                              className="text-[10px] text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-0.5"
+                              className="text-[11px] text-blue-600 hover:text-blue-800 font-medium flex items-center gap-0.5 hover:underline"
                               onClick={(e) => { e.stopPropagation(); setLocation(`/projects/${p.id}`); }}
                               data-testid={`btn-view-project-${p.id}`}
                             >
-                              Detail <ArrowRight className="w-2.5 h-2.5" />
+                              Detail <ArrowRight className="w-3 h-3" />
                             </button>
                           )}
                         </div>
-                        {p.gpPct !== null ? (
-                          <div className="flex items-baseline gap-1">
-                            <span className={`text-2xl font-bold ${p.gpPct >= 20 ? "text-emerald-600" : p.gpPct >= 0 ? "text-amber-600" : "text-red-600"}`}>
-                              {p.gpPct}%
+                        {projectGP !== null ? (
+                          <div className="flex items-baseline gap-1.5">
+                            <span className={`text-3xl font-bold ${projectGP >= 20 ? "text-emerald-600" : projectGP >= 0 ? "text-amber-600" : "text-red-600"}`}>
+                              {projectGP}%
                             </span>
-                            {contractVal > 0 && <span className="text-[10px] text-muted-foreground">of {formatCurrency(contractVal)}</span>}
+                            {contractVal > 0 && <span className="text-[11px] text-muted-foreground">of {formatCurrencyFull(contractVal)}</span>}
                           </div>
                         ) : (
-                          <p className="text-xs text-slate-400 italic">No financial data</p>
+                          <p className="text-xs text-slate-400 italic py-1">No financial data</p>
                         )}
-                        <div className="space-y-1 text-[10px] text-muted-foreground">
-                          {p.constructionStartDate && (
-                            <div className="flex items-center gap-1">
-                              <Calendar className="w-3 h-3 text-blue-500" />
-                              <span>Construction: {formatDate(p.constructionStartDate)}</span>
-                            </div>
-                          )}
-                          {p.commissioningDate && (
-                            <div className="flex items-center gap-1">
-                              <Zap className="w-3 h-3 text-amber-500" />
-                              <span>Commissioning: {formatDate(p.commissioningDate)}</span>
-                            </div>
-                          )}
-                          {p.clientHandoverDate && (
-                            <div className="flex items-center gap-1">
-                              <CheckCircle2 className="w-3 h-3 text-emerald-500" />
-                              <span>Handover: {formatDate(p.clientHandoverDate)}</span>
-                            </div>
-                          )}
+                        <div className="space-y-1.5">
+                          <div className="flex items-center gap-2 text-[11px]">
+                            <Calendar className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                            <span className="text-muted-foreground">Construction</span>
+                            <span className="ml-auto font-medium">{formatDate(p.constructionStartDate)}</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-[11px]">
+                            <Zap className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                            <span className="text-muted-foreground">Commissioning</span>
+                            <span className="ml-auto font-medium">{formatDate(p.commissioningDate)}</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-[11px]">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                            <span className="text-muted-foreground">Handover</span>
+                            <span className="ml-auto font-medium">{formatDate(p.clientHandoverDate)}</span>
+                          </div>
                         </div>
                       </div>
                     </div>
 
                     {p.id && (
-                      <div className="flex items-center gap-2 pt-1 flex-wrap border-t pt-3">
+                      <div className="flex items-center gap-2 mt-4 pt-3 border-t flex-wrap">
                         <Button
                           size="sm"
-                          className="h-7 text-xs gap-1.5"
+                          className="h-8 text-xs gap-1.5 shadow-sm"
                           onClick={(e) => { e.stopPropagation(); setLocation(`/projects/${p.id}`); }}
                           data-testid={`btn-open-project-${p.id}`}
                         >
-                          <ExternalLink className="w-3 h-3" />
+                          <ExternalLink className="w-3.5 h-3.5" />
                           Open Project
                         </Button>
                         <Button
                           size="sm"
                           variant="outline"
-                          className="h-7 text-xs gap-1.5"
+                          className="h-8 text-xs gap-1.5"
                           onClick={(e) => { e.stopPropagation(); setLocation(`/projects/${p.id}?tab=plan`); }}
                           data-testid={`btn-goto-plan-${p.id}`}
                         >
-                          <ClipboardList className="w-3 h-3" />
+                          <ClipboardList className="w-3.5 h-3.5" />
                           Plan Tasks
                         </Button>
                         <Button
                           size="sm"
                           variant="outline"
-                          className="h-7 text-xs gap-1.5"
+                          className="h-8 text-xs gap-1.5"
                           onClick={(e) => { e.stopPropagation(); setLocation(`/projects/${p.id}?tab=revenue`); }}
                           data-testid={`btn-goto-revenue-${p.id}`}
                         >
-                          <DollarSign className="w-3 h-3" />
+                          <DollarSign className="w-3.5 h-3.5" />
                           Revenue
                         </Button>
                         <Button
                           size="sm"
                           variant="outline"
-                          className="h-7 text-xs gap-1.5"
+                          className="h-8 text-xs gap-1.5"
                           onClick={(e) => { e.stopPropagation(); setLocation(`/projects/${p.id}?tab=expenditure`); }}
                           data-testid={`btn-goto-expenditure-${p.id}`}
                         >
-                          <Receipt className="w-3 h-3" />
+                          <Receipt className="w-3.5 h-3.5" />
                           Expenditure
                         </Button>
                       </div>

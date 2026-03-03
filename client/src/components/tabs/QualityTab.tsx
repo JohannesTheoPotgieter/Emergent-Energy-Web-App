@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -10,7 +10,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { AlertCircle, CheckCircle, ChevronDown, ChevronRight, FileText, Shield, AlertTriangle, Clock, User, Lock, Link2, X, Plus, Trash2, Send, Loader2, CheckCircle2, Upload, FolderOpen, Paperclip, ExternalLink, ArrowLeft } from "lucide-react";
+import { AlertCircle, CheckCircle, ChevronDown, ChevronRight, FileText, Shield, AlertTriangle, Clock, User, Lock, Link2, X, Plus, Trash2, Send, Loader2, CheckCircle2, Upload, FolderOpen, Paperclip, ExternalLink, ArrowLeft, UserPlus } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { usePermission } from "@/hooks/use-permissions";
 import { useToast } from "@/hooks/use-toast";
@@ -22,11 +22,11 @@ function qFetch(url: string, options?: RequestInit) {
   return fetch(url, { ...options, headers: { ...headers, ...options?.headers }, credentials: "include" });
 }
 
-const PHASE_COLORS: Record<string, { bg: string; text: string; border: string; progress: string }> = {
-  "planning_design": { bg: "bg-blue-500/10", text: "text-blue-500", border: "border-blue-500/20", progress: "bg-blue-500" },
-  "construction": { bg: "bg-orange-500/10", text: "text-orange-500", border: "border-orange-500/20", progress: "bg-orange-500" },
-  "commissioning": { bg: "bg-purple-500/10", text: "text-purple-500", border: "border-purple-500/20", progress: "bg-purple-500" },
-  "handover": { bg: "bg-green-500/10", text: "text-green-500", border: "border-green-500/20", progress: "bg-green-500" },
+const PHASE_COLORS: Record<string, { bg: string; text: string; border: string; progress: string; lightBg: string }> = {
+  "planning_design": { bg: "bg-blue-500/10", text: "text-blue-600", border: "border-blue-200", progress: "bg-blue-500", lightBg: "bg-blue-50" },
+  "construction": { bg: "bg-orange-500/10", text: "text-orange-600", border: "border-orange-200", progress: "bg-orange-500", lightBg: "bg-orange-50" },
+  "commissioning": { bg: "bg-purple-500/10", text: "text-purple-600", border: "border-purple-200", progress: "bg-purple-500", lightBg: "bg-purple-50" },
+  "handover": { bg: "bg-green-500/10", text: "text-green-600", border: "border-green-200", progress: "bg-green-500", lightBg: "bg-green-50" },
 };
 
 function getPhaseColor(phaseKey: string) {
@@ -60,6 +60,18 @@ function calculateBusinessDays(start: string, end: string): number {
   return count;
 }
 
+const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; dot: string }> = {
+  not_started: { label: "Not Started", color: "text-slate-500", bg: "bg-slate-50 border-slate-200", dot: "bg-slate-400" },
+  review: { label: "In Review", color: "text-amber-600", bg: "bg-amber-50 border-amber-200", dot: "bg-amber-500" },
+  pass: { label: "Passed", color: "text-emerald-600", bg: "bg-emerald-50 border-emerald-200", dot: "bg-emerald-500" },
+  fail: { label: "Failed", color: "text-red-600", bg: "bg-red-50 border-red-200", dot: "bg-red-500" },
+  na: { label: "N/A", color: "text-slate-400", bg: "bg-slate-50 border-slate-200", dot: "bg-slate-300" },
+};
+
+function getStatusConfig(status: string) {
+  return STATUS_CONFIG[status] || STATUS_CONFIG.not_started;
+}
+
 interface QualityTabProps {
   projectName: string;
 }
@@ -86,6 +98,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
   const [spBrowseItemId, setSpBrowseItemId] = useState<number | null>(null);
   const [spFolderStack, setSpFolderStack] = useState<{ id: string | null; name: string }[]>([{ id: null, name: "Root" }]);
   const [spLinking, setSpLinking] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
   const isQmOrAdmin = ['admin', 'COO_ADMIN', 'CEO_ADMIN'].includes(user?.role || '') || ['quality_manager', 'QUALITY_MANAGER'].includes(user?.role || '');
   const canEdit = isQmOrAdmin;
   const { allowed: canDeleteQc } = usePermission('pd_quality', 'delete');
@@ -373,6 +386,12 @@ export function QualityTab({ projectName }: QualityTabProps) {
     }
   }, [checklistData?.phases]);
 
+  const teamMemberMap = useMemo(() => {
+    const map = new Map<number, string>();
+    teamMembers.forEach(m => map.set(m.id, m.name));
+    return map;
+  }, [teamMembers]);
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -476,23 +495,45 @@ export function QualityTab({ projectName }: QualityTabProps) {
     t.taskNo && t.highLevelProgramme && t.taskNo !== "No." && t.highLevelProgramme !== "HIGH LEVEL PROGRAMME"
   );
 
+  const overallStats = useMemo(() => {
+    const applicable = itemInstances.filter((i: any) => i.isApplicable !== false);
+    const passed = applicable.filter((i: any) => getItemQmStatus(i) === "pass");
+    const failed = applicable.filter((i: any) => getItemQmStatus(i) === "fail");
+    const inReview = applicable.filter((i: any) => getItemQmStatus(i) === "review");
+    const unassigned = applicable.filter((i: any) => !i.assigneeUserId);
+    return {
+      total: applicable.length,
+      passed: passed.length,
+      failed: failed.length,
+      inReview: inReview.length,
+      unassigned: unassigned.length,
+      percent: applicable.length > 0 ? Math.round((passed.length / applicable.length) * 100) : 0,
+    };
+  }, [itemInstances]);
+
+  const shouldShowItem = (instance: any) => {
+    if (statusFilter === "all") return true;
+    if (statusFilter === "unassigned") return !instance.assigneeUserId;
+    return getItemQmStatus(instance) === statusFilter;
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {!canEdit && (
-        <div className="rounded-lg border border-blue-500/30 bg-blue-500/5 p-3 flex items-center gap-2" data-testid="quality-readonly-banner">
+        <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-3 flex items-center gap-2" data-testid="quality-readonly-banner">
           <Lock className="w-4 h-4 text-blue-500 shrink-0" />
-          <span className="text-sm text-blue-500">
+          <span className="text-sm text-blue-600">
             View-only mode — editing requires Quality Manager access
           </span>
         </div>
       )}
 
       {activeWarnings.length > 0 && (
-        <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-4" data-testid="quality-warnings">
+        <div className="rounded-xl border border-red-200 bg-red-50/50 p-4" data-testid="quality-warnings">
           <div className="flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 text-red-500 mt-0.5 shrink-0" />
             <div className="space-y-2 flex-1">
-              <p className="text-sm font-medium text-red-500">
+              <p className="text-sm font-semibold text-red-600">
                 {activeWarnings.length} Active Warning{activeWarnings.length !== 1 ? "s" : ""}
               </p>
               {activeWarnings.map((w: any) => (
@@ -508,28 +549,53 @@ export function QualityTab({ projectName }: QualityTabProps) {
         </div>
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {phases.map((phase: any) => {
           const progress = getPhaseProgress(phase.id);
           const colors = getPhaseColor(phase.phaseKey);
           return (
-            <Card key={phase.id} className={`${colors.border} border`}>
-              <CardContent className="p-4 space-y-2">
-                <p className={`text-xs font-medium ${colors.text}`}>{phase.phaseName}</p>
+            <Card key={phase.id} className={`${colors.border} border shadow-sm hover:shadow-md transition-shadow`}>
+              <CardContent className="p-4 space-y-2.5">
+                <div className="flex items-center gap-2">
+                  <div className={`w-2 h-2 rounded-full ${colors.progress}`} />
+                  <p className={`text-xs font-semibold ${colors.text} uppercase tracking-wider`}>{phase.phaseName}</p>
+                </div>
                 <div className="flex items-end justify-between">
-                  <span className="text-2xl font-bold">{progress.percent}%</span>
+                  <span className="text-3xl font-bold">{progress.percent}%</span>
                   <div className="flex flex-col items-end gap-0.5">
-                    <span className="text-xs text-muted-foreground">{progress.completed} passed</span>
-                    {progress.failed > 0 && <span className="text-[10px] text-red-500">{progress.failed} failed</span>}
-                    {progress.inReview > 0 && <span className="text-[10px] text-amber-500">{progress.inReview} review</span>}
+                    <span className="text-[11px] text-muted-foreground font-medium">{progress.completed}/{progress.applicable}</span>
+                    {progress.failed > 0 && <span className="text-[10px] text-red-500 font-medium">{progress.failed} failed</span>}
+                    {progress.inReview > 0 && <span className="text-[10px] text-amber-500 font-medium">{progress.inReview} review</span>}
                   </div>
                 </div>
                 <Progress value={progress.percent} className="h-1.5" />
-                <p className="text-[10px] text-muted-foreground text-center">QM Score</p>
               </CardContent>
             </Card>
           );
         })}
+      </div>
+
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-xs font-medium text-muted-foreground">Filter:</span>
+        {[
+          { value: "all", label: `All (${overallStats.total})` },
+          { value: "not_started", label: `Not Started` },
+          { value: "review", label: `Review (${overallStats.inReview})` },
+          { value: "fail", label: `Failed (${overallStats.failed})` },
+          { value: "pass", label: `Passed (${overallStats.passed})` },
+          { value: "unassigned", label: `Unassigned (${overallStats.unassigned})` },
+        ].map(f => (
+          <Button
+            key={f.value}
+            variant={statusFilter === f.value ? "default" : "outline"}
+            size="sm"
+            className="h-7 text-[11px] px-2.5"
+            onClick={() => setStatusFilter(f.value)}
+            data-testid={`btn-filter-${f.value}`}
+          >
+            {f.label}
+          </Button>
+        ))}
       </div>
 
       {phases.map((phase: any) => {
@@ -541,30 +607,34 @@ export function QualityTab({ projectName }: QualityTabProps) {
         const phaseLinkedTasks = getPhaseLinks(phase.id);
 
         return (
-          <Card key={phase.id} className={`${colors.border} border`} data-testid={`quality-phase-${phase.id}`}>
+          <Card key={phase.id} className={`${colors.border} border shadow-sm`} data-testid={`quality-phase-${phase.id}`}>
             <Collapsible open={isExpanded} onOpenChange={() => togglePhase(phase.id)}>
               <CollapsibleTrigger asChild>
-                <CardHeader className="cursor-pointer hover:bg-muted/30 transition-colors">
+                <CardHeader className="cursor-pointer hover:bg-muted/30 transition-colors py-3 px-4">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2.5">
                       {isExpanded ? (
-                        <ChevronDown className={`w-5 h-5 ${colors.text}`} />
+                        <ChevronDown className={`w-4 h-4 ${colors.text}`} />
                       ) : (
-                        <ChevronRight className={`w-5 h-5 ${colors.text}`} />
+                        <ChevronRight className={`w-4 h-4 ${colors.text}`} />
                       )}
-                      <CardTitle className="text-base">
+                      <div className={`w-2 h-2 rounded-full ${colors.progress}`} />
+                      <CardTitle className="text-sm sm:text-base">
                         <span className={colors.text}>{phase.phaseName}</span>
                       </CardTitle>
-                      <Badge variant="outline" className="text-xs">
-                        {progress.completed}/{progress.applicable} items
+                      <Badge variant="outline" className="text-[10px] font-medium">
+                        {progress.completed}/{progress.applicable}
                       </Badge>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2 sm:gap-3">
                       {progress.failed > 0 && (
-                        <span className="text-xs text-red-500">{progress.failed} failed</span>
+                        <Badge variant="destructive" className="text-[10px] px-1.5 py-0">{progress.failed} failed</Badge>
                       )}
-                      <span className="text-sm font-medium">{progress.percent}%</span>
-                      <div className="w-24">
+                      {progress.inReview > 0 && (
+                        <Badge className="text-[10px] px-1.5 py-0 bg-amber-50 text-amber-600 border-amber-200">{progress.inReview} review</Badge>
+                      )}
+                      <span className="text-sm font-bold tabular-nums">{progress.percent}%</span>
+                      <div className="w-20 sm:w-24">
                         <Progress value={progress.percent} className="h-2" />
                       </div>
                     </div>
@@ -573,29 +643,27 @@ export function QualityTab({ projectName }: QualityTabProps) {
               </CollapsibleTrigger>
 
               <CollapsibleContent>
-                <CardContent className="pt-0 space-y-6">
+                <CardContent className="pt-0 space-y-5 px-4 pb-5">
                   {phaseLinkedTasks.length > 0 && (
                     <div className="space-y-2">
                       <div className="flex items-center gap-2">
-                        <Link2 className="w-4 h-4 text-muted-foreground" />
-                        <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Linked Project Tasks</h4>
+                        <Link2 className="w-3.5 h-3.5 text-muted-foreground" />
+                        <h4 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Linked Project Tasks</h4>
                       </div>
-                      <div className="flex flex-wrap gap-2">
+                      <div className="flex flex-wrap gap-1.5">
                         {phaseLinkedTasks.map((link: any) => {
                           const task = projectTasks.find((t: any) => t.id === link.planItemId);
                           return (
-                            <Badge key={link.id} variant="outline" className="gap-1.5 py-1 pl-2 pr-1" data-testid={`plan-link-${link.id}`}>
-                              <span className="text-xs">
-                                {task ? `${task.taskNo} — ${task.highLevelProgramme}` : `Task #${link.planItemId}`}
-                              </span>
+                            <Badge key={link.id} variant="outline" className="gap-1 py-0.5 pl-2 pr-1 text-[11px]" data-testid={`plan-link-${link.id}`}>
+                              {task ? `${task.taskNo} — ${task.highLevelProgramme}` : `Task #${link.planItemId}`}
                               {task?.actualPctComplete != null && (
-                                <span className="text-[10px] text-muted-foreground ml-1">
+                                <span className="text-muted-foreground ml-0.5">
                                   ({Math.round(task.actualPctComplete * 100)}%)
                                 </span>
                               )}
                               {canEdit && (
                                 <button
-                                  className="ml-1 p-0.5 rounded hover:bg-destructive/20 text-muted-foreground hover:text-destructive"
+                                  className="ml-0.5 p-0.5 rounded hover:bg-destructive/20 text-muted-foreground hover:text-destructive"
                                   onClick={() => removePlanLinkMutation.mutate(link.id)}
                                   data-testid={`unlink-task-${link.id}`}
                                 >
@@ -654,86 +722,127 @@ export function QualityTab({ projectName }: QualityTabProps) {
                     const groupItems = templateItems.filter((ti: any) => ti.templateGroupId === group.id);
                     if (groupItems.length === 0) return null;
 
+                    const visibleItems = groupItems.filter((ti: any) => {
+                      const instance = getItemInstance(ti.id);
+                      return instance && shouldShowItem(instance);
+                    });
+
+                    if (statusFilter !== "all" && visibleItems.length === 0) return null;
+
                     return (
-                      <div key={group.id} className="space-y-3">
+                      <div key={group.id} className="space-y-2">
                         <div className="flex items-center gap-2">
                           <FileText className="w-4 h-4 text-muted-foreground" />
                           <h4 className="text-sm font-semibold">{group.groupName}</h4>
-                          <Badge variant="outline" className="text-xs">{groupItems.length}</Badge>
+                          <Badge variant="outline" className="text-[10px] font-medium">{groupItems.length}</Badge>
                         </div>
 
-                        <div className="space-y-2">
-                          {groupItems.map((templateItem: any) => {
+                        <div className="space-y-1.5">
+                          {(statusFilter !== "all" ? visibleItems : groupItems).map((templateItem: any) => {
                             const instance = getItemInstance(templateItem.id);
                             if (!instance) return null;
+                            if (statusFilter !== "all" && !shouldShowItem(instance)) return null;
                             const itemEvidence = getItemEvidence(instance.id);
                             const isEditing = editingItem === instance.id;
                             const itemLinks = getItemLinks(instance.id);
                             const hasRedWarning = itemLinks.some((l: any) => isTaskCompleted(l.planItemId)) && !instance.approved;
+                            const currentStatus = getItemQmStatus(instance);
+                            const statusCfg = getStatusConfig(currentStatus);
+                            const assigneeName = instance.assigneeUserId ? teamMemberMap.get(instance.assigneeUserId) : null;
 
                             return (
                               <div
                                 key={instance.id}
-                                className={`rounded-lg border p-3 transition-colors ${
-                                  hasRedWarning
-                                    ? "bg-red-500/10 border-red-500 ring-1 ring-red-500/40"
-                                    : "bg-card/50 hover:bg-muted/20"
+                                className={`rounded-xl border transition-all ${
+                                  isEditing ? "ring-2 ring-blue-200 shadow-md" :
+                                  hasRedWarning ? "bg-red-50/50 border-red-300 shadow-sm" :
+                                  "bg-white hover:shadow-sm hover:border-slate-300"
                                 }`}
                                 data-testid={`quality-item-${instance.id}`}
                               >
-                                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2">
-                                      <p className={`text-sm font-medium truncate ${hasRedWarning ? "text-red-600 dark:text-red-400" : ""}`}>{templateItem.itemName}</p>
-                                      {hasRedWarning && (
-                                        <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-5 shrink-0" data-testid={`warning-unchecked-${instance.id}`}>
-                                          <AlertCircle className="w-3 h-3 mr-0.5" />
-                                          Task done — not checked
-                                        </Badge>
-                                      )}
-                                    </div>
-                                    {itemLinks.length > 0 && (
-                                      <div className="flex flex-wrap gap-1 mt-1">
-                                        {itemLinks.map((link: any) => {
-                                          const task = projectTasks.find((t: any) => t.id === link.planItemId);
-                                          const taskDone = isTaskCompleted(link.planItemId);
-                                          return (
-                                            <Badge
-                                              key={link.id}
-                                              variant="outline"
-                                              className={`text-[10px] gap-1 py-0.5 ${taskDone && !instance.approved ? "border-red-500 text-red-600 dark:text-red-400 bg-red-500/5" : ""}`}
-                                              data-testid={`item-link-${link.id}`}
-                                            >
-                                              <Link2 className="w-3 h-3" />
-                                              {task ? `${task.taskNo}` : `#${link.planItemId}`}
-                                              {task?.actualPctComplete != null && (
-                                                <span className="ml-0.5">({Math.round(task.actualPctComplete * 100)}%)</span>
-                                              )}
-                                              {canEdit && (
-                                                <button
-                                                  className="ml-0.5 p-0.5 rounded hover:bg-destructive/20 text-muted-foreground hover:text-destructive"
-                                                  onClick={(e) => { e.stopPropagation(); removePlanLinkMutation.mutate(link.id); }}
-                                                >
-                                                  <X className="w-2.5 h-2.5" />
-                                                </button>
-                                              )}
-                                            </Badge>
-                                          );
-                                        })}
-                                      </div>
-                                    )}
-                                  </div>
+                                <div className="p-3">
+                                  <div className="flex flex-col gap-2">
+                                    <div className="flex items-start gap-2 sm:gap-3">
+                                      <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${statusCfg.dot}`} />
 
-                                  <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-                                    {(() => {
-                                      const currentStatus = getItemQmStatus(instance);
-                                      const needsQmToPass = currentStatus === "review" || currentStatus === "fail";
-                                      const canSetPass = isQmOrAdmin || !needsQmToPass;
-                                      return (
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                          <p className={`text-sm font-medium ${hasRedWarning ? "text-red-600" : ""}`}>{templateItem.itemName}</p>
+                                          {hasRedWarning && (
+                                            <Badge variant="destructive" className="text-[9px] px-1.5 py-0 h-4 shrink-0" data-testid={`warning-unchecked-${instance.id}`}>
+                                              <AlertCircle className="w-2.5 h-2.5 mr-0.5" />
+                                              Task done — not checked
+                                            </Badge>
+                                          )}
+                                          {itemEvidence.length > 0 && (
+                                            <Badge variant="outline" className="text-[9px] gap-0.5 px-1.5 py-0 h-4">
+                                              <Paperclip className="w-2.5 h-2.5" />
+                                              {itemEvidence.length}
+                                            </Badge>
+                                          )}
+                                        </div>
+                                        {itemLinks.length > 0 && (
+                                          <div className="flex flex-wrap gap-1 mt-1">
+                                            {itemLinks.map((link: any) => {
+                                              const task = projectTasks.find((t: any) => t.id === link.planItemId);
+                                              const taskDone = isTaskCompleted(link.planItemId);
+                                              return (
+                                                <Badge
+                                                  key={link.id}
+                                                  variant="outline"
+                                                  className={`text-[9px] gap-0.5 py-0 ${taskDone && !instance.approved ? "border-red-300 text-red-600 bg-red-50/50" : ""}`}
+                                                  data-testid={`item-link-${link.id}`}
+                                                >
+                                                  <Link2 className="w-2.5 h-2.5" />
+                                                  {task ? `${task.taskNo}` : `#${link.planItemId}`}
+                                                  {task?.actualPctComplete != null && (
+                                                    <span className="ml-0.5">({Math.round(task.actualPctComplete * 100)}%)</span>
+                                                  )}
+                                                  {canEdit && (
+                                                    <button
+                                                      className="ml-0.5 p-0.5 rounded hover:bg-destructive/20 text-muted-foreground hover:text-destructive"
+                                                      onClick={(e) => { e.stopPropagation(); removePlanLinkMutation.mutate(link.id); }}
+                                                    >
+                                                      <X className="w-2 h-2" />
+                                                    </button>
+                                                  )}
+                                                </Badge>
+                                              );
+                                            })}
+                                          </div>
+                                        )}
+                                      </div>
+
+                                      <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                                        <Select
+                                          disabled={!canEdit}
+                                          value={String(instance.assigneeUserId || "unassigned")}
+                                          onValueChange={(val) => {
+                                            const userId = val === "unassigned" ? null : parseInt(val);
+                                            handleItemStatusChange(instance.id, "assigneeUserId", userId);
+                                          }}
+                                        >
+                                          <SelectTrigger
+                                            className={`h-7 text-[11px] w-[110px] sm:w-[130px] gap-1 ${!instance.assigneeUserId ? "text-muted-foreground border-dashed" : ""}`}
+                                            data-testid={`select-assignee-${instance.id}`}
+                                          >
+                                            <User className="w-3 h-3 shrink-0" />
+                                            <SelectValue placeholder="Assign..." />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="unassigned">Unassigned</SelectItem>
+                                            {teamMembers.map((m: any) => (
+                                              <SelectItem key={m.id} value={String(m.id)}>{m.name}</SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+
                                         <Select
                                           disabled={!canEdit}
                                           value={currentStatus}
                                           onValueChange={(val) => {
+                                            const needsQmToPass = currentStatus === "review" || currentStatus === "fail";
+                                            const canSetPass = isQmOrAdmin || !needsQmToPass;
                                             if (val === "pass" && !canSetPass) return;
                                             updateItemMutation.mutate({
                                               itemInstanceId: instance.id,
@@ -742,100 +851,100 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                           }}
                                         >
                                           <SelectTrigger
-                                            className={`w-[120px] h-8 text-xs ${
-                                              currentStatus === "fail" ? "border-red-400 text-red-600" :
-                                              currentStatus === "review" ? "border-amber-400 text-amber-600" :
-                                              currentStatus === "pass" ? "border-emerald-400 text-emerald-600" :
-                                              ""
-                                            }`}
+                                            className={`h-7 text-[11px] w-[100px] sm:w-[110px] border ${statusCfg.bg}`}
                                             data-testid={`select-status-${instance.id}`}
                                           >
                                             <SelectValue />
                                           </SelectTrigger>
                                           <SelectContent>
                                             <SelectItem value="not_started">Not Started</SelectItem>
-                                            {canSetPass && <SelectItem value="pass">Pass</SelectItem>}
+                                            {(isQmOrAdmin || !(currentStatus === "review" || currentStatus === "fail")) && (
+                                              <SelectItem value="pass">Pass</SelectItem>
+                                            )}
                                             <SelectItem value="review">Review</SelectItem>
                                             <SelectItem value="fail">Failed</SelectItem>
                                             <SelectItem value="na">N/A</SelectItem>
-                                            {!canSetPass && needsQmToPass && (
-                                              <div className="px-2 py-1.5 text-[10px] text-muted-foreground border-t">
-                                                QM Manager required to set Pass
-                                              </div>
-                                            )}
                                           </SelectContent>
                                         </Select>
-                                      );
-                                    })()}
 
-                                    {itemEvidence.length > 0 && (
-                                      <Badge variant="outline" className="text-xs gap-1">
-                                        <FileText className="w-3 h-3" />
-                                        {itemEvidence.length}
-                                      </Badge>
-                                    )}
+                                        {(() => {
+                                          const canSendForApproval = currentStatus === "not_started" || currentStatus === "fail" || currentStatus === "review";
+                                          return canSendForApproval ? (
+                                            <Button
+                                              variant="outline"
+                                              size="sm"
+                                              className="h-7 text-[10px] px-2 gap-1 text-amber-600 border-amber-200 hover:bg-amber-50 hidden sm:flex"
+                                              onClick={(e) => { e.stopPropagation(); setSendForApprovalItem(instance.id); }}
+                                              data-testid={`btn-send-for-approval-qm-${instance.id}`}
+                                            >
+                                              <Send className="w-3 h-3" /> Approve
+                                            </Button>
+                                          ) : null;
+                                        })()}
 
+                                        {canEdit && (
+                                          <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-7 w-7"
+                                            title="Link project task"
+                                            onClick={(e) => { e.stopPropagation(); setLinkingItemId(linkingItemId === instance.id ? null : instance.id); }}
+                                            data-testid={`link-item-task-${instance.id}`}
+                                          >
+                                            <Link2 className={`w-3.5 h-3.5 ${linkingItemId === instance.id ? "text-primary" : "text-muted-foreground"}`} />
+                                          </Button>
+                                        )}
+
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-7 text-[11px] px-2"
+                                          onClick={() => setEditingItem(isEditing ? null : instance.id)}
+                                          data-testid={`button-edit-item-${instance.id}`}
+                                        >
+                                          {isEditing ? "Close" : "Details"}
+                                        </Button>
+
+                                        {canDeleteQc && deleteConfirmId !== instance.id && (
+                                          <button
+                                            onClick={(e) => { e.stopPropagation(); setDeleteConfirmId(instance.id); }}
+                                            className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
+                                            data-testid={`btn-delete-qc-item-${instance.id}`}
+                                          >
+                                            <Trash2 className="h-3 w-3" />
+                                          </button>
+                                        )}
+                                        {deleteConfirmId === instance.id && (
+                                          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                                            <Button size="sm" variant="destructive" className="h-6 text-[10px] px-2" onClick={() => deleteItemMutation.mutate(instance.id)} disabled={deleteItemMutation.isPending} data-testid={`btn-confirm-delete-qc-${instance.id}`}>
+                                              {deleteItemMutation.isPending ? "..." : "Delete"}
+                                            </Button>
+                                            <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2" onClick={() => setDeleteConfirmId(null)} data-testid={`btn-cancel-delete-qc-${instance.id}`}>No</Button>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {/* Mobile: send for approval button */}
                                     {(() => {
-                                      const st = getItemQmStatus(instance);
-                                      const canSendForApproval = st === "not_started" || st === "fail" || st === "review";
+                                      const canSendForApproval = currentStatus === "not_started" || currentStatus === "fail" || currentStatus === "review";
                                       return canSendForApproval ? (
                                         <Button
                                           variant="outline"
                                           size="sm"
-                                          className="h-8 text-xs gap-1 text-amber-600 border-amber-200 hover:bg-amber-50"
+                                          className="h-7 text-[10px] px-2 gap-1 text-amber-600 border-amber-200 hover:bg-amber-50 sm:hidden w-fit"
                                           onClick={(e) => { e.stopPropagation(); setSendForApprovalItem(instance.id); }}
-                                          data-testid={`btn-send-for-approval-qm-${instance.id}`}
+                                          data-testid={`btn-send-for-approval-qm-mobile-${instance.id}`}
                                         >
                                           <Send className="w-3 h-3" /> Send for Approval
                                         </Button>
                                       ) : null;
                                     })()}
-
-                                    {canEdit && (
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-8 w-8"
-                                        title="Link project task"
-                                        onClick={(e) => { e.stopPropagation(); setLinkingItemId(linkingItemId === instance.id ? null : instance.id); }}
-                                        data-testid={`link-item-task-${instance.id}`}
-                                      >
-                                        <Link2 className={`w-4 h-4 ${linkingItemId === instance.id ? "text-primary" : "text-muted-foreground"}`} />
-                                      </Button>
-                                    )}
-
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className="h-8 text-xs"
-                                      onClick={() => setEditingItem(isEditing ? null : instance.id)}
-                                      data-testid={`button-edit-item-${instance.id}`}
-                                    >
-                                      {isEditing ? "Close" : "Details"}
-                                    </Button>
-
-                                    {canDeleteQc && deleteConfirmId !== instance.id && (
-                                      <button
-                                        onClick={(e) => { e.stopPropagation(); setDeleteConfirmId(instance.id); }}
-                                        className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
-                                        data-testid={`btn-delete-qc-item-${instance.id}`}
-                                      >
-                                        <Trash2 className="h-3.5 w-3.5" />
-                                      </button>
-                                    )}
-                                    {deleteConfirmId === instance.id && (
-                                      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                                        <Button size="sm" variant="destructive" className="h-6 text-[10px] px-2" onClick={() => deleteItemMutation.mutate(instance.id)} disabled={deleteItemMutation.isPending} data-testid={`btn-confirm-delete-qc-${instance.id}`}>
-                                          {deleteItemMutation.isPending ? "..." : "Delete"}
-                                        </Button>
-                                        <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2" onClick={() => setDeleteConfirmId(null)} data-testid={`btn-cancel-delete-qc-${instance.id}`}>No</Button>
-                                      </div>
-                                    )}
                                   </div>
                                 </div>
 
                                 {linkingItemId === instance.id && (
-                                  <div className="mt-2 flex items-center gap-2">
+                                  <div className="px-3 pb-3 flex items-center gap-2">
                                     <Select
                                       onValueChange={(val) => {
                                         addPlanLinkMutation.mutate({ planItemId: parseInt(val), itemInstanceId: instance.id });
@@ -861,22 +970,10 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                 )}
 
                                 {isEditing && (
-                                  <div className="mt-4 pt-4 border-t space-y-3">
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                  <div className="border-t bg-slate-50/50 px-3 pb-3 pt-3 space-y-3 rounded-b-xl">
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                       <div className="space-y-1.5">
-                                        <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-                                          <User className="w-3 h-3" /> Responsible Person
-                                        </label>
-                                        <Input
-                                          className="h-8 text-sm"
-                                          placeholder="Enter name"
-                                          defaultValue={instance.approvalComment || ""}
-                                          onBlur={(e) => handleItemStatusChange(instance.id, "approvalComment", e.target.value)}
-                                          data-testid={`input-responsible-${instance.id}`}
-                                        />
-                                      </div>
-                                      <div className="space-y-1.5">
-                                        <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                                        <label className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1 uppercase tracking-wider">
                                           <Clock className="w-3 h-3" /> Start Date
                                         </label>
                                         <Input
@@ -888,7 +985,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                         />
                                       </div>
                                       <div className="space-y-1.5">
-                                        <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                                        <label className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1 uppercase tracking-wider">
                                           <Clock className="w-3 h-3" /> End Date
                                         </label>
                                         <Input
@@ -900,19 +997,11 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                         />
                                       </div>
                                       <div className="space-y-1.5">
-                                        <label className="text-xs font-medium text-muted-foreground">Working Days</label>
-                                        <Input
-                                          className="h-8 text-sm"
-                                          value={instance.workingDays ?? "—"}
-                                          disabled
-                                        />
-                                      </div>
-                                      <div className="space-y-1.5">
-                                        <label className="text-xs font-medium text-muted-foreground">Allowed Working Days</label>
+                                        <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Allowed Days</label>
                                         <Input
                                           type="number"
                                           className="h-8 text-sm"
-                                          placeholder="Enter allowed days"
+                                          placeholder="Days"
                                           min="0"
                                           disabled={!canEdit}
                                           defaultValue={instance.allowedWorkingDays ?? ""}
@@ -923,58 +1012,58 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                           data-testid={`input-allowed-days-${instance.id}`}
                                         />
                                       </div>
-                                      <div className="space-y-1.5">
-                                        <label className="text-xs font-medium text-muted-foreground">Actual Working Days</label>
-                                        <Input
-                                          className="h-8 text-sm"
-                                          value={instance.startDate && instance.endDate ? calculateBusinessDays(instance.startDate, instance.endDate) : "—"}
-                                          disabled
-                                          data-testid={`input-actual-days-${instance.id}`}
-                                        />
-                                      </div>
                                     </div>
-                                    {instance.endDate && instance.startDate && new Date(instance.endDate) < new Date(instance.startDate) && (
-                                      <p className="text-xs text-red-500 font-medium" data-testid={`date-error-${instance.id}`}>End date cannot be before start date</p>
-                                    )}
-                                    {(() => {
-                                      const actualDays = instance.startDate && instance.endDate ? calculateBusinessDays(instance.startDate, instance.endDate) : null;
-                                      const allowed = instance.allowedWorkingDays;
-                                      if (actualDays !== null && allowed && allowed > 0 && actualDays > allowed) {
-                                        return (
-                                          <Badge variant="destructive" className="text-xs gap-1" data-testid={`badge-overdue-${instance.id}`}>
-                                            <AlertCircle className="w-3 h-3" />
-                                            Overdue by {actualDays - allowed} day{actualDays - allowed !== 1 ? "s" : ""}
-                                          </Badge>
-                                        );
-                                      }
-                                      if (actualDays !== null && allowed && allowed > 0 && actualDays <= allowed) {
-                                        return (
-                                          <Badge className="text-xs gap-1 bg-green-600 hover:bg-green-700" data-testid={`badge-ontrack-${instance.id}`}>
-                                            <CheckCircle className="w-3 h-3" />
-                                            On Track
-                                          </Badge>
-                                        );
-                                      }
-                                      if (!instance.startDate && !instance.endDate) {
-                                        return (
-                                          <Badge variant="secondary" className="text-xs gap-1" data-testid={`badge-notstarted-${instance.id}`}>
-                                            Not started
-                                          </Badge>
-                                        );
-                                      }
-                                      if (instance.startDate && !instance.endDate) {
-                                        return (
-                                          <Badge variant="secondary" className="text-xs gap-1" data-testid={`badge-inprogress-${instance.id}`}>
-                                            In progress
-                                          </Badge>
-                                        );
-                                      }
-                                      return null;
-                                    })()}
+
+                                    <div className="flex items-center gap-3 flex-wrap">
+                                      {instance.startDate && instance.endDate && (
+                                        <span className="text-[11px] text-muted-foreground">
+                                          Actual: {calculateBusinessDays(instance.startDate, instance.endDate)} working days
+                                        </span>
+                                      )}
+                                      {instance.endDate && instance.startDate && new Date(instance.endDate) < new Date(instance.startDate) && (
+                                        <span className="text-[11px] text-red-500 font-medium" data-testid={`date-error-${instance.id}`}>End date before start date</span>
+                                      )}
+                                      {(() => {
+                                        const actualDays = instance.startDate && instance.endDate ? calculateBusinessDays(instance.startDate, instance.endDate) : null;
+                                        const allowed = instance.allowedWorkingDays;
+                                        if (actualDays !== null && allowed && allowed > 0 && actualDays > allowed) {
+                                          return (
+                                            <Badge variant="destructive" className="text-[10px] gap-1" data-testid={`badge-overdue-${instance.id}`}>
+                                              <AlertCircle className="w-3 h-3" />
+                                              Overdue by {actualDays - allowed} day{actualDays - allowed !== 1 ? "s" : ""}
+                                            </Badge>
+                                          );
+                                        }
+                                        if (actualDays !== null && allowed && allowed > 0 && actualDays <= allowed) {
+                                          return (
+                                            <Badge className="text-[10px] gap-1 bg-emerald-600 hover:bg-emerald-700" data-testid={`badge-ontrack-${instance.id}`}>
+                                              <CheckCircle className="w-3 h-3" />
+                                              On Track
+                                            </Badge>
+                                          );
+                                        }
+                                        if (!instance.startDate && !instance.endDate) {
+                                          return (
+                                            <Badge variant="secondary" className="text-[10px] gap-1" data-testid={`badge-notstarted-${instance.id}`}>
+                                              Not started
+                                            </Badge>
+                                          );
+                                        }
+                                        if (instance.startDate && !instance.endDate) {
+                                          return (
+                                            <Badge variant="secondary" className="text-[10px] gap-1" data-testid={`badge-inprogress-${instance.id}`}>
+                                              In progress
+                                            </Badge>
+                                          );
+                                        }
+                                        return null;
+                                      })()}
+                                    </div>
+
                                     <div className="space-y-1.5">
-                                      <label className="text-xs font-medium text-muted-foreground">Notes</label>
+                                      <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Notes</label>
                                       <Textarea
-                                        className="text-sm min-h-[60px]"
+                                        className="text-sm min-h-[50px]"
                                         placeholder="Add notes..."
                                         defaultValue={instance.notApplicableReason || ""}
                                         onBlur={(e) => handleItemStatusChange(instance.id, "notApplicableReason", e.target.value)}
@@ -983,8 +1072,8 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                     </div>
                                     <div className="space-y-1.5">
                                       <div className="flex items-center justify-between">
-                                        <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-                                          <Paperclip className="w-3 h-3" /> Evidence {itemEvidence.length > 0 && <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4">{itemEvidence.length}</Badge>}
+                                        <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                                          <Paperclip className="w-3 h-3" /> Evidence {itemEvidence.length > 0 && <Badge variant="secondary" className="text-[9px] px-1 py-0 h-4">{itemEvidence.length}</Badge>}
                                         </label>
                                         {canEdit && !evidenceMode[instance.id] && (
                                           <div className="flex gap-1">
@@ -1016,7 +1105,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                             const isSp = ev.evidenceNote?.startsWith("SharePoint:");
                                             const displayName = isSp ? ev.evidenceNote.replace("SharePoint: ", "") : (ev.evidenceNote || ev.evidenceUrl);
                                             return (
-                                              <div key={ev.id} className={`flex items-center gap-2 text-xs p-2 rounded ${isSp ? "bg-blue-50/50 dark:bg-blue-950/20" : "bg-muted/30"}`} data-testid={`evidence-item-${ev.id}`}>
+                                              <div key={ev.id} className={`flex items-center gap-2 text-xs p-2 rounded-lg ${isSp ? "bg-blue-50/50" : "bg-muted/30"}`} data-testid={`evidence-item-${ev.id}`}>
                                                 {isSp ? <FolderOpen className="w-3 h-3 text-blue-500 shrink-0" /> : <FileText className="w-3 h-3 text-muted-foreground shrink-0" />}
                                                 <a href={ev.evidenceUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline truncate flex-1 flex items-center gap-1">
                                                   {displayName}
@@ -1044,7 +1133,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                       {evidenceMode[instance.id] === "upload" && (
                                         <div className="space-y-2">
                                           <div
-                                            className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors cursor-pointer hover:border-green-400 hover:bg-green-50/30 dark:hover:bg-green-950/10 border-muted`}
+                                            className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors cursor-pointer hover:border-green-400 hover:bg-green-50/30 border-muted`}
                                             onClick={() => {
                                               const input = document.createElement("input");
                                               input.type = "file";
@@ -1064,7 +1153,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                             ) : (
                                               <div className="text-xs text-muted-foreground flex flex-col items-center gap-1">
                                                 <Upload className="h-5 w-5" />
-                                                Click to select a file to upload as evidence
+                                                Click to select a file
                                               </div>
                                             )}
                                           </div>
@@ -1072,7 +1161,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                         </div>
                                       )}
                                       {evidenceMode[instance.id] === "sharepoint" && spBrowseItemId === instance.id && (
-                                        <div className="border rounded-lg p-3 space-y-2 bg-blue-50/30 dark:bg-blue-950/10">
+                                        <div className="border rounded-lg p-3 space-y-2 bg-blue-50/30">
                                           <div className="flex items-center gap-2 text-xs font-medium text-blue-700">
                                             <FolderOpen className="w-3.5 h-3.5" />
                                             SharePoint — Select a file
@@ -1163,11 +1252,11 @@ export function QualityTab({ projectName }: QualityTabProps) {
                   })}
 
                   {phaseRiskQs.length > 0 && (
-                    <div className="space-y-3 pt-2 border-t border-dashed">
+                    <div className="space-y-3 pt-3 border-t border-dashed">
                       <div className="flex items-center gap-2">
                         <AlertTriangle className="w-4 h-4 text-orange-500" />
                         <h4 className="text-sm font-semibold">Risk Assessment</h4>
-                        <Badge variant="outline" className="text-xs">{phaseRiskQs.length}</Badge>
+                        <Badge variant="outline" className="text-[10px] font-medium">{phaseRiskQs.length}</Badge>
                       </div>
 
                       <div className="space-y-2">
@@ -1195,7 +1284,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
                             return (
                               <div key={parent.id} className="space-y-2">
                                 <div
-                                  className="rounded-lg border bg-card/50 p-3"
+                                  className="rounded-xl border bg-white p-3"
                                   data-testid={`quality-risk-${parent.id}`}
                                 >
                                   <div className="flex flex-col sm:flex-row sm:items-start gap-3">
@@ -1211,7 +1300,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                             variant={isActive ? "default" : "outline"}
                                             size="sm"
                                             disabled={!canEdit}
-                                            className={`h-8 text-xs min-w-[50px] ${isActive ? opt.color : ""}`}
+                                            className={`h-7 text-xs min-w-[46px] ${isActive ? opt.color : ""}`}
                                             onClick={() => {
                                               updateRiskMutation.mutate({
                                                 riskAnswerId: parentAnswer.id,
@@ -1257,7 +1346,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                   return (
                                     <div
                                       key={child.id}
-                                      className="ml-6 rounded-lg border border-dashed bg-muted/30 p-3 space-y-2"
+                                      className="ml-6 rounded-xl border border-dashed bg-muted/30 p-3 space-y-2"
                                       data-testid={`quality-risk-followup-${child.id}`}
                                     >
                                       <label className="text-xs font-medium text-muted-foreground">{child.questionText}</label>
@@ -1337,7 +1426,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">Evidence File (optional)</Label>
               <div
-                className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors cursor-pointer hover:border-amber-400 hover:bg-amber-50/30 dark:hover:bg-amber-950/10 ${sfaFile ? "border-amber-400 bg-amber-50/20" : "border-muted"}`}
+                className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors cursor-pointer hover:border-amber-400 hover:bg-amber-50/30 ${sfaFile ? "border-amber-400 bg-amber-50/20" : "border-muted"}`}
                 onClick={() => {
                   const input = document.createElement("input");
                   input.type = "file";
@@ -1397,12 +1486,13 @@ export function QualityTab({ projectName }: QualityTabProps) {
                       const err = await res.json().catch(() => ({ error: "Failed" }));
                       throw new Error(err.error);
                     }
+                    toast({ title: "Sent for approval", description: "The item has been submitted for review." });
                     setSendForApprovalItem(null);
                     setSfaApprover(""); setSfaNote(""); setSfaFile(null);
                     queryClient.invalidateQueries({ queryKey: ["quality-checklist", projectName] });
                     queryClient.invalidateQueries({ queryKey: ["quality-evidence", projectName] });
                   } catch (err: any) {
-                    console.error("Send for approval failed:", err);
+                    toast({ title: "Error", description: err.message || "Failed to send for approval", variant: "destructive" });
                   } finally {
                     setSfaSending(false);
                   }
