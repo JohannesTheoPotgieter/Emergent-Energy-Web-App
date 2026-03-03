@@ -111,8 +111,16 @@ async function resolveToken(userAccessToken?: string | null): Promise<string> {
   return getAccessToken();
 }
 
+async function resolveUserToken(userAccessToken?: string | null): Promise<string> {
+  if (userAccessToken) return userAccessToken;
+  throw new Error("User SSO token required for user-scoped Microsoft data. Please sign in with Microsoft.");
+}
+
 async function graphGet(url: string, userAccessToken?: string | null): Promise<any> {
-  const token = await resolveToken(userAccessToken);
+  const isUserScoped = url.startsWith("/me/") || url.startsWith("/me?");
+  const token = isUserScoped
+    ? await resolveUserToken(userAccessToken)
+    : await resolveToken(userAccessToken);
   const res = await fetch(`https://graph.microsoft.com/v1.0${url}`, {
     headers: {
       Authorization: `Bearer ${token}`,
@@ -128,7 +136,10 @@ async function graphGet(url: string, userAccessToken?: string | null): Promise<a
 }
 
 async function graphPost(url: string, body: any, userAccessToken?: string | null): Promise<any> {
-  const token = await resolveToken(userAccessToken);
+  const isUserScoped = url.startsWith("/me/") || url.startsWith("/me?");
+  const token = isUserScoped
+    ? await resolveUserToken(userAccessToken)
+    : await resolveToken(userAccessToken);
   const res = await fetch(`https://graph.microsoft.com/v1.0${url}`, {
     method: "POST",
     headers: {
@@ -146,7 +157,10 @@ async function graphPost(url: string, body: any, userAccessToken?: string | null
 }
 
 async function graphPatch(url: string, body: any, userAccessToken?: string | null): Promise<any> {
-  const token = await resolveToken(userAccessToken);
+  const isUserScoped = url.startsWith("/me/") || url.startsWith("/me?");
+  const token = isUserScoped
+    ? await resolveUserToken(userAccessToken)
+    : await resolveToken(userAccessToken);
   const res = await fetch(`https://graph.microsoft.com/v1.0${url}`, {
     method: "PATCH",
     headers: {
@@ -163,7 +177,10 @@ async function graphPatch(url: string, body: any, userAccessToken?: string | nul
 }
 
 async function graphDelete(url: string, userAccessToken?: string | null): Promise<void> {
-  const token = await resolveToken(userAccessToken);
+  const isUserScoped = url.startsWith("/me/") || url.startsWith("/me?");
+  const token = isUserScoped
+    ? await resolveUserToken(userAccessToken)
+    : await resolveToken(userAccessToken);
   const res = await fetch(`https://graph.microsoft.com/v1.0${url}`, {
     method: "DELETE",
     headers: { Authorization: `Bearer ${token}` },

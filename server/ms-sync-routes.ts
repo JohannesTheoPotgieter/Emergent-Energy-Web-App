@@ -162,19 +162,17 @@ export function registerMsSyncRoutes(app: Express) {
       const userId = (req as any).user?.id;
       if (!userId) return res.status(401).json({ error: "auth_required" });
 
-      const user = (req as any).user;
       const existingAccount = await db.select().from(msAccounts).where(eq(msAccounts.userId, userId)).limit(1);
-      if (existingAccount.length === 0) {
-        await db.insert(msAccounts).values({
-          userId,
-          tenantId: process.env.AZURE_TENANT_ID || "",
-          msUserId: user.msUserId || `local-${userId}`,
-          email: user.email || user.username || "",
-          displayName: user.displayName || user.name || user.username || `User ${userId}`,
-          status: "active",
-        }).onConflictDoNothing();
-        console.log(`[MS Sync] Auto-created ms_account for user ${userId}`);
-      } else if (existingAccount[0].status !== "active") {
+      if (existingAccount.length === 0 || !existingAccount[0].ssoAccessToken) {
+        return res.json({
+          success: false,
+          error: "ms_sso_required",
+          message: "Please sign in with Microsoft to sync your calendar, email, and teams data.",
+          results: [],
+        });
+      }
+
+      if (existingAccount[0].status !== "active") {
         await db.update(msAccounts).set({ status: "active" }).where(eq(msAccounts.userId, userId));
       }
 
