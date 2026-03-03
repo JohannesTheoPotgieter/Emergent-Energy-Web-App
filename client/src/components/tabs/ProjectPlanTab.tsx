@@ -121,7 +121,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState("grid");
   const [editingTaskId, setEditingTaskId] = useState<number | null>(null);
-  const [editValues, setEditValues] = useState<{ startDate?: string; endDate?: string; name?: string }>({});
+  const [editValues, setEditValues] = useState<{ startDate?: string; endDate?: string; name?: string; percentComplete?: number }>({});
   const [showWarningModal, setShowWarningModal] = useState(false);
   const [pendingChange, setPendingChange] = useState<{ taskId: number; changes: any } | null>(null);
   const [warningNote, setWarningNote] = useState("");
@@ -457,7 +457,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
   }, [workingPlan]);
 
   const handleSaveEdit = useCallback((taskId: number) => {
-    if (!editValues.startDate && !editValues.endDate && !editValues.name) {
+    if (!editValues.startDate && !editValues.endDate && !editValues.name && editValues.percentComplete === undefined) {
       setEditingTaskId(null);
       return;
     }
@@ -709,7 +709,29 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
                       {task.durationDays}d
                     </TableCell>
                     <TableCell data-testid={`text-actual-pct-${task.id}`}>
-                      <CompactProgress actual={actualPct} expected={null} />
+                      {isEditing ? (
+                        <Input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={editValues.percentComplete !== undefined ? editValues.percentComplete : actualPct}
+                          className="h-7 w-16 text-xs"
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => {
+                            const val = Math.min(100, Math.max(0, parseInt(e.target.value) || 0));
+                            setEditValues(prev => ({ ...prev, percentComplete: val }));
+                          }}
+                          onBlur={() => {
+                            const val = editValues.percentComplete;
+                            if (val !== undefined && val !== actualPct) {
+                              updateTaskMutation.mutate({ taskId: task.id, changes: { percentComplete: val } });
+                            }
+                          }}
+                          data-testid={`input-pct-${task.id}`}
+                        />
+                      ) : (
+                        <CompactProgress actual={actualPct} expected={null} />
+                      )}
                     </TableCell>
                     <TableCell data-testid={`text-expected-pct-${task.id}`}>
                       {expectedPct !== null ? (
