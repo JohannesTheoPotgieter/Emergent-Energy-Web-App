@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Search, Plus, Users, Building2, Pencil, X, Check, ChevronDown, ChevronRight, Link2, Unlink } from "lucide-react";
+import { Search, Plus, Users, Building2, Pencil, X, Check, ChevronDown, ChevronRight, Link2, Unlink, ChevronsUpDown } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,12 +19,18 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
@@ -76,6 +82,7 @@ export default function ClientsPage() {
   const [assignOpen, setAssignOpen] = useState(false);
   const [assignClientId, setAssignClientId] = useState<number | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+  const [projectPopoverOpen, setProjectPopoverOpen] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -487,24 +494,48 @@ export default function ClientsPage() {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <p className="text-sm text-muted-foreground">
-              Select a project to link to this client. Only unassigned projects are shown.
+              Search and select a project to link to this client. Only unassigned projects are shown.
             </p>
-            <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
-              <SelectTrigger data-testid="select-assign-project">
-                <SelectValue placeholder="Select a project..." />
-              </SelectTrigger>
-              <SelectContent>
-                {unassignedProjects.length === 0 ? (
-                  <SelectItem value="__none" disabled>No unassigned projects</SelectItem>
-                ) : (
-                  unassignedProjects.map((p) => (
-                    <SelectItem key={p.project_info_id} value={String(p.project_info_id)}>
-                      {p.project_name}
-                    </SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
+            <Popover open={projectPopoverOpen} onOpenChange={setProjectPopoverOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={projectPopoverOpen}
+                  className="w-full justify-between font-normal"
+                  data-testid="select-assign-project"
+                >
+                  {selectedProjectId
+                    ? unassignedProjects.find(p => String(p.project_info_id) === selectedProjectId)?.project_name || "Select a project..."
+                    : "Search and select a project..."}
+                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                <Command>
+                  <CommandInput placeholder="Search projects..." data-testid="input-search-assign-project" />
+                  <CommandList>
+                    <CommandEmpty>No projects found.</CommandEmpty>
+                    <CommandGroup>
+                      {unassignedProjects.map((p) => (
+                        <CommandItem
+                          key={p.project_info_id}
+                          value={p.project_name}
+                          onSelect={() => {
+                            setSelectedProjectId(String(p.project_info_id));
+                            setProjectPopoverOpen(false);
+                          }}
+                          data-testid={`option-project-${p.project_info_id}`}
+                        >
+                          <Check className={`mr-2 h-4 w-4 ${selectedProjectId === String(p.project_info_id) ? "opacity-100" : "opacity-0"}`} />
+                          {p.project_name}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
           </div>
           <DialogFooter>
             <Button

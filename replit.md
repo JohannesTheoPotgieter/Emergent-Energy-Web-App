@@ -5,6 +5,7 @@ The Emergent Energy Dashboard is a full-stack web application designed for compr
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
+All dropdowns across the app must be searchable (use Popover + Command combobox pattern, never plain Select for lists with more than a few items).
 
 ## System Architecture
 
