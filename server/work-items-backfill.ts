@@ -82,6 +82,13 @@ export async function backfillWorkItems(): Promise<void> {
         WHERE NOT EXISTS (
           SELECT 1 FROM work_items wi WHERE wi.external_ref = CONCAT('NPT::', npt.id::text)
         )
+        AND NOT EXISTS (
+          SELECT 1 FROM work_items wi2
+          WHERE wi2.project_id = npt.project_id
+            AND wi2.workstream = 'PM' AND wi2.source = 'SMART_IMPORT'
+            AND (wi2.legacy_table IS NULL OR wi2.legacy_table = '')
+            AND wi2.deleted_at IS NULL
+        )
       `);
       if (count > 0) console.log(`[Backfill] Migrated ${count} normalized_plan_tasks → work_items`);
 

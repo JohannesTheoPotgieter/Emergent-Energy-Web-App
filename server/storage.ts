@@ -905,7 +905,11 @@ export class DatabaseStorage implements IStorage {
   async getAllProjectPlans(): Promise<ProjectPlan[]> {
     const [rows, piRows] = await Promise.all([
       this.dbInstance.select().from(workItems)
-        .where(isNull(workItems.deletedAt))
+        .where(and(
+          eq(workItems.workstream, "PM"),
+          eq(workItems.source, "SMART_IMPORT"),
+          isNull(workItems.deletedAt),
+        ))
         .orderBy(desc(workItems.createdAt)),
       this.dbInstance.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo),
     ]);
@@ -918,7 +922,12 @@ export class DatabaseStorage implements IStorage {
       .where(eq(projectInfo.projectName, projectName)).limit(1);
     if (piRow.length === 0) return [];
     const rows = await this.dbInstance.select().from(workItems)
-      .where(and(eq(workItems.projectId, piRow[0].id), isNull(workItems.deletedAt)));
+      .where(and(
+        eq(workItems.projectId, piRow[0].id),
+        eq(workItems.workstream, "PM"),
+        eq(workItems.source, "SMART_IMPORT"),
+        isNull(workItems.deletedAt),
+      ));
     return rows.map((wi: any) => this.mapWorkItemToProjectPlan(wi, projectName));
   }
 
