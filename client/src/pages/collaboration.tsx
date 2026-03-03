@@ -300,6 +300,10 @@ function useMsSync() {
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ["ms-objects-mine"] });
       qc.invalidateQueries({ queryKey: ["ms-sync-status"] });
+      if (data.error === "ms_sso_required") {
+        toast({ title: "Microsoft sign-in required", description: data.message || "Please sign in with Microsoft to sync data.", variant: "destructive" });
+        return;
+      }
       const total = (data.results || []).reduce((s: number, r: any) => s + (r.synced || 0), 0);
       const errors = (data.results || []).flatMap((r: any) => r.errors || []);
       if (errors.length > 0) {
