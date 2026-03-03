@@ -10950,7 +10950,7 @@ export async function registerRoutes(
       ).limit(1);
       const isProjectPlanTask = planTaskResult.length > 0;
 
-      const workItemResult = !isProjectPlanTask
+      let workItemResult = !isProjectPlanTask
         ? await db.select().from(workItems).where(
             and(
               eq(workItems.legacyTable, "normalized_plan_tasks"),
@@ -10959,6 +10959,15 @@ export async function registerRoutes(
             )
           ).limit(1)
         : [];
+
+      if (!isProjectPlanTask && workItemResult.length === 0) {
+        workItemResult = await db.select().from(workItems).where(
+          and(
+            eq(workItems.id, actualTaskId),
+            isNull(workItems.deletedAt)
+          )
+        ).limit(1);
+      }
       const isWorkItemTask = workItemResult.length > 0;
 
       if (isProjectPlanTask) {
