@@ -123,14 +123,14 @@ export default function SystemActivityLogPage() {
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Search events..."
-                className="pl-8 w-[200px]"
+                className="pl-8 w-full sm:w-[200px]"
                 value={searchQuery}
                 onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
                 data-testid="input-activity-search"
               />
             </div>
             <Select value={sourceFilter} onValueChange={(v) => { setSourceFilter(v); setPage(1); }}>
-              <SelectTrigger className="w-[160px]" data-testid="select-activity-source">
+              <SelectTrigger className="w-[calc(50%-0.5rem)] sm:w-[160px]" data-testid="select-activity-source">
                 <SelectValue placeholder="Source" />
               </SelectTrigger>
               <SelectContent>
@@ -141,7 +141,7 @@ export default function SystemActivityLogPage() {
               </SelectContent>
             </Select>
             <Select value={entityTypeFilter} onValueChange={(v) => { setEntityTypeFilter(v); setPage(1); }}>
-              <SelectTrigger className="w-[180px]" data-testid="select-activity-entity">
+              <SelectTrigger className="w-[calc(50%-0.5rem)] sm:w-[180px]" data-testid="select-activity-entity">
                 <SelectValue placeholder="Entity Type" />
               </SelectTrigger>
               <SelectContent>
@@ -152,7 +152,7 @@ export default function SystemActivityLogPage() {
               </SelectContent>
             </Select>
             <Select value={projectNameFilter} onValueChange={(v) => { setProjectNameFilter(v); setPage(1); }}>
-              <SelectTrigger className="w-[200px]" data-testid="select-activity-project">
+              <SelectTrigger className="w-full sm:w-[200px]" data-testid="select-activity-project">
                 <SelectValue placeholder="Project" />
               </SelectTrigger>
               <SelectContent>
@@ -178,8 +178,8 @@ export default function SystemActivityLogPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="border rounded-lg overflow-hidden">
-          <table className="w-full text-sm" data-testid="activity-log-table">
+        <div className="border rounded-lg overflow-x-auto">
+          <table className="w-full text-sm min-w-[700px]" data-testid="activity-log-table">
             <thead className="bg-muted">
               <tr>
                 <th className="text-left p-3 font-medium">Time</th>

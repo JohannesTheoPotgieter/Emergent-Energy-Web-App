@@ -182,8 +182,8 @@
 
 @media (max-width: 640px) {
   button, a, [role="button"] {
-    min-height: 40px;
-    min-width: 40px;
+    min-height: 36px;
+    min-width: 36px;
   }
   input, select, textarea {
     font-size: 16px !important;
@@ -191,6 +191,16 @@
   ::-webkit-scrollbar {
     width: 3px;
     height: 3px;
+  }
+  .card-hover:active {
+    transform: scale(0.98);
+  }
+  table {
+    font-size: 11px;
+  }
+  th, td {
+    padding-left: 6px;
+    padding-right: 6px;
   }
 }
 

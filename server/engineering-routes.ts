@@ -2068,7 +2068,7 @@ export function registerEngineeringRoutes(app: Express) {
         dataResult = await db.execute(dataSql);
       } else {
         countResult = await db.execute(sql.raw(`SELECT category, count(*)::int AS cnt FROM (${unionQuery}) unified GROUP BY category`));
-        dataResult = await db.execute(sql.raw(`SELECT * FROM (${unionQuery}) unified ORDER BY timestamp DESC NULLS LAST LIMIT ${pageLimit} OFFSET ${pageOffset}`));
+        dataResult = await db.execute(sql`SELECT * FROM (${sql.raw(unionQuery)}) unified ORDER BY timestamp DESC NULLS LAST LIMIT ${pageLimit} OFFSET ${pageOffset}`);
       }
 
       const categoryCounts: Record<string, number> = {};
