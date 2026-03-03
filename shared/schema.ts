@@ -2086,6 +2086,9 @@ export const deliverables = pgTable("deliverables", {
   linkedQualityItemInstanceId: integer("linked_quality_item_instance_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  scheduledDate: text("scheduled_date"),
+  scheduledStartTime: text("scheduled_start_time"),
+  scheduledEndTime: text("scheduled_end_time"),
 });
 export const insertDeliverableSchema = createInsertSchema(deliverables).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertDeliverable = z.infer<typeof insertDeliverableSchema>;
@@ -3963,6 +3966,9 @@ export const trItems = pgTable("tr_items", {
   createdBy: text("created_by"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   updatedBy: text("updated_by"),
+  scheduledDate: text("scheduled_date"),
+  scheduledStartTime: text("scheduled_start_time"),
+  scheduledEndTime: text("scheduled_end_time"),
 });
 
 export const insertTrItemSchema = createInsertSchema(trItems).omit({ id: true, createdAt: true, updatedAt: true });

@@ -6,7 +6,7 @@ import fs from "fs";
 import path from "path";
 import { storage } from "./storage";
 import { parseTrackerFile, applyFontColors } from "./excelParser";
-import { insertBudgetSchema, projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedExecutionPhases, smartImportRuns, cosStatusOverrides, revenueTrackingOverrides, users, notifications, notificationThrottle, operationalTasks, mytoolTasks, engineeringTasks, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems, workItemAssignments, clients } from "@shared/schema";
+import { insertBudgetSchema, projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedExecutionPhases, smartImportRuns, cosStatusOverrides, revenueTrackingOverrides, users, notifications, notificationThrottle, operationalTasks, mytoolTasks, engineeringTasks, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems, workItemAssignments, clients, trItems, deliverables } from "@shared/schema";
 import { db } from "./db";
 import { safeLegacyQuery } from "./legacy-table-guard";
 import { eq, and, or, sql, isNull, asc, desc, inArray } from "drizzle-orm";
@@ -12176,8 +12176,32 @@ export async function registerRoutes(
             lastUpdatedAt: new Date(),
           })
           .where(eq(qcItemInstance.id, taskId));
+      } else if (taskType === "tr_register") {
+        const [task] = await db.select().from(trItems).where(eq(trItems.id, taskId));
+        if (!task) return res.status(404).json({ error: "Action item not found" });
+
+        await db.update(trItems)
+          .set({
+            scheduledDate: scheduledDate || null,
+            scheduledStartTime: scheduledStartTime || null,
+            scheduledEndTime: scheduledEndTime || null,
+            updatedAt: new Date(),
+          })
+          .where(eq(trItems.id, taskId));
+      } else if (taskType === "deliverable") {
+        const [task] = await db.select().from(deliverables).where(eq(deliverables.id, taskId));
+        if (!task) return res.status(404).json({ error: "Deliverable not found" });
+
+        await db.update(deliverables)
+          .set({
+            scheduledDate: scheduledDate || null,
+            scheduledStartTime: scheduledStartTime || null,
+            scheduledEndTime: scheduledEndTime || null,
+            updatedAt: new Date(),
+          })
+          .where(eq(deliverables.id, taskId));
       } else {
-        return res.status(400).json({ error: "taskType must be 'mytool', 'operational', 'plan', 'engineering', or 'quality'" });
+        return res.status(400).json({ error: "taskType must be 'mytool', 'operational', 'plan', 'engineering', 'quality', 'tr_register', or 'deliverable'" });
       }
 
       logAuditFromReq(req, {

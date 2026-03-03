@@ -51,7 +51,7 @@ interface OutlookEvent {
 
 interface CalendarTask {
   id: number;
-  taskType: "mytool" | "operational" | "plan" | "engineering" | "quality";
+  taskType: "mytool" | "operational" | "plan" | "engineering" | "quality" | "tr_register" | "deliverable" | "approval";
   title: string;
   status: string;
   priority: string;
@@ -66,6 +66,8 @@ interface CalendarTask {
   phase?: string | null;
   owner?: string | null;
   lifecyclePhase?: string | null;
+  ragStatus?: string | null;
+  department?: string | null;
 }
 
 const TASK_TYPE_COLORS: Record<string, { bg: string; border: string; text: string; subText: string; hoverBg: string; bgLight: string; hoverLight: string; legendBg: string; legendBorder: string }> = {
@@ -74,6 +76,9 @@ const TASK_TYPE_COLORS: Record<string, { bg: string; border: string; text: strin
   plan: { bg: "bg-violet-100", border: "border-violet-300", text: "text-violet-900", subText: "text-violet-700", hoverBg: "hover:bg-violet-200", bgLight: "bg-violet-50", hoverLight: "hover:bg-violet-100", legendBg: "bg-violet-100", legendBorder: "border-violet-200" },
   engineering: { bg: "bg-cyan-100", border: "border-cyan-300", text: "text-cyan-900", subText: "text-cyan-700", hoverBg: "hover:bg-cyan-200", bgLight: "bg-cyan-50", hoverLight: "hover:bg-cyan-100", legendBg: "bg-cyan-100", legendBorder: "border-cyan-200" },
   quality: { bg: "bg-rose-100", border: "border-rose-300", text: "text-rose-900", subText: "text-rose-700", hoverBg: "hover:bg-rose-200", bgLight: "bg-rose-50", hoverLight: "hover:bg-rose-100", legendBg: "bg-rose-100", legendBorder: "border-rose-200" },
+  tr_register: { bg: "bg-purple-100", border: "border-purple-300", text: "text-purple-900", subText: "text-purple-700", hoverBg: "hover:bg-purple-200", bgLight: "bg-purple-50", hoverLight: "hover:bg-purple-100", legendBg: "bg-purple-100", legendBorder: "border-purple-200" },
+  deliverable: { bg: "bg-pink-100", border: "border-pink-300", text: "text-pink-900", subText: "text-pink-700", hoverBg: "hover:bg-pink-200", bgLight: "bg-pink-50", hoverLight: "hover:bg-pink-100", legendBg: "bg-pink-100", legendBorder: "border-pink-200" },
+  approval: { bg: "bg-orange-100", border: "border-orange-300", text: "text-orange-900", subText: "text-orange-700", hoverBg: "hover:bg-orange-200", bgLight: "bg-orange-50", hoverLight: "hover:bg-orange-100", legendBg: "bg-orange-100", legendBorder: "border-orange-200" },
 };
 
 const TASK_TYPE_LABELS: Record<string, string> = {
@@ -82,6 +87,9 @@ const TASK_TYPE_LABELS: Record<string, string> = {
   plan: "Project Plan",
   engineering: "Engineering",
   quality: "Quality",
+  tr_register: "Action Item",
+  deliverable: "Deliverable",
+  approval: "Approval",
 };
 
 function getStartStr(ev: OutlookEvent): string {
@@ -296,6 +304,76 @@ export default function MyWorkCalendarPage() {
         scheduledDate: t.scheduledDate || null,
         scheduledStartTime: t.scheduledStartTime || null,
         scheduledEndTime: t.scheduledEndTime || null,
+      });
+    }
+
+    for (const t of (allTaskData.trRegister || [])) {
+      const dueDateStr = t.dueDate ? (typeof t.dueDate === "string" ? t.dueDate.split("T")[0] : null) : null;
+      tasks.push({
+        id: t.id,
+        taskType: "tr_register",
+        title: t.actionDescription || "",
+        status: t.status || "Active",
+        priority: t.ragStatus === "Red" ? "Critical" : t.ragStatus === "Amber" ? "High" : "Medium",
+        projectName: null,
+        plannedForDate: null,
+        dueDate: dueDateStr,
+        startDate: null,
+        scheduledDate: t.scheduledDate || null,
+        scheduledStartTime: t.scheduledStartTime || null,
+        scheduledEndTime: t.scheduledEndTime || null,
+        ragStatus: t.ragStatus || null,
+        department: t.department || null,
+      });
+    }
+
+    for (const d of (allTaskData.deliverables || [])) {
+      tasks.push({
+        id: d.id,
+        taskType: "deliverable",
+        title: d.title || "",
+        status: d.status || "TO DO",
+        priority: "Medium",
+        projectName: d.projectName || d.project_name || null,
+        plannedForDate: null,
+        dueDate: null,
+        startDate: null,
+        scheduledDate: d.scheduledDate || d.scheduled_date || null,
+        scheduledStartTime: d.scheduledStartTime || d.scheduled_start_time || null,
+        scheduledEndTime: d.scheduledEndTime || d.scheduled_end_time || null,
+      });
+    }
+
+    for (const a of (allTaskData.approvals?.engineering || [])) {
+      tasks.push({
+        id: a.id,
+        taskType: "approval",
+        title: a.title || "",
+        status: a.status || "pending",
+        priority: "High",
+        projectName: a.projectName || null,
+        plannedForDate: null,
+        dueDate: null,
+        startDate: null,
+        scheduledDate: null,
+        scheduledStartTime: null,
+        scheduledEndTime: null,
+      });
+    }
+    for (const a of (allTaskData.approvals?.quality || [])) {
+      tasks.push({
+        id: a.id,
+        taskType: "approval",
+        title: a.title || "",
+        status: a.status || "review",
+        priority: "High",
+        projectName: a.projectName || null,
+        plannedForDate: null,
+        dueDate: null,
+        startDate: null,
+        scheduledDate: null,
+        scheduledStartTime: null,
+        scheduledEndTime: null,
       });
     }
 
@@ -569,6 +647,8 @@ export default function MyWorkCalendarPage() {
   );
 }
 
+const NON_SCHEDULABLE_TYPES = new Set(["approval"]);
+
 function DraggableTaskCard({
   task,
   onDragStart,
@@ -582,16 +662,17 @@ function DraggableTaskCard({
   const hoverColor = colors.hoverLight;
   const textColor = colors.text;
   const subTextColor = colors.subText;
+  const canSchedule = !NON_SCHEDULABLE_TYPES.has(task.taskType);
 
   return (
     <div
-      draggable
-      onDragStart={(e) => {
+      draggable={canSchedule}
+      onDragStart={canSchedule ? (e) => {
         e.dataTransfer.effectAllowed = "move";
         e.dataTransfer.setData("text/plain", `${task.taskType}:${task.id}`);
         onDragStart(task);
-      }}
-      className={`rounded border ${borderColor} ${bgColor} ${hoverColor} px-2 py-1.5 text-xs cursor-grab active:cursor-grabbing transition-colors group`}
+      } : undefined}
+      className={`rounded border ${borderColor} ${bgColor} ${hoverColor} px-2 py-1.5 text-xs ${canSchedule ? "cursor-grab active:cursor-grabbing" : "cursor-default opacity-80"} transition-colors group`}
       data-testid={`unscheduled-task-${task.taskType}-${task.id}`}
     >
       <div className="flex items-center gap-1">
