@@ -1775,12 +1775,15 @@ router.get("/api/revenue-tab/:projectName", async (req, res) => {
       let status: string;
       let flags: string[] = [];
 
-      if (!isRed && hasInvoice) {
+      if (inBank && hasInvoice) {
         status = 'inBank';
-      } else if (isRed && hasInvoice) {
+      } else if (hasPaymentReceived && hasInvoice) {
+        status = 'received';
+        flags.push('Payment received, pending bank confirmation');
+      } else if (hasInvoice) {
         status = 'invoiced';
         flags.push('Invoice raised, payment outstanding');
-      } else if (isRed && !hasInvoice && isPast) {
+      } else if (!hasInvoice && isPast) {
         status = 'overdue';
         flags.push('Payment date has passed without invoice');
       } else {
@@ -2169,11 +2172,11 @@ router.post("/api/expenditure/overrides", requireAuth, requireAdminOrFinancialEd
         const fields = rowGroups.get(expense.id)!;
         const effectiveValue = ov.overrideValue === "__null__" ? null : ov.overrideValue;
         fields[colName] = effectiveValue;
-        if (ov.fieldName === 'expenseInvoicedDate' && effectiveValue) {
-          fields.invoiceDateConfirmed = true;
+        if (ov.fieldName === 'expenseInvoicedDate' && !effectiveValue) {
+          fields.invoiceDateConfirmed = false;
         }
-        if (ov.fieldName === 'expensePaymentDate' && effectiveValue) {
-          fields.paymentDateConfirmed = true;
+        if (ov.fieldName === 'expensePaymentDate' && !effectiveValue) {
+          fields.paymentDateConfirmed = false;
         }
       }
 
@@ -2249,6 +2252,32 @@ router.post("/api/expense-task-links/:projectName", requireAuth, requireAdminOrF
       return res.status(400).json({ error: "expenseId and taskId are required" });
     }
     const link = await storage.upsertExpenseTaskLink(req.params.projectName, expenseId, taskId, (req.user as any)?.id);
+
+    sendExcelSyncNotification({
+      projectName: decodeURIComponent(req.params.projectName),
+      changedByUserId: (req as any).user?.id,
+      changeType: "expense_task_linked",
+      changeDescription: `Expense ${expenseId} linked to task ${taskId}`,
+      details: { expenseId, taskId },
+    });
+
+    try {
+      await recordOverride({
+        actorUserId: (req as any).user?.id,
+        actorRole: (req as any).user?.role,
+        entityType: "expense_task_link",
+        entityId: `${req.params.projectName}|expense${expenseId}`,
+        projectName: decodeURIComponent(req.params.projectName),
+        action: "EXPENSE_TASK_LINK",
+        overrideCategory: "DATA_CORRECTION",
+        overrideComment: `Linked expense ${expenseId} to task ${taskId}`,
+        oldRecord: {},
+        newRecord: { expenseId, taskId },
+      });
+    } catch (auditErr: any) {
+      console.warn("[audit] Expense task link audit failed:", auditErr.message);
+    }
+
     res.json(link);
   } catch (error) {
     console.error("Link expense task error:", error);
@@ -2258,7 +2287,34 @@ router.post("/api/expense-task-links/:projectName", requireAuth, requireAdminOrF
 
 router.delete("/api/expense-task-links/:projectName/:expenseId", requireAuth, requireAdminOrFinancialEditor, async (req, res) => {
   try {
-    await storage.deleteExpenseTaskLink(req.params.projectName, parseInt(req.params.expenseId));
+    const expenseId = parseInt(req.params.expenseId);
+    await storage.deleteExpenseTaskLink(req.params.projectName, expenseId);
+
+    sendExcelSyncNotification({
+      projectName: decodeURIComponent(req.params.projectName),
+      changedByUserId: (req as any).user?.id,
+      changeType: "expense_task_unlinked",
+      changeDescription: `Expense ${expenseId} unlinked from task`,
+      details: { expenseId },
+    });
+
+    try {
+      await recordOverride({
+        actorUserId: (req as any).user?.id,
+        actorRole: (req as any).user?.role,
+        entityType: "expense_task_link",
+        entityId: `${req.params.projectName}|expense${expenseId}`,
+        projectName: decodeURIComponent(req.params.projectName),
+        action: "EXPENSE_TASK_UNLINK",
+        overrideCategory: "DATA_CORRECTION",
+        overrideComment: `Unlinked expense ${expenseId} from task`,
+        oldRecord: { expenseId },
+        newRecord: {},
+      });
+    } catch (auditErr: any) {
+      console.warn("[audit] Expense task unlink audit failed:", auditErr.message);
+    }
+
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: "Failed to unlink task" });
@@ -2338,6 +2394,15 @@ router.post("/api/expenses/add-category", requireAuth, requireAdmin, async (req,
       expenseCategory: categoryName,
       expenseLineItem: categoryName,
     });
+
+    sendExcelSyncNotification({
+      projectName: projectName || "Unknown",
+      changedByUserId: (req as any).user?.id,
+      changeType: "expense_category_added",
+      changeDescription: `New expense category added: ${categoryName}`,
+      details: req.body,
+    });
+
     res.json(newCategory);
   } catch (error) {
     console.error("Add category error:", error);

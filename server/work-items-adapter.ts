@@ -64,6 +64,10 @@ export async function getWorkItemsAsNormalizedPlanTasks(projectName: string): Pr
       scheduledDate: null,
       scheduledStartTime: null,
       scheduledEndTime: null,
+      baselineStart: wi.baselineStart || null,
+      baselineEnd: wi.baselineEnd || null,
+      baselineDuration: wi.baselineDuration || null,
+      taskMode: wi.taskMode || "auto",
     };
   });
 }
