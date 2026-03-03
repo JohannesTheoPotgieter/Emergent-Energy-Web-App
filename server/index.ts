@@ -55,7 +55,12 @@ app.use(
   }),
 );
 
-app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+app.use("/uploads", (req: any, res: any, next: any) => {
+  if (req.path.includes("_private_")) {
+    return res.status(403).json({ error: "Access denied" });
+  }
+  next();
+}, express.static(path.join(process.cwd(), "uploads")));
 
 app.use(express.urlencoded({ extended: false }));
 
@@ -456,6 +461,10 @@ async function backfillPmUserIds() {
   const { registerPoRoutes, ensurePoTables } = await import("./po-routes");
   await ensurePoTables();
   registerPoRoutes(app);
+
+  const { registerDeliverableCaptureRoutes, ensureDeliverableCaptureColumns } = await import("./deliverable-capture-routes");
+  await ensureDeliverableCaptureColumns();
+  registerDeliverableCaptureRoutes(app);
 
   const { registerTrRegisterRoutes, seedTrRegisterData } = await import("./tr-register-routes");
   registerTrRegisterRoutes(app);
