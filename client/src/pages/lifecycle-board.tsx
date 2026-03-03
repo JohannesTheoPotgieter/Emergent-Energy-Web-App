@@ -226,12 +226,12 @@ function compactBar(label: string, pct: number | null, color: string, id?: numbe
   if (pct === null || pct === undefined) return null;
   const display = Math.round(pct * 100);
   return (
-    <div className="flex items-center gap-1 text-[10px]" data-testid={`pct-${label}-${id}`}>
-      <span className="text-muted-foreground w-[22px] shrink-0 font-medium text-[9px]">{label}</span>
-      <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden min-w-[30px]">
+    <div className="flex items-center gap-1.5 text-[10px]" data-testid={`pct-${label}-${id}`}>
+      <span className="text-muted-foreground w-[24px] shrink-0 font-semibold text-[9px]">{label}</span>
+      <div className="flex-1 h-[6px] bg-gray-200 rounded-full overflow-hidden min-w-[40px]">
         <div className={`h-full rounded-full ${color}`} style={{ width: `${Math.min(display, 100)}%` }} />
       </div>
-      <span className="text-muted-foreground w-[26px] text-right text-[9px]">{display}%</span>
+      <span className="text-muted-foreground w-[30px] text-right text-[9px] font-medium">{display}%</span>
     </div>
   );
 }
@@ -951,7 +951,7 @@ export default function LifecycleBoardPage() {
       </div>
 
       <div className="pb-4 overflow-x-auto -mx-3 sm:-mx-4 md:-mx-6 px-3 sm:px-4 md:px-6">
-        <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${PHASE_GROUPS.length}, minmax(140px, 1fr))`, minWidth: `${PHASE_GROUPS.length * 140}px` }}>
+        <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${PHASE_GROUPS.length}, minmax(200px, 1fr))`, minWidth: `${PHASE_GROUPS.length * 200}px` }}>
           {PHASE_GROUPS.map((group) => {
             const items = grouped[group.key] || [];
             const isOver = dragOverColumn === group.key;
@@ -993,27 +993,31 @@ export default function LifecycleBoardPage() {
                         onClick={() => openProjectDialog(p)}
                         data-testid={`card-project-${p.id}`}
                       >
-                        <CardContent className="p-2 space-y-1">
-                          <div className="flex items-center gap-1.5">
+                        <CardContent className="p-2.5 space-y-1.5">
+                          <div className="flex items-start gap-1.5">
                             <button
                               type="button"
-                              className="shrink-0 hover:scale-125 transition-transform"
+                              className="shrink-0 hover:scale-125 transition-transform mt-0.5"
                               onClick={(e) => openRagModal(p, e)}
                               title={p.ragStatus ? `RAG: ${p.ragStatus}` : "Set RAG"}
                               data-testid={`rag-dot-${p.id}`}
                             >
                               {ragDot(p.ragStatus)}
                             </button>
-                            <div className="font-semibold text-[11px] leading-snug truncate flex-1 min-w-0" data-testid={`text-project-name-${p.id}`} title={cleanProjectName(p.projectName)}>
-                              {cleanProjectName(p.projectName)}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-start justify-between gap-1">
+                                <span className="font-semibold text-[11px] leading-snug break-words" data-testid={`text-project-name-${p.id}`}>
+                                  {cleanProjectName(p.projectName)}
+                                </span>
+                                {trackerBadge(p.hasTracker)}
+                              </div>
                             </div>
-                            {trackerBadge(p.hasTracker)}
                           </div>
 
-                          <div className="flex flex-wrap items-center gap-1 text-[9px] text-muted-foreground pl-4">
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
                             {p.sizeKwp && parseFloat(p.sizeKwp) > 0 && (
                               <span className="flex items-center gap-0.5 font-medium" data-testid={`text-size-${p.id}`}>
-                                <Zap className="w-2.5 h-2.5 text-amber-500" />
+                                <Zap className="w-3 h-3 text-amber-500" />
                                 {parseFloat(p.sizeKwp).toFixed(0)} kWp
                               </span>
                             )}
@@ -1024,34 +1028,36 @@ export default function LifecycleBoardPage() {
                             )}
                           </div>
 
-                          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[9px] text-muted-foreground pl-4">
+                          <div className="space-y-0.5 text-[10px] text-muted-foreground">
                             {p.pd && (
-                              <span className="flex items-center gap-0.5" data-testid={`text-pd-${p.id}`}>
-                                <span className="font-semibold text-blue-600">PD</span> {p.pd}
-                              </span>
+                              <div className="flex items-center gap-1" data-testid={`text-pd-${p.id}`}>
+                                <span className="font-semibold text-blue-600 w-[20px] shrink-0">PD</span>
+                                <span className="break-words">{p.pd}</span>
+                              </div>
                             )}
                             {p.pm && (
-                              <span className="flex items-center gap-0.5" data-testid={`text-pm-${p.id}`}>
-                                <span className="font-semibold text-indigo-600">PM</span> {p.pm}
-                              </span>
+                              <div className="flex items-center gap-1" data-testid={`text-pm-${p.id}`}>
+                                <span className="font-semibold text-indigo-600 w-[20px] shrink-0">PM</span>
+                                <span className="break-words">{p.pm}</span>
+                              </div>
                             )}
                             {p.lastEngineer && (
-                              <span className="flex items-center gap-0.5 italic" data-testid={`text-last-eng-${p.id}`} title={`Last eng activity: ${p.lastEngineer.name}`}>
-                                <Wrench className="w-2.5 h-2.5 text-purple-400" />
-                                {p.lastEngineer.name}
-                                <span className="text-[8px] opacity-70">{timeAgo(p.lastEngineer.at)}</span>
-                              </span>
+                              <div className="flex items-center gap-1 italic" data-testid={`text-last-eng-${p.id}`} title={`Last eng activity: ${p.lastEngineer.name}`}>
+                                <Wrench className="w-3 h-3 text-purple-400 shrink-0" />
+                                <span className="break-words">{p.lastEngineer.name}</span>
+                                <span className="text-[8px] opacity-60 shrink-0">{timeAgo(p.lastEngineer.at)}</span>
+                              </div>
                             )}
                           </div>
 
-                          <div className="space-y-0.5 mt-0.5 pl-4">
+                          <div className="space-y-0.5 pt-0.5">
                             {compactBar("PD", p.pdPercent, "bg-blue-500", p.id)}
                             {compactBar("Eng", p.engPercent, "bg-purple-500", p.id)}
                             {compactBar("QA", p.qmPercent, "bg-teal-500", p.id)}
                             {compactBar("PM", p.pmPercent, "bg-emerald-500", p.id)}
                             {p.engOverdue > 0 && (
                               <div className="flex items-center gap-0.5 text-[9px] text-red-600 font-medium">
-                                <AlertCircle className="w-2.5 h-2.5" />
+                                <AlertCircle className="w-3 h-3" />
                                 {p.engOverdue} overdue
                               </div>
                             )}
