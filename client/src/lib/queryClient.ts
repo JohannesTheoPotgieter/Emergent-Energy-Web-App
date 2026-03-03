@@ -82,9 +82,27 @@ export function invalidateDashboardQueries(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: ["/api/program-dashboard"] });
   qc.invalidateQueries({ queryKey: ["/api/dashboard/high-priority"] });
   qc.invalidateQueries({ queryKey: ["/api/projects-summary"] });
+  qc.invalidateQueries({ queryKey: ["/api/portfolio-dashboard"] });
+  qc.invalidateQueries({ queryKey: ["/api/lifecycle-board/projects"] });
+  qc.invalidateQueries({ queryKey: ["/api/financial-headline"] });
   qc.invalidateQueries({ queryKey: ["dashboard"] });
   qc.invalidateQueries({ queryKey: ["overview"] });
   qc.invalidateQueries({ queryKey: ["projects-summary"] });
+}
+
+export function invalidateProjectQueries(qc: QueryClient, projectName: string) {
+  invalidateDashboardQueries(qc);
+  qc.invalidateQueries({ queryKey: ["planning-tasks", projectName] });
+  qc.invalidateQueries({ queryKey: ["operational-tasks", projectName] });
+  qc.invalidateQueries({ queryKey: ["working-plan", projectName] });
+  qc.invalidateQueries({ queryKey: ["revenue-tab", projectName] });
+  qc.invalidateQueries({ queryKey: ["expenditure-breakdown", projectName] });
+  qc.invalidateQueries({ queryKey: ["cashflow", projectName] });
+  qc.invalidateQueries({ queryKey: ["program-expenses", projectName] });
+  qc.invalidateQueries({ queryKey: ["program-inflows", projectName] });
+  qc.invalidateQueries({ queryKey: ["quality-summary", projectName] });
+  qc.invalidateQueries({ queryKey: ["finance-revenue", projectName] });
+  qc.invalidateQueries({ queryKey: ["finance-cos", projectName] });
 }
 
 export const queryClient = new QueryClient({
