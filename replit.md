@@ -52,8 +52,9 @@ Preferred communication style: Simple, everyday language.
 -   **Plan Task Bulk Operations**: `POST /api/planning-tasks/bulk` supports delete, indent, outdent, moveUp, moveDown operations with Excel sync notifications and audit logging.
 -   **Summary Rollup**: `GET /api/planning-tasks/:projectName/summary-rollup` returns computed parent task aggregates (weighted % complete, min start, max end, total duration) for summary task display.
 -   **Baseline Tracking**: `work_items` table has `baseline_start`, `baseline_end`, `baseline_duration`, `task_mode` columns. PATCH endpoint handles all baseline and duration fields with auto-calc end date from duration.
--   **MS Object Sync**: Periodically syncs calendar, email, and Teams data from Microsoft Graph API.
+-   **MS Object Sync**: Periodically syncs calendar, email, and Teams data from Microsoft Graph API. All syncs are user-scoped — each user's SSO token is used to fetch their own data. Token refresh via MSAL `acquireTokenSilent` with persisted token cache in `ms_accounts.refresh_token_encrypted`. Fallback to shared Replit Connector is blocked for user-specific endpoints (`/me/*`).
 -   **Email/Message to Task**: Enables creating project-linked tasks from Outlook emails or Teams messages.
+-   **COS Realised Logic**: Font color takes precedence over `invoiceDateConfirmed` boolean. Red font = NOT confirmed regardless of boolean. Manual date overrides do NOT auto-set `invoiceDateConfirmed=true`; only explicit font color toggle (black) confirms a date.
 
 ### Database Architecture
 -   **Core Structure**: `project_info` as the central entity, linked to `clients`.

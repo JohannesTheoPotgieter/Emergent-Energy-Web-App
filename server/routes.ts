@@ -13070,7 +13070,8 @@ export async function registerRoutes(
 
   app.get("/api/sharepoint/discover-sites", requireAuth, async (req, res) => {
     try {
-      const sites = await outlook.discoverSharePointSites();
+      const userToken = await getUserSsoToken(req);
+      const sites = await outlook.discoverSharePointSites(userToken);
       res.json(sites);
     } catch (err: any) {
       if (err.message?.includes("not connected") || err.message?.includes("not available")) {
@@ -13083,7 +13084,8 @@ export async function registerRoutes(
 
   app.get("/api/sharepoint/site-drives/:siteId", requireAuth, async (req, res) => {
     try {
-      const drives = await outlook.getSiteDrives(req.params.siteId);
+      const userToken = await getUserSsoToken(req);
+      const drives = await outlook.getSiteDrives(req.params.siteId, userToken);
       res.json(drives);
     } catch (err: any) {
       console.error("[SharePoint] Site drives error:", err);
