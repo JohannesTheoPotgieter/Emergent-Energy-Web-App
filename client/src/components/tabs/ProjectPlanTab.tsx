@@ -117,11 +117,81 @@ function CompactProgress({ actual, expected, size = "sm" }: { actual: number; ex
   );
 }
 
+function InlinePctEditor({ taskId, pct, projectName }: { taskId: number; pct: number; projectName: string }) {
+  const [editing, setEditing] = useState(false);
+  const [localVal, setLocalVal] = useState(String(pct));
+  const queryClient = useQueryClient();
+
+  useEffect(() => { setLocalVal(String(pct)); }, [pct]);
+
+  const pctMutation = useMutation({
+    mutationFn: async (newPct: number) => {
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const negativeId = -Math.abs(taskId);
+      const res = await fetch(`/api/planning-tasks/${negativeId}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers,
+        body: JSON.stringify({ projectName, percentComplete: newPct }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message || body.error || "Failed to save");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["working-plan", projectName] });
+      invalidateDashboardQueries(queryClient);
+    },
+  });
+
+  const commit = () => {
+    const parsed = Math.min(100, Math.max(0, parseInt(localVal) || 0));
+    setEditing(false);
+    if (parsed !== pct) {
+      pctMutation.mutate(parsed);
+    }
+  };
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+        <input
+          className="w-12 h-6 text-xs tabular-nums text-center border border-primary/40 rounded bg-background outline-none focus:ring-1 focus:ring-primary/30"
+          type="number"
+          min={0}
+          max={100}
+          value={localVal}
+          onChange={(e) => setLocalVal(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } if (e.key === "Escape") { setEditing(false); setLocalVal(String(pct)); } }}
+          autoFocus
+          data-testid={`input-pct-inline-${taskId}`}
+        />
+        <span className="text-[9px] text-muted-foreground">%</span>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      className="text-xs tabular-nums font-medium hover:bg-muted/60 px-1.5 py-0.5 rounded cursor-pointer transition-colors"
+      onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+      data-testid={`btn-pct-${taskId}`}
+    >
+      {pctMutation.isPending ? "..." : `${pct}%`}
+    </button>
+  );
+}
+
 export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState("grid");
   const [editingTaskId, setEditingTaskId] = useState<number | null>(null);
-  const [editValues, setEditValues] = useState<{ startDate?: string; endDate?: string; name?: string; percentComplete?: number }>({});
+  const [editValues, setEditValues] = useState<{ startDate?: string; endDate?: string; name?: string }>({});
   const [showWarningModal, setShowWarningModal] = useState(false);
   const [pendingChange, setPendingChange] = useState<{ taskId: number; changes: any } | null>(null);
   const [warningNote, setWarningNote] = useState("");
@@ -457,7 +527,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
   }, [workingPlan]);
 
   const handleSaveEdit = useCallback((taskId: number) => {
-    if (!editValues.startDate && !editValues.endDate && !editValues.name && editValues.percentComplete === undefined) {
+    if (!editValues.startDate && !editValues.endDate && !editValues.name) {
       setEditingTaskId(null);
       return;
     }
@@ -709,29 +779,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
                       {task.durationDays}d
                     </TableCell>
                     <TableCell data-testid={`text-actual-pct-${task.id}`}>
-                      {isEditing ? (
-                        <Input
-                          type="number"
-                          min={0}
-                          max={100}
-                          value={editValues.percentComplete !== undefined ? editValues.percentComplete : actualPct}
-                          className="h-7 w-16 text-xs"
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) => {
-                            const val = Math.min(100, Math.max(0, parseInt(e.target.value) || 0));
-                            setEditValues(prev => ({ ...prev, percentComplete: val }));
-                          }}
-                          onBlur={() => {
-                            const val = editValues.percentComplete;
-                            if (val !== undefined && val !== actualPct) {
-                              updateTaskMutation.mutate({ taskId: task.id, changes: { percentComplete: val } });
-                            }
-                          }}
-                          data-testid={`input-pct-${task.id}`}
-                        />
-                      ) : (
-                        <CompactProgress actual={actualPct} expected={null} />
-                      )}
+                      <InlinePctEditor taskId={task.id} pct={actualPct} projectName={projectName} />
                     </TableCell>
                     <TableCell data-testid={`text-expected-pct-${task.id}`}>
                       {expectedPct !== null ? (

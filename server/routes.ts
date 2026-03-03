@@ -10897,6 +10897,16 @@ export async function registerRoutes(
 
           if (Object.keys(updateFields).length > 0) {
             await safeLegacyWrite(() => db.update(projectPlan).set(updateFields).where(eq(projectPlan.id, actualTaskId)));
+            try {
+              const wiPct = updateFields.actualPctComplete;
+              if (wiPct !== undefined) {
+                await db.update(workItems).set({ percentComplete: wiPct }).where(
+                  and(eq(workItems.legacyTable, "project_plan"), eq(workItems.legacyId, actualTaskId))
+                );
+              }
+            } catch (e) {
+              console.warn(`[planning-tasks] Failed to sync percentComplete to work_items for task ${actualTaskId}:`, e);
+            }
           }
         }
 
