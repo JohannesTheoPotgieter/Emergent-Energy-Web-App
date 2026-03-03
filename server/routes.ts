@@ -6310,11 +6310,11 @@ export async function registerRoutes(
           const fields = rowGroups.get(expense.id)!;
           const effectiveValue = ov.overrideValue === "__null__" ? null : ov.overrideValue;
           fields[colName] = effectiveValue;
-          if (ov.fieldName === 'expenseInvoicedDate' && effectiveValue) {
-            fields.invoiceDateConfirmed = true;
+          if (ov.fieldName === 'expenseInvoicedDate' && !effectiveValue) {
+            fields.invoiceDateConfirmed = false;
           }
-          if (ov.fieldName === 'expensePaymentDate' && effectiveValue) {
-            fields.paymentDateConfirmed = true;
+          if (ov.fieldName === 'expensePaymentDate' && !effectiveValue) {
+            fields.paymentDateConfirmed = false;
           }
         }
 
@@ -6876,6 +6876,15 @@ export async function registerRoutes(
     try {
       const expenseId = parseInt(req.params.expenseId);
       await db.delete(cosStatusOverrides).where(eq(cosStatusOverrides.expenseId, expenseId));
+
+      sendExcelSyncNotification({
+        projectName: "Unknown",
+        changedByUserId: req.user?.id || 0,
+        changeType: "cos_status_override_removed",
+        changeDescription: `COS status override removed for expense ${expenseId}`,
+        details: { expenseId },
+      }).catch(() => {});
+
       logAuditFromReq(req, { entityType: "cos_override", action: "delete", entityId: String(expenseId), changesJson: { description: "COS status override removed" } });
       res.json({ success: true });
     } catch (error) {
@@ -10553,6 +10562,10 @@ export async function registerRoutes(
               rowNumber: idx + 1,
               parentRowNumber: null,
               indentLevel: ct.indentLevel ?? null,
+              baselineStart: ct.baselineStart || null,
+              baselineEnd: ct.baselineEnd || null,
+              baselineDuration: ct.baselineDuration || null,
+              taskMode: ct.taskMode || "auto",
               createdBy: null,
               createdAt: null,
               updatedAt: null,
@@ -10874,7 +10887,11 @@ export async function registerRoutes(
     try {
       const projectName = decodeURIComponent(req.params.projectName);
       const allTasks = await db.select().from(workItems).where(
-        and(eq(workItems.workstream, "PM"), eq(workItems.projectName, projectName), isNull(workItems.deletedAt))
+        and(
+          eq(workItems.workstream, "PM"),
+          isNull(workItems.deletedAt),
+          sql`EXISTS (SELECT 1 FROM project_info pi WHERE pi.id = ${workItems.projectId} AND pi.project_name = ${projectName})`
+        )
       );
 
       const childrenByParent = new Map<number, typeof allTasks>();
@@ -11160,6 +11177,9 @@ export async function registerRoutes(
         if (updates.baselineDuration != null) {
           wiUpdateFields.baselineDuration = updates.baselineDuration;
         }
+        if (updates.taskMode != null) {
+          wiUpdateFields.taskMode = updates.taskMode;
+        }
 
         if (updates.status === "Done" && updates.percentComplete == null) {
           wiUpdateFields.percentComplete = 1.0;
@@ -11335,7 +11355,12 @@ export async function registerRoutes(
             const [task] = await db.select().from(workItems).where(eq(workItems.id, id));
             if (task) {
               const siblings = await db.select().from(workItems).where(
-                and(eq(workItems.projectName, projectName), eq(workItems.workstream, "PM"), isNull(workItems.deletedAt), eq(workItems.parentId, task.parentId || 0))
+                and(
+                  eq(workItems.workstream, "PM"),
+                  isNull(workItems.deletedAt),
+                  eq(workItems.parentId, task.parentId || 0),
+                  sql`EXISTS (SELECT 1 FROM project_info pi WHERE pi.id = ${workItems.projectId} AND pi.project_name = ${projectName})`
+                )
               );
               const sorted = siblings.sort((a: any, b: any) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
               const idx = sorted.findIndex((s: any) => s.id === id);
@@ -11375,10 +11400,10 @@ export async function registerRoutes(
             if (task) {
               const siblings = await db.select().from(workItems).where(
                 and(
-                  eq(workItems.projectName, projectName),
                   eq(workItems.workstream, "PM"),
                   isNull(workItems.deletedAt),
-                  task.parentId ? eq(workItems.parentId, task.parentId) : isNull(workItems.parentId)
+                  task.parentId ? eq(workItems.parentId, task.parentId) : isNull(workItems.parentId),
+                  sql`EXISTS (SELECT 1 FROM project_info pi WHERE pi.id = ${workItems.projectId} AND pi.project_name = ${projectName})`
                 )
               );
               const sorted = siblings.sort((a: any, b: any) => (a.sortOrder ?? a.id) - (b.sortOrder ?? b.id));

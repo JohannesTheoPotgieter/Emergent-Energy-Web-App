@@ -85,8 +85,10 @@ function getStatusBadge(status: string) {
       return <Badge data-testid="badge-status-inBank" className="bg-green-100 text-green-800 border-green-200 hover:bg-green-100">In Bank</Badge>;
     case "invoiced":
       return <Badge data-testid="badge-status-invoiced" className="bg-blue-100 text-blue-800 border-blue-200 hover:bg-blue-100">Invoiced</Badge>;
+    case "received":
+      return <Badge data-testid="badge-status-received" className="bg-amber-100 text-amber-800 border-amber-200 hover:bg-amber-100">Received</Badge>;
     case "overdue":
-      return <Badge data-testid="badge-status-overdue" className="bg-amber-100 text-amber-800 border-amber-200 hover:bg-amber-100">Overdue</Badge>;
+      return <Badge data-testid="badge-status-overdue" className="bg-red-100 text-red-800 border-red-200 hover:bg-red-100">Overdue</Badge>;
     case "planned":
     default:
       return <Badge data-testid="badge-status-planned" className="bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-100" variant="secondary">Planned</Badge>;
@@ -325,43 +327,43 @@ export function RevenueTrackingEditableTab({ projectName }: RevenueTrackingEdita
     <TooltipProvider>
       <div className="space-y-4">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3" data-testid="kpi-strip-revenue">
-          <Card className="border-l-4 border-l-slate-400">
+          <Card className="bg-slate-50 border-slate-200">
             <CardContent className="p-4">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+              <div className="flex items-center gap-2 text-sm text-slate-600 mb-1">
                 <DollarSign className="h-4 w-4" />
-                <span>Total Contract</span>
+                <span>Total Contract Revenue</span>
               </div>
-              <p data-testid="kpi-total-contract" className="text-xl font-bold">{formatCurrency(summary.totalContract)}</p>
-              <p className="text-xs text-muted-foreground mt-1">{summary.milestoneCount} milestones</p>
+              <p data-testid="kpi-total-contract" className="text-xl font-bold text-slate-900">{formatCurrency(summary.totalContract)}</p>
+              <p className="text-xs text-slate-500 mt-1">{summary.milestoneCount} milestones</p>
             </CardContent>
           </Card>
-          <Card className="border-l-4 border-l-blue-400">
+          <Card className="bg-amber-50 border-amber-200">
             <CardContent className="p-4">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+              <div className="flex items-center gap-2 text-sm text-amber-700 mb-1">
                 <FileText className="h-4 w-4" />
-                <span>Invoiced</span>
+                <span>Invoiced Total</span>
               </div>
-              <p data-testid="kpi-invoiced" className="text-xl font-bold text-blue-700">{formatCurrency(summary.invoiced)}</p>
-              <p className="text-xs text-muted-foreground mt-1">Awaiting payment</p>
+              <p data-testid="kpi-invoiced" className="text-xl font-bold text-amber-800">{formatCurrency(summary.invoiced)}</p>
+              <p className="text-xs text-amber-600 mt-1">Awaiting payment</p>
             </CardContent>
           </Card>
-          <Card className="border-l-4 border-l-green-400">
+          <Card className="bg-green-50 border-green-200">
             <CardContent className="p-4">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+              <div className="flex items-center gap-2 text-sm text-green-700 mb-1">
                 <Landmark className="h-4 w-4" />
-                <span>In Bank</span>
+                <span>In Bank Total</span>
               </div>
-              <p data-testid="kpi-in-bank" className="text-xl font-bold text-green-700">{formatCurrency(summary.inBank)}</p>
-              <p className="text-xs text-muted-foreground mt-1">Confirmed received</p>
+              <p data-testid="kpi-in-bank" className="text-xl font-bold text-green-800">{formatCurrency(summary.inBank)}</p>
+              <p className="text-xs text-green-600 mt-1">Confirmed received</p>
             </CardContent>
           </Card>
-          <Card className="border-l-4 border-l-amber-400">
+          <Card className="bg-red-50 border-red-200">
             <CardContent className="p-4">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+              <div className="flex items-center gap-2 text-sm text-red-700 mb-1">
                 <AlertTriangle className="h-4 w-4" />
                 <span>Outstanding</span>
               </div>
-              <p data-testid="kpi-outstanding" className="text-xl font-bold text-amber-700">{formatCurrency(outstanding > 0 ? outstanding : summary.pending)}</p>
+              <p data-testid="kpi-outstanding" className="text-xl font-bold text-red-800">{formatCurrency(outstanding > 0 ? outstanding : summary.pending)}</p>
               {summary.overdue > 0 && (
                 <p className="text-xs text-red-600 mt-1">{formatCurrency(summary.overdue)} overdue</p>
               )}
