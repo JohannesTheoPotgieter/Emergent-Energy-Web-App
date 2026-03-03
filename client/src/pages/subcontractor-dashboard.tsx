@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { PermissionGate } from "@/components/PermissionGate";
 import { useAuth } from "@/hooks/use-auth";
@@ -17,10 +17,14 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Tabs, TabsContent, TabsList, TabsTrigger,
 } from "@/components/ui/tabs";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/hooks/use-toast";
 import {
   DollarSign, Users, Clock, TrendingUp, Search, Filter,
   Loader2, ArrowUpDown, ChevronRight, AlertCircle, Calendar,
   CheckCircle2, CircleDot, ExternalLink, FileText, Pencil, Check, X, Trash2, Merge, Tag, Link2, ArrowLeft,
+  Building2, Phone, Mail, MapPin, CreditCard, ChevronDown, ChevronUp, Save,
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 
@@ -44,6 +48,228 @@ function formatDate(val: string | null): string {
 }
 
 type SortField = "totalSpendExVat" | "invoiceCount" | "projectCount" | "lastInvoiceDate" | "avgTurnaroundDays" | "openAmount" | "overdueAmount" | "upcomingAmount30d" | "counterpartyName";
+
+function SupplierDetailsPanel({ counterpartyName }: { counterpartyName: string }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [expanded, setExpanded] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({
+    vatNumber: "", registrationNumber: "", address: "", contactPerson: "",
+    contactPhone: "", contactEmail: "", bankName: "", bankAccountNumber: "",
+    bankBranchCode: "", paymentTerms: "", notes: "",
+  });
+
+  const { data: supplierData, isLoading } = useQuery({
+    queryKey: ["supplier-details", counterpartyName],
+    queryFn: async () => {
+      const res = await fetch(`/api/subcontractor-dashboard/supplier-details/${encodeURIComponent(counterpartyName)}`, {
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!counterpartyName,
+  });
+
+  useEffect(() => {
+    if (supplierData && supplierData.exists) {
+      setForm({
+        vatNumber: supplierData.vat_number || "",
+        registrationNumber: supplierData.registration_number || "",
+        address: supplierData.address || "",
+        contactPerson: supplierData.contact_person || "",
+        contactPhone: supplierData.contact_phone || "",
+        contactEmail: supplierData.contact_email || "",
+        bankName: supplierData.bank_name || "",
+        bankAccountNumber: supplierData.bank_account_number || "",
+        bankBranchCode: supplierData.bank_branch_code || "",
+        paymentTerms: supplierData.payment_terms || "",
+        notes: supplierData.notes || "",
+      });
+    }
+  }, [supplierData]);
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/subcontractor-dashboard/supplier-details/${encodeURIComponent(counterpartyName)}`, {
+        method: "PATCH",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      if (!res.ok) throw new Error("Failed to save");
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Supplier details saved" });
+      setEditing(false);
+      queryClient.invalidateQueries({ queryKey: ["supplier-details", counterpartyName] });
+    },
+    onError: () => toast({ title: "Failed to save supplier details", variant: "destructive" }),
+  });
+
+  const updateField = (field: string, value: string) => setForm(prev => ({ ...prev, [field]: value }));
+
+  const hasData = supplierData?.exists && (
+    supplierData.vat_number || supplierData.address || supplierData.contact_person ||
+    supplierData.contact_phone || supplierData.contact_email
+  );
+
+  return (
+    <Card data-testid="supplier-details-panel">
+      <div
+        className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-muted/30"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <div className="flex items-center gap-2">
+          <Building2 className="h-4 w-4 text-blue-600" />
+          <h4 className="text-sm font-semibold">Supplier Details</h4>
+          {!hasData && !editing && (
+            <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-300">Not set</Badge>
+          )}
+          {hasData && !editing && (
+            <Badge variant="secondary" className="text-[10px] text-green-600">Captured</Badge>
+          )}
+        </div>
+        <div className="flex items-center gap-1">
+          {expanded && !editing && (
+            <PermissionGate entity="procurement" action="edit">
+              <Button
+                size="sm" variant="outline" className="h-7 text-xs"
+                onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+                data-testid="btn-edit-supplier-details"
+              >
+                <Pencil className="h-3 w-3 mr-1" /> Edit
+              </Button>
+            </PermissionGate>
+          )}
+          {expanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+        </div>
+      </div>
+      {expanded && (
+        <CardContent className="pt-0 pb-4 px-4">
+          {isLoading ? (
+            <div className="flex justify-center py-4"><Loader2 className="h-4 w-4 animate-spin" /></div>
+          ) : editing ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div>
+                  <Label className="text-xs">VAT Number</Label>
+                  <Input value={form.vatNumber} onChange={e => updateField("vatNumber", e.target.value)}
+                    placeholder="e.g. 4210308138" className="h-8 text-xs" data-testid="input-supplier-vat" />
+                </div>
+                <div>
+                  <Label className="text-xs">Registration Number</Label>
+                  <Input value={form.registrationNumber} onChange={e => updateField("registrationNumber", e.target.value)}
+                    placeholder="Company registration" className="h-8 text-xs" data-testid="input-supplier-reg" />
+                </div>
+                <div className="sm:col-span-2 lg:col-span-1">
+                  <Label className="text-xs">Address</Label>
+                  <Input value={form.address} onChange={e => updateField("address", e.target.value)}
+                    placeholder="Full physical address" className="h-8 text-xs" data-testid="input-supplier-address" />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <Label className="text-xs">Contact Person</Label>
+                  <Input value={form.contactPerson} onChange={e => updateField("contactPerson", e.target.value)}
+                    placeholder="Primary contact name" className="h-8 text-xs" data-testid="input-supplier-contact-person" />
+                </div>
+                <div>
+                  <Label className="text-xs">Phone</Label>
+                  <Input value={form.contactPhone} onChange={e => updateField("contactPhone", e.target.value)}
+                    placeholder="+27..." className="h-8 text-xs" data-testid="input-supplier-phone" />
+                </div>
+                <div>
+                  <Label className="text-xs">Email</Label>
+                  <Input value={form.contactEmail} onChange={e => updateField("contactEmail", e.target.value)}
+                    placeholder="accounts@supplier.co.za" className="h-8 text-xs" data-testid="input-supplier-email" />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <Label className="text-xs">Bank Name</Label>
+                  <Input value={form.bankName} onChange={e => updateField("bankName", e.target.value)}
+                    placeholder="e.g. FNB" className="h-8 text-xs" data-testid="input-supplier-bank" />
+                </div>
+                <div>
+                  <Label className="text-xs">Account Number</Label>
+                  <Input value={form.bankAccountNumber} onChange={e => updateField("bankAccountNumber", e.target.value)}
+                    placeholder="Account number" className="h-8 text-xs" data-testid="input-supplier-account" />
+                </div>
+                <div>
+                  <Label className="text-xs">Branch Code</Label>
+                  <Input value={form.bankBranchCode} onChange={e => updateField("bankBranchCode", e.target.value)}
+                    placeholder="Branch code" className="h-8 text-xs" data-testid="input-supplier-branch" />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs">Payment Terms</Label>
+                  <Input value={form.paymentTerms} onChange={e => updateField("paymentTerms", e.target.value)}
+                    placeholder="e.g. 30 days net" className="h-8 text-xs" data-testid="input-supplier-payment-terms" />
+                </div>
+                <div>
+                  <Label className="text-xs">Notes</Label>
+                  <Input value={form.notes} onChange={e => updateField("notes", e.target.value)}
+                    placeholder="Additional notes" className="h-8 text-xs" data-testid="input-supplier-notes" />
+                </div>
+              </div>
+              <div className="flex gap-2 justify-end">
+                <Button size="sm" variant="outline" onClick={() => setEditing(false)} className="h-7 text-xs" data-testid="btn-cancel-supplier-edit">
+                  Cancel
+                </Button>
+                <Button size="sm" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending} className="h-7 text-xs" data-testid="btn-save-supplier-details">
+                  {saveMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Save className="h-3 w-3 mr-1" />}
+                  Save Details
+                </Button>
+              </div>
+            </div>
+          ) : hasData ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-2 text-xs">
+              {supplierData.vat_number && (
+                <div className="flex items-center gap-1.5"><span className="text-muted-foreground w-24 shrink-0">VAT#:</span><span className="font-medium">{supplierData.vat_number}</span></div>
+              )}
+              {supplierData.registration_number && (
+                <div className="flex items-center gap-1.5"><span className="text-muted-foreground w-24 shrink-0">Reg#:</span><span className="font-medium">{supplierData.registration_number}</span></div>
+              )}
+              {supplierData.address && (
+                <div className="flex items-start gap-1.5"><MapPin className="h-3 w-3 text-muted-foreground mt-0.5 shrink-0" /><span className="font-medium">{supplierData.address}</span></div>
+              )}
+              {supplierData.contact_person && (
+                <div className="flex items-center gap-1.5"><Users className="h-3 w-3 text-muted-foreground shrink-0" /><span className="font-medium">{supplierData.contact_person}</span></div>
+              )}
+              {supplierData.contact_phone && (
+                <div className="flex items-center gap-1.5"><Phone className="h-3 w-3 text-muted-foreground shrink-0" /><span className="font-medium">{supplierData.contact_phone}</span></div>
+              )}
+              {supplierData.contact_email && (
+                <div className="flex items-center gap-1.5"><Mail className="h-3 w-3 text-muted-foreground shrink-0" /><span className="font-medium">{supplierData.contact_email}</span></div>
+              )}
+              {supplierData.bank_name && (
+                <div className="flex items-center gap-1.5"><CreditCard className="h-3 w-3 text-muted-foreground shrink-0" /><span className="font-medium">{supplierData.bank_name} {supplierData.bank_account_number ? `(${supplierData.bank_account_number})` : ""}</span></div>
+              )}
+              {supplierData.payment_terms && (
+                <div className="flex items-center gap-1.5"><span className="text-muted-foreground w-24 shrink-0">Terms:</span><span className="font-medium">{supplierData.payment_terms}</span></div>
+              )}
+              {supplierData.notes && (
+                <div className="sm:col-span-2 lg:col-span-3 flex items-start gap-1.5"><span className="text-muted-foreground w-24 shrink-0">Notes:</span><span className="font-medium">{supplierData.notes}</span></div>
+              )}
+            </div>
+          ) : (
+            <div className="text-center py-4">
+              <p className="text-xs text-muted-foreground mb-2">No supplier details captured yet</p>
+              <PermissionGate entity="procurement" action="edit">
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setEditing(true)} data-testid="btn-add-supplier-details">
+                  <Building2 className="h-3 w-3 mr-1" /> Add Supplier Details
+                </Button>
+              </PermissionGate>
+            </div>
+          )}
+        </CardContent>
+      )}
+    </Card>
+  );
+}
 
 export default function SubcontractorDashboardPage() {
   const [, navigate] = useLocation();
@@ -923,6 +1149,10 @@ export default function SubcontractorDashboardPage() {
                   </div>
                 </div>
               )}
+              {selectedCp && selectedCp.toLowerCase() !== "unknown" && (
+                <SupplierDetailsPanel counterpartyName={selectedCp} />
+              )}
+
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 {detailData.invoiceSummary && (
                   <>

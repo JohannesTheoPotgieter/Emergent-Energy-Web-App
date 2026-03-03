@@ -5,8 +5,31 @@ import { eq, sql } from "drizzle-orm";
 import { extractSupplierName } from "./lib/calculations/supplierExtractor";
 import { verifyToken } from "./jwt";
 import { requirePermission } from "./permission-middleware";
+import { logAuditFromReq } from "./audit-logger";
 
 const router = Router();
+
+async function ensureSupplierColumns() {
+  const cols = [
+    { name: "vat_number", type: "TEXT" },
+    { name: "registration_number", type: "TEXT" },
+    { name: "address", type: "TEXT" },
+    { name: "contact_person", type: "TEXT" },
+    { name: "contact_phone", type: "TEXT" },
+    { name: "contact_email", type: "TEXT" },
+    { name: "bank_name", type: "TEXT" },
+    { name: "bank_account_number", type: "TEXT" },
+    { name: "bank_branch_code", type: "TEXT" },
+    { name: "payment_terms", type: "TEXT" },
+    { name: "notes", type: "TEXT" },
+  ];
+  for (const col of cols) {
+    try {
+      await db.execute(sql.raw(`ALTER TABLE counterparties ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`));
+    } catch {}
+  }
+  console.log("[Procurement] Supplier detail columns ensured");
+}
 
 function jwtAuth(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
@@ -906,7 +929,109 @@ router.get("/api/subcontractor-dashboard/admin-questions", requireAuth, async (_
   });
 });
 
+router.get("/api/subcontractor-dashboard/supplier-details/:name", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const name = decodeURIComponent(req.params.name).trim().toLowerCase();
+    const result = await db.execute(sql`
+      SELECT id, name_canonical, vat_number, registration_number, address,
+             contact_person, contact_phone, contact_email,
+             bank_name, bank_account_number, bank_branch_code,
+             payment_terms, notes, type_default, is_core
+      FROM counterparties
+      WHERE LOWER(TRIM(name_canonical)) = ${name}
+      LIMIT 1
+    `);
+    const row = result.rows[0];
+    if (!row) {
+      return res.json({ exists: false, name: req.params.name });
+    }
+    res.json({ exists: true, ...row });
+  } catch (err: any) {
+    console.error("[Procurement] Supplier details error:", err.message);
+    res.status(500).json({ error: "Failed to fetch supplier details" });
+  }
+});
+
+router.patch("/api/subcontractor-dashboard/supplier-details/:name", requireAuth, requirePermission("procurement", "edit"), async (req: Request, res: Response) => {
+  try {
+    const name = decodeURIComponent(req.params.name).trim();
+    const {
+      vatNumber, registrationNumber, address, contactPerson, contactPhone,
+      contactEmail, bankName, bankAccountNumber, bankBranchCode, paymentTerms, notes
+    } = req.body;
+
+    const existing = await db.execute(sql`
+      SELECT id FROM counterparties WHERE LOWER(TRIM(name_canonical)) = ${name.toLowerCase()}
+      LIMIT 1
+    `);
+
+    if (existing.rows.length > 0) {
+      const cpId = existing.rows[0].id as number;
+      await db.execute(sql`
+        UPDATE counterparties SET
+          vat_number = ${vatNumber ?? null},
+          registration_number = ${registrationNumber ?? null},
+          address = ${address ?? null},
+          contact_person = ${contactPerson ?? null},
+          contact_phone = ${contactPhone ?? null},
+          contact_email = ${contactEmail ?? null},
+          bank_name = ${bankName ?? null},
+          bank_account_number = ${bankAccountNumber ?? null},
+          bank_branch_code = ${bankBranchCode ?? null},
+          payment_terms = ${paymentTerms ?? null},
+          notes = ${notes ?? null}
+        WHERE id = ${cpId}
+      `);
+      logAuditFromReq(req, {
+        entity: "counterparty",
+        entityId: cpId,
+        action: "update_supplier_details",
+        details: { name },
+      });
+      res.json({ success: true, id: cpId });
+    } else {
+      const insertResult = await db.execute(sql`
+        INSERT INTO counterparties (name_canonical, vat_number, registration_number, address,
+          contact_person, contact_phone, contact_email, bank_name, bank_account_number,
+          bank_branch_code, payment_terms, notes, type_default)
+        VALUES (${name}, ${vatNumber ?? null}, ${registrationNumber ?? null}, ${address ?? null},
+          ${contactPerson ?? null}, ${contactPhone ?? null}, ${contactEmail ?? null},
+          ${bankName ?? null}, ${bankAccountNumber ?? null}, ${bankBranchCode ?? null},
+          ${paymentTerms ?? null}, ${notes ?? null}, 'SUPPLIER')
+        RETURNING id
+      `);
+      const cpId = insertResult.rows[0]?.id;
+      logAuditFromReq(req, {
+        entity: "counterparty",
+        entityId: cpId as number,
+        action: "create_with_supplier_details",
+        details: { name },
+      });
+      res.json({ success: true, id: cpId });
+    }
+  } catch (err: any) {
+    console.error("[Procurement] Save supplier details error:", err.message);
+    res.status(500).json({ error: "Failed to save supplier details" });
+  }
+});
+
+router.get("/api/subcontractor-dashboard/supplier-list", requireAuth, async (_req: Request, res: Response) => {
+  try {
+    const result = await db.execute(sql`
+      SELECT id, name_canonical, vat_number, address, contact_person,
+             contact_phone, contact_email, type_default
+      FROM counterparties
+      ORDER BY name_canonical ASC
+    `);
+    res.json(result.rows || []);
+  } catch (err: any) {
+    console.error("[Procurement] Supplier list error:", err.message);
+    res.status(500).json({ error: "Failed to list suppliers" });
+  }
+});
+
 export function registerSubcontractorRoutes(app: any) {
+  ensureSupplierColumns().catch(err => console.error("[Procurement] Column migration error:", err.message));
   app.use(router);
 }
 
