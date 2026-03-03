@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Search, Plus, Users, Building2, Pencil, X, Check } from "lucide-react";
+import { Search, Plus, Users, Building2, Pencil, X, Check, ChevronDown, ChevronRight, Link2, Unlink } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,6 +18,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
@@ -52,12 +59,23 @@ interface ProjectCount {
   count: number;
 }
 
+interface ProjectSummary {
+  project_info_id: number;
+  project_name: string;
+  client_id: number | null;
+  phase: string | null;
+}
+
 export default function ClientsPage() {
   const [search, setSearch] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editName, setEditName] = useState("");
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [assignClientId, setAssignClientId] = useState<number | null>(null);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -74,9 +92,32 @@ export default function ClientsPage() {
     placeholderData: [],
   });
 
+  const { data: allProjects = [] } = useQuery<ProjectSummary[]>({
+    queryKey: ["projects-summary-for-clients"],
+    queryFn: () => qFetch("/api/projects-summary").then((data: any[]) =>
+      data.map((p: any) => ({
+        project_info_id: p.project_info_id,
+        project_name: p.project_name,
+        client_id: p.client_id,
+        phase: p.phase,
+      }))
+    ),
+  });
+
   const projectCountMap = new Map(
     projectCounts.map((pc) => [pc.clientId, pc.count])
   );
+
+  const clientProjects = useMemo(() => {
+    if (expandedId === null) return [];
+    return allProjects.filter(p => p.client_id === expandedId);
+  }, [expandedId, allProjects]);
+
+  const unassignedProjects = useMemo(() => {
+    return allProjects
+      .filter(p => p.client_id === null)
+      .sort((a, b) => a.project_name.localeCompare(b.project_name));
+  }, [allProjects]);
 
   const createMutation = useMutation({
     mutationFn: (name: string) =>
@@ -113,6 +154,26 @@ export default function ClientsPage() {
     },
   });
 
+  const assignProjectMutation = useMutation({
+    mutationFn: ({ projectInfoId, clientId }: { projectInfoId: number; clientId: number | null }) =>
+      qFetch(`/api/project-info/${projectInfoId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ clientId }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["clients"] });
+      queryClient.invalidateQueries({ queryKey: ["clients-project-counts"] });
+      queryClient.invalidateQueries({ queryKey: ["projects-summary-for-clients"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects-summary"] });
+      setAssignOpen(false);
+      setSelectedProjectId("");
+      toast({ title: "Project assigned successfully" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
   const handleCreate = () => {
     if (!newName.trim()) return;
     createMutation.mutate(newName.trim());
@@ -126,6 +187,31 @@ export default function ClientsPage() {
   const handleEdit = () => {
     if (!editName.trim() || editingId === null) return;
     editMutation.mutate({ id: editingId, name: editName.trim() });
+  };
+
+  const toggleExpand = (id: number) => {
+    setExpandedId(expandedId === id ? null : id);
+  };
+
+  const openAssignDialog = (clientId: number) => {
+    setAssignClientId(clientId);
+    setSelectedProjectId("");
+    setAssignOpen(true);
+  };
+
+  const handleAssignProject = () => {
+    if (!selectedProjectId || assignClientId === null) return;
+    assignProjectMutation.mutate({
+      projectInfoId: Number(selectedProjectId),
+      clientId: assignClientId,
+    });
+  };
+
+  const handleUnassignProject = (projectInfoId: number) => {
+    assignProjectMutation.mutate({
+      projectInfoId,
+      clientId: null,
+    });
   };
 
   return (
@@ -169,6 +255,7 @@ export default function ClientsPage() {
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-10" />
               <TableHead className="w-32">Client ID</TableHead>
               <TableHead>Name</TableHead>
               <TableHead className="w-36">Created</TableHead>
@@ -179,98 +266,179 @@ export default function ClientsPage() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-12 text-muted-foreground">
+                <TableCell colSpan={6} className="text-center py-12 text-muted-foreground">
                   Loading clients...
                 </TableCell>
               </TableRow>
             ) : clients.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-12 text-muted-foreground">
+                <TableCell colSpan={6} className="text-center py-12 text-muted-foreground">
                   {search ? "No clients match your search" : "No clients yet. Create your first client."}
                 </TableCell>
               </TableRow>
             ) : (
-              clients.map((client) => (
-                <TableRow
-                  key={client.id}
-                  data-testid={`row-client-${client.id}`}
-                  className="cursor-pointer hover:bg-muted/50"
-                  onClick={() => {
-                    if (editingId !== client.id) startEdit(client);
-                  }}
-                >
-                  <TableCell>
-                    <Badge variant="outline" data-testid={`text-client-id-${client.id}`}>
-                      {client.clientId}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    {editingId === client.id ? (
-                      <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                        <Input
-                          value={editName}
-                          onChange={(e) => setEditName(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") handleEdit();
-                            if (e.key === "Escape") setEditingId(null);
-                          }}
-                          className="h-8 max-w-xs"
-                          autoFocus
-                          data-testid={`input-edit-client-${client.id}`}
-                        />
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={handleEdit}
-                          disabled={editMutation.isPending}
-                          data-testid={`button-save-client-${client.id}`}
-                        >
-                          <Check className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => setEditingId(null)}
-                          data-testid={`button-cancel-edit-${client.id}`}
-                        >
-                          <X className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    ) : (
-                      <span className="font-medium" data-testid={`text-client-name-${client.id}`}>
-                        {client.name}
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground text-sm" data-testid={`text-client-created-${client.id}`}>
-                    {client.createdAt ? format(new Date(client.createdAt), "dd MMM yyyy") : "—"}
-                  </TableCell>
-                  <TableCell className="text-center">
-                    <Badge
-                      variant="secondary"
-                      data-testid={`text-client-projects-${client.id}`}
+              clients.map((client) => {
+                const isExpanded = expandedId === client.id;
+                const count = projectCountMap.get(client.id) ?? 0;
+                return (
+                  <> 
+                    <TableRow
+                      key={client.id}
+                      data-testid={`row-client-${client.id}`}
+                      className="cursor-pointer hover:bg-muted/50"
                     >
-                      <Users className="w-3 h-3 mr-1" />
-                      {projectCountMap.get(client.id) ?? 0}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    {editingId !== client.id && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          startEdit(client);
-                        }}
-                        data-testid={`button-edit-client-${client.id}`}
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </Button>
+                      <TableCell className="w-10 px-2">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0"
+                          onClick={() => toggleExpand(client.id)}
+                          data-testid={`button-expand-${client.id}`}
+                        >
+                          {isExpanded ? (
+                            <ChevronDown className="w-4 h-4" />
+                          ) : (
+                            <ChevronRight className="w-4 h-4" />
+                          )}
+                        </Button>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" data-testid={`text-client-id-${client.id}`}>
+                          {client.clientId}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {editingId === client.id ? (
+                          <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                            <Input
+                              value={editName}
+                              onChange={(e) => setEditName(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") handleEdit();
+                                if (e.key === "Escape") setEditingId(null);
+                              }}
+                              className="h-8 max-w-xs"
+                              autoFocus
+                              data-testid={`input-edit-client-${client.id}`}
+                            />
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={handleEdit}
+                              disabled={editMutation.isPending}
+                              data-testid={`button-save-client-${client.id}`}
+                            >
+                              <Check className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setEditingId(null)}
+                              data-testid={`button-cancel-edit-${client.id}`}
+                            >
+                              <X className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <span
+                            className="font-medium"
+                            data-testid={`text-client-name-${client.id}`}
+                            onClick={() => startEdit(client)}
+                          >
+                            {client.name}
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-sm" data-testid={`text-client-created-${client.id}`}>
+                        {client.createdAt ? format(new Date(client.createdAt), "dd MMM yyyy") : "—"}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Badge
+                          variant="secondary"
+                          data-testid={`text-client-projects-${client.id}`}
+                        >
+                          <Users className="w-3 h-3 mr-1" />
+                          {count}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          {editingId !== client.id && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                startEdit(client);
+                              }}
+                              data-testid={`button-edit-client-${client.id}`}
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                    {isExpanded && (
+                      <TableRow key={`${client.id}-expanded`}>
+                        <TableCell colSpan={6} className="bg-muted/30 p-0">
+                          <div className="px-6 py-4 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <h4 className="text-sm font-semibold text-muted-foreground">
+                                Linked Projects ({clientProjects.length})
+                              </h4>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="gap-1.5"
+                                onClick={() => openAssignDialog(client.id)}
+                                data-testid={`button-assign-project-${client.id}`}
+                              >
+                                <Link2 className="w-3.5 h-3.5" />
+                                Assign Project
+                              </Button>
+                            </div>
+                            {clientProjects.length === 0 ? (
+                              <p className="text-sm text-muted-foreground py-2">
+                                No projects linked to this client yet.
+                              </p>
+                            ) : (
+                              <div className="space-y-1">
+                                {clientProjects.map((p) => (
+                                  <div
+                                    key={p.project_info_id}
+                                    className="flex items-center justify-between py-2 px-3 rounded-md bg-background border"
+                                    data-testid={`linked-project-${p.project_info_id}`}
+                                  >
+                                    <div className="flex items-center gap-3">
+                                      <span className="font-medium text-sm">{p.project_name}</span>
+                                      {p.phase && (
+                                        <Badge variant="outline" className="text-xs">
+                                          {p.phase}
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="text-muted-foreground hover:text-red-500"
+                                      onClick={() => handleUnassignProject(p.project_info_id)}
+                                      disabled={assignProjectMutation.isPending}
+                                      data-testid={`button-unlink-${p.project_info_id}`}
+                                    >
+                                      <Unlink className="w-3.5 h-3.5" />
+                                    </Button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
                     )}
-                  </TableCell>
-                </TableRow>
-              ))
+                  </>
+                );
+              })
             )}
           </TableBody>
         </Table>
@@ -307,6 +475,51 @@ export default function ClientsPage() {
               data-testid="button-confirm-create"
             >
               {createMutation.isPending ? "Creating..." : "Create Client"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={assignOpen} onOpenChange={(open) => { if (!open) { setAssignOpen(false); setSelectedProjectId(""); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Assign Project to Client</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-muted-foreground">
+              Select a project to link to this client. Only unassigned projects are shown.
+            </p>
+            <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
+              <SelectTrigger data-testid="select-assign-project">
+                <SelectValue placeholder="Select a project..." />
+              </SelectTrigger>
+              <SelectContent>
+                {unassignedProjects.length === 0 ? (
+                  <SelectItem value="__none" disabled>No unassigned projects</SelectItem>
+                ) : (
+                  unassignedProjects.map((p) => (
+                    <SelectItem key={p.project_info_id} value={String(p.project_info_id)}>
+                      {p.project_name}
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => { setAssignOpen(false); setSelectedProjectId(""); }}
+              data-testid="button-cancel-assign"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleAssignProject}
+              disabled={!selectedProjectId || assignProjectMutation.isPending}
+              data-testid="button-confirm-assign"
+            >
+              {assignProjectMutation.isPending ? "Assigning..." : "Assign Project"}
             </Button>
           </DialogFooter>
         </DialogContent>

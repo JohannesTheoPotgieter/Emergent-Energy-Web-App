@@ -822,7 +822,6 @@ const COLUMN_WIDTHS: Record<string, string> = {
   pd: "78px",
   pm: "78px",
   cost_proposal_signed: "62px",
-  client_name: "90px",
   funding_signed: "62px",
   epc_contract_signed: "62px",
   financial_close: "52px",
@@ -844,7 +843,7 @@ const COLUMN_WIDTHS: Record<string, string> = {
 };
 
 const COLUMN_GROUPS_META: { label: string; keys: string[]; color: string; stickyFirst?: boolean }[] = [
-  { label: "Project Info", keys: ["project_name", "client_name", "size_kwp", "pd", "pm"], color: "bg-slate-50 text-slate-600", stickyFirst: true },
+  { label: "Project Info", keys: ["project_name", "size_kwp", "pd", "pm"], color: "bg-slate-50 text-slate-600", stickyFirst: true },
   { label: "Financial Close", keys: ["cost_proposal_signed", "funding_signed", "epc_contract_signed", "financial_close"], color: "bg-emerald-50 text-emerald-700" },
   { label: "Phase & Schedule", keys: ["phase", "task_counts", "escalation_level", "pd_handover_date", "construction_start_date", "commissioning_date", "om_handover_date", "client_handover_date", "duration", "kw_per_week"], color: "bg-blue-50 text-blue-700" },
   { label: "Progress", keys: ["project_pct_complete", "expected_pct_complete", "delta_vs_expected"], color: "bg-violet-50 text-violet-700" },
@@ -968,20 +967,6 @@ function EditProjectInfoModal({
     commissioningDate: project.commissioning_date || "",
     omHandoverDate: project.om_handover_date || "",
     clientHandoverDate: project.client_handover_date || "",
-    clientId: project.client_id != null ? String(project.client_id) : "",
-  });
-
-  const { data: clientOptions = [] } = useQuery<{ id: number; clientId: string; name: string }[]>({
-    queryKey: ["/api/clients"],
-    queryFn: async () => {
-      const token = localStorage.getItem("auth_token");
-      const headers: Record<string, string> = {};
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-      const res = await fetch("/api/clients", { credentials: "include", headers });
-      if (!res.ok) return [];
-      return res.json();
-    },
-    staleTime: 60_000,
   });
 
 
@@ -1009,7 +994,6 @@ function EditProjectInfoModal({
       commissioningDate: formData.commissioningDate || null,
       omHandoverDate: formData.omHandoverDate || null,
       clientHandoverDate: formData.clientHandoverDate || null,
-      clientId: formData.clientId ? Number(formData.clientId) : null,
     };
     mutation.mutate(body);
   };
@@ -1076,20 +1060,6 @@ function EditProjectInfoModal({
                 <SelectItem value="__unassigned">Unassigned</SelectItem>
                 {pmUsers.map((u) => (
                   <SelectItem key={u.id} value={u.name}>{u.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label className="text-xs font-medium text-slate-600 mb-1 block">Client</Label>
-            <Select value={formData.clientId || "__none"} onValueChange={(val) => updateField("clientId", val === "__none" ? "" : val)}>
-              <SelectTrigger data-testid="select-edit-client">
-                <SelectValue placeholder="Select client..." />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none">No client</SelectItem>
-                {clientOptions.map((c) => (
-                  <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -1206,18 +1176,6 @@ export default function ProjectsSummary() {
     staleTime: 60_000,
   });
 
-  const { data: allClients = [] } = useQuery<{ id: number; clientId: string; name: string }[]>({
-    queryKey: ["/api/clients"],
-    queryFn: async () => {
-      const token = localStorage.getItem("auth_token");
-      const headers: Record<string, string> = {};
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-      const res = await fetch("/api/clients", { credentials: "include", headers });
-      if (!res.ok) return [];
-      return res.json();
-    },
-    staleTime: 60_000,
-  });
 
   const pmAssignMutation = useMutation({
     mutationFn: async ({ projectInfoId, pm, pmUserId }: { projectInfoId: number; pm: string; pmUserId: number | null }) => {
@@ -1519,15 +1477,6 @@ export default function ProjectsSummary() {
         >
           {cleanName(p.project_name)}
         </button>
-      ),
-    },
-    {
-      key: "client_name",
-      header: "Client",
-      render: (p) => (
-        <span data-testid={`text-client-${p.project_info_id}`} className="text-slate-600 truncate max-w-[100px] block" title={p.client_name || "No client"}>
-          {p.client_name || <span className="text-orange-400 text-[9px]">No client</span>}
-        </span>
       ),
     },
     {
