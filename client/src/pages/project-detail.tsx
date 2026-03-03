@@ -544,7 +544,7 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
                                 </Select>
                               </div>
                             </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                               <div>
                                 <Label className="text-[10px] uppercase text-muted-foreground">Priority</Label>
                                 <Select
@@ -560,6 +560,21 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
                                     ))}
                                   </SelectContent>
                                 </Select>
+                              </div>
+                              <div>
+                                <Label className="text-[10px] uppercase text-muted-foreground">% Complete</Label>
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  max={100}
+                                  defaultValue={Math.round(task.percentComplete ?? 0)}
+                                  className="h-8 text-sm mt-1"
+                                  onBlur={(e) => {
+                                    const val = Math.min(100, Math.max(0, parseInt(e.target.value) || 0));
+                                    if (val !== Math.round(task.percentComplete ?? 0)) updateMutation.mutate({ taskId: tid, updates: { percentComplete: val } });
+                                  }}
+                                  data-testid={`input-pct-${task.id}`}
+                                />
                               </div>
                               <div>
                                 <Label className="text-[10px] uppercase text-muted-foreground">Start Date</Label>
@@ -693,6 +708,7 @@ const OLD_TAB_TO_SECTION: Record<string, { section: string; subTab: string }> = 
   "overview": { section: "overview", subTab: "" },
   "engineering": { section: "engineering", subTab: "eng-tasks" },
   "money": { section: "project-management", subTab: "revenue-tracking" },
+  "revenue": { section: "project-management", subTab: "revenue-tracking" },
   "plan": { section: "project-management", subTab: "plan" },
   "chat": { section: "collaboration", subTab: "chat" },
   "sharepoint": { section: "collaboration", subTab: "sharepoint" },
