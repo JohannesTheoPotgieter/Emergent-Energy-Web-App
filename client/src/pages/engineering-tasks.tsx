@@ -63,6 +63,8 @@ import {
   EyeOff,
   Pencil,
   Paperclip,
+  Save,
+  RotateCw,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { usePermission } from "@/hooks/use-permissions";
@@ -230,6 +232,38 @@ function getSavedMyName(): string {
 
 function setSavedMyName(name: string) {
   localStorage.setItem("eng_my_name", name);
+}
+
+interface EngDefaultView {
+  viewMode: "board" | "list" | "projects" | "mytasks";
+  statusFilter: string;
+  priorityFilter: string;
+  assigneeFilter: string;
+  boardCompact: boolean;
+}
+
+function getEngViewKey(userId?: number): string {
+  return `eng_default_view_${userId || "default"}`;
+}
+
+function getSavedEngDefaultView(userId?: number): EngDefaultView | null {
+  try {
+    const raw = localStorage.getItem(getEngViewKey(userId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    const validViews = ["board", "list", "projects", "mytasks"];
+    if (!validViews.includes(parsed.viewMode)) parsed.viewMode = "board";
+    return parsed;
+  } catch { return null; }
+}
+
+function saveEngDefaultView(view: EngDefaultView, userId?: number) {
+  localStorage.setItem(getEngViewKey(userId), JSON.stringify(view));
+}
+
+function clearEngDefaultView(userId?: number) {
+  localStorage.removeItem(getEngViewKey(userId));
 }
 
 function formatDate(d: string | null) {
@@ -2577,7 +2611,8 @@ export default function EngineeringTasksPage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [viewMode, setViewMode] = useState<"board" | "list" | "projects" | "mytasks">("board");
+  const savedDefaults = useMemo(() => getSavedEngDefaultView(user?.id), [user?.id]);
+  const [viewMode, setViewMode] = useState<"board" | "list" | "projects" | "mytasks">(savedDefaults?.viewMode || "board");
   const [myTasksOnly, setMyTasksOnly] = useState(false);
   const [myName, setMyName] = useState(() => {
     const saved = getSavedMyName();
@@ -2586,9 +2621,10 @@ export default function EngineeringTasksPage() {
     return fullName.split(/\s+/)[0];
   });
   const [showNamePicker, setShowNamePicker] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [priorityFilter, setPriorityFilter] = useState<string>("all");
-  const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>(savedDefaults?.statusFilter || "all");
+  const [priorityFilter, setPriorityFilter] = useState<string>(savedDefaults?.priorityFilter || "all");
+  const [assigneeFilter, setAssigneeFilter] = useState<string>(savedDefaults?.assigneeFilter || "all");
+  const [hasCustomDefault, setHasCustomDefault] = useState(!!savedDefaults);
   const [searchTerm, setSearchTerm] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     return params.get("project") || "";
@@ -2609,7 +2645,7 @@ export default function EngineeringTasksPage() {
 
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [holdDialog, setHoldDialog] = useState<{ taskId: number; reason: string; blockedType: string } | null>(null);
-  const [boardCompact, setBoardCompact] = useState(false);
+  const [boardCompact, setBoardCompact] = useState(savedDefaults?.boardCompact || false);
   const [collapsedColumns, setCollapsedColumns] = useState<Set<string>>(() => new Set());
 
   const toggleColumnCollapse = useCallback((status: string) => {
@@ -2777,6 +2813,23 @@ export default function EngineeringTasksPage() {
     return { label: "All tasks on track — review board for next priorities", severity: "info" };
   }, [overdueTasks, needsApprovalTasks, holdTasks]);
 
+  const handleSaveDefaultView = useCallback(() => {
+    saveEngDefaultView({ viewMode, statusFilter, priorityFilter, assigneeFilter, boardCompact }, user?.id);
+    setHasCustomDefault(true);
+    toast({ title: "Default view saved", description: "This page will open with your current view settings next time." });
+  }, [viewMode, statusFilter, priorityFilter, assigneeFilter, boardCompact, toast, user?.id]);
+
+  const handleResetDefaultView = useCallback(() => {
+    clearEngDefaultView(user?.id);
+    setHasCustomDefault(false);
+    setViewMode("board");
+    setStatusFilter("all");
+    setPriorityFilter("all");
+    setAssigneeFilter("all");
+    setBoardCompact(false);
+    toast({ title: "Default view reset", description: "This page will open with the standard board view." });
+  }, [toast, user?.id]);
+
   const engBlockers = useMemo((): BlockerInfo[] => {
     const b: BlockerInfo[] = [];
     if (overdueTasks.length > 0) b.push({ label: "Overdue tasks", count: overdueTasks.length, severity: "urgent" });
@@ -2861,6 +2914,31 @@ export default function EngineeringTasksPage() {
             >
               <List className="h-4 w-4" />
             </Button>
+          </div>
+          <div className="flex items-center border rounded-md">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 px-2 text-xs gap-1"
+              onClick={handleSaveDefaultView}
+              data-testid="btn-save-default-view"
+              title="Save current view as your default"
+            >
+              <Save className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Save Default</span>
+            </Button>
+            {hasCustomDefault && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 px-2 text-xs gap-1 text-muted-foreground"
+                onClick={handleResetDefaultView}
+                data-testid="btn-reset-default-view"
+                title="Reset to standard view"
+              >
+                <RotateCw className="h-3.5 w-3.5" />
+              </Button>
+            )}
           </div>
           <Dialog open={createOpen} onOpenChange={setCreateOpen}>
             <DialogTrigger asChild>
